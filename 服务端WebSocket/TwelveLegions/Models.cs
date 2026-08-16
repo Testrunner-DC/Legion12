@@ -172,6 +172,7 @@ public sealed class L12PlayerState
     public int NextFactionLegionDiscount { get; set; }
     public int NextS2SunDisasterLegionDiscount { get; set; }
     public int NextS2OlympusLegionDiscount { get; set; }
+    public int S2ArthurDiscountUntilTurn { get; set; } = -1;
     public int FactionMoraleAdditionForbiddenUntilTurn { get; set; } = -1;
     public int MasterCannotBeAttackedUntilTurn { get; set; } = -1;
     public int TombNamedLegionsLeftThisTurn { get; set; }

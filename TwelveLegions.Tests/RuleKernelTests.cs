@@ -195,13 +195,28 @@ public sealed class RuleKernelTests
     public void S2PromotionKeepsSharedStateAndAttachesFoundation()
     {
         var player = Player();
-        var foundation = Card("foundation", 4000, "赫拉克勒斯", "olympus"); foundation.Tapped = true; foundation.HasStrongAttack = true;
-        var promoted = Card("promoted", 6000, "赫拉克勒斯·晋升", "olympus");
+        var foundation = Card("S02-0502", 4000, "赫拉克勒斯", "olympus"); foundation.Tapped = true; foundation.HasStrongAttack = true;
+        var promoted = Card("S02-0501", 6000, "赫拉克勒斯·晋升", "olympus");
         player.Field[0][1] = foundation; player.Hand.Add(promoted);
         player.SpecialZones.GodPower.AddRange([Card("power-a"), Card("power-b")]);
         Assert.True(L12S2ZoneOps.Promote(player, foundation, promoted, 2));
         Assert.Same(promoted, player.Field[0][1]); Assert.True(promoted.Tapped); Assert.True(promoted.HasStrongAttack);
         Assert.Same(foundation, Assert.Single(promoted.AttachedCards)); Assert.Empty(player.Hand);
+    }
+
+    [Fact]
+    public void S2PromotionRejectsWrongFoundationEvenWhenNameMatches()
+    {
+        var player = Player();
+        var wrongFoundation = Card("S02-0504", 4000, "赫拉克勒斯", "olympus");
+        var promoted = Card("S02-0501", 8000, "赫拉克勒斯·晋升", "olympus");
+        player.Field[0][0] = wrongFoundation; player.Hand.Add(promoted);
+        player.SpecialZones.GodPower.AddRange([Card("power-a"), Card("power-b")]);
+
+        Assert.False(L12S2ZoneOps.Promote(player, wrongFoundation, promoted, 2));
+        Assert.Same(wrongFoundation, player.Field[0][0]);
+        Assert.Contains(promoted, player.Hand);
+        Assert.All(player.SpecialZones.GodPower, card => Assert.False(card.Tapped));
     }
 
     [Fact]

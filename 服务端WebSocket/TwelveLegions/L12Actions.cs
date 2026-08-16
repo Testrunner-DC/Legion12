@@ -188,6 +188,7 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0612" && PublicLegions(player).Any(target => target.CardId == "S02-0611")) modifier -= 2;
         if (card.CardId is "S02-0512" or "S02-0518" && player.SpecialZones.GodPower.Count == 0) modifier--;
         if (card.CardId == "S02-0510" && player.SpecialZones.GodPower.Count >= 5) modifier -= 3;
+        if (card.CardId == "S02-0601" && player.S2ArthurDiscountUntilTurn >= State.TurnSerial) modifier -= 3;
         if (card.CardId == "S01-0301") modifier -= player.Graveyard.Count(target => target.CardType == "legion" && target.Faction == "asgard") / 4;
         if (card.CardId == "S01-0302") modifier -= PublicLegions(player).Count();
         if (card.CardId is "S01-0305" or "S01-0306" && player.Hp <= 6) modifier--;

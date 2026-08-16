@@ -158,8 +158,16 @@ public static class L12S2ZoneOps
 
     public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted, int godPowerCost)
     {
-        var normalizedPromotedName = promoted.Name.Replace("·晋升", string.Empty, StringComparison.Ordinal);
-        if (!foundation.Name.Equals(normalizedPromotedName, StringComparison.Ordinal)
+        var requiredFoundationId = promoted.CardId switch
+        {
+            "S02-0501" => "S02-0502",
+            "S02-0503" => "S02-0504",
+            "S02-0505" => "S02-0506",
+            "S02-0507" => "S02-0508",
+            _ => null,
+        };
+        if (requiredFoundationId is null
+            || !foundation.CardId.Equals(requiredFoundationId, StringComparison.OrdinalIgnoreCase)
             || foundation.Faction != "olympus" || promoted.Faction != "olympus") return false;
         var position = (Row: -1, Slot: -1);
         for (var row = 0; row < player.Field.Length; row++)
