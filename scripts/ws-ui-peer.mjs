@@ -1,0 +1,15 @@
+const roomCode = process.argv[2]
+if (!roomCode) throw new Error('room code required')
+const socket = new WebSocket(process.argv[3] || 'ws://localhost:8080/ws/')
+socket.addEventListener('message', event => {
+  const message = JSON.parse(String(event.data))
+  if (message.type === 'session' && message.name !== '界面陪练')
+    socket.send(JSON.stringify({ type: 'hello', name: '界面陪练' }))
+  else if (message.type === 'session')
+    socket.send(JSON.stringify({ type: 'joinRoom', roomCode }))
+  else if (message.type === 'roomState' && message.players.length === 2)
+    socket.send(JSON.stringify({ type: 'ready', ready: true }))
+  else if (message.type === 'gameState')
+    console.log(`peer ready: ${message.state.matchId}`)
+})
+await new Promise(resolve => socket.addEventListener('close', resolve))
