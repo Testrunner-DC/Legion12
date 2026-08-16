@@ -14,6 +14,7 @@ interface CatalogCard {
   hp?: number
   troops?: number
   disasterLevel?: number
+  trialValue?: number
   effect?: string
 }
 
@@ -54,6 +55,10 @@ const s1CounterTactics = new Set([
   'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
   'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
 ])
+const trialValues: Record<string, number> = {
+  'S02-0604': 2, 'S02-0606': 1, 'S02-0609': 1, 'S02-0610': 1,
+  'S02-0613': 1, 'S02-0614': 1, 'S02-0617': 1, 'S02-0618': 2,
+}
 
 const cards = ref<CatalogCard[]>([])
 const decks = ref<PresetDeck[]>([])
@@ -92,6 +97,7 @@ onMounted(async () => {
       cost: card.cost ?? undefined,
       troops: card.attack ?? undefined,
       hp: card.health ?? undefined,
+      trialValue: trialValues[card.cardNo],
       effect: card.effectText ?? undefined,
     }))
     cards.value = [...seasonOne, ...seasonTwo]
@@ -193,6 +199,7 @@ function resetFilters() {
           <template v-if="selected.troops !== undefined"><dt>兵力</dt><dd>{{ selected.troops }}</dd></template>
           <template v-if="selected.hp !== undefined"><dt>血量</dt><dd>{{ selected.hp }}</dd></template>
           <template v-if="selected.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ selected.disasterLevel }}</dd></template>
+          <template v-if="selected.trialValue"><dt>试炼值</dt><dd>{{ selected.trialValue }}</dd></template>
         </dl>
         <section class="archive-effect"><b>效果</b><p>{{ selected.effect || '无效果文字' }}</p></section>
         <section v-if="selectedDecks.length" class="archive-decks"><b>收录预组</b><p v-for="deck in selectedDecks" :key="deck.name">{{ deck.name }} × {{ deck.copies }}</p></section>

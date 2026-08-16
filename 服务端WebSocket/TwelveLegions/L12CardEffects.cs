@@ -304,7 +304,8 @@ public sealed partial class L12GameEngine
                 else AddEvent("effect", item.Controller, "源义经因击杀抽取 1 张牌", card);
                 FinishStackItem(item); return;
             default:
-                if (!TryResolveS1ExtendedAfterAttack(item, card) && !TryResolveS2UniversalAfterAttack(item, card)) FinishStackItem(item);
+                if (!TryResolveS1ExtendedAfterAttack(item, card) && !TryResolveS2UniversalAfterAttack(item, card)
+                    && !TryResolveS2FactionAfterAttack(item, card)) FinishStackItem(item);
                 return;
         }
     }
@@ -314,7 +315,8 @@ public sealed partial class L12GameEngine
         if (State.Phase == L12Phase.GameOver) return;
         if (FindOnField(State.Players[playerIndex], attacker.InstanceId, out _, out _) is null) return;
         if (attacker.CardId is not ("S01-0101" or "S01-0414" or "S01-0409") && !S1ExtendedAfterAttackCards.Contains(attacker.CardId)
-            && !IsS1FactionAfterAttackCard(attacker.CardId) && !S2UniversalAfterAttackCards.Contains(attacker.CardId)) return;
+            && !IsS1FactionAfterAttackCard(attacker.CardId) && !S2UniversalAfterAttackCards.Contains(attacker.CardId)
+            && !IsS2FactionAfterAttackCard(attacker.CardId)) return;
         PushEffect(playerIndex, attacker, "after-attack", "【进攻后】效果",
             data: new Dictionary<string, string> { ["killed"] = killedTarget ? "true" : "false" });
     }

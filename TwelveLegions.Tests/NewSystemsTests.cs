@@ -46,6 +46,7 @@ public sealed class NewSystemsTests
             BaseTroops = definition.Troops ?? 0,
             Troops = definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
+            TrialValue = definition.TrialValue ?? 0,
         };
     }
 
@@ -56,6 +57,35 @@ public sealed class NewSystemsTests
         Assert.Equal("始皇帝 嬴政", Catalog.Cards["S02-0101"].NameZh);
         Assert.Equal("destruction", Catalog.Cards["S02-DS01"].CardType);
         Assert.Equal("otherworld", Catalog.Cards["S02-06M1"].Faction);
+        var trialValues = new Dictionary<string, int>
+        {
+            ["S02-0604"] = 2, ["S02-0606"] = 1, ["S02-0609"] = 1, ["S02-0610"] = 1,
+            ["S02-0613"] = 1, ["S02-0614"] = 1, ["S02-0617"] = 1, ["S02-0618"] = 2,
+        };
+        foreach (var (cardId, expected) in trialValues)
+            Assert.Equal(expected, Catalog.Cards[cardId].TrialValue);
+    }
+
+    [Fact]
+    public void PrintedTrialActionRestsTheLegionAndAddsItsTrialValue()
+    {
+        var game = Create(seed: 5530);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        game.State.Phase = L12Phase.Main;
+        var trial = CreateInstance("S02-06S3", "trial-lake");
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        var galahad = CreateInstance("S02-0604", "trial-galahad");
+        galahad.SummonRound = game.State.Round - 1;
+        player.Field[0][0] = galahad;
+
+        var result = game.Handle(playerIndex, new L12Command("activateAbility",
+            CardInstanceId: galahad.InstanceId, Ability: "trialAdvance"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.True(galahad.Tapped);
+        Assert.Equal(2, trial.TrialProgress);
     }
 
     [Fact]

@@ -124,6 +124,7 @@ function detailFor(id: string | null) {
     troops: card?.troops ?? numberData(id, 'troops'),
     baseTroops: card?.baseTroops ?? numberData(id, 'baseTroops'),
     disasterLevel: card?.disasterLevel ?? numberData(id, 'disasterLevel'),
+    trialValue: card?.trialValue ?? numberData(id, 'trialValue'),
   }
 }
 function cardObjectFor(id: string): Card | null {
@@ -143,6 +144,7 @@ function cardObjectFor(id: string): Card | null {
     baseTroops: detail.baseTroops ?? detail.troops ?? 0,
     troops: detail.troops ?? detail.baseTroops ?? 0,
     disasterLevel: detail.disasterLevel ?? 0,
+    trialValue: detail.trialValue ?? 0,
     tapped: false,
     summonRound: 0,
   }

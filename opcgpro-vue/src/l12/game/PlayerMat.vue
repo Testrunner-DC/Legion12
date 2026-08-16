@@ -117,7 +117,11 @@ function abilities(card: Card) {
   return map[card.cardId] ?? []
 }
 function activeAbilities(card: Card) {
-  return abilities(card).filter(entry => entry[0] !== 'freeMove')
+  return abilities(card).filter(entry => entry[0] !== 'freeMove' && entry[0] !== 'trialAdvance')
+}
+function canAdvanceTrial(card: Card) {
+  return Boolean(props.actionsEnabled && card.trialValue && !card.tapped && card.summonRound < (props.round ?? 0)
+    && props.player.specialZones?.trials.some(trial => !trial.trialCompleted))
 }
 function selectZoneCard(card: Card) {
   emit('focus', card)
@@ -222,6 +226,8 @@ function beginCardAbility(card: Card) {
                   @click.stop="emit('cardAction', 'attack', player.field[row][slot]!)">{{ attackMode ? '选择目标' : '进攻' }}</button>
                 <button v-if="canMove(player.field[row][slot]!, row, slot)" :class="{ active: moveMode }"
                   @click.stop="emit('cardAction', 'move', player.field[row][slot]!)">{{ moveMode ? '选择位置' : '位移' }}</button>
+                <button v-if="canAdvanceTrial(player.field[row][slot]!)"
+                  @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">发动试炼</button>
                 <button v-if="activeAbilities(player.field[row][slot]!).length"
                   @click.stop="beginCardAbility(player.field[row][slot]!)">发动</button>
               </div>

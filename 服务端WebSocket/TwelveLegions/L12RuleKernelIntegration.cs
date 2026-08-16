@@ -268,7 +268,9 @@ public sealed partial class L12GameEngine
                     ? 1000
                     : 0;
                 var spartanOpponentTurnBonus = card.CardId == "S02-0519" && State.ActivePlayer != player.PlayerIndex ? 2000 : 0;
-                L12DerivedStats.ApplyContinuousModifier(card, globalModifier + frontDefenseModifier + adjacentHannibalBonus + spartanOpponentTurnBonus, State.TurnSerial);
+                var gwenllianOpponentTurnBonus = card.CardId == "S02-0615" && row == 0 && State.ActivePlayer != player.PlayerIndex ? 1000 : 0;
+                L12DerivedStats.ApplyContinuousModifier(card, globalModifier + frontDefenseModifier + adjacentHannibalBonus
+                    + spartanOpponentTurnBonus + gwenllianOpponentTurnBonus, State.TurnSerial);
             }
         }
     }

@@ -276,6 +276,7 @@ public sealed partial class L12GameEngine
         {
             var target = FindOnField(defender, command.Target.InstanceId, out var targetRow, out _);
             if (target is null || target.Hidden || !IsFieldLegion(target)) return CommandResult.Reject("目标不是可进攻军团");
+            if (IsProtectedByRestedAmakine(defender, target)) return CommandResult.Reject("休整的阿麦金使活跃的试炼军团不可被进攻");
             if (target.CardId == "S02-0516" && !target.Tapped) return CommandResult.Reject("活跃的汉尼拔不可被进攻");
             var zhangFeiKey = $"zhangfei-defense:{target.InstanceId}:{State.Round}";
             if (target.CardId == "S01-0107" && targetRow == 0 && !defender.UsedAbilities.Contains(zhangFeiKey))
@@ -292,7 +293,8 @@ public sealed partial class L12GameEngine
             isRanged = row == 1 || targetRow == 1;
             if (isRanged && target.CannotBeRanged) return CommandResult.Reject("目标无法被远程进攻");
             var taunts = defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
-            if (taunts.Length > 0 && !HasS1Taunt(target)) return CommandResult.Reject("对方前排存在带有挑衅的军团");
+            if (taunts.Length > 0 && taunts.All(card => card!.InstanceId != target.InstanceId))
+                return CommandResult.Reject("对方前排存在带有挑衅的军团");
             attackTarget = target;
         }
         else if (command.Target.Type == "master")
@@ -370,7 +372,6 @@ public sealed partial class L12GameEngine
             AddEvent("attack-ended", playerIndex, "进攻军团已离场，进攻结束");
             return CommandResult.Ok();
         }
-
         var blockIds = command.CardInstanceIds ?? [];
         var supportId = command.SupportInstanceId;
         var validation = ValidateDefenseChoice(playerIndex, pending, attacker, blockIds, supportId);
@@ -436,6 +437,7 @@ public sealed partial class L12GameEngine
             AddEvent("attack-ended", playerIndex, "进攻军团已离场，进攻结束");
             return CommandResult.Ok();
         }
+        var hasNextAttackNoLoss = attacker.NextAttackNoLossUses > 0;
 
         var killedTarget = false;
         if (pending.Target.Type == "master")
@@ -480,7 +482,7 @@ public sealed partial class L12GameEngine
             {
                 var targetTroops = target.Troops;
                 target.Troops -= attacker.Troops;
-                if (attacker.AttackNoLossUntilTurn < State.TurnSerial && !attacker.HasAttackNoLoss && !(pending.IsRanged && attacker.HasRangedNoLoss)) attacker.Troops -= targetTroops;
+                if (!hasNextAttackNoLoss && attacker.AttackNoLossUntilTurn < State.TurnSerial && !attacker.HasAttackNoLoss && !(pending.IsRanged && attacker.HasRangedNoLoss)) attacker.Troops -= targetTroops;
                 var simultaneousDeaths = new List<(int Controller, L12CardInstance Card)>();
                 if (target.Troops <= 0)
                 {
@@ -491,11 +493,13 @@ public sealed partial class L12GameEngine
                 if (attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true, "阵亡", queueDeathTrigger: false))
                     simultaneousDeaths.Add((attackerPlayer.PlayerIndex, attacker));
                 QueueSimultaneousDeathTriggers(simultaneousDeaths);
-                AddEvent("combat", playerIndex, attacker.AttackNoLossUntilTurn >= State.TurnSerial || attacker.HasAttackNoLoss || pending.IsRanged && attacker.HasRangedNoLoss
+                AddEvent("combat", playerIndex, hasNextAttackNoLoss || attacker.AttackNoLossUntilTurn >= State.TurnSerial || attacker.HasAttackNoLoss || pending.IsRanged && attacker.HasRangedNoLoss
                     ? "进攻无损：被进攻军团承受兵力减损，进攻军团不减损"
                     : "双方军团同时造成等同于当前兵力的兵力减损", attacker, target);
             }
         }
+
+        if (hasNextAttackNoLoss) attacker.NextAttackNoLossUses--;
 
         State.PendingDefense = null;
         if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
@@ -515,7 +519,7 @@ public sealed partial class L12GameEngine
         var targetSlot = command.Slot.GetValueOrDefault();
         if (State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1)
             return CommandResult.Reject("〈腐秽大地〉持续期间无法位移至后排");
-        var hasFreeMove = card.CardId is "S01-0002" or "S01-0106" or "S01-0409"
+        var hasFreeMove = card.CardId is "S01-0002" or "S01-0106" or "S01-0409" or "S02-0505"
             && !player.UsedAbilities.Contains($"free-move:{card.InstanceId}");
         if (!hasFreeMove && Math.Abs(sourceRow - targetRow) + Math.Abs(sourceSlot - targetSlot) != 1)
             return CommandResult.Reject("规则位移每次只能移动至相邻空格");

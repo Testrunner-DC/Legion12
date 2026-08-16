@@ -31,6 +31,7 @@ public sealed class L12CardDefinition
     public int? Hp { get; init; }
     public int? Troops { get; init; }
     public int? DisasterLevel { get; init; }
+    public int? TrialValue { get; init; }
     public string? Effect { get; init; }
 }
 
@@ -73,11 +74,13 @@ public sealed class L12CardInstance
     public int? SetTroopsValue { get; set; }
     public int SetTroopsUntilTurn { get; set; } = -1;
     public int DisasterLevel { get; init; }
+    public int TrialValue { get; init; }
     public int? OwnerIndex { get; set; }
     public bool HasCharge { get; set; }
     public bool HasStrongAttack { get; set; }
     public bool HasSureHit { get; set; }
     public int AttackNoLossUntilTurn { get; set; } = -1;
+    public int NextAttackNoLossUses { get; set; }
     public int SureHitAgainstLegionsUntilTurn { get; set; } = -1;
     public int CannotReadyByEffectUntilTurn { get; set; } = -1;
     public int DiscardAtEndOfTurnUntilTurn { get; set; } = -1;

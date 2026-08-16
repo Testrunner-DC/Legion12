@@ -103,6 +103,7 @@ const boardSlotPreview = computed<Card | null>(() => {
     baseTroops: Number(prompt.data?.[`${id}:baseTroops`] ?? 0),
     troops: Number(prompt.data?.[`${id}:troops`] ?? 0),
     disasterLevel: Number(prompt.data?.[`${id}:disasterLevel`] ?? 0),
+    trialValue: Number(prompt.data?.[`${id}:trialValue`] ?? 0),
     tapped: false,
     summonRound: 0,
   }
@@ -343,7 +344,7 @@ function statusTexts(card: Card) {
             <template v-if="focusCard">
               <CardTile :card="focusCard" />
               <h2>{{ focusCard.name }}</h2>
-              <dl><div><dt>费用</dt><dd>{{ focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div></dl>
+              <dl><div><dt>费用</dt><dd>{{ focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div><div v-if="focusCard.trialValue"><dt>试炼值</dt><dd>{{ focusCard.trialValue }}</dd></div></dl>
               <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
               <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
             </template>
@@ -453,7 +454,7 @@ function statusTexts(card: Card) {
       <aside v-if="modalInspectorVisible && focusCard" class="modal-card-inspector" :class="{ disaster: isHorizontalCardType(focusCard.cardType) }">
         <img v-if="focusCard.imageUrl" :src="focusCard.imageUrl" :alt="focusCard.name" />
         <div><small>选中卡牌</small><h2>{{ focusCard.name }}</h2>
-          <dl><span v-if="focusCard.cost !== undefined">费用 <b>{{ focusCard.currentCost ?? focusCard.cost }}</b></span><span v-if="focusCard.troops">兵力 <b>{{ focusCard.troops }}</b></span><span v-if="focusCard.disasterLevel">天灾等级 <b>{{ focusCard.disasterLevel }}</b></span></dl>
+          <dl><span v-if="focusCard.cost !== undefined">费用 <b>{{ focusCard.currentCost ?? focusCard.cost }}</b></span><span v-if="focusCard.troops">兵力 <b>{{ focusCard.troops }}</b></span><span v-if="focusCard.disasterLevel">天灾等级 <b>{{ focusCard.disasterLevel }}</b></span><span v-if="focusCard.trialValue">试炼值 <b>{{ focusCard.trialValue }}</b></span></dl>
           <p>{{ focusCard.effectText || '无效果文字' }}</p>
           <ul v-if="statusTexts(focusCard).length"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
         </div>

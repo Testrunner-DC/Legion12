@@ -190,6 +190,7 @@ public static class L12S2ZoneOps
         promoted.HasStrongAttack |= foundation.HasStrongAttack;
         promoted.HasSureHit |= foundation.HasSureHit;
         promoted.AttackNoLossUntilTurn = Math.Max(promoted.AttackNoLossUntilTurn, foundation.AttackNoLossUntilTurn);
+        promoted.NextAttackNoLossUses += foundation.NextAttackNoLossUses;
         promoted.SureHitAgainstLegionsUntilTurn = Math.Max(promoted.SureHitAgainstLegionsUntilTurn, foundation.SureHitAgainstLegionsUntilTurn);
         promoted.CannotReadyByEffectUntilTurn = Math.Max(promoted.CannotReadyByEffectUntilTurn, foundation.CannotReadyByEffectUntilTurn);
         promoted.CannotUntapUntilRound = Math.Max(promoted.CannotUntapUntilRound, foundation.CannotUntapUntilRound);

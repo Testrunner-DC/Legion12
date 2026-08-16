@@ -50,7 +50,26 @@ public sealed partial class L12GameEngine
         "S02-0104" => [new("shennongReset", "主动休整 返还1士气：重置我方主宰其中1个效果的使用次数。")],
         "S02-05C1" => [new("godPowerDraw", "我方回合1次 消耗并翻转1张神力：抽取1张牌。")],
         "S02-06C1A" => [new("factionGainRune", "我方回合1次 消耗1士气：获得1枚符文。")],
-        "S02-06S3" or "S02-06S4" or "S02-06S5" or "S02-06S6" => [new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。")],
+        "S02-0604" =>
+        [
+            new("trialAdvance", "发动试炼（试炼值2）"),
+            new("galahadGrailReward", "试炼《寻找圣杯之旅》完成后，弃置此军团：抽取1张牌，我方主宰增加1点血量。"),
+        ],
+        "S02-0606" or "S02-0609" or "S02-0610" or "S02-0613" or "S02-0614" or "S02-0617" => [new("trialAdvance", "发动试炼（试炼值1）")],
+        "S02-0618" => [new("trialAdvance", "发动试炼（试炼值2）")],
+        "S02-06S3" or "S02-06S4" => [new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。")],
+        "S02-06S5" =>
+        [
+            new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。"),
+            new("fenianReady", "我方回合1次 消耗1符文：将我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃。"),
+        ],
+        "S02-06S6" =>
+        [
+            new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。"),
+            new("crusadeTrialNoLoss", "消耗1符文：选择我方1张【试炼军团】，本回合下一次进攻无损。"),
+            new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
+            new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
+        ],
         _ => GetS2FactionAbilities(cardId).Concat(GetS1FactionAbilities(cardId)).ToList(),
     };
 

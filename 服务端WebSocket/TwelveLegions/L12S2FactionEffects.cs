@@ -8,7 +8,7 @@ public sealed partial class L12GameEngine
         "S02-0101", "S02-0203", "S02-0204", "S02-0205",
         "S02-0301", "S02-0302", "S02-0304", "S02-0402",
         "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0517", "S02-0518", "S02-0521", "S02-0613",
-        "S02-0603", "S02-0606", "S02-0607", "S02-0608", "S02-0612", "S02-0616", "S02-0618",
+        "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
     };
 
     private static readonly HashSet<string> S2FactionTacticCards = new(StringComparer.OrdinalIgnoreCase)
@@ -30,6 +30,13 @@ public sealed partial class L12GameEngine
     {
         "S02-0501", "S02-0503", "S02-0505", "S02-0507",
     };
+
+    private static readonly HashSet<string> S2FactionAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "S02-0602",
+    };
+
+    private static bool IsS2FactionAfterAttackCard(string cardId) => S2FactionAfterAttackCards.Contains(cardId);
 
     private static bool HasS2FactionImmediateEffect(string cardId, string trigger)
         => trigger switch
@@ -54,8 +61,16 @@ public sealed partial class L12GameEngine
             new("scarabDebuff", "我方回合1次：弃置1张手牌，选择对方最多2张军团，本回合兵力-1000"),
         ],
         "S02-0603" => [new("merlinRune", "主动休整：消耗1符文，选择敌方军团-3000，或检索费用不高于4的【主动战术】")],
+        "S02-0616" => [new("amakineTop", "主动休整 展示牌库顶部1张牌：若其只拥有【彼界】特征，可加入手牌；否则返回牌库顶部或底部。")],
         _ => [],
     };
+
+    private static bool IsTrialLegion(L12CardInstance card)
+        => card.CardId is "S02-0604" or "S02-0610" or "S02-0614";
+
+    private static bool IsProtectedByRestedAmakine(L12PlayerState owner, L12CardInstance target)
+        => !target.Tapped && IsTrialLegion(target)
+            && PublicLegions(owner).Any(card => card.CardId == "S02-0616" && card.Tapped);
 
     private void AdvanceTrial(int playerIndex, int count, L12CardInstance? source = null)
     {
@@ -66,6 +81,13 @@ public sealed partial class L12GameEngine
         trial.TrialProgress = Math.Min(8, trial.TrialProgress + count);
         player.SpecialZones.TrialLevel = trial.TrialProgress;
         AddEvent("trial", playerIndex, $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}", source ?? trial);
+    }
+
+    private bool SourceIsFieldCard(int playerIndex, string? instanceId, out L12CardInstance card)
+    {
+        var found = FindOnField(State.Players[playerIndex], instanceId, out _, out _);
+        card = found!;
+        return found is not null;
     }
 
     private bool TryResolveS2FactionEnter(L12StackItem item, L12CardInstance card)
@@ -120,10 +142,66 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-joan-master-guard" });
                 return true;
             }
+            case "S02-0604":
+                CreatePrompt(item.Controller, "optional", "加拉哈德：是否休整并发动试炼（试炼值2）？", ["yes", "no"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-galahad-entry-trial", ["yes"] = "发动试炼", ["no"] = "不发动",
+                    });
+                return true;
+            case "S02-0602":
+                if (player.SpecialZones.Runes < 1) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "optional", "兰斯洛特：是否消耗1符文获得冲锋？", ["yes", "no"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-lancelot-entry-charge", ["yes"] = "消耗1符文并获得冲锋", ["no"] = "不发动",
+                    });
+                return true;
+            case "S02-0610":
+                CreatePrompt(item.Controller, "optional", "芬恩：是否休整并发动试炼（试炼值1）？", ["yes", "no"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-finn-entry-trial", ["yes"] = "发动试炼", ["no"] = "不发动",
+                    });
+                return true;
+            case "S02-0614":
+                CreatePrompt(item.Controller, "option", "康斯坦丝：选择登场时效果", ["rune", "trial", "skip"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-constance-entry", ["rune"] = "获得1符文",
+                        ["trial"] = "休整并发动试炼（试炼值1）", ["skip"] = "不发动",
+                    });
+                return true;
+            case "S02-0617":
+            {
+                var squires = player.Hand.Concat(player.Library).Concat(player.Graveyard)
+                    .Where(candidate => candidate.CardId == "S02-0609").Select(candidate => candidate.InstanceId).ToList();
+                squires.Add("skip");
+                CreatePrompt(item.Controller, "optional-card", "罗宾汉：可从手牌、牌库或墓地选择1张〈侍从骑士〉活跃登场",
+                    squires, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-robin-summon-squire", ["skip"] = "不发动" });
+                return true;
+            }
+            case "S02-0619":
+            {
+                if (player.SpecialZones.Runes < 1) { FinishStackItem(item); return true; }
+                var targets = PublicLegions(State.Players[1 - item.Controller]).Select(target => target.InstanceId).ToList();
+                targets.Add("skip");
+                CreatePrompt(item.Controller, "optional-target", "克劳迪娅：可消耗1符文，选择对方1张军团本回合兵力-2000",
+                    targets, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-claudia-debuff", ["skip"] = "不发动" });
+                return true;
+            }
+            case "S02-0616":
+                CreatePrompt(item.Controller, "optional", "阿麦金：是否获得1符文？", ["yes", "no"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-amakine-entry-rune", ["yes"] = "获得1符文", ["no"] = "不发动",
+                    });
+                return true;
             case "S02-0603":
             case "S02-0606":
             case "S02-0607":
-            case "S02-0616":
             case "S02-0618":
                 L12S2ZoneOps.GainRunes(player, 1);
                 AddEvent("runes", item.Controller, $"{card.Name}使我方获得1符文", card);
@@ -359,6 +437,17 @@ public sealed partial class L12GameEngine
         return true;
     }
 
+    private bool TryResolveS2FactionAfterAttack(L12StackItem item, L12CardInstance card)
+    {
+        if (card.CardId != "S02-0602" || item.Data.GetValueOrDefault("killed") != "true") return false;
+        CreatePrompt(item.Controller, "option", "兰斯洛特击杀军团：可选择试炼+1或获得1符文", ["trial", "rune", "skip"], 1, 1,
+            "card-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-lancelot-kill", ["trial"] = "试炼+1", ["rune"] = "获得1符文", ["skip"] = "不发动",
+            });
+        return true;
+    }
+
     private bool TryResolveS2FactionDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
@@ -415,6 +504,18 @@ public sealed partial class L12GameEngine
     private CommandResult? TryBeginS2FactionActiveAbility(int playerIndex, L12CardInstance source, string ability)
     {
         var player = State.Players[playerIndex];
+        if (ability == "trialAdvance" && source.TrialValue > 0)
+        {
+            if (source.Tapped) return CommandResult.Reject("该军团必须为活跃状态");
+            if (source.SummonRound >= State.Round) return CommandResult.Reject("登场回合不能通过通常行动发动试炼");
+            if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
+            if (player.UsedAbilities.Contains($"trial-used:{source.InstanceId}:{State.TurnSerial}"))
+                return CommandResult.Reject("该军团本回合无法再次发动试炼");
+            source.Tapped = true;
+            AdvanceTrial(playerIndex, source.TrialValue, source);
+            AddEvent("trial-action", playerIndex, $"{source.Name}发动试炼（试炼值{source.TrialValue}）", source);
+            return CommandResult.Ok();
+        }
         if (ability == "godPowerDraw" && source.CardId == "S02-05C1")
         {
             if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("该效果本回合已经发动");
@@ -443,6 +544,18 @@ public sealed partial class L12GameEngine
                 new L12ActivationSelectionStep { Kind = "option", Text = "梅林：选择效果", ValidChoices = ["mode:debuff", "mode:search"], MinChoose = 1, MaxChoose = 1 },
                 new L12ActivationSelectionStep { Kind = "active-target", Text = "梅林：声明对应的军团或牌库中的主动战术", ValidChoices = enemy.Concat(tactics).ToList(), MinChoose = 1, MaxChoose = 1 },
             ]);
+        }
+        if (ability == "amakineTop" && source.CardId == "S02-0616")
+        {
+            if (source.Tapped) return CommandResult.Reject("阿麦金必须为活跃状态");
+            if (player.Library.Count == 0) return CommandResult.Reject("牌库为空，无法展示牌库顶部的牌");
+            return CommitActiveAbility(playerIndex, source, ability, target: null);
+        }
+        if (ability == "galahadGrailReward" && source.CardId == "S02-0604")
+        {
+            if (!player.SpecialZones.Trials.Any(card => card.CardId == "S02-06S4" && card.TrialCompleted))
+                return CommandResult.Reject("试炼《寻找圣杯之旅》尚未完成");
+            return CommitActiveAbility(playerIndex, source, ability, target: null);
         }
         if (ability == "aristotleDiscount" && source.CardId == "S02-0513")
             return CommitActiveAbility(playerIndex, source, ability, target: null);
@@ -475,6 +588,43 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("试炼进度达到8后才可完成试炼");
             PushEffect(playerIndex, source, "active", "完成试炼", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
+        }
+        if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
+        {
+            if (!source.TrialCompleted) return CommandResult.Reject("该试炼尚未完成");
+            if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("该效果本回合已经发动");
+            if (ability == "fenianReady")
+            {
+                if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
+                var choices = PublicLegions(player).Where(card => card.Tapped && card.Faction == "otherworld"
+                        && (card.CardId == "S02-0610" || card.BaseTroops <= 4000))
+                    .Select(card => card.InstanceId).ToArray();
+                if (choices.Length == 0) return CommandResult.Reject("没有符合条件的休整军团");
+                return BeginPendingActivation(playerIndex, source, ability, choices, "选择我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃");
+            }
+            if (ability == "crusadeTrialNoLoss")
+            {
+                if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
+                var choices = PublicLegions(player).Where(card => card.CardId is "S02-0604" or "S02-0610" or "S02-0614")
+                    .Select(card => card.InstanceId).ToArray();
+                if (choices.Length == 0) return CommandResult.Reject("战场上没有【试炼军团】");
+                return BeginPendingActivation(playerIndex, source, ability, choices, "选择我方1张【试炼军团】，本回合下一次进攻无损");
+            }
+            if (ability == "crusadeRichardPiercing")
+            {
+                if (player.SpecialZones.Runes < 2) return CommandResult.Reject("需要消耗2符文");
+                var choices = PublicLegions(player).Where(card => card.CardId == "S02-0608").Select(card => card.InstanceId).ToArray();
+                if (choices.Length == 0) return CommandResult.Reject("战场上没有〈狮心王理查一世〉");
+                return BeginPendingActivation(playerIndex, source, ability, choices, "选择我方1张〈狮心王理查一世〉");
+            }
+            if (player.SpecialZones.Runes < 2 || player.Hand.Count == 0) return CommandResult.Reject("需要消耗2符文并弃置1张手牌");
+            var grave = player.Graveyard.Where(card => card.Faction == "otherworld").Select(card => card.InstanceId).ToArray();
+            if (grave.Length == 0) return CommandResult.Reject("墓地没有只有【彼界】特征的卡牌");
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep { Kind = "hand-card", Text = "选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
+                new L12ActivationSelectionStep { Kind = "grave-card", Text = "选择墓地1张只有【彼界】特征的卡牌加入手牌", ValidChoices = grave.ToList(), MinChoose = 1, MaxChoose = 1 },
+            ]);
         }
         return null;
     }
@@ -541,6 +691,63 @@ public sealed partial class L12GameEngine
             var data = new Dictionary<string, string> { ["ability"] = ability, ["targets"] = string.Join('|', declared.Skip(1)) };
             PushEffect(playerIndex, source, "active", "主动效果", data: data);
             AddEvent("cost", playerIndex, $"弃置〈{discard.Name}〉支付黄金圣甲虫费用", discard);
+            return CommandResult.Ok();
+        }
+        if (ability == "amakineTop" && source.CardId == "S02-0616")
+        {
+            if (source.Tapped) return CommandResult.Reject("阿麦金必须为活跃状态");
+            if (player.Library.Count == 0) return CommandResult.Reject("牌库为空，无法展示牌库顶部的牌");
+            source.Tapped = true;
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
+            return CommandResult.Ok();
+        }
+        if (ability == "galahadGrailReward" && source.CardId == "S02-0604")
+        {
+            if (!player.SpecialZones.Trials.Any(card => card.CardId == "S02-06S4" && card.TrialCompleted))
+                return CommandResult.Reject("试炼《寻找圣杯之旅》尚未完成");
+            PushEffect(playerIndex, source, "active", "完成试炼后的主动效果",
+                data: new Dictionary<string, string> { ["ability"] = ability });
+            RemoveFromField(player, source, true, "作为加拉哈德主动效果的费用被弃置");
+            player.UsedAbilities.Add(onceKey);
+            return CommandResult.Ok();
+        }
+        if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
+        {
+            if (!source.TrialCompleted) return CommandResult.Reject("该试炼尚未完成");
+            var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var runeCost = ability == "fenianReady" || ability == "crusadeTrialNoLoss" ? 1 : 2;
+            if (player.SpecialZones.Runes < runeCost) return CommandResult.Reject($"需要消耗{runeCost}符文");
+            if (ability == "fenianReady")
+            {
+                var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
+                if (chosen is null || !chosen.Tapped || chosen.Faction != "otherworld" || (chosen.CardId != "S02-0610" && chosen.BaseTroops > 4000))
+                    return CommandResult.Reject("目标不符合转为活跃的条件");
+            }
+            else if (ability == "crusadeTrialNoLoss")
+            {
+                var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
+                if (chosen?.CardId is not ("S02-0604" or "S02-0610" or "S02-0614")) return CommandResult.Reject("目标不是【试炼军团】");
+            }
+            else if (ability == "crusadeRichardPiercing")
+            {
+                var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
+                if (chosen?.CardId != "S02-0608") return CommandResult.Reject("目标不是〈狮心王理查一世〉");
+            }
+            else
+            {
+                if (declared.Length != 2) return CommandResult.Reject("需要声明弃置手牌和回收墓地牌");
+                var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
+                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "otherworld");
+                if (discard is null || recover is null) return CommandResult.Reject("弃置或回收的卡牌已不合法");
+                player.Hand.Remove(discard);
+                player.Graveyard.Add(discard);
+                AddEvent("cost", playerIndex, $"弃置〈{discard.Name}〉支付十字军东征费用", discard);
+            }
+            L12S2ZoneOps.SpendRunes(player, runeCost);
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "已完成试炼的主动效果",
+                data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
             return CommandResult.Ok();
         }
         return null;
@@ -615,6 +822,38 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
+        if (ability == "amakineTop" && item.SourceCardId == "S02-0616")
+        {
+            if (player.Library.Count == 0)
+            {
+                FinishStackItem(item);
+                return true;
+            }
+            var top = player.Library[0];
+            item.Data["amakine-top"] = top.InstanceId;
+            var choices = top.Faction == "otherworld" ? new[] { "hand", "top", "bottom" } : new[] { "top", "bottom" };
+            var data = new Dictionary<string, string>
+            {
+                ["action"] = "s2-amakine-top-place", ["previewCardId"] = top.InstanceId,
+                ["hand"] = "加入手牌", ["top"] = "返回牌库顶部", ["bottom"] = "返回牌库底部",
+            };
+            AddPromptCardData(data, top);
+            CreatePrompt(item.Controller, "option", $"阿麦金展示牌库顶部的〈{top.Name}〉", choices, 1, 1,
+                "card-effect", item.StackItemId, data: data);
+            return true;
+        }
+        if (ability == "galahadGrailReward" && item.SourceCardId == "S02-0604")
+        {
+            if (!Draw(player, 1))
+            {
+                SetWinner(1 - item.Controller, "加拉哈德效果抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
+            }
+            HealMaster(item.Controller, 1, "加拉哈德完成寻找圣杯之旅后的效果");
+            FinishStackItem(item);
+            return true;
+        }
         if (ability == "completeTrial" && source?.CardType == "trial")
         {
             source.TrialCompleted = true;
@@ -626,6 +865,36 @@ public sealed partial class L12GameEngine
                 AddEvent("runes", item.Controller, "完成试炼，安格斯·麦·奥格获得1枚符文", source);
             }
             ResolveCompletedTrialTrigger(item, source);
+            return true;
+        }
+        if (source?.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
+        {
+            var declared = (item.Data.GetValueOrDefault("target") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            if (ability == "fenianReady")
+            {
+                var target = FindOnField(player, declared.FirstOrDefault(), out _, out _);
+                if (target is not null) target.Tapped = false;
+            }
+            else if (ability == "crusadeTrialNoLoss")
+            {
+                var target = FindOnField(player, declared.FirstOrDefault(), out _, out _);
+                if (target is not null) target.NextAttackNoLossUses++;
+            }
+            else if (ability == "crusadeRichardPiercing")
+            {
+                var target = FindOnField(player, declared.FirstOrDefault(), out _, out _);
+                if (target is not null) player.UsedAbilities.Add($"crusade-piercing:{target.InstanceId}:{State.TurnSerial}");
+            }
+            else if (declared.Length == 2)
+            {
+                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "otherworld");
+                if (recover is not null)
+                {
+                    player.Graveyard.Remove(recover);
+                    AddCardToHandByEffect(player, recover, "graveyard", "十字军东征回收彼界卡牌");
+                }
+            }
+            FinishStackItem(item);
             return true;
         }
         return false;
@@ -680,6 +949,128 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (prompt.Data.GetValueOrDefault("action"))
         {
+            case "s2-amakine-entry-rune":
+                if (chosen[0] == "yes")
+                {
+                    L12S2ZoneOps.GainRunes(player, 1);
+                    var amakine = FindSource(item);
+                    if (amakine is null) AddEvent("runes", item.Controller, "阿麦金使我方获得1符文");
+                    else AddEvent("runes", item.Controller, "阿麦金使我方获得1符文", amakine);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-amakine-top-place":
+            {
+                var top = player.Library.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("amakine-top"));
+                if (top is not null)
+                {
+                    player.Library.Remove(top);
+                    if (chosen[0] == "hand" && top.Faction == "otherworld")
+                        AddCardToHandByEffect(player, top, "library", "阿麦金将牌库顶部的彼界卡牌加入手牌");
+                    else if (chosen[0] == "bottom")
+                    {
+                        player.Library.Add(top);
+                        AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库底部", top);
+                    }
+                    else
+                    {
+                        player.Library.Insert(0, top);
+                        AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库顶部", top);
+                    }
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-lancelot-entry-charge":
+                if (chosen[0] == "yes" && player.SpecialZones.Runes >= 1
+                    && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var lancelot))
+                {
+                    L12S2ZoneOps.SpendRunes(player, 1);
+                    lancelot.HasCharge = true;
+                    AddEvent("effect", item.Controller, "兰斯洛特消耗1符文获得冲锋", lancelot);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-lancelot-kill":
+                if (chosen[0] == "trial") AdvanceTrial(item.Controller, 1, FindSource(item));
+                else if (chosen[0] == "rune")
+                {
+                    L12S2ZoneOps.GainRunes(player, 1);
+                    var killSource = FindSource(item);
+                    if (killSource is null) AddEvent("runes", item.Controller, "兰斯洛特击杀后获得1符文");
+                    else AddEvent("runes", item.Controller, "兰斯洛特击杀后获得1符文", killSource);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-robin-summon-squire":
+                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
+                BeginQueuedSummons(item, [chosen[0]], tapped: false, "罗宾汉：选择〈侍从骑士〉活跃登场的位置");
+                return true;
+            case "s2-claudia-debuff":
+                if (chosen[0] != "skip" && player.SpecialZones.Runes >= 1)
+                {
+                    var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
+                    if (target is not null && L12S2ZoneOps.SpendRunes(player, 1))
+                    {
+                        AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "克劳迪娅");
+                        AddEvent("effect", item.Controller, $"克劳迪娅使{target.Name}本回合兵力-2000", target);
+                    }
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-galahad-entry-trial":
+                if (chosen[0] == "yes" && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var galahad))
+                {
+                    galahad.Tapped = true;
+                    AdvanceTrial(item.Controller, galahad.TrialValue, galahad);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-finn-entry-trial":
+                if (chosen[0] != "yes" || !SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var finn))
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                finn.Tapped = true;
+                AdvanceTrial(item.Controller, finn.TrialValue, finn);
+                if (player.SpecialZones.Runes < 1)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                CreatePrompt(item.Controller, "optional", "芬恩发动试炼后：是否消耗1符文将其转为活跃？", ["yes", "no"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-finn-entry-ready", ["yes"] = "消耗1符文并转为活跃", ["no"] = "保持休整",
+                    });
+                return true;
+            case "s2-finn-entry-ready":
+                if (chosen[0] == "yes" && player.SpecialZones.Runes >= 1
+                    && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var readyFinn))
+                {
+                    L12S2ZoneOps.SpendRunes(player, 1);
+                    readyFinn.Tapped = false;
+                    player.UsedAbilities.Add($"trial-used:{readyFinn.InstanceId}:{State.TurnSerial}");
+                    AddEvent("effect", item.Controller, "芬恩消耗1符文转为活跃，本回合无法再次发动试炼", readyFinn);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-constance-entry":
+                if (chosen[0] == "rune")
+                {
+                    L12S2ZoneOps.GainRunes(player, 1);
+                    var source = FindSource(item);
+                    if (source is null) AddEvent("runes", item.Controller, "康斯坦丝使我方获得1符文");
+                    else AddEvent("runes", item.Controller, "康斯坦丝使我方获得1符文", source);
+                }
+                else if (chosen[0] == "trial" && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var constance))
+                {
+                    constance.Tapped = true;
+                    AdvanceTrial(item.Controller, constance.TrialValue, constance);
+                }
+                FinishStackItem(item);
+                return true;
             case "s2-heracles-entry-damage":
                 if (chosen[0] == "yes")
                 {

@@ -20,6 +20,7 @@ export interface Card {
   baseTroops: number
   troops: number
   disasterLevel: number
+  trialValue?: number
   hasCharge?: boolean
   hasStrongAttack?: boolean
   hasSureHit?: boolean
@@ -41,6 +42,7 @@ export interface Card {
   attachedCards?: Card[]
   trialProgress?: number
   trialCompleted?: boolean
+  nextAttackNoLossUses?: number
 }
 
 export interface DisasterCardView extends Partial<Card> {

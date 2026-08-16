@@ -94,6 +94,7 @@ public sealed partial class L12GameEngine
         data.TryAdd($"{id}:troops", card.Troops.ToString());
         data.TryAdd($"{id}:baseTroops", card.BaseTroops.ToString());
         data.TryAdd($"{id}:disasterLevel", card.DisasterLevel.ToString());
+        data.TryAdd($"{id}:trialValue", card.TrialValue.ToString());
     }
 
     private L12CardInstance? FindPromptCard(int viewer, string instanceId)

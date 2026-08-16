@@ -26,6 +26,7 @@ public sealed class S2FactionRegressionTests
             BaseTroops = definition.Troops ?? 0,
             Troops = definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
+            TrialValue = definition.TrialValue ?? 0,
             CannotAttack = definition.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
         };
     }
@@ -196,5 +197,80 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", arthur.InstanceId, Row: 0, Slot: 1)).Accepted);
         Assert.True(arthur.HasCharge);
+    }
+
+    [Fact]
+    public void RestedAmakineProtectsOnlyActiveTrialLegionsFromAttack()
+    {
+        var game = Create(6309);
+        var attackerPlayer = game.State.ActivePlayer;
+        var defenderPlayer = 1 - attackerPlayer;
+        var attacker = Card("S02-0004", "amakine-test-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[attackerPlayer].Field[0][0] = attacker;
+        var amakine = Card("S02-0616", "amakine-protector");
+        amakine.Tapped = true;
+        var galahad = Card("S02-0604", "amakine-trial-legion");
+        game.State.Players[defenderPlayer].Field[0][0] = galahad;
+        game.State.Players[defenderPlayer].Field[1][0] = amakine;
+        game.State.Phase = L12Phase.Main;
+
+        var protectedAttack = game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", galahad.InstanceId)));
+        Assert.False(protectedAttack.Accepted);
+        Assert.Contains("阿麦金", protectedAttack.Error);
+
+        galahad.Tapped = true;
+        var restedTargetAttack = game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", galahad.InstanceId)));
+        Assert.True(restedTargetAttack.Accepted, restedTargetAttack.Error);
+    }
+
+    [Fact]
+    public void AmakineShowsTheTopOtherworldCardAndCanAddItToHand()
+    {
+        var game = Create(6310);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        var amakine = Card("S02-0616", "amakine-top-source");
+        var top = Card("S02-0619", "amakine-top-card");
+        player.Field[0][0] = amakine;
+        player.Library.Insert(0, top);
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(playerIndex, new L12Command("activateAbility", amakine.InstanceId, Ability: "amakineTop"));
+        Assert.True(activation.Accepted, activation.Error);
+        Assert.True(amakine.Tapped);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-amakine-top-place", prompt.Data["action"]);
+        Assert.Equal(top.InstanceId, prompt.Data["previewCardId"]);
+        Assert.Contains("hand", prompt.ValidChoices);
+        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "hand")).Accepted);
+        Assert.Contains(top, player.Hand);
+        Assert.DoesNotContain(top, player.Library);
+    }
+
+    [Fact]
+    public void GalahadCanPayItselfAfterTheGrailTrialToDrawAndHeal()
+    {
+        var game = Create(6311);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        var galahad = Card("S02-0604", "galahad-grail-source");
+        var grail = Card("S02-06S4", "completed-grail");
+        grail.TrialCompleted = true;
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(grail);
+        player.Field[0][0] = galahad;
+        player.Hp = player.MaxHp - 1;
+        var handBefore = player.Hand.Count;
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(playerIndex, new L12Command("activateAbility", galahad.InstanceId, Ability: "galahadGrailReward"));
+        Assert.True(activation.Accepted, activation.Error);
+        Assert.Contains(galahad, player.Graveyard);
+        Assert.Null(player.Field[0][0]);
+        Assert.Equal(handBefore + 1, player.Hand.Count);
+        Assert.Equal(player.MaxHp, player.Hp);
     }
 }

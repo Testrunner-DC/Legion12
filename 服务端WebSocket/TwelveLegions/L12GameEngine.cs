@@ -236,6 +236,7 @@ public sealed partial class L12GameEngine
             {
                 var target = defender.Field[targetRow][targetSlot];
                 if (target is null || target.Hidden || !IsFieldLegion(target)) continue;
+                if (IsProtectedByRestedAmakine(defender, target)) continue;
                 if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial) continue;
                 if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
                 var isRanged = row == 1 || targetRow == 1;
@@ -299,6 +300,7 @@ public sealed partial class L12GameEngine
                 baseTroops = 0,
                 troops = 0,
                 disasterLevel = 0,
+                trialValue = 0,
                 hidden = true,
                 tapped = false,
                 summonRound = card.SummonRound,
@@ -376,6 +378,7 @@ public sealed partial class L12GameEngine
             BaseTroops = card.Troops ?? 0,
             Troops = card.Troops ?? 0,
             DisasterLevel = card.DisasterLevel ?? 0,
+            TrialValue = card.TrialValue ?? 0,
             Abilities = GetAbilities(card.Id),
             CannotAttack = card.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
             CannotSupport = card.Id == "S02-0201",
