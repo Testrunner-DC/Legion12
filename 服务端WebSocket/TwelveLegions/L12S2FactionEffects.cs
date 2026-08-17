@@ -1264,7 +1264,8 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("试炼《寻找圣杯之旅》尚未完成");
             PushEffect(playerIndex, source, "active", "完成试炼后的主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability });
-            RemoveFromField(player, source, true, "作为加拉哈德主动效果的费用被弃置");
+            RemoveFromField(player, source, true, "作为加拉哈德主动效果的费用被弃置",
+                leaveKind: L12FieldLeaveKind.Discard);
             player.UsedAbilities.Add(onceKey);
             return CommandResult.Ok();
         }
@@ -2369,7 +2370,8 @@ public sealed partial class L12GameEngine
                 {
                     var target = FindOnField(player, id, out _, out _);
                     if (target is null || !IsFieldLegion(target)) continue;
-                    RemoveFromField(player, target, true, "因〈沙漠君临〉弃置");
+                    RemoveFromField(player, target, true, "因〈沙漠君临〉弃置",
+                        leaveKind: L12FieldLeaveKind.Discard);
                     discarded++;
                 }
                 var candidate = player.Hand.FirstOrDefault(card => card.Faction == "taiyangcheng" && card.CardType == "legion" && card.DisasterLevel == discarded);

@@ -18,6 +18,13 @@ public enum L12Phase
     GameOver,
 }
 
+public enum L12FieldLeaveKind
+{
+    Defeat,
+    Discard,
+    PutIntoGraveyard,
+}
+
 public sealed class L12CardDefinition
 {
     public required string Id { get; init; }

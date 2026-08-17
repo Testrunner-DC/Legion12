@@ -157,9 +157,11 @@ public sealed class NewSystemsTests
         Assert.All(discardPrompts, prompt => Assert.Equal("true", prompt.Data["simultaneous"]));
 
         var first = discardPrompts[0];
+        var firstHandBefore = game.State.Players[first.PlayerIndex].Hand.Select(card => card.InstanceId).ToArray();
         Assert.True(game.Handle(first.PlayerIndex, new L12Command("resolvePrompt", PromptId: first.PromptId,
             Choice: first.ValidChoices[0])).Accepted);
         Assert.Single(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "disaster-discard");
+        Assert.Equal(firstHandBefore, game.State.Players[first.PlayerIndex].Hand.Select(card => card.InstanceId));
 
         var second = game.State.PendingPrompts.Single(prompt => prompt.Data.GetValueOrDefault("action") == "disaster-discard");
         Assert.True(game.Handle(second.PlayerIndex, new L12Command("resolvePrompt", PromptId: second.PromptId,

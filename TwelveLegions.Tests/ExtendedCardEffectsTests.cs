@@ -291,6 +291,112 @@ public sealed class ExtendedCardEffectsTests
     }
 
     [Fact]
+    public void DisasterDamageIsNeutralAndDoesNotTriggerMedjed()
+    {
+        var game = Create(2, 3, 9013);
+        game.State.ActivePlayer = 1;
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterValue = 9;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(Card("S01-DS02", "neutral-disaster"));
+
+        Assert.True(game.Handle(1, new L12Command("endTurn")).Accepted);
+        foreach (var prompt in game.State.PendingPrompts
+                     .Where(prompt => prompt.Continuation == "disaster-trigger-confirm").ToArray())
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId)).Accepted);
+
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "medjed-damage-response");
+        Assert.DoesNotContain(game.State.PendingTriggerBatches.SelectMany(batch => batch.Candidates),
+            candidate => candidate.SourceCardId == "S01-02M3");
+    }
+
+    [Fact]
+    public void BlackbeardLocksBothDiscardChoicesBeforeApplyingEither()
+    {
+        var game = Create(0, 1, 9014);
+        var owner = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        ReadyMain(game, 0);
+        var teach = Card("S01-0001", "teach-simultaneous");
+        var ownerCards = new[] { Card("S01-0002", "teach-owner-a"), Card("S01-0003", "teach-owner-b") };
+        var enemyCards = new[] { Card("S01-0002", "teach-enemy-a"), Card("S01-0003", "teach-enemy-b") };
+        owner.Hand.Clear(); enemy.Hand.Clear();
+        owner.Hand.Add(teach); owner.Hand.AddRange(ownerCards); enemy.Hand.AddRange(enemyCards);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", teach.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        var prompts = game.State.PendingPrompts.Where(prompt => prompt.Data.GetValueOrDefault("action") == "teach-discard").ToArray();
+        Assert.Equal(2, prompts.Length);
+        Assert.All(prompts, prompt => Assert.Equal("true", prompt.Data["simultaneous"]));
+
+        var first = prompts[0];
+        var firstCards = first.ValidChoices.Take(2).ToList();
+        Assert.True(game.Handle(first.PlayerIndex, new L12Command("resolvePrompt", PromptId: first.PromptId,
+            CardInstanceIds: firstCards)).Accepted);
+        Assert.All(firstCards, id => Assert.Contains(StateHand(game, first.PlayerIndex), card => card.InstanceId == id));
+
+        var second = game.State.PendingPrompts.Single(prompt => prompt.Data.GetValueOrDefault("action") == "teach-discard");
+        var secondCards = second.ValidChoices.Take(2).ToList();
+        Assert.True(game.Handle(second.PlayerIndex, new L12Command("resolvePrompt", PromptId: second.PromptId,
+            CardInstanceIds: secondCards)).Accepted);
+        Assert.All(firstCards, id => Assert.Contains(game.State.Players[first.PlayerIndex].Graveyard, card => card.InstanceId == id));
+        Assert.All(secondCards, id => Assert.Contains(game.State.Players[second.PlayerIndex].Graveyard, card => card.InstanceId == id));
+    }
+
+    [Fact]
+    public void AlvidaActiveDiscardIsNotDefeatAndDoesNotQueueHerDeathEffect()
+    {
+        var game = Create(3, 2, 9015);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var alvida = Card("S01-0307", "alvida-discard");
+        var summon = Card("S01-0308", "alvida-summon-target");
+        player.Field[0][0] = alvida;
+        player.Hand.Add(summon);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", alvida.InstanceId, Ability: "alvidaSummon")).Accepted);
+        Assert.Contains(alvida, player.Graveyard);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == alvida.InstanceId && item.Trigger == "death");
+        PassResponses(game);
+        Assert.Equal("summon-asgard", Assert.Single(game.State.PendingPrompts).Data["action"]);
+    }
+
+    [Fact]
+    public void LokiHealReturnsTheTwoGraveCardsChosenByThePlayer()
+    {
+        var game = Create(3, 2, 9016);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        player.Graveyard.Clear();
+        var cards = new[]
+        {
+            Card("S01-0301", "loki-grave-a"), Card("S01-0302", "loki-grave-b"), Card("S01-0303", "loki-grave-c"),
+        };
+        player.Graveyard.AddRange(cards);
+        player.Hp--;
+        var hpBefore = player.Hp;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiHeal")).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("loki-heal-return", prompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [cards[2].InstanceId, cards[1].InstanceId])).Accepted);
+
+        Assert.Contains(cards[0], player.Graveyard);
+        Assert.DoesNotContain(cards[1], player.Graveyard);
+        Assert.DoesNotContain(cards[2], player.Graveyard);
+        Assert.Equal([cards[2].InstanceId, cards[1].InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
+        Assert.Equal(hpBefore + 1, player.Hp);
+    }
+
+    private static IEnumerable<L12CardInstance> StateHand(L12GameEngine game, int playerIndex)
+        => game.State.Players[playerIndex].Hand;
+
+    [Fact]
     public void BothOlympusMoraleFacesUseMoraleClassification()
     {
         Assert.Equal("rune", Catalog.Cards["S02-05C1"].CardType);

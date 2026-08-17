@@ -191,7 +191,7 @@ public sealed partial class L12GameEngine
             case "shanhe-search-pick": CompleteShanheSearch(item, chosen[0]); break;
             case "disaster-return-field": CompleteDisasterReturnField(item, chosen[0]); break;
             case "disaster-grave-bottom": ContinueDisasterGraveBottom(item, prompt, chosen); break;
-            case "disaster-discard": CompleteDisasterDiscard(item, prompt, chosen[0]); break;
+            case "disaster-discard": CompleteDisasterDiscard(item, prompt, chosen); break;
             case "disaster-keep-field": CompleteDisasterKeepField(item, prompt, chosen); break;
             case "disaster-s2-fog-discard": CompleteS2FogDiscard(item, prompt, chosen); break;
             case "disaster-s2-pride-mode": ContinueS2PrideMode(item, prompt, chosen[0]); break;
@@ -228,6 +228,17 @@ public sealed partial class L12GameEngine
                         legion.LastMovedTurn = State.TurnSerial;
                         AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
                     }
+                }
+                FinishStackItem(item); break;
+            }
+            case "loki-heal-return":
+            {
+                var cards = chosen.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
+                    .Where(card => card is not null && CanEnterHandOrLibrary(card)).Cast<L12CardInstance>().ToArray();
+                if (cards.Length == 2)
+                {
+                    MoveGraveToLibraryBottom(player, cards);
+                    HealMaster(item.Controller, 1, "洛基主宰效果");
                 }
                 FinishStackItem(item); break;
             }

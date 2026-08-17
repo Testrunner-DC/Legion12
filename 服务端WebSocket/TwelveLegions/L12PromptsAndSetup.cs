@@ -457,7 +457,7 @@ public sealed partial class L12GameEngine
                     || sourceAbilities.Count == 1
                     && source.EffectText?.Contains("主动休整", StringComparison.Ordinal) == true)))
         {
-            DamageMasterNonLethal(controller, 1, "〈无眠之夜〉的持续效果");
+            DamageMasterNonLethal(controller, 1, "〈无眠之夜〉的持续效果", neutralSource: true);
         }
         var item = new L12StackItem
         {
@@ -736,6 +736,7 @@ public sealed partial class L12GameEngine
         }
         if (item.Negated)
         {
+            State.PendingPrompts.RemoveAll(prompt => prompt.StackItemId == item.StackItemId);
             AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
             if (item.Trigger == "attack")
             {

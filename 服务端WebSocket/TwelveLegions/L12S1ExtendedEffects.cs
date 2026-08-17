@@ -90,8 +90,7 @@ public sealed partial class L12GameEngine
         switch (card.CardId)
         {
             case "S01-0001":
-                item.Data["teach-step"] = "owner";
-                PromptDiscard(item, item.Controller, 2, "黑胡子蒂奇：弃置合计2张手牌", "teach-discard");
+                BeginBlackbeardSimultaneousDiscard(item);
                 return true;
             case "S01-0004":
                 card.Tapped = true;
@@ -360,21 +359,17 @@ public sealed partial class L12GameEngine
         {
             case "teach-discard":
             {
-                var chooser = State.Players[prompt.PlayerIndex];
-                foreach (var id in chosen)
+                item.Data[$"teach-discard:{prompt.PlayerIndex}"] = string.Join(',', chosen);
+                if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+                    && candidate.Data.GetValueOrDefault("action") == "teach-discard")) return true;
+                for (var chooserIndex = 0; chooserIndex < 2; chooserIndex++)
                 {
-                    var discard = chooser.Hand.First(candidate => candidate.InstanceId == id);
-                    chooser.Hand.Remove(discard); chooser.Graveyard.Add(discard);
+                    var chooser = State.Players[chooserIndex];
+                    var selected = item.Data.GetValueOrDefault($"teach-discard:{chooserIndex}")?
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+                    foreach (var id in selected) MoveHandToGrave(chooser, id, causedByEffect: true);
                 }
-                if (item.Data["teach-step"] == "owner")
-                {
-                    item.Data["teach-step"] = "enemy";
-                    PromptDiscard(item, 1 - item.Controller, 2, "黑胡子蒂奇：弃置合计2张手牌", "teach-discard");
-                }
-                else
-                {
-                    Draw(player, 2); Draw(enemy, 1); FinishStackItem(item);
-                }
+                Draw(player, 2); Draw(enemy, 1); FinishStackItem(item);
                 return true;
             }
             case "teach-death":
@@ -676,7 +671,8 @@ public sealed partial class L12GameEngine
                 var (row, slot) = ParseSlot(declared[1]);
                 if (handCard is null || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null) return CommandResult.Reject("声明的手牌目标或位置不再合法");
                 if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
-                ReturnMorale(player, 1); RemoveFromField(player, source, true, "被西施效果弃置"); break;
+                ReturnMorale(player, 1); RemoveFromField(player, source, true, "被西施效果弃置",
+                    leaveKind: L12FieldLeaveKind.Discard); break;
             }
             case "destroyInfiltrator" when source.CardId == "S01-0004":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗2张活跃士气");
@@ -721,24 +717,37 @@ public sealed partial class L12GameEngine
     private static IEnumerable<L12CardInstance> PublicLegions(L12PlayerState player)
         => player.Field.SelectMany(row => row).Where(card => card is not null && !card.Hidden && IsFieldLegion(card)).Cast<L12CardInstance>();
 
+    private void BeginBlackbeardSimultaneousDiscard(L12StackItem item)
+    {
+        var prompted = 0;
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var hand = State.Players[playerIndex].Hand;
+            var actual = Math.Min(2, hand.Count);
+            item.Data[$"teach-discard:{playerIndex}"] = string.Empty;
+            if (actual == 0) continue;
+            CreatePrompt(playerIndex, "discard", "黑胡子蒂奇：弃置合计2张手牌",
+                hand.Select(card => card.InstanceId), actual, actual, "card-effect", item.StackItemId, isPrivate: true,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "teach-discard", ["sourceZone"] = "hand", ["layout"] = "single-row",
+                    ["simultaneous"] = "true",
+                });
+            prompted++;
+        }
+        if (prompted > 0) return;
+        Draw(State.Players[item.Controller], 2);
+        Draw(State.Players[1 - item.Controller], 1);
+        FinishStackItem(item);
+    }
+
     private void PromptDiscard(L12StackItem item, int playerIndex, int count, string text, string action)
     {
         var hand = State.Players[playerIndex].Hand;
         var actual = Math.Min(count, hand.Count);
         if (actual == 0)
         {
-            if (action == "teach-discard" && item.Data.GetValueOrDefault("teach-step") == "owner")
-            {
-                item.Data["teach-step"] = "enemy";
-                PromptDiscard(item, 1 - item.Controller, 2, "黑胡子蒂奇：弃置合计2张手牌", "teach-discard");
-            }
-            else if (action == "teach-discard")
-            {
-                Draw(State.Players[item.Controller], 2);
-                Draw(State.Players[1 - item.Controller], 1);
-                FinishStackItem(item);
-            }
-            else FinishStackItem(item);
+            FinishStackItem(item);
             return;
         }
         CreatePrompt(playerIndex, "discard", text, hand.Select(card => card.InstanceId), actual, actual, "card-effect", item.StackItemId,
@@ -987,14 +996,14 @@ public sealed partial class L12GameEngine
         QueueTriggerCandidates(candidates);
     }
 
-    private void QueueS1MasterDamageReaction(int damagedPlayer)
+    private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer)
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
         var counter = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0021" } && card.SetRound < State.Round);
         if (counter is not null)
             candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
-        if (player.MasterId == "S01-02M3" && State.ActivePlayer != damagedPlayer
+        if (player.MasterId == "S01-02M3" && sourcePlayer == 1 - damagedPlayer
             && player.Graveyard.Any(card => card.CardId == "S01-0212")
             && !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
             && player.UsedAbilities.Add("pending:medjedDamageResponse"))

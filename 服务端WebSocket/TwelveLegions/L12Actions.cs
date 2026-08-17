@@ -596,7 +596,7 @@ public sealed partial class L12GameEngine
             var cards = defender.Hand.Where(card => ids.Contains(card.InstanceId) && card.CardType == "legion").ToList();
             if (cards.Count == 0)
             {
-                DamageMaster(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻");
+                DamageMaster(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻", pending.AttackerPlayer);
                 if (attacker.CardId == "S01-0308" && State.Phase != L12Phase.GameOver)
                     PushEffect(pending.AttackerPlayer, attacker, "after-damage", "【对主宰造成伤害时】效果");
             }

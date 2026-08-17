@@ -423,7 +423,8 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip")
                 {
                     var target = FindPublicCard(chosen[0], out var owner);
-                    if (target is not null) RemoveFromField(State.Players[owner], target, true, "被宫廷魔术师置入墓地");
+                    if (target is not null) RemoveFromField(State.Players[owner], target, true, "被宫廷魔术师置入墓地",
+                        leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
                 }
                 FinishStackItem(item);
                 break;

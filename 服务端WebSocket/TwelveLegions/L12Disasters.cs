@@ -54,15 +54,16 @@ public sealed partial class L12GameEngine
                 AddEvent("disaster-active", null, $"〈{disaster.Name}〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
             case "S01-DS02":
-                DamageMasterNonLethal(0, 1, "〈百鬼夜行〉");
-                DamageMasterNonLethal(1, 1, "〈百鬼夜行〉");
+                DamageMasterNonLethal(0, 1, "〈百鬼夜行〉", neutralSource: true);
+                DamageMasterNonLethal(1, 1, "〈百鬼夜行〉", neutralSource: true);
                 FinishStackItem(item); return;
             case "S01-DS03":
                 for (var owner = 0; owner < 2; owner++)
                     for (var slot = 0; slot < 3; slot++)
                     {
                         var card = State.Players[owner].Field[1][slot];
-                        if (card is not null && IsFieldLegion(card)) RemoveFromField(State.Players[owner], card, true, "因腐秽大地置入墓地", queueDeathTrigger: false);
+                        if (card is not null && IsFieldLegion(card)) RemoveFromField(State.Players[owner], card, true, "因腐秽大地置入墓地",
+                            queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
                     }
                 FinishStackItem(item); return;
             case "S01-DS04": BeginThunderWrath(item); return;
@@ -78,12 +79,13 @@ public sealed partial class L12GameEngine
                 for (var owner = 0; owner < 2; owner++)
                     foreach (var card in State.Players[owner].Field.SelectMany(row => row)
                         .Where(card => card is not null && IsFieldLegion(card) && card.BaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
-                        RemoveFromField(State.Players[owner], card, true, "因〈无眠之夜〉弃置", queueDeathTrigger: false);
+                        RemoveFromField(State.Players[owner], card, true, "因〈无眠之夜〉弃置",
+                            queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
                 FinishStackItem(item); return;
             case "S02-DS04": ResolveS2StormChaos(item); return;
             case "S02-DS05":
-                DamageMasterNonLethal(0, 1, "〈暴怒之罪〉");
-                DamageMasterNonLethal(1, 1, "〈暴怒之罪〉");
+                DamageMasterNonLethal(0, 1, "〈暴怒之罪〉", neutralSource: true);
+                DamageMasterNonLethal(1, 1, "〈暴怒之罪〉", neutralSource: true);
                 FinishStackItem(item); return;
             case "S02-DS06": BeginS2Pride(item); return;
             default:
@@ -110,18 +112,17 @@ public sealed partial class L12GameEngine
     private void CompleteS2FogDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
         var playerIndex = int.Parse(prompt.Data["player"]);
-        var player = State.Players[playerIndex];
-        foreach (var id in chosen)
+        item.Data[$"fog-discard:{playerIndex}"] = string.Join(',', chosen);
+        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == "disaster-s2-fog-discard")) return;
+        for (var owner = 0; owner < 2; owner++)
         {
-            var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == id);
-            if (card is null) continue;
-            player.Hand.Remove(card);
-            player.Graveyard.Add(card);
-            NotifyCardDiscarded(player, card, "hand", causedByEffect: true);
+            var player = State.Players[owner];
+            var ids = item.Data.GetValueOrDefault($"fog-discard:{owner}")?
+                .Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+            foreach (var id in ids) MoveHandToGrave(player, id, causedByEffect: true);
         }
-        if (!State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-s2-fog-discard"))
-            FinishStackItem(item);
+        FinishStackItem(item);
     }
 
     private void ResolveS2StormChaos(L12StackItem item)
@@ -184,7 +185,8 @@ public sealed partial class L12GameEngine
             foreach (var id in chosen)
             {
                 var card = FindOnField(player, id, out _, out _);
-                if (card is not null) RemoveFromField(player, card, true, "因〈傲慢之罪〉弃置", queueDeathTrigger: false);
+                if (card is not null) RemoveFromField(player, card, true, "因〈傲慢之罪〉弃置",
+                    queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
             }
         }
         else
@@ -256,7 +258,8 @@ public sealed partial class L12GameEngine
             for (var row = 0; row < 2; row++)
             {
                 var card = State.Players[owner].Field[row][column];
-                if (card is not null) RemoveFromField(State.Players[owner], card, true, "因魔龙降世置入墓地", queueDeathTrigger: false);
+                if (card is not null) RemoveFromField(State.Players[owner], card, true, "因魔龙降世置入墓地",
+                    queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
             }
         BeginDisasterGraveBottom(item);
     }
@@ -324,16 +327,23 @@ public sealed partial class L12GameEngine
         if (prompted == 0) FinishStackItem(item);
     }
 
-    private void CompleteDisasterDiscard(L12StackItem item, L12Prompt prompt, string cardId)
+    private void CompleteDisasterDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
         var promptPlayer = int.Parse(prompt.Data["player"]);
-        var player = State.Players[promptPlayer];
-        var card = player.Hand.First(candidate => candidate.InstanceId == cardId);
-        player.Hand.Remove(card); player.Graveyard.Add(card); Draw(player, 1);
-        AddEvent("discard", promptPlayer, $"{player.Name} 因〈神之天平〉弃置 {card.Name} 并抽取 1 张牌", card);
-        if (!State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-discard"))
-            FinishStackItem(item);
+        item.Data[$"balance-discard:{promptPlayer}"] = string.Join(',', chosen);
+        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == "disaster-discard")) return;
+        for (var owner = 0; owner < 2; owner++)
+        {
+            var player = State.Players[owner];
+            var cardId = item.Data.GetValueOrDefault($"balance-discard:{owner}");
+            var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId);
+            if (card is null) continue;
+            MoveHandToGrave(player, card.InstanceId, causedByEffect: true);
+            Draw(player, 1);
+            AddEvent("effect", owner, $"{player.Name} 因〈神之天平〉抽取 1 张牌", card);
+        }
+        FinishStackItem(item);
     }
 
     private void BeginApocalypse(L12StackItem item)
@@ -363,7 +373,8 @@ public sealed partial class L12GameEngine
             for (var owner = 0; owner < 2; owner++)
             {
                 var target = FindOnField(State.Players[owner], id, out _, out _);
-                if (target is not null) RemoveFromField(State.Players[owner], target, true, "因天启默示录置入墓地", queueDeathTrigger: false);
+                if (target is not null) RemoveFromField(State.Players[owner], target, true, "因天启默示录置入墓地",
+                    queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
             }
         if (playerIndex == 0) PromptApocalypseField(item, 1); else CompleteApocalypseHands(item);
     }
@@ -383,7 +394,8 @@ public sealed partial class L12GameEngine
     {
         for (var owner = 0; owner < 2; owner++)
             foreach (var card in State.Players[owner].Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Cast<L12CardInstance>().ToArray())
-                RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地", queueDeathTrigger: false);
+                RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地",
+                    queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
         var opening = item.Data.GetValueOrDefault("opening") == "true";
         if (opening)
         {

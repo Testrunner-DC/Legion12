@@ -176,7 +176,7 @@ public sealed partial class L12GameEngine
         if (moraleReturnedByMasterEffect > 0)
             QueueS2MasterMoraleReturnTriggers(playerIndex, source, moraleReturnedByMasterEffect);
         if (State.ActiveDisaster?.CardId == "S01-DS08" && source.CardType == "artifact")
-            DamageMasterNonLethal(playerIndex, 1, "使用圣物效果");
+            DamageMasterNonLethal(playerIndex, 1, "使用圣物效果", neutralSource: true);
         return CommandResult.Ok();
     }
 

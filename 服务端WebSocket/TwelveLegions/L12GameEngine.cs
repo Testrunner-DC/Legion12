@@ -446,9 +446,9 @@ public sealed partial class L12GameEngine
         State.Phase = L12Phase.Disaster;
         AddEvent("phase", playerIndex, "执行触发天灾");
         if (State.ActiveDisaster?.CardId == "S01-DS10")
-            DamageMasterNonLethal(0, 1, "〈堙灭〉");
+            DamageMasterNonLethal(0, 1, "〈堙灭〉", neutralSource: true);
         if (State.ActiveDisaster?.CardId == "S01-DS10")
-            DamageMasterNonLethal(1, 1, "〈堙灭〉");
+            DamageMasterNonLethal(1, 1, "〈堙灭〉", neutralSource: true);
         if (State.DisasterValue > 8)
         {
             State.ResumeTurnStartAfterStack = true;
@@ -732,11 +732,13 @@ public sealed partial class L12GameEngine
         return null;
     }
 
-    private bool RemoveFromField(L12PlayerState player, L12CardInstance card, bool toGraveyard, string reason = "离场", bool queueDeathTrigger = true)
+    private bool RemoveFromField(L12PlayerState player, L12CardInstance card, bool toGraveyard, string reason = "离场",
+        bool queueDeathTrigger = true, L12FieldLeaveKind leaveKind = L12FieldLeaveKind.Defeat)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
-        if (toGraveyard && TryPreventS1FactionDeath(player, card)) return false;
-        if (toGraveyard && card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
+        var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
+        if (isDefeat && TryPreventS1FactionDeath(player, card)) return false;
+        if (isDefeat && card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
         {
             card.ImmortalUses--;
             L12DerivedStats.SetUntilTurnEnd(card, 1000, State.TurnSerial);
@@ -761,12 +763,15 @@ public sealed partial class L12GameEngine
         if (queueDeathTrigger)
         {
             var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, card).ToList();
-            if (HasDeathTrigger(card))
+            if (isDefeat && HasDeathTrigger(card))
                 candidates.Add(CreateTriggerCandidate(player.PlayerIndex, card, "death", "【阵亡时】效果"));
-            var morrigan = BuildMorriganEnemyDeathCandidate(player.PlayerIndex);
-            if (morrigan is not null) candidates.Add(morrigan);
-            var nephthys = BuildNephthysOwnDeathCandidate(player.PlayerIndex, card);
-            if (nephthys is not null) candidates.Add(nephthys);
+            if (isDefeat)
+            {
+                var morrigan = BuildMorriganEnemyDeathCandidate(player.PlayerIndex);
+                if (morrigan is not null) candidates.Add(morrigan);
+                var nephthys = BuildNephthysOwnDeathCandidate(player.PlayerIndex, card);
+                if (nephthys is not null) candidates.Add(nephthys);
+            }
             QueueTriggerCandidates(candidates);
         }
         RecalculateContinuousTroops();
@@ -910,7 +915,15 @@ public sealed partial class L12GameEngine
         AddEvent("game-over", winner, $"{State.Players[winner].Name} 获胜：{reason}");
     }
 
-    private void DamageMaster(int playerIndex, int amount, string source)
+    private int? ResolveDamageSourcePlayer(int? declaredSourcePlayer, bool neutralSource)
+    {
+        if (neutralSource) return null;
+        if (declaredSourcePlayer is 0 or 1) return declaredSourcePlayer;
+        var sourceItem = State.EffectStack.LastOrDefault();
+        return sourceItem is null || sourceItem.Trigger == "disaster" ? null : sourceItem.Controller;
+    }
+
+    private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
     {
         var player = State.Players[playerIndex];
         player.Hp -= amount;
@@ -918,10 +931,11 @@ public sealed partial class L12GameEngine
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {amount} 点血量");
         if (player.Hp <= 0)
             SetWinner(1 - playerIndex, $"{player.Name}的主宰因{source}血量降至0");
-        if (State.Phase != L12Phase.GameOver) QueueS1MasterDamageReaction(playerIndex);
+        if (State.Phase != L12Phase.GameOver)
+            QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource));
     }
 
-    private void DamageMasterNonLethal(int playerIndex, int amount, string source)
+    private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
     {
         var player = State.Players[playerIndex];
         var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
@@ -929,7 +943,7 @@ public sealed partial class L12GameEngine
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
-        QueueS1MasterDamageReaction(playerIndex);
+        QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource));
     }
 
     private void HealMaster(int playerIndex, int amount, string source)

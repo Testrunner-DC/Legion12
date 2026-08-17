@@ -559,10 +559,11 @@ public sealed partial class L12GameEngine
             case "sunGuard" when source.CardId == "S01-02C1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "asgardDraw" when source.CardId == "S01-03C1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
-            case "alvidaSummon" when source.CardId == "S01-0307": RemoveFromField(player, source, true, "被主动效果弃置"); break;
+            case "alvidaSummon" when source.CardId == "S01-0307": RemoveFromField(player, source, true, "被主动效果弃置",
+                leaveKind: L12FieldLeaveKind.Discard); break;
             case "olgaDebuff" when source.CardId == "S01-0314":
                 if (!IsEnemyTargetLegal(playerIndex, target, card => FindOnField(State.Players[1 - playerIndex], card.InstanceId, out var row, out _) is not null && row == 0)) return CommandResult.Reject("目标不再合法");
-                RemoveFromField(player, source, true, "被主动效果弃置"); break;
+                RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard); break;
             case "gramReady" when source.CardId == "S01-0317": if (!source.Tapped || !ConsumeMorale(2)) return CommandResult.Reject("神剑格拉墨需为休整，且需要2张活跃士气"); break;
             case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); player.UsedAbilities.Add(onceKey); break;
             case "palaceExchange" when source.CardId == "S01-01D1":
@@ -613,7 +614,11 @@ public sealed partial class L12GameEngine
             case "valhallaRecover" when source.CardId == "S01-03D1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "valhallaKill" when source.CardId == "S01-03D1": if (source.Tapped || player.Graveyard.Count < 2) return CommandResult.Reject("英灵殿需为活跃，墓地需至少2张牌"); source.Tapped = true; player.MasterTapped = true; break;
             case "valkyrieRecover" when source.CardId == "S01-03M1": if (!ConsumeMorale(1) || player.Hp <= 1) return CommandResult.Reject("需要1张活跃士气且主宰血量需高于1"); DamageMaster(playerIndex, 1, "瓦尔基里主宰效果"); player.UsedAbilities.Add(onceKey); break;
-            case "lokiCycle" or "lokiHeal" when source.CardId == "S01-03M2": if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            case "lokiCycle" when source.CardId == "S01-03M2":
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            case "lokiHeal" when source.CardId == "S01-03M2":
+                if (player.Graveyard.Count(CanEnterHandOrLibrary) < 2) return CommandResult.Reject("墓地需要至少2张可返回牌库的卡牌");
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "yomiDiscount" when source.CardId == "S01-04D1": player.UsedAbilities.Add(onceKey); break;
             case "yomiSweep" when source.CardId == "S01-04D1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "yomiRecover" when source.CardId == "S01-04D1": if (source.Tapped) return CommandResult.Reject("黄泉之门必须为活跃状态"); source.Tapped = true; player.MasterTapped = true; break;
@@ -705,7 +710,17 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "card", "瓦尔基里：选择其中1张加入手牌，其余返回牌库底部", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "valkyrie-pick" }); return true;
             }
             case "lokiCycle": Draw(player, 1); PromptDiscard(item, item.Controller, 1, "洛基：弃置1张手牌", "death-cycle-discard"); return true;
-            case "lokiHeal": if (player.Graveyard.Count >= 2) { MoveGraveToLibraryBottom(player, player.Graveyard.Take(2)); HealMaster(item.Controller, 1, "洛基主宰效果"); } FinishStackItem(item); return true;
+            case "lokiHeal":
+            {
+                var choices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToArray();
+                if (choices.Length < 2) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "cards", "洛基：选择墓地2张卡牌返回牌库底部", choices, 2, 2,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "loki-heal-return", ["sourceZone"] = "graveyard", ["layout"] = "single-row",
+                    });
+                return true;
+            }
             case "yomiDiscount": player.NextFactionLegionDiscount = 2; FinishStackItem(item); return true;
             case "yomiSweep": Draw(player, 1); foreach (var target in PublicLegions(State.Players[1 - item.Controller])) target.CostModifier--; PromptEnemyLegion(item, "yomi-kill3", "黄泉之门：可击杀对方1张费用不高于3的军团", target => target.CurrentCost <= 3, true); return true;
             case "yomiRecover":
