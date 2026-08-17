@@ -46,7 +46,6 @@ public sealed class NewSystemsTests
             BaseTroops = definition.Troops ?? 0,
             Troops = definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
-            TrialValue = definition.TrialValue ?? 0,
         };
     }
 
@@ -57,35 +56,6 @@ public sealed class NewSystemsTests
         Assert.Equal("始皇帝 嬴政", Catalog.Cards["S02-0101"].NameZh);
         Assert.Equal("destruction", Catalog.Cards["S02-DS01"].CardType);
         Assert.Equal("otherworld", Catalog.Cards["S02-06M1"].Faction);
-        var trialValues = new Dictionary<string, int>
-        {
-            ["S02-0604"] = 2, ["S02-0606"] = 1, ["S02-0609"] = 1, ["S02-0610"] = 1,
-            ["S02-0613"] = 1, ["S02-0614"] = 1, ["S02-0617"] = 1, ["S02-0618"] = 2,
-        };
-        foreach (var (cardId, expected) in trialValues)
-            Assert.Equal(expected, Catalog.Cards[cardId].TrialValue);
-    }
-
-    [Fact]
-    public void PrintedTrialActionRestsTheLegionAndAddsItsTrialValue()
-    {
-        var game = Create(seed: 5530);
-        var playerIndex = game.State.ActivePlayer;
-        var player = game.State.Players[playerIndex];
-        game.State.Phase = L12Phase.Main;
-        var trial = CreateInstance("S02-06S3", "trial-lake");
-        player.SpecialZones.Trials.Clear();
-        player.SpecialZones.Trials.Add(trial);
-        var galahad = CreateInstance("S02-0604", "trial-galahad");
-        galahad.SummonRound = game.State.Round - 1;
-        player.Field[0][0] = galahad;
-
-        var result = game.Handle(playerIndex, new L12Command("activateAbility",
-            CardInstanceId: galahad.InstanceId, Ability: "trialAdvance"));
-
-        Assert.True(result.Accepted, result.Error);
-        Assert.True(galahad.Tapped);
-        Assert.Equal(2, trial.TrialProgress);
     }
 
     [Fact]
@@ -240,6 +210,10 @@ public sealed class NewSystemsTests
         var spectatorJson = JsonSerializer.Serialize(spectator);
         Assert.Contains("\"hidden\":true", spectatorJson);
         Assert.DoesNotContain(spectator.ChosenDisasters, item => item is L12CardInstance);
+        Assert.IsType<L12CardInstance>(spectator.SessionDisasters[0]);
+        Assert.All(spectator.SessionDisasters.Skip(1), item => Assert.IsNotType<L12CardInstance>(item));
+        Assert.Equal(game.State.RevealedDisasters[0].InstanceId,
+            Assert.IsType<L12CardInstance>(spectator.SessionDisasters[0]).InstanceId);
 
         for (var viewer = 0; viewer < 2; viewer++)
         {
@@ -257,11 +231,19 @@ public sealed class NewSystemsTests
             var filteredEvent = playerSnapshot.RecentEvents.Single(item => item.Sequence == privateEvent.Sequence);
             Assert.Empty(filteredEvent.Cards);
             Assert.DoesNotContain(opponentChoice.Name, filteredEvent.Text);
+            Assert.All(playerSnapshot.SessionDisasters.Take(2), item => Assert.IsType<L12CardInstance>(item));
+            Assert.All(playerSnapshot.SessionDisasters.Skip(2), item => Assert.IsNotType<L12CardInstance>(item));
+            var visibleSessionIds = playerSnapshot.SessionDisasters.Take(2)
+                .Cast<L12CardInstance>().Select(card => card.InstanceId).ToArray();
+            Assert.Equal(game.State.RevealedDisasters[0].InstanceId, visibleSessionIds[0]);
+            Assert.Equal(ownChoice.InstanceId, visibleSessionIds[1]);
+            Assert.DoesNotContain(opponentChoice.InstanceId, visibleSessionIds);
         }
 
         var referee = game.SnapshotForReferee();
         Assert.All(game.State.ChosenDisasters, card => Assert.Contains(referee.ChosenDisasters,
             item => item is L12CardInstance visible && visible.InstanceId == card.InstanceId));
+        Assert.All(referee.SessionDisasters, item => Assert.IsType<L12CardInstance>(item));
         Assert.Equal(4, game.State.DisasterDeck.Count);
         Assert.Equal("S01-DS10", game.State.DisasterDeck[^1].CardId);
         Assert.All(game.State.Players, player => Assert.Equal(6, player.Hand.Count));
@@ -465,8 +447,59 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(triggers[0].PlayerIndex,
             new L12Command("resolvePrompt", PromptId: triggers[0].PromptId)).Accepted);
         Assert.Empty(game.SnapshotFor(triggers[0].PlayerIndex).Prompts);
-        Assert.Null(game.SnapshotFor(triggers[0].PlayerIndex).WaitingPrompt);
+        Assert.NotNull(game.SnapshotFor(triggers[0].PlayerIndex).WaitingPrompt);
         Assert.Contains(game.State.PendingPrompts, prompt => prompt.PromptId == triggers[1].PromptId);
+        Assert.True(game.Handle(triggers[1].PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: triggers[1].PromptId)).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "stack-response");
+    }
+
+    [Fact]
+    public void DisasterRemovalDoesNotQueueDeathTriggersAndCannotBeRespondedTo()
+    {
+        var game = Create(seed: 8860);
+        var deathLegion = CreateInstance("S01-0102", "disaster-death-legion");
+        game.State.Players[0].Field[0][0] = deathLegion;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS09", "fixed-ragnarok"));
+        game.State.DisasterValue = 9;
+
+        Assert.True(game.Handle(0, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+        Assert.True(game.Handle(1, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+        foreach (var prompt in game.State.PendingPrompts.Where(prompt => prompt.Continuation == "disaster-trigger-confirm").ToArray())
+            Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId)).Accepted);
+
+        Assert.Contains(deathLegion, game.State.Players[0].Graveyard);
+        Assert.Empty(game.State.PendingTriggerBatches);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "stack-response");
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == deathLegion.InstanceId);
+    }
+
+    [Fact]
+    public void FinalDisasterLocksDisasterValueAtZeroAcrossTurnEnd()
+    {
+        var game = Create(seed: 8864);
+        game.State.ActiveDisaster = CreateInstance("S01-DS10", "final-disaster");
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterValue = 7;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
+        Assert.Equal(0, game.State.DisasterValue);
+    }
+
+    [Fact]
+    public void HiddenLegionUsesCardBackForOpponentSnapshot()
+    {
+        var game = Create(seed: 8865);
+        var hidden = CreateInstance("S01-0415", "hidden-hanzo");
+        hidden.Hidden = true;
+        game.State.Players[0].Field[0][0] = hidden;
+
+        var json = JsonSerializer.Serialize(game.SnapshotFor(1));
+        Assert.Contains("hidden-card", json);
+        Assert.DoesNotContain("hidden-hanzo\",\"cardId\":\"S01-0415", json);
     }
 
     [Fact]
@@ -696,11 +729,20 @@ public sealed class NewSystemsTests
         var recovery = Create(seed: 8862);
         recovery.State.ActivePlayer = 0;
         recovery.State.Phase = L12Phase.Main;
-        Assert.True(recovery.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionZeroRecovery")).Accepted);
-        foreach (var prompt in recovery.State.PendingPrompts.ToArray())
-            Assert.True(recovery.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
-        Assert.Equal(2, recovery.State.Players[0].Morale.Count);
-        Assert.All(recovery.State.Players[0].Morale, card => Assert.True(card.Tapped));
+        var recoveryPlayer = recovery.State.Players[0];
+        foreach (var morale in recoveryPlayer.MoraleDeck.Take(4).ToArray())
+        {
+            recoveryPlayer.MoraleDeck.Remove(morale);
+            recoveryPlayer.Morale.Add(morale);
+        }
+        Assert.False(recovery.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionZeroRecovery")).Accepted);
+        Assert.True(recovery.Handle(0, new L12Command("activateAbility", "master-0", Ability: "nonLethal")).Accepted);
+        while (recovery.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(recovery.Handle(response.PlayerIndex, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        var trigger = Assert.Single(recovery.State.PendingPrompts, prompt => prompt.Continuation == "faction-zero-recovery");
+        Assert.True(recovery.Handle(0, new L12Command("resolvePrompt", PromptId: trigger.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal(2, recoveryPlayer.Morale.Count);
+        Assert.All(recoveryPlayer.Morale, card => Assert.True(card.Tapped));
     }
 
     [Fact]

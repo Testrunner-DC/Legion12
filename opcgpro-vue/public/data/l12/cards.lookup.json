@@ -959,7 +959,7 @@
     ],
     "faqIds": [],
     "flavorText": "毁灭世界的终焉时刻",
-    "name": "最终天灾 湮灭",
+    "name": "最终天灾 堙灭",
     "image": "/cards/faces/天灾/最终天灾 湮灭.png",
     "type": "天灾终局",
     "faction": "天灾",
@@ -970,7 +970,7 @@
     },
     "subType": "",
     "effectText": "持续 回合开始时，对所有主宰造成1点非致命伤害。",
-    "searchText": "最终天灾 湮灭 天灾 天灾终局 持续 回合开始时，对所有主宰造成1点非致命伤害。"
+    "searchText": "最终天灾 堙灭 天灾 天灾终局 持续 回合开始时，对所有主宰造成1点非致命伤害。"
   },
   {
     "id": "disaster-002",
@@ -3208,7 +3208,7 @@
       "029"
     ],
     "series": "S2彼界&奥林匹斯",
-    "cardNo": "S02-06C1A",
+    "cardNo": "S02-06C1",
     "image": "/cards/faces/彼界/士气.png",
     "type": "士气卡",
     "subType": "",

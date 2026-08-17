@@ -48,29 +48,7 @@ public sealed partial class L12GameEngine
         "S01-04M2" => [new("frontBuff", "消耗1张活跃士气：选择我方1张【高天原】军团发动前排强化。"), new("kusanagi", "消耗2张活跃士气：将圣物区的〈草雉剑〉作为军团置入我方前排。")],
         "S02-0003" => [new("disableCounters", "主动休整：直到我方下个回合开始前，战场上所有反击战术无法发动。")],
         "S02-0104" => [new("shennongReset", "主动休整 返还1士气：重置我方主宰其中1个效果的使用次数。")],
-        "S02-05C1" => [new("godPowerDraw", "我方回合1次 消耗并翻转1张神力：抽取1张牌。")],
-        "S02-06C1A" => [new("factionGainRune", "我方回合1次 消耗1士气：获得1枚符文。")],
-        "S02-0604" =>
-        [
-            new("trialAdvance", "发动试炼（试炼值2）"),
-            new("galahadGrailReward", "试炼《寻找圣杯之旅》完成后，弃置此军团：抽取1张牌，我方主宰增加1点血量。"),
-        ],
-        "S02-0606" or "S02-0609" or "S02-0610" or "S02-0613" or "S02-0614" or "S02-0617" => [new("trialAdvance", "发动试炼（试炼值1）")],
-        "S02-0618" => [new("trialAdvance", "发动试炼（试炼值2）")],
-        "S02-06S3" or "S02-06S4" => [new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。")],
-        "S02-06S5" =>
-        [
-            new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。"),
-            new("fenianReady", "我方回合1次 消耗1符文：将我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃。"),
-        ],
-        "S02-06S6" =>
-        [
-            new("completeTrial", "我方回合 当此试炼进度达到8：完成并翻面此试炼。"),
-            new("crusadeTrialNoLoss", "消耗1符文：选择我方1张【试炼军团】，本回合下一次进攻无损。"),
-            new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
-            new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
-        ],
-        _ => GetS2FactionAbilities(cardId).Concat(GetS1FactionAbilities(cardId)).ToList(),
+        _ => GetS1FactionAbilities(cardId) is { Count: > 0 } s1Abilities ? s1Abilities : GetS2FactionAbilities(cardId),
     };
 
     private bool TryResolveS1ExtendedEnter(L12StackItem item, L12CardInstance card)
@@ -383,7 +361,7 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); return true;
             case "zhuge-disaster":
-                State.DisasterValue = Math.Max(0, State.DisasterValue + int.Parse(chosen[0])); FinishStackItem(item); return true;
+                State.DisasterValue = State.ActiveDisaster?.CardId == "S01-DS10" ? 0 : Math.Max(0, State.DisasterValue + int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "zhuge-peek-pay":
                 if (chosen[0] == "no" || !ReturnMorale(player, 1)) { FinishStackItem(item); return true; }
                 if (player.Library.Count == 0) { FinishStackItem(item); return true; }
@@ -537,7 +515,7 @@ public sealed partial class L12GameEngine
             case "scout-pay":
                 if (chosen[0] == "yes" && enemy.Hand.Count > 0) BeginEffectMoralePayment(item, 1, "scout-shuffle"); else FinishStackItem(item); return true;
             case "ritual-disaster":
-                State.DisasterValue = Math.Max(0, State.DisasterValue + int.Parse(chosen[0])); FinishStackItem(item); return true;
+                State.DisasterValue = State.ActiveDisaster?.CardId == "S01-DS10" ? 0 : Math.Max(0, State.DisasterValue + int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "ambush-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000;
@@ -734,12 +712,11 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string> { ["action"] = action, ["sourceZone"] = "hand", ["layout"] = "single-row" });
     }
 
-    private void MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect = true)
+    private void MoveHandToGrave(L12PlayerState player, string instanceId)
     {
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         player.Hand.Remove(card); player.Graveyard.Add(card); AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
-        if (causedByEffect) QueueS2FaithZealotTrigger(player, card, "从手牌因效果弃置");
     }
 
     private void MoveGraveToHand(L12PlayerState player, string instanceId)

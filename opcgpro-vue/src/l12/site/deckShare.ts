@@ -1,9 +1,9 @@
 import type { DeckCard, SavedL12Deck } from '@/l12/decks'
 
-interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[] }
+interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
 
 export function encodeDeckCode(deck: SavedL12Deck) {
-  const payload: DeckCodePayload = { v: 1, n: deck.name, m: deck.masterId, c: deck.cardIds, r: deck.moraleIds }
+  const payload: DeckCodePayload = { v: 1, n: deck.name, m: deck.masterId, c: deck.cardIds, r: deck.moraleIds, s: deck.specialIds }
   const bytes = new TextEncoder().encode(JSON.stringify(payload))
   let binary = ''
   bytes.forEach(byte => { binary += String.fromCharCode(byte) })
@@ -19,7 +19,7 @@ export function decodeDeckCode(code: string): SavedL12Deck {
   const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
   const payload = JSON.parse(new TextDecoder().decode(bytes)) as DeckCodePayload
   if (payload.v !== 1 || !payload.n || !payload.m || !Array.isArray(payload.c) || !Array.isArray(payload.r)) throw new Error('牌库码内容不完整')
-  return { name: payload.n.slice(0, 24), masterId: payload.m, cardIds: payload.c, moraleIds: payload.r, updatedAt: new Date().toISOString() }
+  return { name: payload.n.slice(0, 24), masterId: payload.m, cardIds: payload.c, moraleIds: payload.r, specialIds: payload.s ?? [], updatedAt: new Date().toISOString() }
 }
 
 async function loadImage(url?: string) {

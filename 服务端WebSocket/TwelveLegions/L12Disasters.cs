@@ -7,7 +7,7 @@ public sealed partial class L12GameEngine
         if (State.ActiveDisaster?.CardId == "S01-DS10" && State.DisasterDeck.Count == 0)
         {
             State.DisasterValue = 0;
-            AddEvent("disaster", State.ActivePlayer, "最终天灾〈湮灭〉持续生效，天灾值保持为 0", State.ActiveDisaster);
+            AddEvent("disaster", State.ActivePlayer, "最终天灾〈堙灭〉持续生效，天灾值保持为 0", State.ActiveDisaster);
             return;
         }
         if (State.DisasterDeck.Count == 0)
@@ -62,7 +62,7 @@ public sealed partial class L12GameEngine
                     for (var slot = 0; slot < 3; slot++)
                     {
                         var card = State.Players[owner].Field[1][slot];
-                        if (card is not null && IsFieldLegion(card)) RemoveFromField(State.Players[owner], card, true, "因腐秽大地置入墓地");
+                        if (card is not null && IsFieldLegion(card)) RemoveFromField(State.Players[owner], card, true, "因腐秽大地置入墓地", queueDeathTrigger: false);
                     }
                 FinishStackItem(item); return;
             case "S01-DS04": BeginThunderWrath(item); return;
@@ -117,7 +117,7 @@ public sealed partial class L12GameEngine
         {
             var card = FindOnField(State.Players[owner], cardId, out var row, out var slot);
             if (card is null) continue;
-            MoveFieldCardToZone(State.Players[owner], card, "hand", "因雷霆天怒返回手牌"); break;
+            MoveFieldCardToZone(State.Players[owner], card, "hand", "因雷霆天怒返回手牌", queueLeaveTrigger: false); break;
         }
         FinishStackItem(item);
     }
@@ -131,7 +131,7 @@ public sealed partial class L12GameEngine
             for (var row = 0; row < 2; row++)
             {
                 var card = State.Players[owner].Field[row][column];
-                if (card is not null) RemoveFromField(State.Players[owner], card, true, "因魔龙降世置入墓地");
+                if (card is not null) RemoveFromField(State.Players[owner], card, true, "因魔龙降世置入墓地", queueDeathTrigger: false);
             }
         BeginDisasterGraveBottom(item);
     }
@@ -234,7 +234,12 @@ public sealed partial class L12GameEngine
     private void CompleteDisasterKeepField(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
         var playerIndex = int.Parse(prompt.Data["player"]);
-        foreach (var id in chosen) KillTarget(id, "因天启默示录置入墓地");
+        foreach (var id in chosen)
+            for (var owner = 0; owner < 2; owner++)
+            {
+                var target = FindOnField(State.Players[owner], id, out _, out _);
+                if (target is not null) RemoveFromField(State.Players[owner], target, true, "因天启默示录置入墓地", queueDeathTrigger: false);
+            }
         if (playerIndex == 0) PromptApocalypseField(item, 1); else CompleteApocalypseHands(item);
     }
 
@@ -253,7 +258,7 @@ public sealed partial class L12GameEngine
     {
         for (var owner = 0; owner < 2; owner++)
             foreach (var card in State.Players[owner].Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Cast<L12CardInstance>().ToArray())
-                RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地");
+                RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地", queueDeathTrigger: false);
         var opening = item.Data.GetValueOrDefault("opening") == "true";
         if (opening)
         {

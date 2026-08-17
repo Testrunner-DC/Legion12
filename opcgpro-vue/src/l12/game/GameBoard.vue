@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { gameAction, l12State } from '../net'
-import CardTile from '../CardTile.vue'
 import GameActions from './GameActions.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
@@ -18,6 +17,8 @@ const scale = ref(1)
 const compactViewport = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
+const inspectorAnchor = ref<HTMLElement | null>(null)
+const inspectorFloatStyle = ref<Record<string, string>>({})
 const mode = ref<'play' | 'attack' | 'move'>('play')
 const mulliganIds = ref<string[]>([])
 const defenseIds = ref<string[]>([])
@@ -27,6 +28,8 @@ const playArmed = ref(false)
 const masterPlayerIndex = ref<number | null>(null)
 const boardTargetIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
+const hiddenRevealCard = ref<Card | null>(null)
+let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 const me = computed(() => props.game.players[props.game.you])
 const enemy = computed(() => props.game.players[1 - props.game.you])
 const defenseTargetType = computed(() => props.game.pendingDefense?.target.type ?? null)
@@ -65,6 +68,7 @@ const handPlayableIds = computed(() => {
 const boardTargetPrompt = computed(() => {
   const fieldIds = new Set(props.game.players.flatMap(player => player.field.flat().filter(Boolean).map(card => card!.instanceId)))
   return props.game.prompts?.find(prompt => {
+    if (prompt.data?.choiceMode === 'board-target') return prompt.validChoices.filter(id => id !== 'skip').every(id => fieldIds.has(id))
     if (!['target', 'targets', 'optional-target', 'optional-targets', 'active-target'].includes(prompt.kind)) return false
     const choices = prompt.validChoices.filter(id => id !== 'skip')
     return choices.length > 0 && choices.every(id => fieldIds.has(id))
@@ -78,9 +82,28 @@ const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId ?? boardSlotPrompt.value?.promptId ?? null)
 const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
   graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
+  || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
   || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
 )))
+function updateInspectorFloatRect() {
+  if (!modalInspectorVisible.value || !inspectorAnchor.value) return
+  const rect = inspectorAnchor.value.getBoundingClientRect()
+  const boardScale = scale.value || 1
+  inspectorFloatStyle.value = {
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width / boardScale}px`,
+    height: `${rect.height / boardScale}px`,
+    transform: `scale(${boardScale})`,
+  }
+}
+watch(modalInspectorVisible, visible => {
+  if (visible) updateInspectorFloatRect()
+}, { flush: 'sync' })
 const sessionDisasters = computed(() => props.game.sessionDisasters ?? [])
+const sessionDisasterSlots = computed<(DisasterCardView | null)[]>(() =>
+  Array.from({ length: 4 }, (_, index) => sessionDisasters.value[index] ?? null),
+)
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
@@ -103,12 +126,18 @@ const boardSlotPreview = computed<Card | null>(() => {
     baseTroops: Number(prompt.data?.[`${id}:baseTroops`] ?? 0),
     troops: Number(prompt.data?.[`${id}:troops`] ?? 0),
     disasterLevel: Number(prompt.data?.[`${id}:disasterLevel`] ?? 0),
-    trialValue: Number(prompt.data?.[`${id}:trialValue`] ?? 0),
     tapped: false,
     summonRound: 0,
   }
 })
 watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
+watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
+  const event = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'hidden-reveal' && item.cards?.length)
+  if (!event?.cards?.[0]) return
+  hiddenRevealCard.value = event.cards[0]
+  if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
+  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, 3000)
+})
 const hiddenLogTypes = new Set([
   'phase', 'phase-detail', 'draw-skipped', 'prompt', 'prompt-resolved', 'priority-pass',
   'stack-push', 'stack-deferred', 'stack-open', 'stack-resolve', 'match-created',
@@ -161,9 +190,10 @@ function updateScale() {
   scale.value = compactViewport.value
     ? Math.max(.78, Math.min(1, window.innerHeight / 900))
     : Math.min(window.innerWidth / 1440, window.innerHeight / 900)
+  window.requestAnimationFrame(updateInspectorFloatRect)
 }
 onMounted(() => { updateScale(); window.addEventListener('resize', updateScale) })
-onBeforeUnmount(() => window.removeEventListener('resize', updateScale))
+onBeforeUnmount(() => { window.removeEventListener('resize', updateScale); if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer) })
 
 function command(type: string, extra: Record<string, unknown> = {}) {
   if (props.readOnly) return
@@ -331,25 +361,29 @@ function statusTexts(card: Card) {
           <section v-if="sessionDisasters.length" class="grand-panel session-disaster-panel" aria-label="本局天灾">
             <h3>本局天灾</h3>
             <div class="session-disaster-strip">
-              <button v-for="card in sessionDisasters" :key="card.instanceId" :class="{ hidden: card.hidden }"
-                :disabled="card.hidden" @click="focusSessionDisaster(card)" @mouseenter="focusSessionDisaster(card)">
-                <img :src="card.imageUrl || '/assets/l12/disaster-back.png'" :alt="card.name || '未揭示天灾'"/>
-                <span>{{ card.name || '未揭示' }}</span>
+              <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
+                :class="{ hidden: !card || card.hidden }" :disabled="!card || card.hidden" :title="card && !card.hidden ? card.name : '未揭示天灾'"
+                @click="card && focusSessionDisaster(card)" @mouseenter="card && focusSessionDisaster(card)">
+                <img :src="card?.imageUrl || '/assets/l12/disaster-back.png'" :alt="card?.name || '未揭示天灾'"/>
               </button>
             </div>
           </section>
-          <section class="grand-panel card-inspector">
-            <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
-            <h3>选中卡牌</h3>
-            <template v-if="focusCard">
-              <CardTile :card="focusCard" />
-              <h2>{{ focusCard.name }}</h2>
-              <dl><div><dt>费用</dt><dd>{{ focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div><div v-if="focusCard.trialValue"><dt>试炼值</dt><dd>{{ focusCard.trialValue }}</dd></div></dl>
-              <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
-              <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
-            </template>
-            <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
-          </section>
+          <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
+          <Teleport to="body" :disabled="!modalInspectorVisible">
+            <section class="grand-panel card-inspector" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
+              <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
+              <h3>选中卡牌</h3>
+              <template v-if="focusCard">
+                <img v-if="focusCard.imageUrl" class="inspector-card-image" :src="focusCard.imageUrl" :alt="focusCard.name" />
+                <h2>{{ focusCard.name }}</h2>
+                <dl><div><dt>费用</dt><dd>{{ focusCard.currentCost ?? focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div></dl>
+                <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
+                <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
+              </template>
+              <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
+            </section>
+          </Teleport>
+          </div>
         </aside>
 
         <main class="board-center">
@@ -451,19 +485,16 @@ function statusTexts(card: Card) {
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" />
     </div>
     <Teleport to="body">
-      <aside v-if="modalInspectorVisible && focusCard" class="modal-card-inspector" :class="{ disaster: isHorizontalCardType(focusCard.cardType) }">
-        <img v-if="focusCard.imageUrl" :src="focusCard.imageUrl" :alt="focusCard.name" />
-        <div><small>选中卡牌</small><h2>{{ focusCard.name }}</h2>
-          <dl><span v-if="focusCard.cost !== undefined">费用 <b>{{ focusCard.currentCost ?? focusCard.cost }}</b></span><span v-if="focusCard.troops">兵力 <b>{{ focusCard.troops }}</b></span><span v-if="focusCard.disasterLevel">天灾等级 <b>{{ focusCard.disasterLevel }}</b></span><span v-if="focusCard.trialValue">试炼值 <b>{{ focusCard.trialValue }}</b></span></dl>
-          <p>{{ focusCard.effectText || '无效果文字' }}</p>
-          <ul v-if="statusTexts(focusCard).length"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
-        </div>
+      <aside v-if="hiddenRevealCard" class="hidden-reveal-toast">
+        <img v-if="hiddenRevealCard.imageUrl" :src="hiddenRevealCard.imageUrl" :alt="hiddenRevealCard.name" />
+        <div><small>隐匿展示</small><strong>{{ hiddenRevealCard.name }}</strong><span>3 秒后覆盖</span></div>
       </aside>
     </Teleport>
   </div>
 </template>
 
 <style scoped>
+.hidden-reveal-toast{position:fixed;z-index:1700;left:50%;top:50%;display:flex;align-items:center;gap:14px;padding:12px 16px;border:2px solid #d7d3c6;background:#090d0e;box-shadow:0 24px 70px #000;transform:translate(-50%,-50%);pointer-events:none;animation:hidden-reveal-in .22s ease-out}.hidden-reveal-toast img{width:150px;height:210px;object-fit:contain}.hidden-reveal-toast div{display:grid;gap:5px}.hidden-reveal-toast small{color:#70d7df;font-weight:900}.hidden-reveal-toast strong{color:#fff;font-size:20px}.hidden-reveal-toast span{color:#a3aaa6;font-size:10px}@keyframes hidden-reveal-in{from{opacity:0;transform:translate(-50%,-45%) scale(.94)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip img{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:7px}.combat-versus em{color:#e5bd60;font-size:18px;font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:10px}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
 .record-log .event-list p{display:flex;align-items:flex-start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.turn-divider{color:#e0b641;font-size:10px;white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:8px;line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
@@ -491,5 +522,6 @@ function statusTexts(card: Card) {
 .board-target-controls{position:fixed;z-index:1050;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:11px}.board-target-controls span{color:#8f9894;font-size:9px}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls img{width:52px;height:72px;object-fit:contain;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:8px;font-weight:800;line-height:1.45}
-.modal-card-inspector{position:fixed;z-index:1300;left:18px;top:50%;display:grid;width:270px;max-height:calc(100vh - 36px);grid-template-rows:auto 1fr;gap:10px;box-sizing:border-box;padding:12px;border:2px solid #ded9cc;background:#080d0e;box-shadow:0 20px 55px #000;transform:translateY(-50%);pointer-events:none}.modal-card-inspector>img{width:138px;height:193px;margin:auto;object-fit:contain;background:#030506}.modal-card-inspector.disaster{width:430px}.modal-card-inspector.disaster>img{width:400px;height:auto;aspect-ratio:8/5;object-fit:contain}.modal-card-inspector small{color:#70d7df;font-size:9px;font-weight:900;letter-spacing:.16em}.modal-card-inspector h2{margin:5px 0 8px;color:#fff;font:900 19px/1.25 'Microsoft YaHei',sans-serif}.modal-card-inspector dl{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px}.modal-card-inspector dl span{padding:4px 6px;background:#252b29;color:#d8ddd8;font-size:9px}.modal-card-inspector dl b{color:#fff}.modal-card-inspector p{max-height:160px;margin:0;overflow:auto;color:#f0eee7;font-size:11px;font-weight:800;line-height:1.7;white-space:pre-wrap}.modal-card-inspector ul{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.modal-card-inspector li{padding:4px 6px;border-left:2px solid #70d7df;background:#132326;color:#fff;font-size:9px;font-weight:800}@media(max-width:760px){.modal-card-inspector{left:8px;top:auto;bottom:8px;width:min(250px,calc(100vw - 16px));max-height:42vh;grid-template-columns:72px 1fr;grid-template-rows:1fr;transform:none}.modal-card-inspector>img{width:68px;height:96px}.modal-card-inspector.disaster{width:calc(100vw - 16px);grid-template-columns:minmax(120px,38vw) 1fr}.modal-card-inspector.disaster>img{width:100%;height:auto;aspect-ratio:8/5}.modal-card-inspector p{max-height:80px}}
+.session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:42px;min-width:42px;height:42px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:center}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
+.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:hidden!important;transform-origin:left top;pointer-events:none}
 </style>

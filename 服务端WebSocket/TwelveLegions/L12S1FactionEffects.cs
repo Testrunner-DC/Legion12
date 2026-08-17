@@ -43,9 +43,7 @@ public sealed partial class L12GameEngine
         "S01-01D1" => [new("palaceReward", "我方 回合1次 若本回合返还的士气高于1张，可从士气牌库追加2张休整的士气，随后抽取1张牌。"), new("palaceExchange", "主动休整 击杀对方1张军团，我方需返还此军团相应费用的士气。随后选择墓地1张费用不高于本次返还士气数量的【天廷】军团，将其活跃登场。")],
         "S01-01M2" => [new("mengpoSilence", "返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。"), new("mengpoMorale", "若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气。")],
         "S01-02D1" => [new("sunTopThree", "我方 回合1次 可消耗2士气：公开牌库顶部3张牌，选择其中1张加入手牌，其余卡牌自选顺序返回牌库底部。随后可选择墓地1张【太阳城】卡牌加入手牌。"), new("sunBottomEnemy", "我方 回合1次 可消耗2士气：选择对方1张兵力不高于4000的军团，将其返回所有者牌库底部。")],
-        "S01-02M1" => [
-            new("isisCanopic", "我方回合 可弃置我方战场3张<陵墓守卫>：将墓地1张名字包含<卡诺匹斯>的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量。"),
-            new("osirisAwaken", "我方回合 若我方圣物区已有5张名字包含<卡诺匹斯>的圣物：可将墓地的<复苏的奥西里斯>置换为我方主宰。在双人对战中，置换成功后获得本局胜利。")],
+        "S01-02M1" => [new("isisCanopic", "我方回合 可弃置我方战场3张<陵墓守卫>：将墓地1张名字包含<卡诺匹斯>的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量。")],
         "S01-02M3" => [new("medjedDebuff", "我方 回合1次 可消耗1士气：选择对方1张军团本回合兵力-1000。若额外休整我方1张<陵墓守卫>，则选择的军团本回合兵力-3000作为代替。")],
         "S01-03D1" => [new("valhallaDiscount", "我方 回合1次 可对我方主宰造成1点伤害：手牌所有【阿斯加德】军团本回合费用-1。"), new("valhallaRecover", "我方 回合1次 可消耗2士气：弃置牌库顶部2张牌，随后可选择墓地1张【阿斯加德】卡牌加入手牌。"), new("valhallaKill", "主动休整 将墓地2张卡牌返回我方牌库底部：击杀对方1张兵力不高于5000的军团和1张兵力不高于1000的军团。")],
         "S01-03M1" => [new("valkyrieRecover", "我方 回合1次 可消耗1士气并对我方主宰造成1点伤害：选择墓地2张牌，其中1张返回牌库底部，另1张加入手牌。")],
@@ -499,8 +497,7 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private CommandResult? TryCommitS1FactionActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards,
-        IEnumerable<string>? returnedMoraleIds = null)
+    private CommandResult? TryCommitS1FactionActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards)
     {
         var player = State.Players[playerIndex];
         bool ConsumeMorale(int cost) => useTombGuards switch
@@ -511,14 +508,6 @@ public sealed partial class L12GameEngine
         };
         switch (ability)
         {
-            case "osirisAwaken" when source.CardId == "S01-02M1":
-            {
-                var canopicCount = player.ExtraRelics.Count(card => card.Name.Contains("卡诺匹斯", StringComparison.Ordinal))
-                    + (player.Relic?.Name.Contains("卡诺匹斯", StringComparison.Ordinal) == true ? 1 : 0);
-                if (canopicCount < 5 || !player.Graveyard.Any(card => card.CardId == "S01-02M2"))
-                    return CommandResult.Reject("需要我方圣物区已有5张<卡诺匹斯>圣物，且墓地存在<复苏的奥西里斯>");
-                break;
-            }
             case "cleopatraGuard" when source.CardId == "S01-0214": if (source.Tapped || !ConsumeMorale(1)) return CommandResult.Reject("需要活跃的克利奥帕特拉七世与1张活跃士气"); source.Tapped = true; break;
             case "sunGuard" when source.CardId == "S01-02C1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
@@ -532,12 +521,12 @@ public sealed partial class L12GameEngine
             case "palaceExchange" when source.CardId == "S01-01D1":
             {
                 var declared = DeclaredEnemyTarget(playerIndex, target); if (source.Tapped || declared is null) return CommandResult.Reject("凌霄宝殿必须为活跃状态且目标合法");
-                var paid = declared.CurrentCost; if (!ReturnMorale(player, paid, returnedMoraleIds)) return CommandResult.Reject("士气不足以支付所选目标费用");
+                var paid = declared.CurrentCost; if (!ReturnMorale(player, paid)) return CommandResult.Reject("士气不足以支付所选目标费用");
                 source.Tapped = true; target = declared.InstanceId; break;
             }
             case "mengpoSilence" when source.CardId == "S01-01M2":
                 if (DeclaredEnemyTarget(playerIndex, target) is null) return CommandResult.Reject("目标不再合法");
-                if (!ReturnMorale(player, 1, returnedMoraleIds)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
             case "mengpoMorale" when source.CardId == "S01-01M2": if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || player.Hand.Count == 0) return CommandResult.Reject("士气需少于对方，且需弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
                 if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target, card => card.Troops <= 4000) is null) return CommandResult.Reject("目标不再合法");
@@ -546,7 +535,7 @@ public sealed partial class L12GameEngine
                 if (source.Tapped) return CommandResult.Reject("安卡神杯必须为活跃状态");
                 if (string.IsNullOrWhiteSpace(target) || !player.Hand.Any(card => card.InstanceId == target)) return CommandResult.Reject("弃置的手牌不再合法");
                 if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped)) return CommandResult.Reject("需要我方存在休整的陵墓守卫");
-                source.Tapped = true; MoveHandToGrave(player, target, causedByEffect: false); break;
+                source.Tapped = true; MoveHandToGrave(player, target); break;
             case "ankhDraw" when source.CardId == "S01-0215":
             {
                 var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == target && card.CardId == "S01-0212" && !card.Tapped);
@@ -599,23 +588,6 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (ability)
         {
-            case "osirisAwaken":
-            {
-                var osiris = player.Graveyard.FirstOrDefault(card => card.CardId == "S01-02M2");
-                if (osiris is null) { FinishStackItem(item); return true; }
-                player.Graveyard.Remove(osiris);
-                var definition = _catalog.Cards[osiris.CardId];
-                player.MasterId = definition.Id;
-                player.MasterName = definition.NameZh;
-                player.MasterImageUrl = definition.ImageUrl;
-                AddEvent("effect", item.Controller, "伊西斯以<复苏的奥西里斯>置换主宰", osiris);
-                if (State.Players.Length == 2)
-                {
-                    SetWinner(item.Controller, "<复苏的奥西里斯>登场，伊西斯达成特殊胜利");
-                }
-                FinishStackItem(item);
-                return true;
-            }
             case "cleopatraGuard": case "sunGuard":
                 BeginQueuedSummons(item, player.Graveyard.Where(card => card.CardId == "S01-0212").Take(1).Select(card => card.InstanceId), false,
                     "选择陵墓守卫活跃登场的位置"); return true;
@@ -693,7 +665,7 @@ public sealed partial class L12GameEngine
         card.Troops = 1000; AddEvent("effect", player.PlayerIndex, "霍列姆赫布弃置陵墓守卫代替阵亡", card, guard); return true;
     }
 
-    private static bool HasS1Taunt(L12CardInstance card) => card.CardId is "S01-0107" or "S01-0204" or "S01-0312" or "S02-0004" or "S02-0007" or "S02-0512" or "S02-0615";
+    private static bool HasS1Taunt(L12CardInstance card) => card.CardId is "S01-0107" or "S01-0204" or "S01-0312" or "S02-0004" or "S02-0007";
 
     private void ApplyS1FactionDefensePassives(L12PlayerState defender, L12CardInstance target, int row)
     {
@@ -789,7 +761,6 @@ public sealed partial class L12GameEngine
         var result = L12LibraryOps.Mill(player, count);
         if (!result.Success) { SetWinner(1 - player.PlayerIndex, $"{source}操作牌库时牌库数量不足"); return; }
         AddEvent("mill", player.PlayerIndex, $"{source}弃置牌库顶部{result.Cards.Count}张牌", result.Cards.ToArray());
-        foreach (var card in result.Cards) QueueS2FaithZealotTrigger(player, card, "从牌库弃置");
     }
 
     private void MoveGraveToLibraryBottom(L12PlayerState player, IEnumerable<L12CardInstance> cards)

@@ -20,7 +20,6 @@ export interface Card {
   baseTroops: number
   troops: number
   disasterLevel: number
-  trialValue?: number
   hasCharge?: boolean
   hasStrongAttack?: boolean
   hasSureHit?: boolean
@@ -39,10 +38,6 @@ export interface Card {
   suppressDeathUntilTurn?: number
   timedModifiers?: Array<{ troopsDelta: number; costDelta: number; expiresAfterTurn: number; source: string }>
   abilities?: Array<{ id: string; label: string }>
-  attachedCards?: Card[]
-  trialProgress?: number
-  trialCompleted?: boolean
-  nextAttackNoLossUses?: number
 }
 
 export interface DisasterCardView extends Partial<Card> {
@@ -101,6 +96,7 @@ export interface GameState {
   effectStack?: StackItem[]
   pendingDefense?: { attackerPlayer: number; attackerInstanceId: string; target: { type: string; instanceId?: string } } | null
   winner?: number | null
+  winnerReason?: string | null
   players: PlayerView[]
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]

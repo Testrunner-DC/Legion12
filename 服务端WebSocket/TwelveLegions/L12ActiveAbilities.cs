@@ -17,8 +17,7 @@ public sealed partial class L12GameEngine
         if (source is null && command.CardInstanceId == $"faction-{playerIndex}")
         {
             var moraleId = player.SpecialZones.GodPower.FirstOrDefault()?.CardId
-                ?? player.Morale.FirstOrDefault()?.CardId
-                ?? player.MoraleDeck.FirstOrDefault()?.CardId;
+                ?? player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
             if (moraleId is not null) source = CreateCard(moraleId, $"faction-{playerIndex}");
         }
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
@@ -71,64 +70,11 @@ public sealed partial class L12GameEngine
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
     }
 
-    private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, bool? useTombGuards = null,
-        IEnumerable<string>? returnedMoraleIds = null)
+    private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, bool? useTombGuards = null)
     {
         var player = State.Players[playerIndex];
         var onceKey = $"active:{source.InstanceId}:{ability}";
-        var faithFree = State.FreeMasterActivation is { } free
-            && free.Controller == playerIndex
-            && free.Ability.Equals(ability, StringComparison.OrdinalIgnoreCase)
-            && source.CardId == player.MasterId;
-        if (!faithFree && player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
-        if (faithFree)
-        {
-            // 〈信仰狂热者〉裁定：本次发动忽略冒号前的所有费用，
-            // 也不登记主宰效果的本回合使用次数；目标仍已由正常流程声明。
-            State.FreeMasterActivation = null;
-            var freeData = new Dictionary<string, string> { ["ability"] = ability, ["faith-free"] = "true" };
-            if (!string.IsNullOrWhiteSpace(target)) freeData["target"] = target;
-            PushEffect(playerIndex, source, "active", "〈信仰狂热者〉无视消耗发动的主宰效果", data: freeData);
-            AddEvent("effect", playerIndex, $"〈信仰狂热者〉使主宰效果「{ability}」无视全部消耗发动", source);
-            return CommandResult.Ok();
-        }
-        var returnMoraleCost = GetActiveAbilityReturnMoraleCost(playerIndex, source, ability, target);
-        if (returnMoraleCost > 0 && returnedMoraleIds is null && RequiresMoraleIdentityChoice(player))
-        {
-            if (!CanReturnMorale(player, returnMoraleCost)) return CommandResult.Reject($"需要返还 {returnMoraleCost} 张士气");
-            var normalMorale = player.Morale.Where(card => card.CardId != "S02-0010").Take(returnMoraleCost).Select(card => card.InstanceId).ToArray();
-            if (player.PreferNormalMoraleReturns && normalMorale.Length == returnMoraleCost)
-                returnedMoraleIds = normalMorale;
-            else
-            {
-                var requiresLotusConfirmation = player.PreferNormalMoraleReturns;
-                var returnChoices = requiresLotusConfirmation
-                    ? player.Morale.Where(card => card.CardId == "S02-0010").Select(card => card.InstanceId)
-                    : player.Morale.Select(card => card.InstanceId);
-                var lotusNeeded = returnMoraleCost - normalMorale.Length;
-            var returnChoiceData = new Dictionary<string, string>
-            {
-                ["sourceId"] = source.InstanceId,
-                ["sourceCardId"] = source.CardId,
-                ["ability"] = ability,
-                ["target"] = target ?? string.Empty,
-                ["returnCount"] = returnMoraleCost.ToString(),
-                ["choiceMode"] = "selected-morale",
-            };
-                if (requiresLotusConfirmation)
-                {
-                    returnChoiceData["autoNormalMoraleIds"] = string.Join('|', normalMorale);
-                    returnChoiceData["lotusConfirmation"] = "true";
-                }
-                CreatePrompt(playerIndex, "morale-return", requiresLotusConfirmation
-                    ? "普通士气不足：请确认返还〈黑色莲花〉；它会置入墓地"
-                    : "请选择要返还的士气；〈黑色莲花〉被返还时会置入墓地",
-                returnChoices, requiresLotusConfirmation ? lotusNeeded : returnMoraleCost, requiresLotusConfirmation ? lotusNeeded : returnMoraleCost,
-                "active-return-morale-choice", data: returnChoiceData);
-                return CommandResult.Ok();
-            }
-        }
-        bool ReturnSelectedMorale(int count) => ReturnMorale(player, count, returnedMoraleIds);
+        if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
         var moraleCost = GetActiveAbilityMoraleCost(source, ability);
         if (moraleCost > 0 && useTombGuards is null
             && PublicLegions(player).Any(card => card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == playerIndex))
@@ -156,7 +102,7 @@ public sealed partial class L12GameEngine
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
                 player.UsedAbilities.Add(onceKey); break;
             case "nonLethal" when source.CardId == "S01-01M1":
-                if (!ReturnSelectedMorale(4)) return CommandResult.Reject("需要返还 4 张士气");
+                if (!ReturnMorale(player, 4)) return CommandResult.Reject("需要返还 4 张士气");
                 player.UsedAbilities.Add(onceKey); break;
             case "frontBuff" when source.CardId == "S01-04M2":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
@@ -170,7 +116,7 @@ public sealed partial class L12GameEngine
             case "searchBrothers" when source.CardId == "S01-0105":
                 if (source.Tapped) return CommandResult.Reject("刘备必须为活跃状态");
                 if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还 1 张士气");
-                source.Tapped = true; if (!ReturnSelectedMorale(1)) return CommandResult.Reject("需要返还 1 张士气"); break;
+                source.Tapped = true; ReturnMorale(player, 1); break;
             case "artifactDraw" when source.CardId == "S01-0117":
                 if (source.Tapped) return CommandResult.Reject("山河社稷图必须为活跃状态");
                 if (!ReturnActiveMorale(player, 1)) return CommandResult.Reject("需要返还 1 张活跃士气");
@@ -191,22 +137,14 @@ public sealed partial class L12GameEngine
                 if (!ConsumeMorale(3)) return CommandResult.Reject("需要消耗3张活跃士气");
                 break;
             case "factionAddActive" when source.CardId == "S01-01C1":
-                if (player.FactionMoraleAdditionForbiddenUntilTurn >= State.TurnSerial)
-                    return CommandResult.Reject("本回合无法因阵营效果追加士气");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗 2 张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
-            case "factionZeroRecovery" when source.CardId == "S01-01C1":
-                if (player.FactionMoraleAdditionForbiddenUntilTurn >= State.TurnSerial)
-                    return CommandResult.Reject("本回合无法因阵营效果追加士气");
-                if (player.Morale.Count != 0) return CommandResult.Reject("只有我方士气为 0 张时才能发动");
                 player.UsedAbilities.Add(onceKey); break;
             case "factionDrawMove" when source.CardId == "S01-04C1":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗 2 张活跃士气");
                 player.UsedAbilities.Add(onceKey); break;
             default:
-                return TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey, returnedMoraleIds)
-                    ?? TryCommitS2FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards, returnedMoraleIds)
-                    ?? TryCommitS1FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards, returnedMoraleIds)
+                return TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey)
+                    ?? TryCommitS2FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
                     ?? TryCommitS1ExtendedActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
                     ?? CommandResult.Reject("该卡没有此主动效果");
         }
@@ -228,38 +166,6 @@ public sealed partial class L12GameEngine
         "discardHolyLock" => 3,
         _ => 0,
     };
-
-    private int GetActiveAbilityReturnMoraleCost(int playerIndex, L12CardInstance source, string ability, string? target)
-    {
-        if (ability == "nonLethal" && source.CardId == "S01-01M1") return 4;
-        if (ability == "searchBrothers" && source.CardId == "S01-0105") return 1;
-        if (ability == "palaceExchange" && source.CardId == "S01-01D1")
-            return DeclaredEnemyTarget(playerIndex, target)?.CurrentCost ?? 0;
-        if (ability == "mengpoSilence" && source.CardId == "S01-01M2") return 1;
-        if (ability == "shennongReset" && source.CardId == "S02-0104") return 1;
-        return 0;
-    }
-
-    private CommandResult ResolveActiveReturnMoraleChoice(L12Prompt prompt, IReadOnlyCollection<string> selectedMoraleIds, bool? preferNormalMoraleReturn)
-    {
-        var player = State.Players[prompt.PlayerIndex];
-        var sourceId = prompt.Data.GetValueOrDefault("sourceId") ?? string.Empty;
-        var source = FindOnField(player, sourceId, out _, out _)
-            ?? (player.Relic?.InstanceId == sourceId ? player.Relic : null)
-            ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == sourceId)
-            ?? (prompt.Data.GetValueOrDefault("sourceCardId") == player.MasterId ? CreateCard(player.MasterId, sourceId) : null);
-        if (source is null) return CommandResult.Reject("返还士气时效果来源已不合法");
-        if (preferNormalMoraleReturn == true) player.PreferNormalMoraleReturns = true;
-        var automaticNormalIds = (prompt.Data.GetValueOrDefault("autoNormalMoraleIds") ?? string.Empty)
-            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var returnedIds = automaticNormalIds.Concat(selectedMoraleIds).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (!int.TryParse(prompt.Data.GetValueOrDefault("returnCount"), out var count)
-            || returnedIds.Length != count
-            || returnedIds.Any(id => player.Morale.All(card => card.InstanceId != id)))
-            return CommandResult.Reject("请选择指定数量、且仍在士气区的士气");
-        return CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data.GetValueOrDefault("ability") ?? string.Empty,
-            prompt.Data.GetValueOrDefault("target"), returnedMoraleIds: returnedIds);
-    }
 
     private bool ReturnActiveMorale(L12PlayerState player, int count)
     {
@@ -354,9 +260,10 @@ public sealed partial class L12GameEngine
                 var choices = player.Field.SelectMany(row => row)
                     .Where(card => card is not null && IsFieldLegion(card) && !card.Tapped && !card.Hidden)
                     .Select(card => card!.InstanceId).ToList();
+                if (choices.Count == 0) { FinishStackItem(item); return; }
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-target", "可选择我方 1 张活跃军团进行 1 格位移", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "faction-move-card" });
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "faction-move-card", ["choiceMode"] = "board-target" });
                 return;
             }
             default:
@@ -402,7 +309,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var card = player.Library.First(candidate => candidate.InstanceId == cardId);
-        player.Library.Remove(card); AddCardToHandByEffect(player, card, "library", $"刘备将{card.Name}加入手牌"); AddEvent("search", item.Controller, $"刘备将 {card.Name} 加入手牌", card);
+        player.Library.Remove(card); player.Hand.Add(card); AddEvent("search", item.Controller, $"刘备将 {card.Name} 加入手牌", card);
         Shuffle(player.Library); FinishStackItem(item);
     }
 
@@ -410,7 +317,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var card = player.Library.First(candidate => candidate.InstanceId == cardId);
-        player.Library.Remove(card); AddCardToHandByEffect(player, card, "library", $"山河社稷图将{card.Name}加入手牌"); AddEvent("search", item.Controller, $"山河社稷图将 {card.Name} 加入手牌", card);
+        player.Library.Remove(card); player.Hand.Add(card); AddEvent("search", item.Controller, $"山河社稷图将 {card.Name} 加入手牌", card);
         var remaining = item.Data["shanhe-top"].Split('|').Where(id => id != cardId).ToArray();
         if (remaining.Length == 0) { FinishStackItem(item); return; }
         item.Data["reorder-context"] = "shanhe";

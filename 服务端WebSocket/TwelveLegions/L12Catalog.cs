@@ -38,24 +38,28 @@ public sealed class L12Catalog
         {
             throw new InvalidDataException($"卡牌数据不完整，至少应包含 133 张 S1 卡牌，实际 {cards.Count} 张。");
         }
-        if (decks.Count < 2 || decks.Any(deck => deck.CardIds.Count != 40 || deck.MoraleIds.Count != 8))
-        {
-            throw new InvalidDataException("首测预组必须至少两套，且每套为 40 张主牌 + 8 张士气。");
-        }
-
         var duplicateIds = cards.GroupBy(card => card.Id, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
         if (duplicateIds.Length > 0)
             throw new InvalidDataException($"存在重复卡号：{string.Join(", ", duplicateIds)}");
         var byId = cards.ToDictionary(card => card.Id, StringComparer.OrdinalIgnoreCase);
+        if (decks.Count < 2) throw new InvalidDataException("至少需要两套官方预组。");
         foreach (var deck in decks)
         {
-            var ids = deck.CardIds.Append(deck.MasterId).Concat(deck.MoraleIds);
+            var ids = deck.CardIds.Append(deck.MasterId).Concat(deck.MoraleIds).Concat(deck.SpecialIds);
             var missing = ids.Where(id => !byId.ContainsKey(id)).Distinct().ToArray();
             if (missing.Length > 0)
             {
                 throw new InvalidDataException($"预组 {deck.Name} 引用了不存在的卡：{string.Join(", ", missing)}");
             }
+
+            var master = byId[deck.MasterId];
+            var countedMain = deck.CardIds.Count(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
+            var requiredMorale = master.Faction == "taiyangcheng" ? 6 : 8;
+            if (countedMain is < 40 or > 50 || deck.MoraleIds.Count != requiredMorale)
+                throw new InvalidDataException($"预组 {deck.Name} 应为 40–50 张计入构筑的主牌 + {requiredMorale} 张士气。");
+            if (deck.SpecialIds.Any(id => byId[id].CardType != "trial" || byId[id].Faction != master.Faction))
+                throw new InvalidDataException($"预组 {deck.Name} 包含无效的特殊区卡牌。");
         }
 
         return new L12Catalog(byId, decks);

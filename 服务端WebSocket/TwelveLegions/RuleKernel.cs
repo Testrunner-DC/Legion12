@@ -158,16 +158,8 @@ public static class L12S2ZoneOps
 
     public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted, int godPowerCost)
     {
-        var requiredFoundationId = promoted.CardId switch
-        {
-            "S02-0501" => "S02-0502",
-            "S02-0503" => "S02-0504",
-            "S02-0505" => "S02-0506",
-            "S02-0507" => "S02-0508",
-            _ => null,
-        };
-        if (requiredFoundationId is null
-            || !foundation.CardId.Equals(requiredFoundationId, StringComparison.OrdinalIgnoreCase)
+        var normalizedPromotedName = promoted.Name.Replace("·晋升", string.Empty, StringComparison.Ordinal);
+        if (!foundation.Name.Equals(normalizedPromotedName, StringComparison.Ordinal)
             || foundation.Faction != "olympus" || promoted.Faction != "olympus") return false;
         var position = (Row: -1, Slot: -1);
         for (var row = 0; row < player.Field.Length; row++)
@@ -175,30 +167,11 @@ public static class L12S2ZoneOps
             if (player.Field[row][slot]?.InstanceId == foundation.InstanceId) position = (row, slot);
         if (position.Row < 0 || !ConsumeAndFlipGodPower(player, godPowerCost)) return false;
 
-        // 晋升者是场上的新主体，但承继底卡已经建立的状态。
-        // 兵力损耗以相对印刷兵力的差值转移，避免晋升重置战斗结果。
-        var troopsDelta = foundation.Troops - foundation.BaseTroops;
         promoted.Tapped = foundation.Tapped;
-        promoted.SummonRound = foundation.SummonRound;
-        promoted.AttacksThisTurn = foundation.AttacksThisTurn;
-        promoted.CostModifier = foundation.CostModifier;
-        promoted.ContinuousTroopsModifier = foundation.ContinuousTroopsModifier;
-        promoted.SetTroopsValue = foundation.SetTroopsValue;
-        promoted.SetTroopsUntilTurn = foundation.SetTroopsUntilTurn;
-        promoted.Troops = Math.Max(0, promoted.BaseTroops + troopsDelta);
         promoted.HasCharge |= foundation.HasCharge;
         promoted.HasStrongAttack |= foundation.HasStrongAttack;
         promoted.HasSureHit |= foundation.HasSureHit;
-        promoted.AttackNoLossUntilTurn = Math.Max(promoted.AttackNoLossUntilTurn, foundation.AttackNoLossUntilTurn);
-        promoted.NextAttackNoLossUses += foundation.NextAttackNoLossUses;
-        promoted.SureHitAgainstLegionsUntilTurn = Math.Max(promoted.SureHitAgainstLegionsUntilTurn, foundation.SureHitAgainstLegionsUntilTurn);
-        promoted.CannotReadyByEffectUntilTurn = Math.Max(promoted.CannotReadyByEffectUntilTurn, foundation.CannotReadyByEffectUntilTurn);
-        promoted.CannotUntapUntilRound = Math.Max(promoted.CannotUntapUntilRound, foundation.CannotUntapUntilRound);
         promoted.ImmortalUses += foundation.ImmortalUses;
-        promoted.ImmortalUntilTurn = Math.Max(promoted.ImmortalUntilTurn, foundation.ImmortalUntilTurn);
-        promoted.TimedModifiers.AddRange(foundation.TimedModifiers);
-        promoted.AttachedCards.AddRange(foundation.AttachedCards);
-        foundation.AttachedCards.Clear();
         promoted.AttachedCards.Add(foundation);
         player.Hand.Remove(promoted);
         player.Field[position.Row][position.Slot] = promoted;

@@ -41,6 +41,7 @@ public sealed class L12PresetDeckDefinition
     public required string MasterId { get; init; }
     public required List<string> CardIds { get; init; }
     public required List<string> MoraleIds { get; init; }
+    public List<string> SpecialIds { get; init; } = [];
 }
 
 public sealed class L12CustomDeckSubmission
@@ -49,6 +50,7 @@ public sealed class L12CustomDeckSubmission
     public string MasterId { get; init; } = string.Empty;
     public List<string> CardIds { get; init; } = [];
     public List<string> MoraleIds { get; init; } = [];
+    public List<string> SpecialIds { get; init; } = [];
 }
 
 public sealed class L12RoomOptions
@@ -91,16 +93,11 @@ public sealed class L12CardInstance
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
     public int AttacksThisTurn { get; set; }
-    // Trial cards are horizontal, public special cards.  Their progress is kept on
-    // the card instead of in a global counter so multiple completed trials remain
-    // distinguishable for masters that can carry more than one.
     public int TrialProgress { get; set; }
     public bool TrialCompleted { get; set; }
     public bool CannotAttack { get; set; }
     public bool CannotSupport { get; set; }
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
-    // A card text may grant a same-turn exception only for attacking the opposing master.
-    // Keep it separate from Charge so it cannot be used to attack legions as well.
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
     public int ImmortalUses { get; set; }
@@ -144,9 +141,9 @@ public sealed class L12PlayerState
     public required string Name { get; init; }
     public required string DeckName { get; init; }
     public required string Faction { get; init; }
-    public required string MasterId { get; set; }
-    public required string MasterName { get; set; }
-    public string? MasterImageUrl { get; set; }
+    public required string MasterId { get; init; }
+    public required string MasterName { get; init; }
+    public string? MasterImageUrl { get; init; }
     public int Hp { get; set; }
     public int MaxHp { get; init; }
     public bool MasterTapped { get; set; }
@@ -180,16 +177,12 @@ public sealed class L12PlayerState
     public int MasterCannotBeAttackedUntilTurn { get; set; } = -1;
     public int TombNamedLegionsLeftThisTurn { get; set; }
     public int NextActiveTacticSurcharge { get; set; }
-    // Per-game player preference chosen from the Black Lotus return prompt.
-    // False keeps every return manual whenever Lotus is present.
-    public bool PreferNormalMoraleReturns { get; set; }
     public bool MulliganDone { get; set; }
 }
 
 public sealed class L12S2SpecialZones
 {
     public int Runes { get; set; }
-    // Retained for older snapshots.  The live value is mirrored from the trial card.
     public int TrialLevel { get; set; }
     public int TrialCapacity { get; set; } = 1;
     public List<L12CardInstance> GodPower { get; } = [];
@@ -254,10 +247,6 @@ public sealed class L12PendingActivation
     public List<string> DeclaredTargets { get; } = [];
 }
 
-/// <summary>
-/// 由〈信仰狂热者〉创建的一次性主宰效果豁免。它只存活到该次发动
-/// 完成声明并入栈，避免把“无视消耗”误做成整回合的通用减费。
-/// </summary>
 public sealed class L12FreeMasterActivation
 {
     public required int Controller { get; init; }
@@ -364,6 +353,7 @@ public sealed class L12GameState
     public int ExtraTurnsForPlayer { get; set; } = -1;
     public int CounterTacticsDisabledUntilTurnSerial { get; set; } = -1;
     public int? Winner { get; set; }
+    public string? WinnerReason { get; set; }
     public long Revision { get; set; }
     public long EventSequence { get; set; }
     public long PromptSequence { get; set; }
@@ -401,6 +391,7 @@ public sealed record L12GameSnapshot(
     object[] EffectStack,
     object? PendingDefense,
     int? Winner,
+    string? WinnerReason,
     object[] Players,
     L12ActionEvent? LastAction,
     L12ActionEvent[] RecentEvents,
@@ -420,8 +411,7 @@ public sealed record L12Command(
     string? PromptId = null,
     string? Choice = null,
     string? Ability = null,
-    string? Destination = null,
-    bool? PreferNormalMoraleReturn = null);
+    string? Destination = null);
 
 public sealed record CommandResult(bool Accepted, string? Error = null)
 {

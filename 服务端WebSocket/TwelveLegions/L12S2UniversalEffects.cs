@@ -2,36 +2,6 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private void QueueS2FaithZealotTrigger(L12PlayerState player, L12CardInstance card, string origin)
-    {
-        if (card.CardId != "S02-0006" || State.ActivePlayer != player.PlayerIndex) return;
-        var master = CreateCard(player.MasterId, $"master-{player.PlayerIndex}");
-        if (!GetAbilities(player.MasterId).Any(view => GetActiveAbilityMoraleCost(master, view.Id) > 0)) return;
-        QueueTriggerCandidates([CreateTriggerCandidate(player.PlayerIndex, card, "s2-faith-zealot",
-            "〈信仰狂热者〉：无视消耗发动主宰效果",
-            new Dictionary<string, string> { ["origin"] = origin })]);
-    }
-
-    private void ResolveS2FaithZealot(L12StackItem item)
-    {
-        var player = State.Players[item.Controller];
-        if (item.Data.ContainsKey("selected")) { FinishStackItem(item); return; }
-        var master = CreateCard(player.MasterId, $"master-{item.Controller}");
-        var options = GetAbilities(player.MasterId)
-            .Where(view => GetActiveAbilityMoraleCost(master, view.Id) > 0)
-            .ToArray();
-        if (options.Length == 0) { FinishStackItem(item); return; }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "s2-faith-zealot",
-            ["skip"] = "不发动",
-            ["choiceMode"] = "instant",
-        };
-        foreach (var option in options) data[option.Id] = option.Label;
-        CreatePrompt(item.Controller, "master-ability", "〈信仰狂热者〉：选择1个需要消耗士气的主宰效果无视全部消耗发动",
-            options.Select(option => option.Id).Append("skip"), 1, 1, "card-effect", item.StackItemId, data: data);
-    }
-
     private static readonly HashSet<string> S2UniversalEnterCards = new(StringComparer.OrdinalIgnoreCase)
     {
         "S02-0001", "S02-0003", "S02-0008", "S02-0104",
@@ -250,8 +220,7 @@ public sealed partial class L12GameEngine
         return null;
     }
 
-    private CommandResult? TryCommitS2UniversalActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey,
-        IEnumerable<string>? returnedMoraleIds = null)
+    private CommandResult? TryCommitS2UniversalActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey)
     {
         if (ability == "disableCounters" && source.CardId == "S02-0003")
         {
@@ -265,7 +234,7 @@ public sealed partial class L12GameEngine
         if (ability == "shennongReset" && source.CardId == "S02-0104")
         {
             if (source.Tapped) return CommandResult.Reject("神农鼎必须为活跃状态");
-            if (!ReturnMorale(State.Players[playerIndex], 1, returnedMoraleIds)) return CommandResult.Reject("需要返还1张士气");
+            if (!ReturnMorale(State.Players[playerIndex], 1)) return CommandResult.Reject("需要返还1张士气");
             source.Tapped = true;
             PushEffect(playerIndex, source, "active", "主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
@@ -309,7 +278,7 @@ public sealed partial class L12GameEngine
         return false;
     }
 
-    private void ContinueS2UniversalEffect(L12StackItem item, L12Prompt prompt, List<string> chosen, L12Command command)
+    private void ContinueS2UniversalEffect(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
@@ -333,7 +302,7 @@ public sealed partial class L12GameEngine
             case "s2-black-lotus-disaster":
             {
                 var delta = int.TryParse(chosen[0], out var parsed) ? Math.Clamp(parsed, -1, 1) : 0;
-                State.DisasterValue = Math.Max(0, State.DisasterValue + delta);
+                State.DisasterValue = State.ActiveDisaster?.CardId == "S01-DS10" ? 0 : Math.Max(0, State.DisasterValue + delta);
                 AddEvent("disaster-value", item.Controller, $"黑色莲花将天灾值调整为 {State.DisasterValue}", FindSource(item) is { } lotus ? [lotus] : []);
                 if (ActiveResourceCount(State.Players[item.Controller]) < 3)
                 {
@@ -444,47 +413,11 @@ public sealed partial class L12GameEngine
                 else FinishStackItem(item);
                 break;
             case "s2-qianyang-draw":
-            {
-                if (chosen[0] != "yes") { FinishStackItem(item); break; }
-                var qianyangPlayer = State.Players[item.Controller];
-                if (RequiresMoraleIdentityChoice(qianyangPlayer))
-                {
-                    var normal = qianyangPlayer.Morale.FirstOrDefault(card => card.CardId != "S02-0010");
-                    if (qianyangPlayer.PreferNormalMoraleReturns && normal is not null)
-                    {
-                        if (ReturnMorale(qianyangPlayer, 1, [normal.InstanceId]) && !Draw(qianyangPlayer, 1))
-                            SetWinner(1 - item.Controller, "《乾坤 阳》抽牌时牌库为空");
-                        FinishStackItem(item);
-                        break;
-                    }
-                    var confirmsLotus = qianyangPlayer.PreferNormalMoraleReturns;
-                    CreatePrompt(item.Controller, "morale-return", confirmsLotus
-                            ? "普通士气不足：请确认返还〈黑色莲花〉；它会置入墓地"
-                            : "请选择要返还的士气；〈黑色莲花〉被返还时会置入墓地",
-                        confirmsLotus ? qianyangPlayer.Morale.Where(card => card.CardId == "S02-0010").Select(card => card.InstanceId) : qianyangPlayer.Morale.Select(card => card.InstanceId),
-                        1, 1, "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string>
-                        {
-                            ["action"] = "s2-qianyang-draw-return",
-                            ["choiceMode"] = "selected-morale",
-                            ["lotusConfirmation"] = confirmsLotus ? "true" : "false",
-                        });
-                    break;
-                }
-                if (ReturnMorale(qianyangPlayer, 1) && !Draw(qianyangPlayer, 1))
+                if (chosen[0] == "yes" && ReturnMorale(State.Players[item.Controller], 1)
+                    && !Draw(State.Players[item.Controller], 1))
                     SetWinner(1 - item.Controller, "〈乾坤 阳〉抽牌时牌库为空");
                 FinishStackItem(item);
                 break;
-            }
-            case "s2-qianyang-draw-return":
-            {
-                var qianyangPlayer = State.Players[item.Controller];
-                if (command.PreferNormalMoraleReturn == true) qianyangPlayer.PreferNormalMoraleReturns = true;
-                if (ReturnMorale(qianyangPlayer, 1, chosen) && !Draw(qianyangPlayer, 1))
-                    SetWinner(1 - item.Controller, "〈乾坤 阳〉抽牌时牌库为空");
-                FinishStackItem(item);
-                break;
-            }
             case "s2-magician-remove-counter":
                 if (chosen[0] != "skip")
                 {

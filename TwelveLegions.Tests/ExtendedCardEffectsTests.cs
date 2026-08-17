@@ -44,6 +44,16 @@ public sealed class ExtendedCardEffectsTests
         };
     }
 
+    private static L12CardInstance TakeCard(L12PlayerState player, string cardId)
+    {
+        var card = player.Hand.Concat(player.Library).FirstOrDefault(candidate => candidate.CardId == cardId)
+            ?? Card(cardId, $"test-{player.PlayerIndex}-{cardId}-{Guid.NewGuid():N}");
+        player.Hand.Remove(card);
+        player.Library.Remove(card);
+        player.Hand.Add(card);
+        return card;
+    }
+
     [Fact]
     public void SolarCityPresetStartsWithThreeTombGuardsInGraveyard()
     {
@@ -59,8 +69,7 @@ public sealed class ExtendedCardEffectsTests
     {
         var game = Create(3, 2);
         var player = game.State.Players[0];
-        var beowulf = player.Hand.Concat(player.Library).First(card => card.CardId == "S01-0301");
-        player.Hand.Remove(beowulf); player.Library.Remove(beowulf); player.Hand.Add(beowulf);
+        var beowulf = TakeCard(player, "S01-0301");
         ReadyMain(game, 0);
         var before = player.Library.Count;
         Assert.True(game.Handle(0, new L12Command("playCard", beowulf.InstanceId, Row: 0, Slot: 0)).Accepted);
@@ -257,8 +266,7 @@ public sealed class ExtendedCardEffectsTests
         var game = Create(2, 3);
         var player = game.State.Players[0];
         ReadyMain(game, 0);
-        var ay = player.Hand.Concat(player.Library).First(card => card.CardId == "S01-0208");
-        player.Hand.Remove(ay); player.Library.Remove(ay); player.Hand.Add(ay);
+        var ay = TakeCard(player, "S01-0208");
 
         Assert.True(game.Handle(0, new L12Command("playCard", ay.InstanceId, Row: 0, Slot: 0)).Accepted);
         PassResponses(game);
@@ -285,8 +293,7 @@ public sealed class ExtendedCardEffectsTests
         var guard = solar.Graveyard.First(card => card.CardId == "S01-0212");
         solar.Graveyard.Remove(guard);
         solar.Field[0][0] = guard;
-        var gram = asgard.Hand.Concat(asgard.Library).First(card => card.CardId == "S01-0317");
-        asgard.Hand.Remove(gram); asgard.Library.Remove(gram); asgard.Hand.Add(gram);
+        var gram = TakeCard(asgard, "S01-0317");
 
         Assert.True(game.Handle(0, new L12Command("playCard", gram.InstanceId)).Accepted);
         PassResponses(game);

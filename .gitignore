@@ -1,10 +1,9 @@
 node_modules/
 dist/
-.dotnet-home/
-.dotnet-sdk/
 bin/
 obj/
 runtime/
+.runtime/
 *.db
 *.db-shm
 *.db-wal

@@ -4,14 +4,12 @@ import { useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import {
   MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, loadDeckCatalog, loadSavedDecks,
-  saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
+  loadOfficialPresetDecks, saveDeck, validateDeck, type DeckCard, type OfficialL12PresetDeck, type SavedL12Deck,
 } from './decks'
-
-interface PresetDeck { name: string; masterId: string; cardIds: string[]; moraleIds: string[] }
 
 const router = useRouter()
 const catalog = ref<DeckCard[]>([])
-const presets = ref<PresetDeck[]>([])
+const presets = ref<OfficialL12PresetDeck[]>([])
 const savedDecks = ref<Record<string, SavedL12Deck>>({})
 const loading = ref(true)
 const notice = ref('')
@@ -23,6 +21,7 @@ const typeFilter = ref('all')
 const productFilter = ref('all')
 const selected = ref<DeckCard | null>(null)
 const activeDeckName = ref<string | null>(null)
+const specialIds = ref<string[]>([])
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -34,11 +33,9 @@ const typeLabels: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    const [cards, presetResponse] = await Promise.all([
-      loadDeckCatalog(), fetch('/data/l12/preset-decks.s1.json'),
-    ])
+    const [cards, officialPresets] = await Promise.all([loadDeckCatalog(), loadOfficialPresetDecks()])
     catalog.value = cards
-    presets.value = presetResponse.ok ? await presetResponse.json() : []
+    presets.value = officialPresets
     savedDecks.value = loadSavedDecks()
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested])
@@ -76,6 +73,7 @@ const validation = computed(() => validateDeck({
   name: deckName.value, masterId: masterId.value,
   cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
   moraleIds: moraleIds.value,
+  specialIds: specialIds.value,
 }, catalog.value))
 const curve = computed(() => {
   const values = Array(9).fill(0) as number[]
@@ -117,6 +115,7 @@ function newDeck() {
   deckName.value = '新牌库'
   masterId.value = ''
   counts.value = {}
+  specialIds.value = []
   selected.value = mainCards.value[0] ?? null
   notice.value = '已新建空白牌库'
 }
@@ -125,7 +124,7 @@ function currentDeck(): SavedL12Deck {
   return {
     name: deckName.value.trim(), masterId: masterId.value,
     cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
-    moraleIds: moraleIds.value, updatedAt: new Date().toISOString(),
+    moraleIds: moraleIds.value, specialIds: [...specialIds.value], updatedAt: new Date().toISOString(),
   }
 }
 
@@ -163,16 +162,18 @@ function loadDeck(deck: SavedL12Deck) {
   const next: Record<string, number> = {}
   deck.cardIds.forEach(id => next[id] = (next[id] || 0) + 1)
   counts.value = next
+  specialIds.value = [...(deck.specialIds ?? [])]
   notice.value = `已载入〈${deck.name}〉`
 }
 
-function importPreset(preset: PresetDeck) {
+function importPreset(preset: OfficialL12PresetDeck) {
   activeDeckName.value = null
   deckName.value = `${preset.name}·自定义`
   masterId.value = preset.masterId
   const next: Record<string, number> = {}
   preset.cardIds.forEach(id => next[id] = (next[id] || 0) + 1)
   counts.value = next
+  specialIds.value = [...(preset.specialIds ?? [])]
   notice.value = `已从〈${preset.name}〉建立副本`
 }
 
@@ -220,7 +221,7 @@ function onDelete(name = activeDeckName.value ?? '') {
         <div class="preset-list"><button v-for="preset in presets" :key="preset.name" @click="importPreset(preset)"><b>{{ preset.name }}</b><span>建立可编辑副本</span></button></div>
 
         <p class="kicker preset-kicker">SAVED DECKS</p>
-        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name"><button @click="loadDeck(deck)"><b>{{ deck.name }}</b><span>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</span></button><button class="delete" @click="onDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
+        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><b>{{ deck.name }}</b><span>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</span></button><button class="delete" @click="onDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
       </aside>
 
       <section class="deck-catalog grand-panel">
@@ -275,6 +276,7 @@ function onDelete(name = activeDeckName.value ?? '') {
 }
 .deck-builder-topbar button{padding:8px 11px;border:1px solid #69716e;background:#171c1d;color:#f1eee5;font-weight:900}.deck-builder-topbar button:hover:not(:disabled){border-color:#70d7df;background:#1b565b;color:#fff}.deck-builder-topbar .back-button{border-color:#d7d2c4;background:#e8e3d7;color:#101314}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111}.deck-builder-topbar .delete-deck{border-color:#8c343c;color:#f1a3aa}.deck-builder-topbar button:disabled{color:#717775;background:#252929;opacity:.45}.deck-file-actions{display:flex;gap:6px}
 .pool-count-controls{display:grid!important;grid-template-columns:1fr 34px 1fr;gap:0!important;padding:0!important;border-top:1px solid #303638}.pool-count-controls button{min-height:30px;border:0;background:#151a1b;color:#e8e4d9;font-size:17px;font-weight:900}.pool-count-controls button:hover:not(:disabled){background:#1d6167;color:#fff}.pool-count-controls strong{display:grid;place-items:center;border-inline:1px solid #303638;background:#090c0d;color:#d7c483;font-size:12px}
+.preset-list button,.saved-list article{border-color:#424b4d;background:#111619}.preset-list button,.saved-list article>button:first-child{background:#111619;color:#f1eee5}.preset-list button:hover,.saved-list article>button:first-child:hover,.saved-list article>button:first-child:focus-visible{border-color:#70d7df;background:#18383b;color:#fff}.preset-list b,.saved-list b{color:#f1eee5}.preset-list span,.saved-list span{color:#aab4b0}.saved-list article.active{border-color:#86e8ee;background:#123e42;box-shadow:inset 3px 0 #86e8ee}.saved-list article.active>button:first-child{background:#123e42;color:#fff}.saved-list article.active span{color:#d5f4f1}.saved-list .delete{background:#211418;color:#f29ba4}.saved-list .delete:hover{background:#6b222b;color:#fff}.saved-list p{color:#929b97}
 .deck-entries article{position:relative;isolation:isolate;gap:7px;margin-bottom:5px;padding:6px;overflow:hidden;border:1px solid #354041;border-left:2px solid #3da4ad}.deck-entry-banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 28%;opacity:.56;filter:saturate(.9) contrast(1.12)}.deck-entries article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,8,9,.91),rgba(9,13,14,.48) 48%,rgba(5,8,9,.88))}.deck-entries article>span{width:27px;height:27px;flex:none}.deck-entries article small{color:#d0d5d1}.deck-entries strong{color:#f0d98e}.deck-entries button{width:27px;height:27px;flex:none;border:1px solid #5c6461;background:#101516;color:#eee;font-size:15px;font-weight:900}.deck-entries button:hover:not(:disabled){border-color:#70d7df;background:#1b565b}
 @media(max-width:1180px){.deck-file-actions button{padding:7px 8px;font-size:10px}}
 @media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(4,1fr)}}

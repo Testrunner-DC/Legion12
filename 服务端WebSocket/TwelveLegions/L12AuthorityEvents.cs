@@ -122,11 +122,6 @@ public sealed partial class L12GameEngine
     private void ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason)
     {
         if (!target.Tapped) return;
-        if (target.CannotReadyByEffectUntilTurn >= State.TurnSerial)
-        {
-            AddEvent("effect-prevented", playerIndex, $"{target.Name}本回合无法因效果转为活跃", target, source);
-            return;
-        }
         QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
             targetInstanceId: target.InstanceId, causedByEffect: true);
     }

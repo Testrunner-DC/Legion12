@@ -16,7 +16,8 @@ public sealed class S2UniversalEffectsTests
     private static L12CardInstance TakeCard(L12GameEngine game, int playerIndex, string cardId)
     {
         var player = game.State.Players[playerIndex];
-        var card = player.Hand.Concat(player.Library).First(candidate => candidate.CardId == cardId);
+        var card = player.Hand.Concat(player.Library).FirstOrDefault(candidate => candidate.CardId == cardId)
+            ?? Instance(cardId, $"test-{playerIndex}-{cardId}-{Guid.NewGuid():N}");
         player.Hand.Remove(card);
         player.Library.Remove(card);
         player.Hand.Add(card);
@@ -397,6 +398,71 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal(printedTroops, target.Troops);
     }
 
+    [Theory]
+    [InlineData("S01-0107", 1000)]
+    [InlineData("S01-0212", 1000)]
+    [InlineData("S01-0312", 1000)]
+    [InlineData("S02-0004", 1000)]
+    [InlineData("S02-0007", 1000)]
+    [InlineData("S02-0519", 2000)]
+    [InlineData("S02-0615", 1000)]
+    public void OpponentTurnStaticTroopsRemainActiveOutsideCombat(string cardId, int bonus)
+    {
+        var game = Create(seed: 62041);
+        var owner = game.State.Players[1];
+        var target = Instance(cardId, $"opponent-turn-{cardId}");
+        owner.Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        game.SnapshotFor(0);
+        Assert.Null(game.State.PendingDefense);
+        Assert.Equal(target.BaseTroops + bonus, target.Troops);
+
+        game.SnapshotFor(1);
+        Assert.Equal(target.BaseTroops + bonus, target.Troops);
+
+        game.State.ActivePlayer = 1;
+        game.SnapshotFor(1);
+        Assert.Equal(target.BaseTroops, target.Troops);
+    }
+
+    [Fact]
+    public void MenesOpponentTurnBonusTracksWhetherA_tombGuardExists()
+    {
+        var game = Create(seed: 62042);
+        var owner = game.State.Players[1];
+        var menes = Instance("S01-0203", "menes-static");
+        owner.Field[0][0] = menes;
+        game.State.ActivePlayer = 0;
+
+        game.SnapshotFor(0);
+        Assert.Equal(menes.BaseTroops + 1000, menes.Troops);
+
+        owner.Field[1][0] = Instance("S01-0212", "tomb-guard-static");
+        game.SnapshotFor(0);
+        Assert.Equal(menes.BaseTroops, menes.Troops);
+    }
+
+    [Fact]
+    public void HannibalContinuouslyBuffsOnlyAdjacentLegions()
+    {
+        var game = Create(seed: 62043);
+        var owner = game.State.Players[0];
+        var left = Instance("S02-0004", "hannibal-left");
+        var hannibal = Instance("S02-0516", "hannibal-source");
+        var right = Instance("S02-0004", "hannibal-right");
+        owner.Field[0][0] = left;
+        owner.Field[0][1] = hannibal;
+        owner.Field[0][2] = right;
+        game.State.ActivePlayer = owner.PlayerIndex;
+
+        game.SnapshotFor(0);
+        Assert.Equal(left.BaseTroops + 1000, left.Troops);
+        Assert.Equal(hannibal.BaseTroops, hannibal.Troops);
+        Assert.Equal(right.BaseTroops + 1000, right.Troops);
+    }
+
     [Fact]
     public void RingDiscardsThenSearchesAUniversalCardAndShuffles()
     {
@@ -481,11 +547,6 @@ public sealed class S2UniversalEffectsTests
             CardInstanceIds: [target.InstanceId])).Accepted);
         var drawPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "yes")).Accepted);
-
-        var returnPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("morale-return", returnPrompt.Kind);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
-            CardInstanceIds: [lotus.InstanceId])).Accepted);
 
         Assert.Contains(player.Graveyard, card => card.InstanceId == lotus.InstanceId && card.CardId == "S02-0010");
         Assert.DoesNotContain(player.MoraleDeck, card => card.InstanceId == lotus.InstanceId);
@@ -631,130 +692,6 @@ public sealed class S2UniversalEffectsTests
         Assert.True(shennong.Tapped);
         Assert.DoesNotContain(usedKey, player.UsedAbilities);
         Assert.Equal(2, player.Morale.Count);
-    }
-
-    [Fact]
-    public void ShennongDingRequiresChoosingReturnedMoraleWhenBlackLotusIsPresent()
-    {
-        var game = CreateTianting(seed: 6214);
-        var player = game.State.Players[0];
-        var shennong = Instance("S02-0104", "shennong-lotus-test");
-        var lotus = new L12MoraleCard { InstanceId = "shennong-lotus-morale", CardId = "S02-0010" };
-        player.Hand.Add(shennong);
-        AddMorale(player, 2);
-        player.Morale.Add(lotus);
-        game.State.ActivePlayer = 0;
-        game.State.Phase = L12Phase.Main;
-
-        Assert.True(game.Handle(0, new L12Command("playCard", shennong.InstanceId)).Accepted);
-        var drawPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "no")).Accepted);
-
-        var usedKey = "active:master-0:drawCycle";
-        player.UsedAbilities.Add(usedKey);
-        Assert.True(game.Handle(0, new L12Command("activateAbility", shennong.InstanceId, Ability: "shennongReset")).Accepted);
-        var targetPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
-            CardInstanceIds: ["drawCycle"])).Accepted);
-
-        var returnPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("morale-return", returnPrompt.Kind);
-        Assert.Contains(lotus.InstanceId, returnPrompt.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
-            CardInstanceIds: [lotus.InstanceId])).Accepted);
-
-        Assert.True(shennong.Tapped);
-        Assert.DoesNotContain(usedKey, player.UsedAbilities);
-        Assert.Contains(player.Graveyard, card => card.InstanceId == lotus.InstanceId);
-        Assert.DoesNotContain(player.Morale, card => card.InstanceId == lotus.InstanceId);
-    }
-
-    [Fact]
-    public void BlackLotusPreferenceAutoReturnsNormalMoraleThenConfirmsLotus()
-    {
-        var game = CreateTianting(seed: 6216);
-        var player = game.State.Players[0];
-        var shennong = Instance("S02-0104", "shennong-preference-test");
-        var lotus = new L12MoraleCard { InstanceId = "preference-lotus", CardId = "S02-0010" };
-        player.Hand.Add(shennong);
-        AddMorale(player, 2);
-        var firstNormal = player.Morale[0];
-        var secondNormal = player.Morale[1];
-        player.Morale.Add(lotus);
-        game.State.ActivePlayer = 0;
-        game.State.Phase = L12Phase.Main;
-        Assert.True(game.Handle(0, new L12Command("playCard", shennong.InstanceId)).Accepted);
-        var drawPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "no")).Accepted);
-
-        var usedKey = "active:master-0:drawCycle";
-        player.UsedAbilities.Add(usedKey);
-        Assert.True(game.Handle(0, new L12Command("activateAbility", shennong.InstanceId, Ability: "shennongReset")).Accepted);
-        var targetPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
-            CardInstanceIds: ["drawCycle"])).Accepted);
-        var firstReturnPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstReturnPrompt.PromptId,
-            CardInstanceIds: [firstNormal.InstanceId], PreferNormalMoraleReturn: true)).Accepted);
-        Assert.True(player.PreferNormalMoraleReturns);
-        Assert.Contains(firstNormal, player.MoraleDeck);
-
-        shennong.Tapped = false;
-        player.UsedAbilities.Add(usedKey);
-        Assert.True(game.Handle(0, new L12Command("activateAbility", shennong.InstanceId, Ability: "shennongReset")).Accepted);
-        targetPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
-            CardInstanceIds: ["drawCycle"])).Accepted);
-        Assert.Empty(game.State.PendingPrompts);
-        Assert.Contains(secondNormal, player.MoraleDeck);
-
-        shennong.Tapped = false;
-        player.UsedAbilities.Add(usedKey);
-        Assert.True(game.Handle(0, new L12Command("activateAbility", shennong.InstanceId, Ability: "shennongReset")).Accepted);
-        targetPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
-            CardInstanceIds: ["drawCycle"])).Accepted);
-        var lotusPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("true", lotusPrompt.Data["lotusConfirmation"]);
-        Assert.Equal([lotus.InstanceId], lotusPrompt.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: lotusPrompt.PromptId,
-            CardInstanceIds: [lotus.InstanceId])).Accepted);
-        Assert.Contains(player.Graveyard, card => card.InstanceId == lotus.InstanceId);
-    }
-
-    [Fact]
-    public void FaithZealotDiscardedByAnEffectMayActivateAMasterAbilityWithoutPayingItsCost()
-    {
-        var game = CreateTianting(seed: 6215);
-        var player = game.State.Players[0];
-        var ring = Instance("S02-0008", "faith-ring");
-        var zealot = Instance("S02-0006", "faith-zealot");
-        var searchable = Instance("S02-0007", "faith-searchable");
-        player.Hand.Add(ring);
-        player.Hand.Add(zealot);
-        player.Library.Add(searchable);
-        AddMorale(player, 3);
-        game.State.ActivePlayer = 0;
-        game.State.Phase = L12Phase.Main;
-
-        Assert.True(game.Handle(0, new L12Command("playCard", ring.InstanceId)).Accepted);
-        var discardPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-ring-discard", discardPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
-            CardInstanceIds: [zealot.InstanceId])).Accepted);
-
-        var searchPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-ring-search", searchPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: searchPrompt.PromptId,
-            CardInstanceIds: [searchable.InstanceId])).Accepted);
-
-        var faithPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-faith-zealot", faithPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: faithPrompt.PromptId, Choice: "drawCycle")).Accepted);
-
-        Assert.Equal(3, player.Morale.Count);
-        Assert.DoesNotContain("active:master-0:drawCycle", player.UsedAbilities);
-        Assert.Contains(player.Graveyard, card => card.InstanceId == zealot.InstanceId);
     }
 
     [Fact]

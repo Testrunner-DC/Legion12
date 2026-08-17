@@ -30,15 +30,19 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void CatalogContainsS1AndS2CardsAndFourValidPresets()
+    public void CatalogContainsS1AndS2CardsAndSixOfficialPresets()
     {
         var catalog = Catalog;
         Assert.Equal(248, catalog.Cards.Count);
-        Assert.Equal(5, catalog.PresetDecks.Count);
+        Assert.Equal(6, catalog.PresetDecks.Count);
+        Assert.Equal(6, catalog.PresetDecks.Select(deck => catalog.Cards[deck.MasterId].Faction).Distinct().Count());
         Assert.All(catalog.PresetDecks, deck =>
         {
-            Assert.Equal(40, deck.CardIds.Count);
-            Assert.Equal(8, deck.MoraleIds.Count);
+            var faction = catalog.Cards[deck.MasterId].Faction;
+            var countedMain = deck.CardIds.Count(id => id != "S01-0212");
+            Assert.InRange(countedMain, 40, 50);
+            Assert.Equal(faction == "taiyangcheng" ? 6 : 8, deck.MoraleIds.Count);
+            Assert.All(deck.SpecialIds, id => Assert.Equal("trial", catalog.Cards[id].CardType));
         });
     }
 

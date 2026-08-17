@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
-import { getFactionPresentation } from '../factionPresentation'
 
 const props = defineProps<{
   player: PlayerView
@@ -42,7 +41,7 @@ const factionMinimized = ref(false)
 const abilityCardOpen = ref<Card | null>(null)
 const abilityCardMinimized = ref(false)
 const moraleLimit = computed(() => props.player.morale.length + (props.player.moraleDeck?.length ?? props.player.moraleDeckCount ?? 0))
-const currentMoraleLimit = computed(() => props.player.morale.length + (props.player.specialZones?.godPower.length ?? 0))
+const currentMoraleLimit = computed(() => props.player.morale.length)
 const topGraveyard = computed(() => props.player.graveyard?.at(-1) ?? null)
 function moraleState(index: number) {
   const card = props.player.morale[index]
@@ -53,14 +52,14 @@ function moraleLabel(index: number) {
   const state = moraleState(index)
   return state === 'active' ? '活跃士气' : state === 'spent' ? '已使用的士气' : '尚未追加的士气'
 }
-const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length + (props.player.specialZones?.godPower.filter(card => !card.tapped).length ?? 0))
+const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length)
 const spendableMorale = computed(() => activeMorale.value + (props.player.temporaryMorale ?? 0))
-const factionVisual = computed(() => getFactionPresentation(props.player.faction))
 const factionActions = computed<Array<[string, string]>>(() => {
-  if (props.player.factionEffect?.abilities?.length) return props.player.factionEffect.abilities.map(entry => [entry.id, entry.label])
+  if (props.player.factionEffect?.abilities?.length) return props.player.factionEffect.abilities
+    .filter(entry => entry.id !== 'factionZeroRecovery')
+    .map(entry => [entry.id, entry.label])
   if (props.player.factionEffect?.cardId === 'S01-01C1') return [
     ['factionAddActive', '我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。'],
-    ['factionZeroRecovery', '我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。'],
   ]
   if (props.player.factionEffect?.cardId === 'S01-04C1') return [
     ['factionDrawMove', '我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。'],
@@ -76,6 +75,7 @@ function isCounterTactic(card: Card | null) {
     || ['S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021', 'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420'].includes(card?.cardId ?? '')
 }
 function counterState(card: Card | null) {
+  if (props.side === 'my' && card?.hidden && card.cardId === 'S01-0415') return 'hidden-dormant'
   if (props.side !== 'my' || !isCounterTactic(card) || !card?.hidden) return ''
   return props.responsePlayableIds?.includes(card.instanceId) ? 'counter-ready' : 'counter-dormant'
 }
@@ -117,11 +117,7 @@ function abilities(card: Card) {
   return map[card.cardId] ?? []
 }
 function activeAbilities(card: Card) {
-  return abilities(card).filter(entry => entry[0] !== 'freeMove' && entry[0] !== 'trialAdvance')
-}
-function canAdvanceTrial(card: Card) {
-  return Boolean(props.actionsEnabled && card.trialValue && !card.tapped && card.summonRound < (props.round ?? 0)
-    && props.player.specialZones?.trials.some(trial => !trial.trialCompleted))
+  return abilities(card).filter(entry => entry[0] !== 'freeMove')
 }
 function selectZoneCard(card: Card) {
   emit('focus', card)
@@ -144,7 +140,7 @@ function beginCardAbility(card: Card) {
 </script>
 
 <template>
-  <section class="l12-player-mat" :class="[`side-${side}`, { 'active-turn': active }]" :style="{ '--faction-color': factionVisual.color }">
+  <section class="l12-player-mat" :class="[`side-${side}`, { 'active-turn': active }]">
     <div class="commander-zone">
       <button class="mini-master" :class="{ targetable: side === 'opponent' && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }" @click="emit('master')">
         <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" />
@@ -153,12 +149,7 @@ function beginCardAbility(card: Card) {
       </button>
 
       <div class="relic-zone" @mouseenter="player.relic && emit('focus', player.relic)" @click="player.relic && selectZoneCard(player.relic)">
-        <div v-if="player.relic" class="attached-card-stack">
-          <div v-for="(attached, index) in player.relic.attachedCards ?? []" :key="attached.instanceId" class="attached-card" :style="{ transform: `translateY(${(index + 1) * 13}px)` }">
-            <CardTile :card="attached" />
-          </div>
-          <CardTile :card="player.relic" />
-        </div>
+        <CardTile v-if="player.relic" :card="player.relic" />
         <div v-else class="zone-placeholder"><i>✦</i><span>圣物区</span></div>
         <button v-for="(relic, index) in player.extraRelics ?? []" :key="relic.instanceId" class="extra-relic"
           :style="{ transform: `translate(${(index + 1) * 12}px, ${(index + 1) * 7}px)` }"
@@ -166,32 +157,12 @@ function beginCardAbility(card: Card) {
           <CardTile :card="relic" :selected="selectedId === relic.instanceId" />
         </button>
       </div>
-      <div class="faction-side-channel" :class="{ visible: player.specialZones && ['olympus', 'otherworld', 'taiyangcheng'].includes(player.faction) }">
+      <div class="faction-side-channel" :class="{ visible: player.specialZones && (player.faction === 'olympus' || player.faction === 'otherworld') }">
         <template v-if="player.faction === 'olympus'">
-          <div class="olympus-power-rig">
-            <span class="special-zone-title">神力</span>
-            <button v-for="power in player.specialZones?.godPower ?? []" :key="power.instanceId" class="god-power-card" :class="{ spent: power.tapped }"
-              @mouseenter="emit('focus', power)" @click.stop="selectZoneCard(power)">
-              <img v-if="power.imageUrl" :src="power.imageUrl" :alt="power.name" />
-            </button>
-            <b>{{ player.specialZones?.godPower.filter(card => !card.tapped).length ?? 0 }}/{{ player.specialZones?.godPower.length ?? 0 }}</b>
-          </div>
-          <small class="promotion-hint">晋升者置于同名军团上方</small>
+          <span>神力</span><b>{{ player.specialZones?.godPower.filter(card => !card.tapped).length ?? 0 }}/{{ player.specialZones?.godPower.length ?? 0 }}</b>
         </template>
         <template v-else-if="player.faction === 'otherworld'">
-          <div class="trial-rig" v-for="trial in player.specialZones?.trials ?? []" :key="trial.instanceId" @mouseenter="emit('focus', trial)" @click.stop="selectZoneCard(trial)">
-            <span class="special-zone-title">试炼</span>
-            <div class="trial-card" :class="{ completed: trial.trialCompleted }"><img v-if="trial.imageUrl" :src="trial.imageUrl" :alt="trial.name" /></div>
-            <div class="trial-progress" :aria-label="`试炼进度 ${trial.trialProgress}/8`"><i v-for="index in 8" :key="index" :class="{ filled: index <= (trial.trialProgress ?? 0) }" /></div>
-          </div>
-          <div class="rune-rack"><span>符文</span><b>{{ player.specialZones?.runes ?? 0 }}</b><i v-for="index in Math.min(player.specialZones?.runes ?? 0, 8)" :key="index">✦</i></div>
-        </template>
-        <template v-else-if="player.faction === 'taiyangcheng'">
-          <div class="isis-rig">
-            <span class="special-zone-title">卡诺匹斯</span>
-            <div class="canopic-track"><i v-for="index in 5" :key="index" :class="{ filled: index <= ([player.relic, ...(player.extraRelics ?? [])].filter(card => card?.name?.includes('卡诺匹斯')).length) }">◆</i></div>
-            <small>集齐5件后可发动主宰特殊胜利</small>
-          </div>
+          <span>符文</span><b>{{ player.specialZones?.runes ?? 0 }}</b><span>试炼</span><b>{{ player.specialZones?.trialLevel ?? 0 }}</b>
         </template>
       </div>
     </div>
@@ -199,10 +170,9 @@ function beginCardAbility(card: Card) {
     <div class="battle-zone">
       <div v-if="side === 'opponent'" class="morale-rail">
         <button class="faction-effect-trigger" @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
-        <img v-if="factionVisual.icon" class="morale-faction-icon" :src="factionVisual.icon" :alt="factionVisual.label" :title="factionVisual.label" />
         <span>士气</span>
         <div class="morale-stack">
-          <i v-for="index in moraleLimit" :key="index" :class="[moraleState(index - 1), { lotus: player.morale[index - 1]?.cardId === 'S02-0010' }]" :title="moraleLabel(index - 1)"><b v-if="player.morale[index - 1]?.cardId === 'S02-0010'">✿</b></i>
+          <i v-for="index in moraleLimit" :key="index" :class="moraleState(index - 1)" :title="moraleLabel(index - 1)" />
         </div>
         <b :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
       </div>
@@ -226,18 +196,11 @@ function beginCardAbility(card: Card) {
                   @click.stop="emit('cardAction', 'attack', player.field[row][slot]!)">{{ attackMode ? '选择目标' : '进攻' }}</button>
                 <button v-if="canMove(player.field[row][slot]!, row, slot)" :class="{ active: moveMode }"
                   @click.stop="emit('cardAction', 'move', player.field[row][slot]!)">{{ moveMode ? '选择位置' : '位移' }}</button>
-                <button v-if="canAdvanceTrial(player.field[row][slot]!)"
-                  @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">发动试炼</button>
                 <button v-if="activeAbilities(player.field[row][slot]!).length"
                   @click.stop="beginCardAbility(player.field[row][slot]!)">发动</button>
               </div>
-              <div class="attached-card-stack">
-                <div v-for="(attached, index) in player.field[row][slot]!.attachedCards ?? []" :key="attached.instanceId" class="attached-card" :style="{ transform: `translateY(${(index + 1) * 10}px)` }">
-                  <CardTile :card="attached" />
-                </div>
-                <CardTile :card="player.field[row][slot]!"
-                  :selected="selectedId === player.field[row][slot]!.instanceId" @mouseenter="emit('focus', player.field[row][slot]!)" />
-              </div>
+              <CardTile :card="player.field[row][slot]!"
+                :selected="selectedId === player.field[row][slot]!.instanceId" @mouseenter="emit('focus', player.field[row][slot]!)" />
             </template>
             <span v-else>{{ row === 0 ? '前排' : '后排' }} {{ slot + 1 }}</span>
           </div>
@@ -246,10 +209,9 @@ function beginCardAbility(card: Card) {
 
       <div v-if="side === 'my'" class="morale-rail">
         <button class="faction-effect-trigger" @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
-        <img v-if="factionVisual.icon" class="morale-faction-icon" :src="factionVisual.icon" :alt="factionVisual.label" :title="factionVisual.label" />
         <span>士气</span>
         <div class="morale-stack">
-          <i v-for="index in moraleLimit" :key="index" :class="[moraleState(index - 1), { lotus: player.morale[index - 1]?.cardId === 'S02-0010' }]" :title="moraleLabel(index - 1)"><b v-if="player.morale[index - 1]?.cardId === 'S02-0010'">✿</b></i>
+          <i v-for="index in moraleLimit" :key="index" :class="moraleState(index - 1)" :title="moraleLabel(index - 1)" />
         </div>
         <b :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
       </div>
@@ -284,7 +246,7 @@ function beginCardAbility(card: Card) {
         <div>
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
-          <p v-if="!factionActions.length">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
+          <p>{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
           <div v-if="side === 'my' && actionsEnabled" class="faction-effect-actions">
             <button v-for="entry in factionActions" :key="entry[0]" @click="emit('factionAbility', entry[0]); factionOpen = false">
               {{ entry[1] }}
@@ -328,8 +290,7 @@ function beginCardAbility(card: Card) {
 
 <style scoped>
 .extra-relic{position:absolute;z-index:2;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent}.extra-relic :deep(.card-tile){width:100%;height:100%}
-.attached-card-stack{position:relative;width:100%;height:100%;isolation:isolate}.attached-card-stack>:last-child{position:relative;z-index:3}.attached-card{position:absolute;inset:0;z-index:1;pointer-events:none;filter:brightness(.78)}.attached-card :deep(.card-tile){width:100%;height:100%;box-shadow:0 0 0 1px rgba(233,211,142,.55)}
-.formation-slot.counter-dormant :deep(.card-tile){filter:brightness(.4) saturate(.55)}.formation-slot.counter-ready :deep(.card-tile){filter:brightness(1.08);box-shadow:0 0 0 2px #71e197,0 0 17px rgba(70,220,126,.7)}
+.formation-slot.counter-dormant :deep(.card-tile),.formation-slot.hidden-dormant :deep(.card-tile){filter:brightness(.4) saturate(.55)}.formation-slot.counter-ready :deep(.card-tile){filter:brightness(1.08);box-shadow:0 0 0 2px #71e197,0 0 17px rgba(70,220,126,.7)}
 .faction-effect-trigger{padding:3px 7px;border:1px solid rgba(238,238,228,.42);border-radius:1px;background:#111718;color:#e8e5dc;font-size:8px;font-weight:900;white-space:nowrap}.faction-effect-trigger:hover{border-color:var(--cyan);color:#fff}
 .faction-effect-overlay{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;background:rgba(2,4,5,.78);backdrop-filter:blur(7px)}
 .faction-effect-dialog{position:relative;width:min(650px,calc(100vw - 32px));display:grid;grid-template-columns:220px 1fr;gap:24px;padding:22px;border:1px solid rgba(238,238,228,.7);background:linear-gradient(145deg,#171c1d,#07090a);box-shadow:0 24px 70px #000}

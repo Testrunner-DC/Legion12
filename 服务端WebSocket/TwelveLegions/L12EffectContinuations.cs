@@ -18,7 +18,7 @@ public sealed partial class L12GameEngine
         {
             if (ContinueS2CounterEffect(item, prompt, chosen)) return;
             if (TryContinueS2Faction(item, prompt, chosen, command)) return;
-            ContinueS2UniversalEffect(item, prompt, chosen, command);
+            ContinueS2UniversalEffect(item, prompt, chosen);
             return;
         }
         switch (action)

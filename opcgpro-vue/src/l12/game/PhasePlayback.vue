@@ -43,7 +43,7 @@ function playNext() {
     running = false
     if (queue.length) playNext()
     else { current.value = null; emit('phaseChange', null) }
-  }, current.value.phase === 'Main' ? 470 : 700)
+  }, current.value.phase === 'Main' ? 260 : 400)
 }
 
 onMounted(() => { lastSequence = Math.max(0, ...props.events.map(event => event.sequence)) })

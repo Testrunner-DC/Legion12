@@ -19,6 +19,7 @@ const game = computed(() => l12State.game)
     <Transition name="fade">
       <div v-if="game.phase === 'GameOver'" class="game-over">
         <p>{{ game.winner === game.you ? '胜利' : '败北' }}</p>
+        <strong>{{ game.winnerReason || '对局已结束' }}</strong>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
         <button @click="router.push('/lobby')">返回大厅</button>
       </div>

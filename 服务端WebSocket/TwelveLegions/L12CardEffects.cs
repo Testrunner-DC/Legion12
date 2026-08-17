@@ -47,7 +47,6 @@ public sealed partial class L12GameEngine
             case "authority-event": ResolveAuthorityEvent(item); break;
             case "disaster": ResolveDisasterEffect(item); break;
             case "s2-after-opponent-tactic": ResolveS2ExorcistReturn(item); break;
-            case "s2-faith-zealot": ResolveS2FaithZealot(item); break;
             default: FinishStackItem(item); break;
         }
     }
@@ -128,6 +127,7 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); return;
             case "S01-0415":
+                AddEvent("hidden-reveal", item.Controller, $"{card.Name}展示后发动隐匿", card);
                 card.Hidden = true;
                 AddEvent("effect", item.Controller, "服部半藏发动隐匿并翻转", card);
                 FinishStackItem(item); return;

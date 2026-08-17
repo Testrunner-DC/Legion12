@@ -23,10 +23,10 @@ public static class L12DeckValidator
             error = "请选择有效的主宰";
             return false;
         }
-        var countedMainDeckSize = submission.CardIds.Count(id => id is not ("S01-0212" or "S02-0201"));
+        var countedMainDeckSize = submission.CardIds.Count(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
         if (countedMainDeckSize is < 40 or > 50)
         {
-            error = $"主牌库须为 40–50 张（陵墓守卫、增殖的甲虫不计入，当前 {countedMainDeckSize} 张）";
+            error = $"主牌库须为 40–50 张（陵墓守卫不计入，当前 {countedMainDeckSize} 张）";
             return false;
         }
         var excessive = submission.CardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
@@ -64,9 +64,18 @@ public static class L12DeckValidator
         foreach (var moraleId in submission.MoraleIds)
         {
             if (!catalog.Cards.TryGetValue(moraleId, out var morale)
-                || morale.CardType != "rune" || morale.Faction != master.Faction)
+                || morale.CardType is not ("rune" or "divinity") || morale.Faction != master.Faction)
             {
                 error = $"无效的士气卡：{moraleId}";
+                return false;
+            }
+        }
+        foreach (var specialId in submission.SpecialIds)
+        {
+            if (!catalog.Cards.TryGetValue(specialId, out var special)
+                || special.CardType != "trial" || special.Faction != master.Faction)
+            {
+                error = $"无效的特殊区卡牌：{specialId}";
                 return false;
             }
         }
@@ -77,6 +86,7 @@ public static class L12DeckValidator
             MasterId = master.Id,
             CardIds = submission.CardIds.ToList(),
             MoraleIds = submission.MoraleIds.ToList(),
+            SpecialIds = submission.SpecialIds.ToList(),
         };
         error = string.Empty;
         return true;

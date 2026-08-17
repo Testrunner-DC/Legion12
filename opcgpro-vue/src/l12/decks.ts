@@ -19,7 +19,16 @@ export interface SavedL12Deck {
   masterId: string
   cardIds: string[]
   moraleIds: string[]
+  specialIds: string[]
   updatedAt: string
+}
+
+export interface OfficialL12PresetDeck {
+  name: string
+  masterId: string
+  cardIds: string[]
+  moraleIds: string[]
+  specialIds?: string[]
 }
 
 interface LookupCard {
@@ -80,10 +89,43 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
 export function loadSavedDecks(): Record<string, SavedL12Deck> {
   try {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-    return value && typeof value === 'object' ? value : {}
+    if (!value || typeof value !== 'object') return {}
+    return Object.fromEntries(Object.entries(value).map(([name, raw]) => {
+      const deck = raw as SavedL12Deck
+      return [name, { ...deck, specialIds: Array.isArray(deck.specialIds) ? deck.specialIds : [] }]
+    }))
   } catch {
     return {}
   }
+}
+
+export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]> {
+  const responses = await Promise.all([
+    fetch('/data/l12/preset-decks.s1.json'),
+    fetch('/data/l12/preset-decks.s2.json'),
+  ])
+  if (responses.some(response => !response.ok)) throw new Error('官方预组加载失败')
+  const seasons = await Promise.all(responses.map(response => response.json() as Promise<OfficialL12PresetDeck[]>))
+  return seasons.flat().map(deck => ({ ...deck, specialIds: deck.specialIds ?? [] }))
+}
+
+export async function ensureOfficialPrebuiltDecks() {
+  const decks = loadSavedDecks()
+  const presets = await loadOfficialPresetDecks()
+  let changed = false
+  presets.forEach(preset => {
+    if (decks[preset.name]) return
+    decks[preset.name] = {
+      ...preset,
+      cardIds: [...preset.cardIds],
+      moraleIds: [...preset.moraleIds],
+      specialIds: [...(preset.specialIds ?? [])],
+      updatedAt: new Date().toISOString(),
+    }
+    changed = true
+  })
+  if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(decks))
+  return decks
 }
 
 export function saveDeck(deck: SavedL12Deck) {
@@ -100,7 +142,7 @@ export function deleteDeck(name: string) {
   if (localStorage.getItem(SELECTED_DECK_KEY) === name) localStorage.removeItem(SELECTED_DECK_KEY)
 }
 
-export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'>, catalog: DeckCard[]) {
+export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'> & { specialIds?: string[] }, catalog: DeckCard[]) {
   const byId = new Map(catalog.map(card => [card.id, card]))
   const master = byId.get(deck.masterId)
   if (!deck.name.trim() || deck.name.trim().length > 24) return '牌库名称须为 1–24 个字符'
@@ -120,14 +162,18 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   if (deck.moraleIds.length !== moraleCount) return `士气牌库须为 ${moraleCount} 张`
   if (deck.moraleIds.some(id => {
     const card = byId.get(id)
-    return !card || card.cardType !== 'rune' || card.faction !== master.faction
+    return !card || !['rune', 'divinity'].includes(card.cardType) || card.faction !== master.faction
   })) return '士气卡与主宰阵营不符'
+  if ((deck.specialIds ?? []).some(id => {
+    const card = byId.get(id)
+    return !card || card.cardType !== 'trial' || card.faction !== master.faction
+  })) return '特殊区卡牌与主宰阵营不符'
   return ''
 }
 
 export function buildMoraleDeck(master: DeckCard | undefined, catalog: DeckCard[]) {
   if (!master) return []
-  const morale = catalog.find(card => card.cardType === 'rune' && card.faction === master.faction)
+  const morale = catalog.find(card => ['rune', 'divinity'].includes(card.cardType) && card.faction === master.faction)
   if (!morale) return []
   return Array(master.faction === 'taiyangcheng' ? 6 : 8).fill(morale.id)
 }

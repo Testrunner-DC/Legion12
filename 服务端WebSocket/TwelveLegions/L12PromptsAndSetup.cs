@@ -94,16 +94,13 @@ public sealed partial class L12GameEngine
         data.TryAdd($"{id}:troops", card.Troops.ToString());
         data.TryAdd($"{id}:baseTroops", card.BaseTroops.ToString());
         data.TryAdd($"{id}:disasterLevel", card.DisasterLevel.ToString());
-        data.TryAdd($"{id}:trialValue", card.TrialValue.ToString());
     }
 
     private L12CardInstance? FindPromptCard(int viewer, string instanceId)
     {
         var mine = State.Players[viewer];
-        var morale = mine.Morale.Concat(mine.MoraleDeck).FirstOrDefault(item => item.InstanceId == instanceId);
-        if (morale is not null) return CreateCard(morale.CardId, morale.InstanceId);
         var card = mine.Hand.Concat(mine.Library).Concat(mine.Graveyard).Concat(mine.Removed)
-            .Concat(mine.Resolving).Concat(mine.SpecialZones.GodPower).Concat(mine.SpecialZones.Trials).FirstOrDefault(item => item.InstanceId == instanceId)
+            .Concat(mine.Resolving).FirstOrDefault(item => item.InstanceId == instanceId)
             ?? mine.Field.SelectMany(row => row).FirstOrDefault(item => item?.InstanceId == instanceId)
             ?? (mine.Relic?.InstanceId == instanceId ? mine.Relic : null);
         if (card is not null) return card;
@@ -166,6 +163,18 @@ public sealed partial class L12GameEngine
             case "setup-second-pick":
                 ResolveDisasterPick(playerIndex, chosen[0], prompt);
                 break;
+            case "faction-zero-recovery":
+            {
+                var player = State.Players[playerIndex];
+                player.UsedAbilities.Remove("pending:factionZeroRecovery");
+                player.UsedAbilities.Add("trigger:factionZeroRecovery");
+                if (chosen[0] == "yes")
+                {
+                    AddMorale(player, 2, tapped: true);
+                    AddEvent("faction-effect", playerIndex, "天廷阵营效果：追加 2 张休整士气");
+                }
+                break;
+            }
             case "disaster-trigger-confirm":
                 if (!State.PendingPrompts.Any(item => item.Continuation == "disaster-trigger-confirm"))
                 {
@@ -218,12 +227,6 @@ public sealed partial class L12GameEngine
             case "active-morale-choice":
             {
                 var result = ResolveTombGuardActivePaymentChoice(prompt, chosen[0]);
-                if (!result.Accepted) return result;
-                break;
-            }
-            case "active-return-morale-choice":
-            {
-                var result = ResolveActiveReturnMoraleChoice(prompt, chosen, command.PreferNormalMoraleReturn);
                 if (!result.Accepted) return result;
                 break;
             }
@@ -397,7 +400,7 @@ public sealed partial class L12GameEngine
         PrepareLibrariesAndHands();
         State.DisasterValue = 0;
         State.Phase = L12Phase.Mulligan;
-        AddEvent("disaster-deck-ready", null, "本局 4 张天灾牌库已组成，〈湮灭〉位于牌库底部");
+        AddEvent("disaster-deck-ready", null, "本局 4 张天灾牌库已组成，〈堙灭〉位于牌库底部");
         AddEvent("mulligan-start", null, "双方同时进行调度");
     }
 
@@ -417,6 +420,7 @@ public sealed partial class L12GameEngine
         if (targets is not null) item.Targets.AddRange(targets);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
+        if (trigger == "disaster") item.Data["unrespondable"] = "true";
         if (State.IsResolvingStack)
         {
             State.DeferredEffectStack.Add(item);
@@ -426,9 +430,21 @@ public sealed partial class L12GameEngine
         {
             State.EffectStack.Add(item);
             AddEvent("stack-push", controller, $"〈{source.Name}〉的{text}进入堆叠", source);
-            BeginResponseWindow(item);
+            BeginStackItem(item);
         }
         return item;
+    }
+
+    private void BeginStackItem(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault("unrespondable") == "true")
+        {
+            State.ResponseWindow = null;
+            State.IsResolvingStack = true;
+            ResolveTopStack();
+            return;
+        }
+        BeginResponseWindow(item);
     }
 
     private void BeginResponseWindow(L12StackItem item)
@@ -738,7 +754,7 @@ public sealed partial class L12GameEngine
         if (State.EffectStack.Count > 0)
         {
             if (State.IsResolvingStack) ResolveTopStack();
-            else BeginResponseWindow(State.EffectStack[^1]);
+            else BeginStackItem(State.EffectStack[^1]);
             return;
         }
         State.IsResolvingStack = false;
@@ -753,7 +769,7 @@ public sealed partial class L12GameEngine
             State.EffectStack.AddRange(State.DeferredEffectStack);
             State.DeferredEffectStack.Clear();
             AddEvent("stack-open", null, "当前堆叠关闭，处理结算中产生的额外触发式效果");
-            BeginResponseWindow(State.EffectStack[^1]);
+            BeginStackItem(State.EffectStack[^1]);
             return;
         }
         AfterStackSettled();
@@ -762,6 +778,14 @@ public sealed partial class L12GameEngine
     private void AfterStackSettled()
     {
         State.ResponseWindow = null;
+        var pendingFactionPlayer = State.Players.FirstOrDefault(player => player.UsedAbilities.Contains("pending:factionZeroRecovery"));
+        if (pendingFactionPlayer is not null)
+        {
+            CreatePrompt(pendingFactionPlayer.PlayerIndex, "option", "我方士气为0张，是否发动天廷阵营效果追加2张休整士气？",
+                ["yes", "no"], 1, 1, "faction-zero-recovery", isPrivate: false,
+                data: new Dictionary<string, string> { ["choiceMode"] = "instant" });
+            return;
+        }
         if (State.CheckDisasterAfterStack)
         {
             State.CheckDisasterAfterStack = false;

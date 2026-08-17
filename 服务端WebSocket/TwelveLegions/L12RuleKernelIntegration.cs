@@ -81,21 +81,12 @@ public sealed partial class L12GameEngine
             ?? (activation.SourceInstanceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
         if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(prompt.PlayerIndex, id)))
         {
-            if (State.FreeMasterActivation is { } free && free.Controller == prompt.PlayerIndex
-                && free.Ability.Equals(activation.Ability, StringComparison.OrdinalIgnoreCase))
-                State.FreeMasterActivation = null;
             AddEvent("ability-rejected", prompt.PlayerIndex, "来源或目标已不合法，效果未支付费用也未入栈");
             return;
         }
         var result = CommitActiveAbility(prompt.PlayerIndex, source, activation.Ability,
             activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets));
-        if (!result.Accepted)
-        {
-            if (State.FreeMasterActivation is { } free && free.Controller == prompt.PlayerIndex
-                && free.Ability.Equals(activation.Ability, StringComparison.OrdinalIgnoreCase))
-                State.FreeMasterActivation = null;
-            AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
-        }
+        if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
     }
 
     private bool IsDeclaredChoiceStillLegal(int controller, string choice)
@@ -257,21 +248,38 @@ public sealed partial class L12GameEngine
             {
                 var card = player.Field[row][slot];
                 if (card is null || !IsFieldLegion(card)) continue;
-                var frontDefenseModifier = row == 0
-                    && State.ActivePlayer != player.PlayerIndex
-                    && card.CardId is "S02-0004" or "S02-0007"
-                    ? 1000
-                    : 0;
-                var adjacentHannibalBonus = player.Field[row]
-                    .Select((candidate, candidateSlot) => (candidate, candidateSlot))
-                    .Any(entry => entry.candidate?.CardId == "S02-0516" && Math.Abs(entry.candidateSlot - slot) == 1)
-                    ? 1000
-                    : 0;
-                var spartanOpponentTurnBonus = card.CardId == "S02-0519" && State.ActivePlayer != player.PlayerIndex ? 2000 : 0;
-                var gwenllianOpponentTurnBonus = card.CardId == "S02-0615" && row == 0 && State.ActivePlayer != player.PlayerIndex ? 1000 : 0;
-                L12DerivedStats.ApplyContinuousModifier(card, globalModifier + frontDefenseModifier + adjacentHannibalBonus
-                    + spartanOpponentTurnBonus + gwenllianOpponentTurnBonus, State.TurnSerial);
+                var modifier = globalModifier + GetTurnAndPositionContinuousTroops(player, card, row, slot);
+                L12DerivedStats.ApplyContinuousModifier(card, modifier, State.TurnSerial);
             }
         }
+    }
+
+    /// <summary>
+    /// 统一计算只依赖当前回合、位置与公开场面状态的持续兵力修正。
+    /// 这些效果不是“被进攻时”或“进攻时”触发，任何快照、目标校验和效果结算前都必须保持生效。
+    /// </summary>
+    private int GetTurnAndPositionContinuousTroops(L12PlayerState owner, L12CardInstance card, int row, int slot)
+    {
+        var isOpponentTurn = State.ActivePlayer != owner.PlayerIndex;
+        var modifier = 0;
+
+        if (isOpponentTurn)
+        {
+            if (row == 0 && card.CardId is "S01-0107" or "S01-0212" or "S01-0312" or "S02-0004" or "S02-0007" or "S02-0615")
+                modifier += 1000;
+            if (card.CardId == "S02-0519") modifier += 2000;
+            if (card.CardId == "S01-0203"
+                && !owner.Field.SelectMany(fieldRow => fieldRow).Any(fieldCard => fieldCard?.CardId == "S01-0212"))
+                modifier += 1000;
+        }
+
+        if (card.CardId == "S01-0212" && owner.MasterId == "S01-02D1") modifier += 1000;
+
+        // 汉尼拔给予同排左右相邻军团的静态兵力修正；多个来源可以叠加。
+        foreach (var adjacentSlot in new[] { slot - 1, slot + 1 })
+            if (adjacentSlot is >= 0 and < 3 && owner.Field[row][adjacentSlot]?.CardId == "S02-0516")
+                modifier += 1000;
+
+        return modifier;
     }
 }

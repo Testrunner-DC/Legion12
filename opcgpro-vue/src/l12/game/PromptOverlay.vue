@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { gameAction, l12State } from '../net'
@@ -27,7 +27,7 @@ const waitingDefense = computed(() => !props.suppressDefenseWait && props.game.p
 const displayKind = computed(() => prompt.value?.kind ?? waitingPrompt.value?.kind ?? (waitingDefense.value ? 'defense-wait' : isMulliganPhase.value ? 'mulligan' : ''))
 const isDisasterPreparation = computed(() => props.game.phase === 'DisasterPreparation')
 const isPreparation = computed(() => isDisasterPreparation.value || ['initiative', 'disaster-ban', 'disaster-pick', 'disaster-reveal', 'mulligan'].includes(displayKind.value))
-const isInitiative = computed(() => prompt.value?.kind === 'initiative')
+const isInitiative = computed(() => displayKind.value === 'initiative')
 const isDisasterChoice = computed(() => ['disaster-ban', 'disaster-pick'].includes(prompt.value?.kind ?? ''))
 const visible = computed(() => Boolean(prompt.value || waitingPrompt.value || waitingDefense.value || isMulliganPhase.value || isDisasterPreparation.value))
 const selected = ref<string[]>([])
@@ -38,7 +38,29 @@ const placementBottom = ref<string[]>([])
 const placementSelected = ref<string | null>(null)
 const draggedChoice = ref<string | null>(null)
 const placementOrder = ref<string[]>([])
-const preferNormalMoraleReturn = ref(false)
+const animatedRolls = ref([1, 1])
+const diceSettled = ref(false)
+let diceTimer: ReturnType<typeof setInterval> | null = null
+let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
+const dieFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
+function dieFace(value: number) { return dieFaces[Math.max(1, Math.min(6, value)) - 1] }
+function startInitiativeDice() {
+  if (diceTimer) clearInterval(diceTimer)
+  if (diceSettleTimer) clearTimeout(diceSettleTimer)
+  diceSettled.value = false
+  diceTimer = setInterval(() => { animatedRolls.value = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)] }, 90)
+  diceSettleTimer = setTimeout(() => {
+    if (diceTimer) clearInterval(diceTimer)
+    diceTimer = null
+    animatedRolls.value = [...props.game.initiativeRolls]
+    diceSettled.value = true
+  }, 1250)
+}
+
+watch(() => `${isInitiative.value}:${props.game.matchId}:${props.game.initiativeRolls.join(',')}`, () => {
+  if (isInitiative.value) startInitiativeDice()
+}, { immediate: true })
+onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer) })
 
 watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mulliganDone}`, () => {
   selected.value = []
@@ -49,7 +71,6 @@ watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mull
   placementSelected.value = null
   draggedChoice.value = null
   placementOrder.value = (prompt.value?.validChoices ?? []).filter(id => id !== 'skip')
-  preferNormalMoraleReturn.value = false
 })
 
 const choiceLabels: Record<string, string> = {
@@ -124,7 +145,6 @@ function detailFor(id: string | null) {
     troops: card?.troops ?? numberData(id, 'troops'),
     baseTroops: card?.baseTroops ?? numberData(id, 'baseTroops'),
     disasterLevel: card?.disasterLevel ?? numberData(id, 'disasterLevel'),
-    trialValue: card?.trialValue ?? numberData(id, 'trialValue'),
   }
 }
 function cardObjectFor(id: string): Card | null {
@@ -144,7 +164,6 @@ function cardObjectFor(id: string): Card | null {
     baseTroops: detail.baseTroops ?? detail.troops ?? 0,
     troops: detail.troops ?? detail.baseTroops ?? 0,
     disasterLevel: detail.disasterLevel ?? 0,
-    trialValue: detail.trialValue ?? 0,
     tapped: false,
     summonRound: 0,
   }
@@ -205,11 +224,7 @@ function resolveChoice(choice: string) {
 function confirm() {
   const p = prompt.value
   if (!p || selected.value.length < p.minChoose || selected.value.length > p.maxChoose) return
-  gameAction({
-    type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value],
-    preferNormalMoraleReturn: p.kind === 'morale-return' && !p.data?.lotusConfirmation
-      ? preferNormalMoraleReturn.value : undefined,
-  })
+  gameAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value] })
 }
 function resolveSinglePlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
@@ -338,6 +353,13 @@ function kindLabel() {
           <small>{{ kindLabel() }}</small><h2>{{ prompt.text }}</h2>
           <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
         </header>
+        <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
+          <article v-for="(player, index) in game.players" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === index }">
+            <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" :alt="player.master.masterName" />
+            <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
+            <b>{{ dieFace(animatedRolls[index] ?? 1) }}</b><em>{{ animatedRolls[index] ?? 1 }} 点</em>
+          </article>
+        </div>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
@@ -417,14 +439,6 @@ function kindLabel() {
             <b v-if="selected.includes(choice) && prompt.maxChoose > 1">{{ selected.indexOf(choice) + 1 }}</b>
           </button>
         </div>
-        <label v-if="prompt.kind === 'morale-return' && !prompt.data?.lotusConfirmation" class="morale-return-preference">
-          <input v-model="preferNormalMoraleReturn" type="checkbox" />
-          <span>本局游戏优先返还普通士气</span>
-          <small>勾选后将自动返还普通士气；普通士气不足时，仍会弹框确认返还〈黑色莲花〉。</small>
-        </label>
-        <p v-else-if="prompt.kind === 'morale-return' && prompt.data?.lotusConfirmation" class="morale-lotus-warning">
-          本次必须返还〈黑色莲花〉；确认后该卡会置入墓地。
-        </p>
         <footer>
           <template v-if="placementMode === 'single-top-bottom'">
             <span>先选择 1 张手牌，再决定放回位置</span>
@@ -491,6 +505,13 @@ function kindLabel() {
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
+        <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
+          <article v-for="(player, index) in game.players" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === index }">
+            <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" :alt="player.master.masterName" />
+            <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
+            <b>{{ dieFace(animatedRolls[index] ?? 1) }}</b><em>{{ animatedRolls[index] ?? 1 }} 点</em>
+          </article>
+        </div>
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>
         <h2>{{ isMulliganPhase ? '等待对手完成调度' : waitingText() }}</h2>
         <i/><i/><i/>
@@ -500,6 +521,7 @@ function kindLabel() {
 </template>
 
 <style scoped>
+.initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:12px}.initiative-race span{color:#89928e;font-size:9px}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:52px;line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:9px;font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:1000!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow:hidden}
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:18px;line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
@@ -507,8 +529,7 @@ function kindLabel() {
 .prompt-panel.has-card-choices{width:min(820px,calc(100vw - 36px))}.prompt-choices.card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;min-height:0;max-height:292px;padding:10px 3px;overflow:auto}.prompt-choices.card-grid>button{display:flex;width:100%;min-width:0;max-width:none;min-height:0;flex-direction:column;align-items:center;justify-content:center;padding:5px;border:2px solid #d9d8cf;background:#101516;color:#fff}.prompt-choices.card-grid>button:hover,.prompt-choices.card-grid>button.selected{border-color:#70d7df;background:#174e54;color:#fff}.prompt-choices.card-grid img{width:72px;max-width:100%;height:100px;margin:0 auto 5px;object-fit:contain}.prompt-choices.card-grid span{display:block;width:100%;overflow:hidden;color:#fff;font-size:11px;line-height:17px;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .prompt-choices.card-grid>button.horizontal-card{grid-column:span 2}.prompt-choices.card-grid>button.horizontal-card img{width:180px;height:112px}.prompt-panel.single-card-row{width:min(900px,calc(100vw - 36px))}.prompt-panel.single-card-row .prompt-choices.card-grid{display:flex;max-height:none;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden}.prompt-panel.single-card-row .prompt-choices.card-grid>button{flex:0 0 112px;width:112px;padding:3px}.prompt-panel.single-card-row .prompt-choices.card-grid img{width:92px;height:128px}
 .prompt-featured-card{display:flex;width:150px;min-height:0;flex-direction:column;align-items:center;gap:5px;margin:10px auto 2px;padding:5px;border:2px solid #ded9cc;background:#0a0e0f;color:#fff}.prompt-featured-card img{width:126px;height:176px;object-fit:contain}.prompt-featured-card.disaster{width:230px}.prompt-featured-card.disaster img{width:210px;height:132px}.prompt-featured-card span{font-size:11px;font-weight:900}
-.l12-prompt-overlay.information-confirm .prompt-panel{width:min(1120px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid{display:flex;justify-content:center;max-height:none}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button{flex:0 0 min(880px,calc(100vw - 100px));width:min(880px,calc(100vw - 100px));max-width:880px}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button img{width:min(840px,calc(100vw - 140px));height:min(525px,58vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card{width:min(900px,calc(100vw - 90px));margin-inline:auto}.l12-prompt-overlay.information-confirm .prompt-featured-card img{width:min(860px,calc(100vw - 130px));height:min(538px,58vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card span{font-size:17px}
-.prompt-card-inspector{position:fixed;z-index:2;left:18px;top:50%;display:grid;width:250px;max-height:calc(100vh - 40px);grid-template-rows:auto 1fr;gap:10px;box-sizing:border-box;padding:12px;border:1px solid #ded9cc;background:#0b1011;box-shadow:0 20px 55px #000;transform:translateY(-50%);pointer-events:none}.prompt-card-inspector>img{width:122px;height:171px;margin:auto;object-fit:contain;background:#050708}.prompt-card-inspector.disaster>img{width:220px;height:138px}.prompt-card-inspector small{color:#70d7df;font-size:8px;letter-spacing:.16em}.prompt-card-inspector h3{margin:5px 0 8px;color:#fff;font-size:18px}.prompt-card-inspector dl{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px}.prompt-card-inspector dl span{padding:3px 5px;background:#202625;color:#aeb5b1;font-size:8px}.prompt-card-inspector dl b{color:#fff}.prompt-card-inspector p{max-height:150px;margin:0;overflow:auto;color:#d4d5cf;font-size:10px;font-weight:800;line-height:1.7;white-space:pre-wrap}
+.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid{display:flex;justify-content:center;max-height:none}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button{flex:0 0 min(616px,calc(100vw - 100px));width:min(616px,calc(100vw - 100px));max-width:616px}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button img{width:min(588px,calc(100vw - 140px));height:min(368px,48vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card{width:min(630px,calc(100vw - 90px));margin-inline:auto}.l12-prompt-overlay.information-confirm .prompt-featured-card img{width:min(602px,calc(100vw - 130px));height:min(376px,48vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card span{font-size:14px}
 .prompt-choices.card-grid>button.unavailable{border-color:#3f4442;filter:brightness(.42);cursor:not-allowed}.prompt-choices.card-grid>button.unavailable:hover{background:#101516;box-shadow:none}
 .mulligan-panel{width:min(900px,calc(100vw - 36px))!important}.mulligan-panel .prompt-choices.card-grid{display:flex;max-height:none;flex-wrap:nowrap;gap:6px;overflow-x:auto}.mulligan-panel .prompt-choices.card-grid>button{flex:1 0 142px;max-width:168px;padding:3px}.mulligan-panel .prompt-choices.card-grid img{width:84px;height:117px}
 .l12-prompt-overlay.disaster-choice .prompt-panel{width:min(820px,calc(100vw - 36px))}.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid{display:flex;max-height:none;justify-content:flex-start;overflow-x:auto;overflow-y:hidden;padding-bottom:8px;scrollbar-color:#65706d #111516;scrollbar-width:thin}.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid>button{flex:0 0 128px}.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid img{width:106px;height:74px}.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid span{font-size:11px;line-height:18px}
@@ -516,23 +537,20 @@ function kindLabel() {
 .all-placement-workspace{display:grid;grid-template-columns:62px 1fr 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{display:flex;min-width:0;justify-content:center;gap:7px;overflow-x:auto;padding:5px}.all-placement-row .placement-mini-card{width:84px!important;min-width:84px!important;height:118px!important;flex-basis:84px!important}.all-placement-row .placement-mini-card img{width:78px!important;height:99px!important}.placement-edge{color:#fff;font-size:18px;font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}
 .prompt-card-detail{display:grid;min-height:112px;grid-template-columns:130px 1fr;gap:14px;margin:0 3px 10px;padding:10px;border:1px solid rgba(238,238,228,.32);background:#090d0e}.prompt-card-detail>img{width:130px;height:108px;object-fit:contain;background:#050708}.prompt-card-detail small{color:#70d7df;font-size:9px;letter-spacing:.12em}.prompt-card-detail h3{margin:3px 0 5px;color:#fff;font-size:16px}.prompt-card-detail dl{display:flex;gap:12px;margin:0}.prompt-card-detail dl div{display:flex;gap:4px}.prompt-card-detail dt{color:#777f7c;font-size:9px}.prompt-card-detail dd{margin:0;color:#fff;font-size:10px;font-weight:900}.prompt-card-detail p{max-height:48px;margin:5px 0 0;overflow:auto;color:#c9cdc7;font-size:10px;font-weight:800;line-height:1.55;white-space:pre-wrap}
 .prompt-panel footer button.primary{border:2px solid #fff!important;background:#f2eee3!important;color:#090c0d!important}.prompt-panel footer button.primary:disabled{border-color:#646966!important;background:#2a2e2d!important;color:#929792!important}.l12-prompt-overlay.waiting{background:rgba(2,4,5,.3)!important;backdrop-filter:blur(2px)}.waiting-panel{position:relative;width:min(430px,calc(100vw - 32px));padding:25px;text-align:center}.waiting-panel>.prompt-minimize{right:10px;top:10px}.waiting-panel small{color:#73d7de;font-size:9px;letter-spacing:.16em}.waiting-panel h2{margin:10px 0;color:#fff;font-size:21px}.waiting-panel p{color:#c0c5bf;font-size:11px}.waiting-panel i{display:inline-block;width:7px;height:7px;margin:10px 4px 0;border-radius:50%;background:#70d7df;animation:waiting-pulse 1.2s infinite}.waiting-panel i:nth-of-type(2){animation-delay:.2s}.waiting-panel i:nth-of-type(3){animation-delay:.4s}@keyframes waiting-pulse{0%,70%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-4px)}}
-.morale-return-preference{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;align-items:center;margin:0 4px 10px;padding:9px 11px;border:1px solid rgba(214,176,75,.62);background:rgba(91,68,21,.2);color:#f3e5ad;cursor:pointer}.morale-return-preference input{width:16px;height:16px;accent-color:#d6b04b}.morale-return-preference span{font-size:11px;font-weight:900}.morale-return-preference small{grid-column:2;color:#c9c6b5;font-size:9px;line-height:1.5}.morale-lotus-warning{margin:0 4px 10px;padding:9px 11px;border:1px solid #c5a34c;background:rgba(89,48,20,.28);color:#f0d37d;font-size:11px;font-weight:900}
 .l12-prompt-overlay.minimized{inset:auto 16px 16px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:flex;max-width:430px;align-items:center;gap:14px;padding:10px 12px;border:1px solid #e4e0d5;background:#0c1112;box-shadow:0 12px 35px #000;pointer-events:auto}.prompt-minimized-bar strong{overflow:hidden;color:#fff;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.prompt-minimized-bar button{flex:none;padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-weight:900}
 /* 天灾卡是横版；所有天灾准备、公开、触发与详情场景共用同一比例。 */
 .prompt-choices.card-grid>button.horizontal-card{grid-column:span 2;min-width:0}
 .prompt-choices.card-grid>button.horizontal-card img{width:min(220px,100%);height:auto;aspect-ratio:8/5;object-fit:contain}
 .prompt-featured-card.disaster{width:min(420px,calc(100vw - 90px))}
 .prompt-featured-card.disaster img{width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}
-.l12-prompt-overlay.information-confirm .prompt-featured-card.disaster{width:min(900px,calc(100vw - 90px))}
-.l12-prompt-overlay.information-confirm .prompt-featured-card.disaster img{width:100%;height:auto;max-height:58vh;aspect-ratio:8/5;object-fit:contain}
-.prompt-card-inspector.disaster{width:380px}
-.prompt-card-inspector.disaster>img{width:354px;height:auto;aspect-ratio:8/5;object-fit:contain}
+.l12-prompt-overlay.information-confirm .prompt-featured-card.disaster{width:min(630px,calc(100vw - 90px))}
+.l12-prompt-overlay.information-confirm .prompt-featured-card.disaster img{width:100%;height:auto;max-height:48vh;aspect-ratio:8/5;object-fit:contain}
 .l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
-.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid>button{flex:0 0 220px;width:220px}
-.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid img{width:204px;height:auto;aspect-ratio:8/5;object-fit:contain}
+.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid>button{flex:0 0 154px;width:154px}
+.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid img{width:143px;height:auto;aspect-ratio:8/5;object-fit:contain}
 .prompt-card-detail.disaster{grid-template-columns:minmax(220px,320px) 1fr}
 .prompt-card-detail.disaster>img{width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}
-@media(max-width:1100px){.prompt-card-inspector{display:none}}@media(max-width:700px){.prompt-choices.card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mulligan-panel .prompt-choices.card-grid,.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid{display:flex}.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid>button{flex-basis:min(220px,72vw);width:min(220px,72vw)}.placement-workspace{grid-template-columns:1fr;max-height:310px;overflow:auto}.all-placement-workspace{grid-template-columns:44px 1fr 44px}.placement-edge{font-size:14px}}
+@media(max-width:700px){.prompt-choices.card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mulligan-panel .prompt-choices.card-grid,.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid{display:flex}.l12-prompt-overlay.disaster-choice .prompt-choices.card-grid>button{flex-basis:min(220px,72vw);width:min(220px,72vw)}.placement-workspace{grid-template-columns:1fr;max-height:310px;overflow:auto}.all-placement-workspace{grid-template-columns:44px 1fr 44px}.placement-edge{font-size:14px}}
 .l12-prompt-overlay.preparation .prompt-panel{width:min(1100px,calc(100vw - 36px))}
 .disaster-preparation-history{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 12px;padding:9px;border:1px solid #3c4646;background:#080c0d;text-align:left}.disaster-preparation-history>section{min-width:0;border:1px solid #394240;background:#101516}.disaster-preparation-history>section>header{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #333c3a}.disaster-preparation-history>section>header b{font-size:10px}.disaster-preparation-history>section>header span{display:grid;width:19px;height:19px;place-items:center;background:#232a28;color:#fff;font:900 9px monospace}.disaster-preparation-history>section>div{display:flex;min-height:78px;align-items:center;gap:5px;overflow-x:auto;padding:6px}.disaster-preparation-history button{display:flex;width:112px;min-width:112px;flex-direction:column;gap:3px;padding:3px;border:2px solid #68706d;background:#080b0c;color:#fff}.disaster-preparation-history img{width:102px;height:auto;aspect-ratio:8/5;object-fit:contain}.disaster-preparation-history button span{overflow:hidden;font-size:8px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history p{margin:auto;color:#626b68;font-size:8px}.disaster-preparation-history .banned button{border-color:#a83c46;box-shadow:0 0 8px rgba(168,60,70,.22)}.disaster-preparation-history .banned>header b{color:#ef7780}.disaster-preparation-history .revealed button{border-color:#d1b76c;box-shadow:0 0 8px rgba(209,183,108,.2)}.disaster-preparation-history .revealed>header b{color:#e8cf83}.disaster-preparation-history .chosen button{border-color:#3f9d73;box-shadow:0 0 8px rgba(63,157,115,.24)}.disaster-preparation-history .chosen>header b{color:#79d2a7}.l12-prompt-overlay.preparation .waiting-panel{width:min(1100px,calc(100vw - 36px));padding:16px 20px 22px}.l12-prompt-overlay.preparation .waiting-panel>small{display:block;margin-top:12px}
 .disaster-preparation-history{grid-template-columns:minmax(260px,.8fr) minmax(420px,1.2fr)}.disaster-preparation-history button small{display:block;width:100%;overflow:hidden;color:#9ca6a1;font-size:7px;font-weight:900;text-align:center;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history .chosen button small{color:#78d1a6}

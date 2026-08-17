@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, selectCustomDeck, selectDeck, setReady } from './net'
-import { loadSavedDecks } from './decks'
+import { ensureOfficialPrebuiltDecks, loadSavedDecks } from './decks'
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
 
@@ -11,6 +11,8 @@ const router = useRouter()
 const customDecks = ref(loadSavedDecks())
 const view = ref<'home' | 'room' | 'cards' | 'replay'>('home')
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
+
+onMounted(async () => { customDecks.value = await ensureOfficialPrebuiltDecks() })
 
 async function ensureConnected() {
   if (!l12State.nickname.trim()) { l12State.notice = '请先输入昵称'; return false }

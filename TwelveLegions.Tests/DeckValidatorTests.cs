@@ -17,6 +17,7 @@ public sealed class DeckValidatorTests
             MasterId = preset.MasterId,
             CardIds = preset.CardIds.ToList(),
             MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
         };
 
         Assert.True(L12DeckValidator.TryValidate(Catalog, submission, out var deck, out var error), error);
@@ -58,13 +59,12 @@ public sealed class DeckValidatorTests
     public void TombGuardsDoNotCountTowardMainDeckButRemainLimitedToThreeCopies()
     {
         var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "taiyangcheng");
-        var cards = preset.CardIds.Concat(Enumerable.Repeat("S01-0212", 3)).ToList();
         var valid = new L12CustomDeckSubmission
         {
             Name = "太阳城与陵墓守卫",
             MasterId = preset.MasterId,
-            CardIds = cards,
-            MoraleIds = preset.MoraleIds.Take(6).ToList(),
+            CardIds = preset.CardIds.ToList(),
+            MoraleIds = preset.MoraleIds.ToList(),
         };
         Assert.True(L12DeckValidator.TryValidate(Catalog, valid, out var deck, out var error), error);
         Assert.Equal(43, deck.CardIds.Count);
@@ -75,21 +75,20 @@ public sealed class DeckValidatorTests
     }
 
     [Fact]
-    public void ProliferatingBeetlesDoNotCountTowardMainDeckButRemainLimitedToThreeCopies()
+    public void OtherworldPresetKeepsItsTrialOutsideTheMainDeck()
     {
-        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "taiyangcheng");
-        var cards = preset.CardIds.Concat(Enumerable.Repeat("S02-0201", 3)).ToList();
-        var valid = new L12CustomDeckSubmission
+        var preset = Catalog.PresetDecks.Single(deck => deck.MasterId == "S02-06M1");
+        var submission = new L12CustomDeckSubmission
         {
-            Name = "太阳城与增殖的甲虫",
+            Name = preset.Name,
             MasterId = preset.MasterId,
-            CardIds = cards,
-            MoraleIds = preset.MoraleIds.Take(6).ToList(),
+            CardIds = preset.CardIds.ToList(),
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
         };
-        Assert.True(L12DeckValidator.TryValidate(Catalog, valid, out _, out var error), error);
 
-        valid.CardIds.Add("S02-0201");
-        Assert.False(L12DeckValidator.TryValidate(Catalog, valid, out _, out var copyError));
-        Assert.Contains("最多 3 张", copyError);
+        Assert.True(L12DeckValidator.TryValidate(Catalog, submission, out var deck, out var error), error);
+        Assert.Equal(42, deck.CardIds.Count);
+        Assert.Equal(["S02-06S4"], deck.SpecialIds);
     }
 }

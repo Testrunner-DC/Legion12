@@ -2,10 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
-import { loadDeckCatalog, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { l12State } from '@/l12/net'
 
-interface PresetDeck { name: string; masterId: string; cardIds: string[]; moraleIds: string[] }
 interface PublishedDeck { id: string; deck: SavedL12Deck; author: string; likes: number; copies: number; liked: boolean; official?: boolean }
 
 const tab = ref<'mine' | 'plaza'>('mine')
@@ -28,13 +27,12 @@ const factionLabels: Record<string, string> = {
 }
 onMounted(async () => {
   catalog.value = await loadDeckCatalog()
-  saved.value = loadSavedDecks()
-  const presetResponse = await fetch('/data/l12/preset-decks.s1.json')
-  const presets: PresetDeck[] = presetResponse.ok ? await presetResponse.json() : []
+  saved.value = await ensureOfficialPrebuiltDecks()
+  const presets = await loadOfficialPresetDecks()
   let locals: PublishedDeck[] = []
   try { locals = JSON.parse(localStorage.getItem('l12-published-decks-v1') || '[]') } catch {}
   published.value = [
-    ...presets.map((deck, index) => ({ id: `official-${index}`, deck: { ...deck, updatedAt: '' }, author: '十二军团官方预组', likes: 0, copies: 0, liked: false, official: true })),
+    ...presets.map((deck, index) => ({ id: `official-${index}`, deck: { ...deck, specialIds: deck.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', likes: 0, copies: 0, liked: false, official: true })),
     ...locals,
   ]
 })
@@ -81,7 +79,7 @@ function uniqueName(base: string) {
   return value
 }
 function copyToMine(entry: PublishedDeck) {
-  const deck = { ...entry.deck, name: uniqueName(entry.deck.name), cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], updatedAt: new Date().toISOString() }
+  const deck = { ...entry.deck, name: uniqueName(entry.deck.name), cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...(entry.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
   saveDeck(deck); saved.value = loadSavedDecks(); entry.copies++; persistPublished(); notice.value = `已复制《${deck.name}》到我的牌库`
 }
 function persistPublished() {
