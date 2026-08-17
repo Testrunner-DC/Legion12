@@ -138,7 +138,6 @@ public sealed class GameEngineTests
 
         Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
-        Assert.True(game.Handle(defenderPlayer, new L12Command("resolveDefense")).Accepted);
 
         Assert.Equal(1000, attacker.Troops);
         Assert.Contains(target, game.State.Players[defenderPlayer].Graveyard);

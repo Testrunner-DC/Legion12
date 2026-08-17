@@ -124,7 +124,7 @@ public sealed partial class L12GameEngine
                 {
                     if (target is not null) target.Data["invalid"] = "true";
                 }
-                else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0]);
+                else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
                 FinishStackItem(item);
                 return true;
             case "s2-ruin-mode":
@@ -140,7 +140,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "s2-ruin-discard":
-                if (target is not null) MoveHandToGrave(State.Players[target.Controller], chosen[0]);
+                if (target is not null) MoveHandToGrave(State.Players[target.Controller], chosen[0], causedByEffect: true);
                 FinishStackItem(item);
                 return true;
             case "s2-plunder-return":
@@ -159,7 +159,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "s2-poison-discard":
-                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0]);
+                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
                 FinishStackItem(item);
                 return true;
             default:

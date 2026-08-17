@@ -47,6 +47,12 @@ public sealed partial class L12GameEngine
             case "authority-event": ResolveAuthorityEvent(item); break;
             case "disaster": ResolveDisasterEffect(item); break;
             case "s2-after-opponent-tactic": ResolveS2ExorcistReturn(item); break;
+            case "discard-trigger": ResolveS2DiscardTrigger(item); break;
+            case "forge-ready-after-kill": ResolveForgeReadyAfterKill(item); break;
+            case "morrigan-enemy-death": ResolveS2MorriganEnemyDeath(item); break;
+            case "nephthys-own-death": ResolveS2NephthysOwnDeath(item); break;
+            case "master-morale-return": ResolveS2MasterMoraleReturn(item); break;
+            case "medjed-master-damage": ResolveMedjedMasterDamageReaction(item); break;
             default: FinishStackItem(item); break;
         }
     }
@@ -56,6 +62,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (item.SourceCardId == player.MasterId)
             return CreateCard(player.MasterId, item.SourceInstanceId);
+        if (item.SourceInstanceId == $"faction-{item.Controller}" && !string.IsNullOrWhiteSpace(item.SourceCardId))
+            return CreateCard(item.SourceCardId, item.SourceInstanceId);
         return FindOnField(player, item.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == item.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
@@ -314,11 +322,29 @@ public sealed partial class L12GameEngine
     {
         if (State.Phase == L12Phase.GameOver) return;
         if (FindOnField(State.Players[playerIndex], attacker.InstanceId, out _, out _) is null) return;
-        if (attacker.CardId is not ("S01-0101" or "S01-0414" or "S01-0409") && !S1ExtendedAfterAttackCards.Contains(attacker.CardId)
-            && !IsS1FactionAfterAttackCard(attacker.CardId) && !S2UniversalAfterAttackCards.Contains(attacker.CardId)
-            && !IsS2FactionAfterAttackCard(attacker.CardId)) return;
-        PushEffect(playerIndex, attacker, "after-attack", "【进攻后】效果",
-            data: new Dictionary<string, string> { ["killed"] = killedTarget ? "true" : "false" });
+        var candidates = new List<L12TriggerCandidate>();
+        if (attacker.CardId is "S01-0101" or "S01-0414" or "S01-0409" || S1ExtendedAfterAttackCards.Contains(attacker.CardId)
+            || IsS1FactionAfterAttackCard(attacker.CardId) || S2UniversalAfterAttackCards.Contains(attacker.CardId)
+            || IsS2FactionAfterAttackCard(attacker.CardId))
+            candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "after-attack", "【进攻后】效果",
+                new Dictionary<string, string> { ["killed"] = killedTarget ? "true" : "false" }));
+        if (killedTarget && attacker.ReadyAfterNextKillUntilTurn == State.TurnSerial)
+        {
+            var sourceName = attacker.ReadyAfterNextKillSourceName ?? "效果";
+            attacker.ReadyAfterNextKillUntilTurn = -1;
+            attacker.ReadyAfterNextKillSourceName = null;
+            candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "forge-ready-after-kill", $"{sourceName}赋予的击杀后转为活跃效果",
+                new Dictionary<string, string> { ["source-name"] = sourceName }));
+        }
+        QueueTriggerCandidates(candidates);
+    }
+
+    private void ResolveForgeReadyAfterKill(L12StackItem item)
+    {
+        var card = FindSource(item);
+        var sourceName = item.Data.GetValueOrDefault("source-name") ?? "效果";
+        if (card is not null) ReadyCardByEffect(item.Controller, card, card, $"{card.Name}因{sourceName}转为活跃");
+        FinishStackItem(item);
     }
 
     private void PromptOptionalEnemyLegion(L12StackItem item, string action, string text,

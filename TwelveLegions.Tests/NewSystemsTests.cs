@@ -30,6 +30,17 @@ public sealed class NewSystemsTests
         }
     }
 
+    private static void AddActiveMorale(L12PlayerState player, int count)
+    {
+        while (player.Morale.Count < count)
+        {
+            var morale = player.MoraleDeck[0];
+            player.MoraleDeck.RemoveAt(0);
+            morale.Tapped = false;
+            player.Morale.Add(morale);
+        }
+    }
+
     private static L12CardInstance CreateInstance(string cardId, string instanceId)
     {
         var definition = Catalog.Cards[cardId];
@@ -56,6 +67,64 @@ public sealed class NewSystemsTests
         Assert.Equal("始皇帝 嬴政", Catalog.Cards["S02-0101"].NameZh);
         Assert.Equal("destruction", Catalog.Cards["S02-DS01"].CardType);
         Assert.Equal("otherworld", Catalog.Cards["S02-06M1"].Faction);
+    }
+
+    [Fact]
+    public void PrideDisasterAddsOneToEveryLegionPlayCost()
+    {
+        var game = Create(seed: 5531);
+        var player = game.State.Players[0];
+        var legion = CreateInstance("S02-0004", "pride-legion");
+        player.Hand.Clear();
+        player.Hand.Add(legion);
+        AddActiveMorale(player, legion.Cost + 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS06", "pride-disaster");
+
+        var result = game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(legion.Cost + 1, player.Morale.Count(card => card.Tapped));
+    }
+
+    [Fact]
+    public void SleeplessNightDamagesMasterWhenAnyActiveRestAbilityIsUsed()
+    {
+        var game = Create(seed: 5532);
+        var player = game.State.Players[0];
+        var baiQi = CreateInstance("S01-0109", "sleepless-baiqi");
+        player.Field[0][0] = baiQi;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS03", "sleepless-disaster");
+        var hpBefore = player.Hp;
+
+        var result = game.Handle(0, new L12Command("activateAbility", baiQi.InstanceId, Ability: "addMorale"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(hpBefore - 1, player.Hp);
+    }
+
+    [Fact]
+    public void PrideDisasterAddsOneMoraleToMasterEffectCost()
+    {
+        var game = Create(seed: 5533);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].MasterId == "S01-01M1");
+        var player = game.State.Players[owner];
+        AddAllMorale(player);
+        foreach (var morale in player.Morale) morale.Tapped = true;
+        foreach (var morale in player.Morale.Take(2)) morale.Tapped = false;
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS06", "pride-master-disaster");
+
+        var result = game.Handle(owner,
+            new L12Command("activateAbility", $"master-{owner}", Ability: "drawCycle"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.DoesNotContain(player.Morale, card => !card.Tapped);
     }
 
     [Fact]
@@ -583,7 +652,6 @@ public sealed class NewSystemsTests
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
         foreach (var prompt in game.State.PendingPrompts.ToArray())
             Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
-        Assert.True(game.Handle(defenderPlayer, new L12Command("resolveDefense")).Accepted);
         Assert.Equal(2000, attacker.Troops);
         Assert.Contains(target, game.State.Players[defenderPlayer].Graveyard);
     }

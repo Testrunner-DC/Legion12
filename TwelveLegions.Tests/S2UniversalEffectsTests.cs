@@ -137,6 +137,9 @@ public sealed class S2UniversalEffectsTests
         attacker.SummonRound = 0;
         game.State.Players[0].Field[0][0] = attacker;
         var puppet = TakeCard(game, 1, "S02-0005");
+        var support = Instance("S02-0003", "puppet-test-support");
+        support.SummonRound = 0;
+        game.State.Players[1].Field[1][1] = support;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
@@ -286,8 +289,9 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal("s2-ruin-mode", mode.Data["action"]);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "suppress")).Accepted);
 
-        Assert.Same(summoned, game.State.Players[0].Field[0][1]);
-        Assert.Equal(summoned.BaseTroops - 3000, summoned.Troops);
+        Assert.Null(game.State.Players[0].Field[0][1]);
+        Assert.Contains(summoned, game.State.Players[0].Graveyard);
+        Assert.Equal(summoned.BaseTroops, summoned.Troops);
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == summoned.InstanceId && item.Trigger == "enter");
     }
 

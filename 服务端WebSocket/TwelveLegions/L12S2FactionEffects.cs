@@ -5,15 +5,15 @@ public sealed partial class L12GameEngine
 {
     private static readonly HashSet<string> S2FactionEnterCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0101", "S02-0203", "S02-0204", "S02-0205",
-        "S02-0301", "S02-0302", "S02-0304", "S02-0402",
-        "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0517", "S02-0518", "S02-0521", "S02-0613",
+        "S02-0101", "S02-0102", "S02-0203", "S02-0204", "S02-0205",
+        "S02-0301", "S02-0302", "S02-0303", "S02-0304", "S02-0401", "S02-0402", "S02-0403", "S02-0404",
+        "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0521", "S02-0613",
         "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
     };
 
     private static readonly HashSet<string> S2FactionTacticCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0206", "S02-0207", "S02-0307", "S02-0522", "S02-0620",
+        "S02-0206", "S02-0207", "S02-0306", "S02-0307", "S02-0405", "S02-0406", "S02-0522", "S02-0620", "S02-0621", "S02-0622",
     };
 
     private static readonly HashSet<string> S2FactionAttackCards = new(StringComparer.OrdinalIgnoreCase)
@@ -23,7 +23,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0202", "S02-0203", "S02-0301", "S02-0402", "S02-0508", "S02-0512", "S02-0609", "S02-0613",
+        "S02-01S1", "S02-0202", "S02-0203", "S02-0301", "S02-0402", "S02-0508", "S02-0512", "S02-0609", "S02-0613",
     };
 
     private static readonly HashSet<string> S2PromotionEnterCards = new(StringComparer.OrdinalIgnoreCase)
@@ -53,6 +53,10 @@ public sealed partial class L12GameEngine
 
     private static List<L12AbilityView> GetS2FactionAbilities(string cardId) => cardId switch
     {
+        "S02-02M1" =>
+        [
+            new("nephthysSacrifice", "我方 回合1次：弃置我方战场任意数量的军团；每弃置1张，本回合下一张带有天灾等级的【太阳城】军团登场费用-1。"),
+        ],
         "S02-0204" => [new("imhotepDiscount", "主动休整：本回合下1张带有天灾等级的【太阳城】军团登场费用-1")],
         "S02-0513" => [new("aristotleDiscount", "主动休整：本回合下一张【奥林匹斯】军团登场费用-1")],
         "S02-0205" =>
@@ -62,8 +66,125 @@ public sealed partial class L12GameEngine
         ],
         "S02-0603" => [new("merlinRune", "主动休整：消耗1符文，选择敌方军团-3000，或检索费用不高于4的【主动战术】")],
         "S02-0616" => [new("amakineTop", "主动休整 展示牌库顶部1张牌：若其只拥有【彼界】特征，可加入手牌；否则返回牌库顶部或底部。")],
+        "S02-0404" =>
+        [
+            new("magatamaMove", "主动休整：选择我方1张活跃的军团，进行1次位移。"),
+            new("magatamaImmortal", "主动休整：选择我方1张本回合位移过的军团，本回合获得免死。"),
+        ],
         _ => [],
     };
+
+    /// <summary>
+    /// 统一处理“从区域弃置”产生的卡牌自身触发。调用者必须明确标记手牌弃置
+    /// 是否由效果造成；牌库弃置无论是效果还是支付费用，均符合〈信仰狂热者〉文本。
+    /// </summary>
+    private void NotifyCardDiscarded(L12PlayerState player, L12CardInstance card, string originZone, bool causedByEffect)
+    {
+        if (card.CardId != "S02-0006" || State.ActivePlayer != player.PlayerIndex) return;
+        if (originZone != "library" && !(originZone == "hand" && causedByEffect)) return;
+
+        var onceKey = $"trigger:faith-zealot:{card.InstanceId}";
+        if (!player.UsedAbilities.Add(onceKey)) return;
+        QueueTriggerCandidates(
+        [
+            CreateTriggerCandidate(player.PlayerIndex, card, "discard-trigger", "弃置时效果",
+                new Dictionary<string, string> { ["originZone"] = originZone })
+        ]);
+    }
+
+    private void ResolveS2DiscardTrigger(L12StackItem item)
+    {
+        if (item.SourceCardId != "S02-0006") { FinishStackItem(item); return; }
+        var player = State.Players[item.Controller];
+        var master = CreateCard(player.MasterId, $"master-{item.Controller}");
+        var abilities = GetAbilities(player.MasterId)
+            .Where(view => GetActiveAbilityMoraleCost(master, view.Id) > 0)
+            .ToArray();
+        if (abilities.Length == 0) { FinishStackItem(item); return; }
+
+        var choices = abilities.Select(view => view.Id).Append("skip").ToArray();
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-faith-zealot",
+            ["choiceMode"] = "instant",
+            ["skip"] = "不发动",
+        };
+        foreach (var ability in abilities) data[ability.Id] = ability.Label;
+        CreatePrompt(item.Controller, "option", "信仰狂热者：选择1个需要消耗士气的主宰效果，无视全部消耗发动且不计入使用次数",
+            choices, 1, 1, "card-effect", item.StackItemId, data: data);
+    }
+
+    private void QueueS2MasterMoraleReturnTriggers(int playerIndex, L12CardInstance master, int returned)
+    {
+        if (returned < 4 || master.CardType != "master") return;
+        var player = State.Players[playerIndex];
+        var candidates = new List<L12TriggerCandidate>();
+        foreach (var liMu in PublicLegions(player).Where(card => card.CardId == "S02-0102"))
+        {
+            var onceKey = $"trigger:limu-morale:{liMu.InstanceId}:{State.TurnSerial}";
+            if (player.UsedAbilities.Contains(onceKey)) continue;
+            candidates.Add(CreateTriggerCandidate(playerIndex, liMu, "master-morale-return", "【主宰效果返还士气时】效果",
+                new Dictionary<string, string> { ["mode"] = "limu", ["onceKey"] = onceKey, ["returned"] = returned.ToString() }));
+        }
+        if (master.CardId == "S01-01M1"
+            && !player.UsedAbilities.Contains($"trigger:xiaotian-morale:{State.TurnSerial}")
+            && player.Field[0].Any(card => card is null)
+            && PublicLegions(player).All(card => card.CardId != "S02-01S1"))
+        {
+            var xiaotian = CreateCard("S02-01S1", $"p{playerIndex}-xiaotian");
+            candidates.Add(CreateTriggerCandidate(playerIndex, xiaotian, "master-morale-return", "【主宰效果返还士气时】效果",
+                new Dictionary<string, string>
+                {
+                    ["mode"] = "xiaotian", ["onceKey"] = $"trigger:xiaotian-morale:{State.TurnSerial}",
+                    ["returned"] = returned.ToString(),
+                }));
+        }
+        QueueTriggerCandidates(candidates);
+    }
+
+    private void ResolveS2MasterMoraleReturn(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var onceKey = item.Data.GetValueOrDefault("onceKey") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(onceKey) || player.UsedAbilities.Contains(onceKey))
+        {
+            FinishStackItem(item);
+            return;
+        }
+        if (item.Data.GetValueOrDefault("mode") == "limu")
+        {
+            var source = FindOnField(player, item.SourceInstanceId, out _, out _);
+            if (source?.CardId != "S02-0102" || player.MoraleDeck.Count == 0)
+            {
+                FinishStackItem(item);
+                return;
+            }
+            CreatePrompt(item.Controller, "optional", "李牧：我方士气因主宰效果返还4张及以上，是否追加1张休整士气？",
+                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-limu-morale", ["onceKey"] = onceKey, ["choiceMode"] = "instant",
+                    ["yes"] = "追加1张休整士气", ["no"] = "不发动",
+                });
+            return;
+        }
+        if (item.Data.GetValueOrDefault("mode") != "xiaotian" || player.Field[0].All(card => card is not null))
+        {
+            FinishStackItem(item);
+            return;
+        }
+        var xiaotian = player.Graveyard.LastOrDefault(card => card.CardId == "S02-01S1")
+            ?? player.Removed.LastOrDefault(card => card.CardId == "S02-01S1")
+            ?? CreateCard("S02-01S1", $"p{item.Controller}-xiaotian");
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-xiaotian-morale", ["onceKey"] = onceKey, ["previewCardId"] = xiaotian.InstanceId,
+            ["yes"] = "使〈哮天犬·稚〉在前排活跃登场", ["no"] = "不发动", ["choiceMode"] = "instant",
+        };
+        AddPromptCardData(data, xiaotian);
+        CreatePrompt(item.Controller, "optional", "杨戬专属：是否使〈哮天犬·稚〉在前排活跃登场？",
+            ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: data);
+    }
 
     private static bool IsTrialLegion(L12CardInstance card)
         => card.CardId is "S02-0604" or "S02-0610" or "S02-0614";
@@ -95,6 +216,9 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {
+            case "S02-0102":
+                BeginS2LiMuEnter(item);
+                return true;
             case "S02-0501":
                 CreatePrompt(item.Controller, "optional", "是否对双方主宰各造成1点非致命伤害？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-heracles-entry-damage" });
@@ -128,7 +252,17 @@ public sealed partial class L12GameEngine
                 card.CanAttackLegionsOnSummonUntilTurn = State.TurnSerial;
                 FinishStackItem(item);
                 return true;
+            case "S02-0515":
+                if (player.SpecialZones.GodPower.Count == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                PromptDiscard(item, 1 - item.Controller, 1, "海伦：对方弃置1张手牌", "s2-helen-entry-discard");
+                return true;
             case "S02-0513":
+                return PromptS2FlipMorale(item, card, optional: true);
+            case "S02-0520":
                 return PromptS2FlipMorale(item, card, optional: true);
             case "S02-0518":
                 return PromptS2FlipMorale(item, card, optional: true, onlyTapped: true);
@@ -224,15 +358,63 @@ public sealed partial class L12GameEngine
                 HealMaster(item.Controller, 1, "该军团登场时效果");
                 FinishStackItem(item);
                 return true;
-            case "S02-0304":
-                if (player.Library.Count > 0)
+            case "S02-0404":
+            {
+                var choices = player.Library
+                    .Where(candidate => candidate.Faction == "gaotianyuan" && candidate.CardType == "legion"
+                        && candidate.Profession == "骑兵")
+                    .Select(candidate => candidate.InstanceId).ToList();
+                choices.Add("skip");
+                CreatePrompt(item.Controller, "optional-card",
+                    "八尺琼勾玉：可查看牌库，选择1张【高天原】的【骑兵】军团展示并加入手牌，随后重洗牌库",
+                    choices, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-magatama-search",
+                        ["choiceMode"] = "optional-add",
+                        ["skip"] = "不加入手牌",
+                    });
+                return true;
+            }
+            case "S02-0303":
+            {
+                var choices = PublicLegions(player).Concat(player.Graveyard)
+                    .Where(candidate => candidate.CardType == "legion" && candidate.Faction == "asgard"
+                        && candidate.InstanceId != card.InstanceId && HasDeathTrigger(candidate))
+                    .Select(candidate => candidate.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                if (choices.Length == 0) { FinishStackItem(item); return true; }
+                var data = new Dictionary<string, string>
                 {
-                    var top = player.Library[0];
-                    player.Library.RemoveAt(0);
-                    player.Graveyard.Add(top);
-                    AddEvent("discard", item.Controller, $"{card.Name}弃置牌库顶部的{top.Name}", top);
-                }
+                    ["action"] = "s2-canute-trigger-deaths",
+                    ["selectionConstraint"] = "distinct-card-names",
+                    ["layout"] = "single-row",
+                };
+                foreach (var candidateId in choices)
+                    if (FindPromptCard(item.Controller, candidateId) is { } candidate) AddPromptCardData(data, candidate);
+                CreatePrompt(item.Controller, "cards", "卡纽特大帝：可选择我方战场或墓地最多2张非同名的【阿斯加德】军团，触发其阵亡时效果",
+                    choices, 0, Math.Min(2, choices.Length), "card-effect", item.StackItemId, data: data);
+                return true;
+            }
+            case "S02-0304":
+                Mill(player, 1, card.Name);
                 FinishStackItem(item);
+                return true;
+            case "S02-0506":
+            {
+                var promotion = player.Graveyard.FirstOrDefault(candidate => candidate.CardId == "S02-0505");
+                if (promotion is null || player.Hand.Count == 0) { FinishStackItem(item); return true; }
+                var choices = player.Hand.Select(candidate => candidate.InstanceId).Append("skip").ToArray();
+                var data = new Dictionary<string, string>
+                {
+                    ["action"] = "s2-perseus-recover-promotion", ["choiceMode"] = "optional-add", ["skip"] = "不发动",
+                };
+                foreach (var handCard in player.Hand) AddPromptCardData(data, handCard);
+                CreatePrompt(item.Controller, "hand-card", "珀尔修斯：可弃置1张手牌，将墓地1张〈帕尔修斯·晋升〉加入手牌",
+                    choices, 1, 1, "card-effect", item.StackItemId, data: data);
+                return true;
+            }
+            case "S02-0514":
+                BeginFactionTopSearch(item, 3, "olympus", "S02-0514", "s2-plato-search");
                 return true;
             case "S02-0402":
             {
@@ -243,6 +425,18 @@ public sealed partial class L12GameEngine
                 item.Data["s2-gaotianyuan-ready-targets"] = string.Join('|', targets);
                 CreatePrompt(item.Controller, "hand-card", "弃置1张手牌：选择1张休整的【高天原】军团转为活跃", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-discard" });
+                return true;
+            }
+            case "S02-0403":
+            {
+                var grassSwordInFront = player.Field[0].Any(candidate => candidate?.CardId == "S01-0417");
+                if (grassSwordInFront)
+                {
+                    card.HasCharge = true;
+                    AddTimedModifier(card, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "冲田总司");
+                    AddEvent("effect", item.Controller, "〈草薙剑〉位于前排，冲田总司获得冲锋且本回合兵力+1000", card);
+                }
+                FinishStackItem(item);
                 return true;
             }
             case "S02-0101":
@@ -278,6 +472,17 @@ public sealed partial class L12GameEngine
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "伊姆何泰普：可将墓地1张费用为6及以上的【太阳城】军团加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-imhotep-recover" });
+                return true;
+            }
+            case "S02-0401":
+            {
+                var choices = player.Library.Where(candidate => candidate.Faction == "gaotianyuan"
+                        && candidate.CardType == "legion" && candidate.BaseTroops <= 5000)
+                    .Select(candidate => candidate.InstanceId).ToList();
+                choices.Add("skip");
+                CreatePrompt(item.Controller, "optional-card", "武田信玄：可查看牌库并选择1张兵力不高于5000的【高天原】军团展示并加入手牌",
+                    choices, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-takeda-search" });
                 return true;
             }
             default:
@@ -332,6 +537,43 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2FactionTactic(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
+        if (card.CardId == "S02-0306")
+        {
+            player.UsedAbilities.Add("s2-mimir-used");
+            HealMaster(item.Controller, 1, "〈密米尔之泉〉");
+            if (!Draw(player, 1))
+            {
+                SetWinner(1 - item.Controller, "〈密米尔之泉〉抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
+            }
+            CreatePrompt(item.Controller, "optional", "〈密米尔之泉〉：是否弃置我方牌库顶部2张牌？",
+                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-mimir-mill", ["choiceMode"] = "instant",
+                    ["yes"] = "弃置牌库顶部2张牌", ["no"] = "不弃置",
+                });
+            return true;
+        }
+        if (card.CardId == "S02-0405")
+        {
+            BeginS2FortuneSearch(item);
+            return true;
+        }
+        if (card.CardId == "S02-0406")
+        {
+            CreatePrompt(item.Controller, "option", "天下布武：选择1项效果",
+                ["row-cost", "front-attack", "free-move"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-tenka-mode",
+                    ["row-cost"] = "选择对方1排所有军团，本回合费用-2",
+                    ["front-attack"] = "本回合我方前排所有【高天原】军团进攻时兵力+1000",
+                    ["free-move"] = "本回合我方所有活跃的【高天原】军团可免费进行1格位移",
+                });
+            return true;
+        }
         if (card.CardId == "S02-0522")
         {
             PromptEnemyLegion(item, "s2-olympus-decree", "选择对方1张军团，本回合兵力-3000", _ => true, false);
@@ -344,13 +586,32 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
+        if (card.CardId == "S02-0621")
+        {
+            var candidates = player.Library
+                .Where(candidate => candidate.CardType == "legion" && candidate.HasTrait("圆桌骑士"))
+                .Select(candidate => candidate.InstanceId)
+                .ToArray();
+            if (candidates.Length == 0)
+            {
+                Shuffle(player.Library);
+                PromptS2RoundTableBuff(item);
+                return true;
+            }
+            CreatePrompt(item.Controller, "card", "圆桌领域：选择牌库中1张【圆桌骑士】军团展示并加入手牌",
+                candidates, 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string> { ["action"] = "s2-round-table-search" });
+            return true;
+        }
+        if (card.CardId == "S02-0622")
+        {
+            PromptEnemyLegion(item, "s2-mistletoe-debuff", "选择对方1张军团，本回合兵力-6000", _ => true, false);
+            return true;
+        }
         if (card.CardId == "S02-0307")
         {
             if (player.Library.Count == 0) { FinishStackItem(item); return true; }
-            var top = player.Library[0];
-            player.Library.RemoveAt(0);
-            player.Graveyard.Add(top);
-            AddEvent("discard", item.Controller, $"弃置牌库顶部的{top.Name}", top);
+            Mill(player, 1, card.Name);
             PromptEnemyLegion(item, "s2-asgard-curse", "选择对方1张军团，本回合兵力-3000", _ => true, false);
             return true;
         }
@@ -453,6 +714,15 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {
+            case "S02-01S1":
+                CreatePrompt(item.Controller, "optional", "哮天犬·稚阵亡：是否从士气牌库追加1张休整士气？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-xiaotian-death", ["choiceMode"] = "instant",
+                        ["yes"] = "追加1张休整士气", ["no"] = "不发动",
+                    });
+                return true;
             case "S02-0508":
                 return PromptS2FlipMorale(item, card);
             case "S02-0512":
@@ -504,6 +774,45 @@ public sealed partial class L12GameEngine
     private CommandResult? TryBeginS2FactionActiveAbility(int playerIndex, L12CardInstance source, string ability)
     {
         var player = State.Players[playerIndex];
+        if (ability == "nephthysSacrifice" && source.CardId == "S02-02M1")
+        {
+            var onceKey = $"active:{source.InstanceId}:{ability}";
+            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            var choices = PublicLegions(player).Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0) return CommandResult.Reject("我方战场没有可弃置的军团");
+            return BeginPendingActivation(playerIndex, source, ability, choices,
+                "奈芙蒂斯：选择我方战场任意数量的军团弃置", min: 1, max: choices.Length);
+        }
+        if (ability == "avalonRecover" && source.CardId == "S02-06D1")
+        {
+            if (player.SpecialZones.Runes < 2) return CommandResult.Reject("需要消耗2符文");
+            var legions = player.Graveyard.Where(card => card.CardType == "legion").Select(card => card.InstanceId).ToList();
+            var tactics = player.Graveyard.Where(card => card.CardType is "tactic" or "counter-tactic").Select(card => card.InstanceId).ToList();
+            if (legions.Count == 0 || tactics.Count == 0) return CommandResult.Reject("墓地中需要同时存在军团和战术");
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep { Kind = "grave-card", Text = "彼界 阿瓦隆：选择墓地1张军团加入手牌", ValidChoices = legions },
+                new L12ActivationSelectionStep { Kind = "grave-card", Text = "彼界 阿瓦隆：选择墓地1张战术加入手牌", ValidChoices = tactics },
+            ]);
+        }
+        if (ability == "avalonDebuff" && source.CardId == "S02-06D1")
+        {
+            if (player.MasterTapped) return CommandResult.Reject("彼界 阿瓦隆必须为活跃状态");
+            var choices = PublicLegions(State.Players[1 - playerIndex]).Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0) return CommandResult.Reject("对方战场没有可选择的军团");
+            return BeginPendingActivation(playerIndex, source, ability, choices,
+                "彼界 阿瓦隆：选择对方1张军团，本回合兵力-4000");
+        }
+        if (ability == "forgeReadyOnKill" && source.CardId == "S02-0520")
+        {
+            if (source.Tapped) return CommandResult.Reject("匠神锻造炉必须为活跃状态");
+            var choices = PublicLegions(player)
+                .Where(card => card.Faction == "olympus" && !card.HasTrait("晋升者"))
+                .Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0) return CommandResult.Reject("我方战场没有【晋升者】以外的【奥林匹斯】军团");
+            return BeginPendingActivation(playerIndex, source, ability, choices,
+                "选择我方1张【晋升者】以外的【奥林匹斯】军团");
+        }
         if (ability == "trialAdvance" && source.TrialValue > 0)
         {
             if (source.Tapped) return CommandResult.Reject("该军团必须为活跃状态");
@@ -524,13 +833,50 @@ public sealed partial class L12GameEngine
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
-        if (ability == "factionGainRune" && source.CardId == "S02-06C1A")
+        if (ability == "factionGainRune" && source.CardId == "S02-06C1")
         {
             if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("该效果本回合已经发动");
-            if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
+            if (!TryConsumeMorale(player, 2)) return CommandResult.Reject("需要2张活跃的士气");
             player.UsedAbilities.Add($"active:{source.InstanceId}:{ability}");
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
+        }
+        if (ability == "olympusMoraleFlip" && source.CardId == "S02-05C1A")
+        {
+            var onceKey = $"active:{source.InstanceId}:{ability}";
+            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "阵营效果",
+                data: new Dictionary<string, string> { ["ability"] = ability });
+            return CommandResult.Ok();
+        }
+        if (ability == "prometheusTopThree" && source.CardId == "S02-05M2")
+        {
+            var onceKey = $"active:{source.InstanceId}:{ability}";
+            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) return CommandResult.Reject("需要1张活跃的神力");
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "主宰效果",
+                data: new Dictionary<string, string> { ["ability"] = ability });
+            return CommandResult.Ok();
+        }
+        if (ability == "morriganReadyOnKill" && source.CardId == "S02-06M1")
+        {
+            var onceKey = $"active:{source.InstanceId}:{ability}";
+            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (player.SpecialZones.Runes < 2) return CommandResult.Reject("需要消耗2符文");
+            var choices = PublicLegions(player).Where(card => card.Faction == "otherworld")
+                .Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0) return CommandResult.Reject("我方战场没有可选择的【彼界】军团");
+            return BeginPendingActivation(playerIndex, source, ability, choices,
+                "莫瑞甘：选择我方1张【彼界】军团，本回合其下一次击杀对方军团后转为活跃");
+        }
+        if (ability == "runeUse" && source.CardId == "S02-06C1")
+        {
+            if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("符文效果本回合已经发动");
+            if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
+            return BeginPendingActivation(playerIndex, source, ability, ["mode:trial", "mode:draw"], "符文：选择试炼+1，或抽取1张牌");
         }
         if (ability == "merlinRune" && source.CardId == "S02-0603")
         {
@@ -582,6 +928,37 @@ public sealed partial class L12GameEngine
                 },
             ]);
         }
+        if (ability == "magatamaMove" && source.CardId == "S02-0404")
+        {
+            if (source.Tapped) return CommandResult.Reject("八尺琼勾玉必须为活跃状态");
+            var candidates = PublicLegions(player)
+                .Where(card => !card.Tapped && FindOnField(player, card.InstanceId, out var row, out var slot) is not null
+                    && AdjacentEmptySlots(player, row, slot).Any())
+                .Select(card => card.InstanceId).ToList();
+            if (candidates.Count == 0) return CommandResult.Reject("我方没有可位移的活跃军团");
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "active-target", Text = "八尺琼勾玉：选择我方1张活跃军团",
+                    ValidChoices = candidates,
+                },
+                new L12ActivationSelectionStep
+                {
+                    Kind = "adjacent-slot", Text = "八尺琼勾玉：选择该军团位移后的相邻空位",
+                    ValidChoices = EmptySlots(player).ToList(),
+                },
+            ]);
+        }
+        if (ability == "magatamaImmortal" && source.CardId == "S02-0404")
+        {
+            if (source.Tapped) return CommandResult.Reject("八尺琼勾玉必须为活跃状态");
+            var choices = PublicLegions(player).Where(card => card.LastMovedTurn == State.TurnSerial)
+                .Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0) return CommandResult.Reject("我方没有本回合位移过的军团");
+            return BeginPendingActivation(playerIndex, source, ability, choices,
+                "八尺琼勾玉：选择我方1张本回合位移过的军团，本回合获得免死");
+        }
         if (ability == "completeTrial" && source.CardType == "trial")
         {
             if (source.TrialCompleted || source.TrialProgress < 8)
@@ -629,10 +1006,158 @@ public sealed partial class L12GameEngine
         return null;
     }
 
+    private L12TriggerCandidate? BuildMorriganEnemyDeathCandidate(int defeatedController)
+    {
+        var controller = 1 - defeatedController;
+        var player = State.Players[controller];
+        var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
+        if (State.ActivePlayer != controller || player.MasterId != "S02-06M1" || player.UsedAbilities.Contains(onceKey))
+            return null;
+        var master = CreateCard(player.MasterId, $"master-{controller}");
+        return CreateTriggerCandidate(controller, master, "morrigan-enemy-death", "【对方军团阵亡时】效果");
+    }
+
+    private L12TriggerCandidate? BuildNephthysOwnDeathCandidate(int defeatedController, L12CardInstance defeated)
+    {
+        var player = State.Players[defeatedController];
+        var onceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
+        if (State.ActivePlayer == defeatedController || player.MasterId != "S02-02M1"
+            || player.UsedAbilities.Contains(onceKey) || defeated.Faction != "taiyangcheng"
+            || defeated.CurrentCost < 2 || !player.Graveyard.Any(card => card.CardId == "S02-0201")
+            || !EmptySlots(player).Any())
+            return null;
+        var master = CreateCard(player.MasterId, $"master-{defeatedController}");
+        return CreateTriggerCandidate(defeatedController, master, "nephthys-own-death", "【我方军团阵亡时】效果",
+            new Dictionary<string, string> { ["defeated"] = defeated.InstanceId });
+    }
+
+    private void ResolveS2MorriganEnemyDeath(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
+        if (State.ActivePlayer != item.Controller || player.MasterId != "S02-06M1" || player.UsedAbilities.Contains(onceKey))
+        {
+            FinishStackItem(item);
+            return;
+        }
+        CreatePrompt(item.Controller, "optional", "莫瑞甘：对方军团阵亡，是否获得1符文？", ["yes", "no"], 1, 1,
+            "card-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-morrigan-enemy-death",
+                ["yes"] = "获得1符文",
+                ["no"] = "不发动",
+            });
+    }
+
+    private void ResolveS2NephthysOwnDeath(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var onceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
+        if (State.ActivePlayer == item.Controller || player.MasterId != "S02-02M1"
+            || player.UsedAbilities.Contains(onceKey) || !player.Graveyard.Any(card => card.CardId == "S02-0201")
+            || !EmptySlots(player).Any())
+        {
+            FinishStackItem(item);
+            return;
+        }
+        CreatePrompt(item.Controller, "optional", "奈芙蒂斯：我方费用不低于2的【太阳城】军团阵亡，是否将墓地1张〈增殖的甲虫〉活跃登场？",
+            ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-nephthys-own-death",
+                ["yes"] = "将〈增殖的甲虫〉活跃登场",
+                ["no"] = "不发动",
+            });
+    }
+
     private CommandResult? TryCommitS2FactionActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards,
         IEnumerable<string>? returnedMoraleIds = null)
     {
         var player = State.Players[playerIndex];
+        if (ability == "nephthysSacrifice" && source.CardId == "S02-02M1")
+        {
+            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            var declaredIds = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (declaredIds.Length == 0) return CommandResult.Reject("至少需要选择1张我方军团");
+            var declared = declaredIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
+            if (declared.Any(card => card is null || !IsFieldLegion(card))) return CommandResult.Reject("选择的军团已不在我方战场");
+            foreach (var card in declared.Cast<L12CardInstance>())
+                MoveFieldCardToZone(player, card, "graveyard", "被奈芙蒂斯效果弃置");
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["count"] = declaredIds.Length.ToString(),
+            });
+            return CommandResult.Ok();
+        }
+        if (ability == "avalonRecover" && source.CardId == "S02-06D1")
+        {
+            var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            if (declared.Length != 2 || declared[0] == declared[1]) return CommandResult.Reject("需要分别选择1张军团和1张战术");
+            var legion = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardType == "legion");
+            var tactic = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.CardType is "tactic" or "counter-tactic");
+            if (legion is null || tactic is null) return CommandResult.Reject("选择的墓地卡牌已不合法");
+            if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["legion"] = legion.InstanceId,
+                ["tactic"] = tactic.InstanceId,
+            });
+            return CommandResult.Ok();
+        }
+        if (ability == "avalonDebuff" && source.CardId == "S02-06D1")
+        {
+            var declared = DeclaredEnemyTarget(playerIndex, target);
+            if (player.MasterTapped || declared is null) return CommandResult.Reject("彼界 阿瓦隆必须为活跃状态且目标合法");
+            player.MasterTapped = true;
+            PushEffect(playerIndex, source, "active", "主神主动休整效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["target"] = declared.InstanceId,
+            });
+            return CommandResult.Ok();
+        }
+        if (ability is "forgePromotionDiscount" or "forgeReadyOnKill" && source.CardId == "S02-0520")
+        {
+            if (source.Tapped) return CommandResult.Reject("匠神锻造炉必须为活跃状态");
+            L12CardInstance? declaredTarget = null;
+            if (ability == "forgeReadyOnKill")
+            {
+                declaredTarget = FindOnField(player, target, out _, out _);
+                if (declaredTarget is null || declaredTarget.Faction != "olympus"
+                    || declaredTarget.HasTrait("晋升者"))
+                    return CommandResult.Reject("选择的军团不符合匠神锻造炉条件");
+            }
+            var paid = useTombGuards switch
+            {
+                true => TryConsumeMorale(player, 1, preferTombGuards: true, allowTombGuards: true),
+                false => TryConsumeMorale(player, 1, preferTombGuards: false, allowTombGuards: false),
+                _ => TryConsumeMorale(player, 1),
+            };
+            if (!paid) return CommandResult.Reject("需要消耗1张活跃的士气");
+            source.Tapped = true;
+            var data = new Dictionary<string, string> { ["ability"] = ability };
+            if (declaredTarget is not null) data["target"] = declaredTarget.InstanceId;
+            PushEffect(playerIndex, source, "active", "主动休整效果", data: data);
+            return CommandResult.Ok();
+        }
+        if (ability == "morriganReadyOnKill" && source.CardId == "S02-06M1")
+        {
+            var declaredTarget = FindOnField(player, target, out _, out _);
+            if (declaredTarget is null || declaredTarget.Faction != "otherworld")
+                return CommandResult.Reject("选择的军团不符合莫瑞甘效果条件");
+            if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["target"] = declaredTarget.InstanceId,
+            });
+            return CommandResult.Ok();
+        }
         if (ability == "merlinRune" && source.CardId == "S02-0603")
         {
             if (source.Tapped || player.SpecialZones.Runes < 1) return CommandResult.Reject("梅林需要为活跃状态且消耗1符文");
@@ -693,6 +1218,37 @@ public sealed partial class L12GameEngine
             AddEvent("cost", playerIndex, $"弃置〈{discard.Name}〉支付黄金圣甲虫费用", discard);
             return CommandResult.Ok();
         }
+        if (ability == "magatamaMove" && source.CardId == "S02-0404")
+        {
+            var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            if (source.Tapped || declared.Length != 2) return CommandResult.Reject("八尺琼勾玉必须为活跃状态且位移声明完整");
+            var legion = FindOnField(player, declared[0], out var row, out var slot);
+            var destination = ParseSlot(declared[1]);
+            if (legion is null || !IsFieldLegion(legion) || legion.Tapped
+                || !AdjacentEmptySlots(player, row, slot).Contains(declared[1]))
+                return CommandResult.Reject("所选军团或位移位置已不合法");
+            source.Tapped = true;
+            PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["target"] = legion.InstanceId,
+                ["destination"] = $"{destination.Row}:{destination.Slot}",
+            });
+            return CommandResult.Ok();
+        }
+        if (ability == "magatamaImmortal" && source.CardId == "S02-0404")
+        {
+            var legion = FindOnField(player, target, out _, out _);
+            if (source.Tapped || legion is null || !IsFieldLegion(legion) || legion.LastMovedTurn != State.TurnSerial)
+                return CommandResult.Reject("八尺琼勾玉必须为活跃状态，且目标必须在本回合位移过");
+            source.Tapped = true;
+            PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["target"] = legion.InstanceId,
+            });
+            return CommandResult.Ok();
+        }
         if (ability == "amakineTop" && source.CardId == "S02-0616")
         {
             if (source.Tapped) return CommandResult.Reject("阿麦金必须为活跃状态");
@@ -710,6 +1266,15 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["ability"] = ability });
             RemoveFromField(player, source, true, "作为加拉哈德主动效果的费用被弃置");
             player.UsedAbilities.Add(onceKey);
+            return CommandResult.Ok();
+        }
+        if (ability == "runeUse" && source.CardId == "S02-06C1")
+        {
+            if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
+            if (target is not ("mode:trial" or "mode:draw")) return CommandResult.Reject("符文效果选项不合法");
+            L12S2ZoneOps.SpendRunes(player, 1);
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "符文效果", data: new Dictionary<string, string> { ["ability"] = ability, ["mode"] = target });
             return CommandResult.Ok();
         }
         if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
@@ -756,16 +1321,116 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2FactionActive(L12StackItem item, L12CardInstance? source, string ability)
     {
         var player = State.Players[item.Controller];
+        if (ability == "nephthysSacrifice" && source?.CardId == "S02-02M1")
+        {
+            var count = int.TryParse(item.Data.GetValueOrDefault("count"), out var parsed) ? parsed : 0;
+            player.NextS2SunDisasterLegionDiscount += Math.Max(0, count);
+            AddEvent("effect", item.Controller,
+                $"奈芙蒂斯弃置{count}张军团；本回合下一张带有天灾等级的【太阳城】军团登场费用-{count}", source);
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "avalonRecover" && source?.CardId == "S02-06D1")
+        {
+            var recovered = new List<L12CardInstance>();
+            foreach (var id in new[] { item.Data.GetValueOrDefault("legion"), item.Data.GetValueOrDefault("tactic") })
+            {
+                var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == id);
+                if (card is null) continue;
+                player.Graveyard.Remove(card);
+                AddCardToHandByEffect(player, card, "graveyard", $"彼界 阿瓦隆将{card.Name}加入手牌");
+                recovered.Add(card);
+            }
+            player.FreeTacticCount++;
+            AddEvent("effect", item.Controller, "彼界 阿瓦隆回收1张军团和1张战术；本回合下一张从手牌打出的战术无需消耗费用", recovered.Prepend(source).ToArray());
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "avalonDebuff" && source?.CardId == "S02-06D1")
+        {
+            var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
+            if (target is not null)
+            {
+                AddTimedModifier(target, -4000, 0, ExpiryAtNextOwnEnd(item.Controller), "彼界 阿瓦隆");
+                AddEvent("effect", item.Controller, $"彼界 阿瓦隆使〈{target.Name}〉本回合兵力-4000", source, target);
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "forgePromotionDiscount" && source?.CardId == "S02-0520")
+        {
+            player.NextS2PromotionGodPowerDiscount++;
+            AddEvent("effect", item.Controller, "本回合下一次晋升登场消耗并翻转的神力-1", source);
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "forgeReadyOnKill" && source?.CardId == "S02-0520")
+        {
+            var target = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
+            if (target is not null)
+            {
+                target.ReadyAfterNextKillUntilTurn = State.TurnSerial;
+                target.ReadyAfterNextKillSourceName = "匠神锻造炉";
+                AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合下一次击杀对方军团后转为活跃", source, target);
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "morriganReadyOnKill" && source?.CardId == "S02-06M1")
+        {
+            var target = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
+            if (target is not null && target.Faction == "otherworld")
+            {
+                target.ReadyAfterNextKillUntilTurn = State.TurnSerial;
+                target.ReadyAfterNextKillSourceName = "莫瑞甘";
+                AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合下一次击杀对方军团后转为活跃", source, target);
+            }
+            FinishStackItem(item);
+            return true;
+        }
         if (ability == "godPowerDraw" && source?.CardId == "S02-05C1")
         {
             Draw(player, 1);
             FinishStackItem(item);
             return true;
         }
-        if (ability == "factionGainRune" && source?.CardId == "S02-06C1A")
+        if (ability == "factionGainRune" && source?.CardId == "S02-06C1")
         {
             L12S2ZoneOps.GainRunes(player, 1);
             AddEvent("effect", item.Controller, "获得1枚符文", source);
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "olympusMoraleFlip" && source?.CardId == "S02-05C1A")
+            return PromptS2FlipMorale(item, source);
+        if (ability == "prometheusTopThree" && source?.CardId == "S02-05M2")
+        {
+            var top = player.Library.Take(3).ToArray();
+            if (top.Length == 0)
+            {
+                FinishStackItem(item);
+                return true;
+            }
+            item.Data["prometheus-top"] = string.Join('|', top.Select(card => card.InstanceId));
+            var choices = top.Where(card => card.Faction == "olympus").Select(card => card.InstanceId).ToList();
+            choices.Add("skip");
+            var data = new Dictionary<string, string>
+            {
+                ["action"] = "s2-prometheus-pick",
+                ["choiceMode"] = "optional-add",
+                ["skip"] = "未找到可加入手牌的【奥林匹斯】卡牌",
+            };
+            foreach (var card in top) AddPromptCardData(data, card);
+            CreatePrompt(item.Controller, "optional-card", "普罗米修斯：查看牌库顶部3张牌，选择1张【奥林匹斯】卡牌加入手牌",
+                choices, 1, 1, "card-effect", item.StackItemId, data: data);
+            return true;
+        }
+        if (ability == "runeUse" && source?.CardId == "S02-06C1")
+        {
+            if (item.Data.GetValueOrDefault("mode") == "mode:trial")
+                AdvanceTrial(item.Controller, 1, CreateCard("S02-06S1", $"rune-effect-{State.TurnSerial}"));
+            else if (!Draw(player, 1))
+                SetWinner(1 - item.Controller, "符文效果抽牌时牌库为空");
             FinishStackItem(item);
             return true;
         }
@@ -818,6 +1483,33 @@ public sealed partial class L12GameEngine
             {
                 var target = DeclaredEnemyTarget(item.Controller, id);
                 if (target is not null) AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "黄金圣甲虫");
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "magatamaMove" && source?.CardId == "S02-0404")
+        {
+            var legion = FindOnField(player, item.Data.GetValueOrDefault("target"), out var row, out var slot);
+            var destinationText = item.Data.GetValueOrDefault("destination") ?? string.Empty;
+            if (legion is not null && !legion.Tapped && AdjacentEmptySlots(player, row, slot).Contains(destinationText))
+            {
+                var (targetRow, targetSlot) = ParseSlot(destinationText);
+                player.Field[row][slot] = null;
+                player.Field[targetRow][targetSlot] = legion;
+                legion.LastMovedTurn = State.TurnSerial;
+                AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (ability == "magatamaImmortal" && source?.CardId == "S02-0404")
+        {
+            var legion = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
+            if (legion is not null && legion.LastMovedTurn == State.TurnSerial)
+            {
+                legion.ImmortalUses = Math.Max(legion.ImmortalUses, 1);
+                legion.ImmortalUntilTurn = Math.Max(legion.ImmortalUntilTurn, ExpiryAtNextOwnEnd(item.Controller));
+                AddEvent("effect", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉本回合获得免死", source, legion);
             }
             FinishStackItem(item);
             return true;
@@ -949,6 +1641,259 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (prompt.Data.GetValueOrDefault("action"))
         {
+            case "s2-limu-morale":
+                if (chosen[0] == "yes")
+                {
+                    player.UsedAbilities.Add(prompt.Data.GetValueOrDefault("onceKey") ?? string.Empty);
+                    AddMorale(player, 1, tapped: true);
+                    AddEvent("morale", item.Controller, "李牧从士气牌库追加1张休整士气", FindSource(item) is { } liMu ? [liMu] : []);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-xiaotian-morale":
+                if (chosen[0] != "yes")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                player.UsedAbilities.Add(prompt.Data.GetValueOrDefault("onceKey") ?? string.Empty);
+                CreatePrompt(item.Controller, "slot", "哮天犬·稚：请直接点击前排高亮空位",
+                    Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null).Select(slot => $"0:{slot}"),
+                    1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-xiaotian-slot" });
+                return true;
+            case "s2-xiaotian-slot":
+            {
+                var (row, slot) = ParseSlot(chosen[0]);
+                if (row != 0 || player.Field[0][slot] is not null)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                var xiaotian = player.Graveyard.LastOrDefault(card => card.CardId == "S02-01S1")
+                    ?? player.Removed.LastOrDefault(card => card.CardId == "S02-01S1")
+                    ?? CreateCard("S02-01S1", $"p{item.Controller}-xiaotian");
+                player.Graveyard.Remove(xiaotian);
+                player.Removed.Remove(xiaotian);
+                xiaotian.Tapped = false;
+                xiaotian.SummonRound = State.Round;
+                player.Field[0][slot] = xiaotian;
+                AddEvent("enter", item.Controller, "〈哮天犬·稚〉在前排活跃登场", xiaotian);
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-xiaotian-death":
+                if (chosen[0] == "yes")
+                {
+                    AddMorale(player, 1, tapped: true);
+                    AddEvent("morale", item.Controller, "哮天犬·稚从士气牌库追加1张休整士气", FindSource(item) is { } xiaotian ? [xiaotian] : []);
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-limu-reveal":
+                if (chosen[0] == "yes") RevealS2LiMuTop(item);
+                else PromptS2LiMuDraw(item);
+                return true;
+            case "s2-limu-tactic":
+                if (chosen[0] == "play") PlayS2LiMuRevealedTactic(item);
+                else
+                {
+                    MoveS2LiMuRevealedToBottom(item);
+                    PromptS2LiMuDraw(item);
+                }
+                return true;
+            case "s2-limu-draw":
+                if (chosen[0] == "yes" && !Draw(player, 1))
+                    SetWinner(1 - item.Controller, "〈李牧〉效果抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
+            case "s2-fortune-artifact":
+                CompleteS2FortunePick(item, chosen[0], "artifact");
+                return true;
+            case "s2-fortune-uesugi":
+                CompleteS2FortunePick(item, chosen[0], "uesugi");
+                return true;
+            case "s2-fortune-bottom-order":
+                CompleteS2FortuneBottomOrder(item, command.BottomCardInstanceIds ?? chosen);
+                return true;
+            case "s2-mimir-mill":
+                if (chosen[0] == "yes") Mill(player, 2, "〈密米尔之泉〉");
+                FinishStackItem(item);
+                return true;
+            case "s2-prometheus-pick":
+            {
+                var topIds = item.Data.GetValueOrDefault("prometheus-top", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var selectedId = chosen[0];
+                if (selectedId != "skip")
+                {
+                    var selected = player.Library.FirstOrDefault(card => card.InstanceId == selectedId
+                        && topIds.Contains(card.InstanceId) && card.Faction == "olympus");
+                    if (selected is not null)
+                    {
+                        player.Library.Remove(selected);
+                        AddCardToHandByEffect(player, selected, "library", "普罗米修斯将奥林匹斯卡牌加入手牌");
+                    }
+                }
+                var remaining = topIds.Where(id => player.Library.Any(card => card.InstanceId == id)).ToArray();
+                if (remaining.Length == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                item.Data["reorder-context"] = "prometheus";
+                item.Data["reorder-cards"] = string.Join('|', remaining);
+                CreatePrompt(item.Controller, "order", "普罗米修斯：排列其余卡牌，并将其全部放回牌库顶部或全部放回牌库底部",
+                    remaining, remaining.Length, remaining.Length, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "reorder-order",
+                        ["placementMode"] = "all-top-bottom",
+                    });
+                return true;
+            }
+            case "s2-tenka-mode":
+            {
+                if (chosen[0] == "row-cost")
+                {
+                    CreatePrompt(item.Controller, "option", "天下布武：选择对方前排或后排",
+                        ["row:0", "row:1"], 1, 1, "card-effect", item.StackItemId,
+                        data: new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-tenka-row",
+                            ["row:0"] = "对方前排所有军团本回合费用-2",
+                            ["row:1"] = "对方后排所有军团本回合费用-2",
+                        });
+                    return true;
+                }
+                if (chosen[0] == "front-attack")
+                {
+                    player.UsedAbilities.Add($"s2-tenka-front-attack:{State.TurnSerial}");
+                    AddEvent("effect", item.Controller, "天下布武：本回合我方前排【高天原】军团进攻时兵力+1000", FindSource(item) is { } source ? [source] : []);
+                }
+                else
+                {
+                    foreach (var legion in PublicLegions(player).Where(card => card.Faction == "gaotianyuan" && !card.Tapped))
+                        player.UsedAbilities.Add($"s2-tenka-free-move:{legion.InstanceId}:{State.TurnSerial}");
+                    AddEvent("effect", item.Controller, "天下布武：本回合我方当前所有活跃【高天原】军团各可免费进行1格位移", FindSource(item) is { } source ? [source] : []);
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-tenka-row":
+            {
+                var row = chosen[0] == "row:1" ? 1 : 0;
+                foreach (var target in State.Players[1 - item.Controller].Field[row].Where(card => card is not null).Cast<L12CardInstance>())
+                    AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "天下布武");
+                AddEvent("effect", item.Controller, $"天下布武：对方{(row == 0 ? "前排" : "后排")}所有军团本回合费用-2", FindSource(item) is { } source ? [source] : []);
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-takeda-search":
+            {
+                if (chosen[0] != "skip")
+                {
+                    var selected = player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]
+                        && card.Faction == "gaotianyuan" && card.CardType == "legion" && card.BaseTroops <= 5000);
+                    if (selected is not null)
+                    {
+                        player.Library.Remove(selected);
+                        AddCardToHandByEffect(player, selected, "library", "武田信玄检索高天原军团");
+                    }
+                }
+                Shuffle(player.Library);
+                var sanadas = player.Hand.Where(card => card.CardId == "S01-0404").Select(card => card.InstanceId).ToList();
+                if (sanadas.Count == 0 || !EmptySlots(player).Any())
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                sanadas.Add("skip");
+                CreatePrompt(item.Controller, "optional-card", "武田信玄：选择手牌中1张〈真田幸村〉活跃登场",
+                    sanadas, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-takeda-sanada" });
+                return true;
+            }
+            case "s2-takeda-sanada":
+                if (chosen[0] == "skip")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                item.Data["takeda-sanada"] = chosen[0];
+                PromptFirstEmptySlot(item, "s2-takeda-sanada-slot", "武田信玄：选择〈真田幸村〉活跃登场的位置");
+                return true;
+            case "s2-takeda-sanada-slot":
+            {
+                var sanadaId = item.Data.GetValueOrDefault("takeda-sanada");
+                if (!string.IsNullOrWhiteSpace(sanadaId))
+                    SummonFromAnyPrivateZone(player, sanadaId, chosen[0], tapped: false);
+                var restedMorale = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
+                if (restedMorale.Length == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                CreatePrompt(item.Controller, "target-morale", "武田信玄：选择1张休整士气转为活跃",
+                    restedMorale, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-takeda-ready-morale" });
+                return true;
+            }
+            case "s2-takeda-ready-morale":
+            {
+                var morale = player.Morale.FirstOrDefault(card => card.InstanceId == chosen[0] && card.Tapped);
+                var source = FindSource(item);
+                if (morale is not null && source is not null)
+                    ReadyMoraleByEffect(item.Controller, source, morale, "武田信玄使1张士气转为活跃");
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-morrigan-enemy-death":
+                if (chosen[0] == "yes")
+                {
+                    var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
+                    if (State.ActivePlayer == item.Controller && player.MasterId == "S02-06M1"
+                        && player.UsedAbilities.Add(onceKey))
+                    {
+                        L12S2ZoneOps.GainRunes(player, 1);
+                        var source = FindSource(item);
+                        if (source is null) AddEvent("runes", item.Controller, "莫瑞甘使我方获得1符文");
+                        else AddEvent("runes", item.Controller, "莫瑞甘使我方获得1符文", source);
+                    }
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-nephthys-own-death":
+                if (chosen[0] != "yes")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                var nephthysOnceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
+                var scarab = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0201");
+                if (State.ActivePlayer == item.Controller || player.MasterId != "S02-02M1"
+                    || player.UsedAbilities.Contains(nephthysOnceKey) || scarab is null || !EmptySlots(player).Any())
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                player.UsedAbilities.Add(nephthysOnceKey);
+                item.Data["nephthys-scarab"] = scarab.InstanceId;
+                var nephthysPromptData = new Dictionary<string, string>
+                {
+                    ["action"] = "s2-nephthys-scarab-slot",
+                    ["previewCardId"] = scarab.InstanceId,
+                };
+                AddPromptCardData(nephthysPromptData, scarab);
+                CreatePrompt(item.Controller, "slot", "奈芙蒂斯：选择〈增殖的甲虫〉活跃登场的位置",
+                    EmptySlots(player), 1, 1, "card-effect", item.StackItemId, data: nephthysPromptData);
+                return true;
+            case "s2-nephthys-scarab-slot":
+                var nephthysScarabId = item.Data.GetValueOrDefault("nephthys-scarab");
+                if (!string.IsNullOrWhiteSpace(nephthysScarabId))
+                    SummonFromAnyPrivateZone(player, nephthysScarabId, chosen[0], tapped: false);
+                FinishStackItem(item);
+                return true;
             case "s2-amakine-entry-rune":
                 if (chosen[0] == "yes")
                 {
@@ -1084,6 +2029,21 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "yes" && !Draw(player, 1)) SetWinner(1 - item.Controller, "阿塔兰忒·晋升效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
+            case "s2-perseus-recover-promotion":
+            {
+                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
+                var discarded = player.Hand.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                var promotion = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0505");
+                if (discarded is not null && promotion is not null)
+                {
+                    MoveHandToGrave(player, discarded.InstanceId, causedByEffect: false);
+                    player.Graveyard.Remove(promotion);
+                    AddCardToHandByEffect(player, promotion, "graveyard", "珀尔修斯将〈帕尔修斯·晋升〉加入手牌");
+                    AddEvent("effect", item.Controller, "珀尔修斯弃置1张手牌，将墓地的〈帕尔修斯·晋升〉加入手牌", promotion, discarded);
+                }
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-heracles-promotion-show":
             {
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
@@ -1180,7 +2140,7 @@ public sealed partial class L12GameEngine
                 var source = FindSource(item);
                 if (chosen[0] != "skip" && source is not null && player.Hand.Any(card => card.InstanceId == chosen[0]))
                 {
-                    MoveHandToGrave(player, chosen[0]);
+                    MoveHandToGrave(player, chosen[0], causedByEffect: false);
                     AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "帕西瓦尔");
                 }
                 FinishStackItem(item);
@@ -1274,9 +2234,31 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "s2-olympus-draw-discard":
-                MoveHandToGrave(player, chosen[0]);
+                MoveHandToGrave(player, chosen[0], causedByEffect: true);
                 FinishStackItem(item);
                 return true;
+            case "s2-helen-entry-discard":
+                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                FinishStackItem(item);
+                return true;
+            case "s2-canute-trigger-deaths":
+            {
+                var triggers = chosen.Select(id => FindPromptCard(item.Controller, id))
+                    .Where(candidate => candidate is not null && candidate.CardType == "legion"
+                        && candidate.Faction == "asgard" && HasDeathTrigger(candidate))
+                    .Cast<L12CardInstance>()
+                    .DistinctBy(candidate => candidate.Name, StringComparer.Ordinal)
+                    .Take(2)
+                    .Select(candidate => CreateTriggerCandidate(item.Controller, candidate, "death", "【阵亡时】效果"))
+                    .ToArray();
+                if (triggers.Length > 0)
+                {
+                    QueueTriggerCandidates(triggers);
+                    AddEvent("effect", item.Controller, $"卡纽特大帝触发了{triggers.Length}张军团的阵亡时效果", FindSource(item) is { } source ? [source] : []);
+                }
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-flip-morale":
             {
                 if (chosen.Count == 0 || chosen[0] == "skip") { FinishStackItem(item); return true; }
@@ -1300,7 +2282,7 @@ public sealed partial class L12GameEngine
             case "s2-joan-master-guard":
                 if (chosen.Count > 0 && chosen[0] != "skip" && player.Hand.Any(card => card.InstanceId == chosen[0]))
                 {
-                    MoveHandToGrave(player, chosen[0]);
+                    MoveHandToGrave(player, chosen[0], causedByEffect: false);
                     player.MasterCannotBeAttackedUntilTurn = Math.Max(player.MasterCannotBeAttackedUntilTurn, State.TurnSerial + 1);
                 }
                 FinishStackItem(item);
@@ -1313,7 +2295,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "s2-asgard-death-discard":
-                MoveHandToGrave(player, chosen[0]);
+                MoveHandToGrave(player, chosen[0], causedByEffect: true);
                 FinishStackItem(item);
                 return true;
             case "s2-asgard-curse":
@@ -1323,6 +2305,54 @@ public sealed partial class L12GameEngine
                     if (target is not null) AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "阿斯加德诅咒");
                 }
                 FinishStackItem(item);
+                return true;
+            case "s2-mistletoe-debuff":
+                if (chosen[0] != "skip")
+                {
+                    var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
+                    if (target is not null) AddTimedModifier(target, -6000, 0, ExpiryAtNextOwnEnd(item.Controller), "槲寄生符咒");
+                }
+                FinishStackItem(item);
+                return true;
+            case "s2-round-table-search":
+            {
+                var selected = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                    && candidate.CardType == "legion" && candidate.HasTrait("圆桌骑士"));
+                if (selected is not null)
+                {
+                    player.Library.Remove(selected);
+                    AddCardToHandByEffect(player, selected, "library", "圆桌领域将【圆桌骑士】军团加入手牌");
+                }
+                Shuffle(player.Library);
+                PromptS2RoundTableBuff(item);
+                return true;
+            }
+            case "s2-magatama-search":
+            {
+                if (chosen[0] != "skip")
+                {
+                    var selected = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                        && candidate.Faction == "gaotianyuan" && candidate.CardType == "legion"
+                        && candidate.Profession == "骑兵");
+                    if (selected is not null)
+                    {
+                        player.Library.Remove(selected);
+                        AddCardToHandByEffect(player, selected, "library", "八尺琼勾玉将【高天原】的【骑兵】军团加入手牌");
+                        AddEvent("reveal", item.Controller, $"八尺琼勾玉展示〈{selected.Name}〉", selected);
+                    }
+                }
+                Shuffle(player.Library);
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-round-table-buff":
+                if (chosen[0] == "skip")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                BeginEffectMoralePayment(item, 1, "s2-round-table-buff",
+                    new Dictionary<string, string> { ["target"] = chosen[0] });
                 return true;
             case "s2-scarab-enter-slot":
                 SummonFromAnyPrivateZone(player, item.Data["scarab"], chosen[0], tapped: false);
@@ -1371,6 +2401,243 @@ public sealed partial class L12GameEngine
             default:
                 return false;
         }
+    }
+
+    private void PromptS2RoundTableBuff(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var targets = PublicLegions(player)
+            .Where(candidate => candidate.HasTrait("圆桌骑士"))
+            .Select(candidate => candidate.InstanceId)
+            .ToList();
+        if (targets.Count == 0 || ActiveResourceCount(player) < 1)
+        {
+            FinishStackItem(item);
+            return;
+        }
+        targets.Add("skip");
+        CreatePrompt(item.Controller, "optional-target", "圆桌领域：可消耗1士气，选择我方1张【圆桌骑士】军团，本回合兵力+2000",
+            targets, 1, 1, "card-effect", item.StackItemId,
+            data: new Dictionary<string, string> { ["action"] = "s2-round-table-buff" });
+    }
+
+    private void BeginS2LiMuEnter(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        if (player.Library.Count == 0)
+        {
+            FinishStackItem(item);
+            return;
+        }
+        CreatePrompt(item.Controller, "optional", "李牧：是否展示牌库顶部1张牌？",
+            ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-limu-reveal", ["choiceMode"] = "instant",
+                ["yes"] = "展示牌库顶部1张牌", ["no"] = "不展示，继续选择是否抽牌",
+            });
+    }
+
+    private void RevealS2LiMuTop(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        if (player.Library.Count == 0)
+        {
+            FinishStackItem(item);
+            return;
+        }
+        var top = player.Library[0];
+        item.Data["s2-limu-top"] = top.InstanceId;
+        AddEvent("reveal", item.Controller, $"李牧展示牌库顶部的〈{top.Name}〉", top);
+        if (top.CardType != "tactic" || IsCounterTactic(top.CardId) || top.CurrentCost > 4)
+        {
+            MoveS2LiMuRevealedToBottom(item);
+            PromptS2LiMuDraw(item);
+            return;
+        }
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-limu-tactic", ["previewCardId"] = top.InstanceId,
+            ["play"] = "无需消耗费用打出", ["bottom"] = "不打出，返回牌库底部",
+        };
+        AddPromptCardData(data, top);
+        CreatePrompt(item.Controller, "option", $"李牧展示了费用不高于4的主动战术〈{top.Name}〉",
+            ["play", "bottom"], 1, 1, "card-effect", item.StackItemId, data: data);
+    }
+
+    private L12CardInstance? FindS2LiMuRevealedCard(L12StackItem item)
+    {
+        var id = item.Data.GetValueOrDefault("s2-limu-top");
+        return string.IsNullOrWhiteSpace(id)
+            ? null
+            : State.Players[item.Controller].Library.FirstOrDefault(card => card.InstanceId == id);
+    }
+
+    private void MoveS2LiMuRevealedToBottom(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var card = FindS2LiMuRevealedCard(item);
+        if (card is null) return;
+        player.Library.Remove(card);
+        player.Library.Add(card);
+        AddEvent("library", item.Controller, $"李牧将〈{card.Name}〉返回牌库底部", card);
+    }
+
+    private void PlayS2LiMuRevealedTactic(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var card = FindS2LiMuRevealedCard(item);
+        if (card is null || card.CardType != "tactic" || IsCounterTactic(card.CardId) || card.CurrentCost > 4)
+        {
+            PromptS2LiMuDraw(item);
+            return;
+        }
+        player.Library.Remove(card);
+        player.Resolving.Add(card);
+        player.LastActiveTacticCardId = card.CardId;
+        AddEvent("play", item.Controller, $"李牧无需消耗费用打出〈{card.Name}〉", card);
+        if (HasImmediateEffect(card, "play"))
+            PushEffect(item.Controller, card, "play", "由〈李牧〉打出的战术效果");
+        else
+        {
+            player.Resolving.Remove(card);
+            ResetCardAfterLeavingField(card);
+            player.Graveyard.Add(card);
+        }
+        PromptS2LiMuDraw(item);
+    }
+
+    private void PromptS2LiMuDraw(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        if (player.Library.Count == 0)
+        {
+            FinishStackItem(item);
+            return;
+        }
+        CreatePrompt(item.Controller, "optional", "李牧：随后是否抽取1张牌？",
+            ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-limu-draw", ["choiceMode"] = "instant",
+                ["yes"] = "抽取1张牌", ["no"] = "不抽牌",
+            });
+    }
+
+    private void BeginS2FortuneSearch(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var top = player.Library.Take(5).ToArray();
+        item.Data["s2-fortune-cards"] = string.Join('|', top.Select(card => card.InstanceId));
+        player.UsedAbilities.Add("s2-fortune-next-uesugi");
+
+        var artifacts = top.Where(card => card.CardType == "artifact").ToArray();
+        if (artifacts.Length == 0)
+        {
+            PromptS2FortuneUesugi(item);
+            return;
+        }
+
+        CreateS2FortuneCardPrompt(item, "s2-fortune-artifact", "〈武运在天 铠甲在前〉：选择其中1张【圣物】加入手牌", artifacts);
+    }
+
+    private List<L12CardInstance> S2FortuneCardsStillInLibrary(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        return item.Data.GetValueOrDefault("s2-fortune-cards", string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => player.Library.FirstOrDefault(card => card.InstanceId == id))
+            .Where(card => card is not null)
+            .Cast<L12CardInstance>()
+            .ToList();
+    }
+
+    private void CreateS2FortuneCardPrompt(L12StackItem item, string action, string text,
+        IReadOnlyCollection<L12CardInstance> choices)
+    {
+        var displayed = S2FortuneCardsStillInLibrary(item);
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = action,
+            ["layout"] = "single-row",
+            ["displayCardIds"] = string.Join('|', displayed.Select(card => card.InstanceId)),
+        };
+        foreach (var card in displayed) AddPromptCardData(data, card);
+        CreatePrompt(item.Controller, "card", text, choices.Select(card => card.InstanceId), 1, 1,
+            "card-effect", item.StackItemId, data: data);
+    }
+
+    private void CompleteS2FortunePick(L12StackItem item, string choice, string stage)
+    {
+        var player = State.Players[item.Controller];
+        var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
+        var valid = selected is not null && (stage == "artifact"
+            ? selected.CardType == "artifact"
+            : selected.CardId == "S01-0403");
+        if (valid)
+        {
+            player.Library.Remove(selected!);
+            AddCardToHandByEffect(player, selected!, "library", $"〈武运在天 铠甲在前〉将〈{selected!.Name}〉加入手牌");
+            AddEvent("search", item.Controller, $"〈武运在天 铠甲在前〉将〈{selected.Name}〉加入手牌", selected);
+        }
+
+        if (stage == "artifact") PromptS2FortuneUesugi(item);
+        else PromptS2FortuneBottomOrder(item);
+    }
+
+    private void PromptS2FortuneUesugi(L12StackItem item)
+    {
+        var uesugi = S2FortuneCardsStillInLibrary(item)
+            .Where(card => card.CardId == "S01-0403")
+            .ToArray();
+        if (uesugi.Length == 0)
+        {
+            PromptS2FortuneBottomOrder(item);
+            return;
+        }
+
+        CreateS2FortuneCardPrompt(item, "s2-fortune-uesugi", "〈武运在天 铠甲在前〉：选择其中1张〈上杉谦信〉加入手牌", uesugi);
+    }
+
+    private void PromptS2FortuneBottomOrder(L12StackItem item)
+    {
+        var remaining = S2FortuneCardsStillInLibrary(item);
+        if (remaining.Count <= 1)
+        {
+            CompleteS2FortuneBottomOrder(item, remaining.Select(card => card.InstanceId).ToList());
+            return;
+        }
+
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-fortune-bottom-order",
+            ["placementMode"] = "all-bottom",
+            ["layout"] = "single-row",
+            ["displayCardIds"] = string.Join('|', remaining.Select(card => card.InstanceId)),
+        };
+        foreach (var card in remaining) AddPromptCardData(data, card);
+        CreatePrompt(item.Controller, "order", "调整其余卡牌的顺序，然后全部放回牌库底部。",
+            remaining.Select(card => card.InstanceId), remaining.Count, remaining.Count,
+            "card-effect", item.StackItemId, data: data);
+    }
+
+    private void CompleteS2FortuneBottomOrder(L12StackItem item, List<string> order)
+    {
+        var player = State.Players[item.Controller];
+        var remainingIds = S2FortuneCardsStillInLibrary(item).Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
+        if (order.Count != remainingIds.Count || order.Any(id => !remainingIds.Contains(id)) || order.Distinct().Count() != order.Count)
+        {
+            FinishStackItem(item);
+            return;
+        }
+
+        foreach (var id in order)
+        {
+            var card = player.Library.First(candidate => candidate.InstanceId == id);
+            player.Library.Remove(card);
+            player.Library.Add(card);
+        }
+        FinishStackItem(item);
     }
 
     private bool PromptS2FlipMorale(L12StackItem item, L12CardInstance source, bool optional = false, bool onlyTapped = false)

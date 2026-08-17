@@ -13,7 +13,10 @@ public sealed partial class L12GameEngine
             ?? player.SpecialZones.GodPower.FirstOrDefault(card => card.InstanceId == command.CardInstanceId);
         if (source is null && command.CardInstanceId is not null
             && (command.CardInstanceId == player.MasterId || command.CardInstanceId == $"master-{playerIndex}"))
+        {
             source = CreateCard(player.MasterId, $"master-{playerIndex}");
+            source.Tapped = player.MasterTapped;
+        }
         if (source is null && command.CardInstanceId == $"faction-{playerIndex}")
         {
             var moraleId = player.SpecialZones.GodPower.FirstOrDefault()?.CardId
@@ -70,25 +73,34 @@ public sealed partial class L12GameEngine
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
     }
 
-    private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, bool? useTombGuards = null)
+    private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
+        bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null)
     {
         var player = State.Players[playerIndex];
         var onceKey = $"active:{source.InstanceId}:{ability}";
+        if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
+            return freeResult;
         if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
-        var moraleCost = GetActiveAbilityMoraleCost(source, ability);
-        if (moraleCost > 0 && useTombGuards is null
-            && PublicLegions(player).Any(card => card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == playerIndex))
+        var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
+        var moraleCost = GetActiveAbilityMoraleCost(source, ability) + disasterMasterSurcharge;
+        if (disasterMasterSurcharge > 0 && ActiveResourceCount(player) < moraleCost)
+            return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
+        if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
+            && HasActiveTombGuardResource(player) && Math.Max(0, moraleCost - player.TemporaryMorale) > 0)
         {
-            var canPayWithoutGuards = ActiveMoraleCountWithoutTombGuards(player) >= moraleCost;
-            CreatePrompt(playerIndex, "optional", $"{source.Name}：是否使用活跃的陵墓守卫支付费用？", ["yes", "no"], 1, 1,
-                "active-morale-choice", data: new Dictionary<string, string>
-                {
-                    ["sourceId"] = source.InstanceId, ["sourceCardId"] = source.CardId, ["ability"] = ability,
-                    ["target"] = target ?? string.Empty, ["canPayWithoutGuards"] = canPayWithoutGuards.ToString(),
-                    ["choiceMode"] = "instant", ["yes"] = $"使用陵墓守卫优先支付（费用 {moraleCost}）",
-                    ["no"] = canPayWithoutGuards ? $"仅使用士气支付（费用 {moraleCost}）" : "不使用并取消发动",
-                });
+            CreateResourcePaymentPrompt(playerIndex, moraleCost, "active-morale-choice", null, new Dictionary<string, string>
+            {
+                ["sourceId"] = source.InstanceId, ["sourceCardId"] = source.CardId, ["ability"] = ability,
+                ["target"] = target ?? string.Empty,
+            });
             return CommandResult.Ok();
+        }
+        if (selectedResourceIds is not null)
+        {
+            if (!TryConsumeSelectedResources(player, moraleCost, selectedResourceIds))
+                return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+            // 下层各阵营效果仍通过统一 ConsumeMorale 申报费用；以临时士气作为一次性预付凭证，避免重复扣费。
+            player.TemporaryMorale += moraleCost;
         }
         bool ConsumeMorale(int cost) => useTombGuards switch
         {
@@ -96,6 +108,7 @@ public sealed partial class L12GameEngine
             false => TryConsumeMorale(player, cost, preferTombGuards: false, allowTombGuards: false),
             _ => TryConsumeMorale(player, cost),
         };
+        var moraleReturnedByMasterEffect = 0;
         switch (ability)
         {
             case "drawCycle" when source.CardId == "S01-01M1":
@@ -103,6 +116,7 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add(onceKey); break;
             case "nonLethal" when source.CardId == "S01-01M1":
                 if (!ReturnMorale(player, 4)) return CommandResult.Reject("需要返还 4 张士气");
+                moraleReturnedByMasterEffect = 4;
                 player.UsedAbilities.Add(onceKey); break;
             case "frontBuff" when source.CardId == "S01-04M2":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
@@ -143,16 +157,51 @@ public sealed partial class L12GameEngine
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗 2 张活跃士气");
                 player.UsedAbilities.Add(onceKey); break;
             default:
-                return TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey)
+            {
+                var result = TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey)
                     ?? TryCommitS2FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
                     ?? TryCommitS1ExtendedActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
                     ?? CommandResult.Reject("该卡没有此主动效果");
+                if (!result.Accepted || disasterMasterSurcharge == 0) return result;
+                if (!ConsumeMorale(disasterMasterSurcharge))
+                    return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
+                return result;
+            }
         }
+        if (disasterMasterSurcharge > 0 && !ConsumeMorale(disasterMasterSurcharge))
+            return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
         PushEffect(playerIndex, source, "active", "主动效果", data: data);
+        if (moraleReturnedByMasterEffect > 0)
+            QueueS2MasterMoraleReturnTriggers(playerIndex, source, moraleReturnedByMasterEffect);
         if (State.ActiveDisaster?.CardId == "S01-DS08" && source.CardType == "artifact")
             DamageMasterNonLethal(playerIndex, 1, "使用圣物效果");
+        return CommandResult.Ok();
+    }
+
+    private CommandResult? TryCommitFreeMasterActivation(int playerIndex, L12CardInstance source, string ability, string? target)
+    {
+        var free = State.FreeMasterActivation;
+        if (free is null || free.Controller != playerIndex
+            || !free.Ability.Equals(ability, StringComparison.OrdinalIgnoreCase)) return null;
+
+        var player = State.Players[playerIndex];
+        var legalAbility = source.CardId == player.MasterId
+            && GetAbilities(player.MasterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase))
+            && GetActiveAbilityMoraleCost(source, ability) > 0;
+        State.FreeMasterActivation = null;
+        if (!legalAbility) return CommandResult.Reject("信仰狂热者选择的主宰效果已不合法");
+
+        var data = new Dictionary<string, string>
+        {
+            ["ability"] = ability,
+            ["freeMasterActivation"] = "true",
+            ["freeMasterSource"] = free.SourceInstanceId,
+        };
+        if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
+        PushEffect(playerIndex, source, "active", "由〈信仰狂热者〉无视消耗触发的主宰效果", data: data);
+        AddEvent("effect", playerIndex, $"〈信仰狂热者〉无视全部消耗触发〈{source.Name}〉的主宰效果，且不计入使用次数", source);
         return CommandResult.Ok();
     }
 
@@ -164,6 +213,7 @@ public sealed partial class L12GameEngine
             or "gramReady" or "sunTopThree" or "sunBottomEnemy" or "valhallaRecover" or "yomiSweep" => 2,
         "extendedRange" when source.CardId == "S01-0003" => 2,
         "discardHolyLock" => 3,
+        "forgePromotionDiscount" or "forgeReadyOnKill" => 1,
         _ => 0,
     };
 

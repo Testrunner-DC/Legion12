@@ -129,6 +129,11 @@ public sealed partial class L12GameEngine
     private void ReadyMoraleByEffect(int playerIndex, L12CardInstance source, L12MoraleCard target, string reason)
     {
         if (!target.Tapped) return;
+        if (source.CardType == "master" && PublicLegions(State.Players[playerIndex]).Any(card => card.CardId == "S02-0401"))
+        {
+            AddEvent("effect-prevented", playerIndex, "武田信玄使我方士气无法因主宰效果转为活跃", source);
+            return;
+        }
         QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
             targetInstanceId: target.InstanceId, causedByEffect: true);
     }

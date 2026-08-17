@@ -48,6 +48,39 @@ public sealed partial class L12GameEngine
         "S01-04M2" => [new("frontBuff", "消耗1张活跃士气：选择我方1张【高天原】军团发动前排强化。"), new("kusanagi", "消耗2张活跃士气：将圣物区的〈草雉剑〉作为军团置入我方前排。")],
         "S02-0003" => [new("disableCounters", "主动休整：直到我方下个回合开始前，战场上所有反击战术无法发动。")],
         "S02-0104" => [new("shennongReset", "主动休整 返还1士气：重置我方主宰其中1个效果的使用次数。")],
+        "S02-05C1" => [new("godPowerDraw", "我方 回合1次 可消耗并翻转1神力：抽取1张牌。")],
+        "S02-05C1A" => [new("olympusMoraleFlip", "我方 回合1次 可消耗1士气：翻转1张士气。")],
+        "S02-05M2" => [new("prometheusTopThree", "我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。")],
+        "S02-06D1" =>
+        [
+            new("avalonRecover", "我方 回合1次 可消耗2符文：选择墓地中1张军团和1张战术加入手牌。随后，本回合从手牌中打出的下1张战术卡无需消耗费用。"),
+            new("avalonDebuff", "主动休整 选择对方1张军团，本回合兵力-4000。"),
+        ],
+        "S02-06M1" => [new("morriganReadyOnKill", "我方 回合1次 可消耗2符文：选择我方1张【彼界】军团，在本回合其下一次击杀对方军团后转为活跃。")],
+        "S02-0520" =>
+        [
+            new("forgePromotionDiscount", "主动休整 消耗1士气：本回合我方下1张军团「晋升登场」消耗并翻转的神力-1。"),
+            new("forgeReadyOnKill", "主动休整 消耗1士气：选择我方1张【晋升者】以外的【奥林匹斯】军团，在本回合其下一次击杀对方军团后转为活跃。"),
+        ],
+        "S02-06C1" =>
+        [
+            new("factionGainRune", "我方 回合1次 可消耗2士气：获得1符文。"),
+            new("runeUse", "我方 回合1次 可消耗1符文：选择试炼+1，或抽取1张牌。"),
+        ],
+        "S02-06S3" => [new("completeTrial", "试炼达到8：完成《湖中仙女的馈赠》。")],
+        "S02-06S4" => [new("completeTrial", "试炼达到8：完成《寻找圣杯之旅》。")],
+        "S02-06S5" =>
+        [
+            new("completeTrial", "试炼达到8：完成《芬尼亚传奇》。"),
+            new("fenianReady", "我方 回合1次 可消耗1符文：将我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃。"),
+        ],
+        "S02-06S6" =>
+        [
+            new("completeTrial", "试炼达到8：完成《十字军东征》。"),
+            new("crusadeTrialNoLoss", "消耗1符文：选择我方1张【试炼军团】，本回合下一次进攻无损。"),
+            new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
+            new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
+        ],
         _ => GetS1FactionAbilities(cardId) is { Count: > 0 } s1Abilities ? s1Abilities : GetS2FactionAbilities(cardId),
     };
 
@@ -350,7 +383,7 @@ public sealed partial class L12GameEngine
                 PromptDiscard(item, item.Controller, 1, "黑胡子蒂奇：弃置1张手牌", "teach-death-discard");
                 return true;
             case "teach-death-discard":
-                MoveHandToGrave(player, chosen[0]); FinishStackItem(item); return true;
+                MoveHandToGrave(player, chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "mozi-immortal":
                 if (chosen.Contains("skip") || !ReturnMorale(player, 1)) { FinishStackItem(item); return true; }
                 foreach (var id in chosen)
@@ -475,7 +508,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             }
             case "evil-ritual-discard":
-                MoveHandToGrave(player, chosen[0]); DamageMasterNonLethal(1 - item.Controller, 1, "邪恶仪式"); FinishStackItem(item); return true;
+                MoveHandToGrave(player, chosen[0], causedByEffect: false); DamageMasterNonLethal(1 - item.Controller, 1, "邪恶仪式"); FinishStackItem(item); return true;
             case "camp-pick":
                 CompleteCampPick(item, chosen[0]); return true;
             case "camp-morale":
@@ -582,7 +615,7 @@ public sealed partial class L12GameEngine
             }
             case "wisdom-discard":
             {
-                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0]); Draw(player, 1);
+                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false); Draw(player, 1);
                 var choices = player.Graveyard.Where(card => card.CardId != "S01-0224" && card.CurrentCost <= 3 && card.CardType is "tactic" or "artifact")
                     .Select(card => card.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "智慧法典：可选择墓地1张费用不高于3的其他战术或圣物回到手牌", choices, 1, 1,
@@ -712,11 +745,14 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string> { ["action"] = action, ["sourceZone"] = "hand", ["layout"] = "single-row" });
     }
 
-    private void MoveHandToGrave(L12PlayerState player, string instanceId)
+    private void MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect)
     {
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
-        player.Hand.Remove(card); player.Graveyard.Add(card); AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
+        player.Hand.Remove(card);
+        player.Graveyard.Add(card);
+        AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
+        NotifyCardDiscarded(player, card, "hand", causedByEffect);
     }
 
     private void MoveGraveToHand(L12PlayerState player, string instanceId)
@@ -755,7 +791,7 @@ public sealed partial class L12GameEngine
         var target = FindOnField(player, item.Data["ryoma-current"], out var row, out var slot);
         if (target is not null)
         {
-            var (nextRow, nextSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target;
+            var (nextRow, nextSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
         }
         item.Data["ryoma-index"] = (int.Parse(item.Data["ryoma-index"]) + 1).ToString(); ContinueRyomaMove(item);
     }
@@ -782,7 +818,7 @@ public sealed partial class L12GameEngine
         var target = FindOnField(enemy, item.Data["orders-current"], out var row, out var slot);
         if (target is not null)
         {
-            var (nextRow, nextSlot) = ParseSlot(slotChoice); enemy.Field[row][slot] = null; enemy.Field[nextRow][nextSlot] = target;
+            var (nextRow, nextSlot) = ParseSlot(slotChoice); enemy.Field[row][slot] = null; enemy.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
         }
         item.Data["orders-index"] = (int.Parse(item.Data["orders-index"]) + 1).ToString(); ContinueOrdersMove(item);
     }
@@ -954,9 +990,19 @@ public sealed partial class L12GameEngine
     private void QueueS1MasterDamageReaction(int damagedPlayer)
     {
         var player = State.Players[damagedPlayer];
+        var candidates = new List<L12TriggerCandidate>();
         var counter = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0021" } && card.SetRound < State.Round);
         if (counter is not null)
-            QueueTriggerCandidates([CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术")]);
+            candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
+        if (player.MasterId == "S01-02M3" && State.ActivePlayer != damagedPlayer
+            && player.Graveyard.Any(card => card.CardId == "S01-0212")
+            && !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
+            && player.UsedAbilities.Add("pending:medjedDamageResponse"))
+        {
+            var master = CreateCard(player.MasterId, $"master-{damagedPlayer}");
+            candidates.Add(CreateTriggerCandidate(damagedPlayer, master, "medjed-master-damage", "【主宰受到伤害时】效果"));
+        }
+        QueueTriggerCandidates(candidates);
     }
 
     private IEnumerable<L12TriggerCandidate> BuildS1LeaveReactionCandidates(int owner, L12CardInstance left)

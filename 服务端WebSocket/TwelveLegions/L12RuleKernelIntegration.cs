@@ -42,7 +42,29 @@ public sealed partial class L12GameEngine
     private void CreateActivationStepPrompt(L12PendingActivation activation)
     {
         var step = activation.SelectionSteps[activation.CurrentStep];
-        CreatePrompt(activation.Controller, step.Kind, step.Text, step.ValidChoices, step.MinChoose, step.MaxChoose,
+        var promptKind = step.Kind;
+        if (step.Kind == "adjacent-slot")
+        {
+            var player = State.Players[activation.Controller];
+            var row = -1;
+            var slot = -1;
+            var moving = activation.DeclaredTargets.Count == 0
+                ? null
+                : FindOnField(player, activation.DeclaredTargets[0], out row, out slot);
+            List<string> choices = moving is null ? [] : AdjacentEmptySlots(player, row, slot).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                State.PendingActivations.Remove(activation);
+                ClearFreeMasterActivation(activation);
+                AddEvent("ability-rejected", activation.Controller, "所选军团没有可位移的相邻空位，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
+        CreatePrompt(activation.Controller, promptKind, step.Text, step.ValidChoices, step.MinChoose,
+            Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
             data: new Dictionary<string, string>
             {
@@ -50,6 +72,13 @@ public sealed partial class L12GameEngine
                 ["activationStep"] = activation.CurrentStep.ToString(),
             });
     }
+
+    private IEnumerable<string> AdjacentEmptySlots(L12PlayerState player, int row, int slot)
+        => new[] { (row - 1, slot), (row + 1, slot), (row, slot - 1), (row, slot + 1) }
+            .Where(position => position.Item1 is >= 0 and < 2 && position.Item2 is >= 0 and < 3
+                && !(State.ActiveDisaster?.CardId == "S01-DS03" && position.Item1 == 1)
+                && player.Field[position.Item1][position.Item2] is null)
+            .Select(position => $"{position.Item1}:{position.Item2}");
 
     private void ResolvePendingActivation(L12Prompt prompt, List<string> chosen)
     {
@@ -61,6 +90,7 @@ public sealed partial class L12GameEngine
             || chosen.Any(id => !step.ValidChoices.Contains(id, StringComparer.OrdinalIgnoreCase)))
         {
             State.PendingActivations.Remove(activation);
+            ClearFreeMasterActivation(activation);
             AddEvent("ability-rejected", prompt.PlayerIndex, "目标声明已失效，效果未支付费用也未入栈");
             return;
         }
@@ -77,16 +107,32 @@ public sealed partial class L12GameEngine
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == activation.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId)
-            ?? (activation.SourceCardId == player.MasterId ? CreateCard(player.MasterId, activation.SourceInstanceId) : null)
+            ?? (activation.SourceCardId == player.MasterId ? CreateActiveMasterSource(player, activation.SourceInstanceId) : null)
             ?? (activation.SourceInstanceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
         if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(prompt.PlayerIndex, id)))
         {
+            ClearFreeMasterActivation(activation);
             AddEvent("ability-rejected", prompt.PlayerIndex, "来源或目标已不合法，效果未支付费用也未入栈");
             return;
         }
         var result = CommitActiveAbility(prompt.PlayerIndex, source, activation.Ability,
             activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets));
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
+    }
+
+    private L12CardInstance CreateActiveMasterSource(L12PlayerState player, string instanceId)
+    {
+        var source = CreateCard(player.MasterId, instanceId);
+        source.Tapped = player.MasterTapped;
+        return source;
+    }
+
+    private void ClearFreeMasterActivation(L12PendingActivation activation)
+    {
+        if (State.FreeMasterActivation is { } free
+            && free.Controller == activation.Controller
+            && free.Ability.Equals(activation.Ability, StringComparison.OrdinalIgnoreCase))
+            State.FreeMasterActivation = null;
     }
 
     private bool IsDeclaredChoiceStillLegal(int controller, string choice)
@@ -135,13 +181,24 @@ public sealed partial class L12GameEngine
 
     private void QueueSimultaneousDeathTriggers(IEnumerable<(int Controller, L12CardInstance Card)> deaths)
     {
-        var candidates = deaths.SelectMany(entry =>
+        var materializedDeaths = deaths.ToArray();
+        var candidates = materializedDeaths.SelectMany(entry =>
         {
             var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.Card).ToList();
             if (HasDeathTrigger(entry.Card))
                 sameTime.Add(CreateTriggerCandidate(entry.Controller, entry.Card, "death", "【阵亡时】效果"));
             return sameTime;
-        }).ToArray();
+        }).ToList();
+        foreach (var defeatedController in materializedDeaths.Select(entry => entry.Controller).Distinct())
+        {
+            var morrigan = BuildMorriganEnemyDeathCandidate(defeatedController);
+            if (morrigan is not null) candidates.Add(morrigan);
+        }
+        foreach (var entry in materializedDeaths)
+        {
+            var nephthys = BuildNephthysOwnDeathCandidate(entry.Controller, entry.Card);
+            if (nephthys is not null) candidates.Add(nephthys);
+        }
         QueueTriggerCandidates(candidates);
     }
 

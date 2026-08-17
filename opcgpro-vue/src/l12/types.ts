@@ -20,6 +20,8 @@ export interface Card {
   baseTroops: number
   troops: number
   disasterLevel: number
+  traits?: string[]
+  profession?: string
   hasCharge?: boolean
   hasStrongAttack?: boolean
   hasSureHit?: boolean
@@ -28,6 +30,7 @@ export interface Card {
   cannotBeRanged?: boolean
   hidden?: boolean
   currentCost?: number
+  playCost?: number
   tapped: boolean
   summonRound: number
   cannotAttack?: boolean
@@ -37,7 +40,7 @@ export interface Card {
   immortalUntilTurn?: number
   suppressDeathUntilTurn?: number
   timedModifiers?: Array<{ troopsDelta: number; costDelta: number; expiresAfterTurn: number; source: string }>
-  abilities?: Array<{ id: string; label: string }>
+  abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }>
 }
 
 export interface DisasterCardView extends Partial<Card> {
@@ -51,8 +54,8 @@ export interface PlayerView {
   name: string
   deckName: string
   faction: string
-  factionEffect?: { cardId: string; name: string; imageUrl?: string; effectText: string; abilities?: Array<{ id: string; label: string }> }
-  master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; hp: number; maxHp: number; abilities?: Array<{ id: string; label: string }> }
+  factionEffect?: { cardId: string; name: string; imageUrl?: string; effectText: string; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
+  master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; hp: number; maxHp: number; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
   libraryCount: number
   hand?: Card[]
   handCount?: number

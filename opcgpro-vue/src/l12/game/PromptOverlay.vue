@@ -141,7 +141,9 @@ function detailFor(id: string | null) {
     imageUrl,
     effectText: card?.effectText ?? prompt.value?.data?.[`${id}:effect`] ?? '',
     cardType: card?.cardType ?? prompt.value?.data?.[`${id}:cardType`] ?? '',
-    cost: card?.currentCost ?? card?.cost ?? numberData(id, 'cost'),
+    traits: card?.traits ?? prompt.value?.data?.[`${id}:traits`]?.split('|').filter(Boolean) ?? [],
+    profession: (card?.profession ?? prompt.value?.data?.[`${id}:profession`]) || undefined,
+    cost: card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost'),
     troops: card?.troops ?? numberData(id, 'troops'),
     baseTroops: card?.baseTroops ?? numberData(id, 'baseTroops'),
     disasterLevel: card?.disasterLevel ?? numberData(id, 'disasterLevel'),
@@ -158,6 +160,8 @@ function cardObjectFor(id: string): Card | null {
     name: detail.name,
     cardType: detail.cardType,
     faction: prompt.value?.data?.[`${id}:faction`] ?? '',
+    traits: detail.traits,
+    profession: detail.profession,
     imageUrl: detail.imageUrl,
     effectText: detail.effectText,
     cost: detail.cost ?? 0,
@@ -190,6 +194,7 @@ const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
 const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
 const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
 const hasCardChoices = computed(() => Boolean(previewCardId.value) || displayedChoices.value.some(id => Boolean(detailFor(id))))
+const isEffectOptionList = computed(() => prompt.value?.kind === 'option' && !hasCardChoices.value && !isInitiative.value)
 const displayedCardsAreAllFromHand = computed(() => {
   const handIds = new Set(props.game.players.flatMap(player => (player.hand ?? []).map(card => card.instanceId)))
   const cards = displayedChoices.value.filter(id => Boolean(detailFor(id)))
@@ -430,7 +435,7 @@ function kindLabel() {
             </div>
           </section>
         </div>
-        <div v-else class="prompt-choices" :class="{ 'card-grid': hasCardChoices }">
+        <div v-else class="prompt-choices" :class="{ 'card-grid': hasCardChoices, 'effect-option-list': isEffectOptionList }">
           <button v-for="choice in displayedChoices" :key="choice"
             :class="{ selected: selected.includes(choice), unavailable: displayedCardsAreChoices && !prompt.validChoices.includes(choice), 'card-choice': detailFor(choice), 'horizontal-card': isHorizontalCardType(detailFor(choice)?.cardType) }"
             @mouseenter="focusChoice(choice)" @focus="focusChoice(choice)" @click="focusChoice(choice); toggle(choice)">
@@ -527,6 +532,7 @@ function kindLabel() {
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:18px;line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:18px}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(820px,calc(100vw - 36px))}.prompt-choices.card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;min-height:0;max-height:292px;padding:10px 3px;overflow:auto}.prompt-choices.card-grid>button{display:flex;width:100%;min-width:0;max-width:none;min-height:0;flex-direction:column;align-items:center;justify-content:center;padding:5px;border:2px solid #d9d8cf;background:#101516;color:#fff}.prompt-choices.card-grid>button:hover,.prompt-choices.card-grid>button.selected{border-color:#70d7df;background:#174e54;color:#fff}.prompt-choices.card-grid img{width:72px;max-width:100%;height:100px;margin:0 auto 5px;object-fit:contain}.prompt-choices.card-grid span{display:block;width:100%;overflow:hidden;color:#fff;font-size:11px;line-height:17px;text-align:center;text-overflow:ellipsis;white-space:nowrap}
+.prompt-choices.effect-option-list{display:flex;max-width:640px;flex-direction:column;align-items:stretch;gap:8px;margin:12px auto}.prompt-choices.effect-option-list>button{width:100%;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:11px;font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
 .prompt-choices.card-grid>button.horizontal-card{grid-column:span 2}.prompt-choices.card-grid>button.horizontal-card img{width:180px;height:112px}.prompt-panel.single-card-row{width:min(900px,calc(100vw - 36px))}.prompt-panel.single-card-row .prompt-choices.card-grid{display:flex;max-height:none;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden}.prompt-panel.single-card-row .prompt-choices.card-grid>button{flex:0 0 112px;width:112px;padding:3px}.prompt-panel.single-card-row .prompt-choices.card-grid img{width:92px;height:128px}
 .prompt-featured-card{display:flex;width:150px;min-height:0;flex-direction:column;align-items:center;gap:5px;margin:10px auto 2px;padding:5px;border:2px solid #ded9cc;background:#0a0e0f;color:#fff}.prompt-featured-card img{width:126px;height:176px;object-fit:contain}.prompt-featured-card.disaster{width:230px}.prompt-featured-card.disaster img{width:210px;height:132px}.prompt-featured-card span{font-size:11px;font-weight:900}
 .l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid{display:flex;justify-content:center;max-height:none}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button{flex:0 0 min(616px,calc(100vw - 100px));width:min(616px,calc(100vw - 100px));max-width:616px}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button img{width:min(588px,calc(100vw - 140px));height:min(368px,48vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card{width:min(630px,calc(100vw - 90px));margin-inline:auto}.l12-prompt-overlay.information-confirm .prompt-featured-card img{width:min(602px,calc(100vw - 130px));height:min(376px,48vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card span{font-size:14px}

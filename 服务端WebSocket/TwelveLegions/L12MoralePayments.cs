@@ -6,39 +6,67 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         if (ActiveResourceCount(player) < cost) { FinishStackItem(item); return; }
-        var guards = PublicLegions(player).Count(card => card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == item.Controller);
-        if (guards == 0)
+        if (!HasActiveTombGuardResource(player) || Math.Max(0, cost - player.TemporaryMorale) == 0)
         {
             if (TryConsumeMorale(player, cost)) CompleteEffectMoralePayment(item, afterPayment, extra ?? []);
             else FinishStackItem(item);
             return;
         }
-        var canPayWithoutGuards = ActiveMoraleCountWithoutTombGuards(player) >= cost;
         var data = new Dictionary<string, string>
         {
             ["action"] = "effect-morale-payment", ["afterPayment"] = afterPayment, ["cost"] = cost.ToString(),
-            ["canPayWithoutGuards"] = canPayWithoutGuards.ToString(), ["choiceMode"] = "instant",
-            ["yes"] = $"使用陵墓守卫优先支付（费用 {cost}）",
-            ["no"] = canPayWithoutGuards ? $"仅使用士气支付（费用 {cost}）" : "不使用并取消发动",
+            ["choiceMode"] = "resource-payment",
         };
         if (extra is not null) foreach (var pair in extra) data[$"payment:{pair.Key}"] = pair.Value;
-        CreatePrompt(item.Controller, "optional", "是否使用活跃的陵墓守卫支付本次效果费用？", ["yes", "no"], 1, 1,
-            "card-effect", item.StackItemId, data: data);
+        CreateResourcePaymentPrompt(item.Controller, cost, "card-effect", item.StackItemId, data);
     }
 
-    private void ContinueEffectMoralePayment(L12StackItem item, L12Prompt prompt, string choice)
+    private void ContinueEffectMoralePayment(L12StackItem item, L12Prompt prompt, IReadOnlyCollection<string> selectedIds)
     {
         var cost = int.TryParse(prompt.Data.GetValueOrDefault("cost"), out var parsedCost) ? parsedCost : 0;
-        var canPayWithoutGuards = bool.TryParse(prompt.Data.GetValueOrDefault("canPayWithoutGuards"), out var parsedCanPay) && parsedCanPay;
-        if (choice == "no" && !canPayWithoutGuards) { FinishStackItem(item); return; }
         var player = State.Players[item.Controller];
-        var paid = choice == "yes"
-            ? TryConsumeMorale(player, cost, preferTombGuards: true, allowTombGuards: true)
-            : TryConsumeMorale(player, cost, preferTombGuards: false, allowTombGuards: false);
-        if (!paid) { FinishStackItem(item); return; }
+        if (!TryConsumeSelectedResources(player, cost, selectedIds)) { FinishStackItem(item); return; }
         var extra = prompt.Data.Where(pair => pair.Key.StartsWith("payment:", StringComparison.Ordinal))
             .ToDictionary(pair => pair.Key[8..], pair => pair.Value);
         CompleteEffectMoralePayment(item, prompt.Data.GetValueOrDefault("afterPayment") ?? string.Empty, extra);
+    }
+
+    private bool HasActiveTombGuardResource(L12PlayerState player)
+        => State.ActivePlayer == player.PlayerIndex
+            && PublicLegions(player).Any(card => card.CardId == "S01-0212" && !card.Tapped);
+
+    private void CreateResourcePaymentPrompt(int playerIndex, int totalCost, string continuation, string? stackItemId,
+        Dictionary<string, string> data)
+    {
+        var player = State.Players[playerIndex];
+        var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
+        var choices = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
+            .Concat(PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId))
+            .ToArray();
+        data["cost"] = totalCost.ToString();
+        data["visibleCost"] = visibleCost.ToString();
+        data["choiceMode"] = "resource-payment";
+        foreach (var morale in player.Morale.Where(card => !card.Tapped)) data[$"{morale.InstanceId}:resourceType"] = "morale";
+        foreach (var guard in PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped))
+            data[$"{guard.InstanceId}:resourceType"] = "tomb-guard";
+        CreatePrompt(playerIndex, "resource-payment", "请选择支付费用的士气或陵墓守卫", choices,
+            visibleCost, visibleCost, continuation, stackItemId, isPrivate: true, data: data);
+    }
+
+    private bool TryConsumeSelectedResources(L12PlayerState player, int totalCost, IReadOnlyCollection<string> selectedIds)
+    {
+        if (totalCost < 0 || ActiveResourceCount(player) < totalCost) return false;
+        var temporary = Math.Min(totalCost, player.TemporaryMorale);
+        var visibleCost = totalCost - temporary;
+        if (selectedIds.Count != visibleCost || selectedIds.Distinct(StringComparer.Ordinal).Count() != visibleCost) return false;
+        var morale = player.Morale.Where(card => selectedIds.Contains(card.InstanceId) && !card.Tapped).ToArray();
+        var guards = PublicLegions(player).Where(card => selectedIds.Contains(card.InstanceId)
+            && card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == player.PlayerIndex).ToArray();
+        if (morale.Length + guards.Length != visibleCost) return false;
+        player.TemporaryMorale -= temporary;
+        foreach (var card in morale) card.Tapped = true;
+        foreach (var card in guards) card.Tapped = true;
+        return true;
     }
 
     private void CompleteEffectMoralePayment(L12StackItem item, string afterPayment, IReadOnlyDictionary<string, string> data)
@@ -79,6 +107,16 @@ public sealed partial class L12GameEngine
                     AddEvent("morale", item.Controller, "〈黑色莲花〉休整置入士气区，视为1张士气", source);
                 }
                 FinishStackItem(item); break;
+            case "s2-round-table-buff":
+            {
+                var target = FindOnField(player, data.GetValueOrDefault("target") ?? string.Empty, out _, out _);
+                if (target is not null && target.HasTrait("圆桌骑士"))
+                {
+                    AddTimedModifier(target, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "圆桌领域");
+                    AddEvent("effect", item.Controller, $"〈圆桌领域〉使{target.Name}本回合兵力+2000", source is null ? [target] : [source, target]);
+                }
+                FinishStackItem(item); break;
+            }
             default: FinishStackItem(item); break;
         }
     }

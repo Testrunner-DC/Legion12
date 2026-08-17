@@ -11,7 +11,12 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == command.CardInstanceId);
         if (card is null) return CommandResult.Reject("卡牌不在手牌中");
+        if (card.CardId == "S02-0306" && player.MasterDamageTakenThisTurn < 2)
+            return CommandResult.Reject("本回合我方主宰受到的累计伤害不足2点");
+        if (card.CardId == "S02-0306" && player.UsedAbilities.Contains("s2-mimir-used"))
+            return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
+        if (IsS2PromotionCard(card)) return PlayS2Promotion(playerIndex, card, command);
         if (card.CardType == "legion" && (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2))
             return CommandResult.Reject("请选择合法阵地");
         if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S01-DS03" && command.Row == 1)
@@ -19,6 +24,25 @@ public sealed partial class L12GameEngine
         if (card.CardType == "legion" && player.Field[command.Row!.Value][command.Slot!.Value] is { } occupant
             && !(command.Row == 1 && IsCounterTactic(occupant.CardId)))
             return CommandResult.Reject("阵地已被占用");
+
+        if (card.CardId == "S02-0622" && command.Choice?.Contains("runes:", StringComparison.Ordinal) != true)
+        {
+            var maximum = Math.Min(player.SpecialZones.Runes, (card.Cost + 1) / 2);
+            var choices = Enumerable.Range(0, maximum + 1).Select(count => $"runes:{count}").ToArray();
+            var data = new Dictionary<string, string>
+            {
+                ["cardInstanceId"] = card.InstanceId,
+                ["choiceMode"] = "instant",
+            };
+            foreach (var choice in choices)
+            {
+                var count = int.Parse(choice.AsSpan("runes:".Length));
+                data[choice] = $"消耗{count}符文（登场费用-{count * 2}）";
+            }
+            CreatePrompt(playerIndex, "option", "〈槲寄生符咒〉：选择要消耗的符文数量", choices, 1, 1,
+                "s2-mistletoe-rune-cost", data: data);
+            return CommandResult.Ok();
+        }
 
         var mayUseSelfDamageDiscount = card.CardType == "legion" && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1;
         if (mayUseSelfDamageDiscount && command.Choice?.StartsWith("self-damage-cost", StringComparison.Ordinal) != true
@@ -43,13 +67,19 @@ public sealed partial class L12GameEngine
         }
 
         var usedAsgardSelfDamageDiscount = command.Choice?.StartsWith("self-damage-cost", StringComparison.Ordinal) == true && mayUseSelfDamageDiscount;
-        var cost = GetPlayCost(playerIndex, card, usedAsgardSelfDamageDiscount);
+        var mistletoeRunes = card.CardId == "S02-0622"
+            ? ParseDeclaredRuneCount(command.Choice, player.SpecialZones.Runes)
+            : 0;
+        var cost = GetPlayCost(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes);
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("活跃士气不足");
+        if (mistletoeRunes > 0 && player.SpecialZones.Runes < mistletoeRunes)
+            return CommandResult.Reject("可用符文数量不足");
         var paymentChoice = EnsureTombGuardPlayPaymentChoice(playerIndex, card, command, cost);
         if (paymentChoice is not null) return paymentChoice;
-        var useTombGuards = command.Choice?.EndsWith("|tomb-guards", StringComparison.Ordinal) == true;
-        if (!useTombGuards && ActiveMoraleCountWithoutTombGuards(player) < cost) return CommandResult.Reject("不使用陵墓守卫时活跃士气不足");
-
+        var paid = command.CardInstanceIds is not null
+            ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds)
+            : TryConsumeMorale(player, cost, allowTombGuards: false);
+        if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         if (card.CardType == "legion")
         {
             if (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2)
@@ -61,11 +91,11 @@ public sealed partial class L12GameEngine
             var occupyingCard = player.Field[row][slot];
             var displacesOwnCounter = row == 1 && occupyingCard is not null && IsCounterTactic(occupyingCard.CardId);
             if (occupyingCard is not null && !displacesOwnCounter) return CommandResult.Reject("阵地已被占用");
-            TryConsumeMorale(player, cost, preferTombGuards: useTombGuards, allowTombGuards: useTombGuards);
             player.Hand.Remove(card);
             if (displacesOwnCounter)
             {
                 occupyingCard!.Hidden = false;
+                ResetCardAfterLeavingField(occupyingCard);
                 player.Graveyard.Add(occupyingCard);
                 AddEvent("counter-displaced", playerIndex,
                     $"{player.Name} 打出军团并将自己覆盖的反击战术〈{occupyingCard.Name}〉置入墓地", occupyingCard);
@@ -75,7 +105,6 @@ public sealed partial class L12GameEngine
         }
         else if (card.CardType == "artifact")
         {
-            TryConsumeMorale(player, cost, preferTombGuards: useTombGuards, allowTombGuards: useTombGuards);
             player.Hand.Remove(card);
             if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
             {
@@ -93,7 +122,7 @@ public sealed partial class L12GameEngine
         }
         else
         {
-            TryConsumeMorale(player, cost, preferTombGuards: useTombGuards, allowTombGuards: useTombGuards);
+            if (mistletoeRunes > 0) L12S2ZoneOps.SpendRunes(player, mistletoeRunes);
             player.Hand.Remove(card);
             player.Resolving.Add(card);
         }
@@ -104,6 +133,11 @@ public sealed partial class L12GameEngine
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId)) player.LastActiveTacticCardId = card.CardId;
         ResolveOnPlayContinuousEffects(playerIndex, card);
         RecalculateContinuousTroops();
+        if (card.CardId == "S01-0403" && player.UsedAbilities.Remove("s2-fortune-next-uesugi"))
+        {
+            card.HasCharge = true;
+            AddEvent("effect", playerIndex, "〈武运在天 铠甲在前〉使〈上杉谦信〉获得冲锋", card);
+        }
         if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
             player.NextFactionLegionDiscount = 0;
         if (card.CardType == "legion" && card.Faction == "taiyangcheng" && card.DisasterLevel > 0)
@@ -120,8 +154,96 @@ public sealed partial class L12GameEngine
         }
         else
         {
-            if (player.Resolving.Remove(card)) player.Graveyard.Add(card);
+            if (player.Resolving.Remove(card))
+            {
+                ResetCardAfterLeavingField(card);
+                player.Graveyard.Add(card);
+            }
             if (card.CardType == "legion" && State.DisasterValue > 8) BeginDisasterTrigger(opening: false);
+        }
+        return CommandResult.Ok();
+    }
+
+    private static bool IsS2PromotionCard(L12CardInstance card)
+        => card.Faction == "olympus" && card.CardType == "legion"
+            && card.HasTrait("晋升者");
+
+    private static string? S2PromotionFoundationCardId(string promotionCardId) => promotionCardId switch
+    {
+        "S02-0501" => "S02-0502",
+        "S02-0503" => "S02-0504",
+        "S02-0505" => "S02-0506",
+        "S02-0507" => "S02-0508",
+        _ => null,
+    };
+
+    private static int S2PromotionGodPowerCost(L12CardInstance card)
+    {
+        const string marker = "消耗并翻转";
+        var start = card.EffectText?.IndexOf(marker, StringComparison.Ordinal) ?? -1;
+        if (start < 0) return 0;
+        start += marker.Length;
+        var end = card.EffectText!.IndexOf("神力", start, StringComparison.Ordinal);
+        return end > start && int.TryParse(card.EffectText.AsSpan(start, end - start), out var parsed)
+            ? parsed
+            : 0;
+    }
+
+    private CommandResult PlayS2Promotion(int playerIndex, L12CardInstance promoted, L12Command command)
+    {
+        var player = State.Players[playerIndex];
+        var foundationName = promoted.Name.EndsWith("·晋升", StringComparison.Ordinal)
+            ? promoted.Name[..^"·晋升".Length]
+            : promoted.Name;
+        var foundationCardId = S2PromotionFoundationCardId(promoted.CardId);
+        var foundations = PublicLegions(player)
+            .Where(card => card.Faction == "olympus" && (card.CardId == foundationCardId || card.Name == foundationName)
+                && !card.HasTrait("晋升者"))
+            .ToArray();
+        if (foundations.Length == 0) return CommandResult.Reject("战场上没有可供晋升的同名非【晋升者】军团");
+
+        var foundationId = command.Choice?.StartsWith("promotion:", StringComparison.Ordinal) == true
+            ? command.Choice["promotion:".Length..]
+            : null;
+        if (foundationId is null)
+        {
+            var data = new Dictionary<string, string>
+            {
+                ["cardInstanceId"] = promoted.InstanceId,
+                ["choiceMode"] = "instant",
+            };
+            foreach (var candidate in foundations) AddPromptCardData(data, candidate);
+            CreatePrompt(playerIndex, "friendly-target", $"{promoted.Name}：选择要叠放的同名非【晋升者】军团",
+                foundations.Select(card => card.InstanceId), 1, 1, "s2-promotion-foundation", isPrivate: true, data: data);
+            return CommandResult.Ok();
+        }
+
+        var foundation = foundations.FirstOrDefault(card => card.InstanceId == foundationId);
+        if (foundation is null) return CommandResult.Reject("选择的晋升基础已不合法");
+        var printedCost = S2PromotionGodPowerCost(promoted);
+        var actualCost = Math.Max(0, printedCost - player.NextS2PromotionGodPowerDiscount);
+        if (!L12S2ZoneOps.Promote(player, foundation, promoted, actualCost))
+            return CommandResult.Reject($"需要{actualCost}张活跃的神力完成晋升");
+
+        if (player.NextS2PromotionGodPowerDiscount > 0) player.NextS2PromotionGodPowerDiscount = 0;
+        ApplyDisasterLevelOnEntry(playerIndex, promoted, deferTriggerUntilStackSettles: false);
+        AddEvent("promotion", playerIndex, $"{player.Name}将〈{promoted.Name}〉叠放至〈{foundation.Name}〉上方晋升登场", promoted, foundation);
+        ResolveOnPlayContinuousEffects(playerIndex, promoted);
+        RecalculateContinuousTroops();
+
+        var candidates = new List<L12TriggerCandidate>();
+        if (HasImmediateEffect(promoted, "promotion-enter"))
+            candidates.Add(CreateTriggerCandidate(playerIndex, promoted, "promotion-enter", "【晋升登场】效果"));
+        if (HasImmediateEffect(promoted, "enter"))
+            candidates.Add(CreateTriggerCandidate(playerIndex, promoted, "enter", "【登场时】效果"));
+        if (candidates.Count > 0)
+        {
+            State.CheckDisasterAfterStack = State.DisasterValue > 8;
+            QueueTriggerCandidates(candidates);
+        }
+        else if (State.DisasterValue > 8)
+        {
+            BeginDisasterTrigger(opening: false);
         }
         return CommandResult.Ok();
     }
@@ -140,7 +262,16 @@ public sealed partial class L12GameEngine
             State.CheckDisasterAfterStack = true;
     }
 
-    private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false)
+    private static int ParseDeclaredRuneCount(string? choice, int available)
+    {
+        var token = (choice ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(part => part.StartsWith("runes:", StringComparison.Ordinal));
+        return token is not null && int.TryParse(token.AsSpan("runes:".Length), out var parsed)
+            ? Math.Clamp(parsed, 0, available)
+            : 0;
+    }
+
+    private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0)
     {
         if (card.CardType == "tactic" && (State.Players[playerIndex].UsedAbilities.Contains("ds01-free-tactic")
             || State.Players[playerIndex].FreeTacticCount > 0)) return 0;
@@ -163,6 +294,7 @@ public sealed partial class L12GameEngine
         if (card.CardId is "S02-0512" or "S02-0518" && player.SpecialZones.GodPower.Count == 0) modifier--;
         if (card.CardId == "S02-0510" && player.SpecialZones.GodPower.Count >= 5) modifier -= 3;
         if (card.CardId == "S02-0601" && player.S2ArthurDiscountUntilTurn >= State.TurnSerial) modifier -= 3;
+        if (card.CardId == "S01-0403" && player.UsedAbilities.Contains("s2-fortune-next-uesugi")) modifier -= 2;
         if (useSelfDamageDiscount && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1) modifier--;
         if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
             modifier -= player.NextFactionLegionDiscount;
@@ -170,6 +302,9 @@ public sealed partial class L12GameEngine
             modifier -= player.NextS2SunDisasterLegionDiscount;
         if (card.CardType == "legion" && card.Faction == "olympus")
             modifier -= player.NextS2OlympusLegionDiscount;
+        if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S02-DS06")
+            modifier++;
+        if (card.CardId == "S02-0622") modifier -= Math.Max(0, spentRunes) * 2;
         return Math.Max(0, card.Cost + modifier);
     }
 
@@ -183,14 +318,16 @@ public sealed partial class L12GameEngine
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("覆盖反击战术需要消耗 2 张活跃士气");
         var paymentChoice = EnsureTombGuardPlayPaymentChoice(playerIndex, card, command, cost);
         if (paymentChoice is not null) return paymentChoice;
-        var useTombGuards = command.Choice?.EndsWith("|tomb-guards", StringComparison.Ordinal) == true;
-        if (!useTombGuards && ActiveMoraleCountWithoutTombGuards(player) < cost) return CommandResult.Reject("不使用陵墓守卫时活跃士气不足");
-        TryConsumeMorale(player, cost, preferTombGuards: useTombGuards, allowTombGuards: useTombGuards);
+        var paid = command.CardInstanceIds is not null
+            ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds)
+            : TryConsumeMorale(player, cost, allowTombGuards: false);
+        if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         player.Hand.Remove(card);
         if (player.Field[1][slot] is not null)
         {
             var old = player.Field[1][slot]!;
             old.Hidden = false;
+            ResetCardAfterLeavingField(old);
             player.Graveyard.Add(old);
             AddEvent("counter-replaced", playerIndex, $"{old.Name} 被新的反击战术顶替并置入墓地", old);
         }
@@ -204,24 +341,16 @@ public sealed partial class L12GameEngine
 
     private CommandResult? EnsureTombGuardPlayPaymentChoice(int playerIndex, L12CardInstance card, L12Command command, int cost)
     {
-        if (cost <= 0 || command.Choice?.Contains("|tomb-guards", StringComparison.Ordinal) == true
-            || command.Choice?.Contains("|morale-only", StringComparison.Ordinal) == true) return null;
+        if (cost <= 0 || command.CardInstanceIds is not null) return null;
         var player = State.Players[playerIndex];
-        var guards = PublicLegions(player).Count(candidate => candidate.CardId == "S01-0212" && !candidate.Tapped && State.ActivePlayer == playerIndex);
-        if (guards == 0) return null;
-        var canPayWithoutGuards = ActiveMoraleCountWithoutTombGuards(player) >= cost;
-        CreatePrompt(playerIndex, "optional", $"{card.Name}：是否使用活跃的陵墓守卫支付费用？", ["yes", "no"], 1, 1,
-            "play-morale-choice", data: new Dictionary<string, string>
-            {
-                ["cardInstanceId"] = card.InstanceId,
-                ["row"] = command.Row?.ToString() ?? string.Empty,
-                ["slot"] = command.Slot?.ToString() ?? string.Empty,
-                ["baseChoice"] = command.Choice ?? "normal-cost",
-                ["canPayWithoutGuards"] = canPayWithoutGuards.ToString(),
-                ["choiceMode"] = "instant",
-                ["yes"] = $"使用陵墓守卫优先支付（费用 {cost}）",
-                ["no"] = canPayWithoutGuards ? $"仅使用士气支付（费用 {cost}）" : "不使用并取消本次打出",
-            });
+        if (!HasActiveTombGuardResource(player) || Math.Max(0, cost - player.TemporaryMorale) == 0) return null;
+        CreateResourcePaymentPrompt(playerIndex, cost, "play-morale-choice", null, new Dictionary<string, string>
+        {
+            ["cardInstanceId"] = card.InstanceId,
+            ["row"] = command.Row?.ToString() ?? string.Empty,
+            ["slot"] = command.Slot?.ToString() ?? string.Empty,
+            ["baseChoice"] = command.Choice ?? "normal-cost",
+        });
         return CommandResult.Ok();
     }
 
@@ -247,34 +376,40 @@ public sealed partial class L12GameEngine
         {
             var target = FindOnField(defender, command.Target.InstanceId, out var targetRow, out _);
             if (target is null || target.Hidden || !IsFieldLegion(target)) return CommandResult.Reject("目标不是可进攻军团");
+            if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !target.Tapped)
+                return CommandResult.Reject("〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团");
             if (IsProtectedByRestedAmakine(defender, target)) return CommandResult.Reject("休整的阿麦金使活跃的试炼军团不可被进攻");
-            var zhangFeiKey = $"zhangfei-defense:{target.InstanceId}:{State.Round}";
-            if (target.CardId == "S01-0107" && targetRow == 0 && !defender.UsedAbilities.Contains(zhangFeiKey))
-            {
-                target.Troops += 1000;
-                defender.UsedAbilities.Add(zhangFeiKey);
-                AddEvent("effect", defender.PlayerIndex, $"张飞在对方回合位于前排，兵力 +1000", target);
-            }
-            ApplyS1FactionDefensePassives(defender, target, targetRow);
             if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
                 return CommandResult.Reject("后排远程军团只能进攻对方前排");
             if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row))
                 return CommandResult.Reject("近战军团无法进攻对方后排");
             isRanged = row == 1 || targetRow == 1;
+            if (isRanged && State.ActiveDisaster?.CardId == "S02-DS04")
+                return CommandResult.Reject("〈风暴乱象〉生效时军团无法发动远程进攻");
             if (isRanged && target.CannotBeRanged) return CommandResult.Reject("目标无法被远程进攻");
-            var taunts = defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
+            var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
+                : defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
             if (taunts.Length > 0 && !HasS1Taunt(target)) return CommandResult.Reject("对方前排存在带有挑衅的军团");
             attackTarget = target;
         }
         else if (command.Target.Type == "master")
         {
+            if (attacker.CardId == "S01-0212" && State.Players[playerIndex].MasterId == "S02-02M1")
+                return CommandResult.Reject("奈芙蒂斯使我方陵墓守卫无法进攻主宰");
+            if (attacker.Troops <= 2000 && HasFrontRowLowTroopMasterProtection(defender))
+                return CommandResult.Reject("对方前排军团使主宰无法被兵力不高于2000的军团进攻");
+            if (State.ActiveDisaster?.CardId == "S02-DS02" && attacker.Troops <= 2000)
+                return CommandResult.Reject("〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰");
+            if (State.ActiveDisaster?.CardId == "S02-DS05" && HasMandatoryDisasterLegionTarget(attacker, row, defender))
+                return CommandResult.Reject("〈暴怒之罪〉生效时必须优先进攻范围内的对方军团");
             var disasterAllowsBackMaster = State.Players[playerIndex].UsedAbilities.Contains("ds01-back-master")
                 && HasRangeInPosition(attacker, row);
             if (row != 0 && !disasterAllowsBackMaster
                 && attacker.CanAttackMasterOnSummonUntilTurn != State.TurnSerial
                 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
                 return CommandResult.Reject("后排远程军团不能进攻主宰");
-            var taunts = defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
+            var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
+                : defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
             if (taunts.Length > 0) return CommandResult.Reject("对方前排存在带有挑衅的军团");
         }
         else return CommandResult.Reject("无效进攻目标");
@@ -282,6 +417,14 @@ public sealed partial class L12GameEngine
         attacker.Tapped = true;
         ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
+        var temporaryAttackerTroopsBonus = 0;
+        if (row == 0 && attacker.Faction == "gaotianyuan"
+            && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
+        {
+            temporaryAttackerTroopsBonus = 1000;
+            attacker.Troops += temporaryAttackerTroopsBonus;
+            AddEvent("effect", playerIndex, $"天下布武使{attacker.Name}本次前排进攻兵力+1000", attacker);
+        }
         if (row == 0 && State.Players[playerIndex].UsedAbilities.Contains($"susano-buff:{attacker.InstanceId}"))
         {
             attacker.Troops += 2000;
@@ -297,6 +440,7 @@ public sealed partial class L12GameEngine
             IsRanged = isRanged,
             SureHit = attacker.HasSureHit,
             MasterDamage = damage,
+            TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
         };
         State.Phase = L12Phase.Defense;
         if (attackTarget is null)
@@ -314,6 +458,28 @@ public sealed partial class L12GameEngine
         if (!card.HasRangeBonus) return false;
         if (card.CardId == "S01-0415" && row != 0) return false;
         return true;
+    }
+
+    private static bool HasFrontRowLowTroopMasterProtection(L12PlayerState defender)
+        => defender.Field[0].Any(card => card is not null && !card.Hidden && IsFieldLegion(card)
+            && card.EffectText?.Contains("我方主宰无法被兵力不高于2000的军团进攻", StringComparison.Ordinal) == true);
+
+    private bool HasMandatoryDisasterLegionTarget(L12CardInstance attacker, int row, L12PlayerState defender)
+    {
+        for (var targetRow = 0; targetRow < 2; targetRow++)
+        for (var slot = 0; slot < 3; slot++)
+        {
+            var target = defender.Field[targetRow][slot];
+            if (target is null || target.Hidden || !IsFieldLegion(target)) continue;
+            if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !target.Tapped) continue;
+            if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial) continue;
+            if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
+            var ranged = row == 1 || targetRow == 1;
+            if (ranged && State.ActiveDisaster?.CardId == "S02-DS04") continue;
+            if (ranged && target.CannotBeRanged) continue;
+            return true;
+        }
+        return false;
     }
 
     private static bool CanAttackFromRow(L12CardInstance card, int row)
@@ -386,6 +552,27 @@ public sealed partial class L12GameEngine
         return CommandResult.Ok();
     }
 
+    private bool HasLegalLegionSupport(L12PendingDefense pending)
+    {
+        if (pending.Target.Type != "legion" || pending.SureHit) return false;
+        var defender = State.Players[1 - pending.AttackerPlayer];
+        var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
+        var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
+        if (attacker is null || target is null || targetRow != 0 || defender.BackRowCannotSupport) return false;
+        var support = defender.Field[1][targetSlot];
+        return support is not null && IsFieldLegion(support) && !support.CannotSupport
+            && target.Troops + support.Troops >= attacker.Troops;
+    }
+
+    private bool AutoResolveLegionDefenseWithoutSupport()
+    {
+        var pending = State.PendingDefense;
+        if (pending is null || pending.Target.Type != "legion" || HasLegalLegionSupport(pending)) return false;
+        AddEvent("support-skipped", 1 - pending.AttackerPlayer, "没有可进行支援的军团，跳过支援选择");
+        ResolveDefenseCore(1 - pending.AttackerPlayer, [], null, forceInvalid: false);
+        return true;
+    }
+
     private CommandResult ResolveDefenseCore(int playerIndex, IReadOnlyList<string> declaredBlockIds,
         string? declaredSupportId, bool forceInvalid)
     {
@@ -427,6 +614,7 @@ public sealed partial class L12GameEngine
             var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
             if (target is null)
             {
+                RevertPendingAttackTroopsBonus(pending, attacker);
                 State.PendingDefense = null;
                 State.Phase = L12Phase.Main;
                 AddEvent("attack-ended", playerIndex, "进攻目标丢失，进攻结束");
@@ -462,6 +650,7 @@ public sealed partial class L12GameEngine
             }
         }
 
+        RevertPendingAttackTroopsBonus(pending, attacker);
         State.PendingDefense = null;
         if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
         QueueAfterAttackEffects(pending.AttackerPlayer, attacker, killedTarget);
@@ -480,17 +669,42 @@ public sealed partial class L12GameEngine
         var targetSlot = command.Slot.GetValueOrDefault();
         if (State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1)
             return CommandResult.Reject("〈腐秽大地〉持续期间无法位移至后排");
-        var hasFreeMove = card.CardId is "S01-0002" or "S01-0106" or "S01-0409"
+        var hasPrintedFreeMove = card.CardId is "S01-0002" or "S01-0106" or "S01-0409"
             && !player.UsedAbilities.Contains($"free-move:{card.InstanceId}");
-        if (!hasFreeMove && Math.Abs(sourceRow - targetRow) + Math.Abs(sourceSlot - targetSlot) != 1)
+        var tenkaKey = $"s2-tenka-free-move:{card.InstanceId}:{State.TurnSerial}";
+        var hasTenkaFreeMove = player.UsedAbilities.Contains(tenkaKey)
+            && !player.UsedAbilities.Contains($"free-move:{card.InstanceId}");
+        var hasFreeMove = hasPrintedFreeMove || hasTenkaFreeMove;
+        if ((!hasFreeMove || hasTenkaFreeMove) && Math.Abs(sourceRow - targetRow) + Math.Abs(sourceSlot - targetSlot) != 1)
             return CommandResult.Reject("规则位移每次只能移动至相邻空格");
         if (player.Field[targetRow][targetSlot] is not null) return CommandResult.Reject("目标阵地已占用");
-        if (!hasFreeMove && !TryConsumeMorale(player, 1)) return CommandResult.Reject("位移需要消耗 1 张活跃士气");
+        if (!hasFreeMove && command.CardInstanceIds is null && HasActiveTombGuardResource(player))
+        {
+            CreateResourcePaymentPrompt(playerIndex, 1, "move-morale-choice", null, new Dictionary<string, string>
+            {
+                ["cardInstanceId"] = card.InstanceId,
+                ["row"] = targetRow.ToString(),
+                ["slot"] = targetSlot.ToString(),
+            });
+            return CommandResult.Ok();
+        }
+        if (!hasFreeMove && !(command.CardInstanceIds is not null
+            ? TryConsumeSelectedResources(player, 1, command.CardInstanceIds)
+            : TryConsumeMorale(player, 1, allowTombGuards: false)))
+            return CommandResult.Reject("位移需要消耗 1 张活跃士气");
         if (hasFreeMove) player.UsedAbilities.Add($"free-move:{card.InstanceId}");
         player.Field[sourceRow][sourceSlot] = null;
         player.Field[targetRow][targetSlot] = card;
+        card.LastMovedTurn = State.TurnSerial;
         AddEvent("move", playerIndex, $"{card.Name} 位移", card);
         return CommandResult.Ok();
+    }
+
+    private static void RevertPendingAttackTroopsBonus(L12PendingDefense pending, L12CardInstance? attacker)
+    {
+        if (attacker is null || pending.TemporaryAttackerTroopsBonus <= 0) return;
+        attacker.Troops -= pending.TemporaryAttackerTroopsBonus;
+        pending.TemporaryAttackerTroopsBonus = 0;
     }
 
     private CommandResult FlipHidden(int playerIndex, string? instanceId)

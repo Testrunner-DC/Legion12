@@ -267,6 +267,7 @@ public sealed partial class L12GameEngine
             {
                 source.AttachedCards.Remove(holyLock);
                 var owner = holyLock.OwnerIndex is >= 0 and <= 1 ? holyLock.OwnerIndex.Value : 1 - item.Controller;
+                ResetCardAfterLeavingField(holyLock);
                 State.Players[owner].Graveyard.Add(holyLock);
                 if (source.AttachedCards.All(card => card.CardId != "S02-0013"))
                     source.Abilities.RemoveAll(view => view.Id == "discardHolyLock");
@@ -324,7 +325,7 @@ public sealed partial class L12GameEngine
                 break;
             case "s2-ring-discard":
             {
-                MoveHandToGrave(State.Players[item.Controller], chosen[0]);
+                MoveHandToGrave(State.Players[item.Controller], chosen[0], causedByEffect: false);
                 var candidates = State.Players[item.Controller].Library
                     .Where(candidate => candidate.Faction == "universal")
                     .Select(candidate => candidate.InstanceId).ToArray();

@@ -70,9 +70,134 @@ public sealed partial class L12GameEngine
             case "S01-DS06": BeginDivineBalance(item); return;
             case "S01-DS07": BeginApocalypse(item); return;
             case "S01-DS09": ResolveRagnarok(item); return;
+            case "S02-DS01":
+                AddEvent("disaster-active", null, "〈天地异变〉的持续效果开始生效", disaster);
+                FinishStackItem(item); return;
+            case "S02-DS02": BeginS2FogDeadEnd(item); return;
+            case "S02-DS03":
+                for (var owner = 0; owner < 2; owner++)
+                    foreach (var card in State.Players[owner].Field.SelectMany(row => row)
+                        .Where(card => card is not null && IsFieldLegion(card) && card.BaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
+                        RemoveFromField(State.Players[owner], card, true, "因〈无眠之夜〉弃置", queueDeathTrigger: false);
+                FinishStackItem(item); return;
+            case "S02-DS04": ResolveS2StormChaos(item); return;
+            case "S02-DS05":
+                DamageMasterNonLethal(0, 1, "〈暴怒之罪〉");
+                DamageMasterNonLethal(1, 1, "〈暴怒之罪〉");
+                FinishStackItem(item); return;
+            case "S02-DS06": BeginS2Pride(item); return;
             default:
                 FinishStackItem(item); return;
         }
+    }
+
+    private void BeginS2FogDeadEnd(L12StackItem item)
+    {
+        var prompted = 0;
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var player = State.Players[playerIndex];
+            var excess = Math.Max(0, player.Hand.Count - 5);
+            if (excess == 0) continue;
+            CreatePrompt(playerIndex, "discard", $"〈迷雾绝境〉：选择{excess}张手牌弃置", player.Hand.Select(card => card.InstanceId), excess, excess,
+                "disaster-effect", item.StackItemId, isPrivate: true,
+                data: new Dictionary<string, string> { ["action"] = "disaster-s2-fog-discard", ["player"] = playerIndex.ToString(), ["simultaneous"] = "true" });
+            prompted++;
+        }
+        if (prompted == 0) FinishStackItem(item);
+    }
+
+    private void CompleteS2FogDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
+    {
+        var playerIndex = int.Parse(prompt.Data["player"]);
+        var player = State.Players[playerIndex];
+        foreach (var id in chosen)
+        {
+            var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == id);
+            if (card is null) continue;
+            player.Hand.Remove(card);
+            player.Graveyard.Add(card);
+            NotifyCardDiscarded(player, card, "hand", causedByEffect: true);
+        }
+        if (!State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == "disaster-s2-fog-discard"))
+            FinishStackItem(item);
+    }
+
+    private void ResolveS2StormChaos(L12StackItem item)
+    {
+        for (var owner = 0; owner < 2; owner++)
+        {
+            var player = State.Players[owner];
+            for (var slot = 0; slot < 3; slot++)
+            {
+                var back = player.Field[1][slot];
+                if (back is not null) MoveFieldCardToZone(player, back, "hand", "因〈风暴乱象〉返回手牌", queueLeaveTrigger: false);
+            }
+            for (var slot = 0; slot < 3; slot++)
+            {
+                var front = player.Field[0][slot];
+                if (front is null || !IsFieldLegion(front)) continue;
+                player.Field[0][slot] = null;
+                player.Field[1][slot] = front;
+                AddEvent("move", owner, $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排", front);
+            }
+        }
+        FinishStackItem(item);
+    }
+
+    private void BeginS2Pride(L12StackItem item)
+    {
+        var counts = State.Players.Select(player => PublicLegions(player).Count()).ToArray();
+        if (counts[0] == counts[1]) { FinishStackItem(item); return; }
+        var owner = counts[0] > counts[1] ? 0 : 1;
+        var difference = Math.Abs(counts[0] - counts[1]);
+        var choices = new List<string> { "field" };
+        if (State.Players[owner].Hand.Count >= difference) choices.Add("hand");
+        CreatePrompt(owner, "option", $"〈傲慢之罪〉：选择弃置{difference}张战场军团，或弃置{difference}张手牌", choices, 1, 1,
+            "disaster-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "disaster-s2-pride-mode", ["player"] = owner.ToString(), ["count"] = difference.ToString(),
+                ["field"] = $"弃置{difference}张战场军团", ["hand"] = $"弃置{difference}张手牌",
+            });
+    }
+
+    private void ContinueS2PrideMode(L12StackItem item, L12Prompt prompt, string choice)
+    {
+        var owner = int.Parse(prompt.Data["player"]);
+        var count = int.Parse(prompt.Data["count"]);
+        var player = State.Players[owner];
+        var candidates = choice == "field"
+            ? PublicLegions(player).Select(card => card.InstanceId)
+            : player.Hand.Select(card => card.InstanceId);
+        CreatePrompt(owner, choice == "field" ? "targets" : "discard", $"〈傲慢之罪〉：选择弃置{count}张{(choice == "field" ? "军团" : "手牌")}",
+            candidates, count, count, "disaster-effect", item.StackItemId, isPrivate: choice != "field",
+            data: new Dictionary<string, string> { ["action"] = "disaster-s2-pride-discard", ["player"] = owner.ToString(), ["zone"] = choice });
+    }
+
+    private void CompleteS2PrideDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
+    {
+        var owner = int.Parse(prompt.Data["player"]);
+        var player = State.Players[owner];
+        if (prompt.Data["zone"] == "field")
+        {
+            foreach (var id in chosen)
+            {
+                var card = FindOnField(player, id, out _, out _);
+                if (card is not null) RemoveFromField(player, card, true, "因〈傲慢之罪〉弃置", queueDeathTrigger: false);
+            }
+        }
+        else
+        {
+            foreach (var id in chosen)
+            {
+                var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == id);
+                if (card is null) continue;
+                player.Hand.Remove(card); player.Graveyard.Add(card);
+                NotifyCardDiscarded(player, card, "hand", causedByEffect: true);
+            }
+        }
+        FinishStackItem(item);
     }
 
     private void BeginMainPhaseDisasterEffect()

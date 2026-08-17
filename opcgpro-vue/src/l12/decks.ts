@@ -11,6 +11,8 @@ export interface DeckCard {
   cost?: number
   troops?: number
   disasterLevel?: number
+  traits?: string[]
+  profession?: string
   effect?: string
 }
 
@@ -40,6 +42,8 @@ interface LookupCard {
   attack?: number | null
   image?: string
   effectText?: string
+  tags?: string[]
+  subType?: string
 }
 
 const STORAGE_KEY = 'l12-custom-decks-v1'
@@ -79,6 +83,8 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
       imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
       cost: card.cost ?? undefined,
       troops: card.attack ?? undefined,
+      traits: card.tags ?? [],
+      profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
     }))
     return [...seasonOne, ...seasonTwo]

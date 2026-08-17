@@ -14,6 +14,8 @@ interface CatalogCard {
   hp?: number
   troops?: number
   disasterLevel?: number
+  traits?: string[]
+  profession?: string
   effect?: string
 }
 
@@ -35,6 +37,8 @@ interface LookupCard {
   health?: number | null
   image?: string
   effectText?: string
+  tags?: string[]
+  subType?: string
 }
 
 const typeLabels: Record<string, string> = {
@@ -94,6 +98,8 @@ onMounted(async () => {
       cost: card.cost ?? undefined,
       troops: card.attack ?? undefined,
       hp: card.health ?? undefined,
+      traits: card.tags ?? [],
+      profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
     }))
     cards.value = [...seasonOne, ...seasonTwo]
@@ -109,7 +115,7 @@ onMounted(async () => {
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   const result = cards.value.filter(card => {
-    const matchesQuery = !keyword || [card.nameZh, card.number, card.effect]
+    const matchesQuery = !keyword || [card.nameZh, card.number, card.effect, card.profession, ...(card.traits ?? [])]
       .some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword))
     const matchesType = type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value
     const matchesFaction = faction.value === 'all' || card.faction === faction.value
@@ -189,7 +195,7 @@ function resetFilters() {
         <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }"><img v-if="selected.imageUrl" :src="selected.imageUrl" :alt="selected.nameZh"/><div v-else>XII</div></div>
         <p class="archive-number">{{ selected.number }} · {{ selected.product }}</p>
         <h2>{{ selected.nameZh }}</h2>
-        <div class="archive-tags"><span>{{ factionLabels[selected.faction] ?? selected.faction }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span></div>
+        <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span></div>
         <dl>
           <template v-if="selected.cost !== undefined"><dt>费用</dt><dd>{{ selected.cost }}</dd></template>
           <template v-if="selected.troops !== undefined"><dt>兵力</dt><dd>{{ selected.troops }}</dd></template>

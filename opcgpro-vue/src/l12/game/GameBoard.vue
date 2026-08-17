@@ -27,6 +27,7 @@ const graveyardPlayer = ref<number | null>(null)
 const playArmed = ref(false)
 const masterPlayerIndex = ref<number | null>(null)
 const boardTargetIds = ref<string[]>([])
+const paymentResourceIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
@@ -48,7 +49,7 @@ const playableIds = computed(() => {
   if (!isMyMain.value) return []
   const hasLegionDestination = me.value.field.some((row, rowIndex) => row.some(card => !card || (rowIndex === 1 && isCounter(card))))
   return (me.value.hand ?? [])
-    .filter(card => (card.currentCost ?? card.cost) <= activeMorale.value && (card.cardType !== 'legion' || hasLegionDestination))
+    .filter(card => (card.playCost ?? card.currentCost ?? card.cost) <= activeMorale.value && (card.cardType !== 'legion' || hasLegionDestination))
     .map(card => card.instanceId)
 })
 const selectedHandCard = computed(() => me.value.hand?.find(card => card.instanceId === selectedId.value) ?? null)
@@ -79,7 +80,12 @@ const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
   prompt.kind === 'slot' && prompt.validChoices.length > 0
   && prompt.validChoices.every(id => /^\d+:\d+$/.test(id)),
 ) ?? null)
-const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId ?? boardSlotPrompt.value?.promptId ?? null)
+const resourcePaymentPrompt = computed(() => props.game.prompts?.find(prompt =>
+  prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment',
+) ?? null)
+const paymentChoiceIds = computed(() => resourcePaymentPrompt.value?.validChoices ?? [])
+const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
+  ?? boardSlotPrompt.value?.promptId ?? resourcePaymentPrompt.value?.promptId ?? null)
 const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
   graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
   || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
@@ -120,6 +126,8 @@ const boardSlotPreview = computed<Card | null>(() => {
     name: prompt.data?.[id] ?? '展示牌',
     cardType: prompt.data?.[`${id}:cardType`] ?? '',
     faction: prompt.data?.[`${id}:faction`] ?? '',
+    traits: prompt.data?.[`${id}:traits`]?.split('|').filter(Boolean) ?? [],
+    profession: prompt.data?.[`${id}:profession`] || undefined,
     imageUrl: prompt.data?.[`${id}:image`],
     effectText: prompt.data?.[`${id}:effect`] ?? '',
     cost: Number(prompt.data?.[`${id}:cost`] ?? 0),
@@ -131,6 +139,7 @@ const boardSlotPreview = computed<Card | null>(() => {
   }
 })
 watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
+watch(() => resourcePaymentPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const event = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'hidden-reveal' && item.cards?.length)
   if (!event?.cards?.[0]) return
@@ -219,6 +228,10 @@ function selectHand(card: Card) {
   playArmed.value = selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
 }
 function ownSlot(row: number, slot: number, card: Card | null) {
+  if (resourcePaymentPrompt.value) {
+    if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
+    return
+  }
   if (boardSlotPrompt.value) {
     const choice = `${row}:${slot}`
     if (!card && boardSlotPrompt.value.validChoices.includes(choice))
@@ -252,6 +265,18 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   command(mode.value === 'move' ? 'move' : 'playCard', { cardInstanceId: selectedId.value, row, slot })
   selectedId.value = null
   playArmed.value = false
+}
+function togglePaymentResource(instanceId: string) {
+  const prompt = resourcePaymentPrompt.value
+  if (!prompt || !paymentChoiceIds.value.includes(instanceId)) return
+  const index = paymentResourceIds.value.indexOf(instanceId)
+  if (index >= 0) paymentResourceIds.value.splice(index, 1)
+  else if (paymentResourceIds.value.length < prompt.maxChoose) paymentResourceIds.value.push(instanceId)
+}
+function confirmResourcePayment() {
+  const prompt = resourcePaymentPrompt.value
+  if (!prompt || paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
+  command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
 }
 function enemySlot(_row: number, _slot: number, card: Card | null) {
   if (card) focusCard.value = card
@@ -376,7 +401,10 @@ function statusTexts(card: Card) {
               <template v-if="focusCard">
                 <img v-if="focusCard.imageUrl" class="inspector-card-image" :src="focusCard.imageUrl" :alt="focusCard.name" />
                 <h2>{{ focusCard.name }}</h2>
-                <dl><div><dt>费用</dt><dd>{{ focusCard.currentCost ?? focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div></dl>
+                <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
+                  <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
+                </div>
+                <dl><div><dt>费用</dt><dd>{{ focusCard.playCost ?? focusCard.currentCost ?? focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div></dl>
                 <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
                 <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
               </template>
@@ -429,11 +457,13 @@ function statusTexts(card: Card) {
               :placement-row="isCounter(selectedHandCard) ? 1 : null" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction" :round="game.round"
               :attackable-ids="attackableIds" :response-playable-ids="responsePlayableIds"
               :selection-mode="Boolean(boardTargetPrompt || boardSlotPrompt)" :targetable-ids="boardTargetableIds" :prompt-slot-ids="boardSlotPrompt?.validChoices ?? []"
+              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === me.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === me.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === me.playerIndex && !combat.target"
               @slot="ownSlot" @master="masterPlayerIndex = me.playerIndex" @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @card-action="fieldAction"
-              @select-card="selectPublicCard" @ability="activateAbility" @faction-ability="activateFactionAbility" />
+              @select-card="selectPublicCard" @ability="activateAbility" @faction-ability="activateFactionAbility"
+              @payment-resource="togglePaymentResource" />
           </div>
           <HandArea :cards="me.hand" :selected-ids="game.phase === 'Mulligan' ? mulliganIds : game.phase === 'Defense' ? defenseIds : selectedId ? [selectedId] : []"
             :playable-ids="l12State.pendingAction ? [] : handPlayableIds" :dim-unplayable="game.phase !== 'Mulligan'"
@@ -452,10 +482,10 @@ function statusTexts(card: Card) {
                 <template v-if="event.type === 'turn-start'"><strong class="turn-divider">—— {{ event.text }} ——</strong></template>
                 <template v-else>
                 <b class="event-tag">{{ eventLabel(event) }}</b>
-                <template v-for="(part, index) in eventParts(event)" :key="index">
+                <span class="event-message"><template v-for="(part, index) in eventParts(event)" :key="index">
                   <span v-if="part.kind === 'text'">{{ part.text }}</span>
                   <button v-else class="log-card-link" @click="focusCard = part.card">{{ part.card.name }}</button>
-                </template>
+                </template></span>
                 </template>
               </p>
               <p v-if="!events.length" class="empty-log">等待对局开始</p>
@@ -481,6 +511,12 @@ function statusTexts(card: Card) {
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
         <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
       </div>
+      <div v-if="resourcePaymentPrompt && !readOnly" class="board-target-controls resource-payment-controls">
+        <strong>请选择支付费用的士气或陵墓守卫</strong>
+        <span>已选择 {{ paymentResourceIds.length }}/{{ resourcePaymentPrompt.maxChoose }}</span>
+        <button class="primary" :disabled="paymentResourceIds.length < resourcePaymentPrompt.minChoose"
+          @click="confirmResourcePayment">确认支付</button>
+      </div>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" />
     </div>
@@ -497,7 +533,7 @@ function statusTexts(card: Card) {
 .hidden-reveal-toast{position:fixed;z-index:1700;left:50%;top:50%;display:flex;align-items:center;gap:14px;padding:12px 16px;border:2px solid #d7d3c6;background:#090d0e;box-shadow:0 24px 70px #000;transform:translate(-50%,-50%);pointer-events:none;animation:hidden-reveal-in .22s ease-out}.hidden-reveal-toast img{width:150px;height:210px;object-fit:contain}.hidden-reveal-toast div{display:grid;gap:5px}.hidden-reveal-toast small{color:#70d7df;font-weight:900}.hidden-reveal-toast strong{color:#fff;font-size:20px}.hidden-reveal-toast span{color:#a3aaa6;font-size:10px}@keyframes hidden-reveal-in{from{opacity:0;transform:translate(-50%,-45%) scale(.94)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip img{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:7px}.combat-versus em{color:#e5bd60;font-size:18px;font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:10px}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
-.record-log .event-list p{display:flex;align-items:flex-start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.turn-divider{color:#e0b641;font-size:10px;white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:8px;line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
+.record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:10px;white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:8px;line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
 .disaster-zone {
   left: 53px;
   width: 112px;
@@ -522,6 +558,7 @@ function statusTexts(card: Card) {
 .board-target-controls{position:fixed;z-index:1050;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:11px}.board-target-controls span{color:#8f9894;font-size:9px}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls img{width:52px;height:72px;object-fit:contain;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:8px;font-weight:800;line-height:1.45}
+.inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:8px;font-weight:900}
 .session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:42px;min-width:42px;height:42px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:center}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:hidden!important;transform-origin:left top;pointer-events:none}
 </style>

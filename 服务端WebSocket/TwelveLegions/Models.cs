@@ -32,6 +32,8 @@ public sealed class L12CardDefinition
     public int? Troops { get; init; }
     public int? DisasterLevel { get; init; }
     public int? TrialValue { get; init; }
+    public List<string> Traits { get; init; } = [];
+    public string? Profession { get; init; }
     public string? Effect { get; init; }
 }
 
@@ -69,6 +71,8 @@ public sealed class L12CardInstance
     public string? ImageUrl { get; init; }
     public int Cost { get; init; }
     public int CostModifier { get; set; }
+    /// <summary>当前场面下从手牌打出此牌实际需要支付的费用，仅用于快照显示。</summary>
+    public int? PlayCost { get; set; }
     public string? EffectText { get; init; }
     public int BaseTroops { get; init; }
     public int Troops { get; set; }
@@ -77,18 +81,23 @@ public sealed class L12CardInstance
     public int SetTroopsUntilTurn { get; set; } = -1;
     public int DisasterLevel { get; init; }
     public int TrialValue { get; init; }
+    public List<string> Traits { get; init; } = [];
+    public string? Profession { get; init; }
     public int? OwnerIndex { get; set; }
     public bool HasCharge { get; set; }
     public bool HasStrongAttack { get; set; }
     public bool HasSureHit { get; set; }
     public int AttackNoLossUntilTurn { get; set; } = -1;
     public int NextAttackNoLossUses { get; set; }
+    public int ReadyAfterNextKillUntilTurn { get; set; } = -1;
+    public string? ReadyAfterNextKillSourceName { get; set; }
     public int SureHitAgainstLegionsUntilTurn { get; set; } = -1;
     public int CannotReadyByEffectUntilTurn { get; set; } = -1;
     public int DiscardAtEndOfTurnUntilTurn { get; set; } = -1;
     public bool Hidden { get; set; }
     public bool Tapped { get; set; }
     public int SummonRound { get; set; }
+    public int LastMovedTurn { get; set; } = -1;
     public int CannotUntapUntilRound { get; set; }
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
@@ -113,11 +122,17 @@ public sealed class L12CardInstance
     public bool HasAttackNoLoss => EffectText?.Contains("进攻无损", StringComparison.Ordinal) == true
         && EffectText?.Contains("远程进攻无损", StringComparison.Ordinal) != true;
     public bool CannotBeRanged => EffectText?.Contains("无法被远程进攻", StringComparison.Ordinal) == true;
+    public bool HasTrait(string trait) => Traits.Contains(trait, StringComparer.Ordinal);
 
     public L12CardInstance Clone() => (L12CardInstance)MemberwiseClone();
 }
 
-public sealed record L12AbilityView(string Id, string Label);
+public sealed record L12AbilityView(
+    string Id,
+    string Label,
+    bool Enabled = true,
+    string? DisabledReason = null,
+    bool TriggerOnly = false);
 
 public sealed class L12TimedModifier
 {
@@ -169,9 +184,11 @@ public sealed class L12PlayerState
     public bool BackRowCannotSupport { get; set; }
     public string? LastActiveTacticCardId { get; set; }
     public int ReturnedMoraleThisTurn { get; set; }
+    public int MasterDamageTakenThisTurn { get; set; }
     public int NextFactionLegionDiscount { get; set; }
     public int NextS2SunDisasterLegionDiscount { get; set; }
     public int NextS2OlympusLegionDiscount { get; set; }
+    public int NextS2PromotionGodPowerDiscount { get; set; }
     public int S2ArthurDiscountUntilTurn { get; set; } = -1;
     public int FactionMoraleAdditionForbiddenUntilTurn { get; set; } = -1;
     public int MasterCannotBeAttackedUntilTurn { get; set; } = -1;
@@ -199,6 +216,7 @@ public sealed class L12PendingDefense
     public bool IsRanged { get; init; }
     public bool SureHit { get; init; }
     public int MasterDamage { get; set; } = 1;
+    public int TemporaryAttackerTroopsBonus { get; set; }
 }
 
 public sealed class L12Prompt

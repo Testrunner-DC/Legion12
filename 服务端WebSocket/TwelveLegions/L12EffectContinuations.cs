@@ -23,7 +23,7 @@ public sealed partial class L12GameEngine
         }
         switch (action)
         {
-            case "effect-morale-payment": ContinueEffectMoralePayment(item, prompt, chosen[0]); break;
+            case "effect-morale-payment": ContinueEffectMoralePayment(item, prompt, chosen); break;
             case "lubu-kill":
                 if (chosen[0] != "skip" && ReturnMorale(player, 2)) KillTarget(chosen[0], "被吕布击杀");
                 FinishStackItem(item); break;
@@ -193,6 +193,9 @@ public sealed partial class L12GameEngine
             case "disaster-grave-bottom": ContinueDisasterGraveBottom(item, prompt, chosen); break;
             case "disaster-discard": CompleteDisasterDiscard(item, prompt, chosen[0]); break;
             case "disaster-keep-field": CompleteDisasterKeepField(item, prompt, chosen); break;
+            case "disaster-s2-fog-discard": CompleteS2FogDiscard(item, prompt, chosen); break;
+            case "disaster-s2-pride-mode": ContinueS2PrideMode(item, prompt, chosen[0]); break;
+            case "disaster-s2-pride-discard": CompleteS2PrideDiscard(item, prompt, chosen); break;
             case "disaster-main-choice":
                 player.UsedAbilities.Add(chosen[0] == "free-tactic" ? "ds01-free-tactic" : "ds01-back-master");
                 FinishStackItem(item); break;
@@ -222,6 +225,7 @@ public sealed partial class L12GameEngine
                     {
                         player.Field[row][slot] = null;
                         player.Field[targetRow][targetSlot] = legion;
+                        legion.LastMovedTurn = State.TurnSerial;
                         AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
                     }
                 }
@@ -358,7 +362,7 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string>
             {
                 ["action"] = "reorder-order",
-                ["placementMode"] = context == "observing-stars" ? "all-top-bottom" : "split-top-bottom",
+                ["placementMode"] = context is "observing-stars" or "prometheus" ? "all-top-bottom" : "split-top-bottom",
             });
     }
 

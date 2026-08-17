@@ -8,7 +8,7 @@ defineEmits<{ select: [] }>()
 <template>
   <button class="card-tile" :class="[{ selected, tapped: card.tapped, compact, 'horizontal-card': isHorizontalCardType(card.cardType) }, `type-${card.cardType}`]" @click="$emit('select')">
     <img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.name" @error="($event.target as HTMLImageElement).style.display='none'" />
-    <span class="card-cost">{{ card.cost }}</span>
+    <span class="card-cost">{{ card.playCost ?? card.currentCost ?? card.cost }}</span>
     <span class="card-name">{{ card.name }}</span>
     <span v-if="card.cardType === 'legion' || card.cardId === 'S01-0417' && card.troops > 0" class="card-power"
       :class="{ boosted: card.troops > card.baseTroops, weakened: card.troops < card.baseTroops }"

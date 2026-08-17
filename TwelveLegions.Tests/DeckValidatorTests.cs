@@ -91,4 +91,21 @@ public sealed class DeckValidatorTests
         Assert.Equal(42, deck.CardIds.Count);
         Assert.Equal(["S02-06S4"], deck.SpecialIds);
     }
+
+    [Fact]
+    public void AcceptsADivinityAsTheDeckMaster()
+    {
+        var preset = Catalog.PresetDecks.Single(deck => deck.MasterId == "S02-06M1");
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = "阿瓦隆牌库",
+            MasterId = "S02-06D1",
+            CardIds = preset.CardIds.ToList(),
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        };
+
+        Assert.True(L12DeckValidator.TryValidate(Catalog, submission, out var deck, out var error), error);
+        Assert.Equal("S02-06D1", deck.MasterId);
+    }
 }

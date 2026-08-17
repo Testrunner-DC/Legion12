@@ -24,6 +24,8 @@ const props = defineProps<{
   combatAttackerId?: string | null
   combatTargetId?: string | null
   combatTargetMaster?: boolean
+  paymentChoiceIds?: string[]
+  paymentSelectedIds?: string[]
 }>()
 const emit = defineEmits<{
   slot: [row: number, slot: number, card: Card | null]
@@ -34,6 +36,7 @@ const emit = defineEmits<{
   ability: [card: Card, ability: string]
   factionAbility: [ability: string]
   selectCard: [card: Card]
+  paymentResource: [instanceId: string]
 }>()
 
 const factionOpen = ref(false)
@@ -54,18 +57,33 @@ function moraleLabel(index: number) {
 }
 const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length)
 const spendableMorale = computed(() => activeMorale.value + (props.player.temporaryMorale ?? 0))
-const factionActions = computed<Array<[string, string]>>(() => {
+type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
+const factionActions = computed<AbilityEntry[]>(() => {
   if (props.player.factionEffect?.abilities?.length) return props.player.factionEffect.abilities
-    .filter(entry => entry.id !== 'factionZeroRecovery')
-    .map(entry => [entry.id, entry.label])
   if (props.player.factionEffect?.cardId === 'S01-01C1') return [
-    ['factionAddActive', '我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。'],
+    { id: 'factionAddActive', label: '我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。' },
   ]
   if (props.player.factionEffect?.cardId === 'S01-04C1') return [
-    ['factionDrawMove', '我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。'],
+    { id: 'factionDrawMove', label: '我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。' },
   ]
   return []
 })
+const masterCard = computed<Card>(() => ({
+  instanceId: `master-${props.player.playerIndex}`,
+  cardId: props.player.master.masterId,
+  name: props.player.master.masterName,
+  cardType: 'master',
+  faction: props.player.faction,
+  imageUrl: props.player.master.masterImageUrl,
+  effectText: props.player.master.effectText,
+  cost: 0,
+  baseTroops: 0,
+  troops: 0,
+  disasterLevel: 0,
+  tapped: Boolean(props.player.master.tapped),
+  summonRound: 0,
+  abilities: props.player.master.abilities,
+}))
 function canAttack(card: Card, row: number) {
   if (props.attackableIds) return props.attackableIds.includes(card.instanceId)
   return Boolean(props.actionsEnabled && !card.cannotAttack && (row === 0 || card.hasRangeBonus) && !card.tapped && !card.hidden && (card.summonRound < (props.round ?? 0) || card.hasCharge))
@@ -105,19 +123,19 @@ function isMoveTarget(row: number, slot: number) {
   }
   return false
 }
-function abilities(card: Card) {
-  if (card.abilities?.length) return card.abilities.map(entry => [entry.id, entry.label] as [string, string])
+function abilities(card: Card): AbilityEntry[] {
+  if (card.abilities?.length) return card.abilities
   const map: Record<string, Array<[string, string]>> = {
     'S01-0105': [['searchBrothers', '检索关羽/张飞']],
     'S01-0109': [['addMorale', '追加士气']],
     'S01-0117': [['artifactDraw', '返还士气·抽牌'], ['artifactSearch', '弃牌·检索']],
     'S01-0417': [['kusanagiDebuff', '对方费用-1'], ['kusanagiStrong', '赋予强攻']],
   }
-  if (card.cardId === 'S01-0415' && card.hidden) return [['flipHidden', '翻回正面']]
-  return map[card.cardId] ?? []
+  if (card.cardId === 'S01-0415' && card.hidden) return [{ id: 'flipHidden', label: '翻回正面' }]
+  return (map[card.cardId] ?? []).map(([id, label]) => ({ id, label }))
 }
 function activeAbilities(card: Card) {
-  return abilities(card).filter(entry => entry[0] !== 'freeMove')
+  return abilities(card).filter(entry => entry.id !== 'freeMove')
 }
 function selectZoneCard(card: Card) {
   emit('focus', card)
@@ -128,12 +146,20 @@ function selectZoneCard(card: Card) {
   }
 }
 function handleSlot(row: number, slot: number, card: Card | null) {
+  if (card && props.paymentChoiceIds?.includes(card.instanceId)) {
+    emit('focus', card)
+    emit('paymentResource', card.instanceId)
+    return
+  }
   emit('slot', row, slot, card)
+}
+function selectMoralePayment(instanceId: string) {
+  if (props.paymentChoiceIds?.includes(instanceId)) emit('paymentResource', instanceId)
 }
 function beginCardAbility(card: Card) {
   const entries = activeAbilities(card)
   if (!entries.length) return
-  if (entries.length === 1) { emit('ability', card, entries[0][0]); return }
+  if (entries.length === 1 && entries[0].enabled !== false && !entries[0].triggerOnly) { emit('ability', card, entries[0].id); return }
   abilityCardOpen.value = card
   abilityCardMinimized.value = false
 }
@@ -142,7 +168,8 @@ function beginCardAbility(card: Card) {
 <template>
   <section class="l12-player-mat" :class="[`side-${side}`, { 'active-turn': active }]">
     <div class="commander-zone">
-      <button class="mini-master" :class="{ targetable: side === 'opponent' && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }" @click="emit('master')">
+      <button class="mini-master" :class="{ targetable: side === 'opponent' && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
+        @mouseenter="emit('focus', masterCard)" @focus="emit('focus', masterCard)" @click="emit('master')">
         <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" />
         <span>{{ player.master.masterName }}</span>
         <b>{{ player.master.hp }}<small>/{{ player.master.maxHp }}</small></b>
@@ -172,7 +199,10 @@ function beginCardAbility(card: Card) {
         <button class="faction-effect-trigger" @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
         <span>士气</span>
         <div class="morale-stack">
-          <i v-for="index in moraleLimit" :key="index" :class="moraleState(index - 1)" :title="moraleLabel(index - 1)" />
+          <button v-for="index in moraleLimit" :key="index" type="button" class="morale-orb"
+            :class="[moraleState(index - 1), { payable: paymentChoiceIds?.includes(player.morale[index - 1]?.instanceId ?? ''), selected: paymentSelectedIds?.includes(player.morale[index - 1]?.instanceId ?? '') }]"
+            :title="moraleLabel(index - 1)" :disabled="!paymentChoiceIds?.includes(player.morale[index - 1]?.instanceId ?? '')"
+            @click.stop="player.morale[index - 1] && selectMoralePayment(player.morale[index - 1].instanceId)" />
         </div>
         <b :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
       </div>
@@ -186,6 +216,8 @@ function beginCardAbility(card: Card) {
               source: selectedId === player.field[row][slot]?.instanceId,
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
+              'payment-resource': paymentChoiceIds?.includes(player.field[row][slot]?.instanceId ?? ''),
+              'payment-selected': paymentSelectedIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               [counterState(player.field[row][slot])]: Boolean(counterState(player.field[row][slot]))
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">
@@ -211,7 +243,10 @@ function beginCardAbility(card: Card) {
         <button class="faction-effect-trigger" @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
         <span>士气</span>
         <div class="morale-stack">
-          <i v-for="index in moraleLimit" :key="index" :class="moraleState(index - 1)" :title="moraleLabel(index - 1)" />
+          <button v-for="index in moraleLimit" :key="index" type="button" class="morale-orb"
+            :class="[moraleState(index - 1), { payable: paymentChoiceIds?.includes(player.morale[index - 1]?.instanceId ?? ''), selected: paymentSelectedIds?.includes(player.morale[index - 1]?.instanceId ?? '') }]"
+            :title="moraleLabel(index - 1)" :disabled="!paymentChoiceIds?.includes(player.morale[index - 1]?.instanceId ?? '')"
+            @click.stop="player.morale[index - 1] && selectMoralePayment(player.morale[index - 1].instanceId)" />
         </div>
         <b :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
       </div>
@@ -246,13 +281,16 @@ function beginCardAbility(card: Card) {
         <div>
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
-          <p>{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
-          <div v-if="side === 'my' && actionsEnabled" class="faction-effect-actions">
-            <button v-for="entry in factionActions" :key="entry[0]" @click="emit('factionAbility', entry[0]); factionOpen = false">
-              {{ entry[1] }}
+          <p v-if="!factionActions.length">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
+          <div v-if="factionActions.length" class="faction-effect-actions">
+            <button v-for="entry in factionActions" :key="entry.id"
+              :disabled="side !== 'my' || !actionsEnabled || entry.enabled === false || entry.triggerOnly"
+              :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
+              @click="emit('factionAbility', entry.id); factionOpen = false">
+              {{ entry.label }}
             </button>
           </div>
-          <span v-else-if="side === 'my'" class="faction-action-hint">仅在我方主要阶段可以发动</span>
+          <span v-if="side === 'my' && !actionsEnabled" class="faction-action-hint">仅在我方主要阶段可以发动</span>
         </div>
       </section>
     </div>
@@ -273,8 +311,10 @@ function beginCardAbility(card: Card) {
           <small>卡牌效果</small><h2>{{ abilityCardOpen.name }}</h2>
           <p v-if="!activeAbilities(abilityCardOpen).length">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
           <div class="faction-effect-actions">
-            <button v-for="entry in activeAbilities(abilityCardOpen)" :key="entry[0]" :disabled="!actionsEnabled"
-              @click="emit('ability', abilityCardOpen!, entry[0]); abilityCardOpen = null">{{ entry[1] }}</button>
+            <button v-for="entry in activeAbilities(abilityCardOpen)" :key="entry.id"
+              :disabled="!actionsEnabled || entry.enabled === false || entry.triggerOnly"
+              :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
+              @click="emit('ability', abilityCardOpen!, entry.id); abilityCardOpen = null">{{ entry.label }}</button>
           </div>
           <span v-if="!actionsEnabled" class="faction-action-hint">仅在可发动时点可以发动</span>
         </div>
@@ -286,6 +326,8 @@ function beginCardAbility(card: Card) {
 <style scoped>
 .formation-slot.combat-attacker{z-index:8;border-color:#d35a61!important;box-shadow:0 0 0 3px #d35a61,0 0 24px rgba(211,90,97,.72)!important}
 .formation-slot.combat-target,.mini-master.combat-target{z-index:8;border-color:#e0b85a!important;box-shadow:0 0 0 3px #e0b85a,0 0 24px rgba(224,184,90,.7)!important}
+.formation-slot.payment-resource{z-index:9;border-color:#52d58a!important;box-shadow:0 0 0 2px #52d58a,0 0 18px rgba(82,213,138,.55)!important;cursor:pointer}.formation-slot.payment-selected{border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.7)!important}
+.morale-orb{box-sizing:border-box;width:14px;height:14px;min-width:14px;padding:0;border:1px solid #7d8581;border-radius:50%;background:#151a1a}.morale-orb.active{background:#d6c55b}.morale-orb.spent{background:#554f42}.morale-orb.unused{opacity:.25}.morale-orb.payable{cursor:pointer;border-color:#72e29f;box-shadow:0 0 9px rgba(82,213,138,.75)}.morale-orb.selected{border:3px solid #fff0a0;background:#d69a2d;box-shadow:0 0 12px #f1c75b}.morale-orb:disabled:not(.payable){cursor:default}
 </style>
 
 <style scoped>
@@ -295,6 +337,6 @@ function beginCardAbility(card: Card) {
 .faction-effect-overlay{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;background:rgba(2,4,5,.78);backdrop-filter:blur(7px)}
 .faction-effect-dialog{position:relative;width:min(650px,calc(100vw - 32px));display:grid;grid-template-columns:220px 1fr;gap:24px;padding:22px;border:1px solid rgba(238,238,228,.7);background:linear-gradient(145deg,#171c1d,#07090a);box-shadow:0 24px 70px #000}
 .faction-effect-dialog>img{width:220px;height:308px;object-fit:contain;background:#050708}
-.faction-effect-dialog small{color:var(--cyan);font-size:9px;letter-spacing:.14em}.faction-effect-dialog h2{margin:8px 0 14px;color:#f0ede4;font-size:25px}.faction-effect-dialog p{color:#d4d5cf;font-size:13px;font-weight:800;line-height:1.85;white-space:pre-wrap}.faction-close,.faction-minimize{position:absolute;top:9px;width:30px;height:30px;border:1px solid #777;background:#111;color:#eee;font-size:20px}.faction-close{right:9px}.faction-minimize{right:47px}.faction-effect-actions{display:grid;gap:8px;margin-top:20px}.faction-effect-actions button{padding:11px;border:1px solid var(--cyan);background:rgba(40,133,140,.2);color:#fff;font-weight:900;text-align:left}.faction-action-hint{display:block;margin-top:18px;color:#777f7c;font-size:10px}.faction-effect-overlay.minimized{inset:auto 16px 16px auto;display:block;background:transparent;backdrop-filter:none;pointer-events:none}.faction-minimized-bar{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #ded9cc;background:#0c1112;box-shadow:0 12px 35px #000;pointer-events:auto}.faction-minimized-bar strong{max-width:270px;overflow:hidden;color:#fff;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.faction-minimized-bar button{padding:6px 10px;border:1px solid var(--cyan);background:#174e54;color:#fff}
+.faction-effect-dialog small{color:var(--cyan);font-size:9px;letter-spacing:.14em}.faction-effect-dialog h2{margin:8px 0 14px;color:#f0ede4;font-size:25px}.faction-effect-dialog p{color:#d4d5cf;font-size:13px;font-weight:800;line-height:1.85;white-space:pre-wrap}.faction-close,.faction-minimize{position:absolute;top:9px;width:30px;height:30px;border:1px solid #777;background:#111;color:#eee;font-size:20px}.faction-close{right:9px}.faction-minimize{right:47px}.faction-effect-actions{display:grid;gap:8px;margin-top:20px}.faction-effect-actions button{padding:11px;border:1px solid var(--cyan);background:rgba(40,133,140,.2);color:#fff;font-weight:900;text-align:left}.faction-effect-actions button:disabled{cursor:not-allowed;border-color:#4a504e;background:#202423;color:#737a77;filter:saturate(.25)}.faction-action-hint{display:block;margin-top:18px;color:#777f7c;font-size:10px}.faction-effect-overlay.minimized{inset:auto 16px 16px auto;display:block;background:transparent;backdrop-filter:none;pointer-events:none}.faction-minimized-bar{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #ded9cc;background:#0c1112;box-shadow:0 12px 35px #000;pointer-events:auto}.faction-minimized-bar strong{max-width:270px;overflow:hidden;color:#fff;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.faction-minimized-bar button{padding:6px 10px;border:1px solid var(--cyan);background:#174e54;color:#fff}
 @media(max-width:650px){.faction-effect-dialog{grid-template-columns:1fr}.faction-effect-dialog>img{width:140px;height:196px;margin:auto}}
 </style>

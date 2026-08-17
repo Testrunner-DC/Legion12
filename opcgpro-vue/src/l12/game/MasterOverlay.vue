@@ -7,16 +7,17 @@ const emit = defineEmits<{ close: []; activate: [ability: string] }>()
 const minimized = ref(false)
 watch(() => props.player.playerIndex, () => { minimized.value = false })
 
-const abilities = computed<Array<[string, string]>>(() => {
+type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
+const abilities = computed<AbilityEntry[]>(() => {
   if (!props.mine) return []
-  if (props.player.master.abilities?.length) return props.player.master.abilities.map(entry => [entry.id, entry.label])
+  if (props.player.master.abilities?.length) return props.player.master.abilities
   if (props.player.master.masterId === 'S01-01M1') return [
-    ['drawCycle', '消耗 1 张活跃士气：抽 1 张牌，再将 1 张手牌放回牌库顶部或底部。'],
-    ['nonLethal', '返还 4 张士气：对方主宰失去 1 点血量，此效果不能令其血量低于 1。'],
+    { id: 'drawCycle', label: '消耗 1 张活跃士气：抽 1 张牌，再将 1 张手牌放回牌库顶部或底部。' },
+    { id: 'nonLethal', label: '返还 4 张士气：对方主宰失去 1 点血量，此效果不能令其血量低于 1。' },
   ]
   if (props.player.master.masterId === 'S01-04M2') return [
-    ['frontBuff', '消耗 1 张活跃士气：选择我方 1 张【高天原】军团发动前排强化。'],
-    ['kusanagi', '消耗 2 张活跃士气：将圣物区的〈草雉剑〉作为军团置入我方前排。'],
+    { id: 'frontBuff', label: '消耗 1 张活跃士气：选择我方 1 张【高天原】军团发动前排强化。' },
+    { id: 'kusanagi', label: '消耗 2 张活跃士气：将圣物区的〈草雉剑〉作为军团置入我方前排。' },
   ]
   return []
 })
@@ -38,14 +39,17 @@ const abilities = computed<Array<[string, string]>>(() => {
           <small>{{ mine ? '我方主宰' : '对方主宰' }}</small>
           <h2>{{ player.master.masterName }}</h2>
           <b>血量 {{ player.master.hp }}/{{ player.master.maxHp }}</b>
-          <p>{{ player.master.effectText || '暂无效果文字' }}</p>
+          <p v-if="!abilities.length">{{ player.master.effectText || '暂无效果文字' }}</p>
           <article v-if="player.master.masterId === 'S01-01M1'" class="master-related-card">
             <img src="/cards/faces/天廷/哮天犬·稚.png" alt="哮天犬·稚" />
             <div><strong>【杨戬专属】哮天犬·稚</strong><p>我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。\n阵亡时 可从士气牌库追加1张休整的士气。</p></div>
           </article>
           <div v-if="abilities.length" class="master-abilities">
-            <button v-for="entry in abilities" :key="entry[0]" :disabled="!canActivate || busy" @click="emit('activate', entry[0])">
-              <span>{{ entry[1] }}</span>
+            <button v-for="entry in abilities" :key="entry.id"
+              :disabled="!canActivate || busy || entry.enabled === false || entry.triggerOnly"
+              :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
+              @click="emit('activate', entry.id)">
+              <span>{{ entry.label }}</span>
             </button>
           </div>
           <span v-if="mine && !canActivate" class="master-hint">仅在我方主要阶段可以发动主宰效果</span>

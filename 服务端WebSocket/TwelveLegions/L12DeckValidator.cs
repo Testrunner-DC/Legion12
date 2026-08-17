@@ -18,7 +18,8 @@ public static class L12DeckValidator
             error = "牌库名称须为 1–24 个字符";
             return false;
         }
-        if (!catalog.Cards.TryGetValue(submission.MasterId, out var master) || master.CardType != "master")
+        if (!catalog.Cards.TryGetValue(submission.MasterId, out var master)
+            || master.CardType is not ("master" or "divinity"))
         {
             error = "请选择有效的主宰";
             return false;

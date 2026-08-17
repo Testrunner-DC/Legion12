@@ -72,6 +72,7 @@ function replayCard(raw: any): Card | null {
   return {
     instanceId: value(raw, 'InstanceId', 'instanceId', ''), cardId: value(raw, 'CardId', 'cardId', ''),
     name: value(raw, 'Name', 'name', '未知卡牌'), cardType: value(raw, 'CardType', 'cardType', ''), faction: value(raw, 'Faction', 'faction', ''),
+    traits: value(raw, 'Traits', 'traits', []), profession: value(raw, 'Profession', 'profession', undefined),
     imageUrl: value(raw, 'ImageUrl', 'imageUrl', undefined), effectText: value(raw, 'EffectText', 'effectText', undefined),
     cost: value(raw, 'Cost', 'cost', 0), currentCost: value(raw, 'CurrentCost', 'currentCost', value(raw, 'Cost', 'cost', 0)),
     baseTroops: value(raw, 'BaseTroops', 'baseTroops', 0), troops: value(raw, 'Troops', 'troops', 0),

@@ -1,5 +1,6 @@
 using TwelveLegions.Server;
 using Xunit;
+using System.Text.Json;
 
 namespace TwelveLegions.Tests;
 
@@ -201,8 +202,11 @@ public sealed class ExtendedCardEffectsTests
         Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 1)).Accepted);
         var paymentPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("play-morale-choice", paymentPrompt.Continuation);
+        Assert.Equal("resource-payment", paymentPrompt.Kind);
         var activeMoraleBefore = player.Morale.Count(card => !card.Tapped);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId, Choice: "yes")).Accepted);
+        var selected = new[] { guard.InstanceId }
+            .Concat(player.Morale.Where(card => !card.Tapped).Take(legion.Cost - 1).Select(card => card.InstanceId)).ToList();
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId, CardInstanceIds: selected)).Accepted);
 
         Assert.True(guard.Tapped);
         Assert.Equal(activeMoraleBefore - (legion.Cost - 1), player.Morale.Count(card => !card.Tapped));
@@ -222,7 +226,9 @@ public sealed class ExtendedCardEffectsTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "sunDraw")).Accepted);
         var paymentPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("active-morale-choice", paymentPrompt.Continuation);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal("resource-payment", paymentPrompt.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            CardInstanceIds: [guard.InstanceId])).Accepted);
 
         Assert.True(guard.Tapped);
         PassResponses(game);
@@ -236,6 +242,82 @@ public sealed class ExtendedCardEffectsTests
         var json = System.Text.Json.JsonSerializer.Serialize(snapshot);
         Assert.Contains("drawCycle", json);
         Assert.Contains("factionAddActive", json);
+    }
+
+    [Fact]
+    public void DisabledAndTriggerOnlyAbilitiesRemainVisibleButCannotBeActivated()
+    {
+        var game = Create(2, 3);
+        ReadyMain(game, 0);
+        var snapshot = game.SnapshotFor(0);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(snapshot));
+        var player = document.RootElement.GetProperty("Players")[0];
+        var factionAbilities = player.GetProperty("factionEffect").GetProperty("abilities").EnumerateArray().ToArray();
+        var sunDraw = factionAbilities.Single(entry => entry.GetProperty("Id").GetString() == "sunDraw");
+        Assert.False(sunDraw.GetProperty("Enabled").GetBoolean());
+
+        var masterAbilities = player.GetProperty("master").GetProperty("abilities").EnumerateArray().ToArray();
+        var reaction = masterAbilities.Single(entry => entry.GetProperty("Id").GetString() == "medjedDamageResponse");
+        Assert.False(reaction.GetProperty("Enabled").GetBoolean());
+        Assert.True(reaction.GetProperty("TriggerOnly").GetBoolean());
+    }
+
+    [Fact]
+    public void MedjedOpponentTurnDamageOffersTombGuardAndThenBoardPosition()
+    {
+        var game = Create(2, 3);
+        var defender = game.State.Players[0];
+        var attackerPlayer = game.State.Players[1];
+        ReadyMain(game, 1);
+        game.State.Round = 2;
+        var attacker = Card("S01-0002", "medjed-test-attacker");
+        attacker.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+
+        Assert.True(game.Handle(1, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        Assert.True(game.Handle(0, new L12Command("resolveDefense")).Accepted);
+        PassResponses(game);
+
+        var guardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("medjed-damage-response", guardPrompt.Data["action"]);
+        var guardId = guardPrompt.ValidChoices.First(id => id != "skip");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId, Choice: guardId)).Accepted);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", slotPrompt.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: slotPrompt.ValidChoices[0])).Accepted);
+        Assert.Contains(defender.Field.SelectMany(row => row), card => card?.InstanceId == guardId && !card.Tapped);
+    }
+
+    [Fact]
+    public void BothOlympusMoraleFacesUseMoraleClassification()
+    {
+        Assert.Equal("rune", Catalog.Cards["S02-05C1"].CardType);
+        Assert.Equal("rune", Catalog.Cards["S02-05C1A"].CardType);
+    }
+
+    [Theory]
+    [InlineData("S02-05C1")]
+    [InlineData("S02-05C1A")]
+    public void BothOlympusMoraleFacesCanBeConsumedAsGodPower(string cardId)
+    {
+        var player = new L12PlayerState
+        {
+            PlayerIndex = 0,
+            Name = "Olympus",
+            DeckName = "Olympus test",
+            Faction = "olympus",
+            MasterId = "S02-05M1",
+            MasterName = "Artemis",
+        };
+        var morale = new L12MoraleCard { CardId = cardId, InstanceId = $"{cardId}-morale" };
+        player.Morale.Add(morale);
+        player.SpecialZones.GodPower.Add(Card("S02-05C1", morale.InstanceId));
+
+        Assert.True(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1));
+        Assert.True(morale.Tapped);
+        Assert.True(player.SpecialZones.GodPower.Single().Tapped);
     }
 
     [Fact]
@@ -257,7 +339,7 @@ public sealed class ExtendedCardEffectsTests
 
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Text.Contains("夺命诗人埃吉尔"));
         Assert.Empty(game.State.EffectStack);
-        Assert.Equal(L12Phase.Defense, game.State.Phase);
+        Assert.Equal(L12Phase.Main, game.State.Phase);
     }
 
     [Fact]

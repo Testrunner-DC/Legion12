@@ -19,7 +19,7 @@ public sealed class RuleKernelTests
         MaxHp = 8,
     };
 
-    private static L12CardInstance Card(string id, int troops = 2000, string? name = null, string faction = "tianting") => new()
+    private static L12CardInstance Card(string id, int troops = 2000, string? name = null, string faction = "tianting", string[]? traits = null) => new()
     {
         InstanceId = id,
         CardId = id,
@@ -27,6 +27,7 @@ public sealed class RuleKernelTests
         CardType = "legion",
         Faction = faction,
         Cost = 1,
+        Traits = traits is null ? [] : [.. traits],
         BaseTroops = troops,
         Troops = troops,
     };
@@ -131,10 +132,10 @@ public sealed class RuleKernelTests
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
-        while (game.State.PendingPrompts.FirstOrDefault() is { } prompt && prompt.ValidChoices.Contains("pass"))
+        while (game.State.EffectStack.LastOrDefault()?.Trigger == "attack"
+            && game.State.PendingPrompts.FirstOrDefault() is { } prompt
+            && prompt.ValidChoices.Contains("pass"))
             Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
-        var defenseResult = game.Handle(1, new L12Command("resolveDefense"));
-        Assert.True(defenseResult.Accepted, defenseResult.Error);
 
         Assert.Equal(2, game.State.EffectStack.Count);
         Assert.Equal(0, game.State.EffectStack[0].Controller);
@@ -196,7 +197,7 @@ public sealed class RuleKernelTests
     {
         var player = Player();
         var foundation = Card("foundation", 4000, "赫拉克勒斯", "olympus"); foundation.Tapped = true; foundation.HasStrongAttack = true;
-        var promoted = Card("promoted", 6000, "赫拉克勒斯·晋升", "olympus");
+        var promoted = Card("promoted", 6000, "赫拉克勒斯·晋升", "olympus", ["奥林匹斯", "晋升者"]);
         player.Field[0][1] = foundation; player.Hand.Add(promoted);
         player.SpecialZones.GodPower.AddRange([Card("power-a"), Card("power-b")]);
         Assert.True(L12S2ZoneOps.Promote(player, foundation, promoted, 2));

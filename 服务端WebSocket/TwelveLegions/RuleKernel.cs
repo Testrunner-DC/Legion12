@@ -150,6 +150,20 @@ public static class L12S2ZoneOps
     public static bool ConsumeAndFlipGodPower(L12PlayerState player, int count)
     {
         if (count < 0) return false;
+        var moralePower = player.Morale
+            .Where(card => (card.CardId is "S02-05C1" or "S02-05C1A") && !card.Tapped)
+            .Take(count)
+            .ToArray();
+        if (moralePower.Length == count)
+        {
+            foreach (var morale in moralePower)
+            {
+                morale.Tapped = true;
+                var mirror = player.SpecialZones.GodPower.FirstOrDefault(card => card.InstanceId == morale.InstanceId);
+                if (mirror is not null) mirror.Tapped = true;
+            }
+            return true;
+        }
         var active = player.SpecialZones.GodPower.Where(card => !card.Tapped).Take(count).ToArray();
         if (active.Length < count) return false;
         foreach (var card in active) card.Tapped = true;
@@ -158,8 +172,12 @@ public static class L12S2ZoneOps
 
     public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted, int godPowerCost)
     {
+        if (!promoted.HasTrait("晋升者") || foundation.HasTrait("晋升者")) return false;
         var normalizedPromotedName = promoted.Name.Replace("·晋升", string.Empty, StringComparison.Ordinal);
-        if (!foundation.Name.Equals(normalizedPromotedName, StringComparison.Ordinal)
+        var knownPair = (promoted.CardId, foundation.CardId) is
+            ("S02-0501", "S02-0502") or ("S02-0503", "S02-0504")
+            or ("S02-0505", "S02-0506") or ("S02-0507", "S02-0508");
+        if (!(knownPair || foundation.Name.Equals(normalizedPromotedName, StringComparison.Ordinal))
             || foundation.Faction != "olympus" || promoted.Faction != "olympus") return false;
         var position = (Row: -1, Slot: -1);
         for (var row = 0; row < player.Field.Length; row++)
@@ -172,6 +190,8 @@ public static class L12S2ZoneOps
         promoted.HasStrongAttack |= foundation.HasStrongAttack;
         promoted.HasSureHit |= foundation.HasSureHit;
         promoted.ImmortalUses += foundation.ImmortalUses;
+        promoted.SummonRound = foundation.SummonRound;
+        promoted.AttacksThisTurn = foundation.AttacksThisTurn;
         promoted.AttachedCards.Add(foundation);
         player.Hand.Remove(promoted);
         player.Field[position.Row][position.Slot] = promoted;

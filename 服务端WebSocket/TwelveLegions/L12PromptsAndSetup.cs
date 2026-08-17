@@ -23,6 +23,12 @@ public sealed partial class L12GameEngine
             if (_catalog.Cards.ContainsKey(id))
                 State.DisasterPool.Add(CreateCard(id, $"disaster-{number:00}"));
         }
+        for (var number = 1; number <= 6; number++)
+        {
+            var id = $"S02-DS{number:00}";
+            if (_catalog.Cards.ContainsKey(id))
+                State.DisasterPool.Add(CreateCard(id, $"disaster-s2-{number:00}"));
+        }
     }
 
     private void PrepareLibrariesAndHands()
@@ -90,6 +96,8 @@ public sealed partial class L12GameEngine
         data.TryAdd($"{id}:cardId", card.CardId);
         data.TryAdd($"{id}:cardType", card.CardType);
         data.TryAdd($"{id}:faction", card.Faction);
+        if (card.Traits.Count > 0) data.TryAdd($"{id}:traits", string.Join('|', card.Traits));
+        if (!string.IsNullOrWhiteSpace(card.Profession)) data.TryAdd($"{id}:profession", card.Profession);
         data.TryAdd($"{id}:cost", card.CurrentCost.ToString());
         data.TryAdd($"{id}:troops", card.Troops.ToString());
         data.TryAdd($"{id}:baseTroops", card.BaseTroops.ToString());
@@ -140,6 +148,13 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject($"必须选择 {prompt.MinChoose} 至 {prompt.MaxChoose} 项");
         if (chosen.Any(item => !prompt.ValidChoices.Contains(item)))
             return CommandResult.Reject("包含无效选项");
+        if (prompt.Data.GetValueOrDefault("selectionConstraint") == "distinct-card-names")
+        {
+            var selectedCards = chosen.Select(id => FindPromptCard(playerIndex, id)).ToArray();
+            if (selectedCards.Any(card => card is null)
+                || selectedCards.Select(card => card!.Name).Distinct(StringComparer.Ordinal).Count() != selectedCards.Length)
+                return CommandResult.Reject("选择的卡牌必须为非同名卡牌");
+        }
 
         State.PendingPrompts.Remove(prompt);
         AddEvent("prompt-resolved", playerIndex, $"{State.Players[playerIndex].Name} 已完成选择");
@@ -220,13 +235,34 @@ public sealed partial class L12GameEngine
             }
             case "play-morale-choice":
             {
-                var result = ResolveTombGuardPlayPaymentChoice(prompt, chosen[0]);
+                var result = ResolveTombGuardPlayPaymentChoice(prompt, chosen);
                 if (!result.Accepted) return result;
                 break;
             }
             case "active-morale-choice":
             {
-                var result = ResolveTombGuardActivePaymentChoice(prompt, chosen[0]);
+                var result = ResolveTombGuardActivePaymentChoice(prompt, chosen);
+                if (!result.Accepted) return result;
+                break;
+            }
+            case "move-morale-choice":
+            {
+                var result = ResolveMoveResourcePayment(prompt, chosen);
+                if (!result.Accepted) return result;
+                break;
+            }
+            case "s2-mistletoe-rune-cost":
+            {
+                var result = PlayCard(prompt.PlayerIndex, new L12Command(
+                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Choice: chosen[0]));
+                if (!result.Accepted) return result;
+                break;
+            }
+            case "s2-promotion-foundation":
+            {
+                var result = PlayCard(prompt.PlayerIndex, new L12Command(
+                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"),
+                    Choice: $"promotion:{chosen[0]}"));
                 if (!result.Accepted) return result;
                 break;
             }
@@ -255,10 +291,8 @@ public sealed partial class L12GameEngine
             Choice: choice == "yes" ? "self-damage-cost" : "normal-cost"));
     }
 
-    private CommandResult ResolveTombGuardPlayPaymentChoice(L12Prompt prompt, string choice)
+    private CommandResult ResolveTombGuardPlayPaymentChoice(L12Prompt prompt, List<string> chosen)
     {
-        var canPayWithoutGuards = bool.TryParse(prompt.Data.GetValueOrDefault("canPayWithoutGuards"), out var parsedCanPay) && parsedCanPay;
-        if (choice == "no" && !canPayWithoutGuards) return CommandResult.Ok();
         int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
         int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
         var baseChoice = prompt.Data.GetValueOrDefault("baseChoice", "normal-cost");
@@ -267,23 +301,32 @@ public sealed partial class L12GameEngine
             CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"),
             Row: row,
             Slot: slot,
-            Choice: $"{baseChoice}|{(choice == "yes" ? "tomb-guards" : "morale-only")}"));
+            Choice: baseChoice,
+            CardInstanceIds: chosen));
     }
 
-    private CommandResult ResolveTombGuardActivePaymentChoice(L12Prompt prompt, string choice)
+    private CommandResult ResolveMoveResourcePayment(L12Prompt prompt, List<string> chosen)
     {
-        var canPayWithoutGuards = bool.TryParse(prompt.Data.GetValueOrDefault("canPayWithoutGuards"), out var parsedCanPay) && parsedCanPay;
-        if (choice == "no" && !canPayWithoutGuards) return CommandResult.Ok();
+        if (!int.TryParse(prompt.Data.GetValueOrDefault("row"), out var row)
+            || !int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var slot))
+            return CommandResult.Reject("位移位置数据无效");
+        return Move(prompt.PlayerIndex, new L12Command("move",
+            CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
+            CardInstanceIds: chosen));
+    }
+
+    private CommandResult ResolveTombGuardActivePaymentChoice(L12Prompt prompt, List<string> chosen)
+    {
         var player = State.Players[prompt.PlayerIndex];
         var sourceId = prompt.Data.GetValueOrDefault("sourceId") ?? string.Empty;
         var source = FindOnField(player, sourceId, out _, out _)
             ?? (player.Relic?.InstanceId == sourceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == sourceId)
-            ?? (prompt.Data.GetValueOrDefault("sourceCardId") == player.MasterId ? CreateCard(player.MasterId, sourceId) : null)
+            ?? (prompt.Data.GetValueOrDefault("sourceCardId") == player.MasterId ? CreateActiveMasterSource(player, sourceId) : null)
             ?? (sourceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(prompt.Data.GetValueOrDefault("sourceCardId") ?? string.Empty, sourceId) : null);
         if (source is null) return CommandResult.Reject("主动效果来源已不在合法区域");
         return CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data.GetValueOrDefault("ability") ?? string.Empty,
-            prompt.Data.GetValueOrDefault("target"), useTombGuards: choice == "yes");
+            prompt.Data.GetValueOrDefault("target"), selectedResourceIds: chosen);
     }
 
     private void ResolveInitiativeChoice(int playerIndex, string choice)
@@ -407,6 +450,15 @@ public sealed partial class L12GameEngine
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,
         IEnumerable<string>? targets = null, Dictionary<string, string>? data = null)
     {
+        var sourceAbilities = GetAbilities(source.CardId);
+        if (trigger == "active" && State.ActiveDisaster?.CardId == "S02-DS03"
+            && sourceAbilities.Any(ability => ability.Id == data?.GetValueOrDefault("ability")
+                && (ability.Label.Contains("主动休整", StringComparison.Ordinal)
+                    || sourceAbilities.Count == 1
+                    && source.EffectText?.Contains("主动休整", StringComparison.Ordinal) == true)))
+        {
+            DamageMasterNonLethal(controller, 1, "〈无眠之夜〉的持续效果");
+        }
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -687,6 +739,12 @@ public sealed partial class L12GameEngine
             AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
             if (item.Trigger == "attack")
             {
+                var pending = State.PendingDefense;
+                if (pending is not null)
+                {
+                    var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
+                    RevertPendingAttackTroopsBonus(pending, attacker);
+                }
                 State.PendingDefense = null;
                 State.Phase = L12Phase.Main;
                 AddEvent("attack-ended", item.Controller, "本次进攻被抵挡");
@@ -748,6 +806,7 @@ public sealed partial class L12GameEngine
         if (resolving is not null && State.EffectStack.All(other => other.SourceInstanceId != resolving.InstanceId))
         {
             owner.Resolving.Remove(resolving);
+            ResetCardAfterLeavingField(resolving);
             owner.Graveyard.Add(resolving);
         }
         if (queueExorcistReturn) QueueS2ExorcistReturns(item.Controller, completedSource!);
@@ -806,6 +865,10 @@ public sealed partial class L12GameEngine
             CompleteEndTurn(State.ActivePlayer);
             return;
         }
-        if (State.PendingDefense is not null) State.Phase = L12Phase.Defense;
+        if (State.PendingDefense is not null)
+        {
+            State.Phase = L12Phase.Defense;
+            AutoResolveLegionDefenseWithoutSupport();
+        }
     }
 }
