@@ -851,7 +851,7 @@
   {
     "id": "S02-0505",
     "number": "S02-0505",
-    "nameZh": "帕尔修斯·晋升",
+    "nameZh": "珀尔修斯·晋升",
     "imageUrl": "/cards/faces/奥林匹斯/帕尔修斯·晋升.png",
     "cardType": "legion",
     "product": "S02",
@@ -1315,6 +1315,7 @@
     "hp": null,
     "troops": 3000,
     "disasterLevel": null,
+    "trialValue": 2,
     "effect": "登场时 可发动试炼。\n我方回合 试炼<寻找圣杯之旅>完成后，可弃置此军团：抽取1张牌，我方主宰可增加1点血量。",
     "traits": [
       "彼界",
@@ -1353,6 +1354,7 @@
     "hp": null,
     "troops": 4000,
     "disasterLevel": null,
+    "trialValue": 1,
     "effect": "登场时 获得1符文。\n进攻时 可弃置1张手牌：本回合兵力+2000。\n击杀时 本回合获得贯穿。",
     "traits": [
       "彼界",
@@ -1409,6 +1411,7 @@
     "hp": null,
     "troops": 1000,
     "disasterLevel": null,
+    "trialValue": 1,
     "effect": "无法进攻主宰。\n阵亡时 试炼+1。",
     "traits": [
       "彼界"
@@ -1427,6 +1430,7 @@
     "hp": null,
     "troops": 5000,
     "disasterLevel": null,
+    "trialValue": 1,
     "effect": "登场时 可发动试炼。\n此军团发动试炼后可消耗1符文：将此军团转为活跃，且本回合无法再次发动试炼。",
     "traits": [
       "彼界"
@@ -1481,6 +1485,7 @@
     "hp": null,
     "troops": 5000,
     "disasterLevel": null,
+    "trialValue": 1,
     "effect": "登场时 可弃置1张手牌：我方主宰直到下个我方回合开始前无法被进攻。\n阵亡时 双方主宰增加1点血量。",
     "traits": [
       "彼界"
@@ -1499,6 +1504,7 @@
     "hp": null,
     "troops": 2000,
     "disasterLevel": null,
+    "trialValue": 1,
     "effect": "进攻距离+1，远程进攻无损。\n登场时 可选择以下一项。\n·获得1符文。\n·发动试炼。",
     "traits": [
       "彼界"
@@ -1553,6 +1559,7 @@
     "hp": null,
     "troops": 2000,
     "disasterLevel": null,
+    "trialValue": 1,
     "effect": "进攻距离+1，远程进攻无损。\n登场时 可从我方手牌/牌库/墓地将1张<侍从骑士>活跃登场。\n进攻时 获得1符文。若我方战场上存在<狮心王理查一世>，可抽取1张牌。",
     "traits": [
       "彼界"
@@ -1571,6 +1578,7 @@
     "hp": null,
     "troops": 1000,
     "disasterLevel": null,
+    "trialValue": 2,
     "effect": "进攻距离+1，远程进攻无损。\n登场时 获得1符文。",
     "traits": [
       "彼界"

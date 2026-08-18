@@ -2513,7 +2513,7 @@
     ],
     "faqIds": [],
     "flavorText": "",
-    "name": "帕尔修斯·晋升",
+    "name": "珀尔修斯·晋升",
     "image": "/cards/faces/奥林匹斯/帕尔修斯·晋升.png",
     "faction": "奥林匹斯",
     "verified": true,
@@ -2522,7 +2522,7 @@
       "code": "S02-0505"
     },
     "subType": "骑兵",
-    "searchText": "帕尔修斯·晋升 奥林匹斯 军团 奥林匹斯 晋升者 骑兵 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。\n我方 回合1次 可进行1次位移。\n登场时 获得冲锋。",
+    "searchText": "珀尔修斯·晋升 奥林匹斯 军团 奥林匹斯 晋升者 骑兵 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。\n我方 回合1次 可进行1次位移。\n登场时 获得冲锋。",
     "type": "军团",
     "effectText": "晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。\n我方 回合1次 可进行1次位移。\n登场时 获得冲锋。"
   },
@@ -3120,6 +3120,7 @@
     "cost": 2,
     "attack": 1000,
     "health": null,
+    "trialValue": 2,
     "tags": [
       "彼界"
     ],
@@ -3149,6 +3150,7 @@
     "cost": 1,
     "attack": 1000,
     "health": null,
+    "trialValue": 1,
     "tags": [
       "彼界"
     ],
@@ -3237,6 +3239,7 @@
     "cost": 3,
     "attack": 3000,
     "health": null,
+    "trialValue": 2,
     "tags": [
       "彼界",
       "圆桌骑士"
@@ -3324,6 +3327,7 @@
     "cost": 6,
     "attack": 5000,
     "health": null,
+    "trialValue": 1,
     "tags": [
       "彼界"
     ],
@@ -3437,6 +3441,7 @@
     "cost": 4,
     "attack": 4000,
     "health": null,
+    "trialValue": 1,
     "tags": [
       "彼界",
       "圆桌骑士"
@@ -3496,6 +3501,7 @@
     "cost": 3,
     "attack": 2000,
     "health": null,
+    "trialValue": 1,
     "tags": [
       "彼界"
     ],
@@ -3810,6 +3816,7 @@
     "cost": 3,
     "attack": 2000,
     "health": null,
+    "trialValue": 1,
     "tags": [
       "彼界"
     ],
@@ -3869,6 +3876,7 @@
     "cost": 4,
     "attack": 5000,
     "health": null,
+    "trialValue": 1,
     "tags": [
       "彼界"
     ],

@@ -14,6 +14,7 @@ interface CatalogCard {
   hp?: number
   troops?: number
   disasterLevel?: number
+  trialValue?: number
   traits?: string[]
   profession?: string
   effect?: string
@@ -35,6 +36,7 @@ interface LookupCard {
   cost?: number | null
   attack?: number | null
   health?: number | null
+  trialValue?: number | null
   image?: string
   effectText?: string
   tags?: string[]
@@ -98,6 +100,7 @@ onMounted(async () => {
       cost: card.cost ?? undefined,
       troops: card.attack ?? undefined,
       hp: card.health ?? undefined,
+      trialValue: card.trialValue ?? undefined,
       traits: card.tags ?? [],
       profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
@@ -201,6 +204,7 @@ function resetFilters() {
           <template v-if="selected.troops !== undefined"><dt>兵力</dt><dd>{{ selected.troops }}</dd></template>
           <template v-if="selected.hp !== undefined"><dt>血量</dt><dd>{{ selected.hp }}</dd></template>
           <template v-if="selected.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ selected.disasterLevel }}</dd></template>
+          <template v-if="selected.trialValue !== undefined"><dt>试炼值</dt><dd>{{ selected.trialValue }}</dd></template>
         </dl>
         <section class="archive-effect"><b>效果</b><p>{{ selected.effect || '无效果文字' }}</p></section>
         <section v-if="selectedDecks.length" class="archive-decks"><b>收录预组</b><p v-for="deck in selectedDecks" :key="deck.name">{{ deck.name }} × {{ deck.copies }}</p></section>

@@ -219,31 +219,36 @@ public sealed class L12RoomManager
 
     private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
     {
-        var players = room.Sessions.Select(id =>
-        {
-            var member = _sessions[id];
-            var deck = SelectedDeck(member);
-            var master = _catalog.Cards[deck.MasterId];
-            return new
-            {
-                member.Name, playerIndex = member.PlayerIndex, member.Connected,
-                ready = room.Ready[member.PlayerIndex!.Value],
-                deckIndex = member.CustomDeck is null ? member.SelectedDeckIndex : -1,
-                customDeck = member.CustomDeck is not null,
-                deckName = deck.Name, masterName = master.NameZh, faction = master.Faction,
-            };
-        }).ToArray();
         var decks = _catalog.PresetDecks.Select((deck, index) => new
         {
             index, deck.Name, deck.MasterId,
             masterName = _catalog.Cards[deck.MasterId].NameZh,
             faction = _catalog.Cards[deck.MasterId].Faction,
         }).ToArray();
-        return room.Sessions.Select(id => new OutgoingMessage(id, new
+        return room.Sessions.Select(id =>
         {
-            type = "roomState", roomCode = room.Code, yourPlayerIndex = _sessions[id].PlayerIndex,
-            players, decks, options = room.Options, started = room.Game is not null,
-        })).ToArray();
+            var viewer = _sessions[id];
+            var players = room.Sessions.Select(memberId =>
+            {
+                var member = _sessions[memberId];
+                var deck = SelectedDeck(member);
+                var master = _catalog.Cards[deck.MasterId];
+                return new
+                {
+                    member.Name, playerIndex = member.PlayerIndex, member.Connected,
+                    ready = room.Ready[member.PlayerIndex!.Value],
+                    deckIndex = member.CustomDeck is null ? member.SelectedDeckIndex : -1,
+                    customDeck = member.CustomDeck is not null,
+                    deckName = member.PlayerIndex == viewer.PlayerIndex ? deck.Name : string.Empty,
+                    masterName = master.NameZh, faction = master.Faction,
+                };
+            }).ToArray();
+            return new OutgoingMessage(id, new
+            {
+                type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
+                players, decks, options = room.Options, started = room.Game is not null,
+            });
+        }).ToArray();
     }
 
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room)

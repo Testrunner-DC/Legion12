@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
+import { destructionRoundBackUrl } from '../specialAssets'
 import { gameAction, l12State } from '../net'
 import GameActions from './GameActions.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
@@ -81,12 +82,12 @@ const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
   prompt.kind === 'slot' && prompt.validChoices.length > 0
   && prompt.validChoices.every(id => /^\d+:\d+$/.test(id)),
 ) ?? null)
-const resourcePaymentPrompt = computed(() => props.game.prompts?.find(prompt =>
-  prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment',
+const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =>
+  prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment' || prompt.kind === 'target-morale',
 ) ?? null)
-const paymentChoiceIds = computed(() => resourcePaymentPrompt.value?.validChoices ?? [])
+const paymentChoiceIds = computed(() => resourceSelectionPrompt.value?.validChoices ?? [])
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
-  ?? boardSlotPrompt.value?.promptId ?? resourcePaymentPrompt.value?.promptId ?? null)
+  ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
 const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
   graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
   || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
@@ -143,7 +144,7 @@ const boardSlotPreview = computed<Card | null>(() => {
   }
 })
 watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
-watch(() => resourcePaymentPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
+watch(() => resourceSelectionPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const event = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'hidden-reveal' && item.cards?.length)
   if (!event?.cards?.[0] || event.sequence <= lastHiddenRevealSequence.value) return
@@ -233,7 +234,7 @@ function selectHand(card: Card) {
   playArmed.value = selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
 }
 function ownSlot(row: number, slot: number, card: Card | null) {
-  if (resourcePaymentPrompt.value) {
+  if (resourceSelectionPrompt.value) {
     if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
     return
   }
@@ -272,19 +273,23 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   playArmed.value = false
 }
 function togglePaymentResource(instanceId: string) {
-  const prompt = resourcePaymentPrompt.value
+  const prompt = resourceSelectionPrompt.value
   if (!prompt || !paymentChoiceIds.value.includes(instanceId)) return
   const index = paymentResourceIds.value.indexOf(instanceId)
   if (index >= 0) paymentResourceIds.value.splice(index, 1)
   else if (paymentResourceIds.value.length < prompt.maxChoose) paymentResourceIds.value.push(instanceId)
 }
 function confirmResourcePayment() {
-  const prompt = resourcePaymentPrompt.value
+  const prompt = resourceSelectionPrompt.value
   if (!prompt || paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
 }
 function enemySlot(_row: number, _slot: number, card: Card | null) {
   if (card) focusCard.value = card
+  if (resourceSelectionPrompt.value) {
+    if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
+    return
+  }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
   if (mode.value !== 'attack' || !selectedId.value || !card || !selectedAttackTargets.value.includes(card.instanceId)) return
   command('attack', { cardInstanceId: selectedId.value, target: { type: 'legion', instanceId: card.instanceId } })
@@ -395,7 +400,7 @@ function statusTexts(card: Card) {
               <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
                 :class="{ hidden: !card || card.hidden, inactive: card && !card.hidden && card.instanceId !== game.activeDisaster?.instanceId }" :disabled="!card || card.hidden" :title="card && !card.hidden ? card.name : '未揭示天灾'"
                 @click="card && focusSessionDisaster(card)" @mouseenter="card && focusSessionDisaster(card)">
-                <img :src="card?.imageUrl || '/assets/l12/card-back-disaster.png'" :alt="card?.name || '未揭示天灾'"/>
+                <img :src="!card || card.hidden || !card.imageUrl ? destructionRoundBackUrl : card.imageUrl" :alt="card?.name || '未揭示天灾'"/>
               </button>
             </div>
           </section>
@@ -410,6 +415,7 @@ function statusTexts(card: Card) {
                 <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
                   <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
                 </div>
+                <div v-if="focusCard.trialValue" class="inspector-card-tags"><span>试炼值 {{ focusCard.trialValue }}</span></div>
                 <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
                 <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
               </template>
@@ -430,8 +436,9 @@ function statusTexts(card: Card) {
               :combat-attacker-id="combat?.attackerOwner.playerIndex === enemy.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === enemy.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === enemy.playerIndex && !combat.target"
+              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :master-targetable="!combat && selectedAttackTargets.includes('master')" @slot="enemySlot" @master="enemyMaster"
-              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" />
+              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @payment-resource="togglePaymentResource" />
             <div class="board-seam">
               <div class="disaster-zone" @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
                 <img class="disaster-card-image"
@@ -521,11 +528,11 @@ function statusTexts(card: Card) {
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
         <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
       </div>
-      <div v-if="resourcePaymentPrompt && !readOnly" class="board-target-controls resource-payment-controls">
-        <strong>请选择支付费用的士气或陵墓守卫</strong>
-        <span>已选择 {{ paymentResourceIds.length }}/{{ resourcePaymentPrompt.maxChoose }}</span>
-        <button class="primary" :disabled="paymentResourceIds.length < resourcePaymentPrompt.minChoose"
-          @click="confirmResourcePayment">确认支付</button>
+      <div v-if="resourceSelectionPrompt && !readOnly" class="board-target-controls resource-payment-controls">
+        <strong>{{ resourceSelectionPrompt.text }}</strong>
+        <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
+        <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
+          @click="confirmResourcePayment">{{ resourceSelectionPrompt.kind === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
       </div>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" />
@@ -562,6 +569,6 @@ function statusTexts(card: Card) {
 .board-slot-controls img{width:52px;height:72px;object-fit:contain;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:8px;font-weight:800;line-height:1.45}
 .inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:8px;font-weight:900}
-.session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:42px;min-width:42px;height:42px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:center}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
+.session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:44px;min-width:44px;height:44px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:center 18%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:hidden!important;transform-origin:left top;pointer-events:none}
 </style>

@@ -409,7 +409,7 @@ public sealed partial class L12GameEngine
                     ["action"] = "s2-perseus-recover-promotion", ["choiceMode"] = "optional-add", ["skip"] = "不发动",
                 };
                 foreach (var handCard in player.Hand) AddPromptCardData(data, handCard);
-                CreatePrompt(item.Controller, "hand-card", "珀尔修斯：可弃置1张手牌，将墓地1张〈帕尔修斯·晋升〉加入手牌",
+                CreatePrompt(item.Controller, "hand-card", "珀尔修斯：可弃置1张手牌，将墓地1张〈珀尔修斯·晋升〉加入手牌",
                     choices, 1, 1, "card-effect", item.StackItemId, data: data);
                 return true;
             }
@@ -2067,8 +2067,8 @@ public sealed partial class L12GameEngine
                 {
                     MoveHandToGrave(player, discarded.InstanceId, causedByEffect: false);
                     player.Graveyard.Remove(promotion);
-                    AddCardToHandByEffect(player, promotion, "graveyard", "珀尔修斯将〈帕尔修斯·晋升〉加入手牌");
-                    AddEvent("effect", item.Controller, "珀尔修斯弃置1张手牌，将墓地的〈帕尔修斯·晋升〉加入手牌", promotion, discarded);
+                    AddCardToHandByEffect(player, promotion, "graveyard", "珀尔修斯将〈珀尔修斯·晋升〉加入手牌");
+                    AddEvent("effect", item.Controller, "珀尔修斯弃置1张手牌，将墓地的〈珀尔修斯·晋升〉加入手牌", promotion, discarded);
                 }
                 FinishStackItem(item);
                 return true;

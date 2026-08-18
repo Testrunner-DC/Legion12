@@ -53,6 +53,13 @@ public sealed class LatestBugRegressionTests
         return Assert.IsType<L12CardInstance[]>(view.GetType().GetProperty("hand")!.GetValue(view));
     }
 
+    private static L12CardInstance[] SnapshotGraveyard(L12GameEngine game, int playerIndex)
+    {
+        var view = game.SnapshotFor(playerIndex).Players[playerIndex];
+        return Assert.IsAssignableFrom<IEnumerable<L12CardInstance>>(
+            view.GetType().GetProperty("Graveyard")!.GetValue(view)).ToArray();
+    }
+
     private static void AddReadyMorale(L12PlayerState player, int count)
     {
         for (var index = 0; index < count; index++)
@@ -249,5 +256,47 @@ public sealed class LatestBugRegressionTests
         Assert.True(abilities[0].GetProperty("Enabled").GetBoolean());
         Assert.Equal("godPowerDraw", abilities[1].GetProperty("Id").GetString());
         Assert.False(abilities[1].GetProperty("Enabled").GetBoolean());
+    }
+
+    [Fact]
+    public void IsisCanopicCostDiscardsThreeTombGuardsIntoGraveyardWithoutDefeatingThem()
+    {
+        var game = CreateWithFirstMaster("S01-02M1", 6408);
+        var player = game.State.Players[0];
+        player.Graveyard.Clear();
+        player.Hand.Clear();
+        for (var slot = 0; slot < 3; slot++)
+            player.Field[0][slot] = Card("S01-0212", $"isis-cost-guard-{slot}");
+        player.Graveyard.Add(Card("S01-0216", "isis-canopic-source"));
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("activateAbility", "S01-02M1", Ability: "isisCanopic"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.All(player.Field[0], card => Assert.Null(card));
+        Assert.Equal(3, player.Graveyard.Count(card => card.CardId == "S01-0212"));
+        Assert.Equal(3, SnapshotGraveyard(game, 0).Count(card => card.CardId == "S01-0212"));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "death" && entry.Cards.Any(card => card.CardId == "S01-0212"));
+    }
+
+    [Fact]
+    public void ResourcePaymentPromptOnlyNamesResourcesThatCanActuallyBeSelected()
+    {
+        var game = CreateWithFirstMaster("S02-05M2", 6409);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Morale.Add(new L12MoraleCard { InstanceId = "ordinary", CardId = "S02-05C1A", Tapped = false });
+        player.Morale.Add(new L12MoraleCard { InstanceId = "god-power", CardId = "S02-05C1A", Tapped = false, IsGodPower = true });
+        var forge = Card("S02-0520", "dynamic-resource-forge");
+        player.Relic = forge;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", forge.InstanceId,
+            Ability: "forgePromotionDiscount")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("请选择支付费用的士气、神力", prompt.Text);
+        Assert.DoesNotContain("陵墓守卫", prompt.Text);
     }
 }

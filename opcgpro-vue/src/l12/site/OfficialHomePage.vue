@@ -1,33 +1,33 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive } from 'vue'
 import { getPublicContent } from '@/l12/platform'
+import { createHomeContent, homeContentFields } from './homeContent'
 
-const headline = ref('十二军团')
-const introduction = ref('集结、构筑、开战')
-const latestNews = ref('')
+const content = reactive(createHomeContent())
 onMounted(async () => {
-  const entries = await Promise.allSettled(['home.headline', 'home.introduction', 'home.latestNews'].map(getPublicContent))
-  const values = entries.map(entry => entry.status === 'fulfilled' ? entry.value.value.trim() : '')
-  if (values[0]) headline.value = values[0]
-  if (values[1]) introduction.value = values[1]
-  if (values[2]) latestNews.value = values[2]
+  const entries = await Promise.allSettled(homeContentFields.map(field => getPublicContent(field.key)))
+  entries.forEach((entry, index) => {
+    const value = entry.status === 'fulfilled' ? entry.value.value.trim() : ''
+    if (value) content[homeContentFields[index].id] = value
+  })
 })
-const modules = [
-  { to: '/lobby', en: 'PLAY', title: '在线对战', text: '公开匹配、好友房与单人测试沙盒。' },
-  { to: '/cards', en: 'DATABASE', title: '卡牌资料库', text: '按赛季、阵营、类型、费用与天灾等级检索。' },
-  { to: '/decks', en: 'DECKS', title: '牌库与分享', text: '构筑、校验、牌库广场、牌库码与牌库图。' },
-  { to: '/records', en: 'REPLAY', title: '对局与回放', text: '完整操作记录、JSON 导入导出与只读棋盘回放。' },
-]
+const modules = computed(() => [
+  { to: '/lobby', en: 'PLAY', title: content.playTitle, text: content.playText },
+  { to: '/cards', en: 'DATABASE', title: content.cardsTitle, text: content.cardsText },
+  { to: '/decks', en: 'DECKS', title: content.decksTitle, text: content.decksText },
+  { to: '/records', en: 'REPLAY', title: content.recordsTitle, text: content.recordsText },
+])
+const featureLabels = computed(() => content.featureLabels.split(/\r?\n/).map(item => item.trim()).filter(Boolean))
 </script>
 
 <template>
   <div class="official-home page-frame">
     <section class="official-hero">
       <div class="hero-copy">
-        <p>LEGION 12 · OFFICIAL WEB PLATFORM</p>
-        <h1>{{ headline }}<br/><span>{{ introduction }}</span></h1>
-        <div class="hero-actions"><router-link to="/lobby">进入对战大厅</router-link><router-link class="secondary" to="/cards">浏览卡牌图鉴</router-link></div>
-        <ul><li>官方网站</li><li>规则与资料库</li><li>在线对战器</li></ul>
+        <p>{{ content.heroEyebrow }}</p>
+        <h1>{{ content.headline }}<br/><span>{{ content.introduction }}</span></h1>
+        <div class="hero-actions"><router-link to="/lobby">{{ content.primaryCta }}</router-link><router-link class="secondary" to="/cards">{{ content.secondaryCta }}</router-link></div>
+        <ul><li v-for="label in featureLabels" :key="label">{{ label }}</li></ul>
       </div>
       <div class="hero-art"><img src="/assets/l12/card-back-gold.png" alt="十二军团官方卡背"/><i/><i/></div>
     </section>
@@ -39,9 +39,9 @@ const modules = [
     </section>
 
     <section class="official-columns">
-      <article><header><small>OFFICIAL</small><h2>官方资讯</h2></header><div class="empty-block"><template v-if="latestNews"><b>最新公告</b><span>{{ latestNews }}</span></template><template v-else><b>暂无正式资讯</b><span>管理员可在后台发布公告、赛季更新、勘误与赛事信息。</span></template></div></article>
-      <article><header><small>RULES & FAQ</small><h2>规则资料</h2></header><router-link to="/cards">卡牌图鉴与原文效果 <b>→</b></router-link><a href="#" @click.prevent>规则书与 FAQ 整理中 <b>→</b></a><router-link to="/records">对局复盘工具 <b>→</b></router-link></article>
-      <article><header><small>DEVELOPMENT</small><h2>开发状态</h2></header><div class="status-line"><span>对战框架</span><b>可测试</b></div><div class="status-line"><span>S1 卡效</span><b>回归中</b></div><div class="status-line"><span>S2 卡效</span><b>接入中</b></div><div class="status-line"><span>移动端</span><b>适配中</b></div></article>
+      <article><header><small>OFFICIAL</small><h2>{{ content.newsTitle }}</h2></header><div class="empty-block"><template v-if="content.latestNews"><b>最新公告</b><span>{{ content.latestNews }}</span></template><template v-else><b>{{ content.newsEmptyTitle }}</b><span>{{ content.newsEmptyText }}</span></template></div></article>
+      <article><header><small>RULES & FAQ</small><h2>{{ content.rulesTitle }}</h2></header><router-link to="/cards">{{ content.cardLinkLabel }} <b>→</b></router-link><a href="#" @click.prevent>{{ content.rulesLinkLabel }} <b>→</b></a><router-link to="/records">{{ content.replayLinkLabel }} <b>→</b></router-link></article>
+      <article><header><small>DEVELOPMENT</small><h2>{{ content.developmentTitle }}</h2></header><div class="status-line"><span>对战框架</span><b>{{ content.battleStatus }}</b></div><div class="status-line"><span>S1 卡效</span><b>{{ content.s1Status }}</b></div><div class="status-line"><span>S2 卡效</span><b>{{ content.s2Status }}</b></div><div class="status-line"><span>移动端</span><b>{{ content.mobileStatus }}</b></div></article>
     </section>
   </div>
 </template>

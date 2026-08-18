@@ -47,17 +47,26 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
-        var choices = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
-            .Concat(PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId))
+        var availableMorale = player.Morale.Where(card => !card.Tapped).ToArray();
+        var availableGuards = PublicLegions(player)
+            .Where(card => card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == playerIndex)
+            .ToArray();
+        var choices = availableMorale.Select(card => card.InstanceId)
+            .Concat(availableGuards.Select(card => card.InstanceId))
             .ToArray();
         data["cost"] = totalCost.ToString();
         data["visibleCost"] = visibleCost.ToString();
         data["choiceMode"] = "resource-payment";
-        foreach (var morale in player.Morale.Where(card => !card.Tapped))
+        foreach (var morale in availableMorale)
             data[$"{morale.InstanceId}:resourceType"] = morale.IsGodPower ? "god-power" : "morale";
-        foreach (var guard in PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped))
+        foreach (var guard in availableGuards)
             data[$"{guard.InstanceId}:resourceType"] = "tomb-guard";
-        CreatePrompt(playerIndex, "resource-payment", "请选择支付费用的士气、神力或陵墓守卫", choices,
+        var resourceNames = new List<string>();
+        if (availableMorale.Any(card => !card.IsGodPower)) resourceNames.Add("士气");
+        if (availableMorale.Any(card => card.IsGodPower)) resourceNames.Add("神力");
+        if (availableGuards.Length > 0) resourceNames.Add("陵墓守卫");
+        var promptText = $"请选择支付费用的{string.Join("、", resourceNames)}";
+        CreatePrompt(playerIndex, "resource-payment", promptText, choices,
             visibleCost, visibleCost, continuation, stackItemId, isPrivate: true, data: data);
     }
 

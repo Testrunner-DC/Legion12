@@ -2,14 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
+import { masterProfileUrl } from './specialAssets'
 import {
   MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
-  loadOfficialPresetDecks, saveDeck, validateDeck, type DeckCard, type OfficialL12PresetDeck, type SavedL12Deck,
+  saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 
 const router = useRouter()
 const catalog = ref<DeckCard[]>([])
-const presets = ref<OfficialL12PresetDeck[]>([])
 const savedDecks = ref<Record<string, SavedL12Deck>>({})
 const loading = ref(true)
 const notice = ref('')
@@ -33,9 +33,7 @@ const typeLabels: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    const [cards, officialPresets] = await Promise.all([loadDeckCatalog(), loadOfficialPresetDecks()])
-    catalog.value = cards
-    presets.value = officialPresets
+    catalog.value = await loadDeckCatalog()
     savedDecks.value = loadSavedDecks()
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested])
@@ -193,17 +191,6 @@ function loadDeck(deck: SavedL12Deck) {
   notice.value = `已载入〈${deck.name}〉`
 }
 
-function importPreset(preset: OfficialL12PresetDeck) {
-  activeDeckName.value = null
-  deckName.value = `${preset.name}·自定义`
-  masterId.value = preset.masterId
-  const next: Record<string, number> = {}
-  preset.cardIds.forEach(id => next[id] = (next[id] || 0) + 1)
-  counts.value = next
-  specialIds.value = [...(preset.specialIds ?? [])]
-  notice.value = `已从〈${preset.name}〉建立副本`
-}
-
 function onDelete(name = activeDeckName.value ?? '') {
   if (!name) { notice.value = '当前不是已保存牌库'; return }
   deleteDeck(name)
@@ -237,7 +224,7 @@ function onDelete(name = activeDeckName.value ?? '') {
           <option v-for="master in masters" :key="master.id" :value="master.id">{{ master.nameZh }} · {{ factionLabels[master.faction] }}</option>
         </select></label>
         <article v-if="selectedMaster" class="master-preview">
-          <img v-if="selectedMaster.imageUrl" :src="selectedMaster.imageUrl" :alt="selectedMaster.nameZh"/>
+          <img :src="masterProfileUrl(selectedMaster.id, selectedMaster.imageUrl)" :alt="selectedMaster.nameZh"/>
           <div><b>{{ selectedMaster.nameZh }}</b><span>{{ factionLabels[selectedMaster.faction] }}</span><small>士气 {{ moraleIds.length }} 张</small></div>
         </article>
         <section v-if="trialCapacity" class="trial-builder">
@@ -263,11 +250,8 @@ function onDelete(name = activeDeckName.value ?? '') {
         <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
         <label>卡池<select v-model="productFilter"><option value="all">S1 + S2</option><option value="S01">S1</option><option value="S02">S2</option></select></label>
 
-        <p class="kicker preset-kicker">STARTER COPY</p>
-        <div class="preset-list"><button v-for="preset in presets" :key="preset.name" @click="importPreset(preset)"><b>{{ preset.name }}</b><span>建立可编辑副本</span></button></div>
-
         <p class="kicker preset-kicker">SAVED DECKS</p>
-        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><b>{{ deck.name }}</b><span>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</span></button><button class="delete" @click="onDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
+        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><img :src="masterProfileUrl(deck.masterId, byId.get(deck.masterId)?.imageUrl)" :alt="byId.get(deck.masterId)?.nameZh || ''"/><span class="saved-deck-copy"><b>{{ deck.name }}</b><small>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</small></span></button><button class="delete" @click="onDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
       </aside>
 
       <section class="deck-catalog grand-panel">
@@ -312,7 +296,7 @@ function onDelete(name = activeDeckName.value ?? '') {
         <section v-if="selected" class="builder-card-detail" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">
           <img v-if="selected.imageUrl" :src="selected.imageUrl" :alt="selected.nameZh"/>
           <div><small>{{ selected.number }}</small><h3>{{ selected.nameZh }}</h3>
-            <div v-if="selected.traits?.length || selected.profession" class="builder-card-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span v-if="selected.profession">{{ selected.profession }}</span></div>
+            <div v-if="selected.traits?.length || selected.profession || selected.trialValue" class="builder-card-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span v-if="selected.profession">{{ selected.profession }}</span><span v-if="selected.trialValue">试炼值 {{ selected.trialValue }}</span></div>
             <p>{{ selected.effect || '无效果文字' }}</p></div>
         </section>
         <footer :class="{ error: validation }">{{ notice || validation || '牌库合法，可以保存并用于房间对战' }}</footer>
@@ -325,18 +309,18 @@ function onDelete(name = activeDeckName.value ?? '') {
 .deck-builder-shell{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(circle at 50% 0,rgba(22,108,120,.2),transparent 38%),linear-gradient(135deg,#080b0d,#160b0d 58%,#071216);color:#eee}
 .deck-builder-topbar{height:74px;flex:none;display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid #675f59;background:rgba(8,10,12,.94)}
 .deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:10px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#b6bab6;font-size:11px;font-weight:900}.deck-builder-topbar input{width:260px;min-height:38px;padding:8px 11px;font-size:15px;font-weight:900}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:11px}
-.deck-loading{display:grid;flex:1;place-items:center;color:#b7b9b5}.deck-builder-grid{display:grid;grid-template-columns:238px minmax(480px,1fr) 330px;gap:10px;min-height:0;padding:10px}.deck-builder-grid>.grand-panel{min-height:0;padding:13px;border-radius:2px}.deck-builder-grid h2{margin:3px 0 12px;font-size:18px}.deck-filter{overflow:auto}.deck-filter label{display:grid;gap:5px;margin:10px 0;color:#959a96;font-size:10px;font-weight:800}.deck-filter input,.deck-filter select{width:100%}.master-preview{display:flex;gap:9px;align-items:center;padding:8px;border-left:2px solid #42abb3;background:#10191b}.master-preview img{width:46px;height:64px;object-fit:cover;border-radius:1px}.master-preview div{display:grid;gap:3px}.master-preview span,.master-preview small{color:#8f9996;font-size:10px}.preset-kicker{margin-top:18px}.preset-list,.saved-list{display:grid;gap:5px}.preset-list button,.saved-list article{border:1px solid #353c3e;background:#111619}.preset-list button,.saved-list article>button:first-child{display:grid;width:100%;gap:2px;padding:8px;text-align:left}.preset-list span,.saved-list span{color:#737d79;font-size:9px}.saved-list article{display:flex}.saved-list .delete{width:32px;border:0;border-left:1px solid #353c3e;color:#bd5961}.saved-list p{color:#666;font-size:10px}
+.deck-loading{display:grid;flex:1;place-items:center;color:#b7b9b5}.deck-builder-grid{display:grid;grid-template-columns:238px minmax(480px,1fr) 330px;gap:10px;min-height:0;padding:10px}.deck-builder-grid>.grand-panel{min-height:0;padding:13px;border-radius:2px}.deck-builder-grid h2{margin:3px 0 12px;font-size:18px}.deck-filter{overflow:auto}.deck-filter label{display:grid;gap:5px;margin:10px 0;color:#959a96;font-size:10px;font-weight:800}.deck-filter input,.deck-filter select{width:100%}.master-preview{display:flex;gap:9px;align-items:center;padding:8px;border-left:2px solid #42abb3;background:#10191b}.master-preview img{width:52px;height:52px;object-fit:cover;border-radius:2px}.master-preview div{display:grid;gap:3px}.master-preview span,.master-preview small{color:#8f9996;font-size:10px}.preset-kicker{margin-top:18px}.saved-list{display:grid;gap:5px}.saved-list article{border:1px solid #353c3e;background:#111619}.saved-list article>button:first-child{display:grid;width:100%;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:7px;padding:7px;text-align:left}.saved-list article>button:first-child>img{width:34px;height:34px;object-fit:cover;border:1px solid #535e5b;border-radius:2px}.saved-deck-copy{display:grid;min-width:0;gap:2px}.saved-deck-copy b,.saved-deck-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.saved-deck-copy small{color:#89938f;font-size:8px}.saved-list span{color:#737d79;font-size:9px}.saved-list article{display:flex}.saved-list .delete{width:32px;border:0;border-left:1px solid #353c3e;color:#bd5961}.saved-list p{color:#666;font-size:10px}
 .deck-catalog{display:flex;flex-direction:column;overflow:hidden}.deck-catalog>header,.deck-list>header{display:flex;align-items:center;justify-content:space-between;flex:none}.deck-catalog>header span{color:#7f8985;font-size:10px}.deck-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px;overflow:auto;padding:3px 4px 20px}.deck-card{min-width:0;border:1px solid #303638;background:#101416;box-shadow:3px 3px 0 #050607}.deck-card.chosen{border-color:#c5a456}.card-image{position:relative;display:block;width:100%;aspect-ratio:5/7;overflow:hidden;border:0;background:#171d1f}.card-image img{width:100%;height:100%;object-fit:cover}.card-image>span{display:grid;height:100%;place-items:center;font-size:24px}.copy-count{position:absolute;right:4px;top:4px;padding:3px 6px;background:#07181a;color:#71d1d0}.deck-card>div{display:grid;gap:2px;padding:7px}.deck-card>div b{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.deck-card>div small{color:#757d79;font-size:8px}.add-card{width:100%;padding:6px;border:0;border-top:1px solid #303638;color:#cdbb89;font-size:9px}.add-card:disabled{color:#4d5351}
 .deck-card.landscape-thumbnail .card-image img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}.builder-card-detail.horizontal{max-height:160px}.builder-card-detail.horizontal img{width:116px;height:auto;aspect-ratio:8/5;object-fit:contain}
 .deck-list{display:flex;flex-direction:column;overflow:hidden}.deck-list>header>b{font-size:27px;color:#65c4c3}.cost-curve{display:flex;height:88px;align-items:end;gap:5px;padding:8px 4px;border-top:1px solid #333;border-bottom:1px solid #333}.cost-curve i{display:grid;flex:1;align-items:end;justify-items:center;height:68px;font-style:normal}.cost-curve i span{width:100%;max-width:22px;background:linear-gradient(#d2b560,#7f6530)}.cost-curve i b,.cost-curve i small{font-size:8px}.cost-curve i small{color:#777}.deck-entries{flex:1;overflow:auto;padding:7px 0}.deck-entries article{display:flex;align-items:center;gap:8px;margin-bottom:4px;padding:5px;border-left:2px solid #3da4ad;background:#111719}.deck-entries article>span{display:grid;width:25px;height:25px;place-items:center;background:#080a0b;color:#eee;font-weight:900}.deck-entries article>div{display:grid;min-width:0;flex:1}.deck-entries article>div b{overflow:hidden;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.deck-entries article small{color:#6e7773;font-size:8px}.deck-entries strong{color:#d4bd7b}.deck-entries button{border:0;color:#ca626a}.deck-entries>p{color:#69716e;font-size:10px;line-height:1.6}.builder-card-detail{display:flex;gap:8px;max-height:130px;padding:8px;border-top:1px solid #3d4241;background:#0b0f10}.builder-card-detail img{width:72px;object-fit:cover}.builder-card-detail div{min-width:0;overflow:auto}.builder-card-detail h3{margin:2px 0 5px;font-size:13px}.builder-card-detail p{margin:0;color:#aeb3af;font-size:9px;line-height:1.55;white-space:pre-line}.builder-card-detail small{color:#6cc5c7;font-size:8px}.builder-card-tags{display:flex!important;flex-wrap:wrap;gap:3px;margin:0 0 5px;overflow:visible!important}.builder-card-tags span{padding:2px 4px;border:1px solid #445451;background:#111819;color:#84d1ce;font-size:8px;font-weight:900}.deck-list footer{min-height:32px;padding:8px;border-top:1px solid #315854;color:#72c8bd;font-size:10px}.deck-list footer.error{border-color:#673a3d;color:#d2757b}
 @media(max-width:1180px){.deck-builder-grid{grid-template-columns:210px minmax(420px,1fr) 290px}.deck-builder-topbar label{display:none}}
 @media(max-width:820px){
   .deck-builder-shell{position:fixed;overflow:auto}.deck-builder-topbar{position:sticky;z-index:20;top:0;height:64px;padding:8px;gap:8px}.deck-builder-topbar>div:nth-child(2) small{display:none}.deck-builder-topbar h1{font-size:18px}.deck-builder-topbar button{padding:7px 9px}.deck-total b{font-size:20px}
-  .deck-builder-grid{display:flex;flex-direction:column;overflow:visible;padding:8px}.deck-builder-grid>.grand-panel{overflow:visible}.deck-filter{order:1}.deck-catalog{order:2;min-height:72vh}.deck-list{order:3;min-height:70vh}.deck-card-grid{grid-template-columns:repeat(3,minmax(92px,1fr));max-height:68vh}.deck-entries{max-height:46vh}.master-preview img{width:64px;height:90px}
+  .deck-builder-grid{display:flex;flex-direction:column;overflow:visible;padding:8px}.deck-builder-grid>.grand-panel{overflow:visible}.deck-filter{order:1}.deck-catalog{order:2;min-height:72vh}.deck-list{order:3;min-height:70vh}.deck-card-grid{grid-template-columns:repeat(3,minmax(92px,1fr));max-height:68vh}.deck-entries{max-height:46vh}.master-preview img{width:64px;height:64px}
 }
 .deck-builder-topbar button{padding:8px 11px;border:1px solid #69716e;background:#171c1d;color:#f1eee5;font-weight:900}.deck-builder-topbar button:hover:not(:disabled){border-color:#70d7df;background:#1b565b;color:#fff}.deck-builder-topbar .back-button{border-color:#d7d2c4;background:#e8e3d7;color:#101314}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111}.deck-builder-topbar .delete-deck{border-color:#8c343c;color:#f1a3aa}.deck-builder-topbar button:disabled{color:#717775;background:#252929;opacity:.45}.deck-file-actions{display:flex;gap:6px}
 .pool-count-controls{display:grid!important;grid-template-columns:1fr 34px 1fr;gap:0!important;padding:0!important;border-top:1px solid #303638}.pool-count-controls button{min-height:30px;border:0;background:#151a1b;color:#e8e4d9;font-size:17px;font-weight:900}.pool-count-controls button:hover:not(:disabled){background:#1d6167;color:#fff}.pool-count-controls strong{display:grid;place-items:center;border-inline:1px solid #303638;background:#090c0d;color:#d7c483;font-size:12px}
-.preset-list button,.saved-list article{border-color:#424b4d;background:#111619}.preset-list button,.saved-list article>button:first-child{background:#111619;color:#f1eee5}.preset-list button:hover,.saved-list article>button:first-child:hover,.saved-list article>button:first-child:focus-visible{border-color:#70d7df;background:#18383b;color:#fff}.preset-list b,.saved-list b{color:#f1eee5}.preset-list span,.saved-list span{color:#aab4b0}.saved-list article.active{border-color:#86e8ee;background:#123e42;box-shadow:inset 3px 0 #86e8ee}.saved-list article.active>button:first-child{background:#123e42;color:#fff}.saved-list article.active span{color:#d5f4f1}.saved-list .delete{background:#211418;color:#f29ba4}.saved-list .delete:hover{background:#6b222b;color:#fff}.saved-list p{color:#929b97}
+.saved-list article{border-color:#424b4d;background:#111619}.saved-list article>button:first-child{background:#111619;color:#f1eee5}.saved-list article>button:first-child:hover,.saved-list article>button:first-child:focus-visible{border-color:#70d7df;background:#18383b;color:#fff}.saved-list b{color:#f1eee5}.saved-list span{color:#aab4b0}.saved-list article.active{border-color:#86e8ee;background:#123e42;box-shadow:inset 3px 0 #86e8ee}.saved-list article.active>button:first-child{background:#123e42;color:#fff}.saved-list article.active span{color:#d5f4f1}.saved-list .delete{background:#211418;color:#f29ba4}.saved-list .delete:hover{background:#6b222b;color:#fff}.saved-list p{color:#929b97}
 .deck-entries article{position:relative;isolation:isolate;gap:7px;margin-bottom:5px;padding:6px;overflow:hidden;border:1px solid #354041;border-left:2px solid #3da4ad}.deck-entry-banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 28%;opacity:.56;filter:saturate(.9) contrast(1.12)}.deck-entries article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,8,9,.91),rgba(9,13,14,.48) 48%,rgba(5,8,9,.88))}.deck-entries article>span{width:27px;height:27px;flex:none}.deck-entries article small{color:#d0d5d1}.deck-entries strong{color:#f0d98e}.deck-entries button{width:27px;height:27px;flex:none;border:1px solid #5c6461;background:#101516;color:#eee;font-size:15px;font-weight:900}.deck-entries button:hover:not(:disabled){border-color:#70d7df;background:#1b565b}
 @media(max-width:1180px){.deck-file-actions button{padding:7px 8px;font-size:10px}}
 @media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(4,1fr)}}

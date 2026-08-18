@@ -332,7 +332,15 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 foreach (var id in chosen.Where(id => id != "skip").Reverse()) { var target = FindOnField(player, id, out _, out _); if (target is not null && HasImmediateEffect(target, "enter")) PushEffect(item.Controller, target, "enter", "拉美西斯二世再次发动的【登场时】效果"); }
                 return true;
-            case "horemheb-charge": if (chosen[0] != "skip" && source is not null) { KillTarget(chosen[0], "被霍列姆赫布弃置"); source.HasCharge = true; } FinishStackItem(item); return true;
+            case "horemheb-charge":
+                if (chosen[0] != "skip" && source is not null)
+                {
+                    var target = FindOnField(player, chosen[0], out _, out _);
+                    if (target is not null)
+                        RemoveFromField(player, target, true, "被霍列姆赫布弃置", leaveKind: L12FieldLeaveKind.Discard);
+                    source.HasCharge = true;
+                }
+                FinishStackItem(item); return true;
             case "nefertiti-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "nitocris-ready": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "ankh-enter":
@@ -377,7 +385,16 @@ public sealed partial class L12GameEngine
             case "festival-bottom-order": CompletePharaohFestivalOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
             case "valkyrie-card": item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); return true;
             case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
-            case "menes-sacrifice": if (chosen[0] != "skip" && source is not null) { KillTarget(chosen[0], "被美尼斯弃置"); source.Troops += 2000; source.HasStrongAttack = true; } FinishStackItem(item); return true;
+            case "menes-sacrifice":
+                if (chosen[0] != "skip" && source is not null)
+                {
+                    var target = FindOnField(player, chosen[0], out _, out _);
+                    if (target is not null)
+                        RemoveFromField(player, target, true, "被美尼斯弃置", leaveKind: L12FieldLeaveKind.Discard);
+                    source.Troops += 2000;
+                    source.HasStrongAttack = true;
+                }
+                FinishStackItem(item); return true;
             case "saladin-move": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["saladin-unit"] = chosen[0]; CreatePrompt(item.Controller, "slot", "选择陵墓守卫位移后的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "saladin-slot" }); } return true;
             case "saladin-slot": MoveOwnCardToSlot(player, item.Data["saladin-unit"], chosen[0]); FinishStackItem(item); return true;
             case "ay-buff": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000; FinishStackItem(item); return true; }
@@ -626,7 +643,9 @@ public sealed partial class L12GameEngine
             {
                 var guards = PublicLegions(player).Where(card => card.CardId == "S01-0212").Take(3).ToArray();
                 if (guards.Length < 3) return CommandResult.Reject("战场需要3张陵墓守卫");
-                foreach (var guard in guards) KillTarget(guard.InstanceId, "作为伊西斯主宰效果的发动费用弃置");
+                foreach (var guard in guards)
+                    RemoveFromField(player, guard, true, "作为伊西斯主宰效果的发动费用弃置",
+                        leaveKind: L12FieldLeaveKind.Discard);
                 break;
             }
             case "medjedDebuff" when source.CardId == "S01-02M3":

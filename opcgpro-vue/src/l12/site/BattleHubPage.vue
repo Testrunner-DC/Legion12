@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
 import { ensureOfficialPrebuiltDecks, loadSavedDecks } from '@/l12/decks'
+import { masterProfileUrl } from '@/l12/specialAssets'
 
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('friendly')
@@ -11,6 +12,13 @@ const roomOptions = ref<RoomOptions>({ spectating: 'public', handVisibility: 're
 const customDecks = ref(loadSavedDecks())
 const roomCodeCopied = ref(false)
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
+function visibleDeckLabel(index: number) {
+  const player = l12State.room?.players[index]
+  if (!player) return '尚未选择牌库'
+  return player.playerIndex === l12State.room?.yourPlayerIndex
+    ? (player.deckName || '尚未选择牌库')
+    : '已选择牌库'
+}
 const optionLabels = {
   spectating: { public: '公开观战', friends: '仅好友观战', disabled: '禁止观战' },
   handVisibility: { request: '查看手牌需申请', public: '观战者可看手牌' },
@@ -59,10 +67,10 @@ async function copyRoomCode() {
     <section v-if="l12State.room" class="room-stage panel">
       <header><div><small>FRIENDLY ROOM</small><h2>友谊战整备室</h2></div><div class="room-code"><code>{{ l12State.room.roomCode }}</code><button type="button" @click="copyRoomCode">{{ roomCodeCopied ? '已复制' : '复制房间码' }}</button></div></header>
       <div class="versus">
-        <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ l12State.room.players[index]?.deckName || '尚未选择牌库' }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
+        <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
       </div>
       <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span></div>
-      <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><b>{{ deck.name }}</b><span>{{ deck.cardIds.length }} 张 · {{ deck.masterId }}</span></button></div>
+      <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><img :src="masterProfileUrl(deck.masterId)" alt=""/><span><b>{{ deck.name }}</b><small>{{ deck.cardIds.length }} 张 · {{ deck.masterId }}</small></span></button></div>
       <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/deck-editor">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
     </section>
 
@@ -89,4 +97,5 @@ async function copyRoomCode() {
 .leave-room{border-color:#7b4147!important;background:#211116!important;color:#e7aeb3!important;font-weight:900}
 .player-online{margin-top:8px;color:#b76570;font-size:9px;font-style:normal;font-weight:900}.player-online.online{color:#58c99a}.room-rule-summary{display:flex;align-items:center;gap:8px;margin:-8px 0 18px;padding:11px 14px;border:1px solid #354149;background:#0a1117}.room-rule-summary b{margin-right:6px;color:#e4c675;font-size:11px}.room-rule-summary span{padding:4px 7px;background:#17212a;color:#aab4b8;font-size:9px;font-weight:900}
 @media(max-width:700px){.room-rule-summary{align-items:stretch;flex-direction:column}.room-rule-summary span{text-align:center}}
+.room-decks button{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;padding:8px}.room-decks button>img{width:38px;height:38px;object-fit:cover;border:1px solid #596269;border-radius:2px}.room-decks button>span,.room-decks button b,.room-decks button small{display:block}.room-decks button small{margin-top:4px;color:#77848a;font-size:9px}
 </style>

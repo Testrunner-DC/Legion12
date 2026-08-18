@@ -2,9 +2,10 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { l12State } from '@/l12/net'
+import { defaultSiteLogoUrl } from '@/l12/specialAssets'
 import SiteIcon from './SiteIcon.vue'
 
-const siteBrandIcon = '/assets/l12/site-icon-default.png'
+const siteBrandIcon = defaultSiteLogoUrl
 
 const route = useRoute()
 const mobileOpen = ref(false)

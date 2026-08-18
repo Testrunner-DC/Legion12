@@ -20,6 +20,7 @@ export interface Card {
   baseTroops: number
   troops: number
   disasterLevel: number
+  trialValue?: number
   traits?: string[]
   profession?: string
   lastCavalryMoveTurn?: number
@@ -43,6 +44,7 @@ export interface Card {
   suppressDeathUntilTurn?: number
   timedModifiers?: Array<{ troopsDelta: number; costDelta: number; expiresAfterTurn: number; source: string }>
   abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }>
+  attachedCards?: Card[]
 }
 
 export interface DisasterCardView extends Partial<Card> {

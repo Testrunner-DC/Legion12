@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { adminApi, isAdmin, type BugReport, type PlatformAccount } from '@/l12/platform'
+import { createHomeContent, homeContentFields } from './homeContent'
 
 const tab = ref<'bugs' | 'accounts' | 'content' | 'operations'>('bugs')
 const bugs = ref<BugReport[]>([])
 const accounts = ref<PlatformAccount[]>([])
 const statusFilter = ref('')
 const notice = ref('')
-const content = reactive({ homeHeadline: '', homeIntroduction: '', latestNews: '', ruleNotice: '' })
-const contentKeys = { homeHeadline: 'home.headline', homeIntroduction: 'home.introduction', latestNews: 'home.latestNews', ruleNotice: 'rules.notice' } as const
+const content = reactive(createHomeContent())
+const ruleNotice = ref('')
 
 async function loadBugs() { try { bugs.value = await adminApi.bugs(statusFilter.value) } catch (error) { notice.value = error instanceof Error ? error.message : '加载失败' } }
 async function loadAccounts() { try { accounts.value = await adminApi.accounts() } catch (error) { notice.value = error instanceof Error ? error.message : '加载失败' } }
 async function updateBug(item: BugReport) { try { await adminApi.updateBug(item.id, { status: item.status, priority: item.priority, assignee: item.assignee, adminNotes: item.adminNotes }); notice.value = `${item.id} 已更新` } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
 async function setRole(account: PlatformAccount) { try { await adminApi.setRole(account.id, account.role); notice.value = `${account.username} 权限已更新` } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
-async function loadContent() { for (const key of Object.keys(content) as Array<keyof typeof content>) { try { content[key] = (await adminApi.getContent(contentKeys[key])).value } catch {} } }
-async function saveContent() { try { await Promise.all((Object.keys(content) as Array<keyof typeof content>).map(key => adminApi.setContent(contentKeys[key], content[key]))); notice.value = '官网内容已保存' } catch (error) { notice.value = error instanceof Error ? error.message : '保存失败' } }
+async function loadContent() {
+  for (const field of homeContentFields) {
+    try { content[field.id] = (await adminApi.getContent(field.key)).value || field.defaultValue } catch {}
+  }
+  try { ruleNotice.value = (await adminApi.getContent('rules.notice')).value } catch {}
+}
+async function saveContent() { try { await Promise.all([...homeContentFields.map(field => adminApi.setContent(field.key, content[field.id])), adminApi.setContent('rules.notice', ruleNotice.value)]); notice.value = '官网内容已保存' } catch (error) { notice.value = error instanceof Error ? error.message : '保存失败' } }
 onMounted(() => { if (isAdmin.value) { loadBugs(); loadAccounts(); loadContent() } })
 </script>
 
@@ -31,7 +37,7 @@ onMounted(() => { if (isAdmin.value) { loadBugs(); loadAccounts(); loadContent()
         <div v-if="!bugs.length" class="empty">暂无符合筛选条件的反馈</div>
       </section>
       <section v-else-if="tab === 'accounts'" class="panel"><header><h2>账号与权限</h2><button @click="loadAccounts">刷新</button></header><div class="account-row head"><b>用户名</b><span>建立时间</span><span>权限</span><span>操作</span></div><div v-for="account in accounts" :key="account.id" class="account-row"><b>{{ account.username }}</b><span>{{ new Date(account.createdAt).toLocaleString() }}</span><select v-model="account.role" :disabled="account.username === 'Admin'"><option value="player">玩家</option><option value="referee">裁判</option><option value="organizer">主办者</option><option value="editor">内容编辑</option><option value="admin">管理员</option></select><button :disabled="account.username === 'Admin'" @click="setRole(account)">保存</button></div></section>
-      <section v-else-if="tab === 'content'" class="panel content-editor"><header><h2>官网内容</h2><button @click="saveContent">保存全部</button></header><label>主页标题<input v-model="content.homeHeadline"/></label><label>主页介绍<textarea v-model="content.homeIntroduction" rows="5"/></label><label>最新资讯<textarea v-model="content.latestNews" rows="8"/></label><label>规则页公告<textarea v-model="content.ruleNotice" rows="5"/></label></section>
+      <section v-else-if="tab === 'content'" class="panel content-editor"><header><h2>官网内容</h2><button @click="saveContent">保存全部</button></header><label v-for="field in homeContentFields" :key="field.key">{{ field.label }}<textarea v-if="field.multiline" v-model="content[field.id]" :rows="field.rows ?? 4"/><input v-else v-model="content[field.id]"/></label><label>规则页公告<textarea v-model="ruleNotice" rows="5"/></label></section>
       <section v-else class="panel operation-grid"><article><b>赛季与天灾</b><p>配置当前赛季天灾池、堙灭锁定、禁限卡表及生效时间。</p></article><article><b>赛事监管</b><p>赛事审批、主办者/裁判权限、暂停与判罚审计。</p></article><article><b>对局与回放</b><p>按房间、玩家、赛事检索对局及 JSON 回放。</p></article><article><b>内容发布</b><p>资讯草稿、定时发布、规则书/FAQ 版本和更新日志。</p></article><article><b>安全与审计</b><p>恶意用户名词库、账号状态、权限变更和管理操作日志。</p></article><article><b>运行状态</b><p>在线人数、连接健康、图片缓存命中率与服务版本。</p></article></section>
       <p v-if="notice" class="notice">{{ notice }}</p>
     </template>

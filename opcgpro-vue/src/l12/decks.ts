@@ -11,6 +11,7 @@ export interface DeckCard {
   cost?: number
   troops?: number
   disasterLevel?: number
+  trialValue?: number
   traits?: string[]
   profession?: string
   effect?: string
@@ -40,6 +41,7 @@ interface LookupCard {
   faction: string
   cost?: number | null
   attack?: number | null
+  trialValue?: number | null
   image?: string
   effectText?: string
   tags?: string[]
@@ -83,6 +85,7 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
       imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
       cost: card.cost ?? undefined,
       troops: card.attack ?? undefined,
+      trialValue: card.trialValue ?? undefined,
       traits: card.tags ?? [],
       profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
