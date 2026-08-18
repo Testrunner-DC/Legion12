@@ -3,6 +3,13 @@
 日期：2026-08-15  
 环境：Windows 10、Node.js 22.18.0、npm 10.9.3、.NET SDK 10.0.302
 
+## 2026-08-19 README 当前基线复核
+
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj`：176/176 通过，0 失败、0 跳过。
+- `npm run build`：UI 契约 32/32 通过，TypeScript/Vue 类型检查通过，Vite 生产构建完成（116 modules transformed）。
+- README 本地链接与图片检查：12/12 路径存在。
+- 本次仅调整项目说明与验证记录，没有改动对战规则、卡牌数据或运行时代码。
+
 ## 2026-08-16 规则与 GrandUMI 查漏回归
 
 - `dotnet test TwelveLegions.Tests`：45/45 通过。新增 FAQ 12 回归，验证同一操控者打出军团时可以挤掉自己覆盖在后排的反击战术；旧反击翻开并进入墓地。
