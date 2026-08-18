@@ -24,6 +24,11 @@ public static class L12DeckValidator
             error = "请选择有效的主宰";
             return false;
         }
+        if (master.Id == "S01-02M2")
+        {
+            error = "复苏的奥西里斯不能被选择为主宰；选择伊西斯时会自动置入额外区并在开局进入墓地";
+            return false;
+        }
         var countedMainDeckSize = submission.CardIds.Count(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
         if (countedMainDeckSize is < 40 or > 50)
         {
@@ -70,6 +75,19 @@ public static class L12DeckValidator
                 error = $"无效的士气卡：{moraleId}";
                 return false;
             }
+        }
+        var trialCapacity = L12SpecialDeckRules.TrialCapacity(master);
+        if (submission.SpecialIds.Count != trialCapacity)
+        {
+            error = trialCapacity == 0
+                ? $"{master.NameZh} 不能携带试炼"
+                : $"{master.NameZh} 的试炼区须为 {trialCapacity} 张（当前 {submission.SpecialIds.Count} 张）";
+            return false;
+        }
+        if (submission.SpecialIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != submission.SpecialIds.Count)
+        {
+            error = "试炼区不能放入重复卡牌";
+            return false;
         }
         foreach (var specialId in submission.SpecialIds)
         {

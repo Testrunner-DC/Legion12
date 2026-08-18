@@ -303,7 +303,7 @@ public sealed partial class L12GameEngine
             case "s2-black-lotus-disaster":
             {
                 var delta = int.TryParse(chosen[0], out var parsed) ? Math.Clamp(parsed, -1, 1) : 0;
-                State.DisasterValue = State.ActiveDisaster?.CardId == "S01-DS10" ? 0 : Math.Max(0, State.DisasterValue + delta);
+                AdjustDisasterValue(delta);
                 AddEvent("disaster-value", item.Controller, $"黑色莲花将天灾值调整为 {State.DisasterValue}", FindSource(item) is { } lotus ? [lotus] : []);
                 if (ActiveResourceCount(State.Players[item.Controller]) < 3)
                 {

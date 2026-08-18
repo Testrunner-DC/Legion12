@@ -19,7 +19,7 @@ const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const inspectorAnchor = ref<HTMLElement | null>(null)
 const inspectorFloatStyle = ref<Record<string, string>>({})
-const mode = ref<'play' | 'attack' | 'move'>('play')
+const mode = ref<'play' | 'attack' | 'move' | 'cavalryMove'>('play')
 const mulliganIds = ref<string[]>([])
 const defenseIds = ref<string[]>([])
 const supportId = ref<string | null>(null)
@@ -30,6 +30,7 @@ const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
+const lastHiddenRevealSequence = ref(0)
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 const me = computed(() => props.game.players[props.game.you])
 const enemy = computed(() => props.game.players[1 - props.game.you])
@@ -107,6 +108,9 @@ watch(modalInspectorVisible, visible => {
   if (visible) updateInspectorFloatRect()
 }, { flush: 'sync' })
 const sessionDisasters = computed(() => props.game.sessionDisasters ?? [])
+const canActivateOsiris = computed(() => me.value.master.masterId === 'S01-02M1'
+  && (me.value.specialZones?.canopicTrack?.filter(card => card.completed).length ?? 0) >= 5
+  && Boolean(me.value.graveyard?.some(card => card.cardId === 'S01-02M2')))
 const sessionDisasterSlots = computed<(DisasterCardView | null)[]>(() =>
   Array.from({ length: 4 }, (_, index) => sessionDisasters.value[index] ?? null),
 )
@@ -142,7 +146,8 @@ watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = []
 watch(() => resourcePaymentPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const event = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'hidden-reveal' && item.cards?.length)
-  if (!event?.cards?.[0]) return
+  if (!event?.cards?.[0] || event.sequence <= lastHiddenRevealSequence.value) return
+  lastHiddenRevealSequence.value = event.sequence
   hiddenRevealCard.value = event.cards[0]
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
   hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, 3000)
@@ -262,7 +267,7 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   }
   if (!selectedId.value) return
   if (mode.value === 'play' && !playArmed.value) return
-  command(mode.value === 'move' ? 'move' : 'playCard', { cardInstanceId: selectedId.value, row, slot })
+  command(mode.value === 'move' || mode.value === 'cavalryMove' ? mode.value : 'playCard', { cardInstanceId: selectedId.value, row, slot })
   selectedId.value = null
   playArmed.value = false
 }
@@ -344,7 +349,7 @@ function playFromHand(card: Card) {
   command('playCard', { cardInstanceId: card.instanceId })
   selectedId.value = null
 }
-function fieldAction(action: 'attack' | 'move', card: Card) {
+function fieldAction(action: 'attack' | 'move' | 'cavalryMove', card: Card) {
   selectedId.value = card.instanceId
   focusCard.value = card
   mode.value = action
@@ -356,7 +361,7 @@ function selectPublicCard(card: Card) {
   mode.value = 'play'
 }
 function activateAbility(card: Card, ability: string) {
-  command(ability === 'flipHidden' ? 'flipHidden' : 'activateAbility', { cardInstanceId: card.instanceId, ability })
+  command('activateAbility', { cardInstanceId: card.instanceId, ability })
   selectedId.value = null
 }
 function activateFactionAbility(ability: string) {
@@ -366,6 +371,7 @@ function statusTexts(card: Card) {
   const statuses: string[] = []
   if (card.hasStrongAttack) statuses.push('强攻：进攻主宰时额外造成 1 点伤害。')
   if (card.hasSureHit) statuses.push('必中：进攻不可被抵挡或支援。')
+  if (card.hasShock) statuses.push('震击：进攻目标左右相邻的军团本回合兵力-2000。')
   if ((card.immortalUses ?? 0) > 0) statuses.push(`免死：剩余 ${card.immortalUses} 次。`)
   if (card.hasCharge) statuses.push('冲锋：登场回合可以进攻。')
   if (card.cannotAttack) statuses.push('当前不能进攻。')
@@ -387,9 +393,9 @@ function statusTexts(card: Card) {
             <h3>本局天灾</h3>
             <div class="session-disaster-strip">
               <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
-                :class="{ hidden: !card || card.hidden }" :disabled="!card || card.hidden" :title="card && !card.hidden ? card.name : '未揭示天灾'"
+                :class="{ hidden: !card || card.hidden, inactive: card && !card.hidden && card.instanceId !== game.activeDisaster?.instanceId }" :disabled="!card || card.hidden" :title="card && !card.hidden ? card.name : '未揭示天灾'"
                 @click="card && focusSessionDisaster(card)" @mouseenter="card && focusSessionDisaster(card)">
-                <img :src="card?.imageUrl || '/assets/l12/disaster-back.png'" :alt="card?.name || '未揭示天灾'"/>
+                <img :src="card?.imageUrl || '/assets/l12/card-back-disaster.png'" :alt="card?.name || '未揭示天灾'"/>
               </button>
             </div>
           </section>
@@ -404,7 +410,6 @@ function statusTexts(card: Card) {
                 <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
                   <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
                 </div>
-                <dl><div><dt>费用</dt><dd>{{ focusCard.playCost ?? focusCard.currentCost ?? focusCard.cost }}</dd></div><div><dt>兵力</dt><dd>{{ focusCard.troops || '—' }}</dd></div><div><dt>天灾等级</dt><dd>{{ focusCard.disasterLevel || '—' }}</dd></div></dl>
                 <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
                 <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
               </template>
@@ -418,12 +423,14 @@ function statusTexts(card: Card) {
           <HandArea hidden :count="enemy.handCount || 0" />
           <div class="felt-board">
             <PlayerMat :player="enemy" side="opponent" :active="game.activePlayer === enemy.playerIndex && !combat"
-              :attack-mode="mode === 'attack' && Boolean(selectedId)" :selection-mode="Boolean(boardTargetPrompt)"
-              :targetable-ids="boardTargetPrompt ? boardTargetableIds : selectedAttackTargets"
+              :turn-serial="game.turnSerial" :hidden-reveal-card="hiddenRevealCard"
+              :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)" :selection-mode="Boolean(boardTargetPrompt)"
+              :targetable-ids="boardTargetPrompt ? boardTargetableIds : combat ? [] : selectedAttackTargets"
+              :selected-target-ids="boardTargetIds"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === enemy.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === enemy.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === enemy.playerIndex && !combat.target"
-              :master-targetable="selectedAttackTargets.includes('master')" @slot="enemySlot" @master="enemyMaster"
+              :master-targetable="!combat && selectedAttackTargets.includes('master')" @slot="enemySlot" @master="enemyMaster"
               @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" />
             <div class="board-seam">
               <div class="disaster-zone" @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
@@ -451,16 +458,18 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat :player="me" side="my" :active="game.activePlayer === me.playerIndex && !combat"
-              :selected-id="supportId || selectedId" :move-mode="mode === 'move'"
+              :turn-serial="game.turnSerial"
+              :selected-id="supportId || selectedId" :move-mode="mode === 'move'" :cavalry-move-mode="mode === 'cavalryMove'"
               :placement-mode="mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'"
               :placement-row="isCounter(selectedHandCard) ? 1 : null" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction" :round="game.round"
               :attackable-ids="attackableIds" :response-playable-ids="responsePlayableIds"
               :selection-mode="Boolean(boardTargetPrompt || boardSlotPrompt)" :targetable-ids="boardTargetableIds" :prompt-slot-ids="boardSlotPrompt?.validChoices ?? []"
+              :selected-target-ids="boardTargetIds"
               :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === me.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === me.playerIndex ? combat.target?.instanceId : null"
-              :combat-target-master="combat?.targetOwner.playerIndex === me.playerIndex && !combat.target"
+              :combat-target-master="combat?.targetOwner.playerIndex === me.playerIndex && !combat.target" :hidden-reveal-card="hiddenRevealCard"
               @slot="ownSlot" @master="masterPlayerIndex = me.playerIndex" @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @card-action="fieldAction"
               @select-card="selectPublicCard" @ability="activateAbility" @faction-ability="activateFactionAbility"
               @payment-resource="togglePaymentResource" />
@@ -498,7 +507,8 @@ function statusTexts(card: Card) {
         </aside>
       </div>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[me, enemy]" :initial-player="graveyardPlayer"
-        @close="graveyardPlayer = null" @focus="focusCard = $event" />
+        :own-player-index="game.you" :can-activate-osiris="canActivateOsiris"
+        @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === game.you"
         :can-activate="!readOnly && masterPlayerIndex === game.you && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />
       <div v-if="boardTargetPrompt && !readOnly" class="board-target-controls">
@@ -520,18 +530,11 @@ function statusTexts(card: Card) {
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" />
     </div>
-    <Teleport to="body">
-      <aside v-if="hiddenRevealCard" class="hidden-reveal-toast">
-        <img v-if="hiddenRevealCard.imageUrl" :src="hiddenRevealCard.imageUrl" :alt="hiddenRevealCard.name" />
-        <div><small>隐匿展示</small><strong>{{ hiddenRevealCard.name }}</strong><span>3 秒后覆盖</span></div>
-      </aside>
-    </Teleport>
   </div>
 </template>
 
 <style scoped>
-.hidden-reveal-toast{position:fixed;z-index:1700;left:50%;top:50%;display:flex;align-items:center;gap:14px;padding:12px 16px;border:2px solid #d7d3c6;background:#090d0e;box-shadow:0 24px 70px #000;transform:translate(-50%,-50%);pointer-events:none;animation:hidden-reveal-in .22s ease-out}.hidden-reveal-toast img{width:150px;height:210px;object-fit:contain}.hidden-reveal-toast div{display:grid;gap:5px}.hidden-reveal-toast small{color:#70d7df;font-weight:900}.hidden-reveal-toast strong{color:#fff;font-size:20px}.hidden-reveal-toast span{color:#a3aaa6;font-size:10px}@keyframes hidden-reveal-in{from{opacity:0;transform:translate(-50%,-45%) scale(.94)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
-.session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip img{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
+.session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:7px}.combat-versus em{color:#e5bd60;font-size:18px;font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:10px}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
 .record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:10px;white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:8px;line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
 .disaster-zone {

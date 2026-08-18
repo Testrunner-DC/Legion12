@@ -22,9 +22,11 @@ export interface Card {
   disasterLevel: number
   traits?: string[]
   profession?: string
+  lastCavalryMoveTurn?: number
   hasCharge?: boolean
   hasStrongAttack?: boolean
   hasSureHit?: boolean
+  hasShock?: boolean
   hasRangeBonus?: boolean
   hasRangedNoLoss?: boolean
   cannotBeRanged?: boolean
@@ -59,16 +61,24 @@ export interface PlayerView {
   libraryCount: number
   hand?: Card[]
   handCount?: number
-  moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean }>
+  moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
   moraleDeckCount?: number
-  morale: Array<{ instanceId: string; cardId: string; tapped: boolean }>
+  morale: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
   field: Array<Array<Card | null>>
   relic?: Card | null
   extraRelics?: Card[]
   graveyard?: Card[]
   graveyardCount?: number
   resolving?: Card[]
-  specialZones?: { runes: number; trialLevel: number; godPower: Card[]; trials: Card[] }
+  specialZones?: {
+    runes: number
+    trialLevel: number
+    trialCapacity?: number
+    godPower: Card[]
+    trials: Array<Card & { trialProgress?: number; trialCompleted?: boolean }>
+    canopicProgress?: Card[]
+    canopicTrack?: Array<Card & { completed: boolean }>
+  }
   temporaryMorale?: number
   nextLegionChargeMaxCost?: number | null
   mulliganDone: boolean
@@ -85,6 +95,8 @@ export interface GameState {
   initiativeRolls: number[]
   phase: Phase
   round: number
+  turnSerial?: number
+  disasterMode: 'all' | 'random' | 'season' | 'none'
   disasterValue: number
   activeDisaster?: Card | null
   disasterDeck?: Array<{ hidden: boolean }>
@@ -135,5 +147,6 @@ export interface RoomState {
   yourPlayerIndex: number
   players: Array<{ name: string; playerIndex: number; connected: boolean; ready: boolean; deckIndex: number; customDeck?: boolean; deckName: string; masterName: string; faction: string }>
   decks: Array<{ index: number; name: string; masterId: string; masterName: string; faction: string }>
+  options?: { spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'season' | 'none' }
   started: boolean
 }

@@ -180,7 +180,7 @@ public sealed class S2FactionRegressionTests
         {
             var morale = new L12MoraleCard
             {
-                InstanceId = $"promotion-power-{index}", CardId = "S02-05C1", Tapped = false,
+                InstanceId = $"promotion-power-{index}", CardId = "S02-05C1", Tapped = false, IsGodPower = true,
             };
             player.Morale.Add(morale);
         }
@@ -197,7 +197,11 @@ public sealed class S2FactionRegressionTests
         Assert.DoesNotContain(promoted, player.Hand);
         Assert.Contains(foundation, promoted.AttachedCards);
         Assert.Equal(foundation.SummonRound, promoted.SummonRound);
-        Assert.All(player.Morale.Where(card => card.CardId == "S02-05C1"), card => Assert.True(card.Tapped));
+        Assert.All(player.Morale.Where(card => card.CardId == "S02-05C1"), card =>
+        {
+            Assert.True(card.Tapped);
+            Assert.False(card.IsGodPower);
+        });
         var triggerOrder = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("trigger-batch-order", triggerOrder.Continuation);
         Assert.Equal(2, triggerOrder.ValidChoices.Count);
@@ -216,11 +220,16 @@ public sealed class S2FactionRegressionTests
         player.Hand.Clear();
         player.Hand.Add(promoted);
         AddMorale(player, 1);
+        player.Morale[0].IsGodPower = true;
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", forge.InstanceId,
             Ability: "forgePromotionDiscount")).Accepted);
+        var forgePayment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", forgePayment.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: forgePayment.PromptId,
+            CardInstanceIds: [player.Morale[0].InstanceId])).Accepted);
         PassResponses(game);
         Assert.Equal(1, player.NextS2PromotionGodPowerDiscount);
 
@@ -231,7 +240,8 @@ public sealed class S2FactionRegressionTests
 
         Assert.Same(promoted, player.Field[0][0]);
         Assert.Equal(0, player.NextS2PromotionGodPowerDiscount);
-        Assert.Empty(player.SpecialZones.GodPower);
+        Assert.True(player.Morale[0].Tapped);
+        Assert.True(player.Morale[0].IsGodPower);
     }
 
     [Fact]
@@ -296,11 +306,19 @@ public sealed class S2FactionRegressionTests
         opponent.Hand.Clear();
         opponent.Hand.Add(discarded);
         AddMorale(player, helen.Cost);
-        player.SpecialZones.GodPower.Add(Card("S02-05C1", "helen-god-power"));
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "helen-god-power", CardId = "S02-05C1", Tapped = false, IsGodPower = true,
+        });
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", helen.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: player.Morale.Where(card => !card.IsGodPower && !card.Tapped)
+                .Take(helen.Cost).Select(card => card.InstanceId).ToList())).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, prompt.PlayerIndex);
         Assert.Equal("s2-helen-entry-discard", prompt.Data["action"]);
@@ -477,7 +495,12 @@ public sealed class S2FactionRegressionTests
         var player = game.State.Players[0];
         var card = Card("S02-0513", "s2-olympus-flip-entry");
         player.Hand.Add(card);
-        AddMorale(player, card.Cost + 1);
+        player.Morale.Clear();
+        for (var index = 0; index < card.Cost + 1; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"olympus-flip-morale-{index}", CardId = "S02-05C1A", Tapped = false,
+            });
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
@@ -486,7 +509,8 @@ public sealed class S2FactionRegressionTests
         Assert.Equal("s2-flip-morale", prompt.Data["action"]);
         var morale = player.Morale.First(candidate => !candidate.Tapped && prompt.ValidChoices.Contains(candidate.InstanceId));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: morale.InstanceId)).Accepted);
-        Assert.True(morale.Tapped);
+        Assert.False(morale.Tapped);
+        Assert.True(morale.IsGodPower);
     }
 
     [Fact]
@@ -691,7 +715,6 @@ public sealed class S2FactionRegressionTests
         var game = Create(6314);
         var playerIndex = game.State.ActivePlayer;
         var player = game.State.Players[playerIndex];
-        player.SpecialZones.GodPower.Clear();
         player.Morale.Clear();
         player.MoraleDeck.Clear();
         player.Morale.Add(new L12MoraleCard
@@ -713,9 +736,51 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: "olympus-morale-rested")).Accepted);
 
-        Assert.False(player.Morale.Single(card => card.InstanceId == "olympus-morale-rested").Tapped);
+        var flipped = player.Morale.Single(card => card.InstanceId == "olympus-morale-rested");
+        Assert.True(flipped.Tapped);
+        Assert.True(flipped.IsGodPower);
         Assert.True(player.Morale.Single(card => card.InstanceId == "olympus-morale-active").Tapped);
         Assert.Contains($"active:faction-{playerIndex}:olympusMoraleFlip", player.UsedAbilities);
+    }
+
+    [Fact]
+    public void AttackEffectOrdinaryCostCanBePaidWithAChosenGodPower()
+    {
+        var game = Create(6319);
+        var player = game.State.Players[0];
+        var bors = Card("S02-0605", "bors-god-power-payment");
+        bors.SummonRound = 0;
+        player.Field[0][0] = bors;
+        player.Morale.Clear();
+        var ordinary = new L12MoraleCard
+        {
+            InstanceId = "bors-ordinary-morale", CardId = "S02-05C1A", Tapped = false,
+        };
+        var godPower = new L12MoraleCard
+        {
+            InstanceId = "bors-god-power", CardId = "S02-05C1", Tapped = false, IsGodPower = true,
+        };
+        player.Morale.AddRange([ordinary, godPower]);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", bors.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        var activate = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-bors-strong", activate.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: activate.PromptId,
+            Choice: "yes")).Accepted);
+
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [godPower.InstanceId])).Accepted);
+
+        Assert.True(bors.HasStrongAttack);
+        Assert.False(ordinary.Tapped);
+        Assert.True(godPower.Tapped);
+        Assert.True(godPower.IsGodPower);
     }
 
     [Fact]
@@ -730,7 +795,7 @@ public sealed class S2FactionRegressionTests
         player.Library.Clear();
         player.Morale.Add(new L12MoraleCard
         {
-            InstanceId = "prometheus-power", CardId = "S02-05C1", Tapped = false,
+            InstanceId = "prometheus-power", CardId = "S02-05C1", Tapped = false, IsGodPower = true,
         });
         var olympus = Card("S02-0502", "prometheus-olympus");
         var first = Card("S02-0003", "prometheus-first");
@@ -757,6 +822,7 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(olympus, player.Hand);
         Assert.Equal([second.InstanceId, first.InstanceId], player.Library.Select(card => card.InstanceId));
         Assert.True(player.Morale.Single(card => card.InstanceId == "prometheus-power").Tapped);
+        Assert.False(player.Morale.Single(card => card.InstanceId == "prometheus-power").IsGodPower);
     }
 
     [Fact]

@@ -12,7 +12,8 @@ public sealed partial class L12GameEngine
         string? originZone = null,
         string? destinationZone = null,
         bool causedByEffect = false,
-        IReadOnlyDictionary<string, string>? data = null)
+        IReadOnlyDictionary<string, string>? data = null,
+        bool publicSource = true)
     {
         var authorityEvent = new L12AuthorityEvent
         {
@@ -53,12 +54,14 @@ public sealed partial class L12GameEngine
         if (State.IsResolvingStack)
         {
             State.DeferredEffectStack.Add(item);
-            AddEvent("authority-event", actorPlayer, $"{text}已登记，将在当前堆叠关闭后处理", source);
+            if (publicSource) AddEvent("authority-event", actorPlayer, $"{text}已登记，将在当前堆叠关闭后处理", source);
+            else AddEvent("authority-event", actorPlayer, $"{State.Players[actorPlayer].Name}因效果将1张牌加入手牌，等待当前堆叠关闭后处理");
         }
         else
         {
             State.EffectStack.Add(item);
-            AddEvent("authority-event", actorPlayer, $"{text}进入响应时点", source);
+            if (publicSource) AddEvent("authority-event", actorPlayer, $"{text}进入响应时点", source);
+            else AddEvent("authority-event", actorPlayer, $"{State.Players[actorPlayer].Name}因效果将1张牌加入手牌，进入响应时点");
             BeginResponseWindow(item);
         }
         return item;
@@ -140,8 +143,9 @@ public sealed partial class L12GameEngine
 
     private void NotifyCardAddedToHandByEffect(L12PlayerState player, L12CardInstance card, string originZone, string reason)
     {
-        QueueAuthorityEvent("effect-hand-add", player.PlayerIndex, card, reason, subjectPlayer: player.PlayerIndex,
-            targetInstanceId: card.InstanceId, originZone: originZone, destinationZone: "hand", causedByEffect: true);
+        QueueAuthorityEvent("effect-hand-add", player.PlayerIndex, card, $"{player.Name}因效果将1张牌加入手牌", subjectPlayer: player.PlayerIndex,
+            targetInstanceId: card.InstanceId, originZone: originZone, destinationZone: "hand", causedByEffect: true,
+            publicSource: false);
     }
 
     private void AddCardToHandByEffect(L12PlayerState player, L12CardInstance card, string originZone, string reason)

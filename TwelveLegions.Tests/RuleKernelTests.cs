@@ -187,9 +187,14 @@ public sealed class RuleKernelTests
         L12S2ZoneOps.GainRunes(player, 2);
         Assert.False(L12S2ZoneOps.SpendRunes(player, 3)); Assert.Equal(2, player.SpecialZones.Runes);
         Assert.True(L12S2ZoneOps.SpendRunes(player, 2)); Assert.Equal(0, player.SpecialZones.Runes);
-        player.SpecialZones.GodPower.AddRange([Card("power-a"), Card("power-b")]);
-        Assert.False(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 3)); Assert.All(player.SpecialZones.GodPower, card => Assert.False(card.Tapped));
-        Assert.True(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2)); Assert.All(player.SpecialZones.GodPower, card => Assert.True(card.Tapped));
+        player.Morale.AddRange([
+            new L12MoraleCard { InstanceId = "power-a", CardId = "S02-05C1", IsGodPower = true },
+            new L12MoraleCard { InstanceId = "power-b", CardId = "S02-05C1", IsGodPower = true },
+        ]);
+        Assert.False(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 3));
+        Assert.All(player.Morale, card => { Assert.False(card.Tapped); Assert.True(card.IsGodPower); });
+        Assert.True(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2));
+        Assert.All(player.Morale, card => { Assert.True(card.Tapped); Assert.False(card.IsGodPower); });
     }
 
     [Fact]
@@ -199,7 +204,10 @@ public sealed class RuleKernelTests
         var foundation = Card("foundation", 4000, "赫拉克勒斯", "olympus"); foundation.Tapped = true; foundation.HasStrongAttack = true;
         var promoted = Card("promoted", 6000, "赫拉克勒斯·晋升", "olympus", ["奥林匹斯", "晋升者"]);
         player.Field[0][1] = foundation; player.Hand.Add(promoted);
-        player.SpecialZones.GodPower.AddRange([Card("power-a"), Card("power-b")]);
+        player.Morale.AddRange([
+            new L12MoraleCard { InstanceId = "power-a", CardId = "S02-05C1", IsGodPower = true },
+            new L12MoraleCard { InstanceId = "power-b", CardId = "S02-05C1", IsGodPower = true },
+        ]);
         Assert.True(L12S2ZoneOps.Promote(player, foundation, promoted, 2));
         Assert.Same(promoted, player.Field[0][1]); Assert.True(promoted.Tapped); Assert.True(promoted.HasStrongAttack);
         Assert.Same(foundation, Assert.Single(promoted.AttachedCards)); Assert.Empty(player.Hand);

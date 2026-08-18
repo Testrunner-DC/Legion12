@@ -178,6 +178,19 @@ public sealed partial class L12GameEngine
             case "setup-second-pick":
                 ResolveDisasterPick(playerIndex, chosen[0], prompt);
                 break;
+            case "setup-trial-order":
+            {
+                var player = State.Players[playerIndex];
+                var ordered = chosen.Select(id => player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == id)).ToArray();
+                if (ordered.Any(card => card is null) || ordered.Length != player.SpecialZones.Trials.Count)
+                    return CommandResult.Reject("必须为全部试炼确定进行顺序");
+                player.SpecialZones.Trials.Clear();
+                player.SpecialZones.Trials.AddRange(ordered!);
+                player.TrialOrderDone = true;
+                AddEvent("trial-order", playerIndex, $"{player.Name} 已确定试炼顺序");
+                if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
+                break;
+            }
             case "faction-zero-recovery":
             {
                 var player = State.Players[playerIndex];
@@ -266,6 +279,17 @@ public sealed partial class L12GameEngine
                 if (!result.Accepted) return result;
                 break;
             }
+            case "s2-promotion-mode":
+            {
+                if (chosen[0] == "cancel") break;
+                int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
+                int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
+                var result = PlayCard(prompt.PlayerIndex, new L12Command(
+                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
+                    Choice: chosen[0] == "normal" ? "normal-entry" : "promotion-mode"));
+                if (!result.Accepted) return result;
+                break;
+            }
             case "trigger-batch-order":
                 ResolveTriggerBatchOrder(prompt, chosen);
                 break;
@@ -333,11 +357,37 @@ public sealed partial class L12GameEngine
     {
         State.FirstPlayer = choice == "first" ? playerIndex : 1 - playerIndex;
         State.ActivePlayer = State.FirstPlayer;
-        State.Phase = L12Phase.DisasterPreparation;
         AddEvent("initiative-choice", playerIndex,
             $"{State.Players[playerIndex].Name} 选择{(choice == "first" ? "先攻" : "后攻")}；{State.Players[State.FirstPlayer].Name} 为先攻玩家");
+        if (State.DisasterMode == "none")
+        {
+            State.Phase = L12Phase.DisasterPreparation;
+            SetDisasterValue(0);
+            PrepareAfterDisasterSelection("本局不使用天灾，天灾值始终为 0");
+            return;
+        }
+        if (State.DisasterMode == "random")
+        {
+            State.Phase = L12Phase.DisasterPreparation;
+            BuildRandomDisasterDeck();
+            PrepareAfterDisasterSelection("已随机建立本局天灾牌库；〈堙灭〉固定置于最底部");
+            return;
+        }
+        State.Phase = L12Phase.DisasterPreparation;
         State.DisasterPreparationStep = 0;
         ContinueDisasterPreparation();
+    }
+
+    private void BuildRandomDisasterDeck()
+    {
+        var normal = State.DisasterPool.Where(card => card.CardId != "S01-DS10")
+            .OrderBy(_ => _random.Next()).Take(3).ToList();
+        Shuffle(normal);
+        State.DisasterDeck.Clear();
+        State.DisasterDeck.AddRange(normal);
+        State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
+        State.DisasterPool.Clear();
+        SetDisasterValue(0);
     }
 
     private void ContinueDisasterPreparation()
@@ -440,10 +490,28 @@ public sealed partial class L12GameEngine
         State.DisasterDeck.AddRange(State.SelectedDisasters);
         State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
         State.DisasterPool.Clear();
+        PrepareAfterDisasterSelection("本局 4 张天灾牌库已组成，〈堙灭〉位于牌库底部");
+    }
+
+    private void PrepareAfterDisasterSelection(string eventText)
+    {
         PrepareLibrariesAndHands();
-        State.DisasterValue = 0;
+        SetDisasterValue(0);
+        AddEvent("disaster-deck-ready", null, eventText);
+        foreach (var player in State.Players.Where(candidate => candidate.SpecialZones.Trials.Count > 1 && !candidate.TrialOrderDone))
+        {
+            var data = new Dictionary<string, string> { ["layout"] = "single-row", ["sourceZone"] = "trial" };
+            foreach (var trial in player.SpecialZones.Trials) AddPromptCardData(data, trial);
+            CreatePrompt(player.PlayerIndex, "trial-order", "按本局进行顺序依次选择全部试炼",
+                player.SpecialZones.Trials.Select(card => card.InstanceId), player.SpecialZones.Trials.Count,
+                player.SpecialZones.Trials.Count, "setup-trial-order", isPrivate: true, data: data);
+        }
+        if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
+    }
+
+    private void StartMulliganAfterPreparation()
+    {
         State.Phase = L12Phase.Mulligan;
-        AddEvent("disaster-deck-ready", null, "本局 4 张天灾牌库已组成，〈堙灭〉位于牌库底部");
         AddEvent("mulligan-start", null, "双方同时进行调度");
     }
 

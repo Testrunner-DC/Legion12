@@ -6,7 +6,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         if (ActiveResourceCount(player) < cost) { FinishStackItem(item); return; }
-        if (!HasActiveTombGuardResource(player) || Math.Max(0, cost - player.TemporaryMorale) == 0)
+        if (!NeedsManualOrdinaryResourcePayment(player, cost))
         {
             if (TryConsumeMorale(player, cost)) CompleteEffectMoralePayment(item, afterPayment, extra ?? []);
             else FinishStackItem(item);
@@ -35,6 +35,13 @@ public sealed partial class L12GameEngine
         => State.ActivePlayer == player.PlayerIndex
             && PublicLegions(player).Any(card => card.CardId == "S01-0212" && !card.Tapped);
 
+    private static bool HasActiveGodPowerResource(L12PlayerState player)
+        => player.Morale.Any(card => card.IsGodPower && !card.Tapped);
+
+    private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost)
+        => Math.Max(0, totalCost - player.TemporaryMorale) > 0
+            && (HasActiveTombGuardResource(player) || HasActiveGodPowerResource(player));
+
     private void CreateResourcePaymentPrompt(int playerIndex, int totalCost, string continuation, string? stackItemId,
         Dictionary<string, string> data)
     {
@@ -46,10 +53,11 @@ public sealed partial class L12GameEngine
         data["cost"] = totalCost.ToString();
         data["visibleCost"] = visibleCost.ToString();
         data["choiceMode"] = "resource-payment";
-        foreach (var morale in player.Morale.Where(card => !card.Tapped)) data[$"{morale.InstanceId}:resourceType"] = "morale";
+        foreach (var morale in player.Morale.Where(card => !card.Tapped))
+            data[$"{morale.InstanceId}:resourceType"] = morale.IsGodPower ? "god-power" : "morale";
         foreach (var guard in PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped))
             data[$"{guard.InstanceId}:resourceType"] = "tomb-guard";
-        CreatePrompt(playerIndex, "resource-payment", "请选择支付费用的士气或陵墓守卫", choices,
+        CreatePrompt(playerIndex, "resource-payment", "请选择支付费用的士气、神力或陵墓守卫", choices,
             visibleCost, visibleCost, continuation, stackItemId, isPrivate: true, data: data);
     }
 
@@ -117,6 +125,13 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); break;
             }
+            case "s2-bors-strong":
+                if (source is not null)
+                {
+                    source.HasStrongAttack = true;
+                    AddEvent("effect", item.Controller, $"〈{source.Name}〉获得强攻", source);
+                }
+                FinishStackItem(item); break;
             default: FinishStackItem(item); break;
         }
     }

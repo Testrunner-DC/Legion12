@@ -3,6 +3,7 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
 import SiteShell from '@/l12/site/SiteShell.vue'
+import GlobalBugFeedback from '@/l12/site/GlobalBugFeedback.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,4 +16,5 @@ watch(() => l12State.game, (game) => {
 <template>
   <router-view v-if="immersive" />
   <SiteShell v-else><router-view /></SiteShell>
+  <GlobalBugFeedback />
 </template>

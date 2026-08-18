@@ -45,7 +45,11 @@ public sealed partial class L12GameEngine
         "S01-01C1" => [new("factionAddActive", "我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。"), new("factionZeroRecovery", "我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。")],
         "S01-04C1" => [new("factionDrawMove", "我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。")],
         "S01-01M1" => [new("drawCycle", "消耗1张活跃士气：抽取1张牌，再将1张手牌放回牌库顶部或底部。"), new("nonLethal", "返还4张士气：对方主宰失去1点血量，此效果不能令其血量低于1。")],
-        "S01-04M2" => [new("frontBuff", "消耗1张活跃士气：选择我方1张【高天原】军团发动前排强化。"), new("kusanagi", "消耗2张活跃士气：将圣物区的〈草雉剑〉作为军团置入我方前排。")],
+        "S01-04M2" =>
+        [
+            new("frontBuff", "我方 回合1次 可消耗1士气：选择我方1张【高天原】军团，本回合位于前排进攻时兵力+2000。"),
+            new("kusanagi", "消耗2士气：将我方〈草薙剑〉置入前排，视为1张兵力5000的【武者】军团。（草薙剑仍可发动其效果）〈草薙剑〉离场时：可选择将其放回牌库顶部。"),
+        ],
         "S02-0003" => [new("disableCounters", "主动休整：直到我方下个回合开始前，战场上所有反击战术无法发动。")],
         "S02-0104" => [new("shennongReset", "主动休整 返还1士气：重置我方主宰其中1个效果的使用次数。")],
         "S02-05C1" => [new("godPowerDraw", "我方 回合1次 可消耗并翻转1神力：抽取1张牌。")],
@@ -389,7 +393,7 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); return true;
             case "zhuge-disaster":
-                State.DisasterValue = State.ActiveDisaster?.CardId == "S01-DS10" ? 0 : Math.Max(0, State.DisasterValue + int.Parse(chosen[0])); FinishStackItem(item); return true;
+                AdjustDisasterValue(int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "zhuge-peek-pay":
                 if (chosen[0] == "no" || !ReturnMorale(player, 1)) { FinishStackItem(item); return true; }
                 if (player.Library.Count == 0) { FinishStackItem(item); return true; }
@@ -543,7 +547,7 @@ public sealed partial class L12GameEngine
             case "scout-pay":
                 if (chosen[0] == "yes" && enemy.Hand.Count > 0) BeginEffectMoralePayment(item, 1, "scout-shuffle"); else FinishStackItem(item); return true;
             case "ritual-disaster":
-                State.DisasterValue = State.ActiveDisaster?.CardId == "S01-DS10" ? 0 : Math.Max(0, State.DisasterValue + int.Parse(chosen[0])); FinishStackItem(item); return true;
+                AdjustDisasterValue(int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "ambush-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000;

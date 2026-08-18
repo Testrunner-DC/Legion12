@@ -4,6 +4,7 @@ public sealed partial class L12GameEngine
 {
     private void BeginDisasterTrigger(bool opening)
     {
+        if (!DisastersEnabled) { SetDisasterValue(0); return; }
         if (State.ActiveDisaster?.CardId == "S01-DS10" && State.DisasterDeck.Count == 0)
         {
             State.DisasterValue = 0;
@@ -62,7 +63,7 @@ public sealed partial class L12GameEngine
                     for (var slot = 0; slot < 3; slot++)
                     {
                         var card = State.Players[owner].Field[1][slot];
-                        if (card is not null && IsFieldLegion(card)) RemoveFromField(State.Players[owner], card, true, "因腐秽大地置入墓地",
+                        if (card is not null && IsDisasterFieldCard(card)) RemoveFromField(State.Players[owner], card, true, "因腐秽大地置入墓地",
                             queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
                     }
                 FinishStackItem(item); return;
@@ -78,7 +79,7 @@ public sealed partial class L12GameEngine
             case "S02-DS03":
                 for (var owner = 0; owner < 2; owner++)
                     foreach (var card in State.Players[owner].Field.SelectMany(row => row)
-                        .Where(card => card is not null && IsFieldLegion(card) && card.BaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
+                        .Where(card => card is not null && IsDisasterFieldCard(card) && card.BaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
                         RemoveFromField(State.Players[owner], card, true, "因〈无眠之夜〉弃置",
                             queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
                 FinishStackItem(item); return;
@@ -92,6 +93,9 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
         }
     }
+
+    private static bool IsDisasterFieldCard(L12CardInstance card)
+        => IsFieldLegion(card) || card.CardId == "S01-0415";
 
     private void BeginS2FogDeadEnd(L12StackItem item)
     {

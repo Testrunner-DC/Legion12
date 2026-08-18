@@ -21,6 +21,7 @@ const emit = defineEmits<{
 const prompt = computed(() => props.game.prompts?.find(item => item.promptId !== props.suppressedPromptId) ?? null)
 const waitingPrompt = computed(() => prompt.value ? null : props.game.waitingPrompt ?? null)
 const me = computed(() => props.game.players[props.game.you] ?? props.game.players[0])
+const initiativePlayers = computed(() => [me.value, ...props.game.players.filter(player => player.playerIndex !== me.value.playerIndex)])
 const isMulliganPhase = computed(() => props.game.phase === 'Mulligan')
 const isMulligan = computed(() => !props.readOnly && isMulliganPhase.value && !me.value.mulliganDone)
 const waitingDefense = computed(() => !props.suppressDefenseWait && props.game.phase === 'Defense' && props.game.pendingDefense?.attackerPlayer === props.game.you)
@@ -359,10 +360,10 @@ function kindLabel() {
           <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
         </header>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
-          <article v-for="(player, index) in game.players" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === index }">
+          <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" :alt="player.master.masterName" />
             <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
-            <b>{{ dieFace(animatedRolls[index] ?? 1) }}</b><em>{{ animatedRolls[index] ?? 1 }} 点</em>
+            <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
           </article>
         </div>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
@@ -370,7 +371,7 @@ function kindLabel() {
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
             <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
-              <img :src="entry.card.imageUrl || '/assets/l12/disaster-back.png'" :alt="entry.card.name || '未揭示天灾'"/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
+              <img :src="entry.card.imageUrl || '/assets/l12/card-back-disaster.png'" :alt="entry.card.name || '未揭示天灾'"/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
@@ -506,15 +507,15 @@ function kindLabel() {
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
             <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
-              <img :src="entry.card.imageUrl || '/assets/l12/disaster-back.png'" :alt="entry.card.name || '未揭示天灾'"/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
+              <img :src="entry.card.imageUrl || '/assets/l12/card-back-disaster.png'" :alt="entry.card.name || '未揭示天灾'"/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
-          <article v-for="(player, index) in game.players" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === index }">
+          <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" :alt="player.master.masterName" />
             <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
-            <b>{{ dieFace(animatedRolls[index] ?? 1) }}</b><em>{{ animatedRolls[index] ?? 1 }} 点</em>
+            <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
           </article>
         </div>
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>

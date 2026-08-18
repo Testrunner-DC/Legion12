@@ -10,7 +10,10 @@ public sealed partial class L12GameEngine
             ?? (player.Relic?.InstanceId == command.CardInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
-            ?? player.SpecialZones.GodPower.FirstOrDefault(card => card.InstanceId == command.CardInstanceId);
+            ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == command.CardInstanceId
+                && card.CardId == "S01-02M2" && ability == "isisVictory");
+        if (source is null && player.Morale.FirstOrDefault(card => card.InstanceId == command.CardInstanceId) is { } morale)
+            source = CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId);
         if (source is null && command.CardInstanceId is not null
             && (command.CardInstanceId == player.MasterId || command.CardInstanceId == $"master-{playerIndex}"))
         {
@@ -19,8 +22,9 @@ public sealed partial class L12GameEngine
         }
         if (source is null && command.CardInstanceId == $"faction-{playerIndex}")
         {
-            var moraleId = player.SpecialZones.GodPower.FirstOrDefault()?.CardId
-                ?? player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
+            var moraleId = player.Faction == "olympus"
+                ? (ability == "godPowerDraw" ? "S02-05C1" : "S02-05C1A")
+                : player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
             if (moraleId is not null) source = CreateCard(moraleId, $"faction-{playerIndex}");
         }
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
@@ -50,6 +54,9 @@ public sealed partial class L12GameEngine
                     .Select(card => card!.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团，本回合获得强攻");
             default:
+                if (GetActiveAbilityMoraleCost(source, ability) > 0
+                    && NeedsManualOrdinaryResourcePayment(player, GetActiveAbilityMoraleCost(source, ability)))
+                    return CommitActiveAbility(playerIndex, source, ability, command.CardInstanceIds?.FirstOrDefault());
                 return TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability)
@@ -86,7 +93,7 @@ public sealed partial class L12GameEngine
         if (disasterMasterSurcharge > 0 && ActiveResourceCount(player) < moraleCost)
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
         if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
-            && HasActiveTombGuardResource(player) && Math.Max(0, moraleCost - player.TemporaryMorale) > 0)
+            && NeedsManualOrdinaryResourcePayment(player, moraleCost))
         {
             CreateResourcePaymentPrompt(playerIndex, moraleCost, "active-morale-choice", null, new Dictionary<string, string>
             {
@@ -101,6 +108,11 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("选择的支付资源已失效或数量不正确");
             // 下层各阵营效果仍通过统一 ConsumeMorale 申报费用；以临时士气作为一次性预付凭证，避免重复扣费。
             player.TemporaryMorale += moraleCost;
+
+            var specialized = TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
+                ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
+                ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability);
+            if (specialized is not null) return specialized;
         }
         bool ConsumeMorale(int cost) => useTombGuards switch
         {
@@ -111,6 +123,18 @@ public sealed partial class L12GameEngine
         var moraleReturnedByMasterEffect = 0;
         switch (ability)
         {
+            case "isisVictory" when source.CardId is "S01-02M1" or "S01-02M2":
+            {
+                var completed = player.SpecialZones.CanopicProgress
+                    .Where(card => card.CardId is "S01-0216" or "S01-0217" or "S01-0218" or "S01-0219" or "S01-0220")
+                    .Select(card => card.CardId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                if (player.MasterId != "S01-02M1" || completed < 5
+                    || !player.Graveyard.Any(card => card.CardId == "S01-02M2"))
+                    return CommandResult.Reject("需要伊西斯、墓地的复苏的奥西里斯与5种已完成的卡诺匹斯圣物");
+                SetWinner(playerIndex, "复苏的奥西里斯登场，达成伊西斯特殊胜利");
+                AddEvent("special-victory", playerIndex, "〈复苏的奥西里斯〉替换〈伊西斯〉登场，达成特殊胜利", source);
+                return CommandResult.Ok();
+            }
             case "drawCycle" when source.CardId == "S01-01M1":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
                 player.UsedAbilities.Add(onceKey); break;
@@ -213,7 +237,8 @@ public sealed partial class L12GameEngine
             or "gramReady" or "sunTopThree" or "sunBottomEnemy" or "valhallaRecover" or "yomiSweep" => 2,
         "extendedRange" when source.CardId == "S01-0003" => 2,
         "discardHolyLock" => 3,
-        "forgePromotionDiscount" or "forgeReadyOnKill" => 1,
+        "forgePromotionDiscount" or "forgeReadyOnKill" or "olympusMoraleFlip" => 1,
+        "factionGainRune" => 2,
         _ => 0,
     };
 

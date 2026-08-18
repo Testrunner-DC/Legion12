@@ -68,7 +68,9 @@ public sealed partial class L12GameEngine
             ?? (player.Relic?.InstanceId == item.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? player.SpecialZones.GodPower.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
+            ?? (player.Morale.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId) is { } morale
+                ? CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId)
+                : null)
             ?? player.Resolving.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
             ?? player.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
             ?? player.Graveyard.LastOrDefault(card => card.InstanceId == item.SourceInstanceId)
@@ -137,7 +139,6 @@ public sealed partial class L12GameEngine
             case "S01-0415":
                 AddEvent("hidden-reveal", item.Controller, $"{card.Name}展示后发动隐匿", card);
                 card.Hidden = true;
-                AddEvent("effect", item.Controller, "服部半藏发动隐匿并翻转", card);
                 FinishStackItem(item); return;
             case "S01-0416":
             {

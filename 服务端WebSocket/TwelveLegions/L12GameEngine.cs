@@ -18,9 +18,10 @@ public sealed partial class L12GameEngine
         int seed,
         string[] playerNames,
         int[] deckIndexes,
-        bool skipPreparation = false)
+        bool skipPreparation = false,
+        string disasterMode = "all")
         : this(catalog, matchId, roomCode, seed, playerNames,
-            deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation)
+            deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode)
     {
     }
 
@@ -31,7 +32,8 @@ public sealed partial class L12GameEngine
         int seed,
         string[] playerNames,
         L12PresetDeckDefinition[] decks,
-        bool skipPreparation = false)
+        bool skipPreparation = false,
+        string disasterMode = "all")
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
@@ -42,6 +44,7 @@ public sealed partial class L12GameEngine
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
+            DisasterMode = NormalizeDisasterMode(disasterMode),
             ActivePlayer = 0,
             FirstPlayer = 0,
             Players =
@@ -62,7 +65,7 @@ public sealed partial class L12GameEngine
         }
         else
         {
-            BuildDisasterPool();
+            if (State.DisasterMode != "none") BuildDisasterPool();
             State.Phase = L12Phase.Initiative;
             AddEvent("initiative", State.DiceWinner,
                 $"掷骰结果：{State.Players[0].Name} {State.InitiativeRolls[0]}，{State.Players[1].Name} {State.InitiativeRolls[1]}；{State.Players[State.DiceWinner].Name} 选择先后手");
@@ -94,6 +97,7 @@ public sealed partial class L12GameEngine
             "attack" => Attack(playerIndex, command),
             "resolveDefense" => ResolveDefense(playerIndex, command),
             "move" => Move(playerIndex, command),
+            "cavalryMove" => CavalryMove(playerIndex, command),
             "activateAbility" => ActivateAbility(playerIndex, command),
             "flipHidden" => FlipHidden(playerIndex, command.CardInstanceId),
             "endTurn" => EndTurn(playerIndex),
@@ -126,7 +130,7 @@ public sealed partial class L12GameEngine
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
-                field = SnapshotField(player, revealCounters: true), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, player.Removed, player.SpecialZones,
+                field = SnapshotField(player, revealCounters: true), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
                 player.TemporaryMorale, player.NextLegionChargeMaxCost, player.MulliganDone,
             }
             : new
@@ -137,7 +141,7 @@ public sealed partial class L12GameEngine
                 libraryCount = player.Library.Count, handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, player.Morale,
                 field = SnapshotField(player, revealCounters: false), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, graveyardCount = player.Graveyard.Count,
-                removedCount = player.Removed.Count, player.SpecialZones, player.TemporaryMorale, player.NextLegionChargeMaxCost, player.MulliganDone,
+                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.MulliganDone,
             }).ToArray();
 
         var prompts = State.PendingPrompts
@@ -155,10 +159,20 @@ public sealed partial class L12GameEngine
             playerName = State.Players[waitingPromptSource.PlayerIndex].Name,
             waitingPromptSource.Kind,
         };
-        var stack = State.EffectStack.Select(item => (object)new
+        var stack = State.EffectStack.Select(item =>
         {
-            item.StackItemId, item.Controller, item.SourceInstanceId, item.SourceCardId,
-            item.SourceName, item.Trigger, item.Text, item.Negated, item.Targets,
+            var privateHandCard = item.Data.GetValueOrDefault("eventType") == "effect-hand-add"
+                && !spectator && item.Controller != viewer;
+            return (object)new
+            {
+                item.StackItemId, item.Controller,
+                SourceInstanceId = privateHandCard ? string.Empty : item.SourceInstanceId,
+                SourceCardId = privateHandCard ? string.Empty : item.SourceCardId,
+                SourceName = privateHandCard ? "加入手牌的牌" : item.SourceName,
+                item.Trigger,
+                Text = privateHandCard ? $"{State.Players[item.Controller].Name}因效果将1张牌加入手牌" : item.Text,
+                item.Negated, Targets = privateHandCard ? [] : item.Targets,
+            };
         }).ToArray();
 
         var recentEvents = State.Events
@@ -170,8 +184,8 @@ public sealed partial class L12GameEngine
 
         return new L12GameSnapshot(
             State.MatchId, State.RoomCode, spectator ? 0 : viewer, State.Revision, State.ActivePlayer,
-            State.FirstPlayer, State.DiceWinner, State.InitiativeRolls, State.Phase, State.Round,
-            State.DisasterValue, State.ActiveDisaster, State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
+            State.FirstPlayer, State.DiceWinner, State.InitiativeRolls, State.Phase, State.Round, State.TurnSerial,
+            State.DisasterMode, State.DisasterValue, State.ActiveDisaster, State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
             State.BannedDisasters.Cast<object>().ToArray(), State.RemovedDisasters.Cast<object>().ToArray(),
             State.RevealedDisasters.Cast<object>().ToArray(), BuildChosenDisasterSnapshot(viewer, revealAllDisasters),
             BuildSessionDisasterSnapshot(viewer, revealAllDisasters),
@@ -185,23 +199,27 @@ public sealed partial class L12GameEngine
 
     private object[] BuildSessionDisasterSnapshot(int viewer, bool revealAll)
     {
-        var known = new List<object>();
-        known.AddRange(State.RevealedDisasters.Cast<object>());
-        var chosen = State.ChosenDisasters
-            .Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll))
+        // 这一区域只表达“玩家目前知道哪些牌”，绝不能用亮/暗位置泄露洗混后的牌序。
+        // 前三格先紧凑排列已知的非最终天灾，再补未知牌背；公开的最终天灾固定在第四格。
+        var all = State.RevealedDisasters.Concat(State.ChosenDisasters)
+            .Concat(State.DisasterDeck).Concat(State.RemovedDisasters)
+            .Append(State.ActiveDisaster)
+            .Where(card => card is not null)
+            .Cast<L12CardInstance>()
+            .DistinctBy(card => card.InstanceId)
             .ToArray();
-        known.AddRange(chosen.Where(IsVisibleDisasterSnapshot));
-        var hidden = chosen.Where(item => !IsVisibleDisasterSnapshot(item)).ToList();
-        var final = State.DisasterDeck.Concat(State.RemovedDisasters).Append(State.ActiveDisaster)
-            .FirstOrDefault(card => card?.CardId == "S01-DS10");
-        if (final is not null)
-        {
-            var finalSnapshot = DisasterVisibilitySnapshot(final, viewer, revealAll);
-            (IsVisibleDisasterSnapshot(finalSnapshot) ? known : hidden).Add(finalSnapshot);
-        }
-        // 本局天灾已经洗混，界面只表达“已知数量”，不暴露任何牌库顺序。
-        known.AddRange(hidden);
-        return known.ToArray();
+        var visible = all.Where(card => card.CardId != "S01-DS10")
+            .Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll))
+            .Where(IsVisibleDisasterSnapshot)
+            .Take(3)
+            .ToList();
+        while (visible.Count < 3)
+            visible.Add(new { instanceId = $"unknown-disaster-{visible.Count}", hidden = true });
+
+        var final = all.FirstOrDefault(card => card.CardId == "S01-DS10")
+            ?? (_catalog.Cards.ContainsKey("S01-DS10") ? CreateCard("S01-DS10", "session-final-disaster") : null);
+        if (final is not null) visible.Add(final);
+        return visible.ToArray();
     }
 
     private static bool IsVisibleDisasterSnapshot(object snapshot) => snapshot is L12CardInstance;
@@ -291,10 +309,65 @@ public sealed partial class L12GameEngine
 
     private object FactionEffectSnapshot(L12PlayerState player)
     {
+        if (player.Faction == "olympus"
+            && _catalog.Cards.TryGetValue("S02-05C1A", out var moraleFace)
+            && _catalog.Cards.TryGetValue("S02-05C1", out var godPowerFace))
+        {
+            var abilities = BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}")
+                .Concat(BuildAbilityViews(player, godPowerFace.Id, $"faction-{player.PlayerIndex}"))
+                .ToArray();
+            return new
+            {
+                cardId = moraleFace.Id,
+                name = "奥林匹斯士气 / 神力",
+                imageUrl = moraleFace.ImageUrl,
+                effectText = $"{moraleFace.Effect}\n{godPowerFace.Effect}",
+                abilities,
+            };
+        }
         var moraleId = player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
         if (moraleId is null || !_catalog.Cards.TryGetValue(moraleId, out var card))
             return new { cardId = string.Empty, name = "阵营效果", imageUrl = (string?)null, effectText = string.Empty, abilities = Array.Empty<L12AbilityView>() };
         return new { cardId = card.Id, name = card.NameZh, imageUrl = card.ImageUrl, effectText = card.Effect, abilities = BuildAbilityViews(player, card.Id, $"faction-{player.PlayerIndex}") };
+    }
+
+    private object SpecialZonesSnapshot(L12PlayerState player, int ownerIndex, int viewer, bool revealAll)
+    {
+        string[] canopicIds = ["S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220"];
+        var completedCanopicIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var canopicTrack = player.MasterId == "S01-02M1"
+            ? canopicIds.Select(cardId =>
+            {
+                var card = CreateCard(cardId, $"canopic-track-{ownerIndex}-{cardId}");
+                return new
+                {
+                    card.InstanceId, card.CardId, card.Name, card.CardType, card.Faction, card.ImageUrl,
+                    card.EffectText, card.Cost, card.BaseTroops, card.Troops, card.DisasterLevel,
+                    completed = completedCanopicIds.Contains(cardId),
+                };
+            }).ToArray()
+            : [];
+        var trials = player.SpecialZones.Trials.Select(card =>
+            revealAll || viewer == ownerIndex || card.TrialCompleted
+                ? (object)card
+                : new { card.InstanceId, cardId = "hidden-trial", name = "未揭示试炼", cardType = "trial", hidden = true,
+                    imageUrl = "/assets/l12/trial-back.png", card.TrialProgress, card.TrialCompleted }).ToArray();
+        var godPower = player.Morale.Where(card => card.IsGodPower).Select(card => new
+        {
+            card.InstanceId,
+            cardId = "S02-05C1",
+            name = "神力",
+            cardType = "rune",
+            faction = "olympus",
+            imageUrl = _catalog.Cards.GetValueOrDefault("S02-05C1")?.ImageUrl,
+            tapped = card.Tapped,
+        }).ToArray();
+        return new
+        {
+            player.SpecialZones.Runes, player.SpecialZones.TrialLevel, player.SpecialZones.TrialCapacity,
+            godPower, trials, canopicProgress = player.SpecialZones.CanopicProgress, canopicTrack,
+        };
     }
 
     private List<L12AbilityView> BuildAbilityViews(L12PlayerState player, string cardId, string sourceInstanceId)
@@ -311,6 +384,19 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = "我方手牌需不高于3张" };
             if (view.Id == "factionZeroRecovery")
                 return view with { Enabled = false, DisabledReason = "我方士气为0张时触发", TriggerOnly = true };
+            if (view.Id == "godPowerDraw" && !player.Morale.Any(card => card.IsGodPower && !card.Tapped))
+                return view with { Enabled = false, DisabledReason = "需要1张活跃神力" };
+            if (view.Id == "olympusMoraleFlip" && !player.Morale.Any(card => !card.IsGodPower))
+                return view with { Enabled = false, DisabledReason = "没有可翻转为神力的士气" };
+            if (view.Id == "isisVictory")
+            {
+                var completed = player.SpecialZones.CanopicProgress
+                    .Where(card => card.CardId is "S01-0216" or "S01-0217" or "S01-0218" or "S01-0219" or "S01-0220")
+                    .Select(card => card.CardId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                if (player.MasterId != "S01-02M1" || completed < 5
+                    || !player.Graveyard.Any(card => card.CardId == "S01-02M2"))
+                    return view with { Enabled = false, DisabledReason = "需要完成5种卡诺匹斯圣物且复苏的奥西里斯位于墓地" };
+            }
             var match = System.Text.RegularExpressions.Regex.Match(view.Label, @"消耗\s*(\d+)\s*士气");
             if (match.Success && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)
                 return view with { Enabled = false, DisabledReason = $"需要{cost}张活跃士气" };
@@ -322,6 +408,24 @@ public sealed partial class L12GameEngine
         => player.Field.Select(row => row.Select(card =>
         {
             if (card is null) return null;
+            if (card.CardId == "S01-0415" && card.Hidden)
+                return new
+                {
+                    card.InstanceId,
+                    cardId = "hidden-card",
+                    name = "覆盖的隐匿卡",
+                    cardType = "covered",
+                    faction = "hidden",
+                    imageUrl = "/assets/l12/card-back-official.png",
+                    effectText = (string?)null,
+                    cost = 0,
+                    baseTroops = 0,
+                    troops = 0,
+                    disasterLevel = 0,
+                    hidden = true,
+                    tapped = false,
+                    summonRound = card.SummonRound,
+                };
             if (revealCounters || !card.Hidden) return (object)card;
             return new
             {
@@ -365,6 +469,7 @@ public sealed partial class L12GameEngine
             Hp = master.Hp ?? 10,
             MaxHp = master.Hp ?? 10,
         };
+        player.SpecialZones.TrialCapacity = L12SpecialDeckRules.TrialCapacity(master);
         var mainDeckIndex = 0;
         foreach (var cardId in deck.CardIds.Where(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase)))
             player.Library.Add(CreateCard(cardId, $"p{index}-c{++mainDeckIndex}"));
@@ -376,6 +481,7 @@ public sealed partial class L12GameEngine
             });
         for (var i = 0; i < deck.SpecialIds.Count; i++)
             player.SpecialZones.Trials.Add(CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}"));
+        player.TrialOrderDone = player.SpecialZones.Trials.Count <= 1;
         if (player.Faction == "taiyangcheng" && _catalog.Cards.ContainsKey("S01-0212"))
         {
             var configuredGuards = deck.CardIds.Count(id => id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
@@ -386,6 +492,28 @@ public sealed partial class L12GameEngine
             player.Graveyard.Add(CreateCard("S01-02M2", $"p{index}-osiris"));
         return player;
     }
+
+    private static string NormalizeDisasterMode(string? mode) => mode switch
+    {
+        "random" => "random",
+        "season" => "season",
+        "none" => "none",
+        _ => "all",
+    };
+
+    private bool DisastersEnabled => State.DisasterMode != "none";
+
+    private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
+    {
+        State.DisasterValue = !DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10"
+            ? 0
+            : Math.Max(0, value);
+        if (!string.IsNullOrWhiteSpace(text))
+            AddEvent("disaster-value", playerIndex, text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal));
+    }
+
+    private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
+        => SetDisasterValue(State.DisasterValue + delta, playerIndex, text);
 
     private L12CardInstance CreateCard(string cardId, string instanceId)
     {
@@ -445,18 +573,18 @@ public sealed partial class L12GameEngine
 
         State.Phase = L12Phase.Disaster;
         AddEvent("phase", playerIndex, "执行触发天灾");
-        if (State.ActiveDisaster?.CardId == "S01-DS10")
+        if (DisastersEnabled && State.ActiveDisaster?.CardId == "S01-DS10")
             DamageMasterNonLethal(0, 1, "〈堙灭〉", neutralSource: true);
-        if (State.ActiveDisaster?.CardId == "S01-DS10")
+        if (DisastersEnabled && State.ActiveDisaster?.CardId == "S01-DS10")
             DamageMasterNonLethal(1, 1, "〈堙灭〉", neutralSource: true);
-        if (State.DisasterValue > 8)
+        if (DisastersEnabled && State.DisasterValue > 8)
         {
             State.ResumeTurnStartAfterStack = true;
             BeginDisasterTrigger(opening: State.Round == 1);
             if (State.EffectStack.Count > 0 || State.PendingPrompts.Count > 0) return;
             State.ResumeTurnStartAfterStack = false;
         }
-        else
+        else if (DisastersEnabled)
         {
             AddEvent("phase-detail", playerIndex, $"当前天灾值为 {State.DisasterValue}，未达到触发条件");
         }
@@ -503,7 +631,7 @@ public sealed partial class L12GameEngine
 
         State.Phase = L12Phase.Main;
         AddEvent("phase", playerIndex, "进入主要阶段");
-        BeginMainPhaseDisasterEffect();
+        if (DisastersEnabled) BeginMainPhaseDisasterEffect();
     }
 
     private CommandResult EndTurn(int playerIndex)
@@ -511,7 +639,7 @@ public sealed partial class L12GameEngine
         if (!CanAct(playerIndex)) return CommandResult.Reject("只能在自己的主要阶段结束回合");
         State.Phase = L12Phase.End;
         AddEvent("phase", playerIndex, "执行结束阶段");
-        ResolveEndPhaseDisasterEffect(playerIndex);
+        if (DisastersEnabled) ResolveEndPhaseDisasterEffect(playerIndex);
         if (State.PendingPrompts.Count > 0 || State.EffectStack.Count > 0) return CommandResult.Ok();
         CompleteEndTurn(playerIndex);
         return CommandResult.Ok();
@@ -535,12 +663,11 @@ public sealed partial class L12GameEngine
             ResetTemporaryCardState(player, State.TurnSerial);
             player.UsedAbilities.Clear();
         }
-        if (State.ActiveDisaster?.CardId == "S01-DS10")
-            State.DisasterValue = 0;
+        if (!DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10")
+            SetDisasterValue(0);
         else
         {
-            State.DisasterValue++;
-            AddEvent("disaster-value", playerIndex, $"天灾值增加至 {State.DisasterValue}");
+            AdjustDisasterValue(1, playerIndex, "天灾值增加至 {value}");
         }
         AddEvent("end-turn", playerIndex, $"{current.Name} 结束回合");
         if (State.ExtraTurnsForPlayer == playerIndex)
@@ -583,15 +710,6 @@ public sealed partial class L12GameEngine
             player.MoraleDeck.RemoveAt(0);
             card.Tapped = tapped;
             player.Morale.Add(card);
-            // Both Olympus morale faces are morale cards. Their shared back is God Power,
-            // so either face must create the same God Power mirror for board presentation
-            // and consumption rules.
-            if (card.CardId is "S02-05C1" or "S02-05C1A")
-            {
-                var godPower = CreateCard("S02-05C1", card.InstanceId);
-                godPower.Tapped = card.Tapped;
-                player.SpecialZones.GodPower.Add(godPower);
-            }
             added++;
         }
         return added;
@@ -633,8 +751,8 @@ public sealed partial class L12GameEngine
         foreach (var card in returned)
         {
             player.Morale.Remove(card);
-            player.SpecialZones.GodPower.RemoveAll(power => power.InstanceId == card.InstanceId);
             card.Tapped = false;
+            card.IsGodPower = false;
             card.CannotUntapUntilRound = 0;
             ReturnMoraleCardToDestination(player, card);
         }
@@ -675,11 +793,6 @@ public sealed partial class L12GameEngine
         player.MasterTapped = false;
         foreach (var morale in player.Morale)
             if (morale.CannotUntapUntilRound < State.Round) morale.Tapped = false;
-        foreach (var godPower in player.SpecialZones.GodPower)
-        {
-            var morale = player.Morale.FirstOrDefault(card => card.InstanceId == godPower.InstanceId);
-            if (morale is not null) godPower.Tapped = morale.Tapped;
-        }
         foreach (var row in player.Field)
             foreach (var card in row)
                 if (card is not null && card.CannotUntapUntilRound < State.Round) card.Tapped = false;
@@ -693,6 +806,7 @@ public sealed partial class L12GameEngine
             L12DerivedStats.ResetForCompletedTurn(card, completedTurn);
             card.HasStrongAttack = false;
             card.HasSureHit = false;
+            card.HasShock = false;
             card.AttacksThisTurn = 0;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
             if (card.ReadyAfterNextKillUntilTurn <= completedTurn)
@@ -828,6 +942,7 @@ public sealed partial class L12GameEngine
         card.HasCharge = false;
         card.HasStrongAttack = false;
         card.HasSureHit = false;
+        card.HasShock = false;
         card.AttackNoLossUntilTurn = -1;
         card.NextAttackNoLossUses = 0;
         card.ReadyAfterNextKillUntilTurn = -1;
@@ -839,6 +954,7 @@ public sealed partial class L12GameEngine
         card.Tapped = false;
         card.SummonRound = 0;
         card.LastMovedTurn = -1;
+        card.LastCavalryMoveTurn = -1;
         card.CannotUntapUntilRound = 0;
         card.CannotRespondUntilRound = 0;
         card.SetRound = 0;

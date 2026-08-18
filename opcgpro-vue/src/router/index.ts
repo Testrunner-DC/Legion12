@@ -13,6 +13,7 @@ export const router = createRouter({
     { path: '/cards', name: 'cards', component: () => import('@/l12/CardArchive.vue') },
     { path: '/rankings', name: 'rankings', component: () => import('@/l12/site/RankingsPage.vue') },
     { path: '/me', name: 'me', component: () => import('@/l12/site/ProfilePage.vue') },
+    { path: '/admin', name: 'admin', component: () => import('@/l12/site/AdminPage.vue') },
     { path: '/records', name: 'records', component: () => import('@/l12/MatchRecords.vue') },
     { path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue') },
     { path: '/deck-editor', component: () => import('@/l12/L12DeckEditor.vue'), meta: { immersive: true } },

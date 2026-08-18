@@ -66,6 +66,7 @@ public sealed class L12RoomOptions
 {
     public string Spectating { get; init; } = "public";
     public string HandVisibility { get; init; } = "request";
+    public string DisasterMode { get; init; } = "all";
 }
 
 public sealed class L12CardInstance
@@ -94,6 +95,7 @@ public sealed class L12CardInstance
     public bool HasCharge { get; set; }
     public bool HasStrongAttack { get; set; }
     public bool HasSureHit { get; set; }
+    public bool HasShock { get; set; }
     public int AttackNoLossUntilTurn { get; set; } = -1;
     public int NextAttackNoLossUses { get; set; }
     public int ReadyAfterNextKillUntilTurn { get; set; } = -1;
@@ -105,6 +107,7 @@ public sealed class L12CardInstance
     public bool Tapped { get; set; }
     public int SummonRound { get; set; }
     public int LastMovedTurn { get; set; } = -1;
+    public int LastCavalryMoveTurn { get; set; } = -1;
     public int CannotUntapUntilRound { get; set; }
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
@@ -154,6 +157,9 @@ public sealed class L12MoraleCard
     public required string InstanceId { get; init; }
     public required string CardId { get; init; }
     public bool Tapped { get; set; }
+    // 奥林匹斯士气的卡面与活跃/休整是两个独立维度：
+    // false = 士气面，true = 神力面；Tapped 只描述活跃/休整。
+    public bool IsGodPower { get; set; }
     public int CannotUntapUntilRound { get; set; }
 }
 
@@ -202,15 +208,18 @@ public sealed class L12PlayerState
     public int TombNamedLegionsLeftThisTurn { get; set; }
     public int NextActiveTacticSurcharge { get; set; }
     public bool MulliganDone { get; set; }
+    public bool TrialOrderDone { get; set; }
 }
 
 public sealed class L12S2SpecialZones
 {
     public int Runes { get; set; }
     public int TrialLevel { get; set; }
-    public int TrialCapacity { get; set; } = 1;
+    public int TrialCapacity { get; set; }
     public List<L12CardInstance> GodPower { get; } = [];
     public List<L12CardInstance> Trials { get; } = [];
+    /// <summary>伊西斯以主宰效果完成的五种卡诺匹斯圣物进度；不占用通常圣物区。</summary>
+    public List<L12CardInstance> CanopicProgress { get; } = [];
 }
 
 public sealed record L12AttackTarget(string Type, string? InstanceId = null);
@@ -353,6 +362,7 @@ public sealed class L12GameState
     public int Round { get; set; } = 1;
     public int TurnSerial { get; set; }
     public int DisasterValue { get; set; }
+    public string DisasterMode { get; init; } = "all";
     public List<L12CardInstance> DisasterPool { get; } = [];
     public List<L12CardInstance> DisasterDeck { get; } = [];
     public List<L12CardInstance> BannedDisasters { get; } = [];
@@ -402,6 +412,8 @@ public sealed record L12GameSnapshot(
     int[] InitiativeRolls,
     L12Phase Phase,
     int Round,
+    int TurnSerial,
+    string DisasterMode,
     int DisasterValue,
     object? ActiveDisaster,
     object[] DisasterDeck,

@@ -234,6 +234,37 @@ public sealed class ExtendedCardEffectsTests
         PassResponses(game);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ActiveGodPowerMakesOrdinaryMoralePaymentAPlayerChoice(bool payWithGodPower)
+    {
+        var game = Create(0, 1);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var legion = Card("S01-0116", "god-power-payment-legion");
+        player.Hand.Add(legion);
+        var godPower = player.Morale.First(card => !card.Tapped);
+        godPower.IsGodPower = true;
+        var ordinaryMorale = player.Morale.First(card => !card.Tapped && card.InstanceId != godPower.InstanceId);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var paymentPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", paymentPrompt.Kind);
+        Assert.Equal("play-morale-choice", paymentPrompt.Continuation);
+        Assert.Equal("god-power", paymentPrompt.Data[$"{godPower.InstanceId}:resourceType"]);
+
+        var selected = payWithGodPower ? godPower : ordinaryMorale;
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            CardInstanceIds: [selected.InstanceId])).Accepted);
+
+        Assert.Equal(!payWithGodPower, ordinaryMorale.Tapped);
+        Assert.False(ordinaryMorale.IsGodPower);
+        Assert.Equal(payWithGodPower, godPower.Tapped);
+        Assert.True(godPower.IsGodPower);
+        Assert.Same(legion, player.Field[0][0]);
+    }
+
     [Fact]
     public void ExtendedAbilityMetadataIsPublishedBySnapshots()
     {
@@ -406,7 +437,7 @@ public sealed class ExtendedCardEffectsTests
     [Theory]
     [InlineData("S02-05C1")]
     [InlineData("S02-05C1A")]
-    public void BothOlympusMoraleFacesCanBeConsumedAsGodPower(string cardId)
+    public void BothOlympusMoraleCardIdsUseTheirCurrentFaceWhenConsumedAsGodPower(string cardId)
     {
         var player = new L12PlayerState
         {
@@ -417,13 +448,12 @@ public sealed class ExtendedCardEffectsTests
             MasterId = "S02-05M1",
             MasterName = "Artemis",
         };
-        var morale = new L12MoraleCard { CardId = cardId, InstanceId = $"{cardId}-morale" };
+        var morale = new L12MoraleCard { CardId = cardId, InstanceId = $"{cardId}-morale", IsGodPower = true };
         player.Morale.Add(morale);
-        player.SpecialZones.GodPower.Add(Card("S02-05C1", morale.InstanceId));
 
         Assert.True(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1));
         Assert.True(morale.Tapped);
-        Assert.True(player.SpecialZones.GodPower.Single().Tapped);
+        Assert.False(morale.IsGodPower);
     }
 
     [Fact]

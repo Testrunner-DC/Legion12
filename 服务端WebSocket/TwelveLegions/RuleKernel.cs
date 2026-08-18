@@ -137,7 +137,7 @@ public static class L12S2ZoneOps
     public static void GainRunes(L12PlayerState player, int count)
     {
         if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
-        player.SpecialZones.Runes += count;
+        player.SpecialZones.Runes = Math.Min(3, player.SpecialZones.Runes + count);
     }
 
     public static bool SpendRunes(L12PlayerState player, int count)
@@ -151,22 +151,23 @@ public static class L12S2ZoneOps
     {
         if (count < 0) return false;
         var moralePower = player.Morale
-            .Where(card => (card.CardId is "S02-05C1" or "S02-05C1A") && !card.Tapped)
+            .Where(card => card.IsGodPower && !card.Tapped)
             .Take(count)
             .ToArray();
-        if (moralePower.Length == count)
+        if (moralePower.Length < count) return false;
+        foreach (var card in moralePower)
         {
-            foreach (var morale in moralePower)
-            {
-                morale.Tapped = true;
-                var mirror = player.SpecialZones.GodPower.FirstOrDefault(card => card.InstanceId == morale.InstanceId);
-                if (mirror is not null) mirror.Tapped = true;
-            }
-            return true;
+            card.Tapped = true;
+            card.IsGodPower = false;
         }
-        var active = player.SpecialZones.GodPower.Where(card => !card.Tapped).Take(count).ToArray();
-        if (active.Length < count) return false;
-        foreach (var card in active) card.Tapped = true;
+        return true;
+    }
+
+    public static bool FlipMoraleFace(L12PlayerState player, string instanceId, bool? toGodPower = null)
+    {
+        var morale = player.Morale.FirstOrDefault(card => card.InstanceId == instanceId);
+        if (morale is null || morale.CardId is not ("S02-05C1" or "S02-05C1A")) return false;
+        morale.IsGodPower = toGodPower ?? !morale.IsGodPower;
         return true;
     }
 

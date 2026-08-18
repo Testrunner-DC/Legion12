@@ -126,7 +126,8 @@ const replayGame = computed<GameState | null>(() => {
     you: 0, revision: currentCommand.value?.revision ?? 0, activePlayer: value(raw, 'ActivePlayer', 'activePlayer', 0),
     firstPlayer: value(raw, 'FirstPlayer', 'firstPlayer', 0), diceWinner: value(raw, 'DiceWinner', 'diceWinner', 0),
     initiativeRolls: value(raw, 'InitiativeRolls', 'initiativeRolls', [0, 0]), phase: typeof rawPhase === 'number' ? phaseNames[rawPhase] ?? 'Main' : rawPhase,
-    round: value(raw, 'Round', 'round', 1), disasterValue: value(raw, 'DisasterValue', 'disasterValue', 0),
+    round: value(raw, 'Round', 'round', 1), disasterMode: value(raw, 'DisasterMode', 'disasterMode', 'all'),
+    disasterValue: value(raw, 'DisasterValue', 'disasterValue', 0),
     activeDisaster: replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null)), players: value<any[]>(raw, 'Players', 'players', []).map(replayPlayer),
     pendingDefense: defense ? {
       attackerPlayer: value(defense, 'AttackerPlayer', 'attackerPlayer', 0),

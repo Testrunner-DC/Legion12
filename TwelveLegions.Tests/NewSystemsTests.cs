@@ -282,7 +282,8 @@ public sealed class NewSystemsTests
         Assert.Contains("\"hidden\":true", spectatorJson);
         Assert.DoesNotContain(spectator.ChosenDisasters, item => item is L12CardInstance);
         Assert.IsType<L12CardInstance>(spectator.SessionDisasters[0]);
-        Assert.All(spectator.SessionDisasters.Skip(1), item => Assert.IsNotType<L12CardInstance>(item));
+        Assert.All(spectator.SessionDisasters.Skip(1).Take(2), item => Assert.IsNotType<L12CardInstance>(item));
+        Assert.Equal("S01-DS10", Assert.IsType<L12CardInstance>(spectator.SessionDisasters[3]).CardId);
         Assert.Equal(game.State.RevealedDisasters[0].InstanceId,
             Assert.IsType<L12CardInstance>(spectator.SessionDisasters[0]).InstanceId);
 
@@ -303,7 +304,8 @@ public sealed class NewSystemsTests
             Assert.Empty(filteredEvent.Cards);
             Assert.DoesNotContain(opponentChoice.Name, filteredEvent.Text);
             Assert.All(playerSnapshot.SessionDisasters.Take(2), item => Assert.IsType<L12CardInstance>(item));
-            Assert.All(playerSnapshot.SessionDisasters.Skip(2), item => Assert.IsNotType<L12CardInstance>(item));
+            Assert.IsNotType<L12CardInstance>(playerSnapshot.SessionDisasters[2]);
+            Assert.Equal("S01-DS10", Assert.IsType<L12CardInstance>(playerSnapshot.SessionDisasters[3]).CardId);
             var visibleSessionIds = playerSnapshot.SessionDisasters.Take(2)
                 .Cast<L12CardInstance>().Select(card => card.InstanceId).ToArray();
             Assert.Equal(game.State.RevealedDisasters[0].InstanceId, visibleSessionIds[0]);

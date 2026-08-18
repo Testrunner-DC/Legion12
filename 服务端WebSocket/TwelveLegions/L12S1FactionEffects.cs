@@ -43,7 +43,12 @@ public sealed partial class L12GameEngine
         "S01-01D1" => [new("palaceReward", "我方 回合1次 若本回合返还的士气高于1张，可从士气牌库追加2张休整的士气，随后抽取1张牌。"), new("palaceExchange", "主动休整 击杀对方1张军团，我方需返还此军团相应费用的士气。随后选择墓地1张费用不高于本次返还士气数量的【天廷】军团，将其活跃登场。")],
         "S01-01M2" => [new("mengpoSilence", "返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。"), new("mengpoMorale", "若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气。")],
         "S01-02D1" => [new("sunTopThree", "我方 回合1次 可消耗2士气：公开牌库顶部3张牌，选择其中1张加入手牌，其余卡牌自选顺序返回牌库底部。随后可选择墓地1张【太阳城】卡牌加入手牌。"), new("sunBottomEnemy", "我方 回合1次 可消耗2士气：选择对方1张兵力不高于4000的军团，将其返回所有者牌库底部。")],
-        "S01-02M1" => [new("isisCanopic", "我方回合 可弃置我方战场3张<陵墓守卫>：将墓地1张名字包含<卡诺匹斯>的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量。")],
+        "S01-02M1" =>
+        [
+            new("isisCanopic", "我方回合 可弃置我方战场3张<陵墓守卫>：将墓地1张名字包含<卡诺匹斯>的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量。"),
+            new("isisVictory", "圣物区存在5张名字包含<卡诺匹斯>的圣物时：可使墓地的<复苏的奥西里斯>替换<伊西斯>登场，并获得游戏胜利。"),
+        ],
+        "S01-02M2" => [new("isisVictory", "圣物区存在5张名字包含<卡诺匹斯>的圣物时：可替换<伊西斯>登场，并获得游戏胜利。")],
         "S01-02M3" =>
         [
             new("medjedDebuff", "我方 回合1次 可消耗1士气：选择对方1张军团本回合兵力-1000。若额外休整我方1张<陵墓守卫>，则选择的军团本回合兵力-3000作为代替。"),
@@ -330,7 +335,13 @@ public sealed partial class L12GameEngine
             case "horemheb-charge": if (chosen[0] != "skip" && source is not null) { KillTarget(chosen[0], "被霍列姆赫布弃置"); source.HasCharge = true; } FinishStackItem(item); return true;
             case "nefertiti-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "nitocris-ready": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
-            case "ankh-enter": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000; FinishStackItem(item); return true; }
+            case "ankh-enter":
+            {
+                var target = FindOnField(player, chosen[0], out _, out _);
+                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "安卡神碑");
+                FinishStackItem(item);
+                return true;
+            }
             case "ankh-ready-target": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "asgard-draw-heal": if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "asgard-heal"); else FinishStackItem(item); return true;
             case "canopic-search":
@@ -444,9 +455,20 @@ public sealed partial class L12GameEngine
             case "isis-canopic":
             {
                 var relic = player.Graveyard.First(card => card.InstanceId == chosen[0]); player.Graveyard.Remove(relic);
-                if (player.Relic is null) player.Relic = relic; else player.ExtraRelics.Add(relic);
-                FinishStackItem(item); return true;
+                ResetCardAfterLeavingField(relic);
+                player.SpecialZones.CanopicProgress.Add(relic);
+                CreatePrompt(item.Controller, "option", "伊西斯：选择抽取1张牌或主宰增加1点血量",
+                    ["draw", "heal"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "isis-canopic-reward", ["choiceMode"] = "instant",
+                        ["draw"] = "抽取1张牌", ["heal"] = "主宰增加1点血量",
+                    });
+                return true;
             }
+            case "isis-canopic-reward":
+                if (chosen[0] == "draw") Draw(player, 1); else HealMaster(item.Controller, 1, "伊西斯");
+                FinishStackItem(item); return true;
             case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.Troops -= 1000; FinishStackItem(item); return true; }
             case "medjed-extra-choice":
                 if (chosen[0] == "normal") { ApplyDeclaredTroopsDelta(item, -1000); FinishStackItem(item); }
@@ -676,7 +698,9 @@ public sealed partial class L12GameEngine
             case "gramDamage": DamageMasterNonLethal(1 - item.Controller, 1, "神剑格拉墨"); FinishStackItem(item); return true;
             case "isisCanopic":
             {
-                var choices = player.Graveyard.Where(card => card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact").Select(card => card.InstanceId).ToArray();
+                var completedIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var choices = player.Graveyard.Where(card => card.Name.Contains("卡诺匹斯", StringComparison.Ordinal)
+                    && card.CardType == "artifact" && !completedIds.Contains(card.CardId)).Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "card", "伊西斯：选择墓地1张卡诺匹斯圣物置入圣物区", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "isis-canopic" }); return true;
             }

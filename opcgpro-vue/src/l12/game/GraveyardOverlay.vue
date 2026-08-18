@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 
-const props = defineProps<{ players: PlayerView[]; initialPlayer: number }>()
-const emit = defineEmits<{ close: []; focus: [card: Card] }>()
+const props = defineProps<{ players: PlayerView[]; initialPlayer: number; ownPlayerIndex: number; canActivateOsiris?: boolean }>()
+const emit = defineEmits<{ close: []; focus: [card: Card]; ability: [card: Card, ability: string] }>()
 const player = computed(() => props.players.find(item => item.playerIndex === props.initialPlayer) ?? props.players[0])
 </script>
 
@@ -20,8 +20,11 @@ const player = computed(() => props.players.find(item => item.playerIndex === pr
           <article>
             <h3>{{ player.name }} <span>{{ player.graveyard?.length ?? player.graveyardCount ?? 0 }} 张</span></h3>
             <div class="graveyard-cards">
-              <CardTile v-for="card in [...(player.graveyard || [])].reverse()" :key="card.instanceId" :card="card"
-                @mouseenter="emit('focus', card)" @select="emit('focus', card)" />
+              <div v-for="card in [...(player.graveyard || [])].reverse()" :key="card.instanceId" class="graveyard-card-entry">
+                <CardTile :card="card" @mouseenter="emit('focus', card)" @select="emit('focus', card)" />
+                <button v-if="player.playerIndex === ownPlayerIndex && canActivateOsiris && card.cardId === 'S01-02M2'"
+                  class="osiris-victory" @mouseenter="emit('focus', card)" @click.stop="emit('ability', card, 'isisVictory')">特殊胜利</button>
+              </div>
               <p v-if="!player.graveyard?.length">墓地为空</p>
             </div>
           </article>
@@ -30,3 +33,7 @@ const player = computed(() => props.players.find(item => item.playerIndex === pr
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.graveyard-card-entry{position:relative}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:5px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:9px;font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
+</style>

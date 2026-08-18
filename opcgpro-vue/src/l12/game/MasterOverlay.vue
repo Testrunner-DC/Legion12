@@ -16,8 +16,8 @@ const abilities = computed<AbilityEntry[]>(() => {
     { id: 'nonLethal', label: '返还 4 张士气：对方主宰失去 1 点血量，此效果不能令其血量低于 1。' },
   ]
   if (props.player.master.masterId === 'S01-04M2') return [
-    { id: 'frontBuff', label: '消耗 1 张活跃士气：选择我方 1 张【高天原】军团发动前排强化。' },
-    { id: 'kusanagi', label: '消耗 2 张活跃士气：将圣物区的〈草雉剑〉作为军团置入我方前排。' },
+    { id: 'frontBuff', label: '我方 回合1次 可消耗1士气：选择我方1张【高天原】军团，本回合位于前排进攻时兵力+2000。' },
+    { id: 'kusanagi', label: '消耗2士气：将我方〈草薙剑〉置入前排，视为1张兵力5000的【武者】军团。（草薙剑仍可发动其效果）〈草薙剑〉离场时：可选择将其放回牌库顶部。' },
   ]
   return []
 })

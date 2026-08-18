@@ -14,14 +14,16 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 {
     private readonly L12RoomManager _rooms;
     private readonly MatchRecorder _recorder;
+    private readonly L12PlatformStore _platform;
     private readonly int _cardCount;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private WebApplication? _app;
 
-    public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, int cardCount)
+    public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform, int cardCount)
     {
         _rooms = rooms;
         _recorder = recorder;
+        _platform = platform;
         _cardCount = cardCount;
     }
 
@@ -36,7 +38,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app = builder.Build();
         _app.Use(async (context, next) =>
         {
-            context.Response.Headers.AccessControlAllowOrigin = "*";
+            var origin = context.Request.Headers.Origin.ToString();
+            if (IsAllowedOrigin(origin)) context.Response.Headers.AccessControlAllowOrigin = origin;
+            context.Response.Headers.Vary = "Origin";
+            context.Response.Headers.AccessControlAllowHeaders = "Content-Type, Authorization";
+            context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, OPTIONS";
+            if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
             await next();
         });
         _app.UseWebSockets();
@@ -46,6 +53,54 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var match = await _recorder.GetMatchAsync(matchId);
             return match is null ? Results.NotFound() : Results.Ok(match);
+        });
+        _app.MapPost("/api/auth/register", (AuthRequest request) =>
+        {
+            var result = _platform.Register(request.Username ?? string.Empty, request.Password ?? string.Empty);
+            return result.Success ? Results.Ok(new { result.Message, result.Account, result.Token }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapPost("/api/auth/login", (AuthRequest request) =>
+        {
+            var result = _platform.Login(request.Username ?? string.Empty, request.Password ?? string.Empty);
+            return result.Success ? Results.Ok(new { result.Message, result.Account, result.Token }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapGet("/api/auth/me", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(account);
+        });
+        _app.MapPost("/api/auth/change-password", (HttpRequest request, ChangePasswordRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var result = _platform.ChangePassword(account.Id, body.CurrentPassword ?? string.Empty, body.NewPassword ?? string.Empty);
+            return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapPost("/api/bugs", (HttpRequest request, BugRequest body) =>
+        {
+            if (string.IsNullOrWhiteSpace(body.Description)) return Results.BadRequest(new { message = "请填写问题描述" });
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return Results.Ok(_platform.AddBug(account, body.Title ?? string.Empty, body.Description, body.Page ?? string.Empty,
+                body.RoomCode, body.MatchId, body.Version ?? "dev"));
+        });
+        _app.MapGet("/api/admin/accounts", (HttpRequest request) =>
+            IsAdmin(request) ? Results.Ok(_platform.Accounts()) : Results.Unauthorized());
+        _app.MapPut("/api/admin/accounts/{id}/role", (HttpRequest request, string id, RoleRequest body) =>
+            !IsAdmin(request) ? Results.Unauthorized() : _platform.SetRole(id, body.Role ?? string.Empty) ? Results.Ok() : Results.BadRequest());
+        _app.MapGet("/api/admin/bugs", (HttpRequest request, string? status) =>
+            IsAdmin(request) ? Results.Ok(_platform.Bugs(status)) : Results.Unauthorized());
+        _app.MapPatch("/api/admin/bugs/{id}", (HttpRequest request, string id, BugUpdateRequest body) =>
+        {
+            if (!IsAdmin(request)) return Results.Unauthorized();
+            var updated = _platform.UpdateBug(id, body.Status, body.Priority, body.Assignee, body.AdminNotes);
+            return updated is null ? Results.NotFound() : Results.Ok(updated);
+        });
+        _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
+        _app.MapPut("/api/admin/content/{key}", (HttpRequest request, string key, ContentRequest body) =>
+        {
+            if (!IsAdmin(request)) return Results.Unauthorized();
+            _platform.SetContent(key, body.Value ?? string.Empty);
+            return Results.Ok(new { key, body.Value });
         });
         _app.Map("/ws", async context =>
         {
@@ -121,6 +176,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "createRoom" => CreateRoom(sessionId, root),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                 "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),
+                "leaveRoom" => _rooms.LeaveRoom(sessionId),
                 "selectDeck" => _rooms.SelectDeck(sessionId, GetInt(root, "deckIndex")),
                 "selectCustomDeck" when root.TryGetProperty("deck", out var deckElement)
                     => SelectCustomDeck(sessionId, deckElement),
@@ -204,8 +260,26 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         => root.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? value.GetBoolean() : fallback;
 
+    private static bool IsAllowedOrigin(string origin)
+    {
+        if (string.IsNullOrWhiteSpace(origin)) return false;
+        if (Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.Host is "localhost" or "127.0.0.1" or "::1") return true;
+        var configured = Environment.GetEnvironmentVariable("L12_ALLOWED_ORIGINS") ?? string.Empty;
+        return configured.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(origin, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private bool IsAdmin(HttpRequest request) => _platform.Authenticate(request.Headers.Authorization)?.Role == "admin";
+
     public async ValueTask DisposeAsync()
     {
         if (_app is not null) await _app.DisposeAsync();
     }
 }
+
+public sealed record AuthRequest(string? Username, string? Password);
+public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+public sealed record RoleRequest(string? Role);
+public sealed record ContentRequest(string? Value);
+public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode, string? MatchId, string? Version);
+public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes);

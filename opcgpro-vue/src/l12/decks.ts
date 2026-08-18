@@ -153,6 +153,7 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   const master = byId.get(deck.masterId)
   if (!deck.name.trim() || deck.name.trim().length > 24) return '牌库名称须为 1–24 个字符'
   if (!master || master.cardType !== 'master') return '请选择主宰'
+  if (master.id === 'S01-02M2') return '复苏的奥西里斯不能被选择为主宰；请选择伊西斯'
   const countedMainDeckSize = deck.cardIds.filter(id => id !== 'S01-0212').length
   if (countedMainDeckSize < 40 || countedMainDeckSize > 50) return `主牌库须为 40–50 张（陵墓守卫不计入，当前 ${countedMainDeckSize} 张）`
   const counts = new Map<string, number>()
@@ -170,11 +171,26 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     const card = byId.get(id)
     return !card || !['rune', 'divinity'].includes(card.cardType) || card.faction !== master.faction
   })) return '士气卡与主宰阵营不符'
+  const trialCapacity = trialCapacityForMaster(master)
+  if ((deck.specialIds ?? []).length !== trialCapacity) return trialCapacity
+    ? `试炼区须为 ${trialCapacity} 张（当前 ${(deck.specialIds ?? []).length} 张）`
+    : `${master.nameZh} 不能携带试炼`
+  if (new Set(deck.specialIds ?? []).size !== (deck.specialIds ?? []).length) return '试炼区不能放入重复卡牌'
   if ((deck.specialIds ?? []).some(id => {
     const card = byId.get(id)
     return !card || card.cardType !== 'trial' || card.faction !== master.faction
   })) return '特殊区卡牌与主宰阵营不符'
   return ''
+}
+
+export function trialCapacityForMaster(master: DeckCard | undefined) {
+  if (!master || master.faction !== 'otherworld') return 0
+  const effect = master.effect ?? ''
+  let capacity = 1
+  const carried = effect.match(/可携带\s*(\d+)\s*张[^。；\n]*试炼/)
+  if (carried) capacity = Math.max(capacity, Number(carried[1]) || 0)
+  for (const match of effect.matchAll(/可完成的试炼数量增加\s*(\d+)\s*张/g)) capacity += Number(match[1]) || 0
+  return capacity
 }
 
 export function buildMoraleDeck(master: DeckCard | undefined, catalog: DeckCard[]) {

@@ -18,7 +18,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0103", "S02-0501", "S02-0605", "S02-0606", "S02-0607", "S02-0612", "S02-0617",
+        "S02-0103", "S02-0501", "S02-0511", "S02-0517", "S02-0605", "S02-0606", "S02-0607", "S02-0612", "S02-0617",
     };
 
     private static readonly HashSet<string> S2FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
@@ -253,7 +253,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "S02-0515":
-                if (player.SpecialZones.GodPower.Count == 0)
+                if (!player.Morale.Any(morale => morale.IsGodPower))
                 {
                     FinishStackItem(item);
                     return true;
@@ -636,11 +636,39 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2FactionAttack(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
+        if (card.HasShock)
+        {
+            ApplyS2Shock(item, card);
+            item.Data["shockApplied"] = "true";
+        }
         if (card.CardId == "S02-0501")
         {
             card.HasStrongAttack = true;
             AddEvent("effect", item.Controller, $"{card.Name}本回合获得强攻", card);
             FinishStackItem(item);
+            return true;
+        }
+        if (card.CardId == "S02-0511")
+        {
+            if (State.PendingDefense?.Target.Type != "legion"
+                || !player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped))
+            {
+                FinishStackItem(item);
+                return true;
+            }
+            CreatePrompt(item.Controller, "optional", "帕洛特埃：是否消耗并翻转1神力，使此军团本回合兵力+1000并获得震击？", ["yes", "no"], 1, 1,
+                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-parrot-god-power" });
+            return true;
+        }
+        if (card.CardId == "S02-0517")
+        {
+            if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped))
+            {
+                FinishStackItem(item);
+                return true;
+            }
+            CreatePrompt(item.Controller, "optional", "彭忒西勒亚：是否消耗并翻转1神力，使此军团本回合兵力+2000？", ["yes", "no"], 1, 1,
+                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-penthesilea-god-power" });
             return true;
         }
         if (card.CardId == "S02-0605")
@@ -2132,8 +2160,10 @@ public sealed partial class L12GameEngine
             case "s2-bors-strong":
             {
                 var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null && TryConsumeMorale(player, 1)) source.HasStrongAttack = true;
-                FinishStackItem(item);
+                if (chosen[0] == "yes" && source is not null)
+                    BeginEffectMoralePayment(item, 1, "s2-bors-strong");
+                else
+                    FinishStackItem(item);
                 return true;
             }
             case "s2-percival-attack-discard":
@@ -2260,13 +2290,33 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
+            case "s2-parrot-god-power":
+            {
+                var source = FindSource(item);
+                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
+                {
+                    AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "帕洛特埃");
+                    source.HasShock = true;
+                    if (item.Data.GetValueOrDefault("shockApplied") != "true") ApplyS2Shock(item, source);
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-penthesilea-god-power":
+            {
+                var source = FindSource(item);
+                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
+                    AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "彭忒西勒亚");
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-flip-morale":
             {
                 if (chosen.Count == 0 || chosen[0] == "skip") { FinishStackItem(item); return true; }
                 var morale = player.Morale.FirstOrDefault(card => card.InstanceId == chosen[0]);
                 if (morale is not null)
                 {
-                    morale.Tapped = !morale.Tapped;
+                    L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true);
                     AddEvent("morale", item.Controller, "翻转1张士气", FindSource(item) is { } source ? [source] : []);
                 }
                 FinishStackItem(item);
@@ -2645,11 +2695,30 @@ public sealed partial class L12GameEngine
     private bool PromptS2FlipMorale(L12StackItem item, L12CardInstance source, bool optional = false, bool onlyTapped = false)
     {
         var player = State.Players[item.Controller];
-        var choices = player.Morale.Where(card => !onlyTapped || card.Tapped).Select(card => card.InstanceId).ToList();
+        var choices = player.Morale.Where(card => !card.IsGodPower && (!onlyTapped || card.Tapped)).Select(card => card.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return true; }
         if (optional) choices.Add("skip");
         CreatePrompt(item.Controller, "target-morale", $"{source.Name}：选择1张士气翻转", choices, optional ? 0 : 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-flip-morale" });
         return true;
+    }
+
+    private void ApplyS2Shock(L12StackItem item, L12CardInstance source)
+    {
+        var pending = State.PendingDefense;
+        if (pending?.Target.Type != "legion") return;
+        var defender = State.Players[1 - item.Controller];
+        var target = FindOnField(defender, pending.Target.InstanceId, out var row, out var slot);
+        if (target is null) return;
+        var adjacent = new[] { slot - 1, slot + 1 }
+            .Where(candidate => candidate is >= 0 and < 3)
+            .Select(candidate => defender.Field[row][candidate])
+            .Where(candidate => candidate is not null && IsFieldLegion(candidate) && !candidate.Hidden)
+            .Cast<L12CardInstance>()
+            .ToArray();
+        foreach (var candidate in adjacent)
+            AddTimedModifier(candidate, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), $"{source.Name}的震击");
+        if (adjacent.Length > 0)
+            AddEvent("effect", item.Controller, $"{source.Name}的震击使进攻目标左右相邻军团本回合兵力-2000", [source, .. adjacent]);
     }
 }

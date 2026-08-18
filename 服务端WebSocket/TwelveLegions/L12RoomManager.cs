@@ -53,8 +53,11 @@ public sealed class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
+        var normalizedOptions = NormalizeOptions(options);
+        if (normalizedOptions.DisasterMode == "season")
+            return Error(sessionId, "赛季天灾池需由管理员后台配置，当前仅作功能占位");
         Room room;
-        do { room = new Room { Code = GenerateRoomCode(), Options = NormalizeOptions(options) }; }
+        do { room = new Room { Code = GenerateRoomCode(), Options = normalizedOptions }; }
         while (!_rooms.TryAdd(room.Code, room));
         room.Sessions.Add(sessionId);
         session.RoomCode = room.Code;
@@ -139,7 +142,8 @@ public sealed class L12RoomManager
                 var playerNames = room.Sessions.Select(id => _sessions[id].Name).ToArray();
                 room.Game = new L12GameEngine(
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
-                    playerNames, room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray());
+                    playerNames, room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray(),
+                    disasterMode: room.Options.DisasterMode);
                 await _recorder.StartAsync(room.Game.State);
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room);
@@ -179,6 +183,40 @@ public sealed class L12RoomManager
         return BroadcastRoom(room);
     }
 
+    public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
+    {
+        if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (room.Game is not null) return Error(sessionId, "对局已开始，请在对局内投降后离开");
+
+        var playerIndex = session.PlayerIndex!.Value;
+        if (playerIndex == 0)
+        {
+            _rooms.TryRemove(room.Code, out _);
+            var messages = new List<OutgoingMessage>();
+            foreach (var id in room.Sessions.ToArray())
+            {
+                if (!_sessions.TryGetValue(id, out var member)) continue;
+                member.RoomCode = null;
+                member.PlayerIndex = null;
+                member.CustomDeck = null;
+                messages.Add(new OutgoingMessage(id, new
+                {
+                    type = id == sessionId ? "roomLeft" : "roomClosed",
+                    message = id == sessionId ? "房间已关闭" : "房主已关闭房间",
+                }));
+            }
+            return messages;
+        }
+
+        room.Sessions.Remove(sessionId);
+        room.Ready[playerIndex] = false;
+        session.RoomCode = null;
+        session.PlayerIndex = null;
+        session.CustomDeck = null;
+        return new[] { new OutgoingMessage(sessionId, new { type = "roomLeft", message = "已离开房间" }) }
+            .Concat(BroadcastRoom(room)).ToArray();
+    }
+
     private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
     {
         var players = room.Sessions.Select(id =>
@@ -204,7 +242,7 @@ public sealed class L12RoomManager
         return room.Sessions.Select(id => new OutgoingMessage(id, new
         {
             type = "roomState", roomCode = room.Code, yourPlayerIndex = _sessions[id].PlayerIndex,
-            players, decks, started = room.Game is not null,
+            players, decks, options = room.Options, started = room.Game is not null,
         })).ToArray();
     }
 
@@ -250,6 +288,7 @@ public sealed class L12RoomManager
     {
         var spectating = options?.Spectating is "friends" or "disabled" ? options.Spectating : "public";
         var handVisibility = options?.HandVisibility == "public" ? "public" : "request";
-        return new L12RoomOptions { Spectating = spectating, HandVisibility = handVisibility };
+        var disasterMode = options?.DisasterMode is "random" or "season" or "none" ? options.DisasterMode : "all";
+        return new L12RoomOptions { Spectating = spectating, HandVisibility = handVisibility, DisasterMode = disasterMode };
     }
 }

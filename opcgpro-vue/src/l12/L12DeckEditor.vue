@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import {
-  MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, loadDeckCatalog, loadSavedDecks,
+  MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   loadOfficialPresetDecks, saveDeck, validateDeck, type DeckCard, type OfficialL12PresetDeck, type SavedL12Deck,
 } from './decks'
 
@@ -48,12 +48,19 @@ onMounted(async () => {
 })
 
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
-const masters = computed(() => catalog.value.filter(card => card.cardType === 'master'))
+const masters = computed(() => catalog.value.filter(card => card.cardType === 'master' && card.id !== 'S01-02M2'))
 const selectedMaster = computed(() => byId.value.get(masterId.value))
+const automaticExtraCards = computed(() => selectedMaster.value?.id === 'S01-02M1'
+  ? [byId.value.get('S01-02M2')].filter(Boolean) as DeckCard[]
+  : [])
 const mainCards = computed(() => catalog.value.filter(card => MAIN_DECK_TYPES.has(card.cardType)))
 const totalCards = computed(() => Object.entries(counts.value).reduce((sum, [id, value]) => sum + (id === 'S01-0212' ? 0 : value), 0))
 const tombGuardCount = computed(() => counts.value['S01-0212'] || 0)
 const moraleIds = computed(() => buildMoraleDeck(selectedMaster.value, catalog.value))
+const trialCapacity = computed(() => trialCapacityForMaster(selectedMaster.value))
+const availableTrials = computed(() => catalog.value.filter(card => card.cardType === 'trial'
+  && card.faction === selectedMaster.value?.faction))
+const selectedTrials = computed(() => specialIds.value.map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
 const entries = computed(() => Object.entries(counts.value)
   .filter(([, count]) => count > 0)
   .map(([id, count]) => ({ card: byId.value.get(id)!, count }))
@@ -92,6 +99,25 @@ function chooseMaster(id: string) {
     if (card && master && (card.faction === 'universal' || card.faction === master.faction)) next[cardId] = count
   })
   counts.value = next
+  const capacity = trialCapacityForMaster(master)
+  specialIds.value = specialIds.value.filter(specialId => {
+    const card = byId.value.get(specialId)
+    return card?.cardType === 'trial' && card.faction === master?.faction
+  }).slice(0, capacity)
+}
+
+function toggleTrial(card: DeckCard) {
+  if (specialIds.value.includes(card.id)) {
+    specialIds.value = specialIds.value.filter(id => id !== card.id)
+    return
+  }
+  if (specialIds.value.length >= trialCapacity.value) {
+    notice.value = `该主宰的试炼区只能携带 ${trialCapacity.value} 张`
+    return
+  }
+  specialIds.value = [...specialIds.value, card.id]
+  selected.value = card
+  notice.value = ''
 }
 
 function add(card: DeckCard) {
@@ -214,6 +240,25 @@ function onDelete(name = activeDeckName.value ?? '') {
           <img v-if="selectedMaster.imageUrl" :src="selectedMaster.imageUrl" :alt="selectedMaster.nameZh"/>
           <div><b>{{ selectedMaster.nameZh }}</b><span>{{ factionLabels[selectedMaster.faction] }}</span><small>士气 {{ moraleIds.length }} 张</small></div>
         </article>
+        <section v-if="trialCapacity" class="trial-builder">
+          <header><b>额外区 · 试炼</b><span>{{ specialIds.length }}/{{ trialCapacity }}</span></header>
+          <p>试炼不计入主牌库；携带数量由主宰卡面规则决定。</p>
+          <div class="trial-options">
+            <button v-for="trial in availableTrials" :key="trial.id" type="button"
+              :class="{ selected: specialIds.includes(trial.id) }" @click="toggleTrial(trial)" @mouseenter="selected = trial">
+              <span class="trial-thumb"><img v-if="trial.imageUrl" :src="trial.imageUrl" :alt="trial.nameZh"/></span>
+              <b>{{ trial.nameZh }}</b><small>{{ trial.number }}</small>
+            </button>
+          </div>
+        </section>
+        <section v-if="automaticExtraCards.length" class="trial-builder automatic-extra-builder">
+          <header><b>额外区 · 主宰专属</b><span>自动配置</span></header>
+          <p>选择伊西斯时自动加入，不计入主牌库，也不能作为主宰选择。</p>
+          <div class="trial-options"><button v-for="card in automaticExtraCards" :key="card.id" type="button" @click="selected = card">
+            <span class="trial-thumb upright"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh"/></span>
+            <b>{{ card.nameZh }}</b><small>{{ card.number }}</small>
+          </button></div>
+        </section>
         <label>搜索<input v-model="query" placeholder="卡名、编号、效果"/></label>
         <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
         <label>卡池<select v-model="productFilter"><option value="all">S1 + S2</option><option value="S01">S1</option><option value="S02">S2</option></select></label>
@@ -252,6 +297,18 @@ function onDelete(name = activeDeckName.value ?? '') {
           <button aria-label="增加一张" :disabled="entry.count >= 3 || (entry.card.id !== 'S01-0212' && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
           <button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button>
         </article><p v-if="!entries.length">从中间卡池加入卡牌，双击卡面也可快速加入。</p></div>
+        <section v-if="trialCapacity" class="selected-trials">
+          <header><b>额外区 · 试炼</b><span>{{ selectedTrials.length }}/{{ trialCapacity }}</span></header>
+          <button v-for="trial in selectedTrials" :key="trial.id" type="button" @click="selected = trial">
+            <img v-if="trial.imageUrl" :src="trial.imageUrl" :alt="trial.nameZh"/><span>{{ trial.nameZh }}</span><i @click.stop="toggleTrial(trial)">×</i>
+          </button>
+        </section>
+        <section v-if="automaticExtraCards.length" class="selected-trials automatic-extra-list">
+          <header><b>额外区 · 主宰专属</b><span>自动</span></header>
+          <button v-for="card in automaticExtraCards" :key="card.id" type="button" @click="selected = card">
+            <img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh"/><span>{{ card.nameZh }}</span><i>锁定</i>
+          </button>
+        </section>
         <section v-if="selected" class="builder-card-detail" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">
           <img v-if="selected.imageUrl" :src="selected.imageUrl" :alt="selected.nameZh"/>
           <div><small>{{ selected.number }}</small><h3>{{ selected.nameZh }}</h3>
@@ -267,7 +324,7 @@ function onDelete(name = activeDeckName.value ?? '') {
 <style scoped>
 .deck-builder-shell{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(circle at 50% 0,rgba(22,108,120,.2),transparent 38%),linear-gradient(135deg,#080b0d,#160b0d 58%,#071216);color:#eee}
 .deck-builder-topbar{height:74px;flex:none;display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid #675f59;background:rgba(8,10,12,.94)}
-.deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:10px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#8d918e;font-size:9px;font-weight:800}.deck-builder-topbar input{width:190px}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:11px}
+.deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:10px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#b6bab6;font-size:11px;font-weight:900}.deck-builder-topbar input{width:260px;min-height:38px;padding:8px 11px;font-size:15px;font-weight:900}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:11px}
 .deck-loading{display:grid;flex:1;place-items:center;color:#b7b9b5}.deck-builder-grid{display:grid;grid-template-columns:238px minmax(480px,1fr) 330px;gap:10px;min-height:0;padding:10px}.deck-builder-grid>.grand-panel{min-height:0;padding:13px;border-radius:2px}.deck-builder-grid h2{margin:3px 0 12px;font-size:18px}.deck-filter{overflow:auto}.deck-filter label{display:grid;gap:5px;margin:10px 0;color:#959a96;font-size:10px;font-weight:800}.deck-filter input,.deck-filter select{width:100%}.master-preview{display:flex;gap:9px;align-items:center;padding:8px;border-left:2px solid #42abb3;background:#10191b}.master-preview img{width:46px;height:64px;object-fit:cover;border-radius:1px}.master-preview div{display:grid;gap:3px}.master-preview span,.master-preview small{color:#8f9996;font-size:10px}.preset-kicker{margin-top:18px}.preset-list,.saved-list{display:grid;gap:5px}.preset-list button,.saved-list article{border:1px solid #353c3e;background:#111619}.preset-list button,.saved-list article>button:first-child{display:grid;width:100%;gap:2px;padding:8px;text-align:left}.preset-list span,.saved-list span{color:#737d79;font-size:9px}.saved-list article{display:flex}.saved-list .delete{width:32px;border:0;border-left:1px solid #353c3e;color:#bd5961}.saved-list p{color:#666;font-size:10px}
 .deck-catalog{display:flex;flex-direction:column;overflow:hidden}.deck-catalog>header,.deck-list>header{display:flex;align-items:center;justify-content:space-between;flex:none}.deck-catalog>header span{color:#7f8985;font-size:10px}.deck-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px;overflow:auto;padding:3px 4px 20px}.deck-card{min-width:0;border:1px solid #303638;background:#101416;box-shadow:3px 3px 0 #050607}.deck-card.chosen{border-color:#c5a456}.card-image{position:relative;display:block;width:100%;aspect-ratio:5/7;overflow:hidden;border:0;background:#171d1f}.card-image img{width:100%;height:100%;object-fit:cover}.card-image>span{display:grid;height:100%;place-items:center;font-size:24px}.copy-count{position:absolute;right:4px;top:4px;padding:3px 6px;background:#07181a;color:#71d1d0}.deck-card>div{display:grid;gap:2px;padding:7px}.deck-card>div b{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.deck-card>div small{color:#757d79;font-size:8px}.add-card{width:100%;padding:6px;border:0;border-top:1px solid #303638;color:#cdbb89;font-size:9px}.add-card:disabled{color:#4d5351}
 .deck-card.landscape-thumbnail .card-image img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}.builder-card-detail.horizontal{max-height:160px}.builder-card-detail.horizontal img{width:116px;height:auto;aspect-ratio:8/5;object-fit:contain}
@@ -283,4 +340,7 @@ function onDelete(name = activeDeckName.value ?? '') {
 .deck-entries article{position:relative;isolation:isolate;gap:7px;margin-bottom:5px;padding:6px;overflow:hidden;border:1px solid #354041;border-left:2px solid #3da4ad}.deck-entry-banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 28%;opacity:.56;filter:saturate(.9) contrast(1.12)}.deck-entries article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,8,9,.91),rgba(9,13,14,.48) 48%,rgba(5,8,9,.88))}.deck-entries article>span{width:27px;height:27px;flex:none}.deck-entries article small{color:#d0d5d1}.deck-entries strong{color:#f0d98e}.deck-entries button{width:27px;height:27px;flex:none;border:1px solid #5c6461;background:#101516;color:#eee;font-size:15px;font-weight:900}.deck-entries button:hover:not(:disabled){border-color:#70d7df;background:#1b565b}
 @media(max-width:1180px){.deck-file-actions button{padding:7px 8px;font-size:10px}}
 @media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(4,1fr)}}
+.trial-builder{margin:12px 0;padding:10px;border:1px solid #42605a;background:#0a1212}.trial-builder>header,.selected-trials>header{display:flex;align-items:center;justify-content:space-between}.trial-builder>header span,.selected-trials>header span{color:#78d2be;font-size:10px;font-weight:900}.trial-builder>p{margin:5px 0 9px;color:#84918c;font-size:9px;line-height:1.5}.trial-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.trial-options button{min-width:0;padding:6px;border:1px solid #384744;background:#101817;color:#e9e5dc;text-align:left}.trial-options button.selected{border-color:#6cd5b4;background:#17332c}.trial-options b,.trial-options small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.trial-options small{margin-top:3px;color:#85908c;font-size:7px}.trial-thumb{position:relative;display:block;width:100%;aspect-ratio:5/7;margin-bottom:5px;overflow:hidden;background:#080b0b}.trial-thumb img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg)}
+.selected-trials{flex:none;display:grid;gap:4px;padding:8px 0;border-top:1px solid #3d4241}.selected-trials button{display:grid;grid-template-columns:42px 1fr 24px;align-items:center;gap:7px;min-height:34px;border:1px solid #3e514d;background:#101817;color:#eee;text-align:left}.selected-trials img{width:42px;height:30px;object-fit:cover}.selected-trials span{font-size:9px;font-weight:900}.selected-trials i{display:grid;height:100%;place-items:center;border-left:1px solid #3e514d;color:#db747c;font-style:normal}
+.trial-thumb.upright img{width:100%;height:100%;object-fit:cover;transform:translate(-50%,-50%)}.automatic-extra-builder{border-color:#8a6a3d}.automatic-extra-list i{width:auto!important;padding:0 5px!important;color:#cdbb89!important;font-size:7px!important}
 </style>

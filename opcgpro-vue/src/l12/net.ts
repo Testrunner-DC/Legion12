@@ -40,6 +40,13 @@ export function connect(): Promise<void> {
       const message = JSON.parse(String(event.data))
       if (message.type === 'session') l12State.sessionId = message.sessionId
       else if (message.type === 'roomState') l12State.room = message
+      else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
+        l12State.room = null
+        l12State.game = null
+        l12State.spectating = false
+        l12State.pendingAction = false
+        l12State.notice = message.message || ''
+      }
       else if (message.type === 'gameState') { l12State.game = message.state; l12State.spectating = Boolean(message.spectating); l12State.pendingAction = false }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') { l12State.notice = message.message; l12State.pendingAction = false }
     }
@@ -64,6 +71,7 @@ export function send(payload: unknown) {
 export interface RoomOptions {
   spectating: 'public' | 'friends' | 'disabled'
   handVisibility: 'request' | 'public'
+  disasterMode: 'all' | 'random' | 'season' | 'none'
 }
 
 export const createRoom = (options?: RoomOptions) => { l12State.spectating = false; send({ type: 'createRoom', options }) }
@@ -72,6 +80,7 @@ export const spectateRoom = (roomCode: string) => send({ type: 'spectateRoom', r
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
+export const leaveRoom = () => send({ type: 'leaveRoom' })
 export function gameAction(command: Record<string, unknown>) {
   if (l12State.pendingAction) return
   l12State.pendingAction = true

@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { connect, createRoom, joinRoom, l12State, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
+import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
 import { ensureOfficialPrebuiltDecks, loadSavedDecks } from '@/l12/decks'
 
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('friendly')
 const roomCode = ref('')
-const roomOptions = ref<RoomOptions>({ spectating: 'public', handVisibility: 'request' })
+const roomOptions = ref<RoomOptions>({ spectating: 'public', handVisibility: 'request', disasterMode: 'all' })
 const customDecks = ref(loadSavedDecks())
 const roomCodeCopied = ref(false)
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
+const optionLabels = {
+  spectating: { public: '公开观战', friends: '仅好友观战', disabled: '禁止观战' },
+  handVisibility: { request: '查看手牌需申请', public: '观战者可看手牌' },
+  disasterMode: { all: '全部天灾', random: '随机天灾', season: '赛季天灾', none: '不使用天灾' },
+} as const
 
 onMounted(async () => {
   customDecks.value = await ensureOfficialPrebuiltDecks()
@@ -54,10 +59,11 @@ async function copyRoomCode() {
     <section v-if="l12State.room" class="room-stage panel">
       <header><div><small>FRIENDLY ROOM</small><h2>友谊战整备室</h2></div><div class="room-code"><code>{{ l12State.room.roomCode }}</code><button type="button" @click="copyRoomCode">{{ roomCodeCopied ? '已复制' : '复制房间码' }}</button></div></header>
       <div class="versus">
-        <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ l12State.room.players[index]?.deckName || '尚未选择牌库' }}</p><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
+        <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ l12State.room.players[index]?.deckName || '尚未选择牌库' }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
       </div>
+      <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span></div>
       <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><b>{{ deck.name }}</b><span>{{ deck.cardIds.length }} 张 · {{ deck.masterId }}</span></button></div>
-      <footer><router-link to="/deck-editor">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
+      <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/deck-editor">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
     </section>
 
     <template v-else>
@@ -66,7 +72,7 @@ async function copyRoomCode() {
 
       <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位与休闲匹配的数据服务尚未接入。页面结构已预留，不会用测试数据伪造排行榜或匹配结果。</p><div class="match-options"><button disabled>排位匹配</button><button disabled>休闲匹配</button></div><button class="primary" disabled>匹配服务待接入</button></section>
 
-      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><label>玩家昵称<input v-model="l12State.nickname" maxlength="16" placeholder="输入玩家昵称"/></label><div class="join-row"><button class="primary" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button @click="onJoin">加入对战</button><button class="spectate-button" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div></div></section>
+      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><label>玩家昵称<input v-model="l12State.nickname" maxlength="16" placeholder="输入玩家昵称"/></label><div class="join-row"><button class="primary" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button @click="onJoin">加入对战</button><button class="spectate-button" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season" disabled>赛季天灾（后台配置后开放）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
@@ -80,4 +86,7 @@ async function copyRoomCode() {
 .join-actions{display:flex;gap:6px}.join-actions .spectate-button{border-color:#4faeb5;color:#80dce2}
 .room-code{display:flex;align-items:stretch;gap:7px}.room-code code{display:grid;place-items:center}.room-code button{padding:0 12px;border:1px solid #6d765f;background:#17201c;color:#f4e9bc;font-size:10px;font-weight:900;white-space:nowrap}.room-code button:hover{border-color:#e0c16d;background:#2a2718;color:#fff}
 @media(max-width:700px){.join-actions{display:grid;grid-template-columns:1fr 1fr}}
+.leave-room{border-color:#7b4147!important;background:#211116!important;color:#e7aeb3!important;font-weight:900}
+.player-online{margin-top:8px;color:#b76570;font-size:9px;font-style:normal;font-weight:900}.player-online.online{color:#58c99a}.room-rule-summary{display:flex;align-items:center;gap:8px;margin:-8px 0 18px;padding:11px 14px;border:1px solid #354149;background:#0a1117}.room-rule-summary b{margin-right:6px;color:#e4c675;font-size:11px}.room-rule-summary span{padding:4px 7px;background:#17212a;color:#aab4b8;font-size:9px;font-weight:900}
+@media(max-width:700px){.room-rule-summary{align-items:stretch;flex-direction:column}.room-rule-summary span{text-align:center}}
 </style>
