@@ -31,9 +31,16 @@ public sealed partial class L12GameEngine
         CompleteEffectMoralePayment(item, prompt.Data.GetValueOrDefault("afterPayment") ?? string.Empty, extra);
     }
 
+    private bool CanUseTombGuardsAsResource(L12PlayerState player)
+        => player.Faction == "taiyangcheng" && State.ActivePlayer == player.PlayerIndex;
+
+    private IEnumerable<L12CardInstance> ActiveTombGuardResources(L12PlayerState player)
+        => CanUseTombGuardsAsResource(player)
+            ? PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped)
+            : [];
+
     private bool HasActiveTombGuardResource(L12PlayerState player)
-        => State.ActivePlayer == player.PlayerIndex
-            && PublicLegions(player).Any(card => card.CardId == "S01-0212" && !card.Tapped);
+        => ActiveTombGuardResources(player).Any();
 
     private static bool HasActiveGodPowerResource(L12PlayerState player)
         => player.Morale.Any(card => card.IsGodPower && !card.Tapped);
@@ -48,9 +55,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
         var availableMorale = player.Morale.Where(card => !card.Tapped).ToArray();
-        var availableGuards = PublicLegions(player)
-            .Where(card => card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == playerIndex)
-            .ToArray();
+        var availableGuards = ActiveTombGuardResources(player).ToArray();
         var choices = availableMorale.Select(card => card.InstanceId)
             .Concat(availableGuards.Select(card => card.InstanceId))
             .ToArray();
@@ -77,8 +82,8 @@ public sealed partial class L12GameEngine
         var visibleCost = totalCost - temporary;
         if (selectedIds.Count != visibleCost || selectedIds.Distinct(StringComparer.Ordinal).Count() != visibleCost) return false;
         var morale = player.Morale.Where(card => selectedIds.Contains(card.InstanceId) && !card.Tapped).ToArray();
-        var guards = PublicLegions(player).Where(card => selectedIds.Contains(card.InstanceId)
-            && card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == player.PlayerIndex).ToArray();
+        var guards = ActiveTombGuardResources(player)
+            .Where(card => selectedIds.Contains(card.InstanceId)).ToArray();
         if (morale.Length + guards.Length != visibleCost) return false;
         player.TemporaryMorale -= temporary;
         foreach (var card in morale) card.Tapped = true;

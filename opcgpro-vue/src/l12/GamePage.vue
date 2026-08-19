@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
-import { gameAction, l12State } from './net'
+import { gameAction, l12State, leaveRoom } from './net'
 
 const router = useRouter()
 const game = computed(() => l12State.game)
@@ -10,6 +10,10 @@ const opponent = computed(() => l12State.room?.players.find(player => player.pla
 function surrender() {
   if (!game.value || game.value.phase === 'GameOver' || !window.confirm('确定要投降并结束本局对战吗？')) return
   gameAction({ type: 'surrender' })
+}
+function returnToLobby() {
+  if (game.value?.phase === 'GameOver' && l12State.room) leaveRoom()
+  router.push('/lobby')
 }
 </script>
 
@@ -31,7 +35,7 @@ function surrender() {
         <p>{{ game.winner === game.you ? '胜利' : '败北' }}</p>
         <strong>{{ game.winnerReason || '对局已结束' }}</strong>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
-        <button @click="router.push('/lobby')">返回大厅</button>
+        <button @click="returnToLobby">返回大厅</button>
       </div>
     </Transition>
   </div>

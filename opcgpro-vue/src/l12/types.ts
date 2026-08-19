@@ -61,6 +61,7 @@ export interface PlayerView {
   factionEffect?: { cardId: string; name: string; imageUrl?: string; effectText: string; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
   master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; hp: number; maxHp: number; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
   libraryCount: number
+  libraryTop?: Card | null
   hand?: Card[]
   handCount?: number
   moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
@@ -83,6 +84,7 @@ export interface PlayerView {
   }
   temporaryMorale?: number
   nextLegionChargeMaxCost?: number | null
+  nextS2PromotionGodPowerDiscount?: number
   mulliganDone: boolean
 }
 

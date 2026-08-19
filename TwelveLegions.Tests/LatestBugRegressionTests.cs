@@ -44,6 +44,7 @@ public sealed class LatestBugRegressionTests
             BaseTroops = definition.Troops ?? 0,
             Troops = definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
+            TrialValue = definition.TrialValue ?? 0,
         };
     }
 
@@ -69,6 +70,32 @@ public sealed class LatestBugRegressionTests
                 CardId = "S01-01C1",
                 Tapped = false,
             });
+    }
+
+    [Fact]
+    public async Task PlayerCanLeaveTheRoomAfterSurrenderEndsTheGame()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-room-leave", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var host = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        manager.Connect(host, "甲");
+        manager.Connect(guest, "乙");
+        var created = manager.CreateRoom(host);
+        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, roomCode);
+        await manager.SetReadyAsync(host, true);
+        await manager.SetReadyAsync(guest, true);
+
+        var surrender = JsonSerializer.SerializeToElement(new { type = "surrender" });
+        var surrenderMessages = await manager.HandleActionAsync(host, surrender);
+        Assert.Contains(surrenderMessages, message => JsonSerializer.SerializeToElement(message.Payload).GetProperty("type").GetString() == "gameState");
+
+        var leaveMessages = manager.LeaveRoom(host);
+        var payload = JsonSerializer.SerializeToElement(leaveMessages.Single(message => message.SessionId == host).Payload);
+        Assert.Equal("roomLeft", payload.GetProperty("type").GetString());
     }
 
     [Fact]
@@ -290,6 +317,7 @@ public sealed class LatestBugRegressionTests
         player.Morale.Add(new L12MoraleCard { InstanceId = "god-power", CardId = "S02-05C1A", Tapped = false, IsGodPower = true });
         var forge = Card("S02-0520", "dynamic-resource-forge");
         player.Relic = forge;
+        player.Field[0][0] = Card("S01-0212", "controlled-tomb-guard");
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
@@ -298,5 +326,55 @@ public sealed class LatestBugRegressionTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("请选择支付费用的士气、神力", prompt.Text);
         Assert.DoesNotContain("陵墓守卫", prompt.Text);
+    }
+
+    [Fact]
+    public void TrialLegionCanUseItsNormalTrialActionAndOnlyOncePerTurn()
+    {
+        var game = Create(6410);
+        var player = game.State.Players[0];
+        var legion = Card("S02-0604", "trial-legion");
+        var trial = Card("S02-06S4", "active-trial");
+        legion.SummonRound = 0;
+        player.Field[0][0] = legion;
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var first = game.Handle(0, new L12Command("activateAbility", legion.InstanceId, Ability: "trialAdvance"));
+
+        Assert.True(first.Accepted, first.Error);
+        Assert.True(legion.Tapped);
+        Assert.Equal(legion.TrialValue, trial.TrialProgress);
+        legion.Tapped = false;
+        var second = game.Handle(0, new L12Command("activateAbility", legion.InstanceId, Ability: "trialAdvance"));
+        Assert.False(second.Accepted);
+    }
+
+    [Fact]
+    public void WorldUpheavalRevealsLibraryTopAndBlocksMatchingProfessionLegion()
+    {
+        var game = Create(6411);
+        var player = game.State.Players[0];
+        var hand = Card("S02-0604", "same-profession-hand");
+        var top = Card("S02-0610", "visible-library-top");
+        Assert.Equal(hand.Profession, top.Profession);
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Hand.Add(hand);
+        player.Library.Add(top);
+        AddReadyMorale(player, 10);
+        game.State.ActiveDisaster = Card("S02-DS01", "world-upheaval");
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(game.SnapshotFor(1)));
+        Assert.Equal(top.CardId, document.RootElement.GetProperty("Players")[0]
+            .GetProperty("libraryTop").GetProperty("CardId").GetString());
+        var result = game.Handle(0, new L12Command("playCard", hand.InstanceId, Row: 0, Slot: 0));
+        Assert.False(result.Accepted);
+        Assert.Contains("天地异变", result.Error);
     }
 }

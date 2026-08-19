@@ -129,19 +129,21 @@ public sealed partial class L12GameEngine
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
-                libraryCount = player.Library.Count, hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
+                libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
+                hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
                 field = SnapshotField(player, revealCounters: true), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
-                player.TemporaryMorale, player.NextLegionChargeMaxCost, player.MulliganDone,
+                player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
             : new
             {
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
-                libraryCount = player.Library.Count, handCount = player.Hand.Count,
+                libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
+                handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, player.Morale,
                 field = SnapshotField(player, revealCounters: false), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, graveyardCount = player.Graveyard.Count,
-                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.MulliganDone,
+                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
         var prompts = State.PendingPrompts
@@ -717,7 +719,7 @@ public sealed partial class L12GameEngine
 
     private int ActiveResourceCount(L12PlayerState player)
         => player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
-            + PublicLegions(player).Count(card => card.CardId == "S01-0212" && !card.Tapped && State.ActivePlayer == player.PlayerIndex);
+            + ActiveTombGuardResources(player).Count();
 
     private static int ActiveMoraleCountWithoutTombGuards(L12PlayerState player)
         => player.TemporaryMorale + player.Morale.Count(card => !card.Tapped);
@@ -728,9 +730,10 @@ public sealed partial class L12GameEngine
         var temporary = Math.Min(cost, player.TemporaryMorale);
         player.TemporaryMorale -= temporary;
         var remaining = cost - temporary;
+        allowTombGuards = allowTombGuards && CanUseTombGuardsAsResource(player);
         if (allowTombGuards && preferTombGuards)
         {
-            var guards = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Take(remaining).ToList();
+            var guards = ActiveTombGuardResources(player).Take(remaining).ToList();
             foreach (var guard in guards) guard.Tapped = true;
             remaining -= guards.Count;
         }
@@ -738,7 +741,7 @@ public sealed partial class L12GameEngine
         foreach (var card in available) card.Tapped = true;
         remaining -= available.Count;
         if (allowTombGuards && remaining > 0)
-            foreach (var guard in PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Take(remaining)) guard.Tapped = true;
+            foreach (var guard in ActiveTombGuardResources(player).Take(remaining)) guard.Tapped = true;
         return true;
     }
 

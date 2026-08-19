@@ -848,6 +848,7 @@ public sealed partial class L12GameEngine
             if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
             if (player.UsedAbilities.Contains($"trial-used:{source.InstanceId}:{State.TurnSerial}"))
                 return CommandResult.Reject("该军团本回合无法再次发动试炼");
+            player.UsedAbilities.Add($"trial-used:{source.InstanceId}:{State.TurnSerial}");
             source.Tapped = true;
             AdvanceTrial(playerIndex, source.TrialValue, source);
             AddEvent("trial-action", playerIndex, $"{source.Name}发动试炼（试炼值{source.TrialValue}）", source);

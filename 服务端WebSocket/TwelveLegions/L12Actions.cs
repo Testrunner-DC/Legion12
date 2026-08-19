@@ -11,6 +11,11 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == command.CardInstanceId);
         if (card is null) return CommandResult.Reject("卡牌不在手牌中");
+        if (State.ActiveDisaster?.CardId == "S02-DS01" && card.CardType == "legion"
+            && player.Library.FirstOrDefault() is { } visibleTop
+            && !string.IsNullOrWhiteSpace(card.Profession)
+            && card.Profession == visibleTop.Profession)
+            return CommandResult.Reject($"〈天地异变〉持续期间，无法从手牌打出与牌库顶部相同兵种（{card.Profession}）的军团");
         if (card.CardId == "S02-0306" && player.MasterDamageTakenThisTurn < 2)
             return CommandResult.Reject("本回合我方主宰受到的累计伤害不足2点");
         if (card.CardId == "S02-0306" && player.UsedAbilities.Contains("s2-mimir-used"))

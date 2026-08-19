@@ -22,6 +22,7 @@ const productFilter = ref('all')
 const selected = ref<DeckCard | null>(null)
 const activeDeckName = ref<string | null>(null)
 const specialIds = ref<string[]>([])
+const catalogTab = ref<'master' | 'main' | 'extra'>('master')
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -102,6 +103,7 @@ function chooseMaster(id: string) {
     const card = byId.value.get(specialId)
     return card?.cardType === 'trial' && card.faction === master?.faction
   }).slice(0, capacity)
+  catalogTab.value = 'main'
 }
 
 function toggleTrial(card: DeckCard) {
@@ -219,33 +221,10 @@ function onDelete(name = activeDeckName.value ?? '') {
     <main v-else class="deck-builder-grid">
       <aside class="deck-filter grand-panel">
         <p class="kicker">COMMAND</p><h2>构筑设定</h2>
-        <label>主宰<select :value="masterId" @change="chooseMaster(($event.target as HTMLSelectElement).value)">
-          <option value="">选择主宰</option>
-          <option v-for="master in masters" :key="master.id" :value="master.id">{{ master.nameZh }} · {{ factionLabels[master.faction] }}</option>
-        </select></label>
         <article v-if="selectedMaster" class="master-preview">
           <img :src="masterProfileUrl(selectedMaster.id, selectedMaster.imageUrl)" :alt="selectedMaster.nameZh"/>
           <div><b>{{ selectedMaster.nameZh }}</b><span>{{ factionLabels[selectedMaster.faction] }}</span><small>士气 {{ moraleIds.length }} 张</small></div>
         </article>
-        <section v-if="trialCapacity" class="trial-builder">
-          <header><b>额外区 · 试炼</b><span>{{ specialIds.length }}/{{ trialCapacity }}</span></header>
-          <p>试炼不计入主牌库；携带数量由主宰卡面规则决定。</p>
-          <div class="trial-options">
-            <button v-for="trial in availableTrials" :key="trial.id" type="button"
-              :class="{ selected: specialIds.includes(trial.id) }" @click="toggleTrial(trial)" @mouseenter="selected = trial">
-              <span class="trial-thumb"><img v-if="trial.imageUrl" :src="trial.imageUrl" :alt="trial.nameZh"/></span>
-              <b>{{ trial.nameZh }}</b><small>{{ trial.number }}</small>
-            </button>
-          </div>
-        </section>
-        <section v-if="automaticExtraCards.length" class="trial-builder automatic-extra-builder">
-          <header><b>额外区 · 主宰专属</b><span>自动配置</span></header>
-          <p>选择伊西斯时自动加入，不计入主牌库，也不能作为主宰选择。</p>
-          <div class="trial-options"><button v-for="card in automaticExtraCards" :key="card.id" type="button" @click="selected = card">
-            <span class="trial-thumb upright"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh"/></span>
-            <b>{{ card.nameZh }}</b><small>{{ card.number }}</small>
-          </button></div>
-        </section>
         <label>搜索<input v-model="query" placeholder="卡名、编号、效果"/></label>
         <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
         <label>卡池<select v-model="productFilter"><option value="all">S1 + S2</option><option value="S01">S1</option><option value="S02">S2</option></select></label>
@@ -255,8 +234,20 @@ function onDelete(name = activeDeckName.value ?? '') {
       </aside>
 
       <section class="deck-catalog grand-panel">
-        <header><div><p class="kicker">CARD POOL</p><h2>可用卡牌</h2></div><span>{{ filtered.length }} 张结果</span></header>
-        <div class="deck-card-grid">
+        <header><div><p class="kicker">CARD POOL</p><h2>{{ catalogTab === 'master' ? '主宰' : catalogTab === 'main' ? '主牌库' : '额外卡牌' }}</h2></div><span>{{ catalogTab === 'master' ? masters.length : catalogTab === 'main' ? filtered.length : availableTrials.length + automaticExtraCards.length }} 张结果</span></header>
+        <nav class="catalog-tabs" aria-label="牌库构筑卡池分类">
+          <button :class="{ active: catalogTab === 'master' }" @click="catalogTab = 'master'">主宰</button>
+          <button :class="{ active: catalogTab === 'main' }" @click="catalogTab = 'main'">主牌库</button>
+          <button :class="{ active: catalogTab === 'extra' }" @click="catalogTab = 'extra'">额外卡牌</button>
+        </nav>
+        <div v-if="catalogTab === 'master'" class="deck-card-grid">
+          <article v-for="master in masters" :key="master.id" class="deck-card" :class="{ chosen: master.id === masterId }" @click="selected = master">
+            <button class="card-image" @dblclick.stop="chooseMaster(master.id)"><img v-if="master.imageUrl" :src="master.imageUrl" :alt="master.nameZh" loading="lazy"/></button>
+            <div><b>{{ master.nameZh }}</b><small>{{ master.number }} · {{ factionLabels[master.faction] }}</small></div>
+            <button class="choose-special" @click.stop="chooseMaster(master.id)">{{ master.id === masterId ? '已选择' : '选择主宰' }}</button>
+          </article>
+        </div>
+        <div v-else-if="catalogTab === 'main'" class="deck-card-grid">
           <article v-for="card in filtered" :key="card.id" class="deck-card" :class="{ chosen: counts[card.id], 'landscape-thumbnail': isHorizontalCardType(card.cardType) }" @click="selected = card">
             <button class="card-image" @dblclick.stop="add(card)">
               <img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh" loading="lazy"/>
@@ -269,6 +260,18 @@ function onDelete(name = activeDeckName.value ?? '') {
               <button :disabled="!masterId || (counts[card.id] || 0) >= 3 || (card.id !== 'S01-0212' && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
             </div>
           </article>
+        </div>
+        <div v-else class="deck-card-grid">
+          <article v-for="trial in availableTrials" :key="trial.id" class="deck-card landscape-thumbnail" :class="{ chosen: specialIds.includes(trial.id) }" @click="selected = trial">
+            <button class="card-image" @dblclick.stop="toggleTrial(trial)"><img v-if="trial.imageUrl" :src="trial.imageUrl" :alt="trial.nameZh" loading="lazy"/></button>
+            <div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div>
+            <button class="choose-special" @click.stop="toggleTrial(trial)">{{ specialIds.includes(trial.id) ? '移出额外区' : '加入额外区' }}</button>
+          </article>
+          <article v-for="card in automaticExtraCards" :key="card.id" class="deck-card chosen" @click="selected = card">
+            <button class="card-image"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh" loading="lazy"/></button>
+            <div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 主宰专属</small></div><button class="choose-special" disabled>自动配置</button>
+          </article>
+          <p v-if="!availableTrials.length && !automaticExtraCards.length" class="empty-extra">当前主宰没有可配置的额外卡牌。</p>
         </div>
       </section>
 
@@ -327,4 +330,5 @@ function onDelete(name = activeDeckName.value ?? '') {
 .trial-builder{margin:12px 0;padding:10px;border:1px solid #42605a;background:#0a1212}.trial-builder>header,.selected-trials>header{display:flex;align-items:center;justify-content:space-between}.trial-builder>header span,.selected-trials>header span{color:#78d2be;font-size:10px;font-weight:900}.trial-builder>p{margin:5px 0 9px;color:#84918c;font-size:9px;line-height:1.5}.trial-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.trial-options button{min-width:0;padding:6px;border:1px solid #384744;background:#101817;color:#e9e5dc;text-align:left}.trial-options button.selected{border-color:#6cd5b4;background:#17332c}.trial-options b,.trial-options small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.trial-options small{margin-top:3px;color:#85908c;font-size:7px}.trial-thumb{position:relative;display:block;width:100%;aspect-ratio:5/7;margin-bottom:5px;overflow:hidden;background:#080b0b}.trial-thumb img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg)}
 .selected-trials{flex:none;display:grid;gap:4px;padding:8px 0;border-top:1px solid #3d4241}.selected-trials button{display:grid;grid-template-columns:42px 1fr 24px;align-items:center;gap:7px;min-height:34px;border:1px solid #3e514d;background:#101817;color:#eee;text-align:left}.selected-trials img{width:42px;height:30px;object-fit:cover}.selected-trials span{font-size:9px;font-weight:900}.selected-trials i{display:grid;height:100%;place-items:center;border-left:1px solid #3e514d;color:#db747c;font-style:normal}
 .trial-thumb.upright img{width:100%;height:100%;object-fit:cover;transform:translate(-50%,-50%)}.automatic-extra-builder{border-color:#8a6a3d}.automatic-extra-list i{width:auto!important;padding:0 5px!important;color:#cdbb89!important;font-size:7px!important}
+.catalog-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:0 0 10px}.catalog-tabs button,.choose-special{min-height:32px;border:1px solid #48504e;background:#101617;color:#c8cfcb;font-weight:900}.catalog-tabs button.active,.choose-special:hover:not(:disabled){border-color:#73d4d8;background:#194b50;color:#fff}.choose-special{width:100%;border-width:1px 0 0}.empty-extra{grid-column:1/-1;padding:32px;color:#8b9490;text-align:center}
 </style>

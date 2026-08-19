@@ -186,7 +186,8 @@ public sealed class L12RoomManager
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
-        if (room.Game is not null) return Error(sessionId, "对局已开始，请在对局内投降后离开");
+        if (room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
+            return Error(sessionId, "对局已开始，请在对局内投降后离开");
 
         var playerIndex = session.PlayerIndex!.Value;
         if (playerIndex == 0)
