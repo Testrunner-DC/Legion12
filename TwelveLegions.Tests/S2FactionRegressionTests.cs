@@ -205,6 +205,17 @@ public sealed class S2FactionRegressionTests
         var triggerOrder = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("trigger-batch-order", triggerOrder.Continuation);
         Assert.Equal(2, triggerOrder.ValidChoices.Count);
+
+        var promotionTrigger = triggerOrder.ValidChoices.Single(id =>
+            triggerOrder.Data.GetValueOrDefault($"trigger:{id}") == "promotion-enter");
+        var enterTrigger = triggerOrder.ValidChoices.Single(id =>
+            triggerOrder.Data.GetValueOrDefault($"trigger:{id}") == "enter");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: triggerOrder.PromptId,
+            CardInstanceIds: [enterTrigger, promotionTrigger])).Accepted);
+
+        // 玩家提交的是实际结算顺序。堆叠虽然后进先出，顶部仍必须是玩家排在第一位的触发。
+        Assert.Equal("enter", game.State.EffectStack[^1].Trigger);
+        Assert.Equal("promotion-enter", game.State.EffectStack[^2].Trigger);
     }
 
     [Fact]
@@ -1454,5 +1465,248 @@ public sealed class S2FactionRegressionTests
         Assert.True(magatama.Tapped);
         Assert.Equal(1, moved.ImmortalUses);
         Assert.True(moved.ImmortalUntilTurn >= game.State.TurnSerial);
+    }
+
+    [Fact]
+    public void ArtemisMayFlipARestedMoraleWhenAnOwnRangedLegionIsDefeated()
+    {
+        var game = CreateWithFirstMaster("S02-05M1", 6336);
+        var defender = game.State.Players[0];
+        var attackerPlayer = game.State.Players[1];
+        defender.Hand.Clear();
+        attackerPlayer.Hand.Clear();
+        var ranged = Card("S02-0513", "artemis-ranged-defeated");
+        var attacker = Card("S02-0004", "artemis-enemy-attacker");
+        ranged.SummonRound = attacker.SummonRound = 0;
+        defender.Field[0][0] = ranged;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Morale.Clear();
+        defender.Morale.Add(new L12MoraleCard
+        {
+            CardId = "S02-05C1", InstanceId = "artemis-rested-morale", Tapped = true,
+        });
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", ranged.InstanceId))).Accepted);
+        PassResponses(game);
+
+        var flip = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-flip-morale");
+        Assert.Contains(defender.Morale[0].InstanceId, flip.ValidChoices);
+        Assert.Contains("skip", flip.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: flip.PromptId,
+            Choice: defender.Morale[0].InstanceId)).Accepted);
+        Assert.True(defender.Morale[0].IsGodPower);
+        Assert.True(defender.Morale[0].Tapped);
+    }
+
+    [Fact]
+    public void TrojanHorseMayEnterEnemyFieldThenLeavesAndDrawsAtOwnersNextEnd()
+    {
+        var game = Create(6337);
+        var attackerPlayer = game.State.Players[0];
+        var owner = game.State.Players[1];
+        attackerPlayer.Hand.Clear();
+        owner.Hand.Clear();
+        var attacker = Card("S02-0004", "trojan-attacker");
+        var horse = Card("S02-0523", "trojan-horse");
+        attacker.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        owner.Hand.Add(horse);
+        var libraryBefore = owner.Library.Count;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+        PassResponses(game);
+        var confirm = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-confirm");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId, Choice: "yes")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-slot");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:1")).Accepted);
+        Assert.Same(horse, attackerPlayer.Field[1][1]);
+
+        game.State.ActivePlayer = 1;
+        game.State.Phase = L12Phase.Main;
+        game.State.TurnSerial = horse.DiscardAtEndOfTurnUntilTurn;
+        Assert.True(game.Handle(1, new L12Command("endTurn")).Accepted);
+
+        Assert.Null(attackerPlayer.Field[1][1]);
+        Assert.Contains(horse, owner.Graveyard);
+        Assert.Equal(libraryBefore - 1, owner.Library.Count);
+    }
+
+    [Fact]
+    public void DivinityRecoveryFirstReturnsAnyOlympusCardThenMaySummonFromHandOrGrave()
+    {
+        var game = CreateWithFirstMaster("S02-05D1", 6338);
+        var player = game.State.Players[0];
+        player.Graveyard.Clear();
+        var recoveredTactic = Card("S02-0522", "divinity-recovered-tactic");
+        var summonedLegion = Card("S02-0502", "divinity-summoned-legion");
+        player.Graveyard.AddRange([recoveredTactic, summonedLegion]);
+        player.Morale.Clear();
+        player.Morale.AddRange([
+            new L12MoraleCard { CardId = "S02-05C1", InstanceId = "divinity-power-a", IsGodPower = true },
+            new L12MoraleCard { CardId = "S02-05C1", InstanceId = "divinity-power-b", IsGodPower = true },
+        ]);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "divinityPower")).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:recover")).Accepted);
+        PassResponses(game);
+        var recover = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-divinity-recover");
+        Assert.Contains(recoveredTactic.InstanceId, recover.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recover.PromptId,
+            Choice: recoveredTactic.InstanceId)).Accepted);
+        var summon = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-divinity-hand");
+        Assert.Contains(summonedLegion.InstanceId, summon.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: summon.PromptId,
+            Choice: summonedLegion.InstanceId)).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-divinity-hand-slot");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "0:0")).Accepted);
+
+        Assert.Contains(recoveredTactic, player.Hand);
+        Assert.Same(summonedLegion, player.Field[0][0]);
+    }
+
+    [Fact]
+    public void TsukuyomiMovementBuildsOneOwnerOrderedBatchForSameTimingTriggers()
+    {
+        var game = CreateWithFirstMaster("S02-04M1", 6339);
+        var player = game.State.Players[0];
+        var moved = Card("S02-0401", "tsukuyomi-moved");
+        var other = Card("S02-0402", "tsukuyomi-other");
+        player.Field[0][0] = moved;
+        player.Field[0][2] = other;
+        player.Morale.Clear();
+        player.Morale.AddRange([
+            new L12MoraleCard { CardId = "S02-04C1", InstanceId = "tsukuyomi-active-a" },
+            new L12MoraleCard { CardId = "S02-04C1", InstanceId = "tsukuyomi-active-b" },
+        ]);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("move", moved.InstanceId, Row: 1, Slot: 0)).Accepted);
+
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        Assert.Equal(2, order.ValidChoices.Count);
+        Assert.Contains(order.ValidChoices, id => order.Data[$"trigger:{id}"] == "active");
+        Assert.Contains(order.ValidChoices, id => order.Data[$"sourceInstance:{id}"] == "master-0");
+    }
+
+    [Fact]
+    public void RestedHippolytaMakesFrontBackMovementFree()
+    {
+        var game = Create(6340);
+        var player = game.State.Players[0];
+        var hippolyta = Card("S02-0510", "hippolyta-rested");
+        var mover = Card("S02-0502", "hippolyta-mover");
+        hippolyta.Tapped = true;
+        player.Field[0][0] = mover;
+        player.Field[0][2] = hippolyta;
+        player.Morale.Clear();
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("move", mover.InstanceId, Row: 1, Slot: 0)).Accepted);
+        Assert.Same(mover, player.Field[1][0]);
+        Assert.Empty(player.Morale);
+    }
+
+    [Fact]
+    public void WukongReturnsChosenMoraleAndEntersAsMasterLegionWithMatchingTroops()
+    {
+        var game = CreateWithFirstMaster("S02-01M1", 6341);
+        var player = game.State.Players[0];
+        AddMorale(player, 3);
+        game.State.Phase = L12Phase.Main;
+        var returned = player.Morale.Take(3).Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "wukongTransform")).Accepted);
+        var choice = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choice.PromptId,
+            CardInstanceIds: [.. returned])).Accepted);
+        PassResponses(game);
+
+        var wukong = Assert.Single(player.Field[0], card => card?.IsMasterLegion == true)!;
+        Assert.Equal("S02-01M1", wukong.CardId);
+        Assert.Equal(3000, wukong.Troops);
+        Assert.True(wukong.HasCharge);
+        Assert.DoesNotContain(player.Morale, morale => returned.Contains(morale.InstanceId));
+    }
+
+    [Fact]
+    public void WukongReturnAtEndAsksBeforeAddingRestedMorale()
+    {
+        var game = CreateWithFirstMaster("S02-01M1", 6342);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        AddMorale(player, 2);
+        AddMorale(opponent, 3);
+        game.State.Phase = L12Phase.Main;
+        var returned = player.Morale.Take(2).Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "wukongTransform")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [.. returned])).Accepted);
+        PassResponses(game);
+
+        Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
+        Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card?.IsMasterLegion == true);
+        var optional = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "s2-wukong-return-morale");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "yes")).Accepted);
+        Assert.Single(player.Morale);
+        Assert.True(player.Morale[0].Tapped);
+        Assert.Equal(1, game.State.ActivePlayer);
+    }
+
+    [Fact]
+    public void RealPreparationAsksOptionalRingAndThorEffectsBeforeDrawingStartingHand()
+    {
+        var baseDeck = Catalog.DeckAt(0);
+        var setupDeck = new L12PresetDeckDefinition
+        {
+            Name = "开局可选效果测试牌库",
+            MasterId = "S02-03M1",
+            CardIds = ["S02-0305", "S02-0301", .. baseDeck.CardIds],
+            MoraleIds = [.. baseDeck.MoraleIds],
+            SpecialIds = [.. baseDeck.SpecialIds],
+        };
+        var game = new L12GameEngine(Catalog, "s2-setup", "S2SETUP", 6343,
+            ["甲", "乙"], [setupDeck, baseDeck], skipPreparation: false, disasterMode: "none");
+        var initiative = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(initiative.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: initiative.PromptId, Choice: "first")).Accepted);
+
+        var owner = game.State.Players[0];
+        var setupPrompts = game.State.PendingPrompts.Where(prompt => prompt.PlayerIndex == 0
+            && prompt.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(2, setupPrompts.Length);
+        Assert.Empty(owner.Hand);
+
+        var ring = setupPrompts.Single(prompt => prompt.Continuation == "setup-s2-ring");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ring.PromptId, Choice: "no")).Accepted);
+        var hammer = game.State.PendingPrompts.Single(prompt => prompt.Continuation == "setup-s2-thor-hammer");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: hammer.PromptId, Choice: "yes")).Accepted);
+
+        Assert.Null(owner.Relic);
+        Assert.Equal(6, owner.Hand.Count);
+        Assert.Contains(owner.Hand, card => card.CardId == "S02-0301");
+        Assert.Equal(L12Phase.Mulligan, game.State.Phase);
     }
 }

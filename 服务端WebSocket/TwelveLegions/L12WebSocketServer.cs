@@ -15,16 +15,18 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly L12RoomManager _rooms;
     private readonly MatchRecorder _recorder;
     private readonly L12PlatformStore _platform;
+    private readonly L12Catalog _catalog;
     private readonly int _cardCount;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private WebApplication? _app;
 
-    public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform, int cardCount)
+    public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform, L12Catalog catalog)
     {
         _rooms = rooms;
         _recorder = recorder;
         _platform = platform;
-        _cardCount = cardCount;
+        _catalog = catalog;
+        _cardCount = catalog.Cards.Count;
     }
 
     public async Task StartAsync(int port)
@@ -102,6 +104,21 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             _platform.SetContent(key, body.Value ?? string.Empty);
             return Results.Ok(new { key, body.Value });
         });
+        _app.MapGet("/api/admin/effect-atoms", (HttpRequest request) =>
+            IsAdmin(request) ? Results.Ok(L12EffectAtomRegistry.All) : Results.Unauthorized());
+        _app.MapGet("/api/admin/effects/coverage", (HttpRequest request) =>
+            IsAdmin(request) ? Results.Ok(_catalog.AtomicEffects.Coverage()) : Results.Unauthorized());
+        _app.MapGet("/api/admin/effects", (HttpRequest request, string? search, string? status, string? product,
+            string? atomKind, int? page, int? pageSize) =>
+            IsAdmin(request)
+                ? Results.Ok(_catalog.AtomicEffects.Query(search, status, product, atomKind, page ?? 1, pageSize ?? 50))
+                : Results.Unauthorized());
+        _app.MapGet("/api/admin/effects/{cardId}", (HttpRequest request, string cardId) =>
+        {
+            if (!IsAdmin(request)) return Results.Unauthorized();
+            var effect = _catalog.AtomicEffects.Find(cardId);
+            return effect is null ? Results.NotFound() : Results.Ok(effect);
+        });
         _app.Map("/ws", async context =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
@@ -174,6 +191,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             {
                 "hello" => [new OutgoingMessage(sessionId, _rooms.Connect(sessionId, GetString(root, "name")))],
                 "createRoom" => CreateRoom(sessionId, root),
+                "createSandbox" => await CreateSandboxAsync(sessionId, root),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                 "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),
                 "leaveRoom" => _rooms.LeaveRoom(sessionId),
@@ -182,6 +200,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     => SelectCustomDeck(sessionId, deckElement),
                 "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
                 "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
+                "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
                 "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
                 _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
             };
@@ -224,6 +243,21 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         catch (JsonException)
         {
             return [new OutgoingMessage(sessionId, new { type = "error", message = "房间设置格式错误" })];
+        }
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxAsync(Guid sessionId, JsonElement root)
+    {
+        try
+        {
+            var request = root.TryGetProperty("request", out var requestElement)
+                ? requestElement.Deserialize<L12SandboxRequest>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : new L12SandboxRequest();
+            return await _rooms.CreateSandboxAsync(sessionId, request);
+        }
+        catch (JsonException)
+        {
+            return [new OutgoingMessage(sessionId, new { type = "error", message = "沙盒设置格式错误" })];
         }
     }
 

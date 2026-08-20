@@ -15,7 +15,7 @@ await recorder.InitializeAsync();
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"));
 
 var rooms = new L12RoomManager(catalog, recorder);
-await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog.Cards.Count);
+await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
 
 Console.WriteLine("Twelve Legions online battle server");
 Console.WriteLine($"Loaded {catalog.Cards.Count} S1-S2 cards and {catalog.PresetDecks.Count} preset decks.");

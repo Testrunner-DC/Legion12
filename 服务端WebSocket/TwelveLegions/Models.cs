@@ -116,6 +116,8 @@ public sealed class L12CardInstance
     public bool TrialCompleted { get; set; }
     public bool CannotAttack { get; set; }
     public bool CannotSupport { get; set; }
+    /// <summary>孙悟空等主宰临时作为军团登场时的权威标记。</summary>
+    public bool IsMasterLegion { get; set; }
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
@@ -209,6 +211,8 @@ public sealed class L12PlayerState
     public int NextActiveTacticSurcharge { get; set; }
     public bool MulliganDone { get; set; }
     public bool TrialOrderDone { get; set; }
+    /// <summary>雷神索尔发动第二项效果后，本局不能再因效果增加血量。</summary>
+    public bool MasterCannotHeal { get; set; }
 }
 
 public sealed class L12S2SpecialZones
@@ -449,6 +453,27 @@ public sealed record L12Command(
     string? Choice = null,
     string? Ability = null,
     string? Destination = null);
+
+/// <summary>
+/// 单人测试沙盒专用的服务端权威调试指令。该结构不进入普通 gameAction；
+/// 房间管理器只会在 IsSandbox 且调用会话为沙盒控制者时转交给规则内核。
+/// </summary>
+public sealed record L12GmCommand(
+    string Type,
+    int TargetPlayer = 0,
+    string? CardId = null,
+    string? CardInstanceId = null,
+    string? Destination = null,
+    int? Row = null,
+    int? Slot = null,
+    int? Value = null,
+    string? Phase = null,
+    bool TriggerEffects = true);
+
+public sealed record L12SandboxRequest(
+    L12CustomDeckSubmission? PlayerDeck = null,
+    L12CustomDeckSubmission? OpponentDeck = null,
+    string DisasterMode = "none");
 
 public sealed record CommandResult(bool Accepted, string? Error = null)
 {

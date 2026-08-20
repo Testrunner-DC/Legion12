@@ -4,6 +4,9 @@ public sealed partial class L12GameEngine
 {
     private bool CanUseS2CounterAtStack(string cardId, int playerIndex, L12StackItem top)
     {
+        if (cardId == "S02-0106")
+            return top.Controller != playerIndex
+                && top.Trigger is not ("s2-reaction" or "disaster" or "authority-event");
         if (top.Trigger != "authority-event" || top.Controller == playerIndex) return false;
         var eventType = top.Data.GetValueOrDefault("eventType");
         return cardId switch
@@ -41,6 +44,11 @@ public sealed partial class L12GameEngine
 
     private void ResolveS2CounterEffect(L12StackItem item)
     {
+        if (item.SourceCardId == "S02-0106")
+        {
+            ResolveS2CosmosYin(item);
+            return;
+        }
         var target = TargetAuthorityStackItem(item);
         if (target is null) { FinishStackItem(item); return; }
         var affectedPlayer = target.Controller;
@@ -97,6 +105,47 @@ public sealed partial class L12GameEngine
         }
     }
 
+    private void ResolveS2CosmosYin(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        if (player.Library.Count == 0)
+        {
+            SetWinner(1 - item.Controller, "〈乾坤·阴〉展示牌库顶部时牌库为空");
+            FinishStackItem(item);
+            return;
+        }
+
+        var revealed = player.Library[0];
+        AddEvent("reveal", item.Controller, $"〈乾坤·阴〉展示牌库顶部的〈{revealed.Name}〉", revealed);
+        if (revealed.CardType != "legion" || revealed.Faction != "tianting" || revealed.CurrentCost > 3)
+        {
+            player.Library.RemoveAt(0);
+            player.Library.Add(revealed);
+            AddEvent("return", item.Controller, $"〈{revealed.Name}〉置于牌库底部", revealed);
+            FinishStackItem(item);
+            return;
+        }
+
+        player.Library.RemoveAt(0);
+        player.Graveyard.Add(revealed);
+        AddEvent("discard", item.Controller, $"〈乾坤·阴〉从牌库弃置〈{revealed.Name}〉", revealed);
+        var choices = PublicLegions(player).Select(card => card.InstanceId).ToList();
+        if (choices.Count == 0)
+        {
+            FinishStackItem(item);
+            return;
+        }
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-cosmos-yin-target",
+            ["bonusTroops"] = revealed.Troops.ToString(),
+            ["bonusCost"] = revealed.CurrentCost.ToString(),
+        };
+        foreach (var card in PublicLegions(player)) AddPromptCardData(data, card);
+        CreatePrompt(item.Controller, "field-legion", "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
+            choices, 1, 1, "card-effect", item.StackItemId, isPrivate: true, data: data);
+    }
+
     private L12StackItem? TargetAuthorityStackItem(L12StackItem response)
         => State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == response.Targets.FirstOrDefault()
             && candidate.Trigger == "authority-event");
@@ -119,6 +168,18 @@ public sealed partial class L12GameEngine
 
         switch (action)
         {
+            case "s2-cosmos-yin-target":
+            {
+                var targetLegion = FindOnField(State.Players[prompt.PlayerIndex], chosen[0], out _, out _);
+                if (targetLegion is not null)
+                {
+                    _ = int.TryParse(prompt.Data.GetValueOrDefault("bonusTroops"), out var troops);
+                    _ = int.TryParse(prompt.Data.GetValueOrDefault("bonusCost"), out var cost);
+                    AddTimedModifier(targetLegion, troops, cost, State.TurnSerial, "乾坤·阴");
+                }
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-landlord-extra-discard":
                 if (chosen[0] == "decline")
                 {

@@ -11,6 +11,7 @@ public sealed class L12Catalog
 
     public IReadOnlyDictionary<string, L12CardDefinition> Cards { get; }
     public IReadOnlyList<L12PresetDeckDefinition> PresetDecks { get; }
+    public L12AtomicEffectCatalog AtomicEffects { get; }
 
     private L12Catalog(
         IReadOnlyDictionary<string, L12CardDefinition> cards,
@@ -18,6 +19,7 @@ public sealed class L12Catalog
     {
         Cards = cards;
         PresetDecks = presetDecks;
+        AtomicEffects = L12AtomicEffectCatalog.Build(cards.Values);
     }
 
     public static L12Catalog Load(string dataPath)

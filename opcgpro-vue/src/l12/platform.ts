@@ -6,6 +6,25 @@ export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
   version: string; status: string; priority: string; assignee?: string; adminNotes?: string; createdAt: string; updatedAt: string
 }
+export interface EffectAtomDescriptor {
+  kind: string; category: string; label: string; description: string; runtimeExecutable: boolean; kernelContract: string
+}
+export interface EffectAtom {
+  atomId: string; kind: string; label: string; order: number; parameters: Record<string, string>; runtimeExecutable: boolean; source: string
+}
+export interface AtomicAbility {
+  abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
+  migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number
+}
+export interface AtomicCardEffect {
+  cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string
+  abilities: AtomicAbility[]; migrationStatus: string; atomCount: number; executableAtomCount: number; legacyAtomCount: number; atomKinds: string[]
+}
+export interface AtomicCoverage {
+  totalCards: number; cardsWithText: number; totalAbilities: number; totalAtoms: number; declarativeReadyAbilities: number
+  verifiedAbilities: number; legacyBackedAbilities: number; byStatus: Record<string, number>; byAtomKind: Record<string, number>
+}
+export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
 
 function loadAccount(): PlatformAccount | null {
   try { return JSON.parse(localStorage.getItem('l12-account') || 'null') as PlatformAccount | null } catch { return null }
@@ -82,4 +101,12 @@ export const adminApi = {
   updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>>) => request<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   getContent: getPublicContent,
   setContent: (key: string, value: string) => request<void>(`/api/admin/content/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  effectAtoms: () => request<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),
+  effectCoverage: () => request<AtomicCoverage>('/api/admin/effects/coverage'),
+  effects: (query: { search?: string; status?: string; product?: string; atomKind?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return request<AtomicEffectPage>(`/api/admin/effects${params.size ? `?${params}` : ''}`)
+  },
+  effect: (cardId: string) => request<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
 }

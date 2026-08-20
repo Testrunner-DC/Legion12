@@ -153,4 +153,5 @@ export interface RoomState {
   decks: Array<{ index: number; name: string; masterId: string; masterName: string; faction: string }>
   options?: { spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'season' | 'none' }
   started: boolean
+  sandbox?: boolean
 }

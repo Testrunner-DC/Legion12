@@ -17,6 +17,7 @@ export const l12State = reactive({
   room: null as RoomState | null,
   game: null as GameState | null,
   spectating: false,
+  gmEnabled: false,
   pendingAction: false,
   notice: '',
 })
@@ -44,10 +45,11 @@ export function connect(): Promise<void> {
         l12State.room = null
         l12State.game = null
         l12State.spectating = false
+        l12State.gmEnabled = false
         l12State.pendingAction = false
         l12State.notice = message.message || ''
       }
-      else if (message.type === 'gameState') { l12State.game = message.state; l12State.spectating = Boolean(message.spectating); l12State.pendingAction = false }
+      else if (message.type === 'gameState') { l12State.game = message.state; l12State.spectating = Boolean(message.spectating); l12State.gmEnabled = Boolean(message.gmEnabled); l12State.pendingAction = false }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') { l12State.notice = message.message; l12State.pendingAction = false }
     }
     socket.onerror = () => {
@@ -55,7 +57,7 @@ export function connect(): Promise<void> {
       l12State.notice = '无法连接服务器，请确认 C# 服务端已启动。'
       reject(new Error(l12State.notice))
     }
-    socket.onclose = () => { l12State.status = 'offline'; l12State.pendingAction = false }
+    socket.onclose = () => { l12State.status = 'offline'; l12State.pendingAction = false; l12State.gmEnabled = false }
   })
 }
 
@@ -75,6 +77,11 @@ export interface RoomOptions {
 }
 
 export const createRoom = (options?: RoomOptions) => { l12State.spectating = false; send({ type: 'createRoom', options }) }
+export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12Deck, disasterMode: RoomOptions['disasterMode'] = 'none') => {
+  l12State.spectating = false
+  l12State.gmEnabled = false
+  send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
+}
 export const joinRoom = (roomCode: string) => { l12State.spectating = false; send({ type: 'joinRoom', roomCode }) }
 export const spectateRoom = (roomCode: string) => send({ type: 'spectateRoom', roomCode })
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
@@ -85,5 +92,12 @@ export function gameAction(command: Record<string, unknown>) {
   if (l12State.pendingAction) return
   l12State.pendingAction = true
   send({ type: 'gameAction', command })
+  if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
+}
+
+export function gmAction(command: Record<string, unknown>) {
+  if (!l12State.gmEnabled || l12State.pendingAction) return
+  l12State.pendingAction = true
+  send({ type: 'gmAction', command })
   if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
 }

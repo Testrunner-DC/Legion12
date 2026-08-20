@@ -54,10 +54,6 @@ public sealed partial class L12GameEngine
             case "S01-DS10":
                 AddEvent("disaster-active", null, $"〈{disaster.Name}〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
-            case "S01-DS02":
-                DamageMasterNonLethal(0, 1, "〈百鬼夜行〉", neutralSource: true);
-                DamageMasterNonLethal(1, 1, "〈百鬼夜行〉", neutralSource: true);
-                FinishStackItem(item); return;
             case "S01-DS03":
                 for (var owner = 0; owner < 2; owner++)
                     for (var slot = 0; slot < 3; slot++)
@@ -84,10 +80,6 @@ public sealed partial class L12GameEngine
                             queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
                 FinishStackItem(item); return;
             case "S02-DS04": ResolveS2StormChaos(item); return;
-            case "S02-DS05":
-                DamageMasterNonLethal(0, 1, "〈暴怒之罪〉", neutralSource: true);
-                DamageMasterNonLethal(1, 1, "〈暴怒之罪〉", neutralSource: true);
-                FinishStackItem(item); return;
             case "S02-DS06": BeginS2Pride(item); return;
             default:
                 FinishStackItem(item); return;

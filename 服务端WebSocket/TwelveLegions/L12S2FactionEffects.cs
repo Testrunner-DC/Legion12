@@ -8,7 +8,7 @@ public sealed partial class L12GameEngine
         "S02-0101", "S02-0102", "S02-0203", "S02-0204", "S02-0205",
         "S02-0301", "S02-0302", "S02-0303", "S02-0304", "S02-0401", "S02-0402", "S02-0403", "S02-0404",
         "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0521", "S02-0613",
-        "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
+        "S02-0601", "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
     };
 
     private static readonly HashSet<string> S2FactionTacticCards = new(StringComparer.OrdinalIgnoreCase)
@@ -18,12 +18,12 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0103", "S02-0501", "S02-0511", "S02-0517", "S02-0605", "S02-0606", "S02-0607", "S02-0612", "S02-0617",
+        "S02-0103", "S02-0501", "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0605", "S02-0606", "S02-0607", "S02-0612", "S02-0617",
     };
 
     private static readonly HashSet<string> S2FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-01S1", "S02-0202", "S02-0203", "S02-0301", "S02-0402", "S02-0508", "S02-0512", "S02-0609", "S02-0613",
+        "S02-01S1", "S02-0202", "S02-0203", "S02-0301", "S02-0402", "S02-0508", "S02-0512", "S02-0601", "S02-0609", "S02-0613", "S02-0615",
     };
 
     private static readonly HashSet<string> S2PromotionEnterCards = new(StringComparer.OrdinalIgnoreCase)
@@ -216,6 +216,15 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {
+            case "S02-0601":
+                if (!player.Morale.Any(morale => !morale.Tapped)) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "optional", "亚瑟王：是否消耗1士气，将〈王者之剑〉叠放在此军团下方？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-arthur-sword", ["yes"] = "消耗1士气并叠放〈王者之剑〉", ["no"] = "不发动",
+                    });
+                return true;
             case "S02-0102":
                 BeginS2LiMuEnter(item);
                 return true;
@@ -660,6 +669,24 @@ public sealed partial class L12GameEngine
                 "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-parrot-god-power" });
             return true;
         }
+        if (card.CardId == "S02-0519")
+        {
+            if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped)) { FinishStackItem(item); return true; }
+            CreatePrompt(item.Controller, "optional", $"{card.Name}：是否消耗并翻转1神力，使此军团本回合兵力+2000？",
+                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string> { ["action"] = "s2-achilles-god-power", ["yes"] = "消耗并翻转1神力：兵力+2000", ["no"] = "不发动" });
+            return true;
+        }
+        if (card.CardId == "S02-0516")
+        {
+            if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped)
+                || !PublicLegions(player).Any() || !PublicLegions(State.Players[1 - item.Controller]).Any())
+            { FinishStackItem(item); return true; }
+            CreatePrompt(item.Controller, "optional", "汉尼拔：是否消耗并翻转1神力，使双方各1张军团本回合兵力-2000？",
+                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string> { ["action"] = "s2-hannibal-pay", ["yes"] = "消耗并翻转1神力", ["no"] = "不发动" });
+            return true;
+        }
         if (card.CardId == "S02-0517")
         {
             if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped))
@@ -742,6 +769,16 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {
+            case "S02-0601":
+            {
+                var choices = player.Hand.Where(candidate => candidate.CardType == "legion" && candidate.HasTrait("圆桌骑士") && candidate.CurrentCost <= 4)
+                    .Select(candidate => candidate.InstanceId).Append("skip").ToList();
+                if (choices.Count == 1 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "optional-card", "亚瑟王阵亡：可将手牌1张费用不高于4的【圆桌骑士】军团活跃登场",
+                    choices, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-arthur-summon", ["skip"] = "不发动" });
+                return true;
+            }
             case "S02-01S1":
                 CreatePrompt(item.Controller, "optional", "哮天犬·稚阵亡：是否从士气牌库追加1张休整士气？",
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
@@ -766,6 +803,12 @@ public sealed partial class L12GameEngine
                 HealMaster(0, 1, $"{card.Name}阵亡时效果");
                 HealMaster(1, 1, $"{card.Name}阵亡时效果");
                 FinishStackItem(item);
+                return true;
+            case "S02-0615":
+                if (item.Data.GetValueOrDefault("cause") != "effect") { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "option", $"{card.Name}因效果阵亡：选择我方主宰增加1点血量，或抽取1张牌",
+                    ["heal", "draw"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-lamorak-death", ["heal"] = "主宰增加1点血量", ["draw"] = "抽取1张牌" });
                 return true;
             case "S02-0301":
             {
@@ -1032,7 +1075,7 @@ public sealed partial class L12GameEngine
                 new L12ActivationSelectionStep { Kind = "grave-card", Text = "选择墓地1张只有【彼界】特征的卡牌加入手牌", ValidChoices = grave.ToList(), MinChoose = 1, MaxChoose = 1 },
             ]);
         }
-        return null;
+        return TryBeginS2RemainingAbility(playerIndex, source, ability);
     }
 
     private L12TriggerCandidate? BuildMorriganEnemyDeathCandidate(int defeatedController)
@@ -1345,7 +1388,7 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
             return CommandResult.Ok();
         }
-        return null;
+        return TryCommitS2RemainingAbility(playerIndex, source, ability, target, onceKey);
     }
 
     private bool TryResolveS2FactionActive(L12StackItem item, L12CardInstance? source, string ability)
@@ -1528,6 +1571,7 @@ public sealed partial class L12GameEngine
                 player.Field[targetRow][targetSlot] = legion;
                 legion.LastMovedTurn = State.TurnSerial;
                 AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
+                NotifyS2LegionMoved(item.Controller, legion, row, targetRow);
             }
             FinishStackItem(item);
             return true;
@@ -1619,7 +1663,7 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
-        return false;
+        return TryResolveS2RemainingAbility(item, source, ability);
     }
 
     private void ResolveCompletedTrialTrigger(L12StackItem item, L12CardInstance trial)
@@ -1671,6 +1715,67 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (prompt.Data.GetValueOrDefault("action"))
         {
+            case "s2-arthur-sword":
+            {
+                var arthur = FindSource(item);
+                if (chosen[0] == "yes" && arthur is not null && TryConsumeMorale(player, 1))
+                {
+                    var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
+                        ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
+                    player.Graveyard.Remove(sword);
+                    sword.OwnerIndex = item.Controller;
+                    arthur.AttachedCards.Add(sword);
+                    RecalculateContinuousTroops();
+                    AddEvent("attach", item.Controller, "〈王者之剑〉叠放至〈亚瑟王〉下方；原本兵力+1000并获得强攻", arthur, sword);
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-arthur-summon":
+                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
+                item.Data["arthur-summon"] = chosen[0];
+                CreatePrompt(item.Controller, "slot", "亚瑟王：选择该【圆桌骑士】军团活跃登场的位置", EmptySlots(player), 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-arthur-summon-slot" });
+                return true;
+            case "s2-arthur-summon-slot":
+                SummonFromAnyPrivateZone(player, item.Data["arthur-summon"], chosen[0], tapped: false);
+                FinishStackItem(item);
+                return true;
+            case "s2-achilles-god-power":
+            {
+                var source = FindSource(item);
+                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
+                    AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "阿喀琉斯");
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-hannibal-pay":
+                if (chosen[0] != "yes" || !L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "field-legion", "汉尼拔：选择我方1张军团，本回合兵力-2000",
+                    PublicLegions(player).Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-hannibal-own" });
+                return true;
+            case "s2-hannibal-own":
+            {
+                var own = FindOnField(player, chosen[0], out _, out _);
+                if (own is not null) AddTimedModifier(own, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "汉尼拔");
+                CreatePrompt(item.Controller, "enemy-legion", "汉尼拔：选择对方1张军团，本回合兵力-2000",
+                    PublicLegions(State.Players[1 - item.Controller]).Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-hannibal-enemy" });
+                return true;
+            }
+            case "s2-hannibal-enemy":
+            {
+                var enemy = DeclaredEnemyTarget(item.Controller, chosen[0]);
+                if (enemy is not null) AddTimedModifier(enemy, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "汉尼拔");
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-lamorak-death":
+                if (chosen[0] == "heal") HealMaster(item.Controller, 1, "勇士兰马洛克阵亡时效果");
+                else if (!Draw(player, 1)) SetWinner(1 - item.Controller, "勇士兰马洛克效果抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
             case "s2-limu-morale":
                 if (chosen[0] == "yes")
                 {
@@ -2452,7 +2557,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             default:
-                return false;
+                return TryContinueS2RemainingEffect(item, prompt, chosen);
         }
     }
 

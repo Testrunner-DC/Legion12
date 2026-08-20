@@ -11,6 +11,11 @@ const playerMat = read('../src/l12/game/PlayerMat.vue')
 const specialAssets = read('../src/l12/specialAssets.ts')
 const cardTile = read('../src/l12/CardTile.vue')
 const cardArchive = read('../src/l12/CardArchive.vue')
+const sandbox = read('../src/l12/site/SandboxPage.vue')
+const gmPanel = read('../src/l12/game/GmPanel.vue')
+const l12Net = read('../src/l12/net.ts')
+const adminPage = read('../src/l12/site/AdminPage.vue')
+const platform = read('../src/l12/platform.ts')
 
 const contracts = [
   [shell.includes('const siteBrandIcon = defaultSiteLogoUrl'), '主页入口必须引用默认网页图标'],
@@ -49,7 +54,15 @@ const contracts = [
   [playerMat.includes('class="morale-count"') && playerMat.match(/class="morale-count"/g)?.length === 2, '双方士气数量必须共用不溢出的计数器'],
   [board.includes('promotionFoundationTargetIds') && board.includes('nextS2PromotionGodPowerDiscount'), '晋升登场必须高亮合法基底并纳入锻造炉减免'],
   [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
-  [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'"), '对局结束返回大厅前必须退出已结束房间'],
+  [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'") && gamePage.includes('l12State.room.sandbox'), '对局结束或退出沙盒返回大厅前必须退出房间'],
+  [sandbox.includes('createSandbox') && !sandbox.includes('沙盒服务器适配器尚未接入'), '单人测试沙盒必须连接正式规则内核，不得回退为占位页'],
+  [gamePage.includes('<GmPanel v-if="l12State.gmEnabled"') && l12Net.includes('gmEnabled: false'), 'GM 面板必须只在服务端授权的沙盒快照中显示'],
+  [gmPanel.includes("send({ type: 'gmAction'") || (gmPanel.includes('gmAction(') && l12Net.includes("send({ type: 'gmAction', command })")), 'GM 操作必须走独立 gmAction 消息，不得伪装成普通 gameAction'],
+  [gmPanel.includes('导出可复现 JSON') && gmPanel.includes('/api/matches/'), 'GM 面板必须保留可复现记录导出入口'],
+  [adminPage.includes('卡效原子化') && adminPage.includes('atom-flow') && adminPage.includes('原子定义 JSON'), '管理后台必须保留卡效原子组合、流程图与原始定义视图'],
+  [adminPage.includes('旧实现兜底') && adminPage.includes('新旧实现不会同时结算'), '原子化后台必须明确显示旧实现兜底与防重复结算边界'],
+  [platform.includes("effectAtoms: () => request<EffectAtomDescriptor[]>('/api/admin/effect-atoms')") && platform.includes('/api/admin/effects/coverage'), '卡效后台必须从服务端权威原子注册表读取数据'],
+  [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
 ]
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)

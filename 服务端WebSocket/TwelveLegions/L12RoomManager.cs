@@ -16,6 +16,7 @@ public sealed class L12RoomManager
         public int SelectedDeckIndex { get; set; }
         public L12PresetDeckDefinition? CustomDeck { get; set; }
         public bool IsSpectator { get; set; }
+        public bool IsVirtual { get; init; }
         public bool Connected { get; set; } = true;
     }
 
@@ -28,6 +29,8 @@ public sealed class L12RoomManager
         public bool[] Ready { get; } = [false, false];
         public L12GameEngine? Game { get; set; }
         public long CommandSequence { get; set; }
+        public bool IsSandbox { get; init; }
+        public Guid? GmControllerSessionId { get; init; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
     }
 
@@ -64,6 +67,83 @@ public sealed class L12RoomManager
         session.PlayerIndex = 0;
         session.SelectedDeckIndex = 0;
         return BroadcastRoom(room);
+    }
+
+    public async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxAsync(Guid sessionId, L12SandboxRequest? request)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
+        if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
+        request ??= new L12SandboxRequest();
+        if (request.DisasterMode == "season") return Error(sessionId, "赛季天灾池尚未配置");
+
+        L12PresetDeckDefinition playerDeck;
+        L12PresetDeckDefinition opponentDeck;
+        if (request.PlayerDeck is not null)
+        {
+            if (!L12DeckValidator.TryValidate(_catalog, request.PlayerDeck, out playerDeck!, out var playerError))
+                return Error(sessionId, $"我方牌库无效：{playerError}", "deckRejected");
+        }
+        else playerDeck = _catalog.DeckAt(0);
+        if (request.OpponentDeck is not null)
+        {
+            if (!L12DeckValidator.TryValidate(_catalog, request.OpponentDeck, out opponentDeck!, out var opponentError))
+                return Error(sessionId, $"对手牌库无效：{opponentError}", "deckRejected");
+        }
+        else opponentDeck = _catalog.DeckAt(Math.Min(1, _catalog.PresetDecks.Count - 1));
+
+        Room room;
+        do
+        {
+            room = new Room
+            {
+                Code = GenerateRoomCode(),
+                IsSandbox = true,
+                GmControllerSessionId = sessionId,
+                Options = NormalizeOptions(new L12RoomOptions
+                {
+                    Spectating = "disabled",
+                    HandVisibility = "public",
+                    DisasterMode = request.DisasterMode,
+                }),
+            };
+        }
+        while (!_rooms.TryAdd(room.Code, room));
+
+        var opponentId = Guid.NewGuid();
+        var opponent = new Session
+        {
+            Id = opponentId,
+            Name = "测试对手",
+            RoomCode = room.Code,
+            PlayerIndex = 1,
+            SelectedDeckIndex = 1,
+            CustomDeck = opponentDeck,
+            IsVirtual = true,
+        };
+        _sessions[opponentId] = opponent;
+        room.Sessions.Add(sessionId);
+        room.Sessions.Add(opponentId);
+        room.Ready[0] = room.Ready[1] = true;
+        session.RoomCode = room.Code;
+        session.PlayerIndex = 0;
+        session.SelectedDeckIndex = 0;
+        session.CustomDeck = playerDeck;
+
+        room.Game = new L12GameEngine(
+            _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
+            [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
+            disasterMode: room.Options.DisasterMode);
+        room.Game.InitializeGmDisasters();
+        await _recorder.StartAsync(room.Game.State);
+        foreach (var playerIndex in new[] { 0, 1 })
+        {
+            var bootstrap = new L12Command("mulligan", CardInstanceIds: []);
+            var result = room.Game.Handle(playerIndex, bootstrap);
+            room.CommandSequence++;
+            await _recorder.AppendAsync(room.Game, room.CommandSequence, playerIndex,
+                JsonSerializer.Serialize(bootstrap), result);
+        }
+        return BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
     }
 
     public IReadOnlyList<OutgoingMessage> SpectateRoom(Guid sessionId, string? roomCode)
@@ -175,6 +255,34 @@ public sealed class L12RoomManager
         finally { room.Gate.Release(); }
     }
 
+    public async Task<IReadOnlyList<OutgoingMessage>> HandleGmActionAsync(Guid sessionId, JsonElement commandElement)
+    {
+        if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
+            return Error(sessionId, "GM 指令只允许由单人测试沙盒的创建者执行", "actionRejected");
+        await room.Gate.WaitAsync();
+        try
+        {
+            if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始");
+            L12GmCommand? command;
+            try
+            {
+                command = commandElement.Deserialize<L12GmCommand>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException) { return Error(sessionId, "GM 操作格式错误", "actionRejected"); }
+            if (command is null || string.IsNullOrWhiteSpace(command.Type))
+                return Error(sessionId, "缺少 GM 操作类型", "actionRejected");
+            var result = room.Game.HandleGm(command);
+            room.CommandSequence++;
+            await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex!.Value,
+                commandElement.GetRawText(), result);
+            if (!result.Accepted) return Error(sessionId, result.Error ?? "GM 操作被拒绝", "actionRejected");
+            if (room.Game.State.Phase == L12Phase.GameOver) await _recorder.CompleteAsync(room.Game);
+            return BroadcastGame(room);
+        }
+        finally { room.Gate.Release(); }
+    }
+
     public IReadOnlyList<OutgoingMessage> Disconnect(Guid sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return [];
@@ -186,7 +294,7 @@ public sealed class L12RoomManager
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
-        if (room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
+        if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
 
         var playerIndex = session.PlayerIndex!.Value;
@@ -205,6 +313,7 @@ public sealed class L12RoomManager
                     type = id == sessionId ? "roomLeft" : "roomClosed",
                     message = id == sessionId ? "房间已关闭" : "房主已关闭房间",
                 }));
+                if (member.IsVirtual) _sessions.TryRemove(id, out _);
             }
             return messages;
         }
@@ -247,7 +356,7 @@ public sealed class L12RoomManager
             return new OutgoingMessage(id, new
             {
                 type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
-                players, decks, options = room.Options, started = room.Game is not null,
+                players, decks, options = room.Options, started = room.Game is not null, sandbox = room.IsSandbox,
             });
         }).ToArray();
     }
@@ -256,9 +365,10 @@ public sealed class L12RoomManager
         => room.Sessions.Select(id => new OutgoingMessage(id, new
         {
             type = "gameState", state = room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value),
+            gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
         })).Concat(room.Spectators.Select(id => new OutgoingMessage(id, new
         {
-            type = "gameState", spectating = true, state = room.Game!.SnapshotForSpectator(),
+            type = "gameState", spectating = true, gmEnabled = false, state = room.Game!.SnapshotForSpectator(),
         }))).ToArray();
 
     private L12PresetDeckDefinition SelectedDeck(Session session)

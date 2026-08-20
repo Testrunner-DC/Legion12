@@ -1,0 +1,111 @@
+namespace TwelveLegions.Server;
+
+public sealed partial class L12GameEngine
+{
+    private bool TryResolveVerifiedAtomicProgram(L12StackItem item)
+    {
+        var program = L12VerifiedAtomicPrograms.Find(item.SourceCardId, item.Trigger);
+        if (program is null) return false;
+        var source = FindSource(item);
+        if (source is null)
+        {
+            FinishStackItem(item);
+            return true;
+        }
+
+        var controller = State.Players[item.Controller];
+        var opponent = State.Players[1 - item.Controller];
+        foreach (var atom in program.Atoms)
+        {
+            switch (atom.Kind)
+            {
+                case L12AtomKinds.Trigger:
+                    break;
+                case L12AtomKinds.Condition:
+                    if (!CheckVerifiedAtomicCondition(atom.Parameters.GetValueOrDefault("expression"), item, source, controller, opponent))
+                    {
+                        FinishStackItem(item);
+                        return true;
+                    }
+                    break;
+                case L12AtomKinds.SetState:
+                    if (atom.Parameters.GetValueOrDefault("key") == "controller.nextLegionChargeMaxCost")
+                        controller.NextLegionChargeMaxCost = AtomicInt(atom, "value");
+                    else if (atom.Parameters.GetValueOrDefault("key") == "opponent.nextActiveTacticSurcharge"
+                        && atom.Parameters.GetValueOrDefault("operation") == "increment")
+                        opponent.NextActiveTacticSurcharge += AtomicInt(atom, "value");
+                    else if (atom.Parameters.GetValueOrDefault("key") == "source.hidden")
+                        source.Hidden = bool.Parse(atom.Parameters.GetValueOrDefault("value") ?? "false");
+                    else
+                        throw new InvalidOperationException($"Unsupported verified atomic state key: {atom.Parameters.GetValueOrDefault("key")}");
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source);
+                    break;
+                case L12AtomKinds.Keyword:
+                    if (atom.Parameters.GetValueOrDefault("keyword") == "charge") source.HasCharge = true;
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source);
+                    break;
+                case L12AtomKinds.AddMorale:
+                {
+                    var added = AddMorale(controller, AtomicInt(atom, "amount"),
+                        tapped: atom.Parameters.GetValueOrDefault("tapped") == "true");
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source, added);
+                    break;
+                }
+                case L12AtomKinds.Draw:
+                {
+                    var amount = AtomicInt(atom, "amount");
+                    var succeeded = Draw(controller, amount);
+                    if (!succeeded)
+                    {
+                        SetWinner(1 - item.Controller, atom.Parameters.GetValueOrDefault("emptyLossReason") ?? $"{source.Name}效果抽牌时牌库为空");
+                    }
+                    if (succeeded) EmitVerifiedAtomicEvent(atom, item.Controller, source, amount);
+                    break;
+                }
+                case L12AtomKinds.HealMaster:
+                    HealMaster(item.Controller, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name);
+                    break;
+                case L12AtomKinds.DamageMaster when atom.Parameters.GetValueOrDefault("target") == "both"
+                    && atom.Parameters.GetValueOrDefault("lethal") == "false":
+                    DamageMasterNonLethal(0, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
+                        neutralSource: atom.Parameters.GetValueOrDefault("neutralSource") == "true");
+                    DamageMasterNonLethal(1, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
+                        neutralSource: atom.Parameters.GetValueOrDefault("neutralSource") == "true");
+                    break;
+                case L12AtomKinds.ModifyTroops when atom.Parameters.GetValueOrDefault("operation") == "set":
+                    source.Troops = AtomicInt(atom, "value");
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Verified atomic program {program.CardId}/{program.Trigger} contains unsupported atom {atom.Kind}.");
+            }
+        }
+        FinishStackItem(item);
+        return true;
+    }
+
+    private bool CheckVerifiedAtomicCondition(string? expression, L12StackItem item, L12CardInstance source,
+        L12PlayerState controller, L12PlayerState opponent)
+        => expression switch
+        {
+            "controller.hand<=5" => controller.Hand.Count <= 5,
+            "controller.hand<=4" => controller.Hand.Count <= 4,
+            "controller.hand<=opponent.hand" => controller.Hand.Count <= opponent.Hand.Count,
+            "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
+            "source.hidden=true" => source.Hidden,
+            "item.killed=true" => item.Data.GetValueOrDefault("killed") == "true",
+            _ => throw new InvalidOperationException($"Unsupported verified atomic condition: {expression}"),
+        };
+
+    private static int AtomicInt(L12EffectAtom atom, string key)
+        => int.TryParse(atom.Parameters.GetValueOrDefault(key), out var value)
+            ? value
+            : throw new InvalidOperationException($"Atomic parameter {key} is not an integer for {atom.Kind}.");
+
+    private void EmitVerifiedAtomicEvent(L12EffectAtom atom, int playerIndex, L12CardInstance source, int value = 0)
+    {
+        if (!atom.Parameters.TryGetValue("event", out var message) || string.IsNullOrWhiteSpace(message)) return;
+        AddEvent(atom.Parameters.GetValueOrDefault("eventType") ?? "effect", playerIndex,
+            message.Replace("{source}", source.Name).Replace("{value}", value.ToString()), source);
+    }
+}

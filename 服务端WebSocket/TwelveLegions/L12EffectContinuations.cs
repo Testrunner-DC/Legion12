@@ -227,6 +227,7 @@ public sealed partial class L12GameEngine
                         player.Field[targetRow][targetSlot] = legion;
                         legion.LastMovedTurn = State.TurnSerial;
                         AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
+                        NotifyS2LegionMoved(item.Controller, legion, row, targetRow);
                     }
                 }
                 FinishStackItem(item); break;
@@ -366,6 +367,12 @@ public sealed partial class L12GameEngine
     {
         var cards = State.Players[item.Controller].Library.Take(count).ToArray();
         if (cards.Length == 0) { FinishStackItem(item); return; }
+        if (context is "observing-stars" or "prometheus")
+        {
+            BeginAllTopBottomReorder(item, context, cards.Select(card => card.InstanceId),
+                $"排列牌库顶部 {cards.Length} 张牌，并将其全部放回牌库顶部或全部放回牌库底部");
+            return;
+        }
         item.Data["reorder-context"] = context;
         item.Data["reorder-cards"] = string.Join('|', cards.Select(card => card.InstanceId));
         CreatePrompt(item.Controller, "order", $"依次选择牌库顶部 {cards.Length} 张牌的排列顺序", cards.Select(card => card.InstanceId),
@@ -373,8 +380,30 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string>
             {
                 ["action"] = "reorder-order",
-                ["placementMode"] = context is "observing-stars" or "prometheus" ? "all-top-bottom" : "split-top-bottom",
+                ["placementMode"] = "split-top-bottom",
             });
+    }
+
+    private void BeginAllTopBottomReorder(L12StackItem item, string context, IEnumerable<string> cardIds, string text)
+    {
+        var ids = cardIds.Distinct().ToArray();
+        if (ids.Length == 0) { FinishStackItem(item); return; }
+        item.Data["reorder-context"] = context;
+        item.Data["reorder-cards"] = string.Join('|', ids);
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "reorder-order",
+            ["placementMode"] = "all-top-bottom",
+            ["displayCardIds"] = string.Join('|', ids),
+        };
+        var player = State.Players[item.Controller];
+        foreach (var id in ids)
+        {
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
+            if (card is not null) AddPromptCardData(data, card);
+        }
+        CreatePrompt(item.Controller, "order", text, ids, ids.Length, ids.Length,
+            "card-effect", item.StackItemId, data: data);
     }
 
     private void ContinueReorderOrder(L12StackItem item, L12Prompt prompt, List<string> chosen)

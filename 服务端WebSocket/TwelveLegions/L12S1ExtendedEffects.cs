@@ -41,6 +41,7 @@ public sealed partial class L12GameEngine
         "S01-0113" => [new("extendedRange", "返还1士气：进攻后排")],
         "S01-0116" => [new("xishiExchange", "弃置自身并返还1士气：替换登场")],
         "S01-0117" => [new("artifactDraw", "返还1活跃士气：抽取1张牌。"), new("artifactSearch", "弃置1张手牌：查看牌库顶部3张牌，选择其中1张【天廷】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。")],
+        "S01-0415" => [new("revealHidden", "主动：翻回正面，作为军团恢复公开状态。")],
         "S01-0417" => [new("kusanagiDebuff", "选择对方1张军团，本回合费用-1。"), new("kusanagiStrong", "选择我方1张【高天原】军团，本回合获得强攻。")],
         "S01-01C1" => [new("factionAddActive", "我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。"), new("factionZeroRecovery", "我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。")],
         "S01-04C1" => [new("factionDrawMove", "我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。")],
@@ -55,6 +56,16 @@ public sealed partial class L12GameEngine
         "S02-05C1" => [new("godPowerDraw", "我方 回合1次 可消耗并翻转1神力：抽取1张牌。")],
         "S02-05C1A" => [new("olympusMoraleFlip", "我方 回合1次 可消耗1士气：翻转1张士气。")],
         "S02-05M2" => [new("prometheusTopThree", "我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。")],
+        "S02-01M1" => [new("wukongTransform", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，且在登场回合即可进攻。")],
+        "S02-03M1" => [new("thorCharge", "我方回合 当我方主宰血量不高于3时，可消耗2士气：本回合我方所有【阿斯加德】军团在登场时获得冲锋。以上效果发动后，我方主宰本局游戏无法因任何效果增加血量。")],
+        "S02-05D1" =>
+        [
+            new("divinityFlipMorale", "我方 回合1次 可翻转1张士气。"),
+            new("divinityPower", "我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。"),
+            new("divinityFreePromotion", "主动休整：本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。"),
+        ],
+        "S02-05M1" => [new("artemisBuff", "我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得强攻或震击。")],
+        "S02-0510" => [new("hippolytaRevive", "主动休整 消耗3士气并弃置1张手牌：选择墓地1张费用不高于4的【奥林匹斯】军团活跃登场。")],
         "S02-06D1" =>
         [
             new("avalonRecover", "我方 回合1次 可消耗2符文：选择墓地中1张军团和1张战术加入手牌。随后，本回合从手牌中打出的下1张战术卡无需消耗费用。"),
@@ -644,7 +655,7 @@ public sealed partial class L12GameEngine
                 },
             ]);
         }
-        if (ability is "extendedRange" or "destroyInfiltrator")
+        if (ability is "extendedRange" or "destroyInfiltrator" or "revealHidden")
             return CommitActiveAbility(playerIndex, source, ability, null);
         return TryBeginS1FactionActiveAbility(playerIndex, source, ability);
     }
@@ -680,6 +691,9 @@ public sealed partial class L12GameEngine
             }
             case "destroyInfiltrator" when source.CardId == "S01-0004":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗2张活跃士气");
+                break;
+            case "revealHidden" when source.CardId == "S01-0415":
+                if (!source.Hidden) return CommandResult.Reject("服部半藏当前已经为正面");
                 break;
             default:
                 return TryCommitS1FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards);
@@ -805,6 +819,7 @@ public sealed partial class L12GameEngine
         if (target is not null)
         {
             var (nextRow, nextSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
+            NotifyS2LegionMoved(item.Controller, target, row, nextRow);
         }
         item.Data["ryoma-index"] = (int.Parse(item.Data["ryoma-index"]) + 1).ToString(); ContinueRyomaMove(item);
     }
@@ -874,7 +889,7 @@ public sealed partial class L12GameEngine
     private static bool IsCounterTactic(string cardId) => cardId is
         "S01-0016" or "S01-0017" or "S01-0018" or "S01-0019" or "S01-0020" or "S01-0021" or "S01-0120" or
         "S01-0223" or "S01-0224" or "S01-0320" or "S01-0420" or
-        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018";
+        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106";
 
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {
@@ -996,6 +1011,9 @@ public sealed partial class L12GameEngine
             .Select(counter => CreateTriggerCandidate(defenderIndex, counter, "reaction", "【对方进攻后】反击战术"))
             .Concat(defender.Hand.Where(card => card.CardId == "S01-0213")
                 .Select(kaba => CreateTriggerCandidate(defenderIndex, kaba, "reaction", "【对方进攻后】手牌效果")))
+            .Concat(defender.Hand.Where(card => card.CardId == "S02-0523")
+                .Select(horse => CreateTriggerCandidate(defenderIndex, horse, "trojan-after-attack", "【对方进攻后】效果",
+                    new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })))
             .ToArray();
         QueueTriggerCandidates(candidates);
     }

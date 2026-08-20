@@ -576,6 +576,80 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void HattoriHanzoCanRevealFromHiddenStateDuringOwnersMainPhase()
+    {
+        var game = Create(seed: 8866);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].Library.Concat(game.State.Players[index].Hand)
+                .Any(card => card.CardId == "S01-0415"));
+        var player = game.State.Players[owner];
+        var hanzo = TakeCard(game, owner, "S01-0415");
+        hanzo.Hidden = true;
+        hanzo.Tapped = false;
+        player.Field[0][0] = hanzo;
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+
+        var ownSnapshot = JsonSerializer.Serialize(game.SnapshotFor(owner));
+        var opponentSnapshot = JsonSerializer.Serialize(game.SnapshotFor(1 - owner));
+        Assert.Contains("S01-0415", ownSnapshot);
+        Assert.Contains("revealHidden", ownSnapshot);
+        Assert.Contains("hidden-card", opponentSnapshot);
+
+        Assert.True(game.Handle(owner,
+            new L12Command("activateAbility", hanzo.InstanceId, Ability: "revealHidden")).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+
+        Assert.False(hanzo.Hidden);
+        Assert.Contains(game.State.Events,
+            item => item.Text.Contains("主动翻回正面", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ShanheShejituReusesObservingStarsAllTopBottomOrdering()
+    {
+        var game = Create(seed: 8867);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].Library.Concat(game.State.Players[index].Hand)
+                .Any(card => card.CardId == "S01-0117"));
+        var player = game.State.Players[owner];
+        var shanhe = TakeCard(game, owner, "S01-0117");
+        shanhe.Tapped = false;
+        player.Relic = shanhe;
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+
+        var eligible = player.Library.First(card => card.Faction == "tianting");
+        player.Library.Remove(eligible);
+        player.Library.Insert(0, eligible);
+        var discard = player.Hand.First();
+
+        Assert.True(game.Handle(owner,
+            new L12Command("activateAbility", shanhe.InstanceId, Ability: "artifactSearch")).Accepted);
+        var costPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: costPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+
+        var searchPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(eligible.InstanceId, searchPrompt.ValidChoices);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: searchPrompt.PromptId,
+            Choice: eligible.InstanceId)).Accepted);
+
+        var orderPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("all-top-bottom", orderPrompt.Data["placementMode"]);
+        Assert.Equal(2, orderPrompt.ValidChoices.Count);
+        var bottom = orderPrompt.ValidChoices.AsEnumerable().Reverse().ToList();
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: orderPrompt.PromptId,
+            TopCardInstanceIds: [], BottomCardInstanceIds: bottom)).Accepted);
+        Assert.Equal(bottom, player.Library.TakeLast(2).Select(card => card.InstanceId));
+    }
+
+    [Fact]
     public void TriggeredEffectStillResolvesAfterItsSourceLeavesTheField()
     {
         var game = Create(seed: 5524);

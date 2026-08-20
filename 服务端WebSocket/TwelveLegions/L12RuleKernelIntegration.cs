@@ -139,6 +139,9 @@ public sealed partial class L12GameEngine
     {
         if (choice is "yes" or "no" or "skip" or "top" or "bottom") return true;
         if (choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)) return true;
+        // PendingActivation 也用于士气/神力等真实资源的预声明。士气不是
+        // L12CardInstance，不能仅依赖 FindPromptCard 校验，否则合法选择会在支付前被误判失效。
+        if (State.Players[controller].Morale.Any(card => card.InstanceId == choice)) return true;
         if (GetAbilities(State.Players[controller].MasterId).Any(view => view.Id.Equals(choice, StringComparison.OrdinalIgnoreCase)))
             return true;
         if (choice.Split(':') is [var rowText, var slotText]
@@ -186,7 +189,8 @@ public sealed partial class L12GameEngine
         {
             var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.Card).ToList();
             if (HasDeathTrigger(entry.Card))
-                sameTime.Add(CreateTriggerCandidate(entry.Controller, entry.Card, "death", "【阵亡时】效果"));
+                sameTime.Add(CreateTriggerCandidate(entry.Controller, entry.Card, "death", "【阵亡时】效果",
+                    new Dictionary<string, string> { ["cause"] = "combat" }));
             return sameTime;
         }).ToList();
         foreach (var defeatedController in materializedDeaths.Select(entry => entry.Controller).Distinct())
@@ -198,6 +202,8 @@ public sealed partial class L12GameEngine
         {
             var nephthys = BuildNephthysOwnDeathCandidate(entry.Controller, entry.Card);
             if (nephthys is not null) candidates.Add(nephthys);
+            var artemis = BuildArtemisRangedDeathCandidate(entry.Controller, entry.Card);
+            if (artemis is not null) candidates.Add(artemis);
         }
         QueueTriggerCandidates(candidates);
     }
@@ -251,7 +257,12 @@ public sealed partial class L12GameEngine
                 continue;
             }
             var data = new Dictionary<string, string> { ["batchId"] = batch.BatchId, ["choiceMode"] = "ordered" };
-            foreach (var candidate in batch.Candidates) data[candidate.CandidateId] = $"〈{candidate.SourceName}〉{candidate.Text}";
+            foreach (var candidate in batch.Candidates)
+            {
+                data[candidate.CandidateId] = $"〈{candidate.SourceName}〉{candidate.Text}";
+                data[$"sourceInstance:{candidate.CandidateId}"] = candidate.SourceInstanceId;
+                data[$"trigger:{candidate.CandidateId}"] = candidate.Trigger;
+            }
             State.PendingTriggerBatches.Insert(0, batch);
             CreatePrompt(batch.Controller, "trigger-order", "同一时点有多个效果触发，请按结算先后排列",
                 batch.Candidates.Select(candidate => candidate.CandidateId), batch.Candidates.Count, batch.Candidates.Count,
@@ -317,8 +328,9 @@ public sealed partial class L12GameEngine
     /// </summary>
     private int GetTurnAndPositionContinuousTroops(L12PlayerState owner, L12CardInstance card, int row, int slot)
     {
+        var attachedSword = card.AttachedCards.Any(attached => attached.CardId == "S02-06S2") ? 1000 : 0;
         var isOpponentTurn = State.ActivePlayer != owner.PlayerIndex;
-        var modifier = 0;
+        var modifier = attachedSword;
 
         if (isOpponentTurn)
         {

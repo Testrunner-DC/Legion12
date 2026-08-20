@@ -11,6 +11,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == command.CardInstanceId);
         if (card is null) return CommandResult.Reject("卡牌不在手牌中");
+        if (card.CardType == "artifact" && player.Relic?.CardId == "S02-0305")
+            return CommandResult.Reject("〈安德华拉诺特〉使我方无法从手牌打出圣物");
         if (State.ActiveDisaster?.CardId == "S02-DS01" && card.CardType == "legion"
             && player.Library.FirstOrDefault() is { } visibleTop
             && !string.IsNullOrWhiteSpace(card.Profession)
@@ -425,6 +427,7 @@ public sealed partial class L12GameEngine
         {
             var target = FindOnField(defender, command.Target.InstanceId, out var targetRow, out _);
             if (target is null || target.Hidden || !IsFieldLegion(target)) return CommandResult.Reject("目标不是可进攻军团");
+            if (target.CardId == "S02-0516" && !target.Tapped) return CommandResult.Reject("活跃的汉尼拔无法被进攻");
             if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !target.Tapped)
                 return CommandResult.Reject("〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团");
             if (IsProtectedByRestedAmakine(defender, target)) return CommandResult.Reject("休整的阿麦金使活跃的试炼军团不可被进攻");
@@ -480,7 +483,13 @@ public sealed partial class L12GameEngine
             attacker.Troops += 2000;
             AddEvent("effect", playerIndex, $"须佐之男使 {attacker.Name} 本次前排进攻兵力 +2000", attacker);
         }
-        var damage = 1 + (attacker.HasStrongAttack ? 1 : 0);
+        if (State.Players[playerIndex].UsedAbilities.Contains($"s2-tsukuyomi-attack:{attacker.InstanceId}:{State.TurnSerial}"))
+        {
+            temporaryAttackerTroopsBonus += 1000;
+            attacker.Troops += 1000;
+            AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+1000", attacker);
+        }
+        var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
         State.PendingDefense = new L12PendingDefense
         {
@@ -701,6 +710,7 @@ public sealed partial class L12GameEngine
         }
 
         RevertPendingAttackTroopsBonus(pending, attacker);
+        ReturnWukongMasterLegionAfterAttack(pending.AttackerPlayer, attacker);
         State.PendingDefense = null;
         if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
         QueueAfterAttackEffects(pending.AttackerPlayer, attacker, killedTarget);
@@ -724,7 +734,9 @@ public sealed partial class L12GameEngine
         if (player.Field[targetRow][targetSlot] is not null) return CommandResult.Reject("目标阵地已占用");
         var tenkaFreeMoveKey = $"s2-tenka-free-move:{card.InstanceId}:{State.TurnSerial}";
         var hasTenkaFreeMove = player.UsedAbilities.Contains(tenkaFreeMoveKey);
-        if (!hasTenkaFreeMove && command.CardInstanceIds is null && NeedsManualOrdinaryResourcePayment(player, 1))
+        var hasHippolytaFreeFrontBackMove = sourceRow != targetRow
+            && PublicLegions(player).Any(candidate => candidate.CardId == "S02-0510" && candidate.Tapped);
+        if (!hasTenkaFreeMove && !hasHippolytaFreeFrontBackMove && command.CardInstanceIds is null && NeedsManualOrdinaryResourcePayment(player, 1))
         {
             CreateResourcePaymentPrompt(playerIndex, 1, "move-morale-choice", null, new Dictionary<string, string>
             {
@@ -734,7 +746,7 @@ public sealed partial class L12GameEngine
             });
             return CommandResult.Ok();
         }
-        if (!hasTenkaFreeMove && !(command.CardInstanceIds is not null
+        if (!hasTenkaFreeMove && !hasHippolytaFreeFrontBackMove && !(command.CardInstanceIds is not null
             ? TryConsumeSelectedResources(player, 1, command.CardInstanceIds)
             : TryConsumeMorale(player, 1, allowTombGuards: false)))
             return CommandResult.Reject("移动需要消耗 1 张活跃士气");
@@ -743,6 +755,7 @@ public sealed partial class L12GameEngine
         card.LastMovedTurn = State.TurnSerial;
         if (hasTenkaFreeMove) player.UsedAbilities.Remove(tenkaFreeMoveKey);
         AddEvent("move", playerIndex, $"{card.Name} 移动至相邻阵地", card);
+        NotifyS2LegionMoved(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }
 
@@ -765,6 +778,7 @@ public sealed partial class L12GameEngine
         card.LastMovedTurn = State.TurnSerial;
         card.LastCavalryMoveTurn = State.TurnSerial;
         AddEvent("move", playerIndex, $"{card.Name} 发动骑兵位移", card);
+        NotifyS2LegionMoved(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }
 

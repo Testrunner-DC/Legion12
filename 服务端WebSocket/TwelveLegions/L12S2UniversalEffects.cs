@@ -25,11 +25,6 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {
-            case "S02-0001":
-                State.Players[1 - item.Controller].NextActiveTacticSurcharge++;
-                AddEvent("effect", item.Controller, "对方下个回合从手牌打出的主动战术费用 +1", card);
-                FinishStackItem(item);
-                return true;
             case "S02-0003":
             {
                 var choices = State.Players.SelectMany(player => player.Field[1])
@@ -130,14 +125,6 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-holy-lock-attach" });
                 return true;
             }
-            case "S02-0014":
-                if (player.Hand.Count <= 4)
-                {
-                    if (!Draw(player, 2)) SetWinner(1 - item.Controller, "〈瞬间的思路〉抽牌时牌库为空");
-                    else AddEvent("draw", item.Controller, "〈瞬间的思路〉抽取 2 张牌", card);
-                }
-                FinishStackItem(item);
-                return true;
             case "S02-0105":
             {
                 var choices = PublicLegions(State.Players[1 - item.Controller])

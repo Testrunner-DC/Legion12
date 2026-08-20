@@ -59,7 +59,7 @@ public sealed partial class L12GameEngine
         {
             State.FirstPlayer = State.DiceWinner;
             State.ActivePlayer = State.FirstPlayer;
-            PrepareLibrariesAndHands();
+            PrepareLibrariesAndHands(applyOptionalSetupDefaults: true);
             State.Phase = L12Phase.Mulligan;
             AddEvent("match-created", null, $"对局创建，玩家 {State.FirstPlayer + 1} 先手（测试准备捷径）");
         }
@@ -410,7 +410,7 @@ public sealed partial class L12GameEngine
         => player.Field.Select(row => row.Select(card =>
         {
             if (card is null) return null;
-            if (card.CardId == "S01-0415" && card.Hidden)
+            if (card.CardId == "S01-0415" && card.Hidden && !revealCounters)
                 return new
                 {
                     card.InstanceId,
@@ -639,6 +639,14 @@ public sealed partial class L12GameEngine
     private CommandResult EndTurn(int playerIndex)
     {
         if (!CanAct(playerIndex)) return CommandResult.Reject("只能在自己的主要阶段结束回合");
+        var endingPlayer = State.Players[playerIndex];
+        if (endingPlayer.Relic?.CardId == "S02-0305" && endingPlayer.Hand.Count > 6)
+        {
+            CreatePrompt(playerIndex, "hand-cards", "安德华拉诺特：弃置手牌直至手牌数量为6张",
+                endingPlayer.Hand.Select(card => card.InstanceId), endingPlayer.Hand.Count - 6, endingPlayer.Hand.Count - 6,
+                "s2-ring-end-discard", isPrivate: true);
+            return CommandResult.Ok();
+        }
         State.Phase = L12Phase.End;
         AddEvent("phase", playerIndex, "执行结束阶段");
         if (DisastersEnabled) ResolveEndPhaseDisasterEffect(playerIndex);
@@ -650,6 +658,11 @@ public sealed partial class L12GameEngine
     private void CompleteEndTurn(int playerIndex)
     {
         var current = State.Players[playerIndex];
+        ResolveS2DelayedEndTurnCards(playerIndex);
+        if (State.Phase == L12Phase.GameOver) return;
+        ReturnWukongMasterLegions(current, "我方回合结束", resumeEndTurn: true);
+        if (State.PendingPrompts.Any(prompt => prompt.Continuation == "s2-wukong-return-morale"
+            && prompt.Data.GetValueOrDefault("resumeEndTurn") == "true")) return;
         current.NextLegionChargeMaxCost = null;
         current.FreeTacticCount = 0;
         current.TemporaryMorale = 0;
@@ -831,7 +844,7 @@ public sealed partial class L12GameEngine
     }
 
     private static bool IsFieldLegion(L12CardInstance card)
-        => card.CardType == "legion" || card.CardId == "S01-0417";
+        => card.CardType == "legion" || card.CardId == "S01-0417" || card.IsMasterLegion;
 
     private L12CardInstance? FindPublicCard(string? instanceId, out int owner)
     {
@@ -881,13 +894,16 @@ public sealed partial class L12GameEngine
         {
             var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, card).ToList();
             if (isDefeat && HasDeathTrigger(card))
-                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, card, "death", "【阵亡时】效果"));
+                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, card, "death", "【阵亡时】效果",
+                    new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }));
             if (isDefeat)
             {
                 var morrigan = BuildMorriganEnemyDeathCandidate(player.PlayerIndex);
                 if (morrigan is not null) candidates.Add(morrigan);
                 var nephthys = BuildNephthysOwnDeathCandidate(player.PlayerIndex, card);
                 if (nephthys is not null) candidates.Add(nephthys);
+                var artemis = BuildArtemisRangedDeathCandidate(player.PlayerIndex, card);
+                if (artemis is not null) candidates.Add(artemis);
             }
             QueueTriggerCandidates(candidates);
         }
@@ -1045,29 +1061,40 @@ public sealed partial class L12GameEngine
     private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
     {
         var player = State.Players[playerIndex];
+        amount = AdjustAnderstorpRingDamage(player, amount);
         player.Hp -= amount;
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {amount} 点血量");
         if (player.Hp <= 0)
             SetWinner(1 - playerIndex, $"{player.Name}的主宰因{source}血量降至0");
         if (State.Phase != L12Phase.GameOver)
+        {
             QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource));
+            QueueAnderstorpRingDraw(playerIndex);
+        }
     }
 
     private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
     {
         var player = State.Players[playerIndex];
+        amount = AdjustAnderstorpRingDamage(player, amount);
         var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
         if (actual == 0) return;
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
         QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource));
+        QueueAnderstorpRingDraw(playerIndex);
     }
 
     private void HealMaster(int playerIndex, int amount, string source)
     {
         var player = State.Players[playerIndex];
+        if (player.MasterCannotHeal)
+        {
+            AddEvent("heal-prevented", playerIndex, $"{player.Name} 的主宰因〈雷神索尔〉无法因{source}增加血量");
+            return;
+        }
         var actual = Math.Min(amount, player.MaxHp - player.Hp);
         if (actual <= 0) return;
         player.Hp += actual;

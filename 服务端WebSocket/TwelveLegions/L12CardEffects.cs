@@ -24,6 +24,12 @@ public sealed partial class L12GameEngine
     private void ResolveOnPlayContinuousEffects(int playerIndex, L12CardInstance card)
     {
         var player = State.Players[playerIndex];
+        if (card.CardType == "legion" && card.Faction == "asgard"
+            && player.UsedAbilities.Contains($"s2-thor-charge:{State.TurnSerial}"))
+        {
+            card.HasCharge = true;
+            AddEvent("effect", playerIndex, $"{card.Name}获得雷神索尔赋予的冲锋", card);
+        }
         if (card.CardType != "legion" || player.NextLegionChargeMaxCost is not int maxCost || card.CurrentCost > maxCost) return;
         player.NextLegionChargeMaxCost = null;
         card.HasCharge = true;
@@ -32,6 +38,7 @@ public sealed partial class L12GameEngine
 
     private void ResolveCardEffect(L12StackItem item)
     {
+        if (TryResolveVerifiedAtomicProgram(item)) return;
         switch (item.Trigger)
         {
             case "enter": ResolveEnterEffect(item); break;
@@ -53,6 +60,7 @@ public sealed partial class L12GameEngine
             case "nephthys-own-death": ResolveS2NephthysOwnDeath(item); break;
             case "master-morale-return": ResolveS2MasterMoraleReturn(item); break;
             case "medjed-master-damage": ResolveMedjedMasterDamageReaction(item); break;
+            case "trojan-after-attack": ResolveS2TrojanHorseAfterAttack(item); break;
             default: FinishStackItem(item); break;
         }
     }
@@ -104,36 +112,11 @@ public sealed partial class L12GameEngine
                         "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "mulan-charge" });
                 else FinishStackItem(item);
                 return;
-            case "S01-0109":
-            {
-                var added = AddMorale(player, 3, tapped: true);
-                AddEvent("effect", item.Controller, $"白起从士气牌库追加 {added} 张休整士气", card);
-                FinishStackItem(item); return;
-            }
-            case "S01-0117":
-            {
-                var added = AddMorale(player, 1);
-                AddEvent("effect", item.Controller, $"山河社稷图从士气牌库追加 {added} 张活跃士气", card);
-                FinishStackItem(item); return;
-            }
-            case "S01-0401":
-            case "S01-0404":
-            case "S01-0410":
-                card.HasCharge = true;
-                AddEvent("effect", item.Controller, $"{card.Name} 获得冲锋", card);
-                FinishStackItem(item); return;
             case "S01-0405":
                 if (!player.Field[0].Any(other => other is not null && other.InstanceId != card.InstanceId))
                 {
                     card.HasCharge = true;
                     AddEvent("effect", item.Controller, "宫本武藏因我方前排没有其他军团而获得冲锋", card);
-                }
-                FinishStackItem(item); return;
-            case "S01-0413":
-                if (player.Hand.Count <= 5)
-                {
-                    if (!Draw(player, 1)) SetWinner(1 - item.Controller, "源博雅效果抽牌时牌库为空");
-                    else AddEvent("effect", item.Controller, "源博雅抽取 1 张牌", card);
                 }
                 FinishStackItem(item); return;
             case "S01-0415":
@@ -168,10 +151,6 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {
-            case "S01-0012":
-                player.NextLegionChargeMaxCost = 6;
-                AddEvent("effect", item.Controller, "本回合下一张费用不高于 6 的军团获得冲锋", card);
-                FinishStackItem(item); return;
             case "S01-0015":
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "议和谈判抽牌时牌库为空"); FinishStackItem(item); return; }
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "是否同意〈议和谈判〉？", ["agree", "refuse"], 1, 1,
@@ -228,17 +207,6 @@ public sealed partial class L12GameEngine
                 PromptEnemyLegion(item, "honda-kill-zero", "选择对方 1 张当前费用为 0 的军团并击杀",
                     target => target.CurrentCost == 0, optional: false);
                 return;
-            case "S01-0405":
-                if (player.Hand.Count <= State.Players[1 - item.Controller].Hand.Count)
-                {
-                    if (!Draw(player, 1)) SetWinner(1 - item.Controller, "宫本武藏效果抽牌时牌库为空");
-                    else AddEvent("effect", item.Controller, "宫本武藏抽取 1 张牌", card);
-                }
-                FinishStackItem(item); return;
-            case "S01-0409":
-                if (FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 1)
-                    card.Troops = 2000;
-                FinishStackItem(item); return;
             case "S01-0413":
             {
                 var counters = State.Players[1 - item.Controller].Field[1]
@@ -272,10 +240,6 @@ public sealed partial class L12GameEngine
         if (card is null) { FinishStackItem(item); return; }
         switch (card.CardId)
         {
-            case "S01-0102":
-                if (!Draw(State.Players[item.Controller], 1)) SetWinner(1 - item.Controller, "武则天阵亡效果抽牌时牌库为空");
-                HealMaster(item.Controller, 1, "武则天的【阵亡时】效果");
-                FinishStackItem(item); return;
             case "S01-0108":
             {
                 if (State.ActivePlayer == item.Controller) { FinishStackItem(item); return; }
@@ -308,10 +272,6 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional", "是否将桂小五郎返回牌库顶部？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "katsura-return" });
                 return;
-            case "S01-0409" when item.Data.GetValueOrDefault("killed") == "true":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "源义经击杀效果抽牌时牌库为空");
-                else AddEvent("effect", item.Controller, "源义经因击杀抽取 1 张牌", card);
-                FinishStackItem(item); return;
             default:
                 if (!TryResolveS1ExtendedAfterAttack(item, card) && !TryResolveS2UniversalAfterAttack(item, card)
                     && !TryResolveS2FactionAfterAttack(item, card)) FinishStackItem(item);

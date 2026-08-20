@@ -238,6 +238,8 @@ public sealed partial class L12GameEngine
         "extendedRange" when source.CardId == "S01-0003" => 2,
         "discardHolyLock" => 3,
         "forgePromotionDiscount" or "forgeReadyOnKill" or "olympusMoraleFlip" => 1,
+        "thorCharge" => 2,
+        "hippolytaRevive" => 3,
         "factionGainRune" => 2,
         _ => 0,
     };
@@ -302,9 +304,15 @@ public sealed partial class L12GameEngine
             case "artifactSearch":
             {
                 var top = player.Library.Take(3).ToArray();
-                var choices = top.Where(card => card.Faction == "tianting").Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { AddEvent("reveal", item.Controller, "山河社稷图检索未命中，向对手展示顶部 3 张牌", top); FinishStackItem(item); return; }
                 item.Data["shanhe-top"] = string.Join('|', top.Select(card => card.InstanceId));
+                var choices = top.Where(card => card.Faction == "tianting").Select(card => card.InstanceId).ToArray();
+                if (choices.Length == 0)
+                {
+                    AddEvent("reveal", item.Controller, "山河社稷图检索未命中，向对手展示顶部 3 张牌", top);
+                    BeginAllTopBottomReorder(item, "shanhe", top.Select(card => card.InstanceId),
+                        "山河社稷图：排列其余卡牌，并将其全部放回牌库顶部或全部放回牌库底部");
+                    return;
+                }
                 CreatePrompt(item.Controller, "search", "选择其中 1 张【天廷】卡牌加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "shanhe-search-pick" });
                 return;
@@ -395,13 +403,7 @@ public sealed partial class L12GameEngine
         player.Library.Remove(card); player.Hand.Add(card); AddEvent("search", item.Controller, $"山河社稷图将 {card.Name} 加入手牌", card);
         var remaining = item.Data["shanhe-top"].Split('|').Where(id => id != cardId).ToArray();
         if (remaining.Length == 0) { FinishStackItem(item); return; }
-        item.Data["reorder-context"] = "shanhe";
-        item.Data["reorder-cards"] = string.Join('|', remaining);
-        CreatePrompt(item.Controller, "order", "依次选择其余卡牌的排列顺序", remaining, remaining.Length, remaining.Length,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string>
-            {
-                ["action"] = "reorder-order",
-                ["placementMode"] = "split-top-bottom",
-            });
+        BeginAllTopBottomReorder(item, "shanhe", remaining,
+            "山河社稷图：排列其余卡牌，并将其全部放回牌库顶部或全部放回牌库底部");
     }
 }

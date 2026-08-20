@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
+import GmPanel from './game/GmPanel.vue'
 import { gameAction, l12State, leaveRoom } from './net'
 
 const router = useRouter()
@@ -12,7 +13,7 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
-  if (game.value?.phase === 'GameOver' && l12State.room) leaveRoom()
+  if (l12State.room && (game.value?.phase === 'GameOver' || l12State.room.sandbox)) leaveRoom()
   router.push('/lobby')
 }
 </script>
@@ -21,10 +22,11 @@ function returnToLobby() {
   <div v-if="game" class="game-page">
     <div class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对手{{ opponent?.connected ? '在线' : '已断开' }}</span>
-      <button @click="router.push('/lobby')">返回大厅</button>
+      <button @click="returnToLobby">返回大厅</button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div>
     <GameBoard :game="game" :read-only="l12State.spectating" />
+    <GmPanel v-if="l12State.gmEnabled" :game="game" />
 
     <Transition name="fade">
       <button v-if="l12State.notice" class="toast" @click="l12State.notice = ''">{{ l12State.notice }}</button>

@@ -31,14 +31,68 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void PrepareLibrariesAndHands()
+    private void PrepareLibrariesAndHands(bool applyOptionalSetupDefaults = false)
     {
         foreach (var player in State.Players)
         {
+            var startingHandSize = 6;
+            // skipPreparation 是服务端测试捷径，无人回答开局 Prompt，所以可显式请求默认使用。
+            // 真实对局在 BeginOptionalS2Setup 中由玩家回答“可”效果，这里只根据已建立的区域状态计算起始手牌。
+            if (applyOptionalSetupDefaults && player.Library.FirstOrDefault(card => card.CardId == "S02-0305") is { } ring)
+            {
+                player.Library.Remove(ring);
+                player.Relic = ring;
+                AddEvent("setup", player.PlayerIndex, "将〈安德华拉诺特〉从牌库置入圣物区，起始手牌改为4张", ring);
+            }
+            if (applyOptionalSetupDefaults && player.MasterId == "S02-03M1"
+                && player.Library.FirstOrDefault(card => card.CardId == "S02-0301") is { } hammer)
+            {
+                player.Library.Remove(hammer);
+                player.Hand.Add(hammer);
+                AddEvent("setup", player.PlayerIndex, "〈雷神索尔〉将1张〈雷神之锤〉加入起始手牌", hammer);
+            }
+            if (player.Relic?.CardId == "S02-0305") startingHandSize = 4;
+            if (player.MasterId == "S02-03M1" && player.Hand.Any(card => card.CardId == "S02-0301")) startingHandSize--;
             Shuffle(player.Library);
-            Draw(player, 6);
-            if (player.MasterId is "S01-02D1" or "S01-03D1" or "S01-04D1") AddMorale(player, 2);
+            Draw(player, startingHandSize);
+            if (player.MasterId is "S01-02D1" or "S01-03D1" or "S01-04D1" or "S02-05D1") AddMorale(player, 2);
         }
+    }
+
+    private void BeginOptionalS2Setup()
+    {
+        foreach (var player in State.Players)
+        {
+            if (player.Library.Any(card => card.CardId == "S02-0305"))
+                CreatePrompt(player.PlayerIndex, "optional", "游戏开始时，是否将〈安德华拉诺特〉从牌库置入圣物区？",
+                    ["yes", "no"], 1, 1, "setup-s2-ring", isPrivate: true,
+                    data: new Dictionary<string, string> { ["yes"] = "置入圣物区，起始手牌为4张", ["no"] = "不发动" });
+            if (player.MasterId == "S02-03M1" && player.Library.Any(card => card.CardId == "S02-0301"))
+                CreatePrompt(player.PlayerIndex, "optional", "游戏开始时，是否将牌库1张〈雷神之锤〉加入起始手牌？",
+                    ["yes", "no"], 1, 1, "setup-s2-thor-hammer", isPrivate: true,
+                    data: new Dictionary<string, string> { ["yes"] = "加入起始手牌", ["no"] = "不发动" });
+        }
+        if (!State.PendingPrompts.Any(prompt => prompt.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)))
+            FinishOptionalS2Setup();
+    }
+
+    private void FinishOptionalS2Setup()
+    {
+        PrepareLibrariesAndHands();
+        BeginTrialOrderingOrMulligan();
+    }
+
+    private void BeginTrialOrderingOrMulligan()
+    {
+        foreach (var player in State.Players.Where(candidate => candidate.SpecialZones.Trials.Count > 1 && !candidate.TrialOrderDone))
+        {
+            var data = new Dictionary<string, string> { ["layout"] = "single-row", ["sourceZone"] = "trial" };
+            foreach (var trial in player.SpecialZones.Trials) AddPromptCardData(data, trial);
+            CreatePrompt(player.PlayerIndex, "trial-order", "按本局进行顺序依次选择全部试炼",
+                player.SpecialZones.Trials.Select(card => card.InstanceId), player.SpecialZones.Trials.Count,
+                player.SpecialZones.Trials.Count, "setup-trial-order", isPrivate: true, data: data);
+        }
+        if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
     }
 
     private L12Prompt CreatePrompt(
@@ -191,6 +245,32 @@ public sealed partial class L12GameEngine
                 if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
                 break;
             }
+            case "setup-s2-ring":
+            {
+                var player = State.Players[playerIndex];
+                if (chosen[0] == "yes" && player.Library.FirstOrDefault(card => card.CardId == "S02-0305") is { } ring)
+                {
+                    player.Library.Remove(ring);
+                    player.Relic = ring;
+                    AddEvent("setup", playerIndex, "将〈安德华拉诺特〉从牌库置入圣物区，起始手牌改为4张", ring);
+                }
+                if (!State.PendingPrompts.Any(item => item.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)))
+                    FinishOptionalS2Setup();
+                break;
+            }
+            case "setup-s2-thor-hammer":
+            {
+                var player = State.Players[playerIndex];
+                if (chosen[0] == "yes" && player.Library.FirstOrDefault(card => card.CardId == "S02-0301") is { } hammer)
+                {
+                    player.Library.Remove(hammer);
+                    player.Hand.Add(hammer);
+                    AddEvent("setup", playerIndex, "〈雷神索尔〉将1张〈雷神之锤〉加入起始手牌", hammer);
+                }
+                if (!State.PendingPrompts.Any(item => item.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)))
+                    FinishOptionalS2Setup();
+                break;
+            }
             case "faction-zero-recovery":
             {
                 var player = State.Players[playerIndex];
@@ -201,6 +281,26 @@ public sealed partial class L12GameEngine
                     AddMorale(player, 2, tapped: true);
                     AddEvent("faction-effect", playerIndex, "天廷阵营效果：追加 2 张休整士气");
                 }
+                break;
+            }
+            case "s2-ring-end-discard":
+            {
+                var player = State.Players[playerIndex];
+                foreach (var id in chosen) MoveHandToGrave(player, id, causedByEffect: false);
+                State.Phase = L12Phase.End;
+                AddEvent("phase", playerIndex, "执行结束阶段");
+                if (DisastersEnabled) ResolveEndPhaseDisasterEffect(playerIndex);
+                if (State.PendingPrompts.Count == 0 && State.EffectStack.Count == 0) CompleteEndTurn(playerIndex);
+                break;
+            }
+            case "s2-wukong-return-morale":
+            {
+                if (chosen[0] == "yes")
+                {
+                    var added = AddMorale(State.Players[playerIndex], 1, tapped: true);
+                    if (added > 0) AddEvent("morale", playerIndex, "孙悟空返回主宰区后追加1张休整士气");
+                }
+                if (prompt.Data.GetValueOrDefault("resumeEndTurn") == "true") CompleteEndTurn(playerIndex);
                 break;
             }
             case "disaster-trigger-confirm":
@@ -495,18 +595,9 @@ public sealed partial class L12GameEngine
 
     private void PrepareAfterDisasterSelection(string eventText)
     {
-        PrepareLibrariesAndHands();
         SetDisasterValue(0);
         AddEvent("disaster-deck-ready", null, eventText);
-        foreach (var player in State.Players.Where(candidate => candidate.SpecialZones.Trials.Count > 1 && !candidate.TrialOrderDone))
-        {
-            var data = new Dictionary<string, string> { ["layout"] = "single-row", ["sourceZone"] = "trial" };
-            foreach (var trial in player.SpecialZones.Trials) AddPromptCardData(data, trial);
-            CreatePrompt(player.PlayerIndex, "trial-order", "按本局进行顺序依次选择全部试炼",
-                player.SpecialZones.Trials.Select(card => card.InstanceId), player.SpecialZones.Trials.Count,
-                player.SpecialZones.Trials.Count, "setup-trial-order", isPrivate: true, data: data);
-        }
-        if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
+        BeginOptionalS2Setup();
     }
 
     private void StartMulliganAfterPreparation()
@@ -866,6 +957,7 @@ public sealed partial class L12GameEngine
         if (item.Trigger == "authority-event" && FindAuthorityEvent(item) is { } authorityEvent)
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);
+        var queueAngusTrial = !item.Negated && item.Trigger == "play" && completedSource?.CardType == "tactic";
         var queueExorcistReturn = !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";
@@ -879,6 +971,7 @@ public sealed partial class L12GameEngine
             owner.Graveyard.Add(resolving);
         }
         if (queueExorcistReturn) QueueS2ExorcistReturns(item.Controller, completedSource!);
+        if (queueAngusTrial) QueueS2AngusTacticTrial(item.Controller, completedSource!);
         if (State.EffectStack.Count > 0)
         {
             if (State.IsResolvingStack) ResolveTopStack();
