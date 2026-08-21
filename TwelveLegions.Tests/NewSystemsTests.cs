@@ -938,6 +938,70 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void ThunderWrathRollsForLegionsAboveTwoThousandAndMayEndTheAttack()
+    {
+        var sawEndedAttack = false;
+        var sawContinuedAttack = false;
+        for (var seed = 7800; seed < 7840 && (!sawEndedAttack || !sawContinuedAttack); seed++)
+        {
+            var game = Create(seed: seed);
+            var attacker = CreateInstance("S02-0004", $"thunder-attacker-{seed}");
+            attacker.SummonRound = -1;
+            game.State.Players[0].Field[0][0] = attacker;
+            game.State.Players[1].Field[0] = new L12CardInstance?[3];
+            game.State.Players[1].Field[1] = new L12CardInstance?[3];
+            game.State.ActiveDisaster = CreateInstance("S01-DS04", $"thunder-{seed}");
+            game.State.ActivePlayer = 0;
+            game.State.Phase = L12Phase.Main;
+            var hpBefore = game.State.Players[1].Hp;
+
+            Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+                Target: new L12AttackTarget("master"))).Accepted);
+            var rollEvent = Assert.Single(game.State.Events, entry => entry.Type == "dice");
+            var roll = int.Parse(rollEvent.Text[^1].ToString());
+            if (roll <= 2)
+            {
+                sawEndedAttack = true;
+                Assert.Null(game.State.PendingDefense);
+                Assert.Equal(L12Phase.Main, game.State.Phase);
+                Assert.True(attacker.Tapped);
+                Assert.Equal(hpBefore, game.State.Players[1].Hp);
+                Assert.Contains(game.State.Events, entry => entry.Type == "attack-ended"
+                    && entry.Text.Contains("雷霆天怒"));
+            }
+            else
+            {
+                sawContinuedAttack = true;
+                Assert.NotNull(game.State.PendingDefense);
+                Assert.Equal(L12Phase.Defense, game.State.Phase);
+            }
+        }
+
+        Assert.True(sawEndedAttack);
+        Assert.True(sawContinuedAttack);
+    }
+
+    [Fact]
+    public void ThunderWrathDoesNotRollForLegionsWithTwoThousandTroops()
+    {
+        var game = Create(seed: 7841);
+        var attacker = CreateInstance("S02-0005", "thunder-low-attacker");
+        attacker.SummonRound = -1;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0] = new L12CardInstance?[3];
+        game.State.Players[1].Field[1] = new L12CardInstance?[3];
+        game.State.ActiveDisaster = CreateInstance("S01-DS04", "thunder-low");
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "dice");
+        Assert.NotNull(game.State.PendingDefense);
+    }
+
+    [Fact]
     public void RangedLegionsAreIdentifiedByTheCanonicalEffectSentence()
     {
         var ranged = Catalog.Cards.Values

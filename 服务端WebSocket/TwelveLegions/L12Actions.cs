@@ -467,6 +467,20 @@ public sealed partial class L12GameEngine
         }
         else return CommandResult.Reject("无效进攻目标");
 
+        if (State.ActiveDisaster?.CardId == "S01-DS04" && attacker.Troops > 2000)
+        {
+            var thunderRoll = _random.Next(1, 7);
+            AddEvent("dice", playerIndex, $"〈雷霆天怒〉：{attacker.Name}进攻时掷骰结果为 {thunderRoll}", attacker);
+            if (thunderRoll <= 2)
+            {
+                attacker.Tapped = true;
+                attacker.AttacksThisTurn++;
+                AddEvent("attack-ended", playerIndex,
+                    $"〈雷霆天怒〉使{attacker.Name}转为休整，进攻结束", attacker);
+                return CommandResult.Ok();
+            }
+        }
+
         attacker.Tapped = true;
         ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
