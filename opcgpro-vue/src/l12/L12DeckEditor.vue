@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { masterProfileUrl } from './specialAssets'
+import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
   MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
@@ -19,10 +20,17 @@ const counts = ref<Record<string, number>>({})
 const query = ref('')
 const typeFilter = ref('all')
 const productFilter = ref('all')
+const costFilter = ref('all')
+const disasterFilter = ref('all')
+const sortMode = ref<'number' | 'cost' | 'troops' | 'name'>('number')
 const selected = ref<DeckCard | null>(null)
 const activeDeckName = ref<string | null>(null)
 const specialIds = ref<string[]>([])
 const catalogTab = ref<'master' | 'main' | 'extra'>('master')
+const pendingDeleteName = ref('')
+const deckImageUrl = ref('')
+const deckImageBlob = ref<Blob | null>(null)
+const generatingDeckImage = ref(false)
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -72,9 +80,20 @@ const filtered = computed(() => {
     if (master && card.faction !== 'universal' && card.faction !== master.faction) return false
     if (typeFilter.value !== 'all' && cardTypeFilterKey(card.cardType) !== typeFilter.value) return false
     if (productFilter.value !== 'all' && card.product !== productFilter.value) return false
+    if (costFilter.value !== 'all' && (costFilter.value === '7+'
+      ? (card.cost ?? -1) < 7
+      : card.cost !== Number(costFilter.value))) return false
+    if (disasterFilter.value !== 'all' && (disasterFilter.value === 'none'
+      ? !!card.disasterLevel
+      : card.disasterLevel !== Number(disasterFilter.value))) return false
     return !keyword || [card.nameZh, card.number, card.profession, ...(card.traits ?? []), card.effect]
       .some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword))
-  }).sort((a, b) => a.number.localeCompare(b.number))
+  }).sort((a, b) => {
+    if (sortMode.value === 'name') return a.nameZh.localeCompare(b.nameZh, 'zh-CN')
+    if (sortMode.value === 'cost') return (a.cost ?? 99) - (b.cost ?? 99) || a.number.localeCompare(b.number)
+    if (sortMode.value === 'troops') return (b.troops ?? -1) - (a.troops ?? -1) || a.number.localeCompare(b.number)
+    return a.number.localeCompare(b.number)
+  })
 })
 const validation = computed(() => validateDeck({
   name: deckName.value, masterId: masterId.value,
@@ -193,13 +212,53 @@ function loadDeck(deck: SavedL12Deck) {
   notice.value = `已载入〈${deck.name}〉`
 }
 
-function onDelete(name = activeDeckName.value ?? '') {
+function requestDelete(name = activeDeckName.value ?? '') {
   if (!name) { notice.value = '当前不是已保存牌库'; return }
+  pendingDeleteName.value = name
+}
+
+function confirmDelete() {
+  const name = pendingDeleteName.value
+  if (!name) return
   deleteDeck(name)
   savedDecks.value = loadSavedDecks()
   if (activeDeckName.value === name) newDeck()
   notice.value = `已删除〈${name}〉`
+  pendingDeleteName.value = ''
 }
+
+function resetFilters() {
+  query.value = ''
+  typeFilter.value = productFilter.value = costFilter.value = disasterFilter.value = 'all'
+  sortMode.value = 'number'
+}
+
+function closeDeckImage() {
+  if (deckImageUrl.value) URL.revokeObjectURL(deckImageUrl.value)
+  deckImageUrl.value = ''
+  deckImageBlob.value = null
+}
+
+async function generateDeckImage() {
+  if (validation.value) { notice.value = validation.value; return }
+  generatingDeckImage.value = true
+  closeDeckImage()
+  try {
+    deckImageBlob.value = await createDeckImageBlob(currentDeck(), catalog.value)
+    deckImageUrl.value = URL.createObjectURL(deckImageBlob.value)
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : '牌库图生成失败'
+  } finally {
+    generatingDeckImage.value = false
+  }
+}
+
+async function saveGeneratedDeckImage() {
+  if (!deckImageBlob.value) return
+  await downloadDeckImage(currentDeck(), catalog.value, deckImageBlob.value)
+}
+
+onBeforeUnmount(closeDeckImage)
 </script>
 
 <template>
@@ -213,24 +272,29 @@ function onDelete(name = activeDeckName.value ?? '') {
         <button @click="newDeck">新建牌库</button>
         <button class="primary" :disabled="!!validation" @click="onSave">保存牌库</button>
         <button :disabled="!!validation" @click="onSaveAs">另存为牌库</button>
-        <button class="delete-deck" :disabled="!activeDeckName" @click="onDelete()">删除牌库</button>
+        <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
+        <button class="delete-deck" :disabled="!activeDeckName" @click="requestDelete()">删除牌库</button>
       </div>
     </header>
 
     <main v-if="loading" class="deck-loading">正在载入 248 张卡牌…</main>
     <main v-else class="deck-builder-grid">
       <aside class="deck-filter grand-panel">
-        <p class="kicker">COMMAND</p><h2>构筑设定</h2>
+        <p class="kicker">FILTER</p><h2>筛选</h2>
         <article v-if="selectedMaster" class="master-preview">
           <img :src="masterProfileUrl(selectedMaster.id, selectedMaster.imageUrl)" :alt="selectedMaster.nameZh"/>
           <div><b>{{ selectedMaster.nameZh }}</b><span>{{ factionLabels[selectedMaster.faction] }}</span><small>士气 {{ moraleIds.length }} 张</small></div>
         </article>
         <label>搜索<input v-model="query" placeholder="卡名、编号、效果"/></label>
         <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
-        <label>卡池<select v-model="productFilter"><option value="all">S1 + S2</option><option value="S01">S1</option><option value="S02">S2</option></select></label>
+        <label>卡池<select v-model="productFilter"><option value="all">全部</option><option value="S01">S1</option><option value="S02">S2</option></select></label>
+        <label>费用<select v-model="costFilter"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
+        <label>天灾等级<select v-model="disasterFilter"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
+        <label>排序<select v-model="sortMode"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+        <button class="filter-reset" @click="resetFilters">重置筛选</button>
 
         <p class="kicker preset-kicker">SAVED DECKS</p>
-        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><img :src="masterProfileUrl(deck.masterId, byId.get(deck.masterId)?.imageUrl)" :alt="byId.get(deck.masterId)?.nameZh || ''"/><span class="saved-deck-copy"><b>{{ deck.name }}</b><small>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</small></span></button><button class="delete" @click="onDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
+        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><img :src="masterProfileUrl(deck.masterId, byId.get(deck.masterId)?.imageUrl)" :alt="byId.get(deck.masterId)?.nameZh || ''"/><span class="saved-deck-copy"><b>{{ deck.name }}</b><small>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</small></span></button><button class="delete" @click="requestDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
       </aside>
 
       <section class="deck-catalog grand-panel">
@@ -305,6 +369,20 @@ function onDelete(name = activeDeckName.value ?? '') {
         <footer :class="{ error: validation }">{{ notice || validation || '牌库合法，可以保存并用于房间对战' }}</footer>
       </aside>
     </main>
+    <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="pendingDeleteName = ''">
+      <section class="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-deck-title">
+        <h2 id="delete-deck-title">删除〈{{ pendingDeleteName }}〉？</h2>
+        <p>牌库删除后不可找回</p>
+        <footer><button class="danger" @click="confirmDelete">继续删除</button><button @click="pendingDeleteName = ''">取消</button></footer>
+      </section>
+    </div>
+    <div v-if="deckImageUrl" class="builder-modal-mask" @click.self="closeDeckImage">
+      <section class="deck-image-dialog" role="dialog" aria-modal="true" aria-labelledby="deck-image-title">
+        <header><h2 id="deck-image-title">牌库图预览</h2><button aria-label="关闭" @click="closeDeckImage">×</button></header>
+        <img :src="deckImageUrl" :alt="`${deckName}牌库图`"/>
+        <footer><button class="primary" @click="saveGeneratedDeckImage">下载牌库图</button><button @click="closeDeckImage">关闭</button></footer>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -321,14 +399,15 @@ function onDelete(name = activeDeckName.value ?? '') {
   .deck-builder-shell{position:fixed;overflow:auto}.deck-builder-topbar{position:sticky;z-index:20;top:0;height:64px;padding:8px;gap:8px}.deck-builder-topbar>div:nth-child(2) small{display:none}.deck-builder-topbar h1{font-size:18px}.deck-builder-topbar button{padding:7px 9px}.deck-total b{font-size:20px}
   .deck-builder-grid{display:flex;flex-direction:column;overflow:visible;padding:8px}.deck-builder-grid>.grand-panel{overflow:visible}.deck-filter{order:1}.deck-catalog{order:2;min-height:72vh}.deck-list{order:3;min-height:70vh}.deck-card-grid{grid-template-columns:repeat(3,minmax(92px,1fr));max-height:68vh}.deck-entries{max-height:46vh}.master-preview img{width:64px;height:64px}
 }
-.deck-builder-topbar button{padding:8px 11px;border:1px solid #69716e;background:#171c1d;color:#f1eee5;font-weight:900}.deck-builder-topbar button:hover:not(:disabled){border-color:#70d7df;background:#1b565b;color:#fff}.deck-builder-topbar .back-button{border-color:#d7d2c4;background:#e8e3d7;color:#101314}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111}.deck-builder-topbar .delete-deck{border-color:#8c343c;color:#f1a3aa}.deck-builder-topbar button:disabled{color:#717775;background:#252929;opacity:.45}.deck-file-actions{display:flex;gap:6px}
+.deck-builder-topbar button{padding:8px 11px;border:1px solid #69716e;background:#171c1d;color:#f1eee5;font-weight:900}.deck-builder-topbar button:hover:not(:disabled){border-color:#70d7df;background:#1b565b;color:#fff}.deck-builder-topbar .back-button{border-color:#d7d2c4;background:#e8e3d7;color:#101314}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111}.deck-builder-topbar .delete-deck{border-color:#8c343c;color:#f1a3aa}.deck-builder-topbar button:disabled{color:#717775;background:#252929;opacity:.45}.deck-file-actions{display:flex;gap:6px}.filter-reset{width:100%;min-height:34px;border:1px solid #5d6865;background:#161c1d;color:#eee;font-weight:900}.filter-reset:hover{border-color:#70d7df;background:#1b565b}
 .pool-count-controls{display:grid!important;grid-template-columns:1fr 34px 1fr;gap:0!important;padding:0!important;border-top:1px solid #303638}.pool-count-controls button{min-height:30px;border:0;background:#151a1b;color:#e8e4d9;font-size:17px;font-weight:900}.pool-count-controls button:hover:not(:disabled){background:#1d6167;color:#fff}.pool-count-controls strong{display:grid;place-items:center;border-inline:1px solid #303638;background:#090c0d;color:#d7c483;font-size:12px}
 .saved-list article{border-color:#424b4d;background:#111619}.saved-list article>button:first-child{background:#111619;color:#f1eee5}.saved-list article>button:first-child:hover,.saved-list article>button:first-child:focus-visible{border-color:#70d7df;background:#18383b;color:#fff}.saved-list b{color:#f1eee5}.saved-list span{color:#aab4b0}.saved-list article.active{border-color:#86e8ee;background:#123e42;box-shadow:inset 3px 0 #86e8ee}.saved-list article.active>button:first-child{background:#123e42;color:#fff}.saved-list article.active span{color:#d5f4f1}.saved-list .delete{background:#211418;color:#f29ba4}.saved-list .delete:hover{background:#6b222b;color:#fff}.saved-list p{color:#929b97}
 .deck-entries article{position:relative;isolation:isolate;gap:7px;margin-bottom:5px;padding:6px;overflow:hidden;border:1px solid #354041;border-left:2px solid #3da4ad}.deck-entry-banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 28%;opacity:.56;filter:saturate(.9) contrast(1.12)}.deck-entries article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,8,9,.91),rgba(9,13,14,.48) 48%,rgba(5,8,9,.88))}.deck-entries article>span{width:27px;height:27px;flex:none}.deck-entries article small{color:#d0d5d1}.deck-entries strong{color:#f0d98e}.deck-entries button{width:27px;height:27px;flex:none;border:1px solid #5c6461;background:#101516;color:#eee;font-size:15px;font-weight:900}.deck-entries button:hover:not(:disabled){border-color:#70d7df;background:#1b565b}
 @media(max-width:1180px){.deck-file-actions button{padding:7px 8px;font-size:10px}}
-@media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(4,1fr)}}
+@media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(5,1fr)}}
 .trial-builder{margin:12px 0;padding:10px;border:1px solid #42605a;background:#0a1212}.trial-builder>header,.selected-trials>header{display:flex;align-items:center;justify-content:space-between}.trial-builder>header span,.selected-trials>header span{color:#78d2be;font-size:10px;font-weight:900}.trial-builder>p{margin:5px 0 9px;color:#84918c;font-size:9px;line-height:1.5}.trial-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.trial-options button{min-width:0;padding:6px;border:1px solid #384744;background:#101817;color:#e9e5dc;text-align:left}.trial-options button.selected{border-color:#6cd5b4;background:#17332c}.trial-options b,.trial-options small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.trial-options small{margin-top:3px;color:#85908c;font-size:7px}.trial-thumb{position:relative;display:block;width:100%;aspect-ratio:5/7;margin-bottom:5px;overflow:hidden;background:#080b0b}.trial-thumb img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg)}
 .selected-trials{flex:none;display:grid;gap:4px;padding:8px 0;border-top:1px solid #3d4241}.selected-trials button{display:grid;grid-template-columns:42px 1fr 24px;align-items:center;gap:7px;min-height:34px;border:1px solid #3e514d;background:#101817;color:#eee;text-align:left}.selected-trials img{width:42px;height:30px;object-fit:cover}.selected-trials span{font-size:9px;font-weight:900}.selected-trials i{display:grid;height:100%;place-items:center;border-left:1px solid #3e514d;color:#db747c;font-style:normal}
 .trial-thumb.upright img{width:100%;height:100%;object-fit:cover;transform:translate(-50%,-50%)}.automatic-extra-builder{border-color:#8a6a3d}.automatic-extra-list i{width:auto!important;padding:0 5px!important;color:#cdbb89!important;font-size:7px!important}
 .catalog-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:0 0 10px}.catalog-tabs button,.choose-special{min-height:32px;border:1px solid #48504e;background:#101617;color:#c8cfcb;font-weight:900}.catalog-tabs button.active,.choose-special:hover:not(:disabled){border-color:#73d4d8;background:#194b50;color:#fff}.choose-special{width:100%;border-width:1px 0 0}.empty-extra{grid-column:1/-1;padding:32px;color:#8b9490;text-align:center}
+.builder-modal-mask{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(0,4,7,.82);backdrop-filter:blur(6px)}.delete-confirm-dialog,.deck-image-dialog{width:min(92vw,520px);border:1px solid #8b7650;background:#111719;color:#f4f0e6;box-shadow:0 22px 80px #000;padding:22px}.delete-confirm-dialog h2,.deck-image-dialog h2{margin:0;font-size:20px}.delete-confirm-dialog p{margin:18px 0;color:#d9c9af;font-weight:900}.delete-confirm-dialog footer,.deck-image-dialog footer{display:flex;justify-content:center;gap:10px}.delete-confirm-dialog button,.deck-image-dialog button{min-width:120px;padding:10px 16px;border:1px solid #66716e;background:#171d1f;color:#f4f0e6;font-weight:900}.delete-confirm-dialog .danger{border-color:#a23943;background:#681f28;color:#fff}.deck-image-dialog{width:min(94vw,1100px)}.deck-image-dialog>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.deck-image-dialog>header button{min-width:42px}.deck-image-dialog>img{display:block;width:100%;max-height:70vh;object-fit:contain;background:#070a0c}.deck-image-dialog footer{margin-top:14px}.deck-image-dialog .primary{border-color:#d9bc72;background:#d9bc72;color:#111}
 </style>
