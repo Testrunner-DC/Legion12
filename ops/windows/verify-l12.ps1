@@ -88,6 +88,15 @@ try {
     Write-Host "[L12 验证] 生成服务器兼容的框架依赖发布产物..."
     Invoke-External dotnet restore ".\服务端WebSocket\GrandUMIServer.csproj" --ignore-failed-sources
     Invoke-External dotnet publish ".\服务端WebSocket\GrandUMIServer.csproj" --configuration Release --self-contained false --output $publishRoot --no-restore
+    $nativeRuntimesRoot = Join-Path $publishRoot "runtimes"
+    if (-not (Test-Path -LiteralPath (Join-Path $nativeRuntimesRoot "linux-x64"))) {
+        throw "发布产物缺少 linux-x64 原生依赖"
+    }
+    Get-ChildItem -LiteralPath $nativeRuntimesRoot -Directory |
+        Where-Object Name -ne "linux-x64" |
+        Remove-Item -Recurse -Force
+    Get-ChildItem -LiteralPath (Join-Path $nativeRuntimesRoot "linux-x64") -Recurse -Filter "*.a" |
+        Remove-Item -Force
 
     Write-Host "[L12 验证] 汇总前端运行产物（卡图单独缓存）..."
     $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
@@ -105,6 +114,9 @@ try {
     $releaseArchive = Join-Path $artifactDirectory "l12-release-$commit.tar.gz"
     if (Test-Path -LiteralPath $releaseArchive) { Remove-Item -LiteralPath $releaseArchive -Force }
     Invoke-External tar -czf $releaseArchive -C $releaseRoot .
+    if ((Get-Item -LiteralPath $releaseArchive).Length -gt 150MB) {
+        throw "不含卡图的运行包异常大于 150MB，请检查发布内容是否混入多平台原生库或运行数据"
+    }
 
     $cardsHash = (& git rev-parse "$commit`:opcgpro-vue/public/cards").Trim()
     if ($LASTEXITCODE -ne 0 -or $cardsHash -notmatch '^[0-9a-f]{40,64}$') { throw "无法读取卡图目录版本" }

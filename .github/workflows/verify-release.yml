@@ -56,10 +56,12 @@ jobs:
           mkdir -p "${root}/opcgpro-vue/dist" "${root}/publish" "${root}/scripts"
           rsync -a --exclude cards/ opcgpro-vue/dist/ "${root}/opcgpro-vue/dist/"
           dotnet publish ./服务端WebSocket/GrandUMIServer.csproj --configuration Release --runtime linux-x64 --self-contained false --output "${root}/publish"
+          find "${root}/publish/runtimes" -type f -name '*.a' -delete
           cp scripts/ws-smoke.mjs "${root}/scripts/ws-smoke.mjs"
           printf '%s' "$commit" > "${root}/.deployment-commit"
           archive="l12-release-${commit}.tar.gz"
           tar -czf "$archive" -C "$root" .
+          test "$(stat -c%s "$archive")" -le 157286400
           release_sha="$(sha256sum "$archive" | awk '{print $1}')"
           cat > "l12-release-${commit}.json" <<EOF
           {
