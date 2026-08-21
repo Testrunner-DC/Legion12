@@ -149,6 +149,97 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void CurrentTurnTroopsBonusIsIncludedInCombatAndRemainingTroopsSurvive()
+    {
+        var game = Create();
+        var attackerPlayer = game.State.ActivePlayer;
+        var defenderPlayer = 1 - attackerPlayer;
+        var attacker = game.State.Players[attackerPlayer].Hand
+            .Concat(game.State.Players[attackerPlayer].Library)
+            .First(card => card.CardType == "legion" && card.BaseTroops == 4000);
+        var target = game.State.Players[defenderPlayer].Hand
+            .Concat(game.State.Players[defenderPlayer].Library)
+            .First(card => card.CardType == "legion" && card.BaseTroops == 5000);
+        game.State.Players[attackerPlayer].Hand.Remove(attacker);
+        game.State.Players[attackerPlayer].Library.Remove(attacker);
+        game.State.Players[defenderPlayer].Hand.Remove(target);
+        game.State.Players[defenderPlayer].Library.Remove(target);
+        attacker.SummonRound = -1;
+        attacker.TimedModifiers.Add(new L12TimedModifier
+        {
+            TroopsDelta = 2000,
+            CostDelta = 0,
+            ExpiresAfterTurn = game.State.TurnSerial,
+            Source = "本回合兵力加值测试",
+        });
+        attacker.Troops = 6000;
+        target.Troops = 5000;
+        game.State.Players[attackerPlayer].Field[0][0] = attacker;
+        game.State.Players[defenderPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[0][0] = target;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+
+        Assert.Same(attacker, game.State.Players[attackerPlayer].Field[0][0]);
+        Assert.Equal(1000, attacker.Troops);
+        Assert.Contains(target, game.State.Players[defenderPlayer].Graveyard);
+    }
+
+    [Fact]
+    public void SaladinAdjacentAttackBonusExpiresAfterThatAttackAndDoesNotStack()
+    {
+        var game = Create();
+        var attackerPlayer = game.State.ActivePlayer;
+        var defenderPlayer = 1 - attackerPlayer;
+        var attacker = new L12CardInstance
+        {
+            InstanceId = "saladin-bonus-attacker",
+            CardId = "test-sun-legion",
+            Name = "测试太阳城军团",
+            CardType = "legion",
+            Faction = "taiyangcheng",
+            BaseTroops = 4000,
+            Troops = 4000,
+            Cost = 4,
+            SummonRound = -1,
+        };
+        var saladin = new L12CardInstance
+        {
+            InstanceId = "saladin-source",
+            CardId = "S01-0206",
+            Name = "萨拉丁",
+            CardType = "legion",
+            Faction = "taiyangcheng",
+            BaseTroops = 4000,
+            Troops = 4000,
+            Cost = 4,
+            SummonRound = -1,
+        };
+        game.State.Players[attackerPlayer].Field[0][0] = attacker;
+        game.State.Players[attackerPlayer].Field[0][1] = saladin;
+        game.State.Players[defenderPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        Assert.Equal(5000, attacker.Troops);
+        Assert.Equal(1000, game.State.PendingDefense?.TemporaryAttackerTroopsBonus);
+        Assert.True(game.Handle(defenderPlayer, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+        Assert.Equal(4000, attacker.Troops);
+
+        attacker.Tapped = false;
+        game.State.Phase = L12Phase.Main;
+        Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        Assert.Equal(5000, attacker.Troops);
+        Assert.Equal(1000, game.State.PendingDefense?.TemporaryAttackerTroopsBonus);
+    }
+
+    [Fact]
     public void SameColumnBackLegionIsTheSupportLegion()
     {
         var game = Create();

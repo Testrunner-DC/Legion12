@@ -80,12 +80,7 @@ public sealed partial class L12GameEngine
                     if (State.PendingDefense is not null)
                     {
                         var pending = State.PendingDefense;
-                        State.PendingDefense = new L12PendingDefense
-                        {
-                            AttackerPlayer = pending.AttackerPlayer, AttackerInstanceId = pending.AttackerInstanceId,
-                            Target = pending.Target, IsRanged = pending.IsRanged, SureHit = pending.SureHit,
-                            MasterDamage = pending.MasterDamage + 1,
-                        };
+                        pending.MasterDamage += 1;
                     }
                 }
                 FinishStackItem(item); break;
@@ -97,12 +92,7 @@ public sealed partial class L12GameEngine
                     if (State.PendingDefense is not null)
                     {
                         var pending = State.PendingDefense;
-                        State.PendingDefense = new L12PendingDefense
-                        {
-                            AttackerPlayer = pending.AttackerPlayer, AttackerInstanceId = pending.AttackerInstanceId,
-                            Target = pending.Target, IsRanged = pending.IsRanged, SureHit = true,
-                            MasterDamage = pending.MasterDamage,
-                        };
+                        pending.SureHit = true;
                     }
                 }
                 FinishStackItem(item); break;

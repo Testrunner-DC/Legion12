@@ -482,9 +482,8 @@ public sealed partial class L12GameEngine
         }
 
         attacker.Tapped = true;
-        ApplyS1FactionAttackPassives(playerIndex, attacker, row);
+        var temporaryAttackerTroopsBonus = ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
-        var temporaryAttackerTroopsBonus = 0;
         var temporaryDefenderTroopsPenalty = 0;
         if (row == 0 && attacker.Faction == "gaotianyuan"
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))

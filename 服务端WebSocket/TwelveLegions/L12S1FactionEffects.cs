@@ -798,8 +798,9 @@ public sealed partial class L12GameEngine
     private static bool HasS1Taunt(L12CardInstance card) => card.CardId is "S01-0107" or "S01-0204" or "S01-0312" or "S02-0004" or "S02-0007"
         || card.TauntUntilTurn >= 0;
 
-    private void ApplyS1FactionAttackPassives(int playerIndex, L12CardInstance attacker, int row)
+    private int ApplyS1FactionAttackPassives(int playerIndex, L12CardInstance attacker, int row)
     {
+        var temporaryBonus = 0;
         var player = State.Players[playerIndex];
         if (row == 0 && attacker.Faction == "taiyangcheng")
         {
@@ -807,9 +808,11 @@ public sealed partial class L12GameEngine
             if (slot >= 0 && player.Field[0].Where((card, index) => Math.Abs(index - slot) == 1 && card?.CardId == "S01-0206").Any())
             {
                 attacker.Troops += 1000;
+                temporaryBonus += 1000;
                 AddEvent("effect", playerIndex, "萨拉丁使相邻太阳城军团本次进攻兵力+1000", attacker);
             }
         }
+        return temporaryBonus;
     }
 
     private void ApplySunKingAttack(L12StackItem item)
