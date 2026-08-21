@@ -35,6 +35,7 @@ interface LookupCard {
   faction: string
   cost?: number | null
   attack?: number | null
+  disasterLevel?: number | null
   health?: number | null
   trialValue?: number | null
   image?: string
@@ -99,6 +100,7 @@ onMounted(async () => {
       imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
       cost: card.cost ?? undefined,
       troops: card.attack ?? undefined,
+      disasterLevel: card.disasterLevel ?? undefined,
       hp: card.health ?? undefined,
       trialValue: card.trialValue ?? undefined,
       traits: card.tags ?? [],

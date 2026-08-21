@@ -287,7 +287,8 @@
     "source": {
       "file": "牌面/天廷/始皇帝 嬴政.png",
       "code": "S02-0101"
-    }
+    },
+    "disasterLevel": 3
   },
   {
     "id": "face-s02_01m1",
@@ -470,7 +471,8 @@
     "source": {
       "file": "牌面/天廷/李牧.png",
       "code": "S02-0102"
-    }
+    },
+    "disasterLevel": 2
   },
   {
     "id": "face-s01_0103",
@@ -2166,7 +2168,8 @@
     "source": {
       "file": "牌面/太阳城/陵墓圣武士.png",
       "code": "S02-0202"
-    }
+    },
+    "disasterLevel": 2
   },
   {
     "id": "face-s01_0212",
@@ -2440,7 +2443,8 @@
       "file": "牌面/奥林匹斯/奥德修斯.png",
       "code": "S02-0509"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 2
   },
   {
     "id": "s2-028",
@@ -2496,7 +2500,8 @@
       "file": "牌面/奥林匹斯/希波吕忒.png",
       "code": "S02-0510"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 2
   },
   {
     "id": "face-s02_0505",
@@ -2524,7 +2529,8 @@
     "subType": "骑兵",
     "searchText": "珀尔修斯·晋升 奥林匹斯 军团 奥林匹斯 晋升者 骑兵 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。\n我方 回合1次 可进行1次位移。\n登场时 获得冲锋。",
     "type": "军团",
-    "effectText": "晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。\n我方 回合1次 可进行1次位移。\n登场时 获得冲锋。"
+    "effectText": "晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。\n我方 回合1次 可进行1次位移。\n登场时 获得冲锋。",
+    "disasterLevel": 2
   },
   {
     "id": "face-s02_0511",
@@ -2540,7 +2546,7 @@
     ],
     "faqIds": [],
     "flavorText": "",
-    "name": "帕洛特埃",
+    "name": "珀洛特埃",
     "image": "/cards/faces/奥林匹斯/帕洛特埃.png",
     "faction": "奥林匹斯",
     "verified": true,
@@ -2549,9 +2555,10 @@
       "code": "S02-0511"
     },
     "subType": "斗士",
-    "searchText": "帕洛特埃 奥林匹斯 军团 奥林匹斯 斗士 登场时 本回合可进攻对方军团。\n进攻时 若目标为对方军团，可消耗并翻转1神力：本回合兵力+1000，并获得震击。",
+    "searchText": "珀洛特埃 奥林匹斯 军团 奥林匹斯 斗士 登场时 本回合可进攻对方军团。\n进攻时 若目标为对方军团，可消耗并翻转1神力：本回合兵力+1000，并获得震击。",
     "type": "军团",
-    "effectText": "登场时 本回合可进攻对方军团。\n进攻时 若目标为对方军团，可消耗并翻转1神力：本回合兵力+1000，并获得震击。"
+    "effectText": "登场时 本回合可进攻对方军团。\n进攻时 若目标为对方军团，可消耗并翻转1神力：本回合兵力+1000，并获得震击。",
+    "disasterLevel": 1
   },
   {
     "id": "s2-006",
@@ -2925,7 +2932,8 @@
       "file": "牌面/奥林匹斯/赫拉克勒斯·晋升.png",
       "code": "S02-0501"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 3
   },
   {
     "id": "s2-019",
@@ -2984,7 +2992,8 @@
       "file": "牌面/奥林匹斯/阿喀琉斯·晋升.png",
       "code": "S02-0503"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 3
   },
   {
     "id": "s2-007",
@@ -3102,7 +3111,8 @@
       "file": "牌面/彼界/亚瑟王.png",
       "code": "S02-0601"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 2
   },
   {
     "id": "s2-037",
@@ -3221,7 +3231,8 @@
       "file": "牌面/彼界/兰斯洛特.png",
       "code": "S02-0602"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 3
   },
   {
     "id": "s2-041",
@@ -3339,7 +3350,8 @@
       "file": "牌面/彼界/圣女贞德.png",
       "code": "S02-0613"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 2
   },
   {
     "id": "s2-029",
@@ -3483,7 +3495,8 @@
       "file": "牌面/彼界/库丘林.png",
       "code": "S02-0611"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 1
   },
   {
     "id": "s2-040",
@@ -3569,7 +3582,8 @@
       "file": "牌面/彼界/斯卡哈.png",
       "code": "S02-0612"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 1
   },
   {
     "id": "s2-042",
@@ -3628,7 +3642,8 @@
       "file": "牌面/彼界/梅林.png",
       "code": "S02-0603"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 1
   },
   {
     "id": "s2-048",
@@ -3715,7 +3730,8 @@
       "file": "牌面/彼界/狮心王理查一世.png",
       "code": "S02-0608"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 3
   },
   {
     "id": "s02-06s2",
@@ -3974,7 +3990,8 @@
       "file": "牌面/彼界/高文.png",
       "code": "S02-0607"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 2
   },
   {
     "id": "s2-049",
@@ -4004,7 +4021,8 @@
       "file": "牌面/彼界/鲍斯.png",
       "code": "S02-0605"
     },
-    "verified": true
+    "verified": true,
+    "disasterLevel": 2
   },
   {
     "id": "face-s02_0008",
@@ -4820,7 +4838,8 @@
     "source": {
       "file": "牌面/通用/路易芒德兰.png",
       "code": "S02-0004"
-    }
+    },
+    "disasterLevel": 1
   },
   {
     "id": "face-s01_0006",
@@ -5082,7 +5101,8 @@
     "source": {
       "file": "牌面/阿斯加德/卡纽特大帝.png",
       "code": "S02-0303"
-    }
+    },
+    "disasterLevel": 2
   },
   {
     "id": "face-s01_0311",
@@ -5423,7 +5443,8 @@
     "source": {
       "file": "牌面/阿斯加德/步行者罗洛.png",
       "code": "S02-0302"
-    }
+    },
+    "disasterLevel": 3
   },
   {
     "id": "face-s01_03m2a",
@@ -5895,7 +5916,8 @@
     "source": {
       "file": "牌面/高天原/井伊直虎.png",
       "code": "S02-0402"
-    }
+    },
+    "disasterLevel": 1
   },
   {
     "id": "face-s02_0404",
@@ -6340,7 +6362,8 @@
     "source": {
       "file": "牌面/高天原/武田信玄.png",
       "code": "S02-0401"
-    }
+    },
+    "disasterLevel": 3
   },
   {
     "id": "face-s02_0405",

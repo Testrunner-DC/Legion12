@@ -689,7 +689,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            CreatePrompt(item.Controller, "optional", "帕洛特埃：是否消耗并翻转1神力，使此军团本回合兵力+1000并获得震击？", ["yes", "no"], 1, 1,
+            CreatePrompt(item.Controller, "optional", "珀洛特埃：是否消耗并翻转1神力，使此军团本回合兵力+1000并获得震击？", ["yes", "no"], 1, 1,
                 "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-parrot-god-power" });
             return true;
         }
@@ -2499,7 +2499,7 @@ public sealed partial class L12GameEngine
                 var source = FindSource(item);
                 if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
                 {
-                    AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "帕洛特埃");
+                    AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "珀洛特埃");
                     source.HasShock = true;
                     if (item.Data.GetValueOrDefault("shockApplied") != "true") ApplyS2Shock(item, source);
                 }
