@@ -115,6 +115,7 @@ public sealed partial class L12GameEngine
         else if (card.CardType == "artifact")
         {
             player.Hand.Remove(card);
+            DiscardFieldArtifactsForRelicReplacement(player);
             if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
             {
                 player.ExtraRelics.Add(card);

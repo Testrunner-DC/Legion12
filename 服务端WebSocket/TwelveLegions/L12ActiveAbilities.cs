@@ -283,7 +283,9 @@ public sealed partial class L12GameEngine
                     var (row, slot) = ParseSlot(item.Data["target"]);
                     // 保留圣物原本的登场回合；置入前排不是再次召唤，因此不会重新获得召唤失调。
                     DiscardAttachedCards(sword, "被叠放的圣物离开圣物区");
-                    player.Relic = null; sword.Troops = 5000; player.Field[row][slot] = sword;
+                    player.Relic = null;
+                    L12DerivedStats.SetUntilTurnEnd(sword, 5000, int.MaxValue);
+                    player.Field[row][slot] = sword;
                     AddEvent("put", item.Controller, "须佐之男将草雉剑置入前排，视为兵力 5000 的【武者】军团", sword);
                 }
                 FinishStackItem(item); return;

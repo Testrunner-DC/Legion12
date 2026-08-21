@@ -426,6 +426,7 @@ public sealed partial class L12GameEngine
                 player.Resolving.Remove(artifact);
                 if (chosen[0] == "play")
                 {
+                    DiscardFieldArtifactsForRelicReplacement(player);
                     if (player.Relic is not null) DiscardRelic(player, player.Relic);
                     player.Relic = artifact; artifact.Tapped = false;
                 }
@@ -1067,9 +1068,11 @@ public sealed partial class L12GameEngine
 
     private IEnumerable<L12TriggerCandidate> BuildS1LeaveReactionCandidates(int owner, L12CardInstance left)
     {
-        if (!IsFieldLegion(left)) return [];
         var player = State.Players[owner];
         var candidates = new List<L12TriggerCandidate>();
+        if (left.CardId == "S01-0417" && player.MasterId == "S01-04M2")
+            candidates.Add(CreateTriggerCandidate(owner, left, "play", "【离场时】效果"));
+        if (!IsFieldLegion(left)) return candidates;
         var bloodEagle = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0320" } && card.SetRound < State.Round);
         if (bloodEagle is not null) candidates.Add(CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术"));
         if (left.CurrentCost > 2 && State.ActivePlayer != owner)

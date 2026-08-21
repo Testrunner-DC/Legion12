@@ -109,6 +109,7 @@ public sealed partial class L12GameEngine
         }
         else if (card.CardType == "artifact")
         {
+            DiscardFieldArtifactsForRelicReplacement(player);
             if (player.Relic is not null) DiscardRelic(player, player.Relic);
             player.Relic = card;
         }

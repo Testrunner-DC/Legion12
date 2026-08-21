@@ -900,6 +900,7 @@ public sealed partial class L12GameEngine
         DiscardAttachedCards(relic, "被叠放的圣物离开圣物区");
         ResetCardAfterLeavingField(relic);
         if (!player.Graveyard.Contains(relic)) player.Graveyard.Add(relic);
+        QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, relic));
     }
 
     private void Mill(L12PlayerState player, int count, string source)

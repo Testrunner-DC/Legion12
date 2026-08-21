@@ -952,6 +952,14 @@ public sealed partial class L12GameEngine
         return true;
     }
 
+    private void DiscardFieldArtifactsForRelicReplacement(L12PlayerState player)
+    {
+        foreach (var fieldArtifact in player.Field.SelectMany(row => row)
+                     .Where(candidate => candidate?.CardType == "artifact").Cast<L12CardInstance>().ToArray())
+            RemoveFromField(player, fieldArtifact, true, "被新圣物顶替",
+                leaveKind: L12FieldLeaveKind.Discard);
+    }
+
     private static void ResetCardAfterLeavingField(L12CardInstance card)
     {
         card.CostModifier = 0;

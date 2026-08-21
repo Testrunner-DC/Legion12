@@ -1211,6 +1211,89 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void KusanagiPlacedAsALegionKeepsFiveThousandTroopsAfterAttackingAMaster()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 63152);
+        var player = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var sword = Card("S01-0417", "kusanagi-legion");
+        sword.SummonRound = 0;
+        player.Relic = sword;
+        defender.Field[0] = new L12CardInstance?[3];
+        defender.Field[1] = new L12CardInstance?[3];
+        AddMorale(player, 2);
+        game.State.Round = 2;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "S01-04M2",
+            Ability: "kusanagi")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "0:0")).Accepted);
+        PassResponses(game);
+
+        Assert.Same(sword, player.Field[0][0]);
+        Assert.Equal(5000, sword.Troops);
+        Assert.Equal(5000, sword.SetTroopsValue);
+        Assert.Equal(int.MaxValue, sword.SetTroopsUntilTurn);
+
+        Assert.True(game.Handle(0, new L12Command("attack", sword.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense")).Accepted);
+
+        Assert.Same(sword, player.Field[0][0]);
+        Assert.DoesNotContain(sword, player.Graveyard);
+        Assert.Equal(5000, sword.Troops);
+    }
+
+    [Fact]
+    public void PlayingANewArtifactReplacesKusanagiEvenWhileItIsALegion()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 63153);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-replaced");
+        L12DerivedStats.SetUntilTurnEnd(sword, 5000, int.MaxValue);
+        player.Field[0][0] = sword;
+        var newArtifact = Card("S01-0216", "replacement-artifact");
+        player.Hand.Clear();
+        player.Hand.Add(newArtifact);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", newArtifact.InstanceId)).Accepted);
+
+        Assert.Null(player.Field[0][0]);
+        Assert.Same(newArtifact, player.Relic);
+        Assert.Contains(sword, player.Graveyard);
+        Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == sword.InstanceId
+            && item.Trigger == "play");
+    }
+
+    [Fact]
+    public void SusanooMayReturnKusanagiFromTheArtifactZoneToTheLibraryTopWhenItLeaves()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 63154);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-relic-leaves");
+        player.Relic = sword;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: sword.InstanceId)).Accepted);
+        PassResponses(game);
+        var returnTop = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("kusanagi-return-top", returnTop.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnTop.PromptId,
+            Choice: "yes")).Accepted);
+
+        Assert.Same(sword, player.Library[0]);
+        Assert.DoesNotContain(sword, player.Graveyard);
+        Assert.Equal(sword.BaseTroops, sword.Troops);
+        Assert.Null(sword.SetTroopsValue);
+    }
+
+    [Fact]
     public void TenkaFubuFrontAttackBonusExistsOnlyDuringThatAttack()
     {
         var game = Create(6316);
