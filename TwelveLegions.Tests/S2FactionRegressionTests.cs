@@ -2121,6 +2121,10 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
             CardInstanceIds: [.. returned])).Accepted);
         PassResponses(game);
+        var zeroMoraleTrigger = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "faction-zero-recovery");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: zeroMoraleTrigger.PromptId,
+            Choice: "no")).Accepted);
 
         Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
         Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card?.IsMasterLegion == true);

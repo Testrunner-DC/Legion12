@@ -765,6 +765,14 @@ public sealed partial class L12GameEngine
     {
         if (!CanReturnMorale(player, count)) return false;
         var returned = player.Morale.OrderByDescending(card => card.Tapped).Take(count).ToArray();
+        return ReturnSelectedMorale(player, returned);
+    }
+
+    private bool ReturnSelectedMorale(L12PlayerState player, IReadOnlyCollection<L12MoraleCard> returned, bool requireActive = false)
+    {
+        if (returned.Count == 0 || returned.Distinct().Count() != returned.Count
+            || returned.Any(card => !player.Morale.Contains(card) || requireActive && card.Tapped))
+            return false;
         foreach (var card in returned)
         {
             player.Morale.Remove(card);
@@ -773,11 +781,17 @@ public sealed partial class L12GameEngine
             card.CannotUntapUntilRound = 0;
             ReturnMoraleCardToDestination(player, card);
         }
+        RegisterReturnedMorale(player, returned.Count);
+        return true;
+    }
+
+    private void RegisterReturnedMorale(L12PlayerState player, int count)
+    {
         player.ReturnedMoraleThisTurn += count;
         if (player.PlayerIndex == State.ActivePlayer && player.Faction == "tianting" && player.Morale.Count == 0
-            && player.MoraleDeck.Count > 0 && !player.UsedAbilities.Contains("trigger:factionZeroRecovery"))
+            && player.MoraleDeck.Count > 0 && !player.UsedAbilities.Contains("trigger:factionZeroRecovery")
+            && !player.UsedAbilities.Contains("pending:factionZeroRecovery"))
             player.UsedAbilities.Add("pending:factionZeroRecovery");
-        return true;
     }
 
     private void ReturnMoraleCardToDestination(L12PlayerState player, L12MoraleCard card)
@@ -794,16 +808,20 @@ public sealed partial class L12GameEngine
 
     private void DiscardAttachedCards(L12CardInstance host, string reason)
     {
+        var fallbackOwner = CardOwner(host, State.Players[0]);
         foreach (var attached in host.AttachedCards.ToArray())
         {
-            var owner = attached.OwnerIndex is >= 0 and <= 1 ? attached.OwnerIndex.Value : 0;
+            var owner = CardOwner(attached, fallbackOwner);
             ResetCardAfterLeavingField(attached);
-            State.Players[owner].Graveyard.Add(attached);
-            AddEvent("grave", owner, $"{reason}，{attached.Name}置入所有者墓地", attached, host);
+            owner.Graveyard.Add(attached);
+            AddEvent("grave", owner.PlayerIndex, $"{reason}，{attached.Name}置入所有者墓地", attached, host);
         }
         host.AttachedCards.Clear();
         host.Abilities.RemoveAll(view => view.Id == "discardHolyLock");
     }
+
+    private L12PlayerState CardOwner(L12CardInstance card, L12PlayerState fallback)
+        => card.OwnerIndex is >= 0 and <= 1 ? State.Players[card.OwnerIndex.Value] : fallback;
 
     private void Untap(L12PlayerState player)
     {
@@ -881,15 +899,13 @@ public sealed partial class L12GameEngine
         player.Field[row][slot] = null;
         if (toGraveyard)
         {
-            ResetCardAfterLeavingField(card);
-            player.Graveyard.Add(card);
+            var owner = CardOwner(card, player);
             if (card.AttachedCards.Count > 0)
-            {
-                foreach (var attached in card.AttachedCards) ResetCardAfterLeavingField(attached);
-                player.Graveyard.AddRange(card.AttachedCards);
-                AddEvent("leave", player.PlayerIndex, $"{card.Name} 与其叠放底座一同离场", card.AttachedCards.ToArray());
-                card.AttachedCards.Clear();
-            }
+                DiscardAttachedCards(card, $"{card.Name}离场");
+            ResetCardAfterLeavingField(card);
+            owner.Graveyard.Add(card);
+            if (owner.PlayerIndex != player.PlayerIndex)
+                AddEvent("grave", owner.PlayerIndex, $"{card.Name}置入所有者墓地", card);
         }
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueDeathTrigger)
@@ -917,34 +933,31 @@ public sealed partial class L12GameEngine
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         player.Field[row][slot] = null;
+        var owner = CardOwner(card, player);
 
         // 规则替代：陵墓守卫不能进入手牌、牌库或移出区，以任何形式离场都改为置入所有者墓地。
         if (card.CardId == "S01-0212")
         {
             ResetCardAfterLeavingField(card);
-            player.Graveyard.Add(card);
-            AddEvent("replacement", player.PlayerIndex, $"{card.Name}以任何形式离场，改为置入墓地", card);
+            owner.Graveyard.Add(card);
+            AddEvent("replacement", owner.PlayerIndex, $"{card.Name}以任何形式离场，改为置入所有者墓地", card);
         }
         else switch (destination)
         {
             case "hand":
                 ResetCardAfterLeavingField(card);
                 if (State.IsResolvingStack || State.EffectStack.Count > 0)
-                    AddCardToHandByEffect(player, card, "field", $"{card.Name}因效果加入手牌");
-                else player.Hand.Add(card);
+                    AddCardToHandByEffect(owner, card, "field", $"{card.Name}因效果加入所有者手牌");
+                else owner.Hand.Add(card);
                 break;
-            case "library-top": ResetCardAfterLeavingField(card); player.Library.Insert(0, card); break;
-            case "library-bottom": ResetCardAfterLeavingField(card); player.Library.Add(card); break;
-            case "removed": ResetCardAfterLeavingField(card); player.Removed.Add(card); break;
-            default: ResetCardAfterLeavingField(card); player.Graveyard.Add(card); break;
+            case "library-top": ResetCardAfterLeavingField(card); owner.Library.Insert(0, card); break;
+            case "library-bottom": ResetCardAfterLeavingField(card); owner.Library.Add(card); break;
+            case "removed": ResetCardAfterLeavingField(card); owner.Removed.Add(card); break;
+            default: ResetCardAfterLeavingField(card); owner.Graveyard.Add(card); break;
         }
 
         if (card.AttachedCards.Count > 0)
-        {
-            foreach (var attached in card.AttachedCards) ResetCardAfterLeavingField(attached);
-            player.Graveyard.AddRange(card.AttachedCards);
-            card.AttachedCards.Clear();
-        }
+            DiscardAttachedCards(card, $"{card.Name}离场");
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueLeaveTrigger)
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, card));

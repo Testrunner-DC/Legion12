@@ -72,7 +72,7 @@ public sealed partial class L12GameEngine
             return CreateCard(player.MasterId, item.SourceInstanceId);
         if (item.SourceInstanceId == $"faction-{item.Controller}" && !string.IsNullOrWhiteSpace(item.SourceCardId))
             return CreateCard(item.SourceCardId, item.SourceInstanceId);
-        return FindOnField(player, item.SourceInstanceId, out _, out _)
+        var source = FindOnField(player, item.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == item.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
@@ -83,6 +83,16 @@ public sealed partial class L12GameEngine
             ?? player.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
             ?? player.Graveyard.LastOrDefault(card => card.InstanceId == item.SourceInstanceId)
             ?? (State.ActiveDisaster?.InstanceId == item.SourceInstanceId ? State.ActiveDisaster : null);
+        if (source is not null) return source;
+        return State.Players.Where(candidate => candidate.PlayerIndex != item.Controller)
+            .SelectMany(candidate => candidate.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>()
+                .Concat(candidate.ExtraRelics)
+                .Concat(candidate.Resolving)
+                .Concat(candidate.Hand)
+                .Concat(candidate.Graveyard)
+                .Concat(candidate.Removed)
+                .Concat(candidate.Relic is null ? [] : [candidate.Relic]))
+            .FirstOrDefault(card => card.InstanceId == item.SourceInstanceId);
     }
 
     private void ResolveEnterEffect(L12StackItem item)

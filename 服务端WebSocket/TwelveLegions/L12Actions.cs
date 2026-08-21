@@ -11,6 +11,11 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == command.CardInstanceId);
         if (card is null) return CommandResult.Reject("卡牌不在手牌中");
+        var targetPlayerIndex = card.CardId == "S01-0004" ? command.TargetPlayerIndex ?? playerIndex : playerIndex;
+        if (targetPlayerIndex is < 0 or > 1) return CommandResult.Reject("目标战场无效");
+        if (card.CardId != "S01-0004" && command.TargetPlayerIndex is not null && command.TargetPlayerIndex != playerIndex)
+            return CommandResult.Reject("该卡牌不能置入对方战场");
+        var targetBattlefield = State.Players[targetPlayerIndex];
         if (card.CardType == "artifact" && player.Relic?.CardId == "S02-0305")
             return CommandResult.Reject("〈安德华拉诺特〉使我方无法从手牌打出圣物");
         if (State.ActiveDisaster?.CardId == "S02-DS01" && card.CardType == "legion"
@@ -30,9 +35,11 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("请选择合法阵地");
         if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S01-DS03" && command.Row == 1)
             return CommandResult.Reject("《腐秽大地》持续期间后排无法放置军团");
-        if (card.CardType == "legion" && player.Field[command.Row!.Value][command.Slot!.Value] is { } occupant
-            && !(command.Row == 1 && IsCounterTactic(occupant.CardId)))
-            return CommandResult.Reject("阵地已被占用");
+        if (card.CardType == "legion" && targetBattlefield.Field[command.Row!.Value][command.Slot!.Value] is { } occupant)
+        {
+            var canReplaceOwnCounter = targetPlayerIndex == playerIndex && command.Row == 1 && IsCounterTactic(occupant.CardId);
+            if (!canReplaceOwnCounter) return CommandResult.Reject("阵地已被占用");
+        }
 
         if (card.CardId == "S02-0622" && command.Choice?.Contains("runes:", StringComparison.Ordinal) != true)
         {
@@ -66,6 +73,7 @@ public sealed partial class L12GameEngine
                     ["cardInstanceId"] = card.InstanceId,
                     ["row"] = command.Row!.Value.ToString(),
                     ["slot"] = command.Slot!.Value.ToString(),
+                    ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
                     ["normalCost"] = normalCost.ToString(),
                     ["discountedCost"] = discountedCost.ToString(),
                     ["choiceMode"] = "instant",
@@ -97,8 +105,8 @@ public sealed partial class L12GameEngine
             var slot = command.Slot.GetValueOrDefault();
             if (State.ActiveDisaster?.CardId == "S01-DS03" && row == 1)
                 return CommandResult.Reject("〈腐秽大地〉持续期间后排无法放置军团");
-            var occupyingCard = player.Field[row][slot];
-            var displacesOwnCounter = row == 1 && occupyingCard is not null && IsCounterTactic(occupyingCard.CardId);
+            var occupyingCard = targetBattlefield.Field[row][slot];
+            var displacesOwnCounter = targetPlayerIndex == playerIndex && row == 1 && occupyingCard is not null && IsCounterTactic(occupyingCard.CardId);
             if (occupyingCard is not null && !displacesOwnCounter) return CommandResult.Reject("阵地已被占用");
             player.Hand.Remove(card);
             if (displacesOwnCounter)
@@ -109,8 +117,9 @@ public sealed partial class L12GameEngine
                 AddEvent("counter-displaced", playerIndex,
                     $"{player.Name} 打出军团并将自己覆盖的反击战术〈{occupyingCard.Name}〉置入墓地", occupyingCard);
             }
+            card.OwnerIndex ??= playerIndex;
             card.SummonRound = State.Round;
-            player.Field[row][slot] = card;
+            targetBattlefield.Field[row][slot] = card;
         }
         else if (card.CardType == "artifact")
         {
@@ -139,6 +148,8 @@ public sealed partial class L12GameEngine
 
         ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: false);
         AddEvent("play", playerIndex, $"{player.Name} 打出 {card.Name}", card);
+        if (card.CardId == "S01-0004" && targetPlayerIndex != playerIndex)
+            AddEvent("put", targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}", card);
         if (usedAsgardSelfDamageDiscount) DamageMaster(playerIndex, 1, $"{card.Name}的登场费用减免");
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId)) player.LastActiveTacticCardId = card.CardId;
         ResolveOnPlayContinuousEffects(playerIndex, card);
@@ -402,6 +413,7 @@ public sealed partial class L12GameEngine
             ["row"] = command.Row?.ToString() ?? string.Empty,
             ["slot"] = command.Slot?.ToString() ?? string.Empty,
             ["baseChoice"] = command.Choice ?? "normal-cost",
+            ["targetPlayerIndex"] = (command.TargetPlayerIndex ?? playerIndex).ToString(),
         });
         return CommandResult.Ok();
     }

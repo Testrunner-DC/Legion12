@@ -23,6 +23,7 @@ export interface Card {
   trialValue?: number
   traits?: string[]
   profession?: string
+  ownerIndex?: number
   lastCavalryMoveTurn?: number
   hasCharge?: boolean
   hasStrongAttack?: boolean

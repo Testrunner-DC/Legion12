@@ -412,7 +412,8 @@ public sealed partial class L12GameEngine
             CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"),
             Row: row,
             Slot: slot,
-            Choice: choice == "yes" ? "self-damage-cost" : "normal-cost"));
+            Choice: choice == "yes" ? "self-damage-cost" : "normal-cost",
+            TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex) ? targetPlayerIndex : null));
     }
 
     private CommandResult ResolveTombGuardPlayPaymentChoice(L12Prompt prompt, List<string> chosen)
@@ -426,7 +427,8 @@ public sealed partial class L12GameEngine
             Row: row,
             Slot: slot,
             Choice: baseChoice,
-            CardInstanceIds: chosen));
+            CardInstanceIds: chosen,
+            TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex) ? targetPlayerIndex : null));
     }
 
     private CommandResult ResolveMoveResourcePayment(L12Prompt prompt, List<string> chosen)

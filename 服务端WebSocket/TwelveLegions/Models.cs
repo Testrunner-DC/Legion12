@@ -464,7 +464,8 @@ public sealed record L12Command(
     string? PromptId = null,
     string? Choice = null,
     string? Ability = null,
-    string? Destination = null);
+    string? Destination = null,
+    int? TargetPlayerIndex = null);
 
 /// <summary>
 /// 单人测试沙盒专用的服务端权威调试指令。该结构不进入普通 gameAction；

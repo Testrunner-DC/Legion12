@@ -7,6 +7,7 @@ import { factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets
 const props = defineProps<{
   player: PlayerView
   side: 'my' | 'opponent'
+  viewerPlayerIndex?: number
   selectedId?: string | null
   attackMode?: boolean
   moveMode?: boolean
@@ -100,6 +101,7 @@ const masterCard = computed<Card>(() => ({
   abilities: props.player.master.abilities,
 }))
 function canAttack(card: Card, row: number) {
+  if (props.side !== 'my') return false
   if (props.attackableIds) return props.attackableIds.includes(card.instanceId)
   return Boolean(props.actionsEnabled && !card.cannotAttack && (row === 0 || card.hasRangeBonus) && !card.tapped && !card.hidden && (card.summonRound < (props.round ?? 0) || card.hasCharge))
 }
@@ -113,16 +115,16 @@ function counterState(card: Card | null) {
   return props.responsePlayableIds?.includes(card.instanceId) ? 'counter-ready' : 'counter-dormant'
 }
 function isPlacementDestination(row: number, card: Card | null) {
-  if (props.side !== 'my' || !props.placementMode || (props.placementRow !== null && props.placementRow !== undefined && props.placementRow !== row)) return false
+  if (!props.placementMode || (props.placementRow !== null && props.placementRow !== undefined && props.placementRow !== row)) return false
   return !card || Boolean(props.placementCanReplaceCounter && row === 1 && isCounterTactic(card))
 }
 function canMove(card: Card, row: number, slot: number) {
-  if (!props.actionsEnabled || card.tapped || card.hidden || spendableMorale.value < 1) return false
+  if (props.side !== 'my' || !props.actionsEnabled || card.tapped || card.hidden || spendableMorale.value < 1) return false
   return [[row - 1, slot], [row + 1, slot], [row, slot - 1], [row, slot + 1]]
     .some(([nextRow, nextSlot]) => nextRow >= 0 && nextRow < 2 && nextSlot >= 0 && nextSlot < 3 && !props.player.field[nextRow][nextSlot])
 }
 function canCavalryMove(card: Card) {
-  if (!props.actionsEnabled || card.tapped || card.hidden || card.profession !== '骑兵') return false
+  if (props.side !== 'my' || !props.actionsEnabled || card.tapped || card.hidden || card.profession !== '骑兵') return false
   if (card.lastCavalryMoveTurn === props.turnSerial) return false
   return props.player.field.some(row => row.some(slotCard => !slotCard))
 }
@@ -161,10 +163,13 @@ function canTrial(card: Card) {
   return Boolean(entry && entry.enabled !== false && !entry.triggerOnly && props.actionsEnabled && !card.tapped
     && card.summonRound < (props.round ?? 0) && currentTrialInstanceId.value)
 }
+function canUseAbilities(card: Card) {
+  return props.side === 'my' || (card.cardId === 'S01-0004' && card.ownerIndex === props.viewerPlayerIndex)
+}
 function selectZoneCard(card: Card) {
   emit('focus', card)
   emit('selectCard', card)
-  if (props.side === 'my' && abilities(card).length) {
+  if (canUseAbilities(card) && abilities(card).length) {
     abilityCardOpen.value = card
     abilityCardMinimized.value = false
   }
@@ -262,7 +267,7 @@ function beginCardAbility(card: Card) {
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (side === 'opponent' && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              available: side === 'my' && ((!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`)) || isPlacementDestination(row, player.field[row][slot]) || isMoveTarget(row, slot)),
+              available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`) && side === 'my') || isPlacementDestination(row, player.field[row][slot]) || (side === 'my' && isMoveTarget(row, slot)),
               source: selectedId === player.field[row][slot]?.instanceId,
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
@@ -273,7 +278,7 @@ function beginCardAbility(card: Card) {
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">
             <template v-if="player.field[row][slot]">
-              <div v-if="side === 'my' && selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !cavalryMoveMode"
+              <div v-if="canUseAbilities(player.field[row][slot]!) && selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !cavalryMoveMode"
                 class="card-context-actions field-actions">
                 <button v-if="canAttack(player.field[row][slot]!, row)" :class="{ active: attackMode }"
                   @click.stop="emit('cardAction', 'attack', player.field[row][slot]!)">{{ attackMode ? '选择目标' : '进攻' }}</button>

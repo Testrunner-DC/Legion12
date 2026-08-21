@@ -47,6 +47,7 @@ const counterIds = new Set([
   'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
 ])
 const isCounter = (card?: Card | null) => Boolean(card && (card.cardType === 'counter-tactic' || counterIds.has(card.cardId)))
+const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
 const promotionFoundations: Record<string, string> = {
   'S02-0501': 'S02-0502', 'S02-0503': 'S02-0504', 'S02-0505': 'S02-0506', 'S02-0507': 'S02-0508',
 }
@@ -60,11 +61,12 @@ function canPromote(card: Card) {
 const playableIds = computed(() => {
   if (!isMyMain.value) return []
   const hasLegionDestination = me.value.field.some((row, rowIndex) => row.some(card => !card || (rowIndex === 1 && isCounter(card))))
+  const hasInfiltratorDestination = hasLegionDestination || enemy.value.field.some(row => row.some(card => !card))
   return (me.value.hand ?? [])
     .filter(card => !(props.game.activeDisaster?.cardId === 'S02-DS01' && card.cardType === 'legion'
       && card.profession && card.profession === me.value.libraryTop?.profession))
     .filter(card => canPromote(card) || ((card.playCost ?? card.currentCost ?? card.cost) <= activeMorale.value
-      && (card.cardType !== 'legion' || hasLegionDestination)))
+      && (card.cardType !== 'legion' || (isInfiltrator(card) ? hasInfiltratorDestination : hasLegionDestination))))
     .map(card => card.instanceId)
 })
 const selectedHandCard = computed(() => me.value.hand?.find(card => card.instanceId === selectedId.value) ?? null)
@@ -279,7 +281,7 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   }
   if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value?.cardType === 'legion'
     && row === 1 && isCounter(card)) {
-    command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot })
+    command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: me.value.playerIndex })
     selectedId.value = null
     playArmed.value = false
     return
@@ -293,7 +295,10 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   }
   if (!selectedId.value) return
   if (mode.value === 'play' && !playArmed.value) return
-  command(mode.value === 'move' || mode.value === 'cavalryMove' ? mode.value : 'playCard', { cardInstanceId: selectedId.value, row, slot })
+  command(mode.value === 'move' || mode.value === 'cavalryMove' ? mode.value : 'playCard', {
+    cardInstanceId: selectedId.value, row, slot,
+    ...(mode.value === 'play' ? { targetPlayerIndex: me.value.playerIndex } : {}),
+  })
   selectedId.value = null
   playArmed.value = false
 }
@@ -309,13 +314,25 @@ function confirmResourcePayment() {
   if (!prompt || paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
 }
-function enemySlot(_row: number, _slot: number, card: Card | null) {
+function enemySlot(row: number, slot: number, card: Card | null) {
   if (card) focusCard.value = card
   if (resourceSelectionPrompt.value) {
     if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
     return
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
+  if (mode.value === 'play' && playArmed.value && selectedHandCard.value && isInfiltrator(selectedHandCard.value) && !card) {
+    command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: enemy.value.playerIndex })
+    selectedId.value = null
+    playArmed.value = false
+    return
+  }
+  if (mode.value === 'play' && card && isInfiltrator(card) && card.ownerIndex === props.game.you) {
+    selectedId.value = selectedId.value === card.instanceId ? null : card.instanceId
+    focusCard.value = card
+    playArmed.value = false
+    return
+  }
   if (mode.value !== 'attack' || !selectedId.value || !card || !selectedAttackTargets.value.includes(card.instanceId)) return
   command('attack', { cardInstanceId: selectedId.value, target: { type: 'legion', instanceId: card.instanceId } })
   selectedId.value = null
@@ -456,6 +473,8 @@ function statusTexts(card: Card) {
           <HandArea hidden :count="enemy.handCount || 0" />
           <div class="felt-board">
             <PlayerMat :player="enemy" side="opponent" :active="game.activePlayer === enemy.playerIndex && !combat"
+              :viewer-player-index="game.you" :selected-id="selectedId" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction"
+              :placement-mode="mode === 'play' && playArmed && isInfiltrator(selectedHandCard)"
               :turn-serial="game.turnSerial" :hidden-reveal-card="hiddenRevealCard"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)" :selection-mode="Boolean(boardTargetPrompt)"
               :targetable-ids="boardTargetPrompt ? boardTargetableIds : combat ? [] : selectedAttackTargets"
@@ -465,7 +484,8 @@ function statusTexts(card: Card) {
               :combat-target-master="combat?.targetOwner.playerIndex === enemy.playerIndex && !combat.target"
               :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :master-targetable="!combat && selectedAttackTargets.includes('master')" @slot="enemySlot" @master="enemyMaster"
-              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @payment-resource="togglePaymentResource" />
+              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @ability="activateAbility"
+              @select-card="selectPublicCard" @payment-resource="togglePaymentResource" />
             <div class="board-seam">
               <div class="disaster-zone" @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
                 <img class="disaster-card-image"
@@ -493,6 +513,7 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat :player="me" side="my" :active="game.activePlayer === me.playerIndex && !combat"
+              :viewer-player-index="game.you"
               :turn-serial="game.turnSerial"
               :selected-id="supportId || selectedId" :move-mode="mode === 'move'" :cavalry-move-mode="mode === 'cavalryMove'"
               :placement-mode="mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))"

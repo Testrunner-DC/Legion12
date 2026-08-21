@@ -81,13 +81,8 @@ public sealed partial class L12GameEngine
                 if (cards.Any(card => card is null)) return CommandResult.Reject("选择的士气已失效");
                 var slot = EmptySlots(player).FirstOrDefault(choice => choice.StartsWith("0:", StringComparison.Ordinal));
                 if (slot is null) return CommandResult.Reject("我方前排没有空位");
-                foreach (var morale in cards.Cast<L12MoraleCard>())
-                {
-                    player.Morale.Remove(morale);
-                    morale.Tapped = false;
-                    ReturnMoraleCardToDestination(player, morale);
-                }
-                player.ReturnedMoraleThisTurn += ids.Length;
+                if (!ReturnSelectedMorale(player, cards.Cast<L12MoraleCard>().ToArray()))
+                    return CommandResult.Reject("选择的士气已失效");
                 player.UsedAbilities.Add(onceKey);
                 PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
                 {

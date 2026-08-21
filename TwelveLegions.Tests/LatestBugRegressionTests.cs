@@ -72,6 +72,142 @@ public sealed class LatestBugRegressionTests
             });
     }
 
+    private static void PassResponses(L12GameEngine game)
+    {
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var prompt = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
+        }
+    }
+
+    [Fact]
+    public void InfiltratorCanEnterEitherBattlefieldButCannotReplaceOpponentCounter()
+    {
+        var game = Create(6415);
+        var owner = game.State.Players[0];
+        var controller = game.State.Players[1];
+        var infiltrator = Card("S01-0004", "cross-field-infiltrator");
+        owner.Hand.Clear();
+        owner.Hand.Add(infiltrator);
+        AddReadyMorale(owner, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", infiltrator.InstanceId,
+            Row: 0, Slot: 1, TargetPlayerIndex: 1)).Accepted);
+        PassResponses(game);
+
+        Assert.Same(infiltrator, controller.Field[0][1]);
+        Assert.Equal(0, infiltrator.OwnerIndex);
+        Assert.True(infiltrator.Tapped);
+
+        var blockedGame = Create(6416);
+        var blockedOwner = blockedGame.State.Players[0];
+        var counter = Card("S01-0016", "opponent-counter");
+        counter.Hidden = true;
+        blockedGame.State.Players[1].Field[1][0] = counter;
+        var blockedInfiltrator = Card("S01-0004", "blocked-infiltrator");
+        blockedOwner.Hand.Clear();
+        blockedOwner.Hand.Add(blockedInfiltrator);
+        AddReadyMorale(blockedOwner, 2);
+        blockedGame.State.ActivePlayer = 0;
+        blockedGame.State.Phase = L12Phase.Main;
+
+        var result = blockedGame.Handle(0, new L12Command("playCard", blockedInfiltrator.InstanceId,
+            Row: 1, Slot: 0, TargetPlayerIndex: 1));
+        Assert.False(result.Accepted);
+        Assert.Same(counter, blockedGame.State.Players[1].Field[1][0]);
+    }
+
+    [Fact]
+    public void InfiltratorDeathAndReturnUseOwnerZonesInsteadOfBattlefieldControllerZones()
+    {
+        var deathGame = Create(6417);
+        var owner = deathGame.State.Players[0];
+        var controller = deathGame.State.Players[1];
+        var infiltrator = Card("S01-0004", "owned-infiltrator");
+        infiltrator.OwnerIndex = 0;
+        controller.Field[0][0] = infiltrator;
+        AddReadyMorale(controller, 2);
+        deathGame.State.ActivePlayer = 1;
+        deathGame.State.Phase = L12Phase.Main;
+        var ownerHandBefore = owner.Hand.Count;
+        var controllerHandBefore = controller.Hand.Count;
+
+        Assert.True(deathGame.Handle(1, new L12Command("activateAbility", infiltrator.InstanceId,
+            Ability: "destroyInfiltrator")).Accepted);
+        PassResponses(deathGame);
+
+        Assert.Contains(infiltrator, owner.Graveyard);
+        Assert.DoesNotContain(infiltrator, controller.Graveyard);
+        Assert.Equal(ownerHandBefore + 1, owner.Hand.Count);
+        Assert.Equal(controllerHandBefore, controller.Hand.Count);
+
+        var returnGame = Create(6418);
+        var returnOwner = returnGame.State.Players[0];
+        var returnController = returnGame.State.Players[1];
+        var returnedInfiltrator = Card("S01-0004", "returned-infiltrator");
+        returnedInfiltrator.OwnerIndex = 0;
+        returnController.Field[0][0] = returnedInfiltrator;
+        var transfer = Card("S01-0009", "strategic-transfer");
+        returnController.Hand.Clear();
+        returnController.Hand.Add(transfer);
+        AddReadyMorale(returnController, 1);
+        returnGame.State.ActivePlayer = 1;
+        returnGame.State.Phase = L12Phase.Main;
+
+        Assert.True(returnGame.Handle(1, new L12Command("playCard", transfer.InstanceId)).Accepted);
+        PassResponses(returnGame);
+        var target = Assert.Single(returnGame.State.PendingPrompts, prompt => prompt.Continuation == "card-effect");
+        Assert.True(returnGame.Handle(1, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: returnedInfiltrator.InstanceId)).Accepted);
+
+        Assert.Contains(returnedInfiltrator, returnOwner.Hand);
+        Assert.DoesNotContain(returnedInfiltrator, returnController.Hand);
+    }
+
+    [Fact]
+    public void InfiltratorOwnerCanDestroyItWhileItIsControlledOnOpponentBattlefield()
+    {
+        var game = Create(6420);
+        var owner = game.State.Players[0];
+        var controller = game.State.Players[1];
+        var infiltrator = Card("S01-0004", "owner-activated-infiltrator");
+        infiltrator.OwnerIndex = 0;
+        controller.Field[0][2] = infiltrator;
+        AddReadyMorale(owner, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", infiltrator.InstanceId,
+            Ability: "destroyInfiltrator")).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(infiltrator, owner.Graveyard);
+        Assert.Null(controller.Field[0][2]);
+    }
+
+    [Fact]
+    public void WukongReturningAllMoraleQueuesTiantingZeroMoraleTrigger()
+    {
+        var game = CreateWithFirstMaster("S02-01M1", 6419);
+        var player = game.State.Players[0];
+        AddReadyMorale(player, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        var returned = player.Morale.Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "wukongTransform")).Accepted);
+        var selection = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [.. returned])).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "faction-zero-recovery");
+    }
+
     [Fact]
     public async Task PlayerCanLeaveTheRoomAfterSurrenderEndsTheGame()
     {

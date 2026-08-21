@@ -12,6 +12,9 @@ public sealed partial class L12GameEngine
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == command.CardInstanceId
                 && card.CardId == "S01-02M2" && ability == "isisVictory");
+        if (source is null && ability == "destroyInfiltrator"
+            && FindPublicCard(command.CardInstanceId, out _) is { CardId: "S01-0004" } infiltrator)
+            source = infiltrator;
         if (source is null && player.Morale.FirstOrDefault(card => card.InstanceId == command.CardInstanceId) is { } morale)
             source = CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId);
         if (source is null && command.CardInstanceId is not null
@@ -248,11 +251,7 @@ public sealed partial class L12GameEngine
     {
         var selected = player.Morale.Where(card => !card.Tapped).Take(count).ToArray();
         if (selected.Length < count) return false;
-        foreach (var card in selected)
-        {
-            player.Morale.Remove(card); card.Tapped = false; ReturnMoraleCardToDestination(player, card);
-        }
-        return true;
+        return ReturnSelectedMorale(player, selected, requireActive: true);
     }
 
     private void ResolveActiveEffect(L12StackItem item)

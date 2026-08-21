@@ -308,9 +308,12 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "teach-death" });
                 return true;
             case "S01-0004":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "无名的渗透者阵亡效果抽牌时牌库为空");
+            {
+                var ownerIndex = card.OwnerIndex is >= 0 and <= 1 ? card.OwnerIndex.Value : item.Controller;
+                if (!Draw(State.Players[ownerIndex], 1)) SetWinner(1 - ownerIndex, "无名的渗透者所有者因阵亡效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
+            }
             case "S01-0110":
                 if (!Draw(player, 1)) SetWinner(1 - item.Controller, "墨子阵亡效果抽牌时牌库为空");
                 FinishStackItem(item);
@@ -729,7 +732,9 @@ public sealed partial class L12GameEngine
                 Draw(player, 1); FinishStackItem(item); return true;
             }
             case "destroyInfiltrator" when source is not null:
-                RemoveFromField(player, source, true, "被主动效果击杀"); FinishStackItem(item); return true;
+                if (FindPublicCard(source.InstanceId, out var battlefieldController) is not null)
+                    RemoveFromField(State.Players[battlefieldController], source, true, "被主动效果击杀");
+                FinishStackItem(item); return true;
             default:
                 return TryResolveS1FactionActive(item, source, ability);
         }
