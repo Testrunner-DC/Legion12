@@ -701,3 +701,13 @@
 - 同类扫描：Windows 发布脚本中 npm 只有依赖安装和生产构建两个入口；服务器端 Bash 直接调用 npm，不受 PowerShell shim 和 StrictMode 影响。
 - 修改：Windows 脚本在命令检查后解析 `npm.cmd`，存在时由独立 cmd 进程执行两个 npm 命令，仅在非 Windows 环境回退至 `npm`。
 - 防回滚：Windows 严格模式发布脚本不得直接调用 `npm` PowerShell shim；部署干运行必须至少通过本地 npm 依赖安装和生产构建后才能上传版本包。
+
+### OPS-20260822-30 新版本根目录权限导致切换后服务无法启动
+
+- 现象：提交 `a12a586` 的完整干运行通过，但正式切换后外网健康检查持续返回 502；systemd 日志报告 `status=200/CHDIR` 与 `Changing to the requested working directory failed: Permission denied`，发布脚本随后自动恢复旧版本。
+- 历史记录匹配：命中 OPS-20260821-28 的隔离发布门禁，以及本项目“验证失败必须恢复旧版本”的部署防护要求；此前没有运行目录权限的切换前契约。
+- 根因：服务器脚本以 `umask 027` 创建暂存根目录，目录归属为 `root:root` 且权限为 `0750`；脚本只将 `publish` 子目录递归改为 `legion12:legion12`。暂存根目录移动成 `/opt/legion12-test` 后，systemd 的 `legion12` 用户无法穿越父目录，因此应用尚未执行就失败。
+- 同类扫描：检查 systemd 的 `User`、`Group`、`WorkingDirectory`、`ExecStart` 与发布脚本内所有 `mkdir`、`chown`、`chmod`、`mv` 路径；账号、Bug、官网内容与对局记录的 `runtime` 目录归属已正确迁移，唯一缺口是即将成为活动目录的暂存根目录。
+- 修改：切换前将暂存根目录显式设为 `0755`；把 `runuser` 纳入服务器环境依赖，并在停止旧服务前以真实 `legion12` 服务账号验证根目录可进入、后端 DLL 可读取。
+- 验证：服务器日志确认失败由根目录 `0750 root:root` 导致且旧版本已恢复为 active；修复后需重新通过服务器自检、完整干运行、正式部署及网页、卡牌页、健康检查和 WebSocket 冒烟测试。
+- 防回滚：发布脚本不得仅验证构建产物存在；任何活动目录切换必须在停止旧服务前以 systemd 的真实运行账号验证完整路径可遍历、入口文件可读取。

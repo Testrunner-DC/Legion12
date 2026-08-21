@@ -16,7 +16,7 @@ require_command() { command -v "$1" >/dev/null 2>&1 || fail "服务器缺少命�
 
 self_test() {
   test "$(id -u)" -eq 0 || fail "必须以 root 身份执行"
-  for command_name in flock sha256sum tar patch npm node dotnet curl systemctl nginx; do
+  for command_name in flock sha256sum tar patch npm node dotnet curl systemctl nginx runuser; do
     require_command "$command_name"
   done
   test -d "$active_dir" || fail "当前部署目录不存在：${active_dir}"
@@ -132,7 +132,10 @@ if [[ -d "${active_dir}/publish/runtime" ]]; then
   cp -a "${active_dir}/publish/runtime/." "${stage_dir}/publish/runtime/"
 fi
 chown -R legion12:legion12 "${stage_dir}/publish"
+chmod 0755 "$stage_dir"
 chmod 0750 "${stage_dir}/publish/runtime"
+runuser -u legion12 -- test -x "$stage_dir" || fail "服务账号无法进入新版本根目录"
+runuser -u legion12 -- test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "服务账号无法读取新版本后端"
 
 log "切换到新版本，旧版本保存在 ${rollback_dir}"
 mv "$active_dir" "$rollback_dir"
