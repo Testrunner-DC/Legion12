@@ -18,7 +18,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0103", "S02-0501", "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0605", "S02-0606", "S02-0607", "S02-0612", "S02-0617",
+        "S02-0103", "S02-0501", "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0605", "S02-0606", "S02-0607", "S02-0608", "S02-0612", "S02-0617",
     };
 
     private static readonly HashSet<string> S2FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
@@ -354,8 +354,9 @@ public sealed partial class L12GameEngine
                 return true;
             case "S02-0608":
                 AdvanceTrial(item.Controller, 2, card);
-                FinishStackItem(item);
-                return true;
+                card.ImmortalUses = Math.Max(card.ImmortalUses, 1);
+                card.ImmortalUntilTurn = Math.Max(card.ImmortalUntilTurn, ExpiryAtNextOwnStart(item.Controller));
+                return PromptS2RichardEntryAttach(item, card);
             case "S02-0301":
                 card.CanAttackMasterOnSummonUntilTurn = State.TurnSerial;
                 AddEvent("effect", item.Controller, "此军团本回合可以进攻对方主宰", card);
@@ -716,6 +717,21 @@ public sealed partial class L12GameEngine
             var choices = Enumerable.Range(0, player.SpecialZones.Runes).Select(count => $"runes:{count}").ToArray();
             CreatePrompt(item.Controller, "optional", "高文：选择本次进攻消耗的符文数量", choices, 1, 1,
                 "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gawain-runes" });
+            return true;
+        }
+        if (card.CardId == "S02-0608")
+        {
+            var squires = card.AttachedCards.Where(attached => attached.CardId == "S02-0609")
+                .Select(attached => attached.InstanceId).ToList();
+            if (squires.Count == 0) { FinishStackItem(item); return true; }
+            squires.Add("skip");
+            CreatePrompt(item.Controller, "optional-cards", "狮心王理查一世：可弃置下方任意数量〈侍从骑士〉，每张使本回合兵力+1000",
+                squires, 1, squires.Count - 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-richard-attack-squires", ["choiceMode"] = "multi-card", ["skip"] = "不弃置",
+                    ["layout"] = "single-row", ["displayCardIds"] = string.Join('|', squires.Where(id => id != "skip")),
+                });
             return true;
         }
         if (card.CardId == "S02-0612")
@@ -2548,6 +2564,62 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
+            case "s2-richard-entry-attach":
+            {
+                var source = FindSource(item);
+                if (source is not null)
+                {
+                    var attached = new List<L12CardInstance>();
+                    foreach (var id in chosen.Where(id => id != "skip").Take(3))
+                        if (TakeS2RichardSquire(player, id) is { } squire)
+                        {
+                            source.AttachedCards.Add(squire);
+                            attached.Add(squire);
+                        }
+                    if (attached.Count > 0)
+                        AddEvent("attach", item.Controller, $"〈狮心王理查一世〉下方叠放{attached.Count}张〈侍从骑士〉", [source, .. attached]);
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-richard-attack-squires":
+            {
+                var source = FindSource(item);
+                if (source is not null)
+                {
+                    var discarded = new List<L12CardInstance>();
+                    foreach (var id in chosen.Where(id => id != "skip"))
+                    {
+                        var squire = source.AttachedCards.FirstOrDefault(card => card.InstanceId == id && card.CardId == "S02-0609");
+                        if (squire is null) continue;
+                        source.AttachedCards.Remove(squire);
+                        ResetCardAfterLeavingField(squire);
+                        player.Graveyard.Add(squire);
+                        discarded.Add(squire);
+                    }
+                    if (discarded.Count > 0)
+                    {
+                        AddTimedModifier(source, discarded.Count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "狮心王理查一世");
+                        AddEvent("effect", item.Controller,
+                            $"〈狮心王理查一世〉弃置{discarded.Count}张叠放的〈侍从骑士〉，本回合兵力+{discarded.Count * 1000}",
+                            [source, .. discarded]);
+                    }
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-richard-defense-extra-discard":
+            {
+                item.Data["richardExtraResolved"] = "true";
+                if (chosen[0] == "decline")
+                {
+                    item.Data["invalid"] = "true";
+                    AddEvent("defense", prompt.PlayerIndex, "未支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效");
+                }
+                else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false);
+                ResolveAuthorityEvent(item);
+                return true;
+            }
             case "s2-round-table-buff":
                 if (chosen[0] == "skip")
                 {
@@ -2867,6 +2939,50 @@ public sealed partial class L12GameEngine
                 ["action"] = "s2-glory-flip", ["choiceMode"] = "multi-card", ["skip"] = "不翻转士气",
             });
         return true;
+    }
+
+    private bool PromptS2RichardEntryAttach(L12StackItem item, L12CardInstance source)
+    {
+        var player = State.Players[item.Controller];
+        var candidates = PublicLegions(player).Where(card => card.InstanceId != source.InstanceId && card.CardId == "S02-0609")
+            .Concat(player.Hand.Where(card => card.CardId == "S02-0609"))
+            .Concat(player.Library.Where(card => card.CardId == "S02-0609"))
+            .Concat(player.Graveyard.Where(card => card.CardId == "S02-0609"))
+            .ToArray();
+        if (candidates.Length == 0) { FinishStackItem(item); return true; }
+        var choices = candidates.Select(card => card.InstanceId).Append("skip").ToArray();
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-richard-entry-attach", ["choiceMode"] = "multi-card", ["skip"] = "不叠放",
+            ["layout"] = "single-row", ["displayCardIds"] = string.Join('|', candidates.Select(card => card.InstanceId)),
+        };
+        foreach (var card in candidates)
+        {
+            AddPromptCardData(data, card);
+            data[$"{card.InstanceId}:zone"] = FindOnField(player, card.InstanceId, out _, out _) is not null ? "战场"
+                : player.Hand.Contains(card) ? "手牌" : player.Library.Contains(card) ? "牌库" : "墓地";
+        }
+        CreatePrompt(item.Controller, "optional-cards", "狮心王理查一世：选择最多3张〈侍从骑士〉叠放至此军团下方",
+            choices, 1, Math.Min(3, candidates.Length), "card-effect", item.StackItemId, data: data);
+        return true;
+    }
+
+    private L12CardInstance? TakeS2RichardSquire(L12PlayerState player, string instanceId)
+    {
+        var squire = FindOnField(player, instanceId, out var row, out var slot);
+        if (squire?.CardId == "S02-0609")
+        {
+            player.Field[row][slot] = null;
+            ResetCardAfterLeavingField(squire);
+            return squire;
+        }
+        squire = player.Hand.FirstOrDefault(card => card.InstanceId == instanceId && card.CardId == "S02-0609");
+        if (squire is not null) { player.Hand.Remove(squire); return squire; }
+        squire = player.Library.FirstOrDefault(card => card.InstanceId == instanceId && card.CardId == "S02-0609");
+        if (squire is not null) { player.Library.Remove(squire); return squire; }
+        squire = player.Graveyard.FirstOrDefault(card => card.InstanceId == instanceId && card.CardId == "S02-0609");
+        if (squire is not null) player.Graveyard.Remove(squire);
+        return squire;
     }
 
     private void PromptS2GloryGodPower(L12StackItem item)

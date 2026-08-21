@@ -78,6 +78,7 @@ public sealed partial class L12GameEngine
         switch (authorityEvent.Type)
         {
             case "defense":
+                if (BeginRequiredDefenseExtraDiscard(item)) return;
                 ResolveDefenseCore(
                     authorityEvent.ActorPlayer,
                     item.Data.GetValueOrDefault("blockIds", string.Empty)
@@ -102,6 +103,38 @@ public sealed partial class L12GameEngine
         }
         authorityEvent.Resolved = true;
         FinishStackItem(item);
+    }
+
+    private bool BeginRequiredDefenseExtraDiscard(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault("richardExtraResolved") == "true"
+            || item.Data.GetValueOrDefault("invalid") == "true"
+            || item.SourceCardId != "S02-0608") return false;
+        var hasDeclaredDefense = item.Data.GetValueOrDefault("action") is "block" or "support"
+            && (!string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("blockIds"))
+                || !string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("supportId")));
+        if (!hasDeclaredDefense) return false;
+
+        var excluded = item.Data.GetValueOrDefault("blockIds", string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        var defender = State.Players[item.Controller];
+        var choices = defender.Hand.Where(card => !excluded.Contains(card.InstanceId)).Select(card => card.InstanceId).ToList();
+        if (choices.Count == 0)
+        {
+            item.Data["richardExtraResolved"] = "true";
+            item.Data["invalid"] = "true";
+            AddEvent("defense", item.Controller, "没有手牌可支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效");
+            return false;
+        }
+        choices.Add("decline");
+        CreatePrompt(item.Controller, "discard-or-decline", "狮心王理查一世：额外弃置1张手牌，否则本次抵挡/支援无效",
+            choices, 1, 1, "card-effect", item.StackItemId, isPrivate: true,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-richard-defense-extra-discard", ["choiceMode"] = "instant",
+                ["decline"] = "不弃置，本次抵挡/支援无效",
+            });
+        return true;
     }
 
     private void CommitEffectReady(L12AuthorityEvent authorityEvent)

@@ -582,6 +582,126 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void RichardEntryAdvancesTrialAttachesUpToThreeSquiresFromAllZonesAndGainsImmortality()
+    {
+        var game = Create(6362);
+        var player = game.State.Players[0];
+        var richard = Card("S02-0608", "richard-entry");
+        var fieldSquire = Card("S02-0609", "richard-field-squire");
+        var handSquire = Card("S02-0609", "richard-hand-squire");
+        var graveSquire = Card("S02-0609", "richard-grave-squire");
+        var librarySquire = Card("S02-0609", "richard-library-squire");
+        var trial = Card("S02-06S4", "richard-trial");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Graveyard.Clear();
+        player.Morale.Clear();
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        player.Hand.AddRange([richard, handSquire]);
+        player.Library.Add(librarySquire);
+        player.Graveyard.Add(graveSquire);
+        player.Field[0][1] = fieldSquire;
+        for (var index = 0; index < richard.Cost; index++)
+            player.Morale.Add(new L12MoraleCard { InstanceId = $"richard-cost-{index}", CardId = "S02-06C1" });
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", richard.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        var attach = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-richard-entry-attach", attach.Data["action"]);
+        Assert.Equal("战场", attach.Data[$"{fieldSquire.InstanceId}:zone"]);
+        Assert.Equal("手牌", attach.Data[$"{handSquire.InstanceId}:zone"]);
+        Assert.Equal("墓地", attach.Data[$"{graveSquire.InstanceId}:zone"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attach.PromptId,
+            CardInstanceIds: [fieldSquire.InstanceId, handSquire.InstanceId, graveSquire.InstanceId])).Accepted);
+
+        Assert.Equal(2, trial.TrialProgress);
+        Assert.Equal(1, richard.ImmortalUses);
+        Assert.True(richard.ImmortalUntilTurn > game.State.TurnSerial);
+        Assert.Equal(3, richard.AttachedCards.Count);
+        Assert.Null(player.Field[0][1]);
+        Assert.DoesNotContain(handSquire, player.Hand);
+        Assert.DoesNotContain(graveSquire, player.Graveyard);
+        Assert.Contains(librarySquire, player.Library);
+    }
+
+    [Fact]
+    public void RichardAttackDiscardsChosenAttachedSquiresAndDefensePaysAnExtraChosenHandCard()
+    {
+        var game = Create(6363);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var richard = Card("S02-0608", "richard-attack");
+        richard.SummonRound = 0;
+        var firstSquire = Card("S02-0609", "richard-attack-squire-a");
+        var secondSquire = Card("S02-0609", "richard-attack-squire-b");
+        richard.AttachedCards.AddRange([firstSquire, secondSquire]);
+        attackerPlayer.Field[0][0] = richard;
+        var blocker = Card("S02-0608", "richard-blocker");
+        blocker.Troops = 12000;
+        var extra = Card("S02-0001", "richard-extra-discard");
+        defender.Hand.Clear();
+        defender.Hand.AddRange([blocker, extra]);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        var hpBefore = defender.Hp;
+
+        Assert.True(game.Handle(0, new L12Command("attack", richard.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        var attackEffect = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-richard-attack-squires", attackEffect.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackEffect.PromptId,
+            CardInstanceIds: [firstSquire.InstanceId, secondSquire.InstanceId])).Accepted);
+        Assert.Equal(richard.BaseTroops + 2000, richard.Troops);
+        Assert.Empty(richard.AttachedCards);
+        Assert.Contains(firstSquire, attackerPlayer.Graveyard);
+        Assert.Contains(secondSquire, attackerPlayer.Graveyard);
+
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [blocker.InstanceId])).Accepted);
+        PassResponses(game);
+        var extraCost = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-richard-defense-extra-discard", extraCost.Data["action"]);
+        Assert.DoesNotContain(blocker.InstanceId, extraCost.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: extraCost.PromptId,
+            Choice: extra.InstanceId)).Accepted);
+
+        Assert.Equal(hpBefore, defender.Hp);
+        Assert.Contains(blocker, defender.Graveyard);
+        Assert.Contains(extra, defender.Graveyard);
+    }
+
+    [Fact]
+    public void RichardMakesDefenseInvalidWhenNoSeparateHandCardCanPayTheExtraCost()
+    {
+        var game = Create(6364);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var richard = Card("S02-0608", "richard-unpaid");
+        richard.SummonRound = 0;
+        attackerPlayer.Field[0][0] = richard;
+        var blocker = Card("S02-0608", "richard-only-blocker");
+        blocker.Troops = 9000;
+        defender.Hand.Clear();
+        defender.Hand.Add(blocker);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        var hpBefore = defender.Hp;
+
+        Assert.True(game.Handle(0, new L12Command("attack", richard.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [blocker.InstanceId])).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(hpBefore - 1, defender.Hp);
+        Assert.Contains(blocker, defender.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("额外弃牌费用", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AristotleDiscountIsConsumedByTheNextOlympusLegion()
     {
         var game = Create(6306);
