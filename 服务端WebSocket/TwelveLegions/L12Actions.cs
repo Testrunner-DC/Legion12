@@ -490,6 +490,13 @@ public sealed partial class L12GameEngine
             attacker.Troops += 1000;
             AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+1000", attacker);
         }
+        if (attacker.CardId == "S02-0507" && row == 1)
+        {
+            var atalantaAdjustment = 3000 - attacker.Troops;
+            temporaryAttackerTroopsBonus += atalantaAdjustment;
+            attacker.Troops = 3000;
+            AddEvent("effect", playerIndex, "阿塔兰忒·晋升位于后排，本次进攻兵力视为3000", attacker);
+        }
         if (isRanged && attackTarget?.CardId == "S02-0503")
         {
             temporaryDefenderTroopsPenalty = 1000;
@@ -524,6 +531,7 @@ public sealed partial class L12GameEngine
     {
         if (!card.HasRangeBonus) return false;
         if (card.CardId == "S01-0415" && row != 0) return false;
+        if (card.CardId == "S02-0507" && row != 1) return false;
         return true;
     }
 
@@ -795,7 +803,7 @@ public sealed partial class L12GameEngine
 
     private void RevertPendingCombatTroopsModifiers(L12PendingDefense pending, L12CardInstance? attacker)
     {
-        if (attacker is not null && pending.TemporaryAttackerTroopsBonus > 0)
+        if (attacker is not null && pending.TemporaryAttackerTroopsBonus != 0)
             attacker.Troops -= pending.TemporaryAttackerTroopsBonus;
         pending.TemporaryAttackerTroopsBonus = 0;
         if (pending.TemporaryDefenderTroopsPenalty <= 0 || pending.Target.Type != "legion") return;

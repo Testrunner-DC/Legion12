@@ -2200,4 +2200,45 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(beforeMasterDamage - 2, opponent.Hp);
         Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
     }
+
+    [Fact]
+    public void PromotedAtalantaUsesThreeThousandTroopsAndRangeOnlyInTheBackRow()
+    {
+        var game = Create(6353);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var atalanta = Card("S02-0507", "atalanta-back-row");
+        var target = Card("S01-0002", "atalanta-front-target");
+        target.Troops = 3500;
+        player.Field[1][0] = atalanta;
+        opponent.Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("attack", atalanta.InstanceId,
+                Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(500, target.Troops);
+        Assert.Equal(4000, atalanta.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("兵力视为3000", StringComparison.Ordinal));
+
+        var frontGame = Create(6354);
+        var frontPlayer = frontGame.State.Players[0];
+        var frontOpponent = frontGame.State.Players[1];
+        var frontAtalanta = Card("S02-0507", "atalanta-front-row");
+        var backTarget = Card("S01-0002", "atalanta-back-target");
+        frontPlayer.Field[0][0] = frontAtalanta;
+        frontOpponent.Field[1][0] = backTarget;
+        frontGame.State.ActivePlayer = 0;
+        frontGame.State.Phase = L12Phase.Main;
+
+        var invalid = frontGame.Handle(0,
+            new L12Command("attack", frontAtalanta.InstanceId,
+                Target: new L12AttackTarget("legion", backTarget.InstanceId)));
+        Assert.False(invalid.Accepted);
+        Assert.Contains("近战军团无法进攻对方后排", invalid.Error);
+    }
 }
