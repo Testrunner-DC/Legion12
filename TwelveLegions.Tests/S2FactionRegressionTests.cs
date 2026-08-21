@@ -525,6 +525,63 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void GloryRoadFlipsUpToThreeChosenMoraleThenPaysTwoChosenGodPowerAndSearchesOlympus()
+    {
+        var game = Create(6361);
+        var player = game.State.Players[0];
+        var road = Card("S02-0521", "glory-road");
+        var olympus = Card("S02-0519", "glory-road-olympus");
+        var other = Card("S02-0301", "glory-road-other");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(road);
+        player.Library.AddRange([other, olympus]);
+        for (var index = 0; index < 7; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"glory-morale-{index}", CardId = "S02-05C1A", Tapped = false,
+            });
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", road.InstanceId)).Accepted);
+        PassResponses(game);
+        var flip = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-glory-flip", flip.Data["action"]);
+        Assert.Equal(3, flip.MaxChoose);
+        var flipIds = player.Morale.Where(card => !card.Tapped && flip.ValidChoices.Contains(card.InstanceId))
+            .Take(3).Select(card => card.InstanceId).ToArray();
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: flip.PromptId,
+            CardInstanceIds: flipIds.ToList())).Accepted);
+        Assert.All(player.Morale.Where(card => flipIds.Contains(card.InstanceId)), card => Assert.True(card.IsGodPower));
+
+        var usePower = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-glory-use-power", usePower.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: usePower.PromptId, Choice: "yes")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-glory-pay-power", payment.Data["action"]);
+        var paidIds = payment.ValidChoices.Take(2).ToArray();
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: paidIds.ToList())).Accepted);
+
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-glory-search", search.Data["action"]);
+        Assert.Equal([olympus.InstanceId], search.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: search.PromptId,
+            Choice: olympus.InstanceId)).Accepted);
+
+        Assert.Contains(olympus, player.Hand);
+        Assert.Contains(other, player.Library);
+        Assert.All(player.Morale.Where(card => paidIds.Contains(card.InstanceId)), card =>
+        {
+            Assert.True(card.Tapped);
+            Assert.False(card.IsGodPower);
+        });
+        Assert.Single(player.Morale, card => flipIds.Contains(card.InstanceId) && card.IsGodPower && !card.Tapped);
+    }
+
+    [Fact]
     public void AristotleDiscountIsConsumedByTheNextOlympusLegion()
     {
         var game = Create(6306);

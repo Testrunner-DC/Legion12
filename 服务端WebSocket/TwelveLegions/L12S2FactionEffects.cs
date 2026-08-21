@@ -7,13 +7,13 @@ public sealed partial class L12GameEngine
     {
         "S02-0101", "S02-0102", "S02-0203", "S02-0204", "S02-0205",
         "S02-0301", "S02-0302", "S02-0303", "S02-0304", "S02-0401", "S02-0402", "S02-0403", "S02-0404",
-        "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0521", "S02-0613",
+        "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0613",
         "S02-0601", "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
     };
 
     private static readonly HashSet<string> S2FactionTacticCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0206", "S02-0207", "S02-0306", "S02-0307", "S02-0405", "S02-0406", "S02-0522", "S02-0620", "S02-0621", "S02-0622",
+        "S02-0206", "S02-0207", "S02-0306", "S02-0307", "S02-0405", "S02-0406", "S02-0521", "S02-0522", "S02-0620", "S02-0621", "S02-0622",
     };
 
     private static readonly HashSet<string> S2FactionAttackCards = new(StringComparer.OrdinalIgnoreCase)
@@ -275,8 +275,6 @@ public sealed partial class L12GameEngine
                 return PromptS2FlipMorale(item, card, optional: true);
             case "S02-0518":
                 return PromptS2FlipMorale(item, card, optional: true, onlyTapped: true);
-            case "S02-0521":
-                return PromptS2FlipMorale(item, card, optional: true);
             case "S02-0613":
             {
                 var choices = player.Hand.Select(candidate => candidate.InstanceId).ToList();
@@ -588,6 +586,7 @@ public sealed partial class L12GameEngine
             PromptEnemyLegion(item, "s2-olympus-decree", "选择对方1张军团，本回合兵力-3000", _ => true, false);
             return true;
         }
+        if (card.CardId == "S02-0521") return BeginS2GloryRoad(item, card);
         if (card.CardId == "S02-0620")
         {
             L12S2ZoneOps.GainRunes(player, 1);
@@ -2502,6 +2501,53 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
+            case "s2-glory-flip":
+            {
+                var selected = chosen.Where(id => id != "skip").Take(3).ToArray();
+                foreach (var id in selected)
+                {
+                    var morale = player.Morale.FirstOrDefault(card => card.InstanceId == id && !card.IsGodPower);
+                    if (morale is not null) L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true);
+                }
+                if (selected.Length > 0)
+                    AddEvent("morale", item.Controller, $"〈荣耀之路〉翻转{selected.Length}张士气", FindSource(item) is { } source ? [source] : []);
+                PromptS2GloryGodPower(item);
+                return true;
+            }
+            case "s2-glory-use-power":
+                if (chosen[0] == "yes") PromptS2GloryGodPowerSelection(item);
+                else FinishStackItem(item);
+                return true;
+            case "s2-glory-pay-power":
+            {
+                var selected = player.Morale.Where(card => chosen.Contains(card.InstanceId)
+                    && card.IsGodPower && !card.Tapped).ToArray();
+                if (selected.Length != 2 || selected.Select(card => card.InstanceId).Distinct(StringComparer.Ordinal).Count() != 2)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                foreach (var morale in selected)
+                {
+                    morale.Tapped = true;
+                    morale.IsGodPower = false;
+                }
+                PromptS2GlorySearch(item);
+                return true;
+            }
+            case "s2-glory-search":
+            {
+                var selected = player.Library.FirstOrDefault(card => card.InstanceId == chosen[0] && card.Faction == "olympus");
+                if (selected is not null)
+                {
+                    player.Library.Remove(selected);
+                    AddCardToHandByEffect(player, selected, "library", "荣耀之路将【奥林匹斯】卡牌加入手牌");
+                    AddEvent("reveal", item.Controller, $"〈荣耀之路〉展示〈{selected.Name}〉并加入手牌", selected);
+                }
+                Shuffle(player.Library);
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-round-table-buff":
                 if (chosen[0] == "skip")
                 {
@@ -2807,6 +2853,64 @@ public sealed partial class L12GameEngine
         CreatePrompt(item.Controller, "target-morale", $"{source.Name}：选择1张士气翻转", choices, optional ? 0 : 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-flip-morale" });
         return true;
+    }
+
+    private bool BeginS2GloryRoad(L12StackItem item, L12CardInstance source)
+    {
+        var player = State.Players[item.Controller];
+        var choices = player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId).ToList();
+        choices.Add("skip");
+        CreatePrompt(item.Controller, "optional-targets", "荣耀之路：选择最多3张士气翻转为神力", choices,
+            1, Math.Min(3, Math.Max(1, choices.Count - 1)), "card-effect", item.StackItemId,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-glory-flip", ["choiceMode"] = "multi-card", ["skip"] = "不翻转士气",
+            });
+        return true;
+    }
+
+    private void PromptS2GloryGodPower(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var canPay = player.Morale.Count(card => card.IsGodPower && !card.Tapped) >= 2;
+        if (!canPay) { FinishStackItem(item); return; }
+        CreatePrompt(item.Controller, "optional", "荣耀之路：是否消耗并翻转2神力，检索1张【奥林匹斯】卡牌？",
+            ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-glory-use-power", ["yes"] = "消耗并翻转2神力：检索1张【奥林匹斯】卡牌", ["no"] = "不发动",
+            });
+    }
+
+    private void PromptS2GloryGodPowerSelection(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var choices = player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId).ToArray();
+        if (choices.Length < 2) { FinishStackItem(item); return; }
+        CreatePrompt(item.Controller, "resource-payment", "荣耀之路：请选择消耗并翻转的2张神力", choices, 2, 2,
+            "card-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-glory-pay-power", ["choiceMode"] = "resource-payment",
+            });
+    }
+
+    private void PromptS2GlorySearch(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var choices = player.Library.Where(card => card.Faction == "olympus").Select(card => card.InstanceId).ToArray();
+        if (choices.Length == 0)
+        {
+            AddEvent("reveal", item.Controller, "〈荣耀之路〉查看牌库但未找到【奥林匹斯】卡牌", FindSource(item) is { } source ? [source] : []);
+            Shuffle(player.Library);
+            FinishStackItem(item);
+            return;
+        }
+        CreatePrompt(item.Controller, "search", "荣耀之路：查看牌库并选择1张【奥林匹斯】卡牌展示加入手牌", choices, 1, 1,
+            "card-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-glory-search", ["layout"] = "single-row", ["previewMode"] = "library-search",
+                ["displayCardIds"] = string.Join('|', choices),
+            });
     }
 
     private void ApplyS2Shock(L12StackItem item, L12CardInstance source)
