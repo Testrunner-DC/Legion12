@@ -261,9 +261,16 @@ public sealed class L12PlatformStore
     {
         lock (_gate)
         {
+            var configuredPassword = Environment.GetEnvironmentVariable("L12_ADMIN_PASSWORD");
             var row = _data.Accounts.FirstOrDefault(item => string.Equals(item.Username, "Admin", StringComparison.Ordinal));
-            if (row is null) _data.Accounts.Add(CreateAccount("Admin", "L12master", "admin"));
-            else row.Role = "admin";
+            if (row is null)
+                _data.Accounts.Add(CreateAccount("Admin",
+                    string.IsNullOrWhiteSpace(configuredPassword) ? "L12master" : configuredPassword, "admin"));
+            else
+            {
+                row.Role = "admin";
+                if (!string.IsNullOrWhiteSpace(configuredPassword)) SetPassword(row, configuredPassword);
+            }
             Save();
         }
     }

@@ -1,0 +1,84 @@
+name: 验证并生成发布包
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: l12-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: opcgpro-vue/package-lock.json
+
+      - name: L12 规则测试
+        run: dotnet test ./TwelveLegions.Tests/TwelveLegions.Tests.csproj --configuration Release
+
+      - name: 平台持久化测试
+        run: dotnet test ./服务端WebSocket.Tests/GrandUMIServer.Tests.csproj --configuration Release --filter "FullyQualifiedName~PlatformStoreTests"
+
+      - name: 前端生产构建
+        working-directory: opcgpro-vue
+        run: |
+          npm ci --prefer-offline --no-audit
+          npm run build
+
+      - name: 生成 Linux 运行包
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          commit="${GITHUB_SHA}"
+          cards_hash="$(git rev-parse "${commit}:opcgpro-vue/public/cards")"
+          root="${RUNNER_TEMP}/l12-release"
+          mkdir -p "${root}/opcgpro-vue/dist" "${root}/publish" "${root}/scripts"
+          rsync -a --exclude cards/ opcgpro-vue/dist/ "${root}/opcgpro-vue/dist/"
+          dotnet publish ./服务端WebSocket/GrandUMIServer.csproj --configuration Release --runtime linux-x64 --self-contained false --output "${root}/publish"
+          cp scripts/ws-smoke.mjs "${root}/scripts/ws-smoke.mjs"
+          printf '%s' "$commit" > "${root}/.deployment-commit"
+          archive="l12-release-${commit}.tar.gz"
+          tar -czf "$archive" -C "$root" .
+          release_sha="$(sha256sum "$archive" | awk '{print $1}')"
+          cat > "l12-release-${commit}.json" <<EOF
+          {
+            "schema": 1,
+            "commit": "${commit}",
+            "generatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "releaseArchive": "${archive}",
+            "releaseSha256": "${release_sha}",
+            "cardsHash": "${cards_hash}",
+            "cardsArchive": "",
+            "cardsSha256": ""
+          }
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: legion12-release-${{ github.sha }}
+          path: |
+            l12-release-${{ github.sha }}.tar.gz
+            l12-release-${{ github.sha }}.json
+          if-no-files-found: error
+          retention-days: 14

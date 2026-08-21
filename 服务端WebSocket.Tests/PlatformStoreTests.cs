@@ -3,8 +3,31 @@ using Xunit;
 
 namespace GrandUMI.Tests;
 
+[CollectionDefinition("Platform environment", DisableParallelization = true)]
+public sealed class PlatformEnvironmentCollection;
+
+[Collection("Platform environment")]
 public sealed class PlatformStoreTests
 {
+    [Fact]
+    public void RootAdminPasswordCanComeFromServerEnvironment()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        var previous = Environment.GetEnvironmentVariable("L12_ADMIN_PASSWORD");
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_ADMIN_PASSWORD", "server-secret-123");
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.True(store.Login("Admin", "server-secret-123").Success);
+            Assert.False(store.Login("Admin", "L12master").Success);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("L12_ADMIN_PASSWORD", previous);
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     [Fact]
     public void RegistrationAuthenticationPasswordAndRootAdminArePersistent()
     {

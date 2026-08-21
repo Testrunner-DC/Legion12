@@ -6,7 +6,10 @@ function normalizeEndpoint(value: string) {
   return value.trim().replace(/\/ws\/$/, '/ws')
 }
 
-const defaultEndpoint = `ws://${location.hostname || 'localhost'}:8080/ws`
+const configuredEndpoint = String(import.meta.env.VITE_WS_URL || '').trim()
+const defaultEndpoint = configuredEndpoint || (location.protocol === 'https:'
+  ? `wss://${location.host}/ws`
+  : `ws://${location.hostname || 'localhost'}:8080/ws`)
 
 export const l12State = reactive({
   socket: null as WebSocket | null,

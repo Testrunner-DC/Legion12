@@ -182,7 +182,7 @@ Legion12/
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 ```
 
-首次使用、干运行、数据保留和回滚说明见 [香港测试服部署文档](docs/DEPLOY-HK.md)。
+部署采用预构建产物：完整测试与构建只执行一次，服务器只校验哈希、迁移共享运行数据、原子切换版本并做冒烟检查；同版本卡图缓存不会重复上传。可先单独执行 `ops/windows/verify-l12.ps1`，首次使用、GitHub Actions、干运行、数据保留和回滚说明见 [香港测试服部署文档](docs/DEPLOY-HK.md)。
 
 ---
 
