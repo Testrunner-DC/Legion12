@@ -5,7 +5,7 @@ import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPr
 import { masterProfileUrl } from './specialAssets'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
-  MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
+  MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 
@@ -43,7 +43,7 @@ const typeLabels: Record<string, string> = {
 onMounted(async () => {
   try {
     catalog.value = await loadDeckCatalog()
-    savedDecks.value = loadSavedDecks()
+    savedDecks.value = await ensureOfficialPrebuiltDecks()
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested])
     else selected.value = mainCards.value[0] ?? null

@@ -27,6 +27,42 @@ public sealed class PlatformStoreTests
 
             var reloaded = new L12PlatformStore(path);
             Assert.True(reloaded.Login("TestPlayer", "new-password-456").Success);
+            Assert.NotNull(reloaded.Authenticate($"Bearer {registered.Token}"));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RegistrationSeedsAndPersistsAccountDecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var presets = Enumerable.Range(1, 6).Select(index => new L12PresetDeckDefinition
+            {
+                Name = $"阵营预组{index}", MasterId = $"M{index}", CardIds = [$"C{index}"],
+                MoraleIds = [$"R{index}"], SpecialIds = [],
+            }).ToArray();
+            var store = new L12PlatformStore(path, presets);
+            var account = store.Register("DeckOwner", "password-123").Account!;
+            Assert.Equal(6, store.Decks(account.Id).Count);
+
+            var custom = new L12PresetDeckDefinition
+            {
+                Name = "我的测试牌库", MasterId = "M1", CardIds = ["C1", "C1"],
+                MoraleIds = ["R1"], SpecialIds = [],
+            };
+            store.UpsertDeck(account.Id, custom);
+            Assert.Equal(2, store.Decks(account.Id).Single(deck => deck.Name == custom.Name).CardIds.Count);
+            Assert.True(store.DeleteDeck(account.Id, custom.Name));
+
+            var reloaded = new L12PlatformStore(path, presets);
+            Assert.Equal(6, reloaded.Decks(account.Id).Count);
+            Assert.DoesNotContain(reloaded.Decks(account.Id), deck => deck.Name == custom.Name);
         }
         finally
         {

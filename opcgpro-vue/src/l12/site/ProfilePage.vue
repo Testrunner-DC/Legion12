@@ -5,7 +5,6 @@ import { changePassword, login, logout, platformState, register } from '@/l12/pl
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 
 interface Match { player0: string; player1: string; winner?: number | null; endedUtc?: string | null; startedUtc: string }
-const nickname = ref(l12State.nickname)
 const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
 const matches = ref<Match[]>([])
 const notice = ref('')
@@ -16,13 +15,12 @@ const authBusy = ref(false)
 function api() { try { const url = new URL(l12State.endpoint); url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'; url.pathname = '/api/matches'; url.search = '?limit=500'; return url.toString() } catch { return 'http://localhost:8080/api/matches?limit=500' } }
 onMounted(async () => { try { const response = await fetch(api()); if (response.ok) matches.value = await response.json() } catch {} })
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
-function saveProfile() { l12State.nickname = nickname.value.trim().slice(0,16); localStorage.setItem('l12-nickname', l12State.nickname); notice.value = '个人设置已保存' }
 async function submitAuth() {
   authBusy.value = true; notice.value = ''
   try {
     if (authMode.value === 'login') await login(auth.username, auth.password)
-    else { await register(auth.username, auth.password); await ensureOfficialPrebuiltDecks() }
-    nickname.value = l12State.nickname
+    else await register(auth.username, auth.password)
+    await ensureOfficialPrebuiltDecks()
     notice.value = authMode.value === 'login' ? '登录成功' : '账号建立成功，六阵营预组会自动加入牌库'
     auth.password = ''
   } catch (error) { notice.value = error instanceof Error ? error.message : '操作失败' }
@@ -42,8 +40,8 @@ const losses = computed(() => myMatches.value.filter(match => match.endedUtc && 
 
 <template>
   <div class="profile-page">
-    <header><small>PROFILE</small><h1>我的</h1><p>管理本地玩家身份、战绩公开范围与数据文件。</p></header>
-    <section class="identity"><div class="avatar">{{ (l12State.nickname || '游').slice(0,1) }}</div><div><small>当前玩家</small><h2>{{ l12State.nickname || '游客' }}</h2><span>{{ l12State.status === 'online' ? '服务器在线' : '离线模式' }}</span></div><div class="record-chip"><b>{{ myMatches.length }}</b><span>已记录对局</span></div></section>
+    <header><small>PROFILE</small><h1>我的</h1><p>管理账号身份、牌库、战绩公开范围与数据文件。</p></header>
+    <section class="identity"><div class="avatar">{{ (platformState.account?.username || '游').slice(0,1) }}</div><div><small>当前账号</small><h2>{{ platformState.account?.username || '游客' }}</h2><span>{{ platformState.account ? `${platformState.account.role} · ${l12State.status === 'online' ? '服务器在线' : '尚未连接对战服务'}` : '登录后同步牌库并进入对战' }}</span></div><div class="record-chip"><b>{{ myMatches.length }}</b><span>已记录对局</span></div></section>
     <section class="stats"><article><span>总场次</span><b>{{ myMatches.length }}</b></article><article><span>胜场</span><b>{{ wins }}</b></article><article><span>负场</span><b>{{ losses }}</b></article><article><span>胜率</span><b>{{ myMatches.length ? `${(wins / myMatches.length * 100).toFixed(1)}%` : '0.0%' }}</b></article></section>
     <section class="panel account-panel">
       <header><h2>账号与安全</h2><span>{{ platformState.account ? `${platformState.account.username} · ${platformState.account.role}` : '用户名与密码' }}</span></header>
@@ -55,7 +53,7 @@ const losses = computed(() => myMatches.value.filter(match => match.endedUtc && 
         <div class="account-form"><label>当前密码<input v-model="auth.currentPassword" type="password" autocomplete="current-password"/></label><label>新密码<input v-model="auth.newPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password"/></label><button class="primary" :disabled="authBusy" @click="submitPassword">修改密码</button><button class="logout" @click="signOut">退出账号</button><router-link v-if="platformState.account.role === 'admin'" class="admin-link" to="/admin">进入管理后台 →</router-link></div>
       </template>
     </section>
-    <div class="profile-grid"><section class="panel"><header><h2>个人设置</h2><span>保存在当前浏览器</span></header><label>玩家昵称<input v-model="nickname" maxlength="16"/></label><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div><button class="primary" @click="saveProfile">保存设置</button></section><section class="panel links"><header><h2>数据与工具</h2></header><router-link to="/records"><b>对局记录与 JSON 回放</b><span>导出、导入并在实战棋盘查看 →</span></router-link><router-link to="/decks"><b>我的牌库</b><span>牌库码与牌库图分享 →</span></router-link><router-link to="/rankings"><b>排行榜</b><span>玩家榜、主宰榜与对阵矩阵 →</span></router-link></section></div>
+    <div class="profile-grid"><section class="panel"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel links"><header><h2>数据与工具</h2></header><router-link to="/records"><b>对局记录与 JSON 回放</b><span>导出、导入并在实战棋盘查看 →</span></router-link><router-link to="/decks"><b>我的牌库</b><span>账号牌库、牌库码与牌库图分享 →</span></router-link><router-link to="/rankings"><b>排行榜</b><span>玩家榜、主宰榜与对阵矩阵 →</span></router-link></section></div>
     <p v-if="notice" class="notice">{{ notice }}</p>
   </div>
 </template>

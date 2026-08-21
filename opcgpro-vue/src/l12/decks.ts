@@ -1,4 +1,5 @@
 import { normalizeLookupCardType } from './cardPresentation'
+import { platformRequest, platformState } from './platform'
 
 export interface DeckCard {
   id: string
@@ -64,6 +65,18 @@ const lookupFactionMap: Record<string, string> = {
 
 let catalogPromise: Promise<DeckCard[]> | null = null
 
+function accountStorageKey() {
+  return platformState.account ? `${STORAGE_KEY}:${platformState.account.id}` : STORAGE_KEY
+}
+
+function selectedDeckStorageKey() {
+  return platformState.account ? `${SELECTED_DECK_KEY}:${platformState.account.id}` : SELECTED_DECK_KEY
+}
+
+function writeSavedDecks(decks: Record<string, SavedL12Deck>) {
+  localStorage.setItem(accountStorageKey(), JSON.stringify(decks))
+}
+
 export function loadDeckCatalog(): Promise<DeckCard[]> {
   if (catalogPromise) return catalogPromise
   catalogPromise = Promise.all([
@@ -99,7 +112,12 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
 
 export function loadSavedDecks(): Record<string, SavedL12Deck> {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+    const key = accountStorageKey()
+    if (platformState.account && localStorage.getItem(key) === null) {
+      const legacy = localStorage.getItem(STORAGE_KEY)
+      if (legacy) localStorage.setItem(key, legacy)
+    }
+    const value = JSON.parse(localStorage.getItem(key) || '{}')
     if (!value || typeof value !== 'object') return {}
     return Object.fromEntries(Object.entries(value).map(([name, raw]) => {
       const deck = raw as SavedL12Deck
@@ -107,6 +125,31 @@ export function loadSavedDecks(): Record<string, SavedL12Deck> {
     }))
   } catch {
     return {}
+  }
+}
+
+export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL12Deck>> {
+  const local = loadSavedDecks()
+  if (!platformState.account || !platformState.token) return local
+  try {
+    const remote = await platformRequest<SavedL12Deck[]>('/api/decks')
+    const merged: Record<string, SavedL12Deck> = Object.fromEntries(remote.map(deck => [deck.name, {
+      ...deck,
+      cardIds: [...deck.cardIds],
+      moraleIds: [...deck.moraleIds],
+      specialIds: [...(deck.specialIds ?? [])],
+    }]))
+    for (const deck of Object.values(local)) {
+      const serverDeck = merged[deck.name]
+      if (!serverDeck || deck.updatedAt > serverDeck.updatedAt) {
+        const saved = await platformRequest<SavedL12Deck>('/api/decks', { method: 'PUT', body: JSON.stringify(deck) })
+        merged[saved.name] = { ...saved, specialIds: [...(saved.specialIds ?? [])] }
+      }
+    }
+    writeSavedDecks(merged)
+    return merged
+  } catch {
+    return local
   }
 }
 
@@ -121,7 +164,7 @@ export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]
 }
 
 export async function ensureOfficialPrebuiltDecks() {
-  const decks = loadSavedDecks()
+  const decks = await syncSavedDecksFromAccount()
   const presets = await loadOfficialPresetDecks()
   let changed = false
   presets.forEach(preset => {
@@ -135,22 +178,30 @@ export async function ensureOfficialPrebuiltDecks() {
     }
     changed = true
   })
-  if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(decks))
+  if (changed) writeSavedDecks(decks)
+  if (changed && platformState.account) {
+    await Promise.all(Object.values(decks).map(deck => platformRequest('/api/decks', {
+      method: 'PUT', body: JSON.stringify(deck),
+    }).catch(() => undefined)))
+  }
   return decks
 }
 
 export function saveDeck(deck: SavedL12Deck) {
   const decks = loadSavedDecks()
   decks[deck.name] = deck
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks))
-  localStorage.setItem(SELECTED_DECK_KEY, deck.name)
+  writeSavedDecks(decks)
+  localStorage.setItem(selectedDeckStorageKey(), deck.name)
+  if (platformState.account) void platformRequest('/api/decks', { method: 'PUT', body: JSON.stringify(deck) }).catch(() => undefined)
 }
 
 export function deleteDeck(name: string) {
   const decks = loadSavedDecks()
   delete decks[name]
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks))
-  if (localStorage.getItem(SELECTED_DECK_KEY) === name) localStorage.removeItem(SELECTED_DECK_KEY)
+  writeSavedDecks(decks)
+  const selectedKey = selectedDeckStorageKey()
+  if (localStorage.getItem(selectedKey) === name) localStorage.removeItem(selectedKey)
+  if (platformState.account) void platformRequest(`/api/decks/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => undefined)
 }
 
 export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'> & { specialIds?: string[] }, catalog: DeckCard[]) {

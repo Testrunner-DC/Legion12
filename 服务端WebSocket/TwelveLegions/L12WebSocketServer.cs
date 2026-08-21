@@ -44,7 +44,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (IsAllowedOrigin(origin)) context.Response.Headers.AccessControlAllowOrigin = origin;
             context.Response.Headers.Vary = "Origin";
             context.Response.Headers.AccessControlAllowHeaders = "Content-Type, Authorization";
-            context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, OPTIONS";
+            context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
             await next();
         });
@@ -77,6 +77,25 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             var result = _platform.ChangePassword(account.Id, body.CurrentPassword ?? string.Empty, body.NewPassword ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapGet("/api/decks", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.Decks(account.Id));
+        });
+        _app.MapPut("/api/decks", (HttpRequest request, L12CustomDeckSubmission submission) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error))
+                return Results.BadRequest(new { message = error });
+            return Results.Ok(_platform.UpsertDeck(account.Id, deck));
+        });
+        _app.MapDelete("/api/decks/{name}", (HttpRequest request, string name) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            return _platform.DeleteDeck(account.Id, name) ? Results.Ok() : Results.NotFound();
         });
         _app.MapPost("/api/bugs", (HttpRequest request, BugRequest body) =>
         {
@@ -151,7 +170,6 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             socket = await context.WebSockets.AcceptWebSocketAsync();
             _sockets[sessionId] = socket;
-            await SendAsync(sessionId, _rooms.Connect(sessionId, null), cancellationToken);
             var buffer = new byte[32 * 1024];
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
@@ -189,7 +207,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             }
             IReadOnlyList<OutgoingMessage> outgoing = typeElement.GetString() switch
             {
-                "hello" => [new OutgoingMessage(sessionId, _rooms.Connect(sessionId, GetString(root, "name")))],
+                "hello" => AuthenticateSession(sessionId, root),
                 "createRoom" => CreateRoom(sessionId, root),
                 "createSandbox" => await CreateSandboxAsync(sessionId, root),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
@@ -206,6 +224,14 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             };
             await SendManyAsync(outgoing, cancellationToken);
         }
+    }
+
+    private IReadOnlyList<OutgoingMessage> AuthenticateSession(Guid sessionId, JsonElement root)
+    {
+        var account = _platform.AuthenticateToken(GetString(root, "authToken"));
+        return account is null
+            ? [new OutgoingMessage(sessionId, new { type = "authenticationRequired", message = "请先登录账号" })]
+            : [new OutgoingMessage(sessionId, _rooms.Connect(sessionId, account.Username))];
     }
 
     private static int GetInt(JsonElement root, string propertyName, int fallback = 0)

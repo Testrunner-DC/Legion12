@@ -24,22 +24,35 @@ export const l12State = reactive({
 
 export function connect(): Promise<void> {
   if (l12State.socket?.readyState === WebSocket.OPEN) return Promise.resolve()
+  const authToken = localStorage.getItem('l12-auth-token') || ''
+  if (!authToken) {
+    l12State.notice = '请先登录账号'
+    return Promise.reject(new Error(l12State.notice))
+  }
   l12State.status = 'connecting'
   l12State.notice = ''
-  localStorage.setItem('l12-nickname', l12State.nickname.trim())
   l12State.endpoint = normalizeEndpoint(l12State.endpoint)
   localStorage.setItem('l12-endpoint', l12State.endpoint)
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(l12State.endpoint)
+    let settled = false
     l12State.socket = socket
     socket.onopen = () => {
-      l12State.status = 'online'
-      send({ type: 'hello', name: l12State.nickname.trim() })
-      resolve()
+      send({ type: 'hello', authToken })
     }
     socket.onmessage = (event) => {
       const message = JSON.parse(String(event.data))
-      if (message.type === 'session') l12State.sessionId = message.sessionId
+      if (message.type === 'session') {
+        l12State.sessionId = message.sessionId
+        l12State.nickname = message.name
+        l12State.status = 'online'
+        if (!settled) { settled = true; resolve() }
+      }
+      else if (message.type === 'authenticationRequired') {
+        l12State.notice = message.message || '请先登录账号'
+        if (!settled) { settled = true; reject(new Error(l12State.notice)) }
+        socket.close()
+      }
       else if (message.type === 'roomState') l12State.room = message
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
         l12State.room = null
@@ -55,10 +68,25 @@ export function connect(): Promise<void> {
     socket.onerror = () => {
       l12State.status = 'offline'
       l12State.notice = '无法连接服务器，请确认 C# 服务端已启动。'
-      reject(new Error(l12State.notice))
+      if (!settled) { settled = true; reject(new Error(l12State.notice)) }
     }
-    socket.onclose = () => { l12State.status = 'offline'; l12State.pendingAction = false; l12State.gmEnabled = false }
+    socket.onclose = () => {
+      l12State.status = 'offline'; l12State.pendingAction = false; l12State.gmEnabled = false
+      if (!settled) { settled = true; reject(new Error(l12State.notice || '连接已关闭')) }
+    }
   })
+}
+
+export function disconnect() {
+  l12State.socket?.close()
+  l12State.socket = null
+  l12State.status = 'offline'
+  l12State.sessionId = ''
+  l12State.room = null
+  l12State.game = null
+  l12State.spectating = false
+  l12State.gmEnabled = false
+  l12State.pendingAction = false
 }
 
 export function send(payload: unknown) {

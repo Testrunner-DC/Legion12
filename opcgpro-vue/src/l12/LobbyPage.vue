@@ -5,6 +5,7 @@ import { connect, createRoom, joinRoom, l12State, selectCustomDeck, selectDeck, 
 import { ensureOfficialPrebuiltDecks, loadSavedDecks } from './decks'
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
+import { platformState } from './platform'
 
 const roomCode = ref('')
 const router = useRouter()
@@ -15,7 +16,7 @@ const me = computed(() => l12State.room?.players.find(player => player.playerInd
 onMounted(async () => { customDecks.value = await ensureOfficialPrebuiltDecks() })
 
 async function ensureConnected() {
-  if (!l12State.nickname.trim()) { l12State.notice = '请先输入昵称'; return false }
+  if (!platformState.account || !platformState.token) { l12State.notice = '请先登录账号'; return false }
   if (l12State.status !== 'online') await connect()
   return true
 }
@@ -98,7 +99,7 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
           <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
           <p class="kicker">FRIENDLY ROOM</p><h1>建立友谊战</h1>
           <div class="terminal-form">
-            <label>玩家昵称<input v-model="l12State.nickname" maxlength="16" placeholder="输入 1–16 个字符"/></label>
+            <label>当前账号<input :value="platformState.account?.username || '尚未登录'" disabled/></label>
             <label>服务器地址<input v-model="l12State.endpoint" spellcheck="false"/></label>
             <button class="primary" @click="onCreate">创建新房间</button>
             <div class="or"><span>或使用房间代码</span></div>

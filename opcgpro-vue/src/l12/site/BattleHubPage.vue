@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
 import { ensureOfficialPrebuiltDecks, loadSavedDecks } from '@/l12/decks'
 import { masterProfileUrl } from '@/l12/specialAssets'
+import { platformState } from '@/l12/platform'
 
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('friendly')
@@ -27,13 +28,13 @@ const optionLabels = {
 
 onMounted(async () => {
   customDecks.value = await ensureOfficialPrebuiltDecks()
-  if (l12State.nickname.trim() && l12State.status === 'offline') {
+  if (platformState.account && platformState.token && l12State.status === 'offline') {
     try { await connect() } catch { /* 页面保留离线提示，创建/加入时仍可重试。 */ }
   }
 })
 
 async function ensureConnected() {
-  if (!l12State.nickname.trim()) { l12State.notice = '请先输入昵称'; return false }
+  if (!platformState.account || !platformState.token) { l12State.notice = '请先登录账号'; return false }
   if (l12State.status !== 'online') await connect()
   return true
 }
@@ -80,7 +81,7 @@ async function copyRoomCode() {
 
       <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位与休闲匹配的数据服务尚未接入。页面结构已预留，不会用测试数据伪造排行榜或匹配结果。</p><div class="match-options"><button disabled>排位匹配</button><button disabled>休闲匹配</button></div><button class="primary" disabled>匹配服务待接入</button></section>
 
-      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><label>玩家昵称<input v-model="l12State.nickname" maxlength="16" placeholder="输入玩家昵称"/></label><div class="join-row"><button class="primary" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button @click="onJoin">加入对战</button><button class="spectate-button" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season" disabled>赛季天灾（后台配置后开放）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
+      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/profile">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button @click="onJoin">加入对战</button><button class="spectate-button" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season" disabled>赛季天灾（后台配置后开放）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
@@ -95,6 +96,7 @@ async function copyRoomCode() {
 .room-code{display:flex;align-items:stretch;gap:7px}.room-code code{display:grid;place-items:center}.room-code button{padding:0 12px;border:1px solid #6d765f;background:#17201c;color:#f4e9bc;font-size:10px;font-weight:900;white-space:nowrap}.room-code button:hover{border-color:#e0c16d;background:#2a2718;color:#fff}
 @media(max-width:700px){.join-actions{display:grid;grid-template-columns:1fr 1fr}}
 .leave-room{border-color:#7b4147!important;background:#211116!important;color:#e7aeb3!important;font-weight:900}
+.account-identity{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin:18px 0;padding:12px 14px;border:1px solid #3e4b53;background:#0a1117}.account-identity span{color:#75838a;font-size:9px;font-weight:900}.account-identity b{font-size:13px}.account-identity a{color:#55c4ca;font-size:10px;font-weight:900;text-decoration:none}.account-identity.missing{border-color:#7b4147}.account-identity.missing b{color:#dda6ab}
 .player-online{margin-top:8px;color:#b76570;font-size:9px;font-style:normal;font-weight:900}.player-online.online{color:#58c99a}.room-rule-summary{display:flex;align-items:center;gap:8px;margin:-8px 0 18px;padding:11px 14px;border:1px solid #354149;background:#0a1117}.room-rule-summary b{margin-right:6px;color:#e4c675;font-size:11px}.room-rule-summary span{padding:4px 7px;background:#17212a;color:#aab4b8;font-size:9px;font-weight:900}
 @media(max-width:700px){.room-rule-summary{align-items:stretch;flex-direction:column}.room-rule-summary span{text-align:center}}
 .room-decks button{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;padding:8px}.room-decks button>img{width:38px;height:38px;object-fit:cover;border:1px solid #596269;border-radius:2px}.room-decks button>span,.room-decks button b,.room-decks button small{display:block}.room-decks button small{margin-top:4px;color:#77848a;font-size:9px}

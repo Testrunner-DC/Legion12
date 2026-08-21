@@ -5,6 +5,8 @@ using System.Text.Json;
 namespace TwelveLegions.Server;
 
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt, bool PublicHistory);
+public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
+    IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
 public sealed record L12BugReportView(string Id, string? ReporterId, string ReporterName, string Title, string Description,
     string Page, string? RoomCode, string? MatchId, string Version, string Status, string Priority, string? Assignee,
     string? AdminNotes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
@@ -41,9 +43,29 @@ public sealed class L12PlatformStore
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    private sealed class SessionRow
+    {
+        public string TokenHash { get; set; } = string.Empty;
+        public string AccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class DeckRow
+    {
+        public string AccountId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string MasterId { get; set; } = string.Empty;
+        public List<string> CardIds { get; set; } = [];
+        public List<string> MoraleIds { get; set; } = [];
+        public List<string> SpecialIds { get; set; } = [];
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     private sealed class DataFile
     {
         public List<AccountRow> Accounts { get; set; } = [];
+        public List<SessionRow> Sessions { get; set; } = [];
+        public List<DeckRow> Decks { get; set; } = [];
         public List<BugRow> BugReports { get; set; } = [];
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
@@ -54,12 +76,13 @@ public sealed class L12PlatformStore
     ];
     private readonly object _gate = new();
     private readonly string _path;
-    private readonly Dictionary<string, string> _tokens = new(StringComparer.Ordinal);
+    private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private DataFile _data;
 
-    public L12PlatformStore(string path)
+    public L12PlatformStore(string path, IReadOnlyList<L12PresetDeckDefinition>? officialDecks = null)
     {
         _path = path;
+        _officialDecks = officialDecks ?? [];
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _data = Load(path);
         EnsureRootAdmin();
@@ -76,8 +99,9 @@ public sealed class L12PlatformStore
                 return (false, "用户名已存在", null, null);
             var row = CreateAccount(username, password, "player");
             _data.Accounts.Add(row);
-            Save();
+            SeedOfficialDecks(row.Id);
             var token = IssueToken(row.Id);
+            Save();
             return (true, "注册成功", ToView(row), token);
         }
     }
@@ -89,6 +113,7 @@ public sealed class L12PlatformStore
             var row = _data.Accounts.FirstOrDefault(item => string.Equals(item.Username, username.Trim(), StringComparison.OrdinalIgnoreCase));
             if (row is null || !Verify(password, row)) return (false, "用户名或密码错误", null, null);
             var token = IssueToken(row.Id);
+            Save();
             return (true, "登录成功", ToView(row), token);
         }
     }
@@ -96,9 +121,19 @@ public sealed class L12PlatformStore
     public L12AccountView? Authenticate(string? authorization)
     {
         if (string.IsNullOrWhiteSpace(authorization) || !authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return null;
-        var token = authorization[7..].Trim();
+        return AuthenticateToken(authorization[7..].Trim());
+    }
+
+    public L12AccountView? AuthenticateToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+        var hash = HashToken(token.Trim());
         lock (_gate)
-            return _tokens.TryGetValue(token, out var id) ? _data.Accounts.Where(row => row.Id == id).Select(ToView).FirstOrDefault() : null;
+        {
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+            var session = _data.Sessions.FirstOrDefault(item => item.TokenHash == hash && item.CreatedAt >= cutoff);
+            return session is null ? null : _data.Accounts.Where(row => row.Id == session.AccountId).Select(ToView).FirstOrDefault();
+        }
     }
 
     public (bool Success, string Message) ChangePassword(string accountId, string currentPassword, string newPassword)
@@ -117,6 +152,45 @@ public sealed class L12PlatformStore
     public IReadOnlyList<L12AccountView> Accounts()
     {
         lock (_gate) return _data.Accounts.OrderBy(row => row.CreatedAt).Select(ToView).ToArray();
+    }
+
+    public IReadOnlyList<L12AccountDeckView> Decks(string accountId)
+    {
+        lock (_gate) return _data.Decks.Where(row => row.AccountId == accountId)
+            .OrderByDescending(row => row.UpdatedAt).Select(ToView).ToArray();
+    }
+
+    public L12AccountDeckView UpsertDeck(string accountId, L12PresetDeckDefinition deck)
+    {
+        lock (_gate)
+        {
+            var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
+            if (row is null)
+            {
+                row = new DeckRow { AccountId = accountId, Name = deck.Name };
+                _data.Decks.Add(row);
+            }
+            row.Name = deck.Name;
+            row.MasterId = deck.MasterId;
+            row.CardIds = deck.CardIds.ToList();
+            row.MoraleIds = deck.MoraleIds.ToList();
+            row.SpecialIds = deck.SpecialIds.ToList();
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            Save();
+            return ToView(row);
+        }
+    }
+
+    public bool DeleteDeck(string accountId, string name)
+    {
+        lock (_gate)
+        {
+            var removed = _data.Decks.RemoveAll(row => row.AccountId == accountId
+                && string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase)) > 0;
+            if (removed) Save();
+            return removed;
+        }
     }
 
     public bool SetRole(string accountId, string role)
@@ -233,17 +307,52 @@ public sealed class L12PlatformStore
     private string IssueToken(string accountId)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        _tokens[token] = accountId;
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+        _data.Sessions.RemoveAll(row => row.CreatedAt < cutoff);
+        var existing = _data.Sessions.Where(row => row.AccountId == accountId)
+            .OrderByDescending(row => row.CreatedAt).Skip(4).ToHashSet();
+        _data.Sessions.RemoveAll(existing.Contains);
+        _data.Sessions.Add(new SessionRow { TokenHash = HashToken(token), AccountId = accountId });
         return token;
     }
 
+    private void SeedOfficialDecks(string accountId)
+    {
+        foreach (var deck in _officialDecks)
+        {
+            _data.Decks.Add(new DeckRow
+            {
+                AccountId = accountId,
+                Name = deck.Name,
+                MasterId = deck.MasterId,
+                CardIds = deck.CardIds.ToList(),
+                MoraleIds = deck.MoraleIds.ToList(),
+                SpecialIds = deck.SpecialIds.ToList(),
+            });
+        }
+    }
+
+    private static string HashToken(string token)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+
     private static L12AccountView ToView(AccountRow row) => new(row.Id, row.Username, row.Role, row.CreatedAt, row.PublicHistory);
+    private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
+        row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
         row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes, row.CreatedAt, row.UpdatedAt);
 
     private static DataFile Load(string path)
     {
-        try { return JsonSerializer.Deserialize<DataFile>(File.ReadAllText(path)) ?? new DataFile(); }
+        try
+        {
+            var data = JsonSerializer.Deserialize<DataFile>(File.ReadAllText(path)) ?? new DataFile();
+            data.Accounts ??= [];
+            data.Sessions ??= [];
+            data.Decks ??= [];
+            data.BugReports ??= [];
+            data.Content ??= new(StringComparer.OrdinalIgnoreCase);
+            return data;
+        }
         catch { return new DataFile(); }
     }
 

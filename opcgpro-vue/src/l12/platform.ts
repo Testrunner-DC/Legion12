@@ -1,5 +1,5 @@
 import { computed, reactive } from 'vue'
-import { l12State } from './net'
+import { disconnect, l12State } from './net'
 
 export interface PlatformAccount { id: string; username: string; role: string; createdAt: string; publicHistory: boolean }
 export interface BugReport {
@@ -46,7 +46,7 @@ export function apiBase() {
   } catch { return `${location.protocol}//${location.hostname}:8080` }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
   if (platformState.token) headers.set('Authorization', `Bearer ${platformState.token}`)
@@ -66,47 +66,50 @@ function remember(account: PlatformAccount, token: string) {
 }
 
 export async function register(username: string, password: string) {
-  const result = await request<{ account: PlatformAccount; token: string }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) })
+  const result = await platformRequest<{ account: PlatformAccount; token: string }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) })
   remember(result.account, result.token)
 }
 
 export async function login(username: string, password: string) {
-  const result = await request<{ account: PlatformAccount; token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  const result = await platformRequest<{ account: PlatformAccount; token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
   remember(result.account, result.token)
 }
 
 export function logout() {
+  disconnect()
   platformState.account = null
   platformState.token = ''
   localStorage.removeItem('l12-account')
   localStorage.removeItem('l12-auth-token')
+  l12State.nickname = ''
+  localStorage.removeItem('l12-nickname')
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
-  return request<{ message: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+  return platformRequest<{ message: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
 }
 
 export async function submitBug(input: { title: string; description: string; page: string; roomCode?: string; matchId?: string; version: string }) {
-  return request<BugReport>('/api/bugs', { method: 'POST', body: JSON.stringify(input) })
+  return platformRequest<BugReport>('/api/bugs', { method: 'POST', body: JSON.stringify(input) })
 }
 
 export async function getPublicContent(key: string) {
-  return request<{ key: string; value: string }>(`/api/content/${encodeURIComponent(key)}`)
+  return platformRequest<{ key: string; value: string }>(`/api/content/${encodeURIComponent(key)}`)
 }
 
 export const adminApi = {
-  accounts: () => request<PlatformAccount[]>('/api/admin/accounts'),
-  setRole: (id: string, role: string) => request<void>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
-  bugs: (status = '') => request<BugReport[]>(`/api/admin/bugs${status ? `?status=${encodeURIComponent(status)}` : ''}`),
-  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>>) => request<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
+  setRole: (id: string, role: string) => platformRequest<void>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  bugs: (status = '') => platformRequest<BugReport[]>(`/api/admin/bugs${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>>) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   getContent: getPublicContent,
-  setContent: (key: string, value: string) => request<void>(`/api/admin/content/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ value }) }),
-  effectAtoms: () => request<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),
-  effectCoverage: () => request<AtomicCoverage>('/api/admin/effects/coverage'),
+  setContent: (key: string, value: string) => platformRequest<void>(`/api/admin/content/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),
+  effectCoverage: () => platformRequest<AtomicCoverage>('/api/admin/effects/coverage'),
   effects: (query: { search?: string; status?: string; product?: string; atomKind?: string; page?: number; pageSize?: number } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
-    return request<AtomicEffectPage>(`/api/admin/effects${params.size ? `?${params}` : ''}`)
+    return platformRequest<AtomicEffectPage>(`/api/admin/effects${params.size ? `?${params}` : ''}`)
   },
-  effect: (cardId: string) => request<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
+  effect: (cardId: string) => platformRequest<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
 }

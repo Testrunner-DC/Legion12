@@ -12,7 +12,7 @@ Directory.CreateDirectory(runtimePath);
 var catalog = L12Catalog.Load(dataPath);
 await using var recorder = new MatchRecorder(Path.Combine(runtimePath, "matches.db"));
 await recorder.InitializeAsync();
-var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"));
+var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks);
 
 var rooms = new L12RoomManager(catalog, recorder);
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
