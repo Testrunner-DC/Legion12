@@ -1058,7 +1058,8 @@ public sealed partial class L12GameEngine
         return sourceItem is null || sourceItem.Trigger == "disaster" ? null : sourceItem.Controller;
     }
 
-    private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
+    private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null,
+        bool neutralSource = false, bool combatDamage = false)
     {
         var player = State.Players[playerIndex];
         amount = AdjustAnderstorpRingDamage(player, amount);
@@ -1069,8 +1070,7 @@ public sealed partial class L12GameEngine
             SetWinner(1 - playerIndex, $"{player.Name}的主宰因{source}血量降至0");
         if (State.Phase != L12Phase.GameOver)
         {
-            QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource));
-            QueueAnderstorpRingDraw(playerIndex);
+            QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), !combatDamage);
         }
     }
 
@@ -1083,16 +1083,20 @@ public sealed partial class L12GameEngine
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
-        QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource));
-        QueueAnderstorpRingDraw(playerIndex);
+        QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), effectDamage: true);
     }
 
-    private void HealMaster(int playerIndex, int amount, string source)
+    private void HealMaster(int playerIndex, int amount, string source, bool legionEffect = false)
     {
         var player = State.Players[playerIndex];
         if (player.MasterCannotHeal)
         {
             AddEvent("heal-prevented", playerIndex, $"{player.Name} 的主宰因〈雷神索尔〉无法因{source}增加血量");
+            return;
+        }
+        if (legionEffect && player.LegionEffectHealForbiddenUntilTurn == State.TurnSerial)
+        {
+            AddEvent("heal-prevented", playerIndex, $"{player.Name} 的主宰本回合无法因军团效果〈{source}〉增加血量");
             return;
         }
         var actual = Math.Min(amount, player.MaxHp - player.Hp);

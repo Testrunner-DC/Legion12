@@ -63,7 +63,8 @@ public sealed partial class L12GameEngine
                     break;
                 }
                 case L12AtomKinds.HealMaster:
-                    HealMaster(item.Controller, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name);
+                    HealMaster(item.Controller, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
+                        legionEffect: source.CardType == "legion");
                     break;
                 case L12AtomKinds.DamageMaster when atom.Parameters.GetValueOrDefault("target") == "both"
                     && atom.Parameters.GetValueOrDefault("lethal") == "false":

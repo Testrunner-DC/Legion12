@@ -452,15 +452,14 @@ public sealed partial class L12GameEngine
         => State.ActivePlayer != player.PlayerIndex && player.Relic?.CardId == "S02-0305"
             && player.MasterDamageTakenThisTurn == 0 ? 2 : amount;
 
-    private void QueueAnderstorpRingDraw(int playerIndex)
+    private L12TriggerCandidate? BuildAnderstorpRingDrawCandidate(int playerIndex)
     {
         var player = State.Players[playerIndex];
         var key = $"trigger:anderstorp-draw:{State.TurnSerial}";
-        if (State.ActivePlayer != playerIndex || player.Relic?.CardId != "S02-0305" || !player.UsedAbilities.Add(key)) return;
-        QueueTriggerCandidates([
-            CreateTriggerCandidate(playerIndex, player.Relic, "active", "主宰受到伤害时效果",
-                new Dictionary<string, string> { ["ability"] = "anderstorpRingDraw" })
-        ]);
+        if (State.ActivePlayer != playerIndex || player.Relic?.CardId != "S02-0305" || !player.UsedAbilities.Add(key))
+            return null;
+        return CreateTriggerCandidate(playerIndex, player.Relic, "active", "主宰受到伤害时效果",
+            new Dictionary<string, string> { ["ability"] = "anderstorpRingDraw" });
     }
 
     private void NotifyS2LegionMoved(int playerIndex, L12CardInstance moved, int fromRow, int toRow)

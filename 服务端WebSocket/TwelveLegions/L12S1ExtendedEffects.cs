@@ -1038,7 +1038,7 @@ public sealed partial class L12GameEngine
         QueueTriggerCandidates(candidates);
     }
 
-    private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer)
+    private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer, bool effectDamage)
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
@@ -1053,6 +1053,15 @@ public sealed partial class L12GameEngine
             var master = CreateCard(player.MasterId, $"master-{damagedPlayer}");
             candidates.Add(CreateTriggerCandidate(damagedPlayer, master, "medjed-master-damage", "【主宰受到伤害时】效果"));
         }
+        if (effectDamage && State.ActivePlayer == damagedPlayer)
+        {
+            candidates.AddRange(PublicLegions(player)
+                .Where(card => card.CardId == "S02-0304" && !card.Tapped)
+                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "active", "【我方主宰因效果受到伤害时】效果",
+                    new Dictionary<string, string> { ["ability"] = "margaretMasterDamage" })));
+        }
+        if (BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)
+            candidates.Add(ringDraw);
         QueueTriggerCandidates(candidates);
     }
 

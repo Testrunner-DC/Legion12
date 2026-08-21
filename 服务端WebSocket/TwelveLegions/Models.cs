@@ -213,6 +213,8 @@ public sealed class L12PlayerState
     public bool TrialOrderDone { get; set; }
     /// <summary>雷神索尔发动第二项效果后，本局不能再因效果增加血量。</summary>
     public bool MasterCannotHeal { get; set; }
+    /// <summary>玛格丽特一世：在指定回合内不能因军团效果增加血量。</summary>
+    public int LegionEffectHealForbiddenUntilTurn { get; set; } = -1;
 }
 
 public sealed class L12S2SpecialZones

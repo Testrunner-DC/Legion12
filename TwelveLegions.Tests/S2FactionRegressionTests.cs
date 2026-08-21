@@ -1886,4 +1886,121 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(owner.Hand, card => card.CardId == "S02-0301");
         Assert.Equal(L12Phase.Mulligan, game.State.Phase);
     }
+
+    [Fact]
+    public void MargaretEntryMillIsOptionalInsteadOfSilentlyDiscardingTheTopCard()
+    {
+        var declineGame = Create(6344);
+        var declinePlayer = declineGame.State.Players[0];
+        var declineMargaret = Card("S02-0304", "margaret-decline");
+        declinePlayer.Hand.Clear();
+        declinePlayer.Hand.Add(declineMargaret);
+        AddMorale(declinePlayer, declineMargaret.Cost);
+        declineGame.State.Phase = L12Phase.Main;
+        var declineLibrary = declinePlayer.Library.Count;
+
+        Assert.True(declineGame.Handle(0,
+            new L12Command("playCard", declineMargaret.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(declineGame);
+        var decline = Assert.Single(declineGame.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-margaret-entry-mill");
+        Assert.Equal(declineLibrary, declinePlayer.Library.Count);
+        Assert.True(declineGame.Handle(0,
+            new L12Command("resolvePrompt", PromptId: decline.PromptId, Choice: "no")).Accepted);
+        Assert.Equal(declineLibrary, declinePlayer.Library.Count);
+
+        var acceptGame = Create(6345);
+        var acceptPlayer = acceptGame.State.Players[0];
+        var acceptMargaret = Card("S02-0304", "margaret-accept");
+        acceptPlayer.Hand.Clear();
+        acceptPlayer.Hand.Add(acceptMargaret);
+        AddMorale(acceptPlayer, acceptMargaret.Cost);
+        acceptGame.State.Phase = L12Phase.Main;
+        var acceptLibrary = acceptPlayer.Library.Count;
+
+        Assert.True(acceptGame.Handle(0,
+            new L12Command("playCard", acceptMargaret.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(acceptGame);
+        var accept = Assert.Single(acceptGame.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-margaret-entry-mill");
+        Assert.True(acceptGame.Handle(0,
+            new L12Command("resolvePrompt", PromptId: accept.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal(acceptLibrary - 1, acceptPlayer.Library.Count);
+        Assert.Contains(acceptPlayer.Graveyard, card => card.Name != acceptMargaret.Name);
+    }
+
+    [Fact]
+    public void MargaretReactsOnlyToEffectDamageAndThenPreventsFurtherLegionHealingThisTurn()
+    {
+        var game = Create(6346);
+        var player = game.State.Players[0];
+        var margaret = Card("S02-0304", "margaret-field");
+        var oddr = Card("S01-0313", "margaret-damage-source");
+        var harald = Card("S02-0302", "margaret-heal-source");
+        player.Field[0][0] = margaret;
+        player.Hand.Clear();
+        player.Hand.AddRange([oddr, harald]);
+        AddMorale(player, 8);
+        player.Hp = player.MaxHp - 2;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", oddr.InstanceId, Row: 0, Slot: 1)).Accepted);
+        PassResponses(game);
+        var oddrDamage = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "oddr-draw");
+        Assert.True(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: oddrDamage.PromptId, Choice: "yes")).Accepted);
+        PassResponses(game);
+
+        var reaction = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-margaret-master-damage");
+        Assert.True(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: reaction.PromptId, Choice: "yes")).Accepted);
+        Assert.True(margaret.Tapped);
+        Assert.Equal(player.MaxHp - 2, player.Hp);
+        Assert.Equal(game.State.TurnSerial, player.LegionEffectHealForbiddenUntilTurn);
+
+        player.Hp = player.MaxHp - 3;
+        foreach (var morale in player.Morale) morale.Tapped = false;
+        Assert.True(game.Handle(0, new L12Command("playCard", harald.InstanceId, Row: 0, Slot: 2)).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(player.MaxHp - 3, player.Hp);
+        Assert.Contains(game.State.Events, entry => entry.Type == "heal-prevented"
+            && entry.Text.Contains("无法因军团效果", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MargaretAndAnderstorpRingShareOneOwnerOrderedDamageTriggerBatch()
+    {
+        var game = Create(6347);
+        var player = game.State.Players[0];
+        var margaret = Card("S02-0304", "margaret-batch");
+        var ring = Card("S02-0305", "ring-batch");
+        var oddr = Card("S01-0313", "batch-damage-source");
+        player.Field[0][0] = margaret;
+        player.Relic = ring;
+        player.Hand.Clear();
+        player.Hand.Add(oddr);
+        AddMorale(player, oddr.Cost);
+        player.Hp = player.MaxHp - 2;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", oddr.InstanceId, Row: 0, Slot: 1)).Accepted);
+        PassResponses(game);
+        var damage = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "oddr-draw");
+        Assert.True(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: damage.PromptId, Choice: "yes")).Accepted);
+
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        Assert.Equal(2, order.ValidChoices.Count);
+        Assert.Contains(order.ValidChoices,
+            id => order.Data[$"sourceInstance:{id}"] == margaret.InstanceId);
+        Assert.Contains(order.ValidChoices,
+            id => order.Data[$"sourceInstance:{id}"] == ring.InstanceId);
+    }
 }

@@ -363,7 +363,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "S02-0302":
-                HealMaster(item.Controller, 1, "该军团登场时效果");
+                HealMaster(item.Controller, 1, "该军团登场时效果", legionEffect: true);
                 FinishStackItem(item);
                 return true;
             case "S02-0404":
@@ -404,8 +404,12 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "S02-0304":
-                Mill(player, 1, card.Name);
-                FinishStackItem(item);
+                CreatePrompt(item.Controller, "optional", "玛格丽特一世：是否弃置我方牌库顶部1张牌？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-margaret-entry-mill", ["yes"] = "弃置牌库顶部1张牌", ["no"] = "不发动",
+                    });
                 return true;
             case "S02-0506":
             {
@@ -815,8 +819,8 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "S02-0613":
-                HealMaster(0, 1, $"{card.Name}阵亡时效果");
-                HealMaster(1, 1, $"{card.Name}阵亡时效果");
+                HealMaster(0, 1, $"{card.Name}阵亡时效果", legionEffect: true);
+                HealMaster(1, 1, $"{card.Name}阵亡时效果", legionEffect: true);
                 FinishStackItem(item);
                 return true;
             case "S02-0615":
@@ -1409,6 +1413,21 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2FactionActive(L12StackItem item, L12CardInstance? source, string ability)
     {
         var player = State.Players[item.Controller];
+        if (ability == "margaretMasterDamage" && source?.CardId == "S02-0304")
+        {
+            if (source.Tapped || State.ActivePlayer != item.Controller)
+            {
+                FinishStackItem(item);
+                return true;
+            }
+            CreatePrompt(item.Controller, "optional", "玛格丽特一世：是否将此军团转为休整，使我方主宰增加1点血量？",
+                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-margaret-master-damage", ["yes"] = "休整此军团并增加1点血量", ["no"] = "不发动",
+                });
+            return true;
+        }
         if (ability == "nephthysSacrifice" && source?.CardId == "S02-02M1")
         {
             var count = int.TryParse(item.Data.GetValueOrDefault("count"), out var parsed) ? parsed : 0;
@@ -1631,7 +1650,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            HealMaster(item.Controller, 1, "加拉哈德完成寻找圣杯之旅后的效果");
+            HealMaster(item.Controller, 1, "加拉哈德完成寻找圣杯之旅后的效果", legionEffect: true);
             FinishStackItem(item);
             return true;
         }
@@ -1730,6 +1749,25 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (prompt.Data.GetValueOrDefault("action"))
         {
+            case "s2-margaret-entry-mill":
+                if (chosen[0] == "yes") Mill(player, 1, "玛格丽特一世登场时效果");
+                FinishStackItem(item);
+                return true;
+            case "s2-margaret-master-damage":
+            {
+                var margaret = FindSource(item);
+                if (chosen[0] == "yes" && margaret is { CardId: "S02-0304", Tapped: false }
+                    && State.ActivePlayer == item.Controller)
+                {
+                    margaret.Tapped = true;
+                    HealMaster(item.Controller, 1, "玛格丽特一世效果", legionEffect: true);
+                    player.LegionEffectHealForbiddenUntilTurn = State.TurnSerial;
+                    AddEvent("effect", item.Controller,
+                        "玛格丽特一世转为休整；本回合我方主宰无法再因军团效果增加血量", margaret);
+                }
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-arthur-sword":
             {
                 var arthur = FindSource(item);
@@ -1787,7 +1825,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "s2-lamorak-death":
-                if (chosen[0] == "heal") HealMaster(item.Controller, 1, "勇士兰马洛克阵亡时效果");
+                if (chosen[0] == "heal") HealMaster(item.Controller, 1, "勇士兰马洛克阵亡时效果", legionEffect: true);
                 else if (!Draw(player, 1)) SetWinner(1 - item.Controller, "勇士兰马洛克效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;

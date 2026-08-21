@@ -265,7 +265,7 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "图坦卡蒙阵亡：可将墓地1张费用不高于4的其他【太阳城】卡牌放回牌库顶部", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "tutankhamun-top" }); return true;
             }
-            case "S01-0209": if (player.Hand.Count < State.Players[1 - item.Controller].Hand.Count) { DamageMaster(1 - item.Controller, 1, "纳芙蒂蒂阵亡效果"); HealMaster(item.Controller, 1, "纳芙蒂蒂阵亡效果"); } FinishStackItem(item); return true;
+            case "S01-0209": if (player.Hand.Count < State.Players[1 - item.Controller].Hand.Count) { DamageMaster(1 - item.Controller, 1, "纳芙蒂蒂阵亡效果"); HealMaster(item.Controller, 1, "纳芙蒂蒂阵亡效果", legionEffect: true); } FinishStackItem(item); return true;
             case "S01-0210":
             {
                 var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion" && candidate.Faction == "taiyangcheng" && candidate.CurrentCost <= 2)
@@ -274,7 +274,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "nitocris-summon" }); return true;
             }
             case "S01-0301": CreatePrompt(item.Controller, "optional", "贝奥武夫阵亡：是否抽取1张牌？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-draw-one" }); return true;
-            case "S01-0302": HealMaster(item.Controller, 1, "金发哈拉尔阵亡效果"); FinishStackItem(item); return true;
+            case "S01-0302": HealMaster(item.Controller, 1, "金发哈拉尔阵亡效果", legionEffect: true); FinishStackItem(item); return true;
             case "S01-0303": CreatePrompt(item.Controller, "optional", "传奇的拉格纳阵亡：是否抽取1张并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-one" }); return true;
             case "S01-0304": PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
             case "S01-0305":
