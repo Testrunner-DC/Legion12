@@ -12,12 +12,12 @@ Set-StrictMode -Version Latest
 
 function Invoke-External {
     param(
-        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true, Position = 0)][string]$Executable,
         [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
     )
-    & $Command @Arguments
+    & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "命令执行失败（退出码 $LASTEXITCODE）：$Command $($Arguments -join ' ')"
+        throw "命令执行失败（退出码 $LASTEXITCODE）：$Executable $($Arguments -join ' ')"
     }
 }
 
