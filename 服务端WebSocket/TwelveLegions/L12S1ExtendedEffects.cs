@@ -521,6 +521,8 @@ public sealed partial class L12GameEngine
                 MoveHandToGrave(player, chosen[0], causedByEffect: false); DamageMasterNonLethal(1 - item.Controller, 1, "邪恶仪式"); FinishStackItem(item); return true;
             case "camp-pick":
                 CompleteCampPick(item, chosen[0]); return true;
+            case "camp-order":
+                CompleteCampOrder(item, chosen); return true;
             case "camp-morale":
                 if (chosen[0] is "heal" or "draw") BeginEffectMoralePayment(item, 1, "camp-mode", new Dictionary<string, string> { ["mode"] = chosen[0] });
                 else FinishStackItem(item); return true;
@@ -860,7 +862,25 @@ public sealed partial class L12GameEngine
             var selected = player.Library.First(card => card.InstanceId == choice); player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"{selected.Name}因效果加入手牌");
         }
         var remaining = topIds.Where(id => id != choice && player.Library.Any(card => card.InstanceId == id)).ToArray();
-        CompleteCampOrder(item, remaining.ToList());
+        if (remaining.Length <= 1)
+        {
+            CompleteCampOrder(item, remaining.ToList());
+            return;
+        }
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "camp-order",
+            ["placementMode"] = "all-bottom",
+            ["layout"] = "single-row",
+            ["displayCardIds"] = string.Join('|', remaining),
+        };
+        foreach (var id in remaining)
+        {
+            var card = player.Library.First(candidate => candidate.InstanceId == id);
+            AddPromptCardData(data, card);
+        }
+        CreatePrompt(item.Controller, "order", "野外扎营：调整其余卡牌的顺序，然后全部放回牌库底部。",
+            remaining, remaining.Length, remaining.Length, "card-effect", item.StackItemId, data: data);
     }
 
     private void CompleteCampOrder(L12StackItem item, List<string> order)

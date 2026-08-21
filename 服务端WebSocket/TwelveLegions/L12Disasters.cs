@@ -354,7 +354,7 @@ public sealed partial class L12GameEngine
         var excess = Math.Max(0, cards.Length - 2);
         if (excess == 0)
         {
-            if (playerIndex == 0) PromptApocalypseField(item, 1); else CompleteApocalypseHands(item);
+            if (playerIndex == 0) PromptApocalypseField(item, 1); else BeginApocalypseHandOrder(item);
             return;
         }
         CreatePrompt(playerIndex, "targets", $"选择 {excess} 张我方军团置入墓地，使战场军团不高于 2 张", cards, excess, excess,
@@ -372,7 +372,45 @@ public sealed partial class L12GameEngine
                 if (target is not null) RemoveFromField(State.Players[owner], target, true, "因天启默示录置入墓地",
                     queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
             }
-        if (playerIndex == 0) PromptApocalypseField(item, 1); else CompleteApocalypseHands(item);
+        if (playerIndex == 0) PromptApocalypseField(item, 1); else BeginApocalypseHandOrder(item);
+    }
+
+    private void BeginApocalypseHandOrder(L12StackItem item)
+    {
+        var prompted = 0;
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var hand = State.Players[playerIndex].Hand.ToArray();
+            if (hand.Length == 0)
+            {
+                item.Data[$"apocalypse-hand-order:{playerIndex}"] = string.Empty;
+                continue;
+            }
+            var data = new Dictionary<string, string>
+            {
+                ["action"] = "disaster-apocalypse-hand-order",
+                ["player"] = playerIndex.ToString(),
+                ["simultaneous"] = "true",
+                ["placementMode"] = "all-bottom",
+                ["layout"] = "single-row",
+                ["displayCardIds"] = string.Join('|', hand.Select(card => card.InstanceId)),
+            };
+            foreach (var card in hand) AddPromptCardData(data, card);
+            CreatePrompt(playerIndex, "order", "〈天启默示录〉：调整全部手牌的顺序，然后放回牌库底部。",
+                hand.Select(card => card.InstanceId), hand.Length, hand.Length,
+                "disaster-effect", item.StackItemId, isPrivate: true, data: data);
+            prompted++;
+        }
+        if (prompted == 0) CompleteApocalypseHands(item);
+    }
+
+    private void ContinueApocalypseHandOrder(L12StackItem item, L12Prompt prompt, List<string> chosen)
+    {
+        var playerIndex = int.Parse(prompt.Data["player"]);
+        item.Data[$"apocalypse-hand-order:{playerIndex}"] = string.Join('|', chosen);
+        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == "disaster-apocalypse-hand-order")) return;
+        CompleteApocalypseHands(item);
     }
 
     private void CompleteApocalypseHands(L12StackItem item)
@@ -380,7 +418,22 @@ public sealed partial class L12GameEngine
         for (var index = 0; index < 2; index++)
         {
             var player = State.Players[index];
-            foreach (var card in player.Hand.ToArray()) { player.Hand.Remove(card); player.Library.Add(card); }
+            var order = item.Data.GetValueOrDefault($"apocalypse-hand-order:{index}")?
+                .Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
+            if (order.Length != player.Hand.Count || order.Distinct().Count() != order.Length
+                || order.Any(id => player.Hand.All(card => card.InstanceId != id)))
+            {
+                AddEvent("effect-rejected", index, "〈天启默示录〉手牌排序结果不完整");
+                FinishStackItem(item);
+                return;
+            }
+            var cards = order.ToDictionary(id => id, id => player.Hand.First(card => card.InstanceId == id));
+            foreach (var id in order)
+            {
+                var card = cards[id];
+                player.Hand.Remove(card);
+                player.Library.Add(card);
+            }
             if (!Draw(player, 4)) SetWinner(1 - index, "天启默示录抽牌时牌库为空");
         }
         FinishStackItem(item);

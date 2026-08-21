@@ -445,6 +445,84 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void WildCampLetsThePlayerOrderEveryUnchosenCardBeforeReturningThemToBottom()
+    {
+        var game = Create(seed: 5528);
+        const int owner = 0;
+        var player = game.State.Players[owner];
+        var camp = CreateInstance("S01-0007", "wild-camp-order");
+        player.Hand.Add(camp);
+        AddAllMorale(player);
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+        var revealed = player.Library.Take(3).Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(owner, new L12Command("playCard", camp.InstanceId)).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+
+        var pick = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner,
+            new L12Command("resolvePrompt", PromptId: pick.PromptId, Choice: "skip")).Accepted);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("all-bottom", order.Data["placementMode"]);
+        Assert.Equal(revealed, order.ValidChoices);
+        var bottom = revealed.Reverse().ToList();
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            TopCardInstanceIds: [], BottomCardInstanceIds: bottom)).Accepted);
+        var option = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner,
+            new L12Command("resolvePrompt", PromptId: option.PromptId, Choice: "skip")).Accepted);
+
+        Assert.Equal(bottom, player.Library.TakeLast(bottom.Count).Select(card => card.InstanceId));
+    }
+
+    [Fact]
+    public void ApocalypseLetsBothPlayersPrivatelyOrderTheirWholeHandsBeforeDrawingFour()
+    {
+        var game = Create(seed: 5529);
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS07", "fixed-apocalypse"));
+        game.State.DisasterValue = 9;
+        var originalHands = game.State.Players
+            .Select(player => player.Hand.Select(card => card.InstanceId).ToArray()).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+        Assert.True(game.Handle(1, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+        foreach (var prompt in game.State.PendingPrompts.Where(prompt => prompt.Kind == "disaster-trigger").ToArray())
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId)).Accepted);
+
+        var orders = game.State.PendingPrompts
+            .Where(prompt => prompt.Data.GetValueOrDefault("action") == "disaster-apocalypse-hand-order")
+            .OrderBy(prompt => prompt.PlayerIndex).ToArray();
+        Assert.Equal(2, orders.Length);
+        Assert.All(orders, prompt =>
+        {
+            Assert.True(prompt.IsPrivate);
+            Assert.Equal("all-bottom", prompt.Data["placementMode"]);
+        });
+        var expectedBottom = new List<string>[2];
+        foreach (var prompt in orders)
+        {
+            expectedBottom[prompt.PlayerIndex] = prompt.ValidChoices.AsEnumerable().Reverse().ToList();
+            Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                TopCardInstanceIds: [], BottomCardInstanceIds: expectedBottom[prompt.PlayerIndex])).Accepted);
+        }
+
+        for (var index = 0; index < 2; index++)
+        {
+            Assert.Equal(expectedBottom[index], game.State.Players[index].Library
+                .TakeLast(originalHands[index].Length).Select(card => card.InstanceId));
+            Assert.Equal(4, game.State.Players[index].Hand.Count);
+        }
+    }
+
+    [Fact]
     public void NegatingAnEnterEffectDoesNotUndoTheLegionEntryOrItsDisasterValue()
     {
         var game = Create(seed: 5522);
