@@ -422,6 +422,7 @@ public sealed class S2UniversalEffectsTests
         game.SnapshotFor(0);
         Assert.Null(game.State.PendingDefense);
         Assert.Equal(target.BaseTroops + bonus, target.Troops);
+        if (cardId == "S01-0212") Assert.Equal(target.Cost + 1, target.CurrentCost);
 
         game.SnapshotFor(1);
         Assert.Equal(target.BaseTroops + bonus, target.Troops);
@@ -429,6 +430,7 @@ public sealed class S2UniversalEffectsTests
         game.State.ActivePlayer = 1;
         game.SnapshotFor(1);
         Assert.Equal(target.BaseTroops, target.Troops);
+        if (cardId == "S01-0212") Assert.Equal(target.Cost, target.CurrentCost);
     }
 
     [Fact]

@@ -345,7 +345,8 @@ public sealed partial class L12GameEngine
             && State.Players[playerIndex].Morale.Count < State.Players[1 - playerIndex].Morale.Count)
             modifier--;
         if (card.CardId == "S01-0202" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier -= 2;
-        if (card.CardId == "S01-0301") modifier -= player.Graveyard.Count(target => target.CardType == "legion" && target.Faction == "asgard") / 4;
+        if (card.CardId == "S01-0301") modifier -= player.Graveyard.Count(target => target.CardType == "legion"
+            && L12StructuredCardRules.HasFaction(player, target, "asgard")) / 4;
         if (card.CardId == "S01-0302") modifier -= PublicLegions(player).Count();
         if (card.CardId is "S01-0305" or "S01-0306" && player.Hp <= 6) modifier--;
         if (card.CardId == "S02-0202") modifier -= player.TombNamedLegionsLeftThisTurn;
@@ -377,7 +378,10 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var slot = command.Slot.Value;
         if (player.Field[1][slot] is { CardType: not "tactic" }) return CommandResult.Reject("该后排阵地已有军团");
-        var cost = State.ActiveDisaster?.CardId == "S01-DS03" ? 0 : 2;
+        var freeFromDisaster = State.ActiveDisaster?.CardId == "S01-DS03";
+        var freeFromEffect = !freeFromDisaster && (player.FreeTacticCount > 0
+            || player.UsedAbilities.Contains("ds01-free-tactic"));
+        var cost = freeFromDisaster || freeFromEffect ? 0 : 2;
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("覆盖反击战术需要消耗 2 张活跃士气");
         var paymentChoice = EnsurePlayResourcePaymentChoice(playerIndex, card, command, cost);
         if (paymentChoice is not null) return paymentChoice;
@@ -398,6 +402,11 @@ public sealed partial class L12GameEngine
         card.SetRound = State.Round;
         card.SummonRound = State.Round;
         player.Field[1][slot] = card;
+        if (freeFromEffect)
+        {
+            if (player.FreeTacticCount > 0) player.FreeTacticCount--;
+            else player.UsedAbilities.Remove("ds01-free-tactic");
+        }
         AddEvent("counter-set", playerIndex, $"{player.Name} 在后排覆盖 1 张反击战术");
         return CommandResult.Ok();
     }
@@ -494,14 +503,23 @@ public sealed partial class L12GameEngine
         }
 
         attacker.Tapped = true;
-        var temporaryAttackerTroopsBonus = ApplyS1FactionAttackPassives(playerIndex, attacker, row);
+        var combatProfile = L12StructuredCardRules.CombatProfile(attacker, row);
+        var temporaryAttackerTroopsBonus = 0;
+        if (combatProfile.AttackTroopsSetValue is { } setAttackTroops)
+        {
+            temporaryAttackerTroopsBonus = setAttackTroops - attacker.Troops;
+            attacker.Troops = setAttackTroops;
+            AddEvent("effect", playerIndex,
+                $"{attacker.Name}位于后排，本次进攻兵力视为{setAttackTroops}", attacker);
+        }
+        temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
         var temporaryDefenderTroopsPenalty = 0;
         if (row == 0 && attacker.Faction == "gaotianyuan"
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
         {
-            temporaryAttackerTroopsBonus = 1000;
-            attacker.Troops += temporaryAttackerTroopsBonus;
+            temporaryAttackerTroopsBonus += 1000;
+            attacker.Troops += 1000;
             AddEvent("effect", playerIndex, $"天下布武使{attacker.Name}本次前排进攻兵力+1000", attacker);
         }
         if (row == 0 && State.Players[playerIndex].UsedAbilities.Contains($"susano-buff:{attacker.InstanceId}"))
@@ -515,13 +533,6 @@ public sealed partial class L12GameEngine
             temporaryAttackerTroopsBonus += 1000;
             attacker.Troops += 1000;
             AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+1000", attacker);
-        }
-        if (attacker.CardId == "S02-0507" && row == 1)
-        {
-            var atalantaAdjustment = 3000 - attacker.Troops;
-            temporaryAttackerTroopsBonus += atalantaAdjustment;
-            attacker.Troops = 3000;
-            AddEvent("effect", playerIndex, "阿塔兰忒·晋升位于后排，本次进攻兵力视为3000", attacker);
         }
         if (isRanged && attackTarget?.CardId == "S02-0503")
         {
@@ -537,6 +548,7 @@ public sealed partial class L12GameEngine
             AttackerInstanceId = attacker.InstanceId,
             Target = command.Target,
             IsRanged = isRanged,
+            RangedNoLoss = combatProfile.HasRangedNoLoss,
             SureHit = attacker.HasSureHit,
             MasterDamage = damage,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
@@ -554,12 +566,7 @@ public sealed partial class L12GameEngine
     }
 
     private static bool HasRangeInPosition(L12CardInstance card, int row)
-    {
-        if (!card.HasRangeBonus) return false;
-        if (card.CardId == "S01-0415" && row != 0) return false;
-        if (card.CardId == "S02-0507" && row != 1) return false;
-        return true;
-    }
+        => L12StructuredCardRules.CombatProfile(card, row).HasRangeBonus;
 
     private static bool HasFrontRowLowTroopMasterProtection(L12PlayerState defender)
         => defender.Field[0].Any(card => card is not null && !card.Hidden && IsFieldLegion(card)
@@ -737,7 +744,7 @@ public sealed partial class L12GameEngine
             {
                 var targetTroops = target.Troops;
                 target.Troops -= attacker.Troops;
-                if (!attacker.HasAttackNoLoss && !(pending.IsRanged && attacker.HasRangedNoLoss)) attacker.Troops -= targetTroops;
+                if (!attacker.HasAttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss)) attacker.Troops -= targetTroops;
                 var simultaneousDeaths = new List<(int Controller, L12CardInstance Card)>();
                 if (target.Troops <= 0)
                 {
@@ -748,7 +755,7 @@ public sealed partial class L12GameEngine
                 if (attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true, "阵亡", queueDeathTrigger: false))
                     simultaneousDeaths.Add((attackerPlayer.PlayerIndex, attacker));
                 QueueSimultaneousDeathTriggers(simultaneousDeaths);
-                AddEvent("combat", playerIndex, attacker.HasAttackNoLoss || pending.IsRanged && attacker.HasRangedNoLoss
+                AddEvent("combat", playerIndex, attacker.HasAttackNoLoss || pending.IsRanged && pending.RangedNoLoss
                     ? "进攻无损：被进攻军团承受兵力减损，进攻军团不减损"
                     : "双方军团同时造成等同于当前兵力的兵力减损", attacker, target);
             }
@@ -810,7 +817,8 @@ public sealed partial class L12GameEngine
         if (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2) return CommandResult.Reject("目标阵地无效");
         var player = State.Players[playerIndex];
         var card = FindOnField(player, command.CardInstanceId, out var sourceRow, out var sourceSlot);
-        if (card is null || !IsFieldLegion(card) || card.Tapped || card.Hidden || card.Profession != "骑兵")
+        if (card is null || !IsFieldLegion(card) || card.Tapped || card.Hidden
+            || !L12StructuredCardRules.HasProfession(card, sourceRow, "骑兵"))
             return CommandResult.Reject("只能令活跃且未覆盖的【骑兵】进行骑兵位移");
         if (card.LastCavalryMoveTurn == State.TurnSerial) return CommandResult.Reject("该军团本回合已经进行过骑兵位移");
         var targetRow = command.Row.Value;

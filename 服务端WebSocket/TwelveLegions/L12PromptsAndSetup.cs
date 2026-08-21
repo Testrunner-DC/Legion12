@@ -620,6 +620,14 @@ public sealed partial class L12GameEngine
         {
             DamageMasterNonLethal(controller, 1, "〈无眠之夜〉的持续效果", neutralSource: true);
         }
+        // 〈虚构的圣杯〉监听“圣物效果发动”这一公共事件，而不是只挂在主动效果按钮上。
+        // PushEffect 是登场时、主动、触发式圣物效果共同经过的唯一入口；持续效果不会入栈，
+        // 因而不会在这里被误计为一次发动。
+        if (State.ActiveDisaster?.CardId == "S01-DS08" && source.CardType == "artifact"
+            && trigger is not "disaster")
+        {
+            DamageMasterNonLethal(controller, 1, "〈虚构的圣杯〉：发动圣物效果", neutralSource: true);
+        }
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -677,9 +685,10 @@ public sealed partial class L12GameEngine
         var top = State.EffectStack[^1];
         var player = State.Players[playerIndex];
         var choices = new List<string>();
+        var protectedFromCounters = top.Controller != playerIndex && IsProtectedFromCounterTactics(top);
         var responseCards = player.Field[1].Where(card => card is { CardType: "tactic" }
             && card.SetRound < State.Round && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
-        if (State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial) responseCards = [];
+        if (State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial || protectedFromCounters) responseCards = [];
         foreach (var card in responseCards)
         {
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
@@ -690,12 +699,12 @@ public sealed partial class L12GameEngine
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
             if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
         }
-        if (top.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion" && top.Controller != playerIndex)
+        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion" && top.Controller != playerIndex)
             choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
-        if (top.Trigger == "attack" && State.PendingDefense?.Target.Type == "master" && top.Controller != playerIndex
+        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "master" && top.Controller != playerIndex
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
-        if (choices.Count == 0)
+        if (_autoPassEmptyResponses && choices.Count == 0)
         {
             PassPriority(playerIndex);
             return;
@@ -708,6 +717,14 @@ public sealed partial class L12GameEngine
         responseData["choiceMode"] = "instant";
         CreatePrompt(playerIndex, "response", $"是否响应堆叠顶部：{top.SourceName}－{top.Text}", choices,
             1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+    }
+
+    private bool IsProtectedFromCounterTactics(L12StackItem top)
+    {
+        if (top.Trigger == "disaster") return true;
+        var source = FindSource(top);
+        return source is not null && source.SummonRound == State.Round
+            && source.EffectText?.Contains("此军团登场回合不受反击战术效果影响", StringComparison.Ordinal) == true;
     }
 
     private void ResolveStackResponse(int playerIndex, L12Prompt prompt, string choice)

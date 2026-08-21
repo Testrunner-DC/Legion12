@@ -139,6 +139,8 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); break;
             }
+            case "s2-rune-power-search":
+                BeginRunePowerSearch(item); break;
             case "s2-bors-strong":
                 if (source is not null)
                 {

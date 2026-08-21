@@ -98,11 +98,10 @@ public sealed class AtomicEffectsTests
             var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));
             var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == program.Trigger);
             Assert.Equal("verified", ability.MigrationStatus);
-            Assert.Equal("verified-runtime-program", ability.MappingSource);
+            Assert.Contains("verified-runtime-program", ability.MappingSource, StringComparison.Ordinal);
             Assert.Equal(program.Atoms, ability.Atoms);
         }
-        Assert.Equal(L12VerifiedAtomicPrograms.All.Count,
-            catalog.AtomicEffects.Coverage().VerifiedAbilities);
+        Assert.True(catalog.AtomicEffects.Coverage().VerifiedAbilities >= L12VerifiedAtomicPrograms.All.Count);
     }
 
     [Fact]
@@ -115,6 +114,28 @@ public sealed class AtomicEffectsTests
         var yoshitsune = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0409"));
         Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "attack" && ability.MigrationStatus == "verified");
         Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "after-attack" && ability.MigrationStatus == "verified");
+    }
+
+    [Fact]
+    public void StructuredCombatCardsExposeExecutionModelAndAtomicStages()
+    {
+        var atalanta = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-0507"));
+        Assert.Equal(5, atalanta.Abilities.Count);
+        Assert.Contains(atalanta.Abilities, ability => ability.ExecutionModel == "summon-flow"
+            && ability.Atoms.Any(atom => atom.Stage == "cost")
+            && ability.Atoms.Any(atom => atom.Stage == "target"));
+        Assert.Contains(atalanta.Abilities, ability => ability.ExecutionModel == "continuous"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SetState
+                && atom.Parameters.GetValueOrDefault("value") == "弓手"));
+        Assert.Contains(atalanta.Abilities, ability => ability.Trigger == "attack"
+            && ability.Atoms.Any(atom => atom.Stage == "duration"
+                && atom.Parameters.GetValueOrDefault("duration") == "current-attack"));
+
+        var yoshitsune = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0409"));
+        Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "continuous");
+        Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "activated");
+        Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "after-attack"
+            && ability.MappingSource.Contains("verified-runtime-program", StringComparison.Ordinal));
     }
 
     private static L12EffectAtom Atom(string id, string kind, int order)

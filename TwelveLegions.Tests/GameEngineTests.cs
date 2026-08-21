@@ -78,6 +78,26 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void ProductionResponseModeOffersAnonymousPassEvenWhenNoResponseCardExists()
+    {
+        var game = new L12GameEngine(Catalog, "response-privacy", "PRIVACY", 1207,
+            ["甲", "乙"], [0, 1], skipPreparation: true, autoPassEmptyResponses: false);
+        var card = PutCardInHand(game, 0, "S01-0103");
+
+        Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var first = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", first.Kind);
+        Assert.Equal(["pass"], first.ValidChoices);
+        Assert.True(game.Handle(first.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: first.PromptId, Choice: "pass")).Accepted);
+
+        var second = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", second.Kind);
+        Assert.Equal(["pass"], second.ValidChoices);
+        Assert.NotEqual(first.PlayerIndex, second.PlayerIndex);
+    }
+
+    [Fact]
     public void FirstPlayerSkipsDrawAndReceivesOneMorale()
     {
         var game = Create();

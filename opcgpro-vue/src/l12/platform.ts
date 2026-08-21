@@ -10,11 +10,11 @@ export interface EffectAtomDescriptor {
   kind: string; category: string; label: string; description: string; runtimeExecutable: boolean; kernelContract: string
 }
 export interface EffectAtom {
-  atomId: string; kind: string; label: string; order: number; parameters: Record<string, string>; runtimeExecutable: boolean; source: string
+  atomId: string; kind: string; label: string; order: number; parameters: Record<string, string>; runtimeExecutable: boolean; source: string; stage: string
 }
 export interface AtomicAbility {
   abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
-  migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number
+  migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number; executionModel: string
 }
 export interface AtomicCardEffect {
   cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string

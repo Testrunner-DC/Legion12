@@ -48,7 +48,8 @@ public sealed record L12EffectAtom(
     int Order,
     IReadOnlyDictionary<string, string> Parameters,
     bool RuntimeExecutable,
-    string Source);
+    string Source,
+    string Stage = "resolution");
 
 public sealed record L12AtomicAbility(
     string AbilityId,
@@ -60,7 +61,8 @@ public sealed record L12AtomicAbility(
     string MigrationStatus,
     bool HasLegacyFallback,
     string MappingSource,
-    decimal Confidence);
+    decimal Confidence,
+    string ExecutionModel = "legacy");
 
 public sealed record L12AtomicCardEffect(
     string CardId,
@@ -201,8 +203,9 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicCardEffect BuildCard(L12CardDefinition card)
     {
         var text = card.Effect?.Trim() ?? string.Empty;
-        var clauses = SplitAbilities(text);
-        var abilities = clauses.Select((clause, index) => BuildAbility(card, clause, index + 1)).ToArray();
+        var abilities = L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
+            ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToArray()
+            : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToArray();
         var legacy = abilities.Sum(ability => ability.Atoms.Count(atom => atom.Kind == L12AtomKinds.Legacy));
         var executable = abilities.Sum(ability => ability.Atoms.Count(atom => atom.RuntimeExecutable));
         var atomCount = abilities.Sum(ability => ability.Atoms.Count);
@@ -215,6 +218,31 @@ public sealed class L12AtomicEffectCatalog
         return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType, card.ImageUrl,
             text, abilities, status, atomCount, executable, legacy,
             abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray());
+    }
+
+    private static L12AtomicAbility BuildStructuredAbility(
+        L12CardDefinition card, L12StructuredAbilityTemplate template, int sequence)
+    {
+        if (L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger) is { } verified)
+            return verified.ToAbility(card, template.Text, sequence) with
+            {
+                ExecutionModel = template.ExecutionModel,
+                MappingSource = "shared-structured-rule+verified-runtime-program",
+            };
+        var atoms = new List<L12EffectAtom>();
+        var triggerDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Trigger);
+        atoms.Add(new L12EffectAtom("atom-1", L12AtomKinds.Trigger, template.Trigger, 1,
+            new ReadOnlyDictionary<string, string>(new Dictionary<string, string> { ["timing"] = template.Trigger }),
+            triggerDescriptor.RuntimeExecutable, "shared-structured-rule", "trigger"));
+        foreach (var source in template.Atoms)
+        {
+            var descriptor = L12EffectAtomRegistry.Get(source.Kind);
+            atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", source.Kind, source.Label, atoms.Count + 1,
+                source.Parameters, descriptor.RuntimeExecutable || source.Kind == L12AtomKinds.Special,
+                "shared-structured-rule", source.Stage));
+        }
+        return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, template.Text,
+            template.Trigger, atoms, "verified", false, "shared-structured-rule", 1m, template.ExecutionModel);
     }
 
     private static string[] SplitAbilities(string text)
@@ -294,14 +322,15 @@ public sealed class L12AtomicEffectCatalog
             Add(atoms, L12AtomKinds.Legacy, "调用现有权威卡效分支", new() { ["reason"] = "尚未通过逐卡等价回归" }, "migration-guard");
         var status = needsLegacy ? (atoms.Count > 2 ? "partially-atomized" : "legacy-backed") : "declarative-ready";
         return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, text, trigger, atoms,
-            status, needsLegacy, "card-text+registry", needsLegacy ? 0.70m : 0.90m);
+            status, needsLegacy, "card-text+registry", needsLegacy ? 0.70m : 0.90m,
+            ExecutionModelFor(trigger, text));
     }
 
     private static void Add(List<L12EffectAtom> atoms, string kind, string label, Dictionary<string, string> parameters, string source)
     {
         var descriptor = L12EffectAtomRegistry.Get(kind);
         atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", kind, label, atoms.Count + 1,
-            new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source));
+            new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source, StageFor(kind)));
     }
 
     private static void AddNumeric(List<L12EffectAtom> atoms, string kind, string text, string label)
@@ -338,6 +367,26 @@ public sealed class L12AtomicEffectCatalog
             : "static";
     private static string ExtractCondition(string text) => text.Length <= 80 ? text : text[..80] + "…";
     private static string ExtractDuration(string text) => new[] { "本次进攻", "本回合", "下个回合", "本局" }.FirstOrDefault(text.Contains) ?? "持续";
+    private static string ExecutionModelFor(string trigger, string text)
+        => trigger switch
+        {
+            "enter" or "death" or "after-attack" or "attack" or "turn-start" or "turn-end" or "disaster" => "triggered",
+            "active" or "play" => "activated",
+            "promotion" => "summon-flow",
+            "static" when ContainsAny(text, "作为代替", "代替承受", "代替阵亡") => "replacement",
+            "static" => "continuous",
+            _ => "legacy",
+        };
+    private static string StageFor(string kind)
+        => kind switch
+        {
+            L12AtomKinds.Trigger => "trigger",
+            L12AtomKinds.Condition or L12AtomKinds.Optional => "condition",
+            L12AtomKinds.PayMorale or L12AtomKinds.ReturnMorale or L12AtomKinds.RestSource or L12AtomKinds.Discard => "cost",
+            L12AtomKinds.SelectTarget or L12AtomKinds.SelectMode => "target",
+            L12AtomKinds.Duration => "duration",
+            _ => "resolution",
+        };
     private static string DetectDomain(L12CardDefinition card, string text)
         => card.CardType is "disaster" or "destruction" || text.Contains("天灾") ? "disaster"
             : card.CardType == "trial" || text.Contains("试炼") ? "trial"
@@ -356,7 +405,8 @@ public sealed record L12VerifiedAtomicProgram(
 {
     public L12AtomicAbility ToAbility(L12CardDefinition card, string text, int sequence)
         => new($"{card.Id}:ability:{sequence}", card.Id, sequence, text, Trigger, Atoms,
-            "verified", false, "verified-runtime-program", 1m);
+            "verified", false, "verified-runtime-program", 1m,
+            Trigger is "active" or "play" ? "activated" : Trigger == "static" ? "continuous" : "triggered");
 }
 
 /// <summary>
@@ -394,9 +444,6 @@ public static class L12VerifiedAtomicPrograms
             Program("S01-0405", "attack",
                 Atom(L12AtomKinds.Condition, "我方手牌数量不高于对方", ("expression", "controller.hand<=opponent.hand")),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "宫本武藏效果抽牌时牌库为空"), ("event", "宫本武藏抽取 1 张牌"))),
-            Program("S01-0409", "attack",
-                Atom(L12AtomKinds.Condition, "此军团位于后排", ("expression", "source.row=back")),
-                Atom(L12AtomKinds.ModifyTroops, "本次结算兵力视为 2000", ("operation", "set"), ("value", "2000"))),
             Program("S01-0409", "after-attack",
                 Atom(L12AtomKinds.Condition, "本次进攻击杀对象", ("expression", "item.killed=true")),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "源义经击杀效果抽牌时牌库为空"), ("event", "源义经因击杀抽取 1 张牌"))),
@@ -429,6 +476,15 @@ public static class L12VerifiedAtomicPrograms
         {
             AtomId = $"atom-{index + 1}",
             Order = index + 1,
+            Stage = atom.Kind switch
+            {
+                L12AtomKinds.Trigger => "trigger",
+                L12AtomKinds.Condition or L12AtomKinds.Optional => "condition",
+                L12AtomKinds.PayMorale or L12AtomKinds.ReturnMorale or L12AtomKinds.RestSource or L12AtomKinds.Discard => "cost",
+                L12AtomKinds.SelectTarget or L12AtomKinds.SelectMode => "target",
+                L12AtomKinds.Duration => "duration",
+                _ => "resolution",
+            },
         }).ToArray());
     }
 

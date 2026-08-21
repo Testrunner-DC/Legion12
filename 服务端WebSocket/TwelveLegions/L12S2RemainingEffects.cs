@@ -409,7 +409,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[owner];
         var key = $"trigger:artemis-ranged-death:{State.TurnSerial}";
-        if (player.MasterId != "S02-05M1" || !defeated.HasRangeBonus
+        if (player.MasterId != "S02-05M1" || !defeated.LastKnownWasRanged
             || !player.Morale.Any(card => card.Tapped && !card.IsGodPower) || !player.UsedAbilities.Add(key)) return null;
         var master = CreateCard("S02-05M1", $"master-{owner}");
         return CreateTriggerCandidate(owner, master, "active", "我方远程军团阵亡时效果",

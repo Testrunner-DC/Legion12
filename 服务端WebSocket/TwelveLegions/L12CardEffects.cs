@@ -46,6 +46,7 @@ public sealed partial class L12GameEngine
             case "play": ResolveTacticEffect(item); break;
             case "attack": ResolveAttackEffect(item); break;
             case "death": ResolveDeathEffect(item); break;
+            case "leave": ResolveLeaveEffect(item); break;
             case "after-attack": ResolveAfterAttackEffect(item); break;
             case "after-damage": ResolveS1FactionAfterDamage(item); break;
             case "active": ResolveActiveEffect(item); break;
@@ -263,6 +264,13 @@ public sealed partial class L12GameEngine
                 if (!TryResolveS1ExtendedDeath(item, card) && !TryResolveS2FactionDeath(item, card)) FinishStackItem(item);
                 return;
         }
+    }
+
+    private void ResolveLeaveEffect(L12StackItem item)
+    {
+        var card = FindSource(item);
+        if (card?.CardId == "S01-0204" && TryResolveS1FactionDeath(item, card)) return;
+        FinishStackItem(item);
     }
 
     private void ResolveAfterAttackEffect(L12StackItem item)

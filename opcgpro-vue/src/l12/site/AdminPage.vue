@@ -108,12 +108,12 @@ onMounted(() => { if (isAdmin.value) { loadBugs(); loadAccounts(); loadContent()
               <header><div><small>{{ selectedEffect.cardId }} · {{ selectedEffect.product }}</small><h2>{{ selectedEffect.name }}</h2><p>{{ selectedEffect.faction }} · {{ selectedEffect.cardType }}</p></div><span class="status-pill" :data-status="selectedEffect.migrationStatus">{{ statusLabel(selectedEffect.migrationStatus) }}</span></header>
               <div class="original-text"><b>卡面原文</b><p>{{ selectedEffect.effectText || '无效果文本' }}</p></div>
               <article v-for="ability in selectedEffect.abilities" :key="ability.abilityId" class="ability-card">
-                <header><span><small>ABILITY {{ ability.sequence }}</small><b>{{ ability.trigger }}</b></span><span class="status-pill" :data-status="ability.migrationStatus">{{ statusLabel(ability.migrationStatus) }}</span></header>
+                <header><span><small>ABILITY {{ ability.sequence }}</small><b>{{ ability.trigger }}</b><em class="execution-model">{{ ability.executionModel }}</em></span><span class="status-pill" :data-status="ability.migrationStatus">{{ statusLabel(ability.migrationStatus) }}</span></header>
                 <p>{{ ability.text }}</p>
                 <div class="atom-flow">
                   <template v-for="(atom, index) in ability.atoms" :key="atom.atomId">
                     <article class="atom-node" :data-category="atomDescriptor(atom.kind)?.category" :class="{ legacy: atom.kind === 'legacy.resolve' }" :title="atomDescriptor(atom.kind)?.description">
-                      <small>{{ atomDescriptor(atom.kind)?.category || '原子' }}</small><b>{{ atom.label }}</b><code>{{ atom.kind }}</code>
+                      <small>{{ atom.stage }} · {{ atomDescriptor(atom.kind)?.category || '原子' }}</small><b>{{ atom.label }}</b><code>{{ atom.kind }}</code>
                       <dl v-if="Object.keys(atom.parameters).length"><template v-for="(value, key) in atom.parameters" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></template></dl>
                     </article><span v-if="index < ability.atoms.length - 1" class="flow-arrow">→</span>
                   </template>

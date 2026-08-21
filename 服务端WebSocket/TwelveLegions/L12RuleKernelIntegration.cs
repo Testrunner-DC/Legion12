@@ -181,7 +181,8 @@ public sealed partial class L12GameEngine
         if (target is null) { FinishStackItem(item); return; }
         var paid = int.TryParse(item.Data.GetValueOrDefault("paid"), out var parsed) ? parsed : target.CurrentCost;
         KillTarget(target.InstanceId, "被凌霄宝殿击杀");
-        var choices = player.Graveyard.Where(card => card.CardType == "legion" && card.Faction == "tianting" && card.CurrentCost <= paid)
+        var choices = player.Graveyard.Where(card => card.CardType == "legion"
+            && L12StructuredCardRules.HasFaction(player, card, "tianting") && card.CurrentCost <= paid)
             .Select(card => card.InstanceId).ToList();
         choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张费用不高于返还士气数量的【天廷】军团活跃登场",
@@ -323,6 +324,8 @@ public sealed partial class L12GameEngine
             {
                 var card = player.Field[row][slot];
                 if (card is null || !IsFieldLegion(card)) continue;
+                card.EffectiveProfession = L12StructuredCardRules.EffectiveProfession(card, row);
+                card.ContinuousCostModifier = card.CardId == "S01-0212" && State.ActivePlayer != player.PlayerIndex ? 1 : 0;
                 var modifier = globalModifier + GetTurnAndPositionContinuousTroops(player, card, row, slot);
                 L12DerivedStats.ApplyContinuousModifier(card, modifier, State.TurnSerial);
             }
@@ -338,6 +341,8 @@ public sealed partial class L12GameEngine
         var attachedSword = card.AttachedCards.Any(attached => attached.CardId == "S02-06S2") ? 1000 : 0;
         var isOpponentTurn = State.ActivePlayer != owner.PlayerIndex;
         var modifier = attachedSword;
+        if (card.CardId == "S01-0204")
+            modifier += card.AttachedCards.Count(attached => attached.CardId == "S01-0212") * 1000;
 
         if (isOpponentTurn)
         {

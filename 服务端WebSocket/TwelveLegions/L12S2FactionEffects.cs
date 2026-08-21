@@ -601,7 +601,14 @@ public sealed partial class L12GameEngine
         {
             L12S2ZoneOps.GainRunes(player, 1);
             AddEvent("runes", item.Controller, $"{card.Name}使我方获得1符文", card);
-            FinishStackItem(item);
+            if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
+            CreatePrompt(item.Controller, "optional", "符文之力：是否消耗1士气，查看牌库顶部3张牌？",
+                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-rune-power-pay-choice", ["choiceMode"] = "instant",
+                    ["yes"] = "消耗1士气并执行后续效果", ["no"] = "不执行后续效果",
+                });
             return true;
         }
         if (card.CardId == "S02-0621")
@@ -2532,7 +2539,60 @@ public sealed partial class L12GameEngine
                     var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                     if (target is not null) AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "奥林匹斯法令");
                 }
+                if (player.Morale.Any(card => card.IsGodPower && !card.Tapped))
+                    CreatePrompt(item.Controller, "optional", "倪克斯的陨星：是否消耗并翻转1神力，令对方1张军团本回合兵力-2000？",
+                        ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                        data: new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-nyx-second-choice", ["choiceMode"] = "instant",
+                            ["yes"] = "消耗并翻转1神力，执行第二段效果", ["no"] = "不执行第二段效果",
+                        });
+                else FinishStackItem(item);
+                return true;
+            case "s2-nyx-second-choice":
+                if (chosen[0] != "yes") { FinishStackItem(item); return true; }
+                var activePowers = player.Morale.Where(card => card.IsGodPower && !card.Tapped).ToArray();
+                if (activePowers.Length == 0) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "target-morale", "倪克斯的陨星：选择消耗并翻转的1神力",
+                    activePowers.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-nyx-pay-power" });
+                return true;
+            case "s2-nyx-pay-power":
+            {
+                var power = player.Morale.FirstOrDefault(card => card.InstanceId == chosen[0] && card.IsGodPower && !card.Tapped);
+                if (power is null) { FinishStackItem(item); return true; }
+                power.Tapped = true;
+                power.IsGodPower = false;
+                PromptEnemyLegion(item, "s2-nyx-second-target", "倪克斯的陨星：选择对方1张军团，本回合兵力-2000", _ => true, false);
+                return true;
+            }
+            case "s2-nyx-second-target":
+            {
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
+                if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "倪克斯的陨星");
                 FinishStackItem(item);
+                return true;
+            }
+            case "s2-rune-power-pay-choice":
+                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "s2-rune-power-search");
+                else FinishStackItem(item);
+                return true;
+            case "s2-rune-power-pick":
+            {
+                var ids = item.Data.GetValueOrDefault("rune-power-top", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var selected = chosen[0] == "skip" ? null : player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                if (selected is not null)
+                {
+                    player.Library.Remove(selected);
+                    AddCardToHandByEffect(player, selected, "library", "符文之力将【彼界】卡牌加入手牌");
+                    AddEvent("reveal", item.Controller, $"〈符文之力〉展示〈{selected.Name}〉并加入手牌", selected);
+                }
+                PromptRunePowerBottomOrder(item, ids);
+                return true;
+            }
+            case "s2-rune-power-bottom-order":
+                CompleteRunePowerBottomOrder(item, chosen);
                 return true;
             case "s2-joan-master-guard":
                 if (chosen.Count > 0 && chosen[0] != "skip" && player.Hand.Any(card => card.InstanceId == chosen[0]))
@@ -2990,6 +3050,67 @@ public sealed partial class L12GameEngine
             return;
         }
 
+        foreach (var id in order)
+        {
+            var card = player.Library.First(candidate => candidate.InstanceId == id);
+            player.Library.Remove(card);
+            player.Library.Add(card);
+        }
+        FinishStackItem(item);
+    }
+
+    private void BeginRunePowerSearch(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var top = player.Library.Take(3).ToArray();
+        item.Data["rune-power-top"] = string.Join('|', top.Select(card => card.InstanceId));
+        if (top.Length == 0) { FinishStackItem(item); return; }
+        var choices = top.Where(card => card.CardId != "S02-0620" && card.Faction == "otherworld")
+            .Select(card => card.InstanceId).Append("skip").ToArray();
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-rune-power-pick", ["choiceMode"] = "optional-add",
+            ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId)),
+            ["layout"] = "single-row", ["skip"] = "不将卡牌加入手牌",
+        };
+        foreach (var card in top) AddPromptCardData(data, card);
+        CreatePrompt(item.Controller, "optional-card", "符文之力：选择1张〈符文之力〉以外的【彼界】卡牌展示并加入手牌",
+            choices, 1, 1, "card-effect", item.StackItemId, data: data);
+    }
+
+    private void PromptRunePowerBottomOrder(L12StackItem item, IEnumerable<string> originalIds)
+    {
+        var player = State.Players[item.Controller];
+        var remaining = originalIds.Select(id => player.Library.FirstOrDefault(card => card.InstanceId == id))
+            .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
+        if (remaining.Length <= 1)
+        {
+            CompleteRunePowerBottomOrder(item, remaining.Select(card => card.InstanceId).ToList());
+            return;
+        }
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-rune-power-bottom-order", ["placementMode"] = "all-bottom",
+            ["displayCardIds"] = string.Join('|', remaining.Select(card => card.InstanceId)), ["layout"] = "single-row",
+        };
+        foreach (var card in remaining) AddPromptCardData(data, card);
+        CreatePrompt(item.Controller, "order", "调整其余卡牌的顺序，然后全部放回牌库底部。",
+            remaining.Select(card => card.InstanceId), remaining.Length, remaining.Length,
+            "card-effect", item.StackItemId, data: data);
+    }
+
+    private void CompleteRunePowerBottomOrder(L12StackItem item, IReadOnlyCollection<string> order)
+    {
+        var player = State.Players[item.Controller];
+        var remainingIds = item.Data.GetValueOrDefault("rune-power-top", string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .Where(id => player.Library.Any(card => card.InstanceId == id)).ToHashSet(StringComparer.Ordinal);
+        if (order.Count != remainingIds.Count || order.Any(id => !remainingIds.Contains(id))
+            || order.Distinct(StringComparer.Ordinal).Count() != order.Count)
+        {
+            FinishStackItem(item);
+            return;
+        }
         foreach (var id in order)
         {
             var card = player.Library.First(candidate => candidate.InstanceId == id);

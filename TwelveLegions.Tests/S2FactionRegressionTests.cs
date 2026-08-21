@@ -2356,6 +2356,7 @@ public sealed class S2FactionRegressionTests
 
         Assert.Equal(500, target.Troops);
         Assert.Equal(4000, atalanta.Troops);
+        Assert.Equal("弓手", atalanta.EffectiveProfession);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("兵力视为3000", StringComparison.Ordinal));
 
@@ -2374,5 +2375,29 @@ public sealed class S2FactionRegressionTests
                 Target: new L12AttackTarget("legion", backTarget.InstanceId)));
         Assert.False(invalid.Accepted);
         Assert.Contains("近战军团无法进攻对方后排", invalid.Error);
+        Assert.Equal(frontAtalanta.Profession, L12StructuredCardRules.EffectiveProfession(frontAtalanta, 0));
+    }
+
+    [Fact]
+    public void YoshitsuneUsesSharedBackRowRangeAndAttackTroopsWithoutPersistingTheSetValue()
+    {
+        var game = Create(6355);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var yoshitsune = Card("S01-0409", "yoshitsune-back-row");
+        var target = Card("S01-0002", "yoshitsune-front-target");
+        target.Troops = 2500;
+        player.Field[1][0] = yoshitsune;
+        opponent.Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", yoshitsune.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(500, target.Troops);
+        Assert.Equal(yoshitsune.BaseTroops, yoshitsune.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("兵力视为2000", StringComparison.Ordinal));
     }
 }

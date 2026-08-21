@@ -823,7 +823,15 @@ public sealed partial class L12GameEngine
         var target = FindOnField(player, ids[index], out _, out _);
         if (target is null) { item.Data["ryoma-index"] = (index + 1).ToString(); ContinueRyomaMove(item); return; }
         item.Data["ryoma-current"] = target.InstanceId;
-        CreatePrompt(item.Controller, "slot", $"坂本龙马：选择{target.Name}位移后的空位", EmptySlots(player), 1, 1,
+        var choices = EmptySlots(player).ToList();
+        // FAQ：两张被选择的休整军团可以直接互换位置。把另一张已选休整军团所在阵地
+        // 作为合法目标；提交时原子交换，避免先后移动造成中间态位置冲突。
+        foreach (var otherId in ids.Where(id => id != target.InstanceId))
+        {
+            var other = FindOnField(player, otherId, out var otherRow, out var otherSlot);
+            if (target.Tapped && other is { Tapped: true }) choices.Add($"{otherRow}:{otherSlot}");
+        }
+        CreatePrompt(item.Controller, "slot", $"坂本龙马：选择{target.Name}任意位移后的阵地", choices.Distinct(), 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ryoma-slot" });
     }
 
@@ -833,7 +841,23 @@ public sealed partial class L12GameEngine
         var target = FindOnField(player, item.Data["ryoma-current"], out var row, out var slot);
         if (target is not null)
         {
-            var (nextRow, nextSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
+            var (nextRow, nextSlot) = ParseSlot(slotChoice);
+            var occupant = player.Field[nextRow][nextSlot];
+            var selected = item.Data["ryoma-units"].Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Contains(occupant?.InstanceId, StringComparer.Ordinal);
+            if (occupant is not null && selected && target.Tapped && occupant.Tapped)
+            {
+                player.Field[row][slot] = occupant;
+                player.Field[nextRow][nextSlot] = target;
+                target.LastMovedTurn = State.TurnSerial;
+                occupant.LastMovedTurn = State.TurnSerial;
+                NotifyS2LegionMoved(item.Controller, target, row, nextRow);
+                NotifyS2LegionMoved(item.Controller, occupant, nextRow, row);
+                AddEvent("move", item.Controller, $"坂本龙马使{target.Name}与{occupant.Name}互换阵地", target, occupant);
+                FinishStackItem(item);
+                return;
+            }
+            player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
             NotifyS2LegionMoved(item.Controller, target, row, nextRow);
         }
         item.Data["ryoma-index"] = (int.Parse(item.Data["ryoma-index"]) + 1).ToString(); ContinueRyomaMove(item);
@@ -1004,7 +1028,7 @@ public sealed partial class L12GameEngine
             case "S01-0320":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
                     AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "复仇血鹰");
-                var asgard = player.Graveyard.Where(card => card.Faction == "asgard").Select(card => card.InstanceId).Take(2).ToArray();
+                var asgard = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).Take(2).ToArray();
                 if (asgard.Length < 2) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "cards", "复仇血鹰：选择墓地2张【阿斯加德】卡牌", asgard, 2, 2, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "blood-eagle-pick" }); return;
@@ -1084,6 +1108,8 @@ public sealed partial class L12GameEngine
         var candidates = new List<L12TriggerCandidate>();
         if (left.CardId == "S01-0417" && player.MasterId == "S01-04M2")
             candidates.Add(CreateTriggerCandidate(owner, left, "play", "【离场时】效果"));
+        if (left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
+            candidates.Add(CreateTriggerCandidate(owner, left, "leave", "【离场时】效果"));
         if (!IsFieldLegion(left)) return candidates;
         var bloodEagle = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0320" } && card.SetRound < State.Round);
         if (bloodEagle is not null) candidates.Add(CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术"));

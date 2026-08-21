@@ -84,8 +84,8 @@ public sealed partial class L12GameEngine
             {
                 var guards = player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").ToArray();
                 foreach (var guard in guards) { player.Graveyard.Remove(guard); card.AttachedCards.Add(guard); }
-                card.Troops += guards.Length * 1000;
                 AddEvent("effect", item.Controller, $"陵墓构造体叠放{guards.Length}张陵墓守卫，兵力+{guards.Length * 1000}", card);
+                RecalculateContinuousTroops();
                 FinishStackItem(item); return true;
             }
             case "S01-0205":
@@ -191,7 +191,8 @@ public sealed partial class L12GameEngine
             case "S01-0222": BeginPharaohFestival(item); return true;
             case "S01-0318":
             {
-                var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion" && candidate.Faction == "asgard" && candidate.CurrentCost <= 5)
+                var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion"
+                    && L12StructuredCardRules.HasFaction(player, candidate, "asgard") && candidate.CurrentCost <= 5)
                     .Select(candidate => candidate.InstanceId).ToArray();
                 if (choices.Length == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
                 if (player.Hp > 5) DamageMaster(item.Controller, 1, "女武神的召唤");
@@ -249,13 +250,8 @@ public sealed partial class L12GameEngine
         {
             case "S01-0201": ApplySunKingAttack(item); return true;
             case "S01-0204":
-                foreach (var guard in card.AttachedCards.ToArray())
-                {
-                    card.AttachedCards.Remove(guard);
-                    ResetCardAfterLeavingField(guard);
-                    player.Graveyard.Add(guard);
-                }
-                BeginQueuedSummons(item, player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").Select(candidate => candidate.InstanceId), tapped: true,
+                var attachedIds = card.LastKnownAttachedCardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                BeginQueuedSummons(item, player.Graveyard.Where(candidate => candidate.CardId == "S01-0212" && attachedIds.Contains(candidate.InstanceId)).Select(candidate => candidate.InstanceId), tapped: true,
                     "陵墓构造体：选择陵墓守卫休整登场的位置"); return true;
             case "S01-0206": PromptOwnLegion(item, "saladin-move", "萨拉丁阵亡：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
             case "S01-0207":
@@ -461,7 +457,8 @@ public sealed partial class L12GameEngine
             {
                 var target = FindOnField(enemy, chosen[0], out _, out _); if (target is null) { FinishStackItem(item); return true; }
                 var paid = target.CurrentCost; if (!ReturnMorale(player, paid)) { FinishStackItem(item); return true; } KillTarget(target.InstanceId, "被凌霄宝殿击杀");
-                var choices = player.Graveyard.Where(card => card.CardType == "legion" && card.Faction == "tianting" && card.CurrentCost <= paid).Select(card => card.InstanceId).ToList(); choices.Add("skip");
+                var choices = player.Graveyard.Where(card => card.CardType == "legion"
+                    && L12StructuredCardRules.HasFaction(player, card, "tianting") && card.CurrentCost <= paid).Select(card => card.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "选择墓地1张费用不高于返还士气数量的【天廷】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "palace-revive" }); return true;
             }
             case "palace-revive": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
@@ -572,7 +569,8 @@ public sealed partial class L12GameEngine
                 choices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神杯：选择转为休整的陵墓守卫");
             case "gramDamage":
-                choices = player.Graveyard.Where(card => card.CardType == "legion" && card.Faction == "asgard").Select(card => card.InstanceId).ToArray();
+                choices = player.Graveyard.Where(card => card.CardType == "legion"
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).ToArray();
                 return BeginPendingActivation(playerIndex, source, ability, choices, "神剑格拉墨：依次选择4张【阿斯加德】军团返回牌库底部", 4, 4);
             case "medjedDebuff":
             case "amaterasuKill":
@@ -634,7 +632,8 @@ public sealed partial class L12GameEngine
             case "gramDamage" when source.CardId == "S01-0317":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && card.CardType == "legion" && card.Faction == "asgard")).ToArray();
+                var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                    && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard"))).ToArray();
                 if (source.Tapped || cards.Length != 4 || cards.Any(card => card is null) || ids.Distinct().Count() != 4)
                     return CommandResult.Reject("需要活跃的神剑格拉墨与墓地4张不同的【阿斯加德】军团");
                 source.Tapped = true;
@@ -844,7 +843,8 @@ public sealed partial class L12GameEngine
     private void BeginQueuedSummons(L12StackItem item, IEnumerable<string> ids, bool tapped, string text)
     {
         var player = State.Players[item.Controller];
-        var queue = ids.Distinct().Where(id => player.Graveyard.Any(card => card.InstanceId == id) || player.Hand.Any(card => card.InstanceId == id))
+        var queue = ids.Distinct().Where(id => player.Graveyard.Any(card => card.InstanceId == id)
+                || player.Hand.Any(card => card.InstanceId == id) || player.Library.Any(card => card.InstanceId == id))
             .Take(EmptySlots(player).Count()).ToArray();
         if (queue.Length == 0) { FinishStackItem(item); return; }
         item.Data["summon-queue"] = string.Join('|', queue);
@@ -879,10 +879,11 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var queue = item.Data.GetValueOrDefault("summon-queue", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
-        queue.RemoveAll(id => player.Graveyard.All(card => card.InstanceId != id) && player.Hand.All(card => card.InstanceId != id));
+        queue.RemoveAll(id => player.Graveyard.All(card => card.InstanceId != id)
+            && player.Hand.All(card => card.InstanceId != id) && player.Library.All(card => card.InstanceId != id));
         if (queue.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return; }
         item.Data["summon-queue"] = string.Join('|', queue);
-        var current = player.Graveyard.Concat(player.Hand).First(card => card.InstanceId == queue[0]);
+        var current = player.Graveyard.Concat(player.Hand).Concat(player.Library).First(card => card.InstanceId == queue[0]);
         var data = new Dictionary<string, string> { ["action"] = "queued-summon-slot", ["previewCardId"] = current.InstanceId };
         AddPromptCardData(data, current);
         CreatePrompt(item.Controller, "slot", item.Data.GetValueOrDefault("summon-text", "选择军团登场的位置"), EmptySlots(player), 1, 1,
@@ -935,13 +936,13 @@ public sealed partial class L12GameEngine
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => card.Faction == "asgard" && card.CurrentCost <= maxCost && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList(); choices.Add("skip");
+        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CurrentCost <= maxCost && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList(); choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" });
     }
 
     private void SummonAsgardFromGrave(L12StackItem item, int maxCost)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => card.Faction == "asgard" && card.CardType == "legion" && card.CurrentCost <= maxCost).Select(card => card.InstanceId).ToList(); choices.Add("skip");
+        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && card.CurrentCost <= maxCost).Select(card => card.InstanceId).ToList(); choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "summon-asgard" });
     }
 
@@ -1080,14 +1081,20 @@ public sealed partial class L12GameEngine
     private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice, bool tapped)
     {
         var fromHand = player.Hand.Any(candidate => candidate.InstanceId == instanceId);
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId) ?? player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId); if (card is null) return; player.Hand.Remove(card); player.Graveyard.Remove(card); var (row, slot) = ParseSlot(slotChoice); card.Tapped = tapped; card.SummonRound = State.Round; player.Field[row][slot] = card;
+        var fromLibrary = player.Library.Any(candidate => candidate.InstanceId == instanceId);
+        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId)
+            ?? player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId)
+            ?? player.Library.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
+        if (card is null) return;
+        player.Hand.Remove(card); player.Graveyard.Remove(card); player.Library.Remove(card);
+        var (row, slot) = ParseSlot(slotChoice); card.Tapped = tapped; card.SummonRound = State.Round; player.Field[row][slot] = card;
         AddEvent("put", player.PlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         ApplyDisasterLevelOnEntry(player.PlayerIndex, card, deferTriggerUntilStackSettles: true);
         if (fromHand)
         {
             if (HasImmediateEffect(card, "enter")) PushEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
         }
-        else QueueNonHandEntry(player.PlayerIndex, card, "graveyard");
+        else QueueNonHandEntry(player.PlayerIndex, card, fromLibrary ? "library" : "graveyard");
     }
 
     private void MoveOwnCardToSlot(L12PlayerState player, string instanceId, string slotChoice)

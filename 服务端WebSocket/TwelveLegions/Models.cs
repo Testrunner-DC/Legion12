@@ -79,6 +79,8 @@ public sealed class L12CardInstance
     public string? ImageUrl { get; init; }
     public int Cost { get; init; }
     public int CostModifier { get; set; }
+    /// <summary>由当前公开场面持续产生的费用修正，与限时/一次性 CostModifier 分层计算。</summary>
+    public int ContinuousCostModifier { get; set; }
     /// <summary>当前场面下从手牌打出此牌实际需要支付的费用，仅用于快照显示。</summary>
     public int? PlayCost { get; set; }
     public string? EffectText { get; init; }
@@ -91,6 +93,14 @@ public sealed class L12CardInstance
     public int TrialValue { get; init; }
     public List<string> Traits { get; init; } = [];
     public string? Profession { get; init; }
+    /// <summary>随位置或持续效果变化后的当前职介；离场时恢复印刷职介。</summary>
+    public string? EffectiveProfession { get; set; }
+    /// <summary>离场前最后一次公开场面中的派生职介，供离场触发读取。</summary>
+    public string? LastKnownEffectiveProfession { get; set; }
+    /// <summary>离场前是否满足远程进攻配置，避免重置后按印刷文本误判位置条件。</summary>
+    public bool LastKnownWasRanged { get; set; }
+    /// <summary>离场前叠放卡实例快照；离场触发不得依赖已清空的 AttachedCards。</summary>
+    public List<string> LastKnownAttachedCardIds { get; set; } = [];
     public int? OwnerIndex { get; set; }
     public bool HasCharge { get; set; }
     public bool HasStrongAttack { get; set; }
@@ -130,7 +140,7 @@ public sealed class L12CardInstance
     public List<L12TimedModifier> TimedModifiers { get; init; } = [];
     public List<L12CardInstance> AttachedCards { get; init; } = [];
 
-    public int CurrentCost => Math.Max(0, Cost + CostModifier);
+    public int CurrentCost => Math.Max(0, Cost + CostModifier + ContinuousCostModifier);
     public bool HasRangeBonus => EffectText?.Contains("进攻距离+1", StringComparison.Ordinal) == true;
     public bool HasRangedNoLoss => EffectText?.Contains("远程进攻无损", StringComparison.Ordinal) == true;
     public bool HasAttackNoLoss => EffectText?.Contains("进攻无损", StringComparison.Ordinal) == true
@@ -240,6 +250,7 @@ public sealed class L12PendingDefense
     public required string AttackerInstanceId { get; init; }
     public required L12AttackTarget Target { get; set; }
     public bool IsRanged { get; init; }
+    public bool RangedNoLoss { get; init; }
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
     public int TemporaryAttackerTroopsBonus { get; set; }

@@ -386,13 +386,52 @@ public sealed class ExtendedCardEffectsTests
         var summon = Card("S01-0308", "alvida-summon-target");
         player.Field[0][0] = alvida;
         player.Hand.Add(summon);
+        var hpBeforeActivation = player.Hp;
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", alvida.InstanceId, Ability: "alvidaSummon")).Accepted);
         Assert.Contains(alvida, player.Graveyard);
         Assert.DoesNotContain(game.State.EffectStack,
             item => item.SourceInstanceId == alvida.InstanceId && item.Trigger == "death");
         PassResponses(game);
-        Assert.Equal("summon-asgard", Assert.Single(game.State.PendingPrompts).Data["action"]);
+        var summonPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("summon-asgard", summonPrompt.Data["action"]);
+        var selectedSummon = player.Hand.First(card => summonPrompt.ValidChoices.Contains(card.InstanceId));
+        var summonResult = game.Handle(0, new L12Command("resolvePrompt", PromptId: summonPrompt.PromptId,
+            CardInstanceIds: [selectedSummon.InstanceId]));
+        Assert.True(summonResult.Accepted, summonResult.Error);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("faction-summon-slot", slotPrompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:1", CardInstanceIds: ["0:1"])).Accepted);
+
+        Assert.Same(selectedSummon, player.Field[0][1]);
+        Assert.Equal(hpBeforeActivation - 1, player.Hp);
+        Assert.DoesNotContain(selectedSummon, player.Hand);
+    }
+
+    [Fact]
+    public void FictitiousChaliceDamagesTheControllerForAnArtifactActiveEffect()
+    {
+        var game = Create(2, 3, 9017);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        game.State.ActiveDisaster = Card("S01-DS08", "fictitious-chalice");
+        var ankh = Card("S01-0215", "chalice-ankh");
+        player.Relic = ankh;
+        var guard = player.Graveyard.First(card => card.CardId == "S01-0212");
+        player.Graveyard.Remove(guard);
+        guard.Tapped = false;
+        player.Field[0][0] = guard;
+        var hpBefore = player.Hp;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", ankh.InstanceId,
+            Ability: "ankhDraw")).Accepted);
+        var paymentPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            Choice: guard.InstanceId)).Accepted);
+
+        Assert.Equal(hpBefore - 1, player.Hp);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("虚构的圣杯", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -8,6 +8,13 @@ public sealed partial class L12GameEngine
 {
     private readonly L12Catalog _catalog;
     private readonly Random _random;
+    private readonly bool _autoPassEmptyResponses;
+
+    /// <summary>
+    /// 仅供自动化测试选择旧式“无可用反应时自动让过”。正式运行保持 false，
+    /// 以保证有牌/无牌时都经过相同的匿名响应窗口，不泄露私有信息。
+    /// </summary>
+    public static bool AutoPassEmptyResponsesByDefault { get; set; }
 
     public L12GameState State { get; }
 
@@ -19,9 +26,10 @@ public sealed partial class L12GameEngine
         string[] playerNames,
         int[] deckIndexes,
         bool skipPreparation = false,
-        string disasterMode = "all")
+        string disasterMode = "all",
+        bool? autoPassEmptyResponses = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
-            deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode)
+            deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses)
     {
     }
 
@@ -33,12 +41,14 @@ public sealed partial class L12GameEngine
         string[] playerNames,
         L12PresetDeckDefinition[] decks,
         bool skipPreparation = false,
-        string disasterMode = "all")
+        string disasterMode = "all",
+        bool? autoPassEmptyResponses = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
         _catalog = catalog;
         _random = new Random(seed);
+        _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
         State = new L12GameState
         {
             MatchId = matchId,
@@ -542,6 +552,7 @@ public sealed partial class L12GameEngine
             TrialValue = card.TrialValue ?? 0,
             Traits = [.. card.Traits],
             Profession = card.Profession,
+            EffectiveProfession = card.Profession,
             Abilities = GetAbilities(card.Id),
             CannotAttack = card.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
             CannotSupport = card.Id == "S02-0201",
@@ -902,6 +913,7 @@ public sealed partial class L12GameEngine
             if (card.Troops > 0) return false;
             AddEvent("effect", player.PlayerIndex, $"{card.Name} 在持续兵力修正重算后兵力仍不高于 0", card);
         }
+        CaptureLastKnownFieldState(card, row);
         player.Field[row][slot] = null;
         if (toGraveyard)
         {
@@ -938,6 +950,7 @@ public sealed partial class L12GameEngine
     private bool MoveFieldCardToZone(L12PlayerState player, L12CardInstance card, string destination, string reason, bool queueLeaveTrigger = true)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
+        CaptureLastKnownFieldState(card, row);
         player.Field[row][slot] = null;
         var owner = CardOwner(card, player);
 
@@ -982,6 +995,7 @@ public sealed partial class L12GameEngine
     private static void ResetCardAfterLeavingField(L12CardInstance card)
     {
         card.CostModifier = 0;
+        card.ContinuousCostModifier = 0;
         card.PlayCost = null;
         card.Troops = card.BaseTroops;
         card.ContinuousTroopsModifier = 0;
@@ -1018,7 +1032,16 @@ public sealed partial class L12GameEngine
         card.ImmortalUses = 0;
         card.ImmortalUntilTurn = -1;
         card.SuppressDeathUntilTurn = -1;
+        card.EffectiveProfession = card.Profession;
         card.TimedModifiers.Clear();
+    }
+
+    private static void CaptureLastKnownFieldState(L12CardInstance card, int row)
+    {
+        var profile = L12StructuredCardRules.CombatProfile(card, row);
+        card.LastKnownEffectiveProfession = profile.EffectiveProfession;
+        card.LastKnownWasRanged = profile.HasRangeBonus && profile.HasRangedNoLoss;
+        card.LastKnownAttachedCardIds = card.AttachedCards.Select(attached => attached.InstanceId).ToList();
     }
 
     private L12CardInstance[] SnapshotHand(int playerIndex)
