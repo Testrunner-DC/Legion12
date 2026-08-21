@@ -103,3 +103,25 @@ ssh root@legion12.grand-umi.com "journalctl -u legion12-test.service -n 200 --no
 ```
 
 禁止直接覆盖 `/opt/legion12-test`、删除 `/opt/legion12-runtime`，或在服务器源码目录执行 `git pull`。旧 release 暂不自动删除，以便人工审计和回滚。
+
+## Windows 构建缓存位置
+
+Windows 完整验证和部署入口会自动初始化本次进程使用的构建缓存。开发电脑存在 D:\GPT 时，默认使用：
+
+~~~text
+D:\GPT\L12-cache\temp
+D:\GPT\L12-cache\dotnet-home
+D:\GPT\L12-cache\nuget
+D:\GPT\L12-cache\npm
+D:\GPT\L12-cache\corepack
+D:\GPT\L12-deploy-artifacts
+~~~
+
+这只影响当前验证/部署进程及其子进程，不会修改 Windows 全局 TEMP，也不会删除 C 盘旧缓存。需要临时改用其他磁盘时可传入：
+
+~~~powershell
+powershell -ExecutionPolicy Bypass -File .\ops\windows\verify-l12.ps1 -CacheRoot E:\L12-cache
+powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -CacheRoot E:\L12-cache
+~~~
+
+也可以预先设置进程环境变量 L12_WORK_CACHE；显式 -CacheRoot 的优先级最高。发布产物目录仍由 L12_DEPLOY_CACHE 或 -OutputDirectory 独立控制。

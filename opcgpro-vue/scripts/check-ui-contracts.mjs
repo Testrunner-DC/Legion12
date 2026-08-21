@@ -20,6 +20,9 @@ const platform = read('../src/l12/platform.ts')
 const decks = read('../src/l12/decks.ts')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
+const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.ps1')
+const windowsVerify = read('../../ops/windows/verify-l12.ps1')
+const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 
 const contracts = [
   [shell.includes('const siteBrandIcon = defaultSiteLogoUrl'), '主页入口必须引用默认网页图标'],
@@ -83,6 +86,8 @@ const contracts = [
   [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
   [wsSmoke.includes("ws.send(JSON.stringify({ type: 'deploymentProbe' }))") && !wsSmoke.includes("wait(m => m.type === 'session')"), '发布烟雾测试必须先执行无状态 WebSocket 探针，不得恢复为认证前等待 session'],
   [wsServer.includes('"deploymentProbe" =>') && wsServer.includes('protocolVersion = 1') && wsServer.includes('authentication = "token"'), '服务端必须保留无需账号且不写运行数据的发布探针协议'],
+  [cacheEnvironment.includes('D:\\GPT\\L12-cache') && cacheEnvironment.includes('NUGET_PACKAGES') && cacheEnvironment.includes('npm_config_cache') && cacheEnvironment.includes('DOTNET_CLI_HOME') && cacheEnvironment.includes('COREPACK_HOME'), 'Windows 构建必须统一使用可覆盖的 D 盘缓存根目录'],
+  [windowsVerify.includes('Initialize-L12BuildEnvironment.ps1') && windowsDeploy.includes('Initialize-L12BuildEnvironment.ps1') && windowsDeploy.includes('"-CacheRoot", $resolvedCacheRoot'), '完整验证和部署子进程必须共用同一缓存根目录'],
 ]
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)

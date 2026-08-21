@@ -2,6 +2,7 @@
 param(
     [string]$Server = "root@legion12.grand-umi.com",
     [string]$ArtifactManifest = "",
+    [string]$CacheRoot = "",
     [switch]$DryRun,
     [switch]$AllowVerifiedWorktree,
     [switch]$ForceVerification
@@ -38,6 +39,8 @@ function Invoke-GitFetchWithRetry {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
+$resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
 $serverScript = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
 $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $originalLocation = Get-Location
@@ -62,7 +65,7 @@ try {
     if ($commit -ne $remoteCommit) { throw "本地提交与 origin/main 不一致，拒绝部署。" }
 
     if ([string]::IsNullOrWhiteSpace($ArtifactManifest)) {
-        $arguments = @("-ExecutionPolicy", "Bypass", "-File", $verifyScript)
+        $arguments = @("-ExecutionPolicy", "Bypass", "-File", $verifyScript, "-CacheRoot", $resolvedCacheRoot)
         if ($ForceVerification) { $arguments += "-Force" }
         $verificationOutput = & powershell @arguments
         if ($LASTEXITCODE -ne 0) { throw "本地完整验证或发布包生成失败" }
