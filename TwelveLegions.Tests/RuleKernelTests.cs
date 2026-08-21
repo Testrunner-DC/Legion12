@@ -32,6 +32,21 @@ public sealed class RuleKernelTests
         Troops = troops,
     };
 
+    private static L12GameEngine CreateWithFirstMaster(string masterId, int seed)
+    {
+        var baseDeck = Catalog.DeckAt(0);
+        var firstDeck = new L12PresetDeckDefinition
+        {
+            Name = $"{masterId}测试牌库",
+            MasterId = masterId,
+            CardIds = [.. baseDeck.CardIds],
+            MoraleIds = [.. baseDeck.MoraleIds],
+            SpecialIds = [.. baseDeck.SpecialIds],
+        };
+        return new L12GameEngine(Catalog, "rule-kernel", "RULEKERNEL", seed,
+            ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true);
+    }
+
     [Fact]
     public void DrawIsAtomicWhenLibraryIsTooSmall()
     {
@@ -240,5 +255,51 @@ public sealed class RuleKernelTests
         var slotPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId, Choice: "0:1")).Accepted);
         Assert.Single(player.Morale); Assert.Same(summon, player.Field[0][1]); Assert.Contains(xishi, player.Graveyard);
+    }
+
+    [Fact]
+    public void XiShiMayChooseNoLegionAndStillPaysCostAndDraws()
+    {
+        var game = new L12GameEngine(Catalog, "xishi-zero", "XISHIZERO", 8131, ["甲", "乙"], [0, 0], skipPreparation: true);
+        var player = game.State.Players[0];
+        while (player.Morale.Count < 1) { var morale = player.MoraleDeck[0]; player.MoraleDeck.RemoveAt(0); player.Morale.Add(morale); }
+        var xishi = Card("S01-0116", 1000, "西施");
+        player.Field[0][0] = xishi;
+        var handBefore = player.Hand.Count;
+        game.State.ActivePlayer = 0; game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", xishi.InstanceId, Ability: "xishiExchange")).Accepted);
+        var cardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, cardPrompt.MinChoose);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: cardPrompt.PromptId)).Accepted);
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        Assert.Empty(player.Morale);
+        Assert.Contains(xishi, player.Graveyard);
+        Assert.Equal(handBefore + 1, player.Hand.Count);
+    }
+
+    [Fact]
+    public void MengPoMayChooseNoEnemyAndStillReturnsMoraleAndDraws()
+    {
+        var game = CreateWithFirstMaster("S01-01M2", 8132);
+        var player = game.State.Players[0];
+        while (player.Morale.Count < 1) { var morale = player.MoraleDeck[0]; player.MoraleDeck.RemoveAt(0); player.Morale.Add(morale); }
+        while (player.Hand.Count > 5) player.Hand.RemoveAt(player.Hand.Count - 1);
+        var enemy = Card("enemy", 2000, "对方军团", "asgard");
+        game.State.Players[1].Field[0][0] = enemy;
+        var suppressBefore = enemy.SuppressDeathUntilTurn;
+        var handBefore = player.Hand.Count;
+        game.State.ActivePlayer = 0; game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "mengpoSilence")).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, targetPrompt.MinChoose);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId)).Accepted);
+
+        Assert.Empty(player.Morale);
+        Assert.Equal(suppressBefore, enemy.SuppressDeathUntilTurn);
+        Assert.Equal(handBefore + 1, player.Hand.Count);
     }
 }

@@ -17,6 +17,7 @@ public sealed partial class L12GameEngine
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
             MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
+            SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
         }).ToList();
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose)) return CommandResult.Reject("没有足够的合法目标");
         var first = steps[0];
@@ -96,6 +97,12 @@ public sealed partial class L12GameEngine
         }
         activation.DeclaredTargets.AddRange(chosen);
         activation.CurrentStep++;
+        while (activation.CurrentStep < activation.SelectionSteps.Count
+            && activation.SelectionSteps[activation.CurrentStep].SkipWhenPreviousStepEmpty
+            && chosen.Count == 0)
+        {
+            activation.CurrentStep++;
+        }
         if (activation.CurrentStep < activation.SelectionSteps.Count)
         {
             CreateActivationStepPrompt(activation);

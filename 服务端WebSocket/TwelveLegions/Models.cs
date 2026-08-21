@@ -306,6 +306,11 @@ public sealed class L12ActivationSelectionStep
     public required List<string> ValidChoices { get; init; }
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
+    /// <summary>
+    /// 当前步骤依赖紧邻的前一步选择；前一步合法选择 0 项时直接跳过本步骤。
+    /// 用于“选择最多 1 张军团登场”这类只有选中军团后才需要声明位置的效果。
+    /// </summary>
+    public bool SkipWhenPreviousStepEmpty { get; init; }
 }
 
 public sealed class L12TriggerCandidate

@@ -558,7 +558,8 @@ public sealed partial class L12GameEngine
                 return PromptActiveTarget(playerIndex, source, ability, choices, "凌霄宝殿：选择要击杀并按费用返还士气的军团");
             case "mengpoSilence":
                 choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "孟婆：选择本回合失去阵亡时效果的军团");
+                return BeginPendingActivation(playerIndex, source, ability, choices,
+                    "孟婆：选择对方最多1张军团，本回合失去「阵亡时」效果", min: 0, max: 1);
             case "sunBottomEnemy":
                 choices = PublicLegions(enemy).Where(card => card.Troops <= 4000).Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "众神之乡：选择返回牌库底部的军团");
@@ -612,7 +613,8 @@ public sealed partial class L12GameEngine
                 source.Tapped = true; player.MasterTapped = true; target = declared.InstanceId; break;
             }
             case "mengpoSilence" when source.CardId == "S01-01M2":
-                if (DeclaredEnemyTarget(playerIndex, target) is null) return CommandResult.Reject("目标不再合法");
+                if (!string.IsNullOrWhiteSpace(target) && DeclaredEnemyTarget(playerIndex, target) is null)
+                    return CommandResult.Reject("目标不再合法");
                 if (!ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
             case "mengpoMorale" when source.CardId == "S01-01M2": if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || player.Hand.Count == 0) return CommandResult.Reject("士气需少于对方，且需弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":

@@ -649,12 +649,15 @@ public sealed partial class L12GameEngine
             [
                 new L12ActivationSelectionStep
                 {
-                    Kind = "card", Text = "西施：选择手牌中 1 张兵力不高于 2000 的其他军团",
+                    Kind = "card", Text = "西施：选择手牌中最多 1 张兵力不高于 2000 的其他军团",
                     ValidChoices = player.Hand.Where(card => card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000).Select(card => card.InstanceId).ToList(),
+                    MinChoose = 0,
+                    MaxChoose = 1,
                 },
                 new L12ActivationSelectionStep
                 {
                     Kind = "slot", Text = "西施：预先选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                    SkipWhenPreviousStepEmpty = true,
                 },
             ]);
         }
@@ -684,10 +687,14 @@ public sealed partial class L12GameEngine
             case "xishiExchange" when source.CardId == "S01-0116":
             {
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length != 2) return CommandResult.Reject("需要预先声明手牌目标与登场位置");
-                var handCard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000);
-                var (row, slot) = ParseSlot(declared[1]);
-                if (handCard is null || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null) return CommandResult.Reject("声明的手牌目标或位置不再合法");
+                if (declared.Length is not (0 or 2)) return CommandResult.Reject("手牌目标与登场位置声明不完整");
+                if (declared.Length == 2)
+                {
+                    var handCard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000);
+                    var (row, slot) = ParseSlot(declared[1]);
+                    if (handCard is null || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
+                        return CommandResult.Reject("声明的手牌目标或位置不再合法");
+                }
                 if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
                 ReturnMorale(player, 1); RemoveFromField(player, source, true, "被西施效果弃置",
                     leaveKind: L12FieldLeaveKind.Discard); break;
