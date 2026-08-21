@@ -99,14 +99,19 @@ try {
         Remove-Item -Force
 
     Write-Host "[L12 验证] 汇总前端运行产物（卡图单独缓存）..."
+    $frontendDistRoot = (Resolve-Path ".\opcgpro-vue\dist").Path
+    $frontendCardsRoot = Join-Path $frontendDistRoot "cards"
     $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
     if ($null -ne $robocopy) {
-        & $robocopy.Source ".\opcgpro-vue\dist" $webRoot /E /XD ".\opcgpro-vue\dist\cards" /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+        & $robocopy.Source $frontendDistRoot $webRoot /E /XD $frontendCardsRoot /NFL /NDL /NJH /NJS /NC /NS | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "复制前端产物失败（robocopy 退出码 $LASTEXITCODE）" }
     }
     else {
         Copy-Item ".\opcgpro-vue\dist\*" $webRoot -Recurse -Force
         Remove-Item (Join-Path $webRoot "cards") -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath (Join-Path $webRoot "cards")) {
+        throw "运行包错误包含卡图目录"
     }
     Copy-Item ".\scripts\ws-smoke.mjs" (Join-Path $scriptsRoot "ws-smoke.mjs") -Force
     [IO.File]::WriteAllText((Join-Path $releaseRoot ".deployment-commit"), $commit, [Text.UTF8Encoding]::new($false))
