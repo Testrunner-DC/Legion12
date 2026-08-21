@@ -5,7 +5,8 @@
 ## 客户端消息
 
 ```json
-{ "type": "hello", "name": "玩家昵称" }
+{ "type": "deploymentProbe" }
+{ "type": "hello", "authToken": "登录令牌" }
 { "type": "createRoom" }
 { "type": "joinRoom", "roomCode": "ABC123" }
 { "type": "ready", "ready": true }
@@ -34,6 +35,7 @@
 - `actionRejected`：操作被规则层拒绝，包含可显示的 `message`。
 - `error`：会话或消息格式错误。
 - `pong`：心跳响应。
+- `deploymentProbe`：无需认证、无状态且不写入运行数据的发布探针；返回服务标识、协议版本与认证方式。仅用于验证部署后的 WebSocket 建连和协议版本，不建立玩家会话。
 
 每次合法操作增加 `revision`。`stateHash` 是服务器完整状态的 SHA-256，用于两端一致性核对和后续回放校验。
 

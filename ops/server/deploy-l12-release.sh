@@ -201,7 +201,7 @@ mv -Tf "$next_link" "$active_dir"
 systemctl start "$service_name"
 service_stopped=0
 
-log "执行快速生产冒烟检查"
+log "验证公网 HTTP 健康状态"
 healthy=0
 for _ in $(seq 1 30); do
   if curl -fsS "${public_base}/health" >/dev/null; then healthy=1; break; fi
@@ -210,7 +210,8 @@ done
 [[ "$healthy" -eq 1 ]] || fail "后端健康检查超时"
 curl -fsS "${public_base}/" >/dev/null
 curl -fsS "${public_base}/cards" >/dev/null
-node "${active_dir}/scripts/ws-smoke.mjs" "wss://legion12.grand-umi.com/ws"
+log "验证公网 WebSocket 建连与无状态部署协议"
+timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://legion12.grand-umi.com/ws"
 
 cat > "${deployment_dir}/deployment-info.txt" <<EOF
 Legion12 香港测试服

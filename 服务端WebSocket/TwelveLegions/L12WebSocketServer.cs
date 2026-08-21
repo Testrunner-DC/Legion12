@@ -220,6 +220,13 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
                 "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
                 "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
+                "deploymentProbe" => [new OutgoingMessage(sessionId, new
+                {
+                    type = "deploymentProbe",
+                    service = "twelve-legions",
+                    protocolVersion = 1,
+                    authentication = "token",
+                })],
                 _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
             };
             await SendManyAsync(outgoing, cancellationToken);

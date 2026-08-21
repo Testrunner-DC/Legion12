@@ -37,7 +37,7 @@
 | npm 依赖审计 | `npm audit` | 0 vulnerabilities |
 | C# 服务端构建 | `dotnet build` | 通过；0 warning / 0 error |
 | 规则与记录单测 | `dotnet test TwelveLegions.Tests` | 32/32 通过 |
-| 双客户端 WebSocket 冒烟 | `node scripts/ws-smoke.mjs` | 通过 |
+| WebSocket 无状态发布探针 | `node scripts/ws-smoke.mjs` | 通过；认证房间与双端状态同步由规则/平台测试覆盖 |
 | 卡牌档案数据校验 | S1 本地 + 查询站 S2 去重计数 | 133 + 115 = 248 张；S2 卡图抽查 HTTP 200 |
 
 单测覆盖：133 张 S1 数据与四套预组、相同 seed 的状态哈希一致、双方调度门槛、自动阶段、战斗与支援、SQLite 永久记录，以及有序天灾准备、随机公开天灾确认、前后排远程距离、远程原文识别、远程进攻无损、覆盖反击战术与响应堆叠、绝对防御费用保留、草雉剑置入前排后视为军团、四阵营效果、杨戬同弹框抽牌调整、观星同弹框顶/底分组排序、太阳城开局陵墓守卫、贝奥武夫堆墓、卡诺匹斯额外圣物和服务端主动效果元数据。
