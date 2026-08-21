@@ -174,6 +174,16 @@ Legion12/
 - 本仓库包含的游戏名称、卡牌文字、图片和标识可能涉及其权利人的知识产权。
 - 当前仓库未声明可用于商业分发的许可证；公开部署或商业使用前，应分别确认模板代码与游戏素材的授权。
 
+## 香港测试服部署
+
+拥有服务器 SSH 权限的开发者，可以从干净且已同步的 `main` 分支执行一键部署：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
+```
+
+首次使用、干运行、数据保留和回滚说明见 [香港测试服部署文档](docs/DEPLOY-HK.md)。
+
 ---
 
 项目仓库：[Testrunner-DC/Legion12](https://github.com/Testrunner-DC/Legion12)
