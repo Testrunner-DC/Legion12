@@ -340,6 +340,35 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void OdysseusMayRevealATacticFromHandToGainOneThousandOnAttack()
+    {
+        var game = Create(63135);
+        var player = game.State.Players[0];
+        var odysseus = Card("S02-0509", "odysseus-attack");
+        var tactic = Card("S02-0522", "odysseus-shown-tactic");
+        odysseus.SummonRound = -1;
+        player.Field[0][0] = odysseus;
+        player.Hand.Clear();
+        player.Hand.Add(tactic);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", odysseus.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        var show = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-odysseus-show-tactic", show.Data["action"]);
+        Assert.Contains(tactic.InstanceId, show.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: show.PromptId,
+            Choice: tactic.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(tactic, player.Hand);
+        Assert.Equal(odysseus.BaseTroops + 1000, odysseus.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal" && entry.Cards.Any(card => card.CardId == tactic.CardId));
+    }
+
+    [Fact]
     public void ForgeDiscountIsAppliedToAndConsumedByTheNextPromotion()
     {
         var game = Create(6314);

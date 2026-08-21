@@ -18,7 +18,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0103", "S02-0501", "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0605", "S02-0606", "S02-0607", "S02-0608", "S02-0612", "S02-0617",
+        "S02-0103", "S02-0501", "S02-0509", "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0605", "S02-0606", "S02-0607", "S02-0608", "S02-0612", "S02-0617",
     };
 
     private static readonly HashSet<string> S2FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
@@ -658,6 +658,21 @@ public sealed partial class L12GameEngine
             card.HasStrongAttack = true;
             AddEvent("effect", item.Controller, $"{card.Name}本回合获得强攻", card);
             FinishStackItem(item);
+            return true;
+        }
+        if (card.CardId == "S02-0509")
+        {
+            var tactics = player.Hand.Where(candidate => candidate.CardType == "tactic")
+                .Select(candidate => candidate.InstanceId).ToList();
+            if (tactics.Count == 0) { FinishStackItem(item); return true; }
+            tactics.Add("skip");
+            CreatePrompt(item.Controller, "optional-card", "奥德修斯：可展示手牌中1张战术，使此军团本回合兵力+1000",
+                tactics, 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-odysseus-show-tactic", ["skip"] = "不发动",
+                    ["layout"] = "single-row", ["displayCardIds"] = string.Join('|', tactics.Where(id => id != "skip")),
+                });
             return true;
         }
         if (card.CardId == "S02-0511")
@@ -2456,6 +2471,19 @@ public sealed partial class L12GameEngine
                 {
                     QueueTriggerCandidates(triggers);
                     AddEvent("effect", item.Controller, $"卡纽特大帝触发了{triggers.Length}张军团的阵亡时效果", FindSource(item) is { } source ? [source] : []);
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "s2-odysseus-show-tactic":
+            {
+                var source = FindSource(item);
+                var shown = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                    && candidate.CardType == "tactic");
+                if (chosen[0] != "skip" && shown is not null && source is not null)
+                {
+                    AddEvent("reveal", item.Controller, $"{source.Name}展示手牌中的〈{shown.Name}〉", source, shown);
+                    AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "奥德修斯");
                 }
                 FinishStackItem(item);
                 return true;
