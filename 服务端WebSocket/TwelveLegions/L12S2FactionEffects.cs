@@ -7,7 +7,7 @@ public sealed partial class L12GameEngine
     {
         "S02-0101", "S02-0102", "S02-0203", "S02-0204", "S02-0205",
         "S02-0301", "S02-0302", "S02-0303", "S02-0304", "S02-0401", "S02-0402", "S02-0403", "S02-0404",
-        "S02-0501", "S02-0502", "S02-0503", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0613",
+        "S02-0501", "S02-0502", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0613",
         "S02-0601", "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
     };
 
@@ -33,7 +33,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0602",
+        "S02-0503", "S02-0602",
     };
 
     private static bool IsS2FactionAfterAttackCard(string cardId) => S2FactionAfterAttackCards.Contains(cardId);
@@ -243,7 +243,6 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, $"{card.Name}使本回合下一张战术无需消耗费用", card);
                 FinishStackItem(item);
                 return true;
-            case "S02-0503":
             case "S02-0517":
                 card.CanAttackLegionsOnSummonUntilTurn = State.TurnSerial;
                 FinishStackItem(item);
@@ -774,6 +773,18 @@ public sealed partial class L12GameEngine
 
     private bool TryResolveS2FactionAfterAttack(L12StackItem item, L12CardInstance card)
     {
+        if (card.CardId == "S02-0503")
+        {
+            if (item.Data.GetValueOrDefault("killed") == "true"
+                && FindOnField(State.Players[item.Controller], card.InstanceId, out var row, out _) is not null
+                && row == 0)
+            {
+                card.TauntUntilTurn = Math.Max(card.TauntUntilTurn, ExpiryAtNextOwnStart(item.Controller));
+                AddEvent("effect", item.Controller, $"{card.Name}因击杀军团，在我方下个回合开始前于前排获得挑衅", card);
+            }
+            FinishStackItem(item);
+            return true;
+        }
         if (card.CardId != "S02-0602" || item.Data.GetValueOrDefault("killed") != "true") return false;
         CreatePrompt(item.Controller, "option", "兰斯洛特击杀军团：可选择试炼+1或获得1符文", ["trial", "rune", "skip"], 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string>

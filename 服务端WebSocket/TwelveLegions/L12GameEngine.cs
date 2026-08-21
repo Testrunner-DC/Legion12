@@ -825,6 +825,7 @@ public sealed partial class L12GameEngine
             card.HasShock = false;
             card.AttacksThisTurn = 0;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
+            card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
             if (card.ReadyAfterNextKillUntilTurn <= completedTurn)
             {
                 card.ReadyAfterNextKillUntilTurn = -1;
@@ -985,6 +986,7 @@ public sealed partial class L12GameEngine
         card.CanAttackBackAndMasterUntilTurn = -1;
         card.CanAttackMasterOnSummonUntilTurn = -1;
         card.CanAttackLegionsOnSummonUntilTurn = -1;
+        card.TauntUntilTurn = -1;
         card.ImmortalUses = 0;
         card.ImmortalUntilTurn = -1;
         card.SuppressDeathUntilTurn = -1;

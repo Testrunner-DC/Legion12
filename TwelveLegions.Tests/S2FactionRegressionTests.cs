@@ -219,6 +219,127 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void AchillesMayAttackLegionsOnSummonOnlyWhenItEnteredByPromotion()
+    {
+        var ordinaryGame = Create(63130);
+        var ordinaryPlayer = ordinaryGame.State.Players[0];
+        ordinaryPlayer.Hand.Clear();
+        var ordinary = Card("S02-0503", "achilles-ordinary-entry");
+        ordinaryPlayer.Hand.Add(ordinary);
+        AddMorale(ordinaryPlayer, ordinary.Cost);
+        ordinaryGame.State.ActivePlayer = 0;
+        ordinaryGame.State.Phase = L12Phase.Main;
+
+        Assert.True(ordinaryGame.Handle(0, new L12Command("playCard", ordinary.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(ordinaryGame);
+        Assert.Equal(-1, ordinary.CanAttackLegionsOnSummonUntilTurn);
+
+        var promotionGame = Create(63131);
+        var promotionPlayer = promotionGame.State.Players[0];
+        var foundation = Card("S02-0504", "achilles-promotion-foundation");
+        var promoted = Card("S02-0503", "achilles-promotion-entry");
+        foundation.SummonRound = -1;
+        promotionPlayer.Field[0][0] = foundation;
+        promotionPlayer.Hand.Clear();
+        promotionPlayer.Hand.Add(promoted);
+        for (var index = 0; index < 2; index++)
+            promotionPlayer.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"achilles-god-power-{index}", CardId = "S02-05C1", IsGodPower = true,
+            });
+        promotionGame.State.ActivePlayer = 0;
+        promotionGame.State.Phase = L12Phase.Main;
+
+        Assert.True(promotionGame.Handle(0, new L12Command("playCard", promoted.InstanceId)).Accepted);
+        var chooseFoundation = Assert.Single(promotionGame.State.PendingPrompts);
+        Assert.True(promotionGame.Handle(0, new L12Command("resolvePrompt", PromptId: chooseFoundation.PromptId,
+            Choice: foundation.InstanceId)).Accepted);
+        PassResponses(promotionGame);
+
+        Assert.Equal(promotionGame.State.TurnSerial, promoted.CanAttackLegionsOnSummonUntilTurn);
+    }
+
+    [Fact]
+    public void AchillesLosesAnExtraThousandOnlyDuringARangedCombat()
+    {
+        var game = Create(63132);
+        var attacker = Card("S02-0003", "achilles-ranged-attacker");
+        var achilles = Card("S02-0503", "achilles-ranged-target");
+        attacker.Troops = 7000;
+        attacker.SummonRound = -1;
+        achilles.SummonRound = -1;
+        game.State.Players[0].Field[1][0] = attacker;
+        game.State.Players[1].Field[0][0] = achilles;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", achilles.InstanceId))).Accepted);
+        PassResponses(game);
+
+        Assert.Null(game.State.Players[1].Field[0][0]);
+        Assert.Contains(achilles, game.State.Players[1].Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("受到远程进攻") && entry.Text.Contains("-1000"));
+
+        var supportedGame = Create(63133);
+        var supportedAttacker = Card("S02-0003", "achilles-supported-attacker");
+        var supportedAchilles = Card("S02-0503", "achilles-supported-target");
+        var supporter = Card("S02-0004", "achilles-supporter");
+        supportedAttacker.Troops = 7000;
+        supportedAttacker.SummonRound = -1;
+        supportedAchilles.SummonRound = -1;
+        supporter.SummonRound = -1;
+        supportedGame.State.Players[0].Field[1][0] = supportedAttacker;
+        supportedGame.State.Players[1].Field[0][0] = supportedAchilles;
+        supportedGame.State.Players[1].Field[1][0] = supporter;
+        supportedGame.State.ActivePlayer = 0;
+        supportedGame.State.Phase = L12Phase.Main;
+
+        Assert.True(supportedGame.Handle(0, new L12Command("attack", supportedAttacker.InstanceId,
+            Target: new L12AttackTarget("legion", supportedAchilles.InstanceId))).Accepted);
+        PassResponses(supportedGame);
+        Assert.Equal(L12Phase.Defense, supportedGame.State.Phase);
+        Assert.Equal(7000, supportedAchilles.Troops);
+        Assert.True(supportedGame.Handle(1, new L12Command("resolveDefense",
+            SupportInstanceId: supporter.InstanceId)).Accepted);
+
+        Assert.Equal(supportedAchilles.BaseTroops, supportedAchilles.Troops);
+        Assert.Same(supportedAchilles, supportedGame.State.Players[1].Field[0][0]);
+    }
+
+    [Fact]
+    public void AchillesGainsTemporaryFrontRowTauntAfterKillingALegion()
+    {
+        var game = Create(63134);
+        var achilles = Card("S02-0503", "achilles-kill-attacker");
+        var victim = Card("S02-0005", "achilles-kill-victim");
+        achilles.SummonRound = -1;
+        victim.SummonRound = -1;
+        game.State.Players[0].Field[0][0] = achilles;
+        game.State.Players[1].Field[0][0] = victim;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", achilles.InstanceId,
+            Target: new L12AttackTarget("legion", victim.InstanceId))).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(victim, game.State.Players[1].Graveyard);
+        Assert.True(achilles.TauntUntilTurn > game.State.TurnSerial);
+
+        var enemyAttacker = Card("S02-0003", "achilles-taunt-enemy");
+        enemyAttacker.SummonRound = -1;
+        game.State.Players[1].Field[0][1] = enemyAttacker;
+        game.State.ActivePlayer = 1;
+        game.State.Phase = L12Phase.Main;
+        var attackMaster = game.Handle(1, new L12Command("attack", enemyAttacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+
+        Assert.False(attackMaster.Accepted);
+        Assert.Contains("挑衅", attackMaster.Error);
+    }
+
+    [Fact]
     public void ForgeDiscountIsAppliedToAndConsumedByTheNextPromotion()
     {
         var game = Create(6314);

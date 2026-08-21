@@ -121,6 +121,8 @@ public sealed class L12CardInstance
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
+    /// <summary>由限时效果赋予的挑畔持续到哪个回合结束；前排判定仍由进攻规则实时计算。</summary>
+    public int TauntUntilTurn { get; set; } = -1;
     public int ImmortalUses { get; set; }
     public int ImmortalUntilTurn { get; set; } = -1;
     public int SuppressDeathUntilTurn { get; set; } = -1;
@@ -239,6 +241,7 @@ public sealed class L12PendingDefense
     public bool SureHit { get; init; }
     public int MasterDamage { get; set; } = 1;
     public int TemporaryAttackerTroopsBonus { get; set; }
+    public int TemporaryDefenderTroopsPenalty { get; set; }
 }
 
 public sealed class L12Prompt

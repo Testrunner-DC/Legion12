@@ -903,7 +903,7 @@ public sealed partial class L12GameEngine
                 if (pending is not null)
                 {
                     var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
-                    RevertPendingAttackTroopsBonus(pending, attacker);
+                    RevertPendingCombatTroopsModifiers(pending, attacker);
                 }
                 State.PendingDefense = null;
                 State.Phase = L12Phase.Main;

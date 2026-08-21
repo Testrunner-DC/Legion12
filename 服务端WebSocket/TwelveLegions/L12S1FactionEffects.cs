@@ -795,7 +795,8 @@ public sealed partial class L12GameEngine
         card.Troops = 1000; AddEvent("effect", player.PlayerIndex, "霍列姆赫布弃置陵墓守卫代替阵亡", card, guard); return true;
     }
 
-    private static bool HasS1Taunt(L12CardInstance card) => card.CardId is "S01-0107" or "S01-0204" or "S01-0312" or "S02-0004" or "S02-0007";
+    private static bool HasS1Taunt(L12CardInstance card) => card.CardId is "S01-0107" or "S01-0204" or "S01-0312" or "S02-0004" or "S02-0007"
+        || card.TauntUntilTurn >= 0;
 
     private void ApplyS1FactionAttackPassives(int playerIndex, L12CardInstance attacker, int row)
     {

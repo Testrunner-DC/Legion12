@@ -470,6 +470,7 @@ public sealed partial class L12GameEngine
         ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
         var temporaryAttackerTroopsBonus = 0;
+        var temporaryDefenderTroopsPenalty = 0;
         if (row == 0 && attacker.Faction == "gaotianyuan"
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
         {
@@ -489,6 +490,12 @@ public sealed partial class L12GameEngine
             attacker.Troops += 1000;
             AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+1000", attacker);
         }
+        if (isRanged && attackTarget?.CardId == "S02-0503")
+        {
+            temporaryDefenderTroopsPenalty = 1000;
+            attackTarget.Troops -= temporaryDefenderTroopsPenalty;
+            AddEvent("effect", defender.PlayerIndex, $"{attackTarget.Name}受到远程进攻，本次交战兵力额外-1000", attackTarget);
+        }
         var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
         State.PendingDefense = new L12PendingDefense
@@ -500,6 +507,7 @@ public sealed partial class L12GameEngine
             SureHit = attacker.HasSureHit,
             MasterDamage = damage,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
+            TemporaryDefenderTroopsPenalty = temporaryDefenderTroopsPenalty,
         };
         State.Phase = L12Phase.Defense;
         if (attackTarget is null)
@@ -555,6 +563,7 @@ public sealed partial class L12GameEngine
         var attacker = FindOnField(attackerPlayer, pending.AttackerInstanceId, out _, out _);
         if (attacker is null)
         {
+            RevertPendingCombatTroopsModifiers(pending, null);
             State.PendingDefense = null;
             State.Phase = L12Phase.Main;
             AddEvent("attack-ended", playerIndex, "进攻军团已离场，进攻结束");
@@ -642,6 +651,7 @@ public sealed partial class L12GameEngine
         var attacker = FindOnField(attackerPlayer, pending.AttackerInstanceId, out _, out _);
         if (attacker is null)
         {
+            RevertPendingCombatTroopsModifiers(pending, null);
             State.PendingDefense = null;
             State.Phase = L12Phase.Main;
             AddEvent("attack-ended", playerIndex, "进攻军团已离场，进攻结束");
@@ -674,7 +684,7 @@ public sealed partial class L12GameEngine
             var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
             if (target is null)
             {
-                RevertPendingAttackTroopsBonus(pending, attacker);
+                RevertPendingCombatTroopsModifiers(pending, attacker);
                 State.PendingDefense = null;
                 State.Phase = L12Phase.Main;
                 AddEvent("attack-ended", playerIndex, "进攻目标丢失，进攻结束");
@@ -710,7 +720,7 @@ public sealed partial class L12GameEngine
             }
         }
 
-        RevertPendingAttackTroopsBonus(pending, attacker);
+        RevertPendingCombatTroopsModifiers(pending, attacker);
         ReturnWukongMasterLegionAfterAttack(pending.AttackerPlayer, attacker);
         State.PendingDefense = null;
         if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
@@ -783,11 +793,16 @@ public sealed partial class L12GameEngine
         return CommandResult.Ok();
     }
 
-    private static void RevertPendingAttackTroopsBonus(L12PendingDefense pending, L12CardInstance? attacker)
+    private void RevertPendingCombatTroopsModifiers(L12PendingDefense pending, L12CardInstance? attacker)
     {
-        if (attacker is null || pending.TemporaryAttackerTroopsBonus <= 0) return;
-        attacker.Troops -= pending.TemporaryAttackerTroopsBonus;
+        if (attacker is not null && pending.TemporaryAttackerTroopsBonus > 0)
+            attacker.Troops -= pending.TemporaryAttackerTroopsBonus;
         pending.TemporaryAttackerTroopsBonus = 0;
+        if (pending.TemporaryDefenderTroopsPenalty <= 0 || pending.Target.Type != "legion") return;
+        var defender = State.Players[1 - pending.AttackerPlayer];
+        var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
+        if (target is not null) target.Troops += pending.TemporaryDefenderTroopsPenalty;
+        pending.TemporaryDefenderTroopsPenalty = 0;
     }
 
     private CommandResult FlipHidden(int playerIndex, string? instanceId)
