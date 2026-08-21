@@ -9,6 +9,7 @@ readonly deployment_patch="${deployment_dir}/hong-kong-test.patch"
 readonly service_name="legion12-test.service"
 readonly public_base="https://legion12.grand-umi.com"
 readonly lock_file="/run/lock/legion12-deploy.lock"
+readonly web_user="www-data"
 
 log() { printf '[L12 部署] %s\n' "$*"; }
 fail() { printf '[L12 部署] 错误：%s\n' "$*" >&2; return 1; }
@@ -22,6 +23,7 @@ self_test() {
   test -d "$active_dir" || fail "当前部署目录不存在：${active_dir}"
   test -f "$deployment_patch" || fail "香港部署补丁不存在：${deployment_patch}"
   test -f "/etc/legion12-test.env" || fail "管理员环境配置不存在"
+  id "$web_user" >/dev/null 2>&1 || fail "找不到 Nginx 运行账号：${web_user}"
   systemctl cat "$service_name" >/dev/null
   nginx -t >/dev/null
   log "服务器部署环境检查通过"
@@ -134,8 +136,14 @@ fi
 chown -R legion12:legion12 "${stage_dir}/publish"
 chmod 0755 "$stage_dir"
 chmod 0750 "${stage_dir}/publish/runtime"
+chmod 0755 "${stage_dir}/opcgpro-vue"
+find "${stage_dir}/opcgpro-vue/dist" -type d -exec chmod 0755 {} +
+find "${stage_dir}/opcgpro-vue/dist" -type f -exec chmod 0644 {} +
 runuser -u legion12 -- test -x "$stage_dir" || fail "服务账号无法进入新版本根目录"
 runuser -u legion12 -- test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "服务账号无法读取新版本后端"
+runuser -u "$web_user" -- test -x "${stage_dir}/opcgpro-vue" || fail "Nginx 账号无法进入前端目录"
+runuser -u "$web_user" -- test -x "${stage_dir}/opcgpro-vue/dist" || fail "Nginx 账号无法进入静态目录"
+runuser -u "$web_user" -- test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "Nginx 账号无法读取前端首页"
 
 log "切换到新版本，旧版本保存在 ${rollback_dir}"
 mv "$active_dir" "$rollback_dir"
