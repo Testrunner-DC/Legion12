@@ -41,6 +41,14 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 8. 切换目录、启动服务并检查主页、卡牌页、健康接口和公网 WebSocket；
 9. 任一切换后检查失败时，自动恢复上一版本。
 
+当开发电脑的 `main` 正被另一个工作区占用时，可以从隔离的干净工作区执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -AllowVerifiedWorktree
+```
+
+该开关只放宽本地分支名称检查；脚本仍会要求工作区无未提交修改，并强制核对 `HEAD` 与 GitHub `origin/main` 完全一致，不能部署未推送提交或其他分支内容。
+
 部署不会替换 Nginx 配置、TLS 证书、systemd 服务文件或 `/etc/legion12-test.env`。
 
 ## 干运行

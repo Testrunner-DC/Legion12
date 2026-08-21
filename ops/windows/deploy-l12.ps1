@@ -1,7 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [string]$Server = "root@legion12.grand-umi.com",
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$AllowVerifiedWorktree
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,8 +37,11 @@ try {
     }
 
     $branch = (& git branch --show-current).Trim()
-    if ($LASTEXITCODE -ne 0 -or $branch -ne "main") {
+    if ($LASTEXITCODE -ne 0 -or ($branch -ne "main" -and -not $AllowVerifiedWorktree)) {
         throw "只能从 main 分支部署，当前分支：$branch"
+    }
+    if ($branch -ne "main") {
+        Write-Host "[L12 部署] 使用隔离验证工作区：$branch；稍后仍会强制校验 HEAD 与 origin/main 完全一致。"
     }
     $dirty = (& git status --porcelain)
     if ($LASTEXITCODE -ne 0 -or $dirty) {
