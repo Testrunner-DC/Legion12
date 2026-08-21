@@ -7,7 +7,7 @@ import { platformState } from '@/l12/platform'
 const decks = ref<SavedL12Deck[]>([])
 const playerDeckName = ref('')
 const opponentDeckName = ref('')
-const disasterMode = ref<'all' | 'random' | 'none'>('none')
+const disasterMode = ref<'all' | 'random' | 'none' | 'custom'>('none')
 const creating = ref(false)
 const playerDeck = computed(() => decks.value.find(deck => deck.name === playerDeckName.value))
 const opponentDeck = computed(() => decks.value.find(deck => deck.name === opponentDeckName.value))
@@ -42,7 +42,7 @@ async function startSandbox() {
         <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/profile">前往登录</router-link></div>
         <label><b>我方牌库</b><select v-model="playerDeckName"><option v-for="deck in decks" :key="`self-${deck.name}`" :value="deck.name">{{ deck.name }}</option></select></label>
         <label><b>对手牌库</b><select v-model="opponentDeckName"><option v-for="deck in decks" :key="`enemy-${deck.name}`" :value="deck.name">{{ deck.name }}</option></select></label>
-        <label><b>天灾模式</b><select v-model="disasterMode"><option value="none">不使用天灾</option><option value="random">随机天灾</option><option value="all">全部天灾</option></select></label>
+        <label><b>天灾模式</b><select v-model="disasterMode"><option value="none">不使用天灾</option><option value="random">随机天灾</option><option value="all">全部天灾</option><option value="custom">自定天灾（四张始终公开）</option></select></label>
       </div>
       <div class="capabilities"><article><b>卡牌与区域</b><span>加牌、置顶/置底、墓地、无视费用打出、击杀与状态切换。</span></article><article><b>阶段与数值</b><span>切换回合玩家和阶段，调整血量、天灾值、士气并触发天灾。</span></article><article><b>可复现记录</b><span>每条 GM 指令由服务端校验，并写入与实战相同的状态快照。</span></article></div>
       <p v-if="l12State.notice" class="notice">{{ l12State.notice }}</p>

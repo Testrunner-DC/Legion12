@@ -23,7 +23,7 @@ function visibleDeckLabel(index: number) {
 const optionLabels = {
   spectating: { public: '公开观战', friends: '仅好友观战', disabled: '禁止观战' },
   handVisibility: { request: '查看手牌需申请', public: '观战者可看手牌' },
-  disasterMode: { all: '全部天灾', random: '随机天灾', season: '赛季天灾', none: '不使用天灾' },
+  disasterMode: { all: '全部天灾', random: '随机天灾', season: '赛季天灾', none: '不使用天灾', custom: '自定天灾（沙盒）' },
 } as const
 
 onMounted(async () => {

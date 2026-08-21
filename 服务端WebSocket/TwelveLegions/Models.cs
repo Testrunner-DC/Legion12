@@ -386,6 +386,8 @@ public sealed class L12GameState
     public List<L12CardInstance> SelectedDisasters { get; } = [];
     public List<L12CardInstance> RevealedDisasters { get; } = [];
     public List<L12CardInstance> ChosenDisasters { get; } = [];
+    /// <summary>测试沙盒自定天灾的稳定四槽清单；第四槽固定为最终天灾〈堙灭〉。</summary>
+    public List<L12CardInstance> CustomDisasters { get; } = [];
     public Dictionary<string, int> ChosenDisasterOwners { get; } = [];
     public L12CardInstance? ActiveDisaster { get; set; }
     public int DisasterPreparationStep { get; set; }

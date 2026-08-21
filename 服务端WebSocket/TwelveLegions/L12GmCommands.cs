@@ -14,6 +14,17 @@ public sealed partial class L12GameEngine
         {
             BuildRandomDisasterDeck();
         }
+        else if (State.DisasterMode == "custom")
+        {
+            var normal = State.DisasterPool.Where(card => card.CardId != "S01-DS10")
+                .OrderBy(_ => _random.Next()).Take(3).ToList();
+            State.CustomDisasters.Clear();
+            State.CustomDisasters.AddRange(normal);
+            State.CustomDisasters.Add(CreateCard("S01-DS10", "custom-disaster-final"));
+            State.DisasterDeck.AddRange(State.CustomDisasters);
+            State.DisasterPool.Clear();
+            SetDisasterValue(0);
+        }
         else
         {
             var all = State.DisasterPool.OrderBy(_ => _random.Next()).ToList();
@@ -39,6 +50,8 @@ public sealed partial class L12GameEngine
         {
             "addCard" => GmAddCard(command),
             "placeCard" => GmPlaceCard(command),
+            "moveHandCard" => GmMoveHandCard(command),
+            "playHandCard" => GmPlayHandCard(command),
             "destroyCard" => GmDestroyCard(command),
             "setCardState" => GmSetCardState(command),
             "setTroops" => GmSetTroops(command),
@@ -55,6 +68,7 @@ public sealed partial class L12GameEngine
             "setLife" => GmSetLife(command),
             "setDisaster" => GmSetDisaster(command),
             "triggerDisaster" => GmTriggerDisaster(),
+            "replaceDisaster" => GmReplaceDisaster(command),
             "setPhase" => GmSetPhase(command),
             _ => CommandResult.Reject("未知 GM 操作"),
         };
@@ -99,9 +113,47 @@ public sealed partial class L12GameEngine
     private CommandResult GmPlaceCard(L12GmCommand command)
     {
         if (!TryCreateGmCard(command, out var card, out var error)) return CommandResult.Reject(error);
+        return GmPlaceCardInstance(command, card, removeFromHand: false);
+    }
+
+    private CommandResult GmPlayHandCard(L12GmCommand command)
+    {
+        var player = State.Players[command.TargetPlayer];
+        var card = player.Hand.FirstOrDefault(item => item.InstanceId == command.CardInstanceId);
+        if (card is null) return CommandResult.Reject("目标卡牌不在该玩家手牌中");
+        return GmPlaceCardInstance(command, card, removeFromHand: true);
+    }
+
+    private CommandResult GmMoveHandCard(L12GmCommand command)
+    {
+        var player = State.Players[command.TargetPlayer];
+        var card = player.Hand.FirstOrDefault(item => item.InstanceId == command.CardInstanceId);
+        if (card is null) return CommandResult.Reject("目标卡牌不在该玩家手牌中");
+        var destination = command.Destination switch
+        {
+            "library-top" => "library-top",
+            "library-bottom" => "library-bottom",
+            "graveyard" => "graveyard",
+            "removed" => "removed",
+            _ => string.Empty,
+        };
+        if (destination.Length == 0) return CommandResult.Reject("请选择手牌要前往的合法区域");
+        player.Hand.Remove(card);
+        switch (destination)
+        {
+            case "library-top": player.Library.Insert(0, card); break;
+            case "library-bottom": player.Library.Add(card); break;
+            case "graveyard": player.Graveyard.Add(card); break;
+            case "removed": player.Removed.Add(card); break;
+        }
+        AddEvent("gm", command.TargetPlayer, $"[GM] 将手牌〈{card.Name}〉移至{GmZoneLabel(destination)}", card);
+        return CommandResult.Ok();
+    }
+
+    private CommandResult GmPlaceCardInstance(L12GmCommand command, L12CardInstance card, bool removeFromHand)
+    {
         var player = State.Players[command.TargetPlayer];
         card.OwnerIndex = command.TargetPlayer;
-        card.SummonRound = State.Round;
 
         if (card.CardType == "legion")
         {
@@ -112,22 +164,28 @@ public sealed partial class L12GameEngine
             var targetSlot = command.Slot.GetValueOrDefault();
             if (player.Field[targetRow][targetSlot] is not null)
                 return CommandResult.Reject("目标阵地已有卡牌");
+            if (removeFromHand) player.Hand.Remove(card);
+            card.SummonRound = State.Round;
             player.Field[targetRow][targetSlot] = card;
         }
         else if (card.CardType == "artifact")
         {
+            if (removeFromHand) player.Hand.Remove(card);
+            card.SummonRound = State.Round;
             DiscardFieldArtifactsForRelicReplacement(player);
             if (player.Relic is not null) DiscardRelic(player, player.Relic);
             player.Relic = card;
         }
         else if (card.CardType == "tactic")
         {
+            if (removeFromHand) player.Hand.Remove(card);
             player.Resolving.Add(card);
         }
         else return CommandResult.Reject("该卡牌类型不能由 GM 打出到场上");
 
         ApplyDisasterLevelOnEntry(command.TargetPlayer, card, deferTriggerUntilStackSettles: false);
-        AddEvent("gm", command.TargetPlayer, $"[GM] 使〈{card.Name}〉无视费用打出", card);
+        AddEvent("gm", command.TargetPlayer,
+            $"[GM] 使{(removeFromHand ? "手牌" : string.Empty)}〈{card.Name}〉无视费用打出", card);
         ResolveOnPlayContinuousEffects(command.TargetPlayer, card);
         RecalculateContinuousTroops();
         if (command.TriggerEffects)
@@ -312,6 +370,40 @@ public sealed partial class L12GameEngine
         if (State.DisasterDeck.Count == 0) return CommandResult.Reject("天灾牌库为空");
         SetDisasterValue(9, null, "[GM] 将天灾值设为触发阈值 9");
         BeginDisasterTrigger(opening: false);
+        return CommandResult.Ok();
+    }
+
+    private CommandResult GmReplaceDisaster(L12GmCommand command)
+    {
+        if (State.DisasterMode != "custom" || State.CustomDisasters.Count != 4)
+            return CommandResult.Reject("只有自定天灾沙盒可更换本局天灾");
+        if (command.Slot is null || command.Slot is < 0 or > 3)
+            return CommandResult.Reject("天灾槽位无效");
+        if (command.Slot == 3) return CommandResult.Reject("最终天灾〈堙灭〉固定在第四槽，不能更换");
+        if (!TryCreateGmCard(command, out var replacement, out var error)) return CommandResult.Reject(error);
+        if (replacement.CardType != "destruction" || replacement.CardId == "S01-DS10")
+            return CommandResult.Reject("请选择非最终天灾卡牌");
+        if (State.CustomDisasters.Where((_, index) => index != command.Slot)
+            .Any(card => card.CardId == replacement.CardId))
+            return CommandResult.Reject("本局自定天灾不能重复");
+
+        var slot = command.Slot.Value;
+        var previous = State.CustomDisasters[slot];
+        State.CustomDisasters[slot] = replacement;
+
+        var deckIndex = State.DisasterDeck.FindIndex(card => card.InstanceId == previous.InstanceId);
+        if (deckIndex >= 0) State.DisasterDeck[deckIndex] = replacement;
+        var removedIndex = State.RemovedDisasters.FindIndex(card => card.InstanceId == previous.InstanceId);
+        if (removedIndex >= 0) State.RemovedDisasters[removedIndex] = replacement;
+        var revealedIndex = State.RevealedDisasters.FindIndex(card => card.InstanceId == previous.InstanceId);
+        if (revealedIndex >= 0) State.RevealedDisasters[revealedIndex] = replacement;
+        if (State.ActiveDisaster?.InstanceId == previous.InstanceId)
+            State.ActiveDisaster = replacement;
+
+        RecalculateContinuousTroops();
+        AddEvent("gm", null,
+            $"[GM] 将自定天灾第 {slot + 1} 槽由〈{previous.Name}〉更换为〈{replacement.Name}〉；当前持续效果已刷新且不重复触发翻开效果",
+            previous, replacement);
         return CommandResult.Ok();
     }
 

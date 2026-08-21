@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { destructionRoundBackUrl } from '../specialAssets'
-import { gameAction, l12State } from '../net'
+import { gameAction, gmAction, l12State } from '../net'
 import GameActions from './GameActions.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
@@ -12,6 +12,7 @@ import PhaseTrack from './PhaseTrack.vue'
 import PlayerMat from './PlayerMat.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
+import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 
 const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; embedded?: boolean }>(), { readOnly: false, embedded: false })
 const scale = ref(1)
@@ -31,6 +32,7 @@ const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
+const customDisasterSlot = ref<number | null>(null)
 const lastHiddenRevealSequence = ref(0)
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 const me = computed(() => props.game.players[props.game.you])
@@ -138,8 +140,15 @@ const sessionDisasterSlots = computed<(DisasterCardView | null)[]>(() =>
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
-function focusSessionDisaster(card: DisasterCardView) {
+function focusSessionDisaster(card: DisasterCardView, index?: number) {
   if (isVisibleDisasterCard(card)) focusCard.value = card
+  if (index !== undefined && props.game.disasterMode === 'custom' && l12State.gmEnabled && !props.readOnly && index < 3)
+    customDisasterSlot.value = index
+}
+function replaceCustomDisaster(card: SandboxCatalogCard) {
+  if (customDisasterSlot.value === null) return
+  gmAction({ type: 'replaceDisaster', targetPlayer: props.game.you, slot: customDisasterSlot.value, cardId: card.id })
+  customDisasterSlot.value = null
 }
 const boardSlotPreview = computed<Card | null>(() => {
   const prompt = boardSlotPrompt.value
@@ -442,8 +451,8 @@ function statusTexts(card: Card) {
             <h3>本局天灾</h3>
             <div class="session-disaster-strip">
               <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
-                :class="{ hidden: !card || card.hidden, inactive: card && !card.hidden && card.instanceId !== game.activeDisaster?.instanceId }" :disabled="!card || card.hidden" :title="card && !card.hidden ? card.name : '未揭示天灾'"
-                @click="card && focusSessionDisaster(card)" @mouseenter="card && focusSessionDisaster(card)">
+                :class="{ hidden: !card || card.hidden, inactive: card && !card.hidden && card.instanceId !== game.activeDisaster?.instanceId, replaceable: game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 }" :disabled="!card || card.hidden" :title="card && !card.hidden ? (game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 ? `${card.name} · 点击更换` : card.name) : '未揭示天灾'"
+                @click="card && focusSessionDisaster(card, index)" @mouseenter="card && isVisibleDisasterCard(card) && (focusCard = card)">
                 <img :src="!card || card.hidden || !card.imageUrl ? destructionRoundBackUrl : card.imageUrl" :alt="card?.name || '未揭示天灾'"/>
               </button>
             </div>
@@ -587,6 +596,7 @@ function statusTexts(card: Card) {
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" />
     </div>
   </div>
+  <SandboxCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
 </template>
 
 <style scoped>
@@ -621,4 +631,5 @@ function statusTexts(card: Card) {
 .inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:8px;font-weight:900}
 .session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:44px;min-width:44px;height:44px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:center 18%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:hidden!important;transform-origin:left top;pointer-events:none}
+.session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 </style>

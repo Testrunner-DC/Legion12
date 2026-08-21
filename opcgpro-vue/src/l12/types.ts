@@ -101,7 +101,7 @@ export interface GameState {
   phase: Phase
   round: number
   turnSerial?: number
-  disasterMode: 'all' | 'random' | 'season' | 'none'
+  disasterMode: 'all' | 'random' | 'season' | 'none' | 'custom'
   disasterValue: number
   activeDisaster?: Card | null
   disasterDeck?: Array<{ hidden: boolean }>
@@ -152,7 +152,7 @@ export interface RoomState {
   yourPlayerIndex: number
   players: Array<{ name: string; playerIndex: number; connected: boolean; ready: boolean; deckIndex: number; customDeck?: boolean; deckName: string; masterName: string; faction: string }>
   decks: Array<{ index: number; name: string; masterId: string; masterName: string; faction: string }>
-  options?: { spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'season' | 'none' }
+  options?: { spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'season' | 'none' | 'custom' }
   started: boolean
   sandbox?: boolean
 }

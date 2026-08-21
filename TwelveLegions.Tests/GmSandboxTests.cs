@@ -168,4 +168,61 @@ public sealed class GmSandboxTests
         Assert.Contains(game.State.Events, entry => entry.Type == "attack");
         Assert.Contains(game.State.Events, entry => entry.Type == "gm" && entry.Text.Contains("测试进攻"));
     }
+
+    [Fact]
+    public void GmSnapshotRevealsBothHandsAndCommandsMoveActualHandInstances()
+    {
+        var game = new L12GameEngine(Catalog, "gm-hands", "GMHANDS", 1205,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        var legion = Catalog.Cards.Values.First(card => card.CardType == "legion");
+        Assert.True(game.HandleGm(new L12GmCommand("addCard", 1, legion.Id, Destination: "hand")).Accepted);
+        var handCard = game.State.Players[1].Hand.Last(card => card.CardId == legion.Id);
+
+        var normal = JsonSerializer.SerializeToElement(game.SnapshotFor(0), WebJson);
+        Assert.False(normal.GetProperty("players")[1].TryGetProperty("hand", out _));
+        var gm = JsonSerializer.SerializeToElement(game.SnapshotForGm(0), WebJson);
+        Assert.Contains(gm.GetProperty("players")[1].GetProperty("hand").EnumerateArray(),
+            card => card.GetProperty("instanceId").GetString() == handCard.InstanceId);
+
+        Assert.True(game.HandleGm(new L12GmCommand("moveHandCard", 1,
+            CardInstanceId: handCard.InstanceId, Destination: "graveyard")).Accepted);
+        Assert.DoesNotContain(game.State.Players[1].Hand, card => card.InstanceId == handCard.InstanceId);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == handCard.InstanceId);
+
+        Assert.True(game.HandleGm(new L12GmCommand("addCard", 1, legion.Id, Destination: "hand")).Accepted);
+        var played = game.State.Players[1].Hand.Last(card => card.CardId == legion.Id);
+        Assert.True(game.HandleGm(new L12GmCommand("playHandCard", 1,
+            CardInstanceId: played.InstanceId, Row: 0, Slot: 2, TriggerEffects: false)).Accepted);
+        Assert.Same(played, game.State.Players[1].Field[0][2]);
+        Assert.DoesNotContain(game.State.Players[1].Hand, card => card.InstanceId == played.InstanceId);
+    }
+
+    [Fact]
+    public void CustomSandboxKeepsFourVisibleSlotsAndFinalDisasterLocked()
+    {
+        var game = new L12GameEngine(Catalog, "gm-custom-disaster", "GMCUSTOM", 1206,
+            ["甲", "乙"], [0, 1], skipPreparation: true, disasterMode: "custom");
+        game.InitializeGmDisasters();
+        Assert.Equal(4, game.State.CustomDisasters.Count);
+        Assert.Equal("S01-DS10", game.State.CustomDisasters[3].CardId);
+        Assert.Equal(game.State.CustomDisasters.Select(card => card.InstanceId),
+            game.State.DisasterDeck.Select(card => card.InstanceId));
+
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0), WebJson);
+        var slots = snapshot.GetProperty("sessionDisasters").EnumerateArray().ToArray();
+        Assert.Equal(4, slots.Length);
+        Assert.All(slots, slot => Assert.False(slot.TryGetProperty("hidden", out var hidden) && hidden.GetBoolean()));
+
+        var replacement = Catalog.Cards.Values.First(card => card.CardType == "destruction"
+            && card.Id != "S01-DS10" && game.State.CustomDisasters.All(current => current.CardId != card.Id));
+        var previous = game.State.CustomDisasters[0];
+        Assert.True(game.HandleGm(new L12GmCommand("replaceDisaster", CardId: replacement.Id, Slot: 0)).Accepted);
+        Assert.Equal(replacement.Id, game.State.CustomDisasters[0].CardId);
+        Assert.DoesNotContain(game.State.DisasterDeck, card => card.InstanceId == previous.InstanceId);
+
+        var finalBefore = game.State.CustomDisasters[3];
+        var rejected = game.HandleGm(new L12GmCommand("replaceDisaster", CardId: replacement.Id, Slot: 3));
+        Assert.False(rejected.Accepted);
+        Assert.Same(finalBefore, game.State.CustomDisasters[3]);
+    }
 }

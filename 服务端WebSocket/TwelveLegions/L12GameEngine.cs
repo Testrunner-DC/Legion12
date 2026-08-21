@@ -114,16 +114,18 @@ public sealed partial class L12GameEngine
         return result;
     }
 
-    public L12GameSnapshot SnapshotFor(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: false);
+    public L12GameSnapshot SnapshotFor(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: false, revealAllHands: false);
 
-    public L12GameSnapshot SnapshotForSpectator() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: false);
+    public L12GameSnapshot SnapshotForGm(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: true, revealAllHands: true);
 
-    public L12GameSnapshot SnapshotForReferee() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: true);
+    public L12GameSnapshot SnapshotForSpectator() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: false, revealAllHands: false);
 
-    private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters)
+    public L12GameSnapshot SnapshotForReferee() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: true, revealAllHands: false);
+
+    private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
     {
         RecalculateContinuousTroops();
-        var players = State.Players.Select((player, index) => !spectator && index == viewer
+        var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
             ? (object)new
             {
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
@@ -201,6 +203,9 @@ public sealed partial class L12GameEngine
 
     private object[] BuildSessionDisasterSnapshot(int viewer, bool revealAll)
     {
+        if (State.DisasterMode == "custom" && State.CustomDisasters.Count == 4)
+            return State.CustomDisasters.Cast<object>().ToArray();
+
         // 这一区域只表达“玩家目前知道哪些牌”，绝不能用亮/暗位置泄露洗混后的牌序。
         // 前三格先紧凑排列已知的非最终天灾，再补未知牌背；公开的最终天灾固定在第四格。
         var all = State.RevealedDisasters.Concat(State.ChosenDisasters)
@@ -499,6 +504,7 @@ public sealed partial class L12GameEngine
     {
         "random" => "random",
         "season" => "season",
+        "custom" => "custom",
         "none" => "none",
         _ => "all",
     };

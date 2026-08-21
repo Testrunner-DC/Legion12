@@ -101,7 +101,7 @@ export function send(payload: unknown) {
 export interface RoomOptions {
   spectating: 'public' | 'friends' | 'disabled'
   handVisibility: 'request' | 'public'
-  disasterMode: 'all' | 'random' | 'season' | 'none'
+  disasterMode: 'all' | 'random' | 'season' | 'none' | 'custom'
 }
 
 export const createRoom = (options?: RoomOptions) => { l12State.spectating = false; send({ type: 'createRoom', options }) }

@@ -104,7 +104,7 @@ public sealed class L12RoomManager
                     Spectating = "disabled",
                     HandVisibility = "public",
                     DisasterMode = request.DisasterMode,
-                }),
+                }, allowCustom: true),
             };
         }
         while (!_rooms.TryAdd(room.Code, room));
@@ -364,7 +364,9 @@ public sealed class L12RoomManager
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room)
         => room.Sessions.Select(id => new OutgoingMessage(id, new
         {
-            type = "gameState", state = room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value),
+            type = "gameState", state = room.IsSandbox && room.GmControllerSessionId == id
+                ? room.Game!.SnapshotForGm(_sessions[id].PlayerIndex!.Value)
+                : room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value),
             gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
         })).Concat(room.Spectators.Select(id => new OutgoingMessage(id, new
         {
@@ -400,11 +402,12 @@ public sealed class L12RoomManager
         return new string(Enumerable.Range(0, 6).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]).ToArray());
     }
 
-    private static L12RoomOptions NormalizeOptions(L12RoomOptions? options)
+    private static L12RoomOptions NormalizeOptions(L12RoomOptions? options, bool allowCustom = false)
     {
         var spectating = options?.Spectating is "friends" or "disabled" ? options.Spectating : "public";
         var handVisibility = options?.HandVisibility == "public" ? "public" : "request";
-        var disasterMode = options?.DisasterMode is "random" or "season" or "none" ? options.DisasterMode : "all";
+        var disasterMode = options?.DisasterMode is "random" or "season" or "none"
+            || (allowCustom && options?.DisasterMode == "custom") ? options!.DisasterMode : "all";
         return new L12RoomOptions { Spectating = spectating, HandVisibility = handVisibility, DisasterMode = disasterMode };
     }
 }
