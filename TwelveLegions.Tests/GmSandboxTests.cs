@@ -126,4 +126,46 @@ public sealed class GmSandboxTests
         Assert.Empty(game.State.Players[0].Resolving);
         Assert.Contains(game.State.Players[0].Graveyard, card => card.CardId == tactic.Id);
     }
+
+    [Fact]
+    public void GmCanRepeatCardsSetDisplayedTroopsAndStartRulesAttack()
+    {
+        var game = new L12GameEngine(Catalog, "gm-combat", "GMCOMBAT", 1204,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        var legion = Catalog.Cards.Values.First(card => card.CardType == "legion");
+
+        var handBefore = game.State.Players[1].Hand.Count;
+        Assert.True(game.HandleGm(new L12GmCommand("addCard", 1, legion.Id,
+            Destination: "hand", Value: 3)).Accepted);
+        var added = game.State.Players[1].Hand.Skip(handBefore).ToArray();
+        Assert.Equal(3, added.Length);
+        Assert.Equal(3, added.Select(card => card.InstanceId).Distinct().Count());
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 1, legion.Id,
+            Row: 0, Slot: 0, TriggerEffects: false)).Accepted);
+        var attacker = game.State.Players[1].Field[0][0]!;
+        Assert.True(game.HandleGm(new L12GmCommand("setTroops", 1,
+            CardInstanceId: attacker.InstanceId, Value: 6000)).Accepted);
+        Assert.Equal(6000, attacker.Troops);
+
+        var activeBeforeRejectedAttack = game.State.ActivePlayer;
+        var phaseBeforeRejectedAttack = game.State.Phase;
+        var tappedBeforeRejectedAttack = attacker.Tapped;
+        var summonRoundBeforeRejectedAttack = attacker.SummonRound;
+        var rejectedAttack = game.HandleGm(new L12GmCommand("startAttack", 1,
+            CardInstanceId: attacker.InstanceId, TargetInstanceId: "missing-target"));
+        Assert.False(rejectedAttack.Accepted);
+        Assert.Equal(activeBeforeRejectedAttack, game.State.ActivePlayer);
+        Assert.Equal(phaseBeforeRejectedAttack, game.State.Phase);
+        Assert.Equal(tappedBeforeRejectedAttack, attacker.Tapped);
+        Assert.Equal(summonRoundBeforeRejectedAttack, attacker.SummonRound);
+
+        var attack = game.HandleGm(new L12GmCommand("startAttack", 1,
+            CardInstanceId: attacker.InstanceId));
+        Assert.True(attack.Accepted, attack.Error);
+        Assert.Equal(1, game.State.ActivePlayer);
+        Assert.True(attacker.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "attack");
+        Assert.Contains(game.State.Events, entry => entry.Type == "gm" && entry.Text.Contains("测试进攻"));
+    }
 }

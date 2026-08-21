@@ -480,7 +480,8 @@ public sealed record L12GmCommand(
     int? Slot = null,
     int? Value = null,
     string? Phase = null,
-    bool TriggerEffects = true);
+    bool TriggerEffects = true,
+    string? TargetInstanceId = null);
 
 public sealed record L12SandboxRequest(
     L12CustomDeckSubmission? PlayerDeck = null,

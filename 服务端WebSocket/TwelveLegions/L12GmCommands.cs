@@ -41,6 +41,8 @@ public sealed partial class L12GameEngine
             "placeCard" => GmPlaceCard(command),
             "destroyCard" => GmDestroyCard(command),
             "setCardState" => GmSetCardState(command),
+            "setTroops" => GmSetTroops(command),
+            "startAttack" => GmStartAttack(command),
             "readyAll" => GmSetAllCardsTapped(command.TargetPlayer, false),
             "restAll" => GmSetAllCardsTapped(command.TargetPlayer, true),
             "destroyAll" => GmDestroyAll(command.TargetPlayer),
@@ -66,8 +68,9 @@ public sealed partial class L12GameEngine
 
     private CommandResult GmAddCard(L12GmCommand command)
     {
-        if (!TryCreateGmCard(command, out var card, out var error)) return CommandResult.Reject(error);
+        if (!TryCreateGmCard(command, out _, out var error)) return CommandResult.Reject(error);
         var player = State.Players[command.TargetPlayer];
+        var count = Math.Clamp(command.Value ?? 1, 1, 20);
         var destination = command.Destination switch
         {
             "library-top" => "library-top",
@@ -76,16 +79,20 @@ public sealed partial class L12GameEngine
             "removed" => "removed",
             _ => "hand",
         };
-        switch (destination)
+        for (var index = 0; index < count; index++)
         {
-            case "library-top": player.Library.Insert(0, card); break;
-            case "library-bottom": player.Library.Add(card); break;
-            case "graveyard": player.Graveyard.Add(card); break;
-            case "removed": player.Removed.Add(card); break;
-            default: player.Hand.Add(card); break;
+            if (!TryCreateGmCard(command, out var card, out error)) return CommandResult.Reject(error);
+            switch (destination)
+            {
+                case "library-top": player.Library.Insert(0, card); break;
+                case "library-bottom": player.Library.Add(card); break;
+                case "graveyard": player.Graveyard.Add(card); break;
+                case "removed": player.Removed.Add(card); break;
+                default: player.Hand.Add(card); break;
+            }
+            AddEvent("gm", command.TargetPlayer,
+                $"[GM] 将〈{card.Name}〉加入{GmZoneLabel(destination)}", card);
         }
-        AddEvent("gm", command.TargetPlayer,
-            $"[GM] 将〈{card.Name}〉加入{GmZoneLabel(destination)}", card);
         return CommandResult.Ok();
     }
 
@@ -169,6 +176,56 @@ public sealed partial class L12GameEngine
         var tapped = command.Destination == "rested";
         card.Tapped = tapped;
         AddEvent("gm", command.TargetPlayer, $"[GM] 将〈{card.Name}〉转为{(tapped ? "休整" : "活跃")}", card);
+        return CommandResult.Ok();
+    }
+
+    private CommandResult GmSetTroops(L12GmCommand command)
+    {
+        var player = State.Players[command.TargetPlayer];
+        var card = FindOnField(player, command.CardInstanceId, out _, out _);
+        if (card is null || !IsFieldLegion(card)) return CommandResult.Reject("目标不是该玩家战场上的军团");
+        var displayedValue = Math.Clamp(command.Value ?? card.Troops, 0, 99999);
+        card.SetTroopsValue = Math.Max(0, displayedValue - card.ContinuousTroopsModifier);
+        card.SetTroopsUntilTurn = int.MaxValue;
+        card.Troops = displayedValue;
+        AddEvent("gm", command.TargetPlayer, $"[GM] 将〈{card.Name}〉当前兵力设为 {displayedValue}", card);
+        return CommandResult.Ok();
+    }
+
+    private CommandResult GmStartAttack(L12GmCommand command)
+    {
+        if (State.PendingDefense is not null || State.PendingPrompts.Count > 0 || State.EffectStack.Count > 0
+            || State.PendingActivations.Count > 0 || State.PendingTriggerBatches.Count > 0)
+            return CommandResult.Reject("当前仍有待处理的选择、触发或堆叠，请先完成结算或使用阶段跳转清场");
+
+        var attacker = FindOnField(State.Players[command.TargetPlayer], command.CardInstanceId, out _, out _);
+        if (attacker is null || !IsFieldLegion(attacker)) return CommandResult.Reject("请选择该玩家战场上的进攻军团");
+
+        var previousActivePlayer = State.ActivePlayer;
+        var previousPhase = State.Phase;
+        var previousTapped = attacker.Tapped;
+        var previousSummonRound = attacker.SummonRound;
+        State.ActivePlayer = command.TargetPlayer;
+        State.Phase = L12Phase.Main;
+        attacker.Tapped = false;
+        attacker.SummonRound = Math.Min(attacker.SummonRound, State.Round - 1);
+
+        var target = string.IsNullOrWhiteSpace(command.TargetInstanceId)
+            ? new L12AttackTarget("master")
+            : new L12AttackTarget("legion", command.TargetInstanceId);
+        var result = Attack(command.TargetPlayer,
+            new L12Command("attack", CardInstanceId: attacker.InstanceId, Target: target));
+        if (!result.Accepted)
+        {
+            State.ActivePlayer = previousActivePlayer;
+            State.Phase = previousPhase;
+            attacker.Tapped = previousTapped;
+            attacker.SummonRound = previousSummonRound;
+            return result;
+        }
+
+        AddEvent("gm", command.TargetPlayer,
+            $"[GM] 令〈{attacker.Name}〉对{(target.Type == "master" ? "对方主宰" : "指定军团")}发起规则内测试进攻", attacker);
         return CommandResult.Ok();
     }
 
