@@ -686,6 +686,37 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void HattoriHanzoRevealedOnALaterTurnCanAttackWithoutNewSummonSickness()
+    {
+        var game = Create(seed: 88661);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].Library.Concat(game.State.Players[index].Hand)
+                .Any(card => card.CardId == "S01-0415"));
+        var player = game.State.Players[owner];
+        var hanzo = TakeCard(game, owner, "S01-0415");
+        hanzo.Hidden = true;
+        hanzo.Tapped = false;
+        hanzo.SummonRound = game.State.Round;
+        player.Field[0][0] = hanzo;
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+
+        var enteredRound = hanzo.SummonRound;
+        game.State.Round = enteredRound + 1;
+        Assert.True(game.Handle(owner,
+            new L12Command("activateAbility", hanzo.InstanceId, Ability: "revealHidden")).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+
+        Assert.False(hanzo.Hidden);
+        Assert.Equal(enteredRound, hanzo.SummonRound);
+        Assert.Contains(hanzo.InstanceId, game.SnapshotFor(owner).LegalAttackTargets.Keys);
+        Assert.True(game.Handle(owner, new L12Command("attack", hanzo.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+    }
+
+    [Fact]
     public void ShanheShejituReusesObservingStarsAllTopBottomOrdering()
     {
         var game = Create(seed: 8867);
