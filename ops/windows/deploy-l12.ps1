@@ -35,6 +35,11 @@ try {
     foreach ($commandName in @("git", "dotnet", "npm", "ssh", "scp")) {
         Require-Command $commandName
     }
+    # Windows 的 npm PowerShell shim 会继承本脚本的 StrictMode，并在部分 npm
+    # 版本读取不存在的 InvocationInfo.Statement 时失败。优先调用 npm.cmd，
+    # 让 npm 在独立的 cmd 进程中运行；非 Windows 环境仍回退到 npm。
+    $npmCommand = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
+    $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
 
     $branch = (& git branch --show-current).Trim()
     if ($LASTEXITCODE -ne 0 -or ($branch -ne "main" -and -not $AllowVerifiedWorktree)) {
@@ -63,8 +68,8 @@ try {
     Write-Host "[L12 部署] 验证前端生产构建..."
     Push-Location (Join-Path $repoRoot "opcgpro-vue")
     try {
-        Invoke-External npm ci
-        Invoke-External npm run build
+        Invoke-External $npmExecutable ci
+        Invoke-External $npmExecutable run build
     }
     finally {
         Pop-Location

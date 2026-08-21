@@ -693,3 +693,11 @@
 - 根因：发布安全同时使用“分支名”和“提交一致性”两道检查，但 Git worktree 不允许两个工作区同时检出同一分支；分支名检查把安全的隔离发布路径误判为非法。
 - 修改：新增显式 `-AllowVerifiedWorktree` 开关，仅放宽分支名称；工作区必须干净、`HEAD` 必须与最新 `origin/main` 完全相同的两项安全门禁保持不变，默认部署行为也保持不变。
 - 防回滚：隔离工作区发布不得跳过远端拉取、干净状态或提交哈希检查；禁止提供允许部署未推送提交的开关。
+
+### OPS-20260821-29 Windows StrictMode 令 npm PowerShell shim 中断发布
+
+- 现象：部署脚本的 L12 235/235 与平台 3/3 测试通过后，在 `npm ci` 入口报“属性 Statement 不存在”，发布在打包和上传前终止。
+- 根因：脚本启用 `Set-StrictMode -Version Latest`，PowerShell 命令解析优先选择 `npm.ps1`；当前 npm shim 会读取并非所有 PowerShell 版本都提供的 `InvocationInfo.Statement`，因此被调用方脚本继承 StrictMode 后失败。
+- 同类扫描：Windows 发布脚本中 npm 只有依赖安装和生产构建两个入口；服务器端 Bash 直接调用 npm，不受 PowerShell shim 和 StrictMode 影响。
+- 修改：Windows 脚本在命令检查后解析 `npm.cmd`，存在时由独立 cmd 进程执行两个 npm 命令，仅在非 Windows 环境回退至 `npm`。
+- 防回滚：Windows 严格模式发布脚本不得直接调用 `npm` PowerShell shim；部署干运行必须至少通过本地 npm 依赖安装和生产构建后才能上传版本包。
