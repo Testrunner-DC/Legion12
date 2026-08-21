@@ -5,7 +5,7 @@ public sealed partial class L12GameEngine
 {
     private static readonly HashSet<string> S2FactionEnterCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0101", "S02-0102", "S02-0203", "S02-0204", "S02-0205",
+        "S02-0101", "S02-0102", "S02-0103", "S02-0203", "S02-0204", "S02-0205",
         "S02-0301", "S02-0302", "S02-0303", "S02-0304", "S02-0401", "S02-0402", "S02-0403", "S02-0404",
         "S02-0501", "S02-0502", "S02-0505", "S02-0506", "S02-0507", "S02-0509", "S02-0511", "S02-0513", "S02-0514", "S02-0515", "S02-0517", "S02-0518", "S02-0520", "S02-0613",
         "S02-0601", "S02-0602", "S02-0603", "S02-0604", "S02-0606", "S02-0607", "S02-0608", "S02-0610", "S02-0612", "S02-0614", "S02-0616", "S02-0617", "S02-0618", "S02-0619",
@@ -227,6 +227,12 @@ public sealed partial class L12GameEngine
                 return true;
             case "S02-0102":
                 BeginS2LiMuEnter(item);
+                return true;
+            case "S02-0103":
+                player.NextMasterDamageToOpponentBecomesTwoUntilTurn = State.TurnSerial;
+                AddEvent("effect", item.Controller,
+                    "平阳昭公主使本回合我方主宰对对方主宰造成的下一次伤害变为2", card);
+                FinishStackItem(item);
                 return true;
             case "S02-0501":
                 CreatePrompt(item.Controller, "optional", "是否对双方主宰各造成1点非致命伤害？", ["yes", "no"], 1, 1,

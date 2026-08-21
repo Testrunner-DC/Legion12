@@ -671,6 +671,7 @@ public sealed partial class L12GameEngine
         current.NextFactionLegionDiscount = 0;
         current.NextS2SunDisasterLegionDiscount = 0;
         current.NextS2OlympusLegionDiscount = 0;
+        current.NextMasterDamageToOpponentBecomesTwoUntilTurn = -1;
         current.NextActiveTacticSurcharge = 0;
         foreach (var player in State.Players)
         {
@@ -1060,10 +1061,27 @@ public sealed partial class L12GameEngine
         return sourceItem is null || sourceItem.Trigger == "disaster" ? null : sourceItem.Controller;
     }
 
+    private int ApplyOutgoingMasterDamageOverride(int targetPlayerIndex, int amount, int? sourcePlayer, bool neutralSource)
+    {
+        var resolvedSourcePlayer = ResolveDamageSourcePlayer(sourcePlayer, neutralSource);
+        if (resolvedSourcePlayer is not (0 or 1) || resolvedSourcePlayer == targetPlayerIndex) return amount;
+        var sourceItem = State.EffectStack.LastOrDefault();
+        var source = State.Players[resolvedSourcePlayer.Value];
+        if (sourceItem?.Controller != resolvedSourcePlayer || sourceItem.SourceCardId != source.MasterId
+            || source.NextMasterDamageToOpponentBecomesTwoUntilTurn != State.TurnSerial)
+            return amount;
+
+        source.NextMasterDamageToOpponentBecomesTwoUntilTurn = -1;
+        AddEvent("effect", resolvedSourcePlayer,
+            "平阳昭公主使主宰对对方主宰造成的这次伤害变为2");
+        return 2;
+    }
+
     private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null,
         bool neutralSource = false, bool combatDamage = false)
     {
         var player = State.Players[playerIndex];
+        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
         amount = AdjustAnderstorpRingDamage(player, amount);
         player.Hp -= amount;
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
@@ -1079,6 +1097,7 @@ public sealed partial class L12GameEngine
     private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
     {
         var player = State.Players[playerIndex];
+        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
         amount = AdjustAnderstorpRingDamage(player, amount);
         var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
         if (actual == 0) return;

@@ -206,6 +206,8 @@ public sealed class L12PlayerState
     public int NextS2SunDisasterLegionDiscount { get; set; }
     public int NextS2OlympusLegionDiscount { get; set; }
     public int NextS2PromotionGodPowerDiscount { get; set; }
+    /// <summary>平阳昭公主：本回合主宰对对方主宰造成的下一次伤害变为2。</summary>
+    public int NextMasterDamageToOpponentBecomesTwoUntilTurn { get; set; } = -1;
     public int S2ArthurDiscountUntilTurn { get; set; } = -1;
     public int FactionMoraleAdditionForbiddenUntilTurn { get; set; } = -1;
     public int MasterCannotBeAttackedUntilTurn { get; set; } = -1;

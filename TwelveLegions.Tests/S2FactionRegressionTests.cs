@@ -2153,4 +2153,51 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(order.ValidChoices,
             id => order.Data[$"sourceInstance:{id}"] == ring.InstanceId);
     }
+
+    [Fact]
+    public void PingyangMakesOnlyTheNextMasterDamageToTheOpponentBecomeTwoThisTurn()
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6352);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var pingyang = Card("S02-0103", "pingyang-entry");
+        player.Hand.Clear();
+        player.Hand.Add(pingyang);
+        AddMorale(player, 8);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("playCard", pingyang.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        Assert.Equal(game.State.TurnSerial, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+
+        var mercenary = Card("S01-0002", "pingyang-non-master-damage");
+        player.Field[0][1] = mercenary;
+        opponent.Hp = Math.Max(3, opponent.Hp);
+        var beforeLegionDamage = opponent.Hp;
+        // 同一玩家的军团进攻不会错误消耗“主宰造成的下一次伤害”。
+        Assert.True(game.Handle(0,
+            new L12Command("attack", mercenary.InstanceId, Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        if (game.State.PendingDefense is not null)
+            Assert.True(game.Handle(1, new L12Command("resolveDefense")).Accepted);
+        Assert.Equal(beforeLegionDamage - 1, opponent.Hp);
+        Assert.Equal(game.State.TurnSerial, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+
+        foreach (var morale in player.Morale) morale.Tapped = false;
+        var beforeMasterDamage = opponent.Hp;
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "nonLethal")).Accepted);
+        PassResponses(game);
+        while (game.State.PendingPrompts.Count > 0)
+        {
+            var prompt = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+            PassResponses(game);
+        }
+
+        Assert.Equal(beforeMasterDamage - 2, opponent.Hp);
+        Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+    }
 }
