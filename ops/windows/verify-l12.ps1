@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$OutputDirectory = $(if ($env:L12_DEPLOY_CACHE) { $env:L12_DEPLOY_CACHE } elseif (Test-Path "D:\GPT") { "D:\GPT\L12-deploy-artifacts" } else { Join-Path ([IO.Path]::GetTempPath()) "l12-deploy-artifacts" }),
     [switch]$Force

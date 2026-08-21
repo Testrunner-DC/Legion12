@@ -731,3 +731,13 @@
 - 修改：新增完整验证/产物脚本，生成 Linux 后端与不含卡图的前端运行包并按提交复用；部署脚本增加 GitHub 有限重试和产物清单校验；服务器只校验预构建包，以 release 目录和稳定符号链接原子切换；运行数据迁移至共享目录，卡图按 Git tree hash 缓存且仅变化时上传；新增 GitHub Actions 测试和 Linux Artifact。
 - 验证：PowerShell 与 Bash 语法、全量规则测试、平台持久化测试、前端 UI 契约/类型/生产构建、Linux publish、快速干运行、首次数据迁移、正式切换、网页/卡牌/健康/WebSocket 冒烟及回滚路径均需通过；清单 SHA256、提交标记和真实 `legion12`/`www-data` 权限在停止服务前验证。
 - 防回滚：服务器不得恢复 `npm ci`、`dotnet test` 或源码补丁构建；运行数据不得重新复制进每个版本；卡图不得并入每次运行包；任何复用产物必须同时匹配提交哈希和文件 SHA256，远端提交一致性、运行账号预检和失败回滚不得被快速模式绕过。
+
+### OPS-20260822-33 Windows PowerShell 5.1 无法解析无 BOM 的中文发布脚本
+
+- 现象：PowerShell 7 语法检查通过，但正式调用 `powershell.exe -File` 时中文提示与中文项目路径乱码，继而报字符串未闭合等解析错误。
+- 历史记录匹配：命中 OPS-20260821-29 的跨平台脚本要求；原验证只覆盖当前 PowerShell 7 进程，未覆盖部署入口实际调用的 Windows PowerShell 5.1。
+- 根因：两份脚本被保存为无 BOM UTF-8；PowerShell 5.1 按系统代码页读取，破坏了中文字符串和 `服务端WebSocket` 路径。
+- 同类扫描：扫描全部正式 Windows 发布入口；`verify-l12.ps1` 与 `deploy-l12.ps1` 均包含不可移除的中文仓库路径，不能只把日志改成英文规避。
+- 修改：两份脚本统一保存为 UTF-8 BOM；正式验证直接使用 `powershell.exe -File`，覆盖实际入口解释器。
+- 验证：Windows PowerShell 5.1 成功进入并完成制品验证；PowerShell 7 解析器继续通过。
+- 防回滚：包含非 ASCII 内容且由 Windows PowerShell 5.1 执行的 `.ps1` 必须保留 UTF-8 BOM；提交前除静态解析外，还必须执行实际入口。

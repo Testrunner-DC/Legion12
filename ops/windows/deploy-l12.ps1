@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Server = "root@legion12.grand-umi.com",
     [string]$ArtifactManifest = "",
