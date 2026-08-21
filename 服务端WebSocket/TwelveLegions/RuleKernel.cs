@@ -163,6 +163,18 @@ public static class L12S2ZoneOps
         return true;
     }
 
+    public static bool ConsumeGodPower(L12PlayerState player, int count)
+    {
+        if (count < 0) return false;
+        var moralePower = player.Morale
+            .Where(card => card.IsGodPower && !card.Tapped)
+            .Take(count)
+            .ToArray();
+        if (moralePower.Length < count) return false;
+        foreach (var card in moralePower) card.Tapped = true;
+        return true;
+    }
+
     public static bool FlipMoraleFace(L12PlayerState player, string instanceId, bool? toGodPower = null)
     {
         var morale = player.Morale.FirstOrDefault(card => card.InstanceId == instanceId);

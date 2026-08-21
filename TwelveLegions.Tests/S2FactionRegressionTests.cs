@@ -1160,7 +1160,54 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(olympus, player.Hand);
         Assert.Equal([second.InstanceId, first.InstanceId], player.Library.Select(card => card.InstanceId));
         Assert.True(player.Morale.Single(card => card.InstanceId == "prometheus-power").Tapped);
-        Assert.False(player.Morale.Single(card => card.InstanceId == "prometheus-power").IsGodPower);
+        Assert.True(player.Morale.Single(card => card.InstanceId == "prometheus-power").IsGodPower);
+    }
+
+    [Fact]
+    public void HannibalConsumesGodPowerWithoutFlippingItBackToMorale()
+    {
+        var game = Create(63151);
+        var player = game.State.Players[0];
+        var enemyPlayer = game.State.Players[1];
+        var hannibal = Card("S02-0516", "hannibal-attacker");
+        var ownTarget = Card("S02-0004", "hannibal-own-target");
+        var enemyTarget = Card("S02-0004", "hannibal-enemy-target");
+        hannibal.SummonRound = -1;
+        ownTarget.SummonRound = -1;
+        enemyTarget.SummonRound = -1;
+        player.Field[0][0] = hannibal;
+        player.Field[0][1] = ownTarget;
+        enemyPlayer.Field[0][0] = enemyTarget;
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "hannibal-power", CardId = "S02-05C1", Tapped = false, IsGodPower = true,
+        });
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", hannibal.InstanceId,
+            Target: new L12AttackTarget("legion", enemyTarget.InstanceId))).Accepted);
+        PassResponses(game);
+        var pay = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-hannibal-pay", pay.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pay.PromptId,
+            Choice: "yes")).Accepted);
+
+        var own = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-hannibal-own", own.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: own.PromptId,
+            Choice: ownTarget.InstanceId)).Accepted);
+
+        var enemy = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-hannibal-enemy", enemy.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: enemy.PromptId,
+            Choice: enemyTarget.InstanceId)).Accepted);
+
+        var power = Assert.Single(player.Morale, card => card.InstanceId == "hannibal-power");
+        Assert.True(power.Tapped);
+        Assert.True(power.IsGodPower);
+        Assert.True(ownTarget.Troops < ownTarget.BaseTroops);
+        Assert.True(enemyTarget.Troops < enemyTarget.BaseTroops);
     }
 
     [Fact]

@@ -195,6 +195,15 @@ public sealed class RuleKernelTests
         Assert.All(player.Morale, card => { Assert.False(card.Tapped); Assert.True(card.IsGodPower); });
         Assert.True(L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2));
         Assert.All(player.Morale, card => { Assert.True(card.Tapped); Assert.False(card.IsGodPower); });
+
+        var retainedPower = new L12MoraleCard
+        {
+            InstanceId = "power-c", CardId = "S02-05C1", IsGodPower = true,
+        };
+        player.Morale.Add(retainedPower);
+        Assert.True(L12S2ZoneOps.ConsumeGodPower(player, 1));
+        Assert.True(retainedPower.Tapped);
+        Assert.True(retainedPower.IsGodPower);
     }
 
     [Fact]

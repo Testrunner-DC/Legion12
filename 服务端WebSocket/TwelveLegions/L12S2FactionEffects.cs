@@ -706,9 +706,9 @@ public sealed partial class L12GameEngine
             if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped)
                 || !PublicLegions(player).Any() || !PublicLegions(State.Players[1 - item.Controller]).Any())
             { FinishStackItem(item); return true; }
-            CreatePrompt(item.Controller, "optional", "汉尼拔：是否消耗并翻转1神力，使双方各1张军团本回合兵力-2000？",
+            CreatePrompt(item.Controller, "optional", "汉尼拔：是否消耗1神力，使双方各1张军团本回合兵力-2000？",
                 ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string> { ["action"] = "s2-hannibal-pay", ["yes"] = "消耗并翻转1神力", ["no"] = "不发动" });
+                data: new Dictionary<string, string> { ["action"] = "s2-hannibal-pay", ["yes"] = "消耗1神力", ["no"] = "不发动" });
             return true;
         }
         if (card.CardId == "S02-0517")
@@ -978,7 +978,7 @@ public sealed partial class L12GameEngine
         {
             var onceKey = $"active:{source.InstanceId}:{ability}";
             if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
-            if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) return CommandResult.Reject("需要1张活跃的神力");
+            if (!L12S2ZoneOps.ConsumeGodPower(player, 1)) return CommandResult.Reject("需要1张活跃的神力");
             player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "主宰效果",
                 data: new Dictionary<string, string> { ["ability"] = ability });
@@ -1835,7 +1835,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "s2-hannibal-pay":
-                if (chosen[0] != "yes" || !L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) { FinishStackItem(item); return true; }
+                if (chosen[0] != "yes" || !L12S2ZoneOps.ConsumeGodPower(player, 1)) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "field-legion", "汉尼拔：选择我方1张军团，本回合兵力-2000",
                     PublicLegions(player).Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "s2-hannibal-own" });
