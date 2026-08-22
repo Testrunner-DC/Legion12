@@ -7,6 +7,7 @@ const prompt = read('../src/l12/game/PromptOverlay.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
 const gamePage = read('../src/l12/GamePage.vue')
+const app = read('../src/App.vue')
 const playerMat = read('../src/l12/game/PlayerMat.vue')
 const specialAssets = read('../src/l12/specialAssets.ts')
 const cardTile = read('../src/l12/CardTile.vue')
@@ -36,7 +37,9 @@ const contracts = [
   [gamePage.includes("import GameBoard from './game/GameBoard.vue'"), '对战入口必须唯一指向 src/l12/game/GameBoard.vue'],
   [!lobby.includes('l12State.room.decks'), '友谊战整备室不得同时渲染服务端预组与我的牌库'],
   [lobby.includes('platformState.account') && !lobby.includes('玩家昵称<input'), '对战大厅必须使用登录账号身份且不得保留手填昵称'],
-  [l12Net.includes("send({ type: 'hello', authToken })") && !l12Net.includes("type: 'hello', name"), 'WebSocket 握手必须使用账号令牌而非任意昵称'],
+  [l12Net.includes("JSON.stringify({ type: 'hello', authToken })") && !l12Net.includes("type: 'hello', name"), 'WebSocket 握手必须使用账号令牌而非任意昵称'],
+  [app.includes('startAutomaticConnection') && app.includes('platformState.token') && app.includes('{ immediate: true }'), '已登录玩家必须在全站启动自动连接，不得只在进入大厅后连接'],
+  [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
   [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
   [lobby.includes('copyRoomCode') && lobby.includes('复制房间码'), '友谊战整备室必须保留房间码复制按钮'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],

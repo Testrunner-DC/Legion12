@@ -10,12 +10,51 @@ const configuredEndpoint = String(import.meta.env.VITE_WS_URL || '').trim()
 const defaultEndpoint = configuredEndpoint || (location.protocol === 'https:'
   ? `wss://${location.host}/ws`
   : `ws://${location.hostname || 'localhost'}:8080/ws`)
+const storedEndpoint = localStorage.getItem('l12-endpoint') || ''
+// 正式 HTTPS 页面必须跟随当前域名，避免历史调试地址在部署后把玩家永久带到旧服务。
+const initialEndpoint = location.protocol === 'https:' && !configuredEndpoint
+  ? defaultEndpoint
+  : (storedEndpoint || defaultEndpoint)
+
+let connectPromise: Promise<void> | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+let reconnectAttempts = 0
+let automaticConnectionEnabled = false
+
+function clearReconnectTimer() {
+  if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+  reconnectTimer = null
+}
+
+function clearHeartbeat() {
+  if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer)
+  heartbeatTimer = null
+}
+
+function startHeartbeat(socket: WebSocket) {
+  clearHeartbeat()
+  heartbeatTimer = window.setInterval(() => {
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }))
+  }, 25_000)
+}
+
+function scheduleReconnect() {
+  if (!automaticConnectionEnabled || reconnectTimer !== null || !localStorage.getItem('l12-auth-token')) return
+  const delay = Math.min(1_000 * (2 ** reconnectAttempts), 15_000)
+  reconnectAttempts += 1
+  l12State.notice = `连接中断，${Math.ceil(delay / 1000)} 秒后自动重连…`
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null
+    void connect().catch(() => undefined)
+  }, delay)
+}
 
 export const l12State = reactive({
   socket: null as WebSocket | null,
   status: 'offline' as 'offline' | 'connecting' | 'online',
   nickname: localStorage.getItem('l12-nickname') || '',
-  endpoint: normalizeEndpoint(localStorage.getItem('l12-endpoint') || defaultEndpoint),
+  endpoint: normalizeEndpoint(initialEndpoint),
   sessionId: '',
   room: null as RoomState | null,
   game: null as GameState | null,
@@ -26,22 +65,25 @@ export const l12State = reactive({
 })
 
 export function connect(): Promise<void> {
-  if (l12State.socket?.readyState === WebSocket.OPEN) return Promise.resolve()
+  if (l12State.socket?.readyState === WebSocket.OPEN && l12State.status === 'online') return Promise.resolve()
+  if (connectPromise) return connectPromise
   const authToken = localStorage.getItem('l12-auth-token') || ''
   if (!authToken) {
     l12State.notice = '请先登录账号'
     return Promise.reject(new Error(l12State.notice))
   }
+  automaticConnectionEnabled = true
+  clearReconnectTimer()
   l12State.status = 'connecting'
   l12State.notice = ''
   l12State.endpoint = normalizeEndpoint(l12State.endpoint)
   localStorage.setItem('l12-endpoint', l12State.endpoint)
-  return new Promise((resolve, reject) => {
+  const pending = new Promise<void>((resolve, reject) => {
     const socket = new WebSocket(l12State.endpoint)
     let settled = false
     l12State.socket = socket
     socket.onopen = () => {
-      send({ type: 'hello', authToken })
+      socket.send(JSON.stringify({ type: 'hello', authToken }))
     }
     socket.onmessage = (event) => {
       const message = JSON.parse(String(event.data))
@@ -49,10 +91,14 @@ export function connect(): Promise<void> {
         l12State.sessionId = message.sessionId
         l12State.nickname = message.name
         l12State.status = 'online'
+        l12State.notice = ''
+        reconnectAttempts = 0
+        startHeartbeat(socket)
         if (!settled) { settled = true; resolve() }
       }
       else if (message.type === 'authenticationRequired') {
-        l12State.notice = message.message || '请先登录账号'
+        automaticConnectionEnabled = false
+        l12State.notice = message.message || '登录状态已失效，请重新登录账号'
         if (!settled) { settled = true; reject(new Error(l12State.notice)) }
         socket.close()
       }
@@ -69,18 +115,43 @@ export function connect(): Promise<void> {
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') { l12State.notice = message.message; l12State.pendingAction = false }
     }
     socket.onerror = () => {
-      l12State.status = 'offline'
-      l12State.notice = '无法连接服务器，请确认 C# 服务端已启动。'
+      if (l12State.socket === socket) l12State.status = 'offline'
+      l12State.notice = '暂时无法连接服务器，正在自动重试。'
       if (!settled) { settled = true; reject(new Error(l12State.notice)) }
     }
     socket.onclose = () => {
-      l12State.status = 'offline'; l12State.pendingAction = false; l12State.gmEnabled = false
+      clearHeartbeat()
+      if (l12State.socket === socket) {
+        l12State.socket = null
+        l12State.status = 'offline'
+        l12State.pendingAction = false
+        l12State.gmEnabled = false
+      }
       if (!settled) { settled = true; reject(new Error(l12State.notice || '连接已关闭')) }
+      scheduleReconnect()
     }
   })
+  connectPromise = pending.finally(() => { connectPromise = null })
+  return connectPromise
+}
+
+export function startAutomaticConnection() {
+  automaticConnectionEnabled = true
+  if (!localStorage.getItem('l12-auth-token')) return
+  if (l12State.status === 'offline') void connect().catch(() => undefined)
+}
+
+export function stopAutomaticConnection() {
+  automaticConnectionEnabled = false
+  clearReconnectTimer()
+  reconnectAttempts = 0
+  disconnect()
 }
 
 export function disconnect() {
+  automaticConnectionEnabled = false
+  clearReconnectTimer()
+  clearHeartbeat()
   l12State.socket?.close()
   l12State.socket = null
   l12State.status = 'offline'
