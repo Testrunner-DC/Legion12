@@ -465,7 +465,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void TrialLegionCanUseItsNormalTrialActionAndOnlyOncePerTurn()
+    public void TrialLegionCanActAgainWhenAnotherEffectReadiesItInTheSameTurn()
     {
         var game = Create(6410);
         var player = game.State.Players[0];
@@ -486,7 +486,34 @@ public sealed class LatestBugRegressionTests
         Assert.Equal(legion.TrialValue, trial.TrialProgress);
         legion.Tapped = false;
         var second = game.Handle(0, new L12Command("activateAbility", legion.InstanceId, Ability: "trialAdvance"));
-        Assert.False(second.Accepted);
+        Assert.True(second.Accepted, second.Error);
+        Assert.Equal(legion.TrialValue * 2, trial.TrialProgress);
+    }
+
+    [Fact]
+    public void ExplicitCardTextCanStillLockFinnFromAnotherTrialThisTurn()
+    {
+        var game = Create(64101);
+        var player = game.State.Players[0];
+        var finn = Card("S02-0610", "finn-trial-lock");
+        var trial = Card("S02-06S4", "finn-active-trial");
+        finn.SummonRound = 0;
+        finn.Tapped = false;
+        player.Field[0][0] = finn;
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        player.UsedAbilities.Add($"trial-card-lock:{finn.InstanceId}:0");
+        game.State.ActivePlayer = 0;
+        game.State.TurnSerial = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("activateAbility", finn.InstanceId, Ability: "trialAdvance"));
+
+        Assert.False(result.Accepted);
+        Assert.Contains("卡牌效果", result.Error);
+        Assert.False(finn.Tapped);
+        Assert.Equal(0, trial.TrialProgress);
     }
 
     [Fact]

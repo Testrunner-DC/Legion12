@@ -951,9 +951,10 @@ public sealed partial class L12GameEngine
             if (source.Tapped) return CommandResult.Reject("该军团必须为活跃状态");
             if (source.SummonRound >= State.Round) return CommandResult.Reject("登场回合不能通过通常行动发动试炼");
             if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
-            if (player.UsedAbilities.Contains($"trial-used:{source.InstanceId}:{State.TurnSerial}"))
-                return CommandResult.Reject("该军团本回合无法再次发动试炼");
-            player.UsedAbilities.Add($"trial-used:{source.InstanceId}:{State.TurnSerial}");
+            // 规则书“阵营机制—试炼”没有通用的回合一次限制。军团被其他效果重新转为活跃后可再次试炼；
+            // 仅〈芬恩〉自己的卡面会在消耗符文转为活跃时明确写入本回合禁止再次试炼。
+            if (player.UsedAbilities.Contains($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}"))
+                return CommandResult.Reject("该军团因卡牌效果本回合无法再次发动试炼");
             source.Tapped = true;
             AdvanceTrial(playerIndex, source.TrialValue, source);
             AddEvent("trial-action", playerIndex, $"{source.Name}发动试炼（试炼值{source.TrialValue}）", source);
@@ -2227,7 +2228,7 @@ public sealed partial class L12GameEngine
                 {
                     L12S2ZoneOps.SpendRunes(player, 1);
                     readyFinn.Tapped = false;
-                    player.UsedAbilities.Add($"trial-used:{readyFinn.InstanceId}:{State.TurnSerial}");
+                    player.UsedAbilities.Add($"trial-card-lock:{readyFinn.InstanceId}:{State.TurnSerial}");
                     AddEvent("effect", item.Controller, "芬恩消耗1符文转为活跃，本回合无法再次发动试炼", readyFinn);
                 }
                 FinishStackItem(item);
