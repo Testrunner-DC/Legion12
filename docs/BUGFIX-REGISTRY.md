@@ -1154,3 +1154,12 @@
 - 修改：发布验证在 D 盘提交产物目录建立隔离前端副本，卡图目录通过只读 Junction 复用；`npm ci`、类型检查和 Vite 构建均只写隔离目录，运行包从隔离产物汇总。
 - 验证：发布脚本语法检查、完整验证、运行包生成、服务器原子切换及公网健康检查共同作为验收。
 - 防回滚：发布验证不得再在 `opcgpro-vue/node_modules` 执行 `npm ci`；清理前必须确认隔离目录位于发布输出根目录，并先移除卡图 Junction。
+
+### OPS-20260824-79 隔离前端构建缺少仓库根级契约依赖
+
+- 现象：隔离构建成功安装依赖后，UI 契约检查读取不到根级 `scripts/ws-smoke.mjs`；异常清理卡图 Junction 时，Windows PowerShell 的 `Remove-Item` 又触发空引用。发布仍在切换线上版本前安全中止。
+- 根因：只复制了 `opcgpro-vue`，但契约检查还会按仓库相对路径审计 WebSocket、服务端入口与发布脚本；Junction 不能在该 PowerShell 环境中按普通目录删除。
+- 同类扫描：扫描 `check-ui-contracts.mjs` 的全部跨目录读取，完整命中 `scripts`、`服务端WebSocket` 和 `ops/windows`；扫描发布脚本临时目录清理，只发现卡图路径为 Junction。
+- 修改：隔离工作区恢复与仓库一致的最小目录结构，并只复制契约所需文件；Junction 改用 `System.IO.Directory.Delete` 删除，之后才递归清理已校验位于 D 盘发布根目录的隔离工作区。
+- 验证：PowerShell 语法检查、隔离目录 `npm ci`、75 项 UI 契约、Vue/TypeScript/Vite 构建、运行包生成和服务器发布全链路共同验收。
+- 防回滚：新增跨仓库目录的 UI 契约时，必须同步加入隔离工作区依赖清单；不得用普通递归目录删除命令直接处理 Junction。

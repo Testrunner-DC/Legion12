@@ -49,6 +49,7 @@ $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
 $originalLocation = Get-Location
 $stagingDirectory = $null
+$frontendWorkspaceDirectory = $null
 $frontendBuildDirectory = $null
 $frontendCardsLink = $null
 
@@ -77,7 +78,8 @@ try {
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"
-    $frontendBuildDirectory = Join-Path $artifactDirectory "frontend-$([Guid]::NewGuid().ToString('N'))"
+    $frontendWorkspaceDirectory = Join-Path $artifactDirectory "frontend-work-$([Guid]::NewGuid().ToString('N'))"
+    $frontendBuildDirectory = Join-Path $frontendWorkspaceDirectory "opcgpro-vue"
     New-Item -ItemType Directory -Path $frontendBuildDirectory -Force | Out-Null
     $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
     if ($null -ne $robocopy) {
@@ -88,6 +90,21 @@ try {
     }
     else {
         throw "Windows 发布验证缺少 robocopy，无法安全隔离开发中的 node_modules"
+    }
+
+    # 前端契约检查会读取仓库根级的网络冒烟脚本、服务端入口和发布脚本。
+    # 隔离工作区必须保留相同的相对目录结构，避免构建依赖开发工作树。
+    $contractFiles = @(
+        @{ Source = "scripts\ws-smoke.mjs"; Target = "scripts\ws-smoke.mjs" },
+        @{ Source = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs"; Target = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs" },
+        @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
+        @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
+        @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" }
+    )
+    foreach ($contractFile in $contractFiles) {
+        $targetPath = Join-Path $frontendWorkspaceDirectory $contractFile.Target
+        New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repoRoot $contractFile.Source) -Destination $targetPath -Force
     }
     $frontendCardsLink = Join-Path $frontendBuildDirectory "public\cards"
     New-Item -ItemType Junction -Path $frontendCardsLink -Target (Join-Path $frontendSourceRoot "public\cards") | Out-Null
@@ -170,10 +187,10 @@ try {
 finally {
     Set-Location $originalLocation
     if ($null -ne $frontendCardsLink -and (Test-Path -LiteralPath $frontendCardsLink)) {
-        Remove-Item -LiteralPath $frontendCardsLink -Force
+        [IO.Directory]::Delete($frontendCardsLink)
     }
-    if ($null -ne $frontendBuildDirectory -and (Test-Path -LiteralPath $frontendBuildDirectory)) {
-        $resolvedFrontendBuild = (Resolve-Path -LiteralPath $frontendBuildDirectory).Path
+    if ($null -ne $frontendWorkspaceDirectory -and (Test-Path -LiteralPath $frontendWorkspaceDirectory)) {
+        $resolvedFrontendBuild = (Resolve-Path -LiteralPath $frontendWorkspaceDirectory).Path
         $resolvedOutputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path
         if (-not $resolvedFrontendBuild.StartsWith($resolvedOutputRoot, [StringComparison]::OrdinalIgnoreCase)) {
             throw "拒绝清理输出目录以外的前端构建目录：$resolvedFrontendBuild"
