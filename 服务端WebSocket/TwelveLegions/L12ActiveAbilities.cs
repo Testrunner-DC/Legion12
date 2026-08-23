@@ -42,9 +42,9 @@ public sealed partial class L12GameEngine
                     .Select(card => card!.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团");
             case "kusanagi" when source.CardId == "S01-04M2":
-                if (player.Relic?.CardId != "S01-0417") return CommandResult.Reject("圣物区没有〈草雉剑〉");
+                if (player.Relic?.CardId != "S01-0417") return CommandResult.Reject("圣物区没有〈草薙剑〉");
                 choices = Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null).Select(slot => $"0:{slot}").ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "选择〈草雉剑〉置入前排的位置");
+                return PromptActiveTarget(playerIndex, source, ability, choices, "选择〈草薙剑〉置入前排的位置");
             case "artifactSearch" when source.CardId == "S01-0117":
                 choices = player.Hand.Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择弃置的 1 张手牌");
@@ -171,7 +171,7 @@ public sealed partial class L12GameEngine
                 AddEvent("cost", playerIndex, $"弃置 {discard.Name} 支付山河社稷图费用", discard); break;
             }
             case "kusanagiDebuff" or "kusanagiStrong" when source.CardId == "S01-0417":
-                if (player.UsedAbilities.Contains($"active:{source.InstanceId}:choice")) return CommandResult.Reject("草雉剑的效果本回合已经发动");
+                if (player.UsedAbilities.Contains($"active:{source.InstanceId}:choice")) return CommandResult.Reject("草薙剑的效果本回合已经发动");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
                 player.UsedAbilities.Add($"active:{source.InstanceId}:choice"); break;
             case "discardHolyLock" when source.AttachedCards.Any(card => card.CardId == "S02-0013"):
@@ -283,7 +283,7 @@ public sealed partial class L12GameEngine
                     player.Relic = null;
                     L12DerivedStats.SetUntilTurnEnd(sword, 5000, int.MaxValue);
                     player.Field[row][slot] = sword;
-                    AddEvent("put", item.Controller, "须佐之男将草雉剑置入前排，视为兵力 5000 的【武者】军团", sword);
+                    AddEvent("put", item.Controller, "须佐之男将草薙剑置入前排，视为兵力 5000 的【武者】军团", sword);
                 }
                 FinishStackItem(item); return;
             }

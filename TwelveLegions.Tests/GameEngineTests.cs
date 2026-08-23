@@ -47,6 +47,18 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void KusanagiUsesCanonicalOriginalNameAcrossCatalog()
+    {
+        var catalog = Catalog;
+        Assert.Equal("草薙剑", catalog.Cards["S01-0417"].NameZh);
+        Assert.DoesNotContain(catalog.Cards.Values, card =>
+            card.NameZh.Contains("草稚剑", StringComparison.Ordinal)
+            || card.NameZh.Contains("草雉剑", StringComparison.Ordinal)
+            || card.Effect?.Contains("草稚剑", StringComparison.Ordinal) == true
+            || card.Effect?.Contains("草雉剑", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public void SameSeedProducesSameInitialStateHash()
     {
         var first = Create(42);

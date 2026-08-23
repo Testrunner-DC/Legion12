@@ -178,7 +178,7 @@ public sealed partial class L12GameEngine
                 return;
             }
             case "S01-0417":
-                CreatePrompt(item.Controller, "optional", "是否将离场的〈草雉剑〉放回牌库顶部？", ["yes", "no"], 1, 1,
+                CreatePrompt(item.Controller, "optional", "是否将离场的〈草薙剑〉放回牌库顶部？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kusanagi-return-top" });
                 return;
             case "S01-0119": BeginTopDeckReorder(item, 5, "observing-stars"); return;

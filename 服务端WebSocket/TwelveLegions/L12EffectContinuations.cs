@@ -144,7 +144,7 @@ public sealed partial class L12GameEngine
                 {
                     player.Graveyard.Remove(source);
                     player.Library.Insert(0, source);
-                    AddEvent("return", item.Controller, "草雉剑返回牌库顶部", source);
+                    AddEvent("return", item.Controller, "草薙剑返回牌库顶部", source);
                 }
                 FinishStackItem(item); break;
             case "lijing-choice": ContinueLiJingChoice(item, chosen[0]); break;
