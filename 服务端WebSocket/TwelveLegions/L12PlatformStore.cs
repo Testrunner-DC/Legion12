@@ -17,7 +17,7 @@ public sealed record L12AdminAuditView(string Id, string ActorId, string ActorNa
 public sealed record L12ContentEntryView(string Key, string DraftValue, string PublishedValue, string Status,
     string? UpdatedBy, DateTimeOffset? UpdatedAt, string? PublishedBy, DateTimeOffset? PublishedAt);
 public sealed record L12EffectReviewView(string CardId, string? AbilityId, string Status, string Note,
-    string Reviewer, DateTimeOffset UpdatedAt);
+    string Reviewer, DateTimeOffset UpdatedAt, string StructureHash = "");
 
 public sealed class L12PlatformStore
 {
@@ -98,6 +98,7 @@ public sealed class L12PlatformStore
         public string Note { get; set; } = string.Empty;
         public string Reviewer { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public string StructureHash { get; set; } = string.Empty;
     }
 
     private sealed class SessionRow
@@ -411,7 +412,7 @@ public sealed class L12PlatformStore
     }
 
     public L12EffectReviewView SaveEffectReview(L12AccountView actor, string cardId, string? abilityId,
-        string status, string? note)
+        string status, string? note, string? structureHash = null)
     {
         if (status is not ("unreviewed" or "human-assisted" or "confirmed" or "rejected"))
             throw new ArgumentException("无效的审查状态", nameof(status));
@@ -430,6 +431,7 @@ public sealed class L12PlatformStore
             row.Note = note?.Trim() ?? string.Empty;
             row.Reviewer = actor.Username;
             row.UpdatedAt = DateTimeOffset.UtcNow;
+            row.StructureHash = structureHash?.Trim() ?? string.Empty;
             AddAdminAudit(actor, "effect", "review", abilityId is null ? cardId : $"{cardId}/{abilityId}",
                 previous, status, row.Note);
             Save();
@@ -443,12 +445,29 @@ public sealed class L12PlatformStore
         {
             var cardReview = _data.EffectReviews.LastOrDefault(row => row.AbilityId is null
                 && string.Equals(row.CardId, effect.CardId, StringComparison.OrdinalIgnoreCase));
+            var migrated = false;
             var abilities = effect.Abilities.Select(ability =>
             {
                 var review = _data.EffectReviews.LastOrDefault(row => string.Equals(row.CardId, effect.CardId, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(row.AbilityId, ability.AbilityId, StringComparison.OrdinalIgnoreCase));
+                if (review is null && !string.IsNullOrWhiteSpace(ability.LegacyAbilityId))
+                {
+                    review = _data.EffectReviews.LastOrDefault(row => string.Equals(row.CardId, effect.CardId, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(row.AbilityId, ability.LegacyAbilityId, StringComparison.OrdinalIgnoreCase)
+                        && string.IsNullOrWhiteSpace(row.StructureHash));
+                    if (review is not null)
+                    {
+                        review.AbilityId = ability.AbilityId;
+                        review.StructureHash = ability.StructureHash;
+                        migrated = true;
+                    }
+                }
+                if (review is not null && !string.IsNullOrWhiteSpace(review.StructureHash)
+                    && !string.Equals(review.StructureHash, ability.StructureHash, StringComparison.OrdinalIgnoreCase))
+                    review = null;
                 return review is null ? ability : ability with { ReviewStatus = review.Status, ReviewSource = $"后台人工确认：{review.Reviewer}" };
             }).ToArray();
+            if (migrated) Save();
             var status = cardReview?.Status ?? L12EffectReviewAggregation.CardStatus(abilities, effect.ReviewStatus);
             var source = cardReview is null
                 ? L12EffectReviewAggregation.CardSource(abilities, effect.ReviewSource)
@@ -565,7 +584,7 @@ public sealed class L12PlatformStore
     private static L12ContentEntryView ToView(ContentRow row) => new(row.Key, row.DraftValue, row.PublishedValue,
         row.Status, row.UpdatedBy, row.UpdatedAt, row.PublishedBy, row.PublishedAt);
     private static L12EffectReviewView ToView(EffectReviewRow row) => new(row.CardId, row.AbilityId, row.Status,
-        row.Note, row.Reviewer, row.UpdatedAt);
+        row.Note, row.Reviewer, row.UpdatedAt, row.StructureHash);
 
     private ContentRow EnsureContentEntry(string key)
     {

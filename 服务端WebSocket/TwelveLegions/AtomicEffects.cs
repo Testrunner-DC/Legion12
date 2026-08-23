@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace TwelveLegions.Server;
@@ -64,7 +66,9 @@ public sealed record L12AtomicAbility(
     decimal Confidence,
     string ExecutionModel = "legacy",
     string ReviewStatus = "unreviewed",
-    string ReviewSource = "automatic");
+    string ReviewSource = "automatic",
+    string StructureHash = "",
+    string LegacyAbilityId = "");
 
 public sealed record L12AtomicCardEffect(
     string CardId,
@@ -119,6 +123,36 @@ public static class L12EffectReviewAggregation
             .Distinct(StringComparer.Ordinal).ToArray();
         return sources.Length == 0 ? fallback : string.Join("+", sources);
     }
+}
+
+public static class L12AtomicAbilityIdentity
+{
+    public static L12AtomicAbility Assign(string cardId, L12AtomicAbility ability, int sequence)
+    {
+        var canonical = new StringBuilder()
+            .Append(Normalize(ability.Trigger)).Append('|')
+            .Append(Normalize(ability.ExecutionModel)).Append('|')
+            .Append(Normalize(ability.Text));
+        foreach (var atom in ability.Atoms.OrderBy(atom => atom.Order))
+        {
+            canonical.Append('|').Append(atom.Order).Append(':').Append(atom.Kind).Append(':').Append(atom.Stage);
+            foreach (var parameter in atom.Parameters.OrderBy(item => item.Key, StringComparer.Ordinal))
+                canonical.Append(':').Append(parameter.Key).Append('=').Append(Normalize(parameter.Value));
+        }
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())))[..16].ToLowerInvariant();
+        var trigger = Regex.Replace(ability.Trigger.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+        if (string.IsNullOrWhiteSpace(trigger)) trigger = "effect";
+        return ability with
+        {
+            AbilityId = $"{cardId}:ability:{trigger}:{hash}",
+            Sequence = sequence,
+            StructureHash = hash,
+            LegacyAbilityId = $"{cardId}:ability:{sequence}",
+        };
+    }
+
+    private static string Normalize(string? value)
+        => Regex.Replace(value?.Trim() ?? string.Empty, @"\s+", " ");
 }
 
 /// <summary>
@@ -227,9 +261,10 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicCardEffect BuildCard(L12CardDefinition card)
     {
         var text = card.Effect?.Trim() ?? string.Empty;
-        var abilities = L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
+        var abilities = (L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
             ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToArray()
-            : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToArray();
+            : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToArray())
+            .Select((ability, index) => L12AtomicAbilityIdentity.Assign(card.Id, ability, index + 1)).ToArray();
         var legacy = abilities.Sum(ability => ability.Atoms.Count(atom => atom.Kind == L12AtomKinds.Legacy));
         var executable = abilities.Sum(ability => ability.Atoms.Count(atom => atom.RuntimeExecutable));
         var atomCount = abilities.Sum(ability => ability.Atoms.Count);

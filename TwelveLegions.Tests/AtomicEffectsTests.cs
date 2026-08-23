@@ -104,6 +104,26 @@ public sealed class AtomicEffectsTests
         Assert.True(catalog.AtomicEffects.Coverage().VerifiedAbilities >= L12VerifiedAtomicPrograms.All.Count);
     }
 
+    [Fact]
+    public void AbilityIdentitySurvivesAbilityReorderingButInvalidatesChangedStructure()
+    {
+        var original = new L12AtomicAbility("legacy", "TEST", 1, "登场时 可抽取1张牌。", "enter",
+            [Atom("a1", L12AtomKinds.Trigger, 1), Atom("a2", L12AtomKinds.Draw, 2)],
+            "declarative-ready", false, "test", 1m, "triggered");
+        var beforeReorder = L12AtomicAbilityIdentity.Assign("TEST", original, 1);
+        var afterReorder = L12AtomicAbilityIdentity.Assign("TEST", original with { Sequence = 4 }, 4);
+        var changed = L12AtomicAbilityIdentity.Assign("TEST", original with
+        {
+            Atoms = [Atom("a1", L12AtomKinds.Trigger, 1), Atom("a2", L12AtomKinds.Draw, 2), Atom("a3", L12AtomKinds.HealMaster, 3)],
+        }, 1);
+
+        Assert.Equal(beforeReorder.AbilityId, afterReorder.AbilityId);
+        Assert.Equal(beforeReorder.StructureHash, afterReorder.StructureHash);
+        Assert.NotEqual(beforeReorder.AbilityId, changed.AbilityId);
+        Assert.NotEqual(beforeReorder.StructureHash, changed.StructureHash);
+        Assert.Equal("TEST:ability:4", afterReorder.LegacyAbilityId);
+    }
+
     [Theory]
     [InlineData("S02-0511")]
     [InlineData("S02-0517")]

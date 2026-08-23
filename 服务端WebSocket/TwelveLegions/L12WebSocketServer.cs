@@ -155,8 +155,14 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var actor = _platform.Authenticate(request.Headers.Authorization);
             if (actor is null || actor.Role is not ("admin" or "editor")) return Results.Unauthorized();
-            if (_catalog.AtomicEffects.Find(cardId) is null) return Results.NotFound();
-            try { return Results.Ok(_platform.SaveEffectReview(actor, cardId, body.AbilityId, body.Status ?? "unreviewed", body.Note)); }
+            var effect = _catalog.AtomicEffects.Find(cardId);
+            if (effect is null) return Results.NotFound();
+            var ability = body.AbilityId is null ? null : effect.Abilities
+                .FirstOrDefault(item => string.Equals(item.AbilityId, body.AbilityId, StringComparison.OrdinalIgnoreCase));
+            if (body.AbilityId is not null && ability is null)
+                return Results.BadRequest(new { message = "能力标识已过期，请刷新后重新审查" });
+            try { return Results.Ok(_platform.SaveEffectReview(actor, cardId, body.AbilityId,
+                body.Status ?? "unreviewed", body.Note, ability?.StructureHash)); }
             catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
         });
         _app.MapGet("/api/admin/audit", (HttpRequest request, string? category, int? limit) =>

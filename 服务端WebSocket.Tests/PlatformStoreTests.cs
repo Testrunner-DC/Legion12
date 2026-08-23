@@ -198,4 +198,33 @@ public sealed class PlatformStoreTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void LegacyOrdinalReviewMigratesOnceAndChangedAbilityRequiresReviewAgain()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var legacy = new L12AtomicAbility("TEST-002:ability:1", "TEST-002", 1, "登场时抽1张牌。", "enter", [],
+                "legacy-backed", true, "test", 1m);
+            store.SaveEffectReview(admin, "TEST-002", legacy.AbilityId, "confirmed", "旧序号记录");
+
+            var stable = L12AtomicAbilityIdentity.Assign("TEST-002", legacy, 1);
+            var effect = new L12AtomicCardEffect("TEST-002", "测试卡", "S02", "neutral", "legion", null,
+                legacy.Text, [stable], "legacy-backed", 0, 0, 0, []);
+            Assert.Equal("confirmed", store.ApplyEffectReviews(effect).Abilities[0].ReviewStatus);
+
+            var reordered = L12AtomicAbilityIdentity.Assign("TEST-002", legacy, 2);
+            Assert.Equal("confirmed", store.ApplyEffectReviews(effect with { Abilities = [reordered] }).Abilities[0].ReviewStatus);
+
+            var changed = L12AtomicAbilityIdentity.Assign("TEST-002", legacy with { Text = "登场时抽取2张牌。" }, 2);
+            Assert.Equal("unreviewed", store.ApplyEffectReviews(effect with { Abilities = [changed] }).Abilities[0].ReviewStatus);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }
