@@ -28,4 +28,21 @@ public static partial class L12SpecialDeckRules
 
         return capacity;
     }
+
+    public static bool DoesNotCountTowardMainDeck(L12CardDefinition card)
+        => HasRule(card.Effect, "构筑时不计入卡组数量");
+
+    public static bool StartsInGraveyard(L12CardDefinition card)
+        => HasRule(card.Effect, "游戏开始时置入墓地");
+
+    public static bool CannotEnterHandOrLibrary(L12CardInstance card)
+        => HasRule(card.EffectText, "不能进入手牌和牌库");
+
+    public static bool AlwaysReturnsToOwnerGraveyard(L12CardInstance card)
+        => HasRule(card.EffectText, "以任何形式离场")
+           && HasRule(card.EffectText, "所有者墓地");
+
+    private static bool HasRule(string? effect, string rule)
+        => !string.IsNullOrWhiteSpace(effect)
+           && effect.Contains(rule, StringComparison.Ordinal);
 }

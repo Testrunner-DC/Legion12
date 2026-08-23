@@ -234,8 +234,31 @@ public sealed class NewSystemsTests
                     Assert.True(reveal.Data.ContainsKey($"{sharedPreview}:image"));
                     Assert.True(game.Handle(reveal.PlayerIndex,
                         new L12Command("resolvePrompt", PromptId: reveal.PromptId)).Accepted);
-                    if (revealIndex == 0) Assert.NotNull(game.SnapshotFor(reveal.PlayerIndex).WaitingPrompt);
+                    if (revealIndex == 0)
+                    {
+                        var confirmedSnapshot = game.SnapshotFor(reveal.PlayerIndex);
+                        Assert.Empty(confirmedSnapshot.Prompts);
+                        Assert.NotNull(confirmedSnapshot.WaitingPrompt);
+                        var waitingJson = JsonSerializer.Serialize(confirmedSnapshot.WaitingPrompt);
+                        Assert.Contains("disaster-reveal", waitingJson);
+                        Assert.Contains((1 - reveal.PlayerIndex).ToString(), waitingJson);
+                        Assert.Contains(game.State.PendingPrompts,
+                            prompt => prompt.PromptId == revealPrompts[1].PromptId);
+
+                        // A duplicated/stale acknowledgement must be rejected without consuming the
+                        // opponent's independent public-information confirmation.
+                        var stale = game.Handle(reveal.PlayerIndex,
+                            new L12Command("resolvePrompt", PromptId: reveal.PromptId));
+                        Assert.False(stale.Accepted);
+                        Assert.Contains(game.State.PendingPrompts,
+                            prompt => prompt.PromptId == revealPrompts[1].PromptId);
+                    }
                 }
+                Assert.DoesNotContain(game.State.PendingPrompts,
+                    prompt => prompt.Continuation == "setup-public-confirm");
+                Assert.Equal(4, game.State.DisasterPreparationStep);
+                Assert.Single(game.State.PendingPrompts,
+                    prompt => prompt.Continuation == "setup-first-pick");
                 sawRandomReveal = true;
                 continue;
             }

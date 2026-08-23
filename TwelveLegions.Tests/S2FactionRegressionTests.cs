@@ -93,6 +93,29 @@ public sealed class S2FactionRegressionTests
         Assert.Empty(game.State.PendingPrompts);
     }
 
+    [Fact]
+    public void GoldenScarabEnterEffectSummonsStartingGraveyardBeetleToChosenSlot()
+    {
+        var game = Create(63011);
+        var player = game.State.Players[0];
+        var beetle = Card("S02-0201", "golden-scarab-beetle");
+        beetle.OwnerIndex = 0;
+        player.Graveyard.Add(beetle);
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0205")).Accepted);
+        PassResponses(game);
+
+        var chooseSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-scarab-enter-slot", chooseSlot.Data["action"]);
+        Assert.Equal(beetle.InstanceId, chooseSlot.Data["previewCardId"]);
+        var destination = Assert.Single(chooseSlot.ValidChoices.Take(1));
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: chooseSlot.PromptId,
+            Choice: destination)).Accepted);
+
+        Assert.DoesNotContain(beetle, player.Graveyard);
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == beetle.InstanceId && !card.Tapped);
+    }
+
     [Theory]
     [InlineData("S02-0203")]
     [InlineData("S02-0301")]

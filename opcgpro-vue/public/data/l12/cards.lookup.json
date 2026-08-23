@@ -1344,8 +1344,8 @@
     "series": "太阳城",
     "cardNo": "S02-0204",
     "rarity": "",
-    "cost": null,
-    "attack": null,
+    "cost": 3,
+    "attack": 2000,
     "health": null,
     "tags": [
       "太阳城"

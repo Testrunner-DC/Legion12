@@ -75,6 +75,62 @@ public sealed class DeckValidatorTests
     }
 
     [Fact]
+    public void RuleTextSpecialLegionsDoNotCountAndStartInOwnersGraveyard()
+    {
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "taiyangcheng");
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = "太阳城特殊军团",
+            MasterId = preset.MasterId,
+            CardIds = [.. preset.CardIds, "S02-0201", "S02-0201", "S02-0201"],
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        };
+
+        Assert.True(L12DeckValidator.TryValidate(Catalog, submission, out var deck, out var error), error);
+        Assert.Equal(preset.CardIds.Count + 3, deck.CardIds.Count);
+
+        var opponent = Catalog.DeckAt(0);
+        var game = new L12GameEngine(Catalog, "special-start", "SPECIAL", 90201,
+            ["甲", "乙"], [deck, opponent], skipPreparation: true, disasterMode: "none");
+        var owner = game.State.Players[0];
+
+        Assert.Equal(3, owner.Graveyard.Count(card => card.CardId == "S02-0201"));
+        Assert.DoesNotContain(owner.Hand, card => card.CardId == "S02-0201");
+        Assert.DoesNotContain(owner.Library, card => card.CardId == "S02-0201");
+        Assert.Equal(3, owner.Graveyard.Count(card => card.CardId == "S01-0212"));
+    }
+
+    [Fact]
+    public void AllRuleTextStartingGraveyardCardsShareTheSameDeckRules()
+    {
+        var specialLegions = Catalog.Cards.Values
+            .Where(card => card.Effect?.Contains("游戏开始时置入墓地", StringComparison.Ordinal) == true)
+            .ToArray();
+
+        Assert.Equal(new[] { "S01-0212", "S02-0201" }, specialLegions.Select(card => card.Id).Order().ToArray());
+        Assert.All(specialLegions, card =>
+        {
+            Assert.True(L12SpecialDeckRules.DoesNotCountTowardMainDeck(card));
+            Assert.True(L12SpecialDeckRules.StartsInGraveyard(card));
+        });
+    }
+
+    [Fact]
+    public void EveryNumberedLegionHasPrintedCostAndTroops()
+    {
+        var incomplete = Catalog.Cards.Values
+            .Where(card => card.CardType == "legion"
+                && System.Text.RegularExpressions.Regex.IsMatch(card.Id, @"^S\d{2}-\d{4}$")
+                && (card.Cost is null || card.Troops is null))
+            .Select(card => $"{card.Id} {card.NameZh}")
+            .Order()
+            .ToArray();
+
+        Assert.True(incomplete.Length == 0, $"普通军团缺少印刷费用或兵力：{string.Join("、", incomplete)}");
+    }
+
+    [Fact]
     public void OtherworldPresetKeepsItsTrialOutsideTheMainDeck()
     {
         var preset = Catalog.PresetDecks.Single(deck => deck.MasterId == "S02-06M1");

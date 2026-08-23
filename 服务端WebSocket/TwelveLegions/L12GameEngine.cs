@@ -493,8 +493,18 @@ public sealed partial class L12GameEngine
         };
         player.SpecialZones.TrialCapacity = L12SpecialDeckRules.TrialCapacity(master);
         var mainDeckIndex = 0;
-        foreach (var cardId in deck.CardIds.Where(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase)))
-            player.Library.Add(CreateCard(cardId, $"p{index}-c{++mainDeckIndex}"));
+        var startingGraveyardCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cardId in deck.CardIds)
+        {
+            var definition = _catalog.Cards[cardId];
+            var card = CreateCard(cardId, $"p{index}-c{++mainDeckIndex}");
+            if (L12SpecialDeckRules.StartsInGraveyard(definition))
+            {
+                player.Graveyard.Add(card);
+                startingGraveyardCounts[cardId] = startingGraveyardCounts.GetValueOrDefault(cardId) + 1;
+            }
+            else player.Library.Add(card);
+        }
         for (var i = 0; i < deck.MoraleIds.Count; i++)
             player.MoraleDeck.Add(new L12MoraleCard
             {
@@ -506,9 +516,10 @@ public sealed partial class L12GameEngine
         player.TrialOrderDone = player.SpecialZones.Trials.Count <= 1;
         if (player.Faction == "taiyangcheng" && _catalog.Cards.ContainsKey("S01-0212"))
         {
-            var configuredGuards = deck.CardIds.Count(id => id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
+            var configuredGuards = startingGraveyardCounts.GetValueOrDefault("S01-0212");
             var guardCount = configuredGuards == 0 ? 3 : Math.Min(3, configuredGuards);
-            for (var i = 0; i < guardCount; i++) player.Graveyard.Add(CreateCard("S01-0212", $"p{index}-guard-{i + 1}"));
+            for (var i = configuredGuards; i < guardCount; i++)
+                player.Graveyard.Add(CreateCard("S01-0212", $"p{index}-guard-{i + 1}"));
         }
         if (player.MasterId == "S01-02M1" && _catalog.Cards.ContainsKey("S01-02M2"))
             player.Graveyard.Add(CreateCard("S01-02M2", $"p{index}-osiris"));
@@ -1017,8 +1028,8 @@ public sealed partial class L12GameEngine
         player.Field[row][slot] = null;
         var owner = CardOwner(card, player);
 
-        // 规则替代：陵墓守卫不能进入手牌、牌库或移出区，以任何形式离场都改为置入所有者墓地。
-        if (card.CardId == "S01-0212")
+        // 规则替代：卡面注明“以任何形式离场均视为置入所有者墓地”的卡统一执行该替代。
+        if (L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard(card))
         {
             ResetCardAfterLeavingField(card);
             owner.Graveyard.Add(card);
@@ -1143,7 +1154,8 @@ public sealed partial class L12GameEngine
         throw new InvalidOperationException("兵力状态检查超过安全迭代次数");
     }
 
-    private static bool CanEnterHandOrLibrary(L12CardInstance card) => card.CardId != "S01-0212";
+    private static bool CanEnterHandOrLibrary(L12CardInstance card)
+        => !L12SpecialDeckRules.CannotEnterHandOrLibrary(card);
 
     private void CheckWinner()
     {

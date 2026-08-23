@@ -470,9 +470,9 @@
     "cardType": "legion",
     "product": "S02",
     "faction": "taiyangcheng",
-    "cost": null,
+    "cost": 3,
     "hp": null,
-    "troops": null,
+    "troops": 2000,
     "disasterLevel": null,
     "effect": "进攻距离+1，远程进攻无损。\n登场时 若我方手牌数量少于对方，可将墓地1张费用为6及以上的【太阳城】军团加入手牌。\n主动休整 本回合我方下1张带有天灾等级的【太阳城】军团登场费用-1。",
     "traits": [

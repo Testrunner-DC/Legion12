@@ -29,10 +29,11 @@ public static class L12DeckValidator
             error = "复苏的奥西里斯不能被选择为主宰；选择伊西斯时会自动置入额外区并在开局进入墓地";
             return false;
         }
-        var countedMainDeckSize = submission.CardIds.Count(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
+        var countedMainDeckSize = submission.CardIds.Count(id => !catalog.Cards.TryGetValue(id, out var card)
+            || !L12SpecialDeckRules.DoesNotCountTowardMainDeck(card));
         if (countedMainDeckSize is < 40 or > 50)
         {
-            error = $"主牌库须为 40–50 张（陵墓守卫不计入，当前 {countedMainDeckSize} 张）";
+            error = $"主牌库须为 40–50 张（规则标明不计入构筑的卡牌除外，当前 {countedMainDeckSize} 张）";
             return false;
         }
         var excessive = submission.CardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase)

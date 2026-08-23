@@ -56,7 +56,7 @@ public sealed class L12Catalog
             }
 
             var master = byId[deck.MasterId];
-            var countedMain = deck.CardIds.Count(id => !id.Equals("S01-0212", StringComparison.OrdinalIgnoreCase));
+            var countedMain = deck.CardIds.Count(id => !L12SpecialDeckRules.DoesNotCountTowardMainDeck(byId[id]));
             var requiredMorale = master.Faction == "taiyangcheng" ? 6 : 8;
             if (countedMain is < 40 or > 50 || deck.MoraleIds.Count != requiredMorale)
                 throw new InvalidDataException($"预组 {deck.Name} 应为 40–50 张计入构筑的主牌 + {requiredMorale} 张士气。");
