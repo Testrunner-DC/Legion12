@@ -239,10 +239,13 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-heracles-entry-damage" });
                 return true;
             case "S02-0502":
-                if (!Draw(player, 2)) { SetWinner(1 - item.Controller, "该军团登场时抽牌，牌库为空"); FinishStackItem(item); return true; }
-                if (player.Hand.Count == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "hand-card", "抽取2张牌后弃置1张手牌", player.Hand.Select(candidate => candidate.InstanceId), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" });
+                CreatePrompt(item.Controller, "optional", "赫拉克勒斯：是否抽取2张牌，并弃置1张手牌？", ["yes", "no"], 1, 1,
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-heracles-draw-discard-choice",
+                        ["yes"] = "抽取2张牌，并弃置1张手牌",
+                        ["no"] = "不发动",
+                    });
                 return true;
             case "S02-0507":
                 CreatePrompt(item.Controller, "optional", "是否抽取1张牌？", ["yes", "no"], 1, 1,
@@ -858,14 +861,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-lamorak-death", ["heal"] = "主宰增加1点血量", ["draw"] = "抽取1张牌" });
                 return true;
             case "S02-0301":
-            {
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "该军团阵亡时抽牌，牌库为空");
-                else AddEvent("draw", item.Controller, $"{card.Name}阵亡时抽取1张牌", card);
-                if (player.Hand.Count == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "hand-card", "弃置1张手牌", player.Hand.Select(candidate => candidate.InstanceId), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-asgard-death-discard" });
-                return true;
-            }
+                return PromptOptionalS2DeathDraw(item, card, discardAfterDraw: true);
             case "S02-0202":
             {
                 var guard = player.Graveyard.FirstOrDefault(candidate => candidate.CardId == "S01-0212");
@@ -875,18 +871,26 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "S02-0203":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "哈特谢普苏特阵亡时抽牌，牌库为空");
-                else AddEvent("draw", item.Controller, "哈特谢普苏特阵亡时抽取1张牌", card);
-                FinishStackItem(item);
-                return true;
             case "S02-0402":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "该军团阵亡时抽牌，牌库为空");
-                else AddEvent("draw", item.Controller, $"{card.Name}阵亡时抽取1张牌", card);
-                FinishStackItem(item);
-                return true;
+            case "S02-0512":
+                return PromptOptionalS2DeathDraw(item, card, discardAfterDraw: false);
             default:
                 return false;
         }
+    }
+
+    private bool PromptOptionalS2DeathDraw(L12StackItem item, L12CardInstance card, bool discardAfterDraw)
+    {
+        CreatePrompt(item.Controller, "optional", $"{card.Name}阵亡：是否抽取1张牌{(discardAfterDraw ? "，并弃置1张手牌" : string.Empty)}？",
+            ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = "s2-optional-death-draw",
+                ["discardAfterDraw"] = discardAfterDraw ? "true" : "false",
+                ["yes"] = discardAfterDraw ? "抽取1张牌，并弃置1张手牌" : "抽取1张牌",
+                ["no"] = "不发动",
+            });
+        return true;
     }
 
     private CommandResult? TryBeginS2FactionActiveAbility(int playerIndex, L12CardInstance source, string ability)
@@ -2450,6 +2454,49 @@ public sealed partial class L12GameEngine
                 if (targets.Length == 0) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "target", "选择1张休整的【高天原】军团转为活跃", targets, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-target" });
+                return true;
+            }
+            case "s2-heracles-draw-discard-choice":
+                if (chosen[0] != "yes")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                if (!Draw(player, 2))
+                {
+                    SetWinner(1 - item.Controller, "赫拉克勒斯登场效果抽牌时牌库为空");
+                    FinishStackItem(item);
+                    return true;
+                }
+                CreatePrompt(item.Controller, "hand-card", "赫拉克勒斯：抽取2张牌后弃置1张手牌",
+                    player.Hand.Select(candidate => candidate.InstanceId), 1, 1,
+                    "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" });
+                return true;
+            case "s2-optional-death-draw":
+            {
+                if (chosen[0] != "yes")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                var source = FindSource(item);
+                if (!Draw(player, 1))
+                {
+                    SetWinner(1 - item.Controller, $"{source?.Name ?? "军团"}阵亡效果抽牌时牌库为空");
+                    FinishStackItem(item);
+                    return true;
+                }
+                if (source is not null) AddEvent("draw", item.Controller, $"{source.Name}阵亡时抽取1张牌", source);
+                if (prompt.Data.GetValueOrDefault("discardAfterDraw") != "true")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                CreatePrompt(item.Controller, "hand-card", "雷神之锤：弃置1张手牌",
+                    player.Hand.Select(candidate => candidate.InstanceId), 1, 1,
+                    "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-asgard-death-discard" });
                 return true;
             }
             case "s2-olympus-draw-discard":

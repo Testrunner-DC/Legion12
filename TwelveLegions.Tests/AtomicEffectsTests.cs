@@ -123,7 +123,6 @@ public sealed class AtomicEffectsTests
     [Theory]
     [InlineData("S02-0505", "enter", L12AtomKinds.Keyword, "charge")]
     [InlineData("S02-0509", "enter", L12AtomKinds.SetState, "controller.freeTacticCount")]
-    [InlineData("S02-0512", "death", L12AtomKinds.Draw, "1")]
     public void SecondOlympusBatchUsesVerifiedRuntimePrograms(
         string cardId, string trigger, string expectedKind, string expectedValue)
     {
@@ -143,6 +142,17 @@ public sealed class AtomicEffectsTests
         Assert.Equal("verified", ability.MigrationStatus);
         Assert.False(ability.HasLegacyFallback);
         Assert.Equal(program.Atoms, ability.Atoms);
+    }
+
+    [Fact]
+    public void OptionalAeneasDeathDrawIsNotMisreportedAsUnconditionalVerifiedRuntime()
+    {
+        Assert.Null(L12VerifiedAtomicPrograms.Find("S02-0512", "death"));
+        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-0512"));
+        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == "death");
+        Assert.True(ability.HasLegacyFallback);
+        Assert.NotEqual("verified", ability.MigrationStatus);
+        Assert.Contains(ability.Atoms, atom => atom.Kind == L12AtomKinds.Optional);
     }
 
     [Fact]

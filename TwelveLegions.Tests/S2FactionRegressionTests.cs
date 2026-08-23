@@ -72,6 +72,54 @@ public sealed class S2FactionRegressionTests
         }
     }
 
+    [Fact]
+    public void HeraclesMayDeclineItsDrawTwoDiscardOneEnterEffect()
+    {
+        var game = Create(63010);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Library.AddRange([Card("S02-0503", "heracles-draw-one"), Card("S02-0504", "heracles-draw-two")]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0502", Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-heracles-draw-discard-choice", prompt.Data["action"]);
+        Assert.Equal(2, player.Library.Count);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+        Assert.Empty(player.Hand);
+        Assert.Equal(2, player.Library.Count);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData("S02-0203")]
+    [InlineData("S02-0301")]
+    [InlineData("S02-0402")]
+    [InlineData("S02-0512")]
+    public void OptionalDeathDrawClusterMayDeclineWithoutDrawingOrDiscarding(string cardId)
+    {
+        var game = Create(63012);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Library.Add(Card("S02-0504", $"optional-death-draw-{cardId}"));
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, cardId, Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var source = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0, CardInstanceId: source.InstanceId)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-optional-death-draw", prompt.Data["action"]);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+        Assert.Empty(player.Hand);
+        Assert.Single(player.Library);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
     [Theory]
     [InlineData("S02-0509", 0, 1)]
     [InlineData("S02-0512", 0, 1)]
@@ -174,6 +222,9 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", heracles.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var optional = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-heracles-draw-discard-choice", optional.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "yes")).Accepted);
         var discard = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-olympus-draw-discard", discard.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId, Choice: zealot.InstanceId)).Accepted);
@@ -619,6 +670,7 @@ public sealed class S2FactionRegressionTests
         var duplicate = Card("S02-0301", "canute-beowulf-duplicate");
         player.Hand.Clear();
         player.Hand.Add(canute);
+        player.Library.Insert(0, Card("S02-0302", "canute-death-draw"));
         player.Graveyard.AddRange([beowulf, duplicate]);
         AddMorale(player, canute.Cost);
         game.State.ActivePlayer = 0;
@@ -638,6 +690,9 @@ public sealed class S2FactionRegressionTests
             CardInstanceIds: [beowulf.InstanceId])).Accepted);
         PassResponses(game);
 
+        var optional = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-optional-death-draw", optional.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "yes")).Accepted);
         Assert.Contains(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-asgard-death-discard");
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("卡纽特大帝触发了1张军团"));
