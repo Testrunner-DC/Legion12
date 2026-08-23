@@ -313,11 +313,14 @@ public sealed partial class L12GameEngine
     private object MasterSnapshot(L12PlayerState player)
     {
         _catalog.Cards.TryGetValue(player.MasterId, out var card);
+        var deployedAsLegion = PublicLegions(player)
+            .Any(legion => legion.IsMasterLegion && legion.CardId == player.MasterId);
         return new
         {
             player.MasterId,
             player.MasterName,
-            player.MasterImageUrl,
+            masterImageUrl = deployedAsLegion ? null : player.MasterImageUrl,
+            deployedAsLegion,
             effectText = card?.Effect,
             tapped = player.MasterTapped,
             player.Hp,

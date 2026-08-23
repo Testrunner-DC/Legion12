@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Text.Json;
 using Xunit;
 
 namespace TwelveLegions.Tests;
@@ -2212,6 +2213,7 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "wukongTransform")).Accepted);
         var choice = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-selection", choice.Data.GetValueOrDefault("choiceMode"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choice.PromptId,
             CardInstanceIds: [.. returned])).Accepted);
         PassResponses(game);
@@ -2221,6 +2223,25 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(3000, wukong.Troops);
         Assert.True(wukong.HasCharge);
         Assert.DoesNotContain(player.Morale, morale => returned.Contains(morale.InstanceId));
+
+        using var snapshot = JsonDocument.Parse(JsonSerializer.Serialize(game.SnapshotFor(0)));
+        var master = snapshot.RootElement.GetProperty("Players")[0].GetProperty("master");
+        Assert.True(master.GetProperty("deployedAsLegion").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, master.GetProperty("masterImageUrl").ValueKind);
+        Assert.Equal("孙悟空", master.GetProperty("MasterName").GetString());
+        Assert.Equal(8, master.GetProperty("Hp").GetInt32());
+    }
+
+    [Fact]
+    public void WukongUsesFourHumanAssistedStructuredAbilities()
+    {
+        Assert.True(L12StructuredCardRules.TryGetStructuredAbilities("S02-01M1", out var abilities));
+        Assert.Equal(4, abilities.Count);
+        Assert.All(abilities, ability => Assert.Equal("human-assisted", ability.ReviewStatus));
+        Assert.Contains(abilities, ability => ability.ExecutionModel == "active"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.ReturnMorale));
+        Assert.Contains(abilities, ability => ability.Trigger == "leave"
+            && ability.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("operation") == "replace-leave-with-return-master-zone"));
     }
 
     [Fact]

@@ -119,11 +119,44 @@ public static class L12StructuredCardRules
             "S02-05M2" => PrometheusAbilities(),
             "S02-05C1" => GodPowerAbilities(),
             "S02-05C1A" => OlympusMoraleAbilities(),
+            "S02-01M1" => WukongAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
         };
         return abilities.Count > 0;
     }
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> WukongAbilities() => Assisted(
+    [
+        new("active", "active", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，且在登场回合即可进攻。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;once-per-turn" }),
+            new(L12AtomKinds.SelectTarget, "在场面上选择返还 2 至 8 张士气", "target", new() { ["zone"] = "controller.morale", ["min"] = "2", ["max"] = "8", ["presentation"] = "direct-board" }),
+            new(L12AtomKinds.ReturnMorale, "返还所选士气", "cost", new() { ["amount"] = "selected-count", ["selection"] = "declared-targets" }),
+            new(L12AtomKinds.MoveZone, "作为【斗士】军团在我方前排活跃登场", "resolution", new() { ["operation"] = "master-enter-as-legion", ["profession"] = "斗士", ["row"] = "front", ["state"] = "active" }),
+            new(L12AtomKinds.ModifyTroops, "兵力设为返还士气数量 ×1000", "resolution", new() { ["operation"] = "set", ["value"] = "selected-count*1000" }),
+            new(L12AtomKinds.Keyword, "获得本回合可进攻", "resolution", new() { ["keywordRef"] = "charge" }),
+        ]),
+        new("static", "continuous", "「作为军团」在登场的回合即可进攻。",
+        [
+            new(L12AtomKinds.Condition, "作为军团且处于登场回合", "condition", new() { ["expression"] = "source.is-master-legion;source.entered-this-turn" }),
+            new(L12AtomKinds.AttackRule, "本回合可进攻", "resolution", new() { ["canAttack"] = "true" }),
+            new(L12AtomKinds.Duration, "持续至登场回合结束", "duration", new() { ["duration"] = "entry-turn" }),
+        ]),
+        new("after-attack-or-turn-end", "triggered", "「作为军团」我方回合结束时 或 进攻后 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。",
+        [
+            new(L12AtomKinds.Condition, "作为军团", "condition", new() { ["expression"] = "source.is-master-legion" }),
+            new(L12AtomKinds.MoveZone, "返回主宰区", "resolution", new() { ["operation"] = "return-master-zone" }),
+            new(L12AtomKinds.Condition, "我方士气少于对方", "condition", new() { ["expression"] = "controller.morale-count<opponent.morale-count" }),
+            new(L12AtomKinds.Optional, "可追加士气", "condition", new()),
+            new(L12AtomKinds.AddMorale, "从士气牌库追加 1 张休整士气", "resolution", new() { ["amount"] = "1", ["state"] = "rested" }),
+        ]),
+        new("leave", "replacement", "「作为军团」离场时 返回主宰区。",
+        [
+            new(L12AtomKinds.Condition, "作为军团且即将离场", "condition", new() { ["expression"] = "source.is-master-legion;source.would-leave-field" }),
+            new(L12AtomKinds.MoveZone, "代替离场并返回主宰区", "replacement", new() { ["operation"] = "replace-leave-with-return-master-zone" }),
+        ]),
+    ]);
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> AtalantaAbilities() => Assisted(
     [

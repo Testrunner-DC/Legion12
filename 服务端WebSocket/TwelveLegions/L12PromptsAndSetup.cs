@@ -111,6 +111,7 @@ public sealed partial class L12GameEngine
         data ??= [];
         if (validChoices.Count == 2 && validChoices.Contains("yes") && validChoices.Contains("no"))
             data.TryAdd("choiceMode", "instant");
+        ApplyDirectBoardChoiceMode(validChoices, data);
         EnrichPromptCardData(playerIndex, validChoices, data);
         var prompt = new L12Prompt
         {
@@ -129,6 +130,42 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Add(prompt);
         AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{text}");
         return prompt;
+    }
+
+    /// <summary>
+    /// 所有公开场面与同质资源的选择都在棋盘上直接完成。此规则放在 Prompt 公共入口，
+    /// 避免卡效分支分别设置 choiceMode 后再次出现编号弹框或同类效果交互不一致。
+    /// 私有区域（手牌、牌库、墓地）仍使用单行卡图选择器。
+    /// </summary>
+    private void ApplyDirectBoardChoiceMode(IReadOnlyCollection<string> choices, Dictionary<string, string> data)
+    {
+        if (data.ContainsKey("choiceMode")) return;
+        var materialChoices = choices.Where(choice => choice is not ("skip" or "yes" or "no" or "pass")
+            && !choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)
+            && !choice.StartsWith("discard:", StringComparison.OrdinalIgnoreCase)
+            && !choice.StartsWith("pay:", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (materialChoices.Length == 0) return;
+
+        var fieldIds = State.Players.SelectMany(player => player.Field.SelectMany(row => row))
+            .Where(card => card is not null && !card.Hidden).Select(card => card!.InstanceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var moraleIds = State.Players.SelectMany(player => player.Morale).Select(card => card.InstanceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        static bool IsRune(string choice) => choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(choice.AsSpan(5), out var index) && index is >= 1 and <= 3;
+        static bool IsSlot(string choice)
+        {
+            var parts = choice.Split(':');
+            return parts.Length == 2 && int.TryParse(parts[0], out var row) && int.TryParse(parts[1], out var slot)
+                && row is >= 0 and < 2 && slot is >= 0 and < 3;
+        }
+
+        if (materialChoices.All(fieldIds.Contains)) data["choiceMode"] = "board-target";
+        else if (materialChoices.All(choice => moraleIds.Contains(choice) || IsRune(choice)))
+            data["choiceMode"] = "resource-selection";
+        else if (materialChoices.All(choice => fieldIds.Contains(choice) || moraleIds.Contains(choice) || IsRune(choice)))
+            data["choiceMode"] = "board-selection";
+        else if (materialChoices.All(IsSlot)) data["choiceMode"] = "board-slot";
     }
 
     private void EnrichPromptCardData(int viewer, IEnumerable<string> choices, Dictionary<string, string> data)

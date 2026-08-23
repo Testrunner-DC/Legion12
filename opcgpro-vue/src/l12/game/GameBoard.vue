@@ -127,13 +127,15 @@ const boardTargetPrompt = computed(() => {
 })
 const boardTargetableIds = computed(() => boardTargetPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
 const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
-  prompt.kind === 'slot' && prompt.validChoices.length > 0
+  (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot') && prompt.validChoices.length > 0
   && prompt.validChoices.every(id => /^\d+:\d+$/.test(id)),
 ) ?? null)
 const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =>
-  prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment' || prompt.kind === 'target-morale',
+  prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment'
+  || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
+  || prompt.kind === 'target-morale',
 ) ?? null)
-const paymentChoiceIds = computed(() => resourceSelectionPrompt.value?.validChoices ?? [])
+const paymentChoiceIds = computed(() => resourceSelectionPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
   ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
 const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && focusCard.value && (
@@ -421,9 +423,15 @@ function togglePaymentResource(instanceId: string) {
   if (index >= 0) paymentResourceIds.value.splice(index, 1)
   else if (paymentResourceIds.value.length < prompt.maxChoose) paymentResourceIds.value.push(instanceId)
 }
-function confirmResourcePayment() {
+function confirmResourcePayment(skip = false) {
   const prompt = resourceSelectionPrompt.value
-  if (!prompt || paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
+  if (!prompt) return
+  if (skip) {
+    if (!prompt.validChoices.includes('skip')) return
+    command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['skip'] })
+    return
+  }
+  if (paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
 }
 function enemySlot(row: number, slot: number, card: Card | null) {
@@ -717,8 +725,9 @@ function statusTexts(card: Card) {
       <div v-if="resourceSelectionPrompt && !readOnly" class="board-target-controls resource-payment-controls">
         <strong>{{ resourceSelectionPrompt.text }}</strong>
         <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
+        <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">不发动</button>
         <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
-          @click="confirmResourcePayment">{{ resourceSelectionPrompt.kind === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
+          @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
       </div>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" />
