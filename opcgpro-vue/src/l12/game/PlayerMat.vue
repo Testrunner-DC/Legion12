@@ -283,7 +283,7 @@ function beginCardAbility(card: Card) {
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`) && controllable) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
+              available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`)) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
               source: selectedId === player.field[row][slot]?.instanceId,
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,

@@ -190,6 +190,37 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void ForgedOrdersTargetsTheOpponentDestinationInsteadOfTheControllersMatchingSlot()
+    {
+        var game = Create(6421);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var orders = Card("S01-0010", "forged-orders");
+        var target = Card("S01-0103", "forged-orders-target");
+        player.Hand.Clear();
+        player.Hand.Add(orders);
+        enemy.Field[1][0] = target;
+        AddReadyMorale(player, 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", orders.InstanceId)).Accepted);
+        PassResponses(game);
+        var pick = Assert.Single(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "orders-pick");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pick.PromptId,
+            CardInstanceIds: [target.InstanceId])).Accepted);
+
+        var destination = Assert.Single(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "orders-row");
+        Assert.Equal("1", destination.Data["targetPlayerIndex"]);
+        Assert.Equal(["0:0"], destination.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: destination.PromptId, Choice: "0:0")).Accepted);
+
+        Assert.Same(target, enemy.Field[0][0]);
+        Assert.Null(enemy.Field[1][0]);
+        Assert.Null(player.Field[0][0]);
+    }
+
+    [Fact]
     public void WukongReturningAllMoraleQueuesTiantingZeroMoraleTrigger()
     {
         var game = CreateWithFirstMaster("S02-01M1", 6419);

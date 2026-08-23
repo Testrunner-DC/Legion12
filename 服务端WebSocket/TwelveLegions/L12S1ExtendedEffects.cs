@@ -876,7 +876,11 @@ public sealed partial class L12GameEngine
         if (choices.Count == 0) { item.Data["orders-index"] = (index + 1).ToString(); ContinueOrdersMove(item); return; }
         item.Data["orders-current"] = target.InstanceId;
         CreatePrompt(item.Controller, "slot", $"伪造密令：选择{target.Name}位移的位置", choices, 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "orders-row" });
+            "card-effect", item.StackItemId, data: new Dictionary<string, string>
+            {
+                ["action"] = "orders-row",
+                ["targetPlayerIndex"] = (1 - item.Controller).ToString(),
+            });
     }
 
     private void CompleteOrdersMove(L12StackItem item, string slotChoice)

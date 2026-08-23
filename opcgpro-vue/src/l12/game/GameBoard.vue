@@ -130,6 +130,11 @@ const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
   (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot') && prompt.validChoices.length > 0
   && prompt.validChoices.every(id => /^\d+:\d+$/.test(id)),
 ) ?? null)
+const boardSlotTargetPlayerIndex = computed(() => {
+  const raw = boardSlotPrompt.value?.data?.targetPlayerIndex
+  const parsed = raw === undefined ? Number.NaN : Number(raw)
+  return Number.isInteger(parsed) ? parsed : controlledPlayerIndex.value
+})
 const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =>
   prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment'
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
@@ -369,7 +374,7 @@ function ownSlot(row: number, slot: number, card: Card | null) {
     if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
     return
   }
-  if (boardSlotPrompt.value) {
+  if (boardSlotPrompt.value && boardSlotTargetPlayerIndex.value === me.value.playerIndex) {
     const choice = `${row}:${slot}`
     if (!card && boardSlotPrompt.value.validChoices.includes(choice))
       command('resolvePrompt', { promptId: boardSlotPrompt.value.promptId, choice })
@@ -438,6 +443,12 @@ function enemySlot(row: number, slot: number, card: Card | null) {
   if (card) focusCard.value = card
   if (resourceSelectionPrompt.value) {
     if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
+    return
+  }
+  if (boardSlotPrompt.value && boardSlotTargetPlayerIndex.value === enemy.value.playerIndex) {
+    const choice = `${row}:${slot}`
+    if (!card && boardSlotPrompt.value.validChoices.includes(choice))
+      command('resolvePrompt', { promptId: boardSlotPrompt.value.promptId, choice })
     return
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
@@ -606,7 +617,7 @@ function statusTexts(card: Card) {
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'cavalryMove'"
               :selection-mode="selectionModeFor(viewEnemy.playerIndex)" :targetable-ids="targetableIdsFor(viewEnemy.playerIndex)"
-              :prompt-slot-ids="isControlledPlayer(viewEnemy.playerIndex) ? (boardSlotPrompt?.validChoices ?? []) : []"
+              :prompt-slot-ids="boardSlotTargetPlayerIndex === viewEnemy.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewEnemy.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewEnemy.playerIndex) ? responsePlayableIds : []"
               :selected-target-ids="boardTargetIds"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewEnemy.playerIndex ? combat.attacker.instanceId : null"
@@ -655,7 +666,7 @@ function statusTexts(card: Card) {
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
-              :prompt-slot-ids="isControlledPlayer(viewMe.playerIndex) ? (boardSlotPrompt?.validChoices ?? []) : []"
+              :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
               :selected-target-ids="boardTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
