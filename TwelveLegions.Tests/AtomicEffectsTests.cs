@@ -143,7 +143,7 @@ public sealed class AtomicEffectsTests
     [Fact]
     public void UserReviewedOlympusCardsExposeReviewMarkersAndRequestedAbilityBoundaries()
     {
-        var assisted = new[] { "S02-0501", "S02-0503", "S02-0504", "S02-0505", "S02-0507", "S02-0508", "S02-0509", "S02-0510", "S02-0511", "S02-0512" };
+        var assisted = new[] { "S02-0501", "S02-0503", "S02-0504", "S02-0505", "S02-0507", "S02-0508", "S02-0509", "S02-0510", "S02-0511", "S02-0512", "S02-0513", "S02-0514", "S02-0515", "S02-0516", "S02-0517", "S02-0518", "S02-0519", "S02-0520", "S02-0522", "S02-0523", "S02-05M1" };
         Assert.All(assisted, cardId =>
         {
             var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
@@ -155,7 +155,7 @@ public sealed class AtomicEffectsTests
             });
         });
 
-        Assert.All(new[] { "S02-0502", "S02-0506" }, cardId =>
+        Assert.All(new[] { "S02-0502", "S02-0506", "S02-0521", "S02-05M2", "S02-05C1", "S02-05C1A" }, cardId =>
         {
             var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
             Assert.Equal("confirmed", card.ReviewStatus);
@@ -171,12 +171,27 @@ public sealed class AtomicEffectsTests
         Assert.Contains(hippolyta.Abilities.SelectMany(ability => ability.Atoms), atom =>
             atom.Parameters.GetValueOrDefault("operation") == "enable-free-front-back-move"
             && atom.Parameters.GetValueOrDefault("button") == "免费位移");
+        var forge = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-0520"));
+        Assert.Equal(4, forge.Abilities.Count);
+        Assert.Contains(forge.Abilities, ability => ability.ExecutionModel == "activated"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SelectMode));
+
+        var artemis = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-05M1"));
+        Assert.Equal(4, artemis.Abilities.Count);
+        Assert.Contains(artemis.Abilities.SelectMany(ability => ability.Atoms), atom =>
+            atom.Parameters.GetValueOrDefault("keywordRef") == "strong-attack");
+        Assert.Contains(artemis.Abilities.SelectMany(ability => ability.Atoms), atom =>
+            atom.Parameters.GetValueOrDefault("keywordRef") == "shock");
+
+        var prometheus = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-05M2"));
+        Assert.Contains(prometheus.Abilities.SelectMany(ability => ability.Atoms), atom =>
+            atom.Parameters.GetValueOrDefault("operation") == "consume");
     }
 
     [Fact]
     public void RevealAtomsRequireOpponentConfirmationAndPublicCardLog()
     {
-        foreach (var cardId in new[] { "S02-0501", "S02-0509" })
+        foreach (var cardId in new[] { "S02-0501", "S02-0509", "S02-0514", "S02-0518", "S02-0521", "S02-05M2" })
         {
             var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
             var revealAtoms = card.Abilities.SelectMany(ability => ability.Atoms)

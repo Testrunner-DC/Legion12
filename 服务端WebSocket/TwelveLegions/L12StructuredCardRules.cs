@@ -104,7 +104,21 @@ public static class L12StructuredCardRules
             "S02-0510" => HippolytaAbilities(),
             "S02-0511" => ProloteAbilities(),
             "S02-0512" => AeneasAbilities(),
+            "S02-0513" => AristotleAbilities(),
+            "S02-0514" => PlatoAbilities(),
+            "S02-0515" => HelenAbilities(),
+            "S02-0516" => HannibalAbilities(),
+            "S02-0517" => PenthesileaAbilities(),
             "S02-0518" => TheseusAbilities(),
+            "S02-0519" => SpartanWarriorAbilities(),
+            "S02-0520" => ForgeAbilities(),
+            "S02-0521" => GloryRoadAbilities(),
+            "S02-0522" => NyxMeteorAbilities(),
+            "S02-0523" => TrojanHorseAbilities(),
+            "S02-05M1" => ArtemisAbilities(),
+            "S02-05M2" => PrometheusAbilities(),
+            "S02-05C1" => GodPowerAbilities(),
+            "S02-05C1A" => OlympusMoraleAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
         };
@@ -379,7 +393,300 @@ public static class L12StructuredCardRules
         ]),
     ]);
 
-    private static IReadOnlyList<L12StructuredAbilityTemplate> TheseusAbilities() =>
+    private static L12StructuredAbilityTemplate RangedAbility(bool frontOnly = false) =>
+        new("static", "continuous", frontOnly ? "「位于前排」进攻距离+1，远程进攻无损。" : "进攻距离+1，远程进攻无损。",
+        frontOnly
+            ?
+            [
+                new(L12AtomKinds.Condition, "位于前排", "condition", new() { ["expression"] = "source.row=front" }),
+                new(L12AtomKinds.AttackRule, "进攻距离 +1", "resolution", new() { ["rangeBonus"] = "1" }),
+                new(L12AtomKinds.AttackRule, "远程进攻无损", "resolution", new() { ["rangedNoLoss"] = "true" }),
+                new(L12AtomKinds.Duration, "位于前排期间持续", "duration", new() { ["duration"] = "while-source-row-front" }),
+            ]
+            :
+            [
+                new(L12AtomKinds.AttackRule, "进攻距离 +1", "resolution", new() { ["rangeBonus"] = "1" }),
+                new(L12AtomKinds.AttackRule, "远程进攻无损", "resolution", new() { ["rangedNoLoss"] = "true" }),
+                new(L12AtomKinds.Duration, "位于战场期间持续", "duration", new() { ["duration"] = "while-on-field" }),
+            ]);
+
+    private static L12StructuredAtomTemplate GodPowerCost(int amount, bool flip) =>
+        new(L12AtomKinds.Special, flip ? $"消耗并翻转 {amount} 神力" : $"消耗 {amount} 神力", "cost", new()
+        {
+            ["domain"] = "god-power",
+            ["amount"] = amount.ToString(),
+            ["operation"] = flip ? "consume-and-flip" : "consume",
+        });
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> AristotleAbilities() => Assisted(
+    [
+        RangedAbility(),
+        new("enter", "triggered", "登场时 可翻转1张士气。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.Special, "翻转 1 张士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip", ["amount"] = "1" }),
+        ]),
+        new("active", "activated", "主动休整 本回合我方下1张【奥林匹斯】军团登场费用-1。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且来源活跃", "condition", new() { ["expression"] = "controller.turn;source.ready=true" }),
+            new(L12AtomKinds.RestSource, "将此军团转为休整", "cost", new()),
+            new(L12AtomKinds.SetState, "本回合下一张【奥林匹斯】军团登场费用 -1", "resolution", new() { ["key"] = "controller.next-olympus-legion-cost", ["operation"] = "add", ["value"] = "-1", ["uses"] = "1" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束或被下一张符合卡牌消耗", "duration", new() { ["duration"] = "this-turn-or-next-use" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> PlatoAbilities() => Assisted(
+    [
+        RangedAbility(),
+        new("enter", "triggered", "登场时 可查看牌库顶部3张牌，选择其中1张<柏拉图>以外的【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库底部。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.Special, "查看牌库顶部 3 张牌", "resolution", new() { ["operation"] = "inspect-library-top", ["amount"] = "3", ["visibility"] = "controller-only" }),
+            new(L12AtomKinds.SelectTarget, "选择其中 1 张〈柏拉图〉以外的【奥林匹斯】卡牌", "target", new() { ["zone"] = "controller.inspected-library", ["filter"] = "faction=olympus;card-id!=S02-0514", ["min"] = "1", ["max"] = "1" }),
+            PublicReveal("展示所选卡牌并由对手确认"),
+            new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "controller.hand" }),
+            new(L12AtomKinds.SelectTarget, "自选其余卡牌顺序", "target", new() { ["zone"] = "controller.inspected-library", ["operation"] = "reorder-all", ["destination"] = "controller.library-bottom" }),
+            new(L12AtomKinds.MoveZone, "其余卡牌按所选顺序返回牌库底部", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "controller.library-bottom", ["order"] = "player-selected" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> HelenAbilities() => Assisted(
+    [
+        RangedAbility(),
+        new("enter", "triggered", "登场时 若我方神力为1张及以上，对方弃置1张手牌。",
+        [
+            new(L12AtomKinds.Condition, "我方神力为 1 张及以上", "condition", new() { ["expression"] = "controller.god-power>=1" }),
+            new(L12AtomKinds.SelectTarget, "对方选择 1 张手牌", "target", new() { ["zone"] = "opponent.hand", ["min"] = "1", ["max"] = "1", ["selectionController"] = "opponent" }),
+            new(L12AtomKinds.Discard, "对方弃置所选手牌", "resolution", new() { ["reason"] = "effect-discard", ["ownerZone"] = "graveyard" }),
+        ]),
+        new("lethal-replacement", "replacement", "「位于前排」回合1次 即将阵亡时，可弃置手牌中的1张<海伦>以外的军团卡代替承受本次致命进攻或效果。",
+        [
+            new(L12AtomKinds.Condition, "位于前排、即将阵亡且本回合未发动", "condition", new() { ["expression"] = "source.row=front;source.would-die=true;source.once-per-turn-unused=true" }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.SelectTarget, "选择手牌中 1 张〈海伦〉以外的军团", "target", new() { ["zone"] = "controller.hand", ["filter"] = "card-type=legion;card-id!=S02-0515", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.Discard, "弃置所选军团", "cost", new() { ["reason"] = "ability-cost" }),
+            new(L12AtomKinds.SetState, "代替承受致命结果并保持致命时刻状态", "resolution", new() { ["operation"] = "replace-lethal-result", ["preserveTroops"] = "true", ["preserveTappedState"] = "true" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> HannibalAbilities() => Assisted(
+    [
+        new("static", "continuous", "此军团活跃时不可被进攻。",
+        [
+            new(L12AtomKinds.Condition, "此军团处于活跃", "condition", new() { ["expression"] = "source.ready=true" }),
+            new(L12AtomKinds.AttackRule, "此军团不可成为进攻目标", "resolution", new() { ["targetableByAttack"] = "false" }),
+            new(L12AtomKinds.Duration, "活跃期间持续", "duration", new() { ["duration"] = "while-source-ready" }),
+        ]),
+        new("static", "continuous", "此军团左右相邻军团兵力+1000。",
+        [
+            new(L12AtomKinds.ModifyTroops, "左右相邻军团兵力 +1000", "resolution", new() { ["target"] = "controller.adjacent-legions", ["operation"] = "add", ["value"] = "1000" }),
+            new(L12AtomKinds.Duration, "此军团位于战场期间持续", "duration", new() { ["duration"] = "while-source-on-field" }),
+        ]),
+        new("attack", "triggered", "进攻时 可消耗1神力：选择双方各1张军团，本回合兵力-2000。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            GodPowerCost(1, false),
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张军团", "target", new() { ["zone"] = "controller.field", ["filter"] = "card-type=legion", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.SelectTarget, "选择对方 1 张军团", "target", new() { ["zone"] = "opponent.field", ["filter"] = "card-type=legion", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.ModifyTroops, "所选双方军团兵力各 -2000", "resolution", new() { ["target"] = "declared-both-legions", ["operation"] = "add", ["value"] = "-2000" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> PenthesileaAbilities() => Assisted(
+    [
+        RangedAbility(true),
+        new("enter", "triggered", "登场时 本回合可进攻对方军团。",
+        [
+            new(L12AtomKinds.AttackRule, "本回合可进攻对方军团", "resolution", new() { ["canAttackOpponentLegion"] = "true" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+        new("attack", "triggered", "进攻时 可消耗并翻转1神力：本回合兵力+2000。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            GodPowerCost(1, true),
+            new(L12AtomKinds.ModifyTroops, "此军团兵力 +2000", "resolution", new() { ["operation"] = "add", ["value"] = "2000" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> SpartanWarriorAbilities() => Assisted(
+    [
+        new("attack", "triggered", "进攻时 可消耗并翻转1神力：此军团本回合兵力+2000。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            GodPowerCost(1, true),
+            new(L12AtomKinds.ModifyTroops, "此军团兵力 +2000", "resolution", new() { ["operation"] = "add", ["value"] = "2000" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+        new("static", "continuous", "对方回合 此军团兵力+2000。",
+        [
+            new(L12AtomKinds.Condition, "当前为对方回合", "condition", new() { ["expression"] = "opponent.turn" }),
+            new(L12AtomKinds.ModifyTroops, "此军团兵力 +2000", "resolution", new() { ["operation"] = "add", ["value"] = "2000" }),
+            new(L12AtomKinds.Duration, "对方回合期间持续", "duration", new() { ["duration"] = "while-opponent-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> ForgeAbilities() => Assisted(
+    [
+        new("enter", "triggered", "登场时 可翻转1张士气。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.Special, "翻转 1 张士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip", ["amount"] = "1" }),
+        ]),
+        new("active", "activated", "主动休整 消耗1士气：选择 ABILITY 3 或 ABILITY 4。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且来源活跃", "condition", new() { ["expression"] = "controller.turn;source.ready=true" }),
+            new(L12AtomKinds.RestSource, "将此圣物转为休整", "cost", new()),
+            new(L12AtomKinds.PayMorale, "支付 1 士气", "cost", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.SelectMode, "选择一项效果", "target", new() { ["options"] = "S02-0520:ability:3|S02-0520:ability:4" }),
+        ]),
+        new("mode-promotion-discount", "granted-effect", "本回合我方下1张军团「晋升登场」消耗并翻转的神力-1。",
+        [
+            new(L12AtomKinds.SetState, "下一次晋升登场消耗并翻转的神力 -1", "resolution", new() { ["key"] = "controller.next-promotion-god-power-cost", ["operation"] = "add", ["value"] = "-1", ["uses"] = "1" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束或被下一次晋升登场消耗", "duration", new() { ["duration"] = "this-turn-or-next-use" }),
+        ]),
+        new("mode-ready-after-kill", "granted-effect", "选择我方1张【晋升者】以外的【奥林匹斯】军团，在本回合其下一次击杀对方军团后转为活跃。",
+        [
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张【晋升者】以外的【奥林匹斯】军团", "target", new() { ["zone"] = "controller.field", ["filter"] = "card-type=legion;faction=olympus;trait!=晋升者", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.SetState, "下一次击杀对方军团后转为活跃", "resolution", new() { ["key"] = "target.ready-after-next-kill", ["value"] = "true", ["uses"] = "1" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束或下一次击杀", "duration", new() { ["duration"] = "this-turn-or-next-kill" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> GloryRoadAbilities() => Confirmed(
+    [
+        new("play", "spell-resolution", "翻转最多3张士气。",
+        [
+            new(L12AtomKinds.SelectTarget, "选择 0 至 3 张士气", "target", new() { ["zone"] = "controller.morale", ["min"] = "0", ["max"] = "3" }),
+            new(L12AtomKinds.Special, "翻转所选士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip-selected" }),
+        ]),
+        new("play-additional", "additional-resolution", "可消耗并翻转2神力：查看我方牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库。",
+        [
+            new(L12AtomKinds.Optional, "可发动额外效果", "condition", new()),
+            GodPowerCost(2, true),
+            new(L12AtomKinds.Special, "查看我方牌库", "resolution", new() { ["operation"] = "inspect-library", ["visibility"] = "controller-only" }),
+            new(L12AtomKinds.SelectTarget, "选择牌库中 1 张【奥林匹斯】卡牌", "target", new() { ["zone"] = "controller.library", ["filter"] = "faction=olympus", ["min"] = "1", ["max"] = "1" }),
+            PublicReveal("展示所选卡牌并由对手确认"),
+            new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.library", ["to"] = "controller.hand" }),
+            new(L12AtomKinds.Shuffle, "重洗牌库", "resolution", new() { ["zone"] = "controller.library" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> NyxMeteorAbilities() => Assisted(
+    [
+        new("play", "spell-resolution", "选择对方1张军团，本回合兵力-3000。",
+        [
+            new(L12AtomKinds.SelectTarget, "选择对方 1 张军团", "target", new() { ["zone"] = "opponent.field", ["filter"] = "card-type=legion", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.ModifyTroops, "所选军团兵力 -3000", "resolution", new() { ["operation"] = "add", ["value"] = "-3000" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+        new("play-additional", "additional-resolution", "可消耗并翻转1神力：选择对方1张军团，本回合兵力-2000。",
+        [
+            new(L12AtomKinds.Optional, "可发动额外效果", "condition", new()),
+            GodPowerCost(1, true),
+            new(L12AtomKinds.SelectTarget, "选择对方 1 张军团", "target", new() { ["zone"] = "opponent.field", ["filter"] = "card-type=legion", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.ModifyTroops, "所选军团兵力 -2000", "resolution", new() { ["operation"] = "add", ["value"] = "-2000" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> TrojanHorseAbilities() => Assisted(
+    [
+        new("after-opponent-attack", "reaction", "对方 进攻后：可将此战术置入对方战场任意空位，直到下个我方回合结束。随后弃置此战术，抽取1张牌。",
+        [
+            new(L12AtomKinds.Condition, "对方完成一次进攻且对方战场有空位", "condition", new() { ["expression"] = "opponent.attack-ended;opponent.field.has-empty-slot=true" }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.SelectTarget, "选择对方战场任意空位", "target", new() { ["zone"] = "opponent.field-empty-slot", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.MoveZone, "将此战术置入所选空位", "resolution", new() { ["from"] = "controller.hand-or-covered", ["to"] = "opponent.field", ["as"] = "tactic" }),
+            new(L12AtomKinds.Duration, "持续至下个我方回合结束", "duration", new() { ["duration"] = "until-controller-next-turn-end" }),
+            new(L12AtomKinds.MoveZone, "期限结束后弃置此战术", "resolution", new() { ["from"] = "opponent.field", ["to"] = "owner.graveyard", ["reason"] = "effect-discard" }),
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+        ]),
+        new("static", "continuous", "此战术在对方战场时：对方所有军团兵力-1000。",
+        [
+            new(L12AtomKinds.Condition, "此战术位于对方战场", "condition", new() { ["expression"] = "source.zone=opponent.field" }),
+            new(L12AtomKinds.ModifyTroops, "对方所有军团兵力 -1000", "resolution", new() { ["target"] = "opponent.all-legions", ["operation"] = "add", ["value"] = "-1000" }),
+            new(L12AtomKinds.Duration, "此战术位于对方战场期间持续", "duration", new() { ["duration"] = "while-source-on-opponent-field" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> ArtemisAbilities() => Assisted(
+    [
+        new("friendly-ranged-death", "triggered", "回合1次 我方远程军团阵亡时，可翻转1张休整的士气。",
+        [
+            new(L12AtomKinds.Condition, "我方远程军团阵亡且本回合未发动", "condition", new() { ["expression"] = "friendly.ranged-legion-died;source.once-per-turn-unused=true" }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.Special, "翻转 1 张休整士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip-rested", ["amount"] = "1" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]),
+        new("active", "activated", "我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得 ABILITY 3 或 ABILITY 4。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.once-per-turn-unused=true" }),
+            new(L12AtomKinds.SelectMode, "选择消耗并翻转 1 神力或弃置 1 张手牌", "cost", new() { ["options"] = "god-power|discard-hand" }),
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张费用为 3 至 6 的【奥林匹斯】军团", "target", new() { ["zone"] = "controller.field", ["filter"] = "card-type=legion;faction=olympus;cost>=3;cost<=6", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.SelectMode, "选择赋予强攻或震击", "target", new() { ["options"] = "S02-05M1:ability:3|S02-05M1:ability:4" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+        new("keyword-definition", "keyword-definition", "强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。",
+        [
+            new(L12AtomKinds.Keyword, "【强攻】规则引用", "resolution", new() { ["keywordRef"] = "strong-attack", ["extraMasterDamage"] = "1" }),
+        ]),
+        new("keyword-definition", "keyword-definition", "震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。",
+        [
+            new(L12AtomKinds.Keyword, "【震击】规则引用", "resolution", new() { ["keywordRef"] = "shock", ["adjacentTroopsDelta"] = "-2000" }),
+            new(L12AtomKinds.Duration, "相邻军团兵力修正持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> PrometheusAbilities() => Confirmed(
+    [
+        new("active", "activated", "我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.once-per-turn-unused=true" }),
+            GodPowerCost(1, false),
+            new(L12AtomKinds.Special, "查看牌库顶部 3 张牌", "resolution", new() { ["operation"] = "inspect-library-top", ["amount"] = "3", ["visibility"] = "controller-only" }),
+            new(L12AtomKinds.SelectTarget, "选择其中 1 张【奥林匹斯】卡牌", "target", new() { ["zone"] = "controller.inspected-library", ["filter"] = "faction=olympus", ["min"] = "1", ["max"] = "1" }),
+            PublicReveal("展示所选卡牌并由对手确认"),
+            new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "controller.hand" }),
+            new(L12AtomKinds.SelectTarget, "自选其余卡牌顺序", "target", new() { ["zone"] = "controller.inspected-library", ["operation"] = "reorder-all" }),
+            new(L12AtomKinds.SelectMode, "选择其余卡牌全部返回牌库顶部或底部", "target", new() { ["options"] = "library-top|library-bottom" }),
+            new(L12AtomKinds.MoveZone, "其余卡牌按所选顺序返回所选位置", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "selected-library-end", ["order"] = "player-selected" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> GodPowerAbilities() => Confirmed(
+    [
+        new("static", "continuous", "规则上，此卡可视为1张士气。",
+        [
+            new(L12AtomKinds.SetState, "规则上视为 1 张士气", "resolution", new() { ["key"] = "source.counts-as-morale", ["value"] = "true" }),
+            new(L12AtomKinds.Duration, "位于士气区期间持续", "duration", new() { ["duration"] = "while-in-morale-zone" }),
+        ]),
+        new("active", "activated", "我方 回合1次 可消耗并翻转1神力：抽取1张牌。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.once-per-turn-unused=true" }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            GodPowerCost(1, true),
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> OlympusMoraleAbilities() => Confirmed(
+    [
+        new("active", "activated", "我方 回合1次 可消耗1士气：翻转1张士气。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.once-per-turn-unused=true" }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.PayMorale, "支付 1 士气", "cost", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.SelectTarget, "选择 1 张士气", "target", new() { ["zone"] = "controller.morale", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.Special, "翻转所选士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip-selected" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]),
+    ]);
+    private static IReadOnlyList<L12StructuredAbilityTemplate> TheseusAbilities() => Assisted(
     [
         new("static", "continuous", "「位于手牌」若我方神力为0张，此军团登场费用-1。",
         [
@@ -396,9 +703,10 @@ public static class L12StructuredCardRules
         [
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
             new(L12AtomKinds.SelectTarget, "选择墓地中的 1 张【晋升者】军团", "target", new() { ["zone"] = "controller.graveyard", ["filter"] = "card-type=legion;trait=晋升者", ["min"] = "1", ["max"] = "1" }),
+            PublicReveal("展示所选【晋升者】军团并由对手确认"),
             new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.graveyard", ["to"] = "controller.hand" }),
         ]),
-    ];
+    ]);
 
     private static L12StructuredAbilityTemplate PromotionAbility(int godPower) =>
         new("promotion", "summon-flow", $"晋升 消耗并翻转{godPower}神力，叠放至我方同名非【晋升者】军团上方登场。",
