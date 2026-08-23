@@ -285,7 +285,7 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicAbility BuildStructuredAbility(
         L12CardDefinition card, L12StructuredAbilityTemplate template, int sequence)
     {
-        if (L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger) is { } verified)
+        if (L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger, template.Text) is { } verified)
             return verified.ToAbility(card, template.Text, sequence) with
             {
                 ExecutionModel = template.ExecutionModel,
@@ -349,7 +349,7 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicAbility BuildAbility(L12CardDefinition card, string text, int sequence)
     {
         var trigger = DetectTrigger(card, text);
-        if (L12VerifiedAtomicPrograms.Find(card.Id, trigger) is { } verified)
+        if (L12VerifiedAtomicPrograms.Find(card.Id, trigger, text) is { } verified)
             return verified.ToAbility(card, text, sequence);
         var atoms = new List<L12EffectAtom>();
         Add(atoms, L12AtomKinds.Trigger, trigger, new() { ["timing"] = trigger }, "inferred");
@@ -472,7 +472,9 @@ public sealed class L12AtomicEffectCatalog
 public sealed record L12VerifiedAtomicProgram(
     string CardId,
     string Trigger,
-    IReadOnlyList<L12EffectAtom> Atoms)
+    IReadOnlyList<L12EffectAtom> Atoms,
+    string ProgramId = "",
+    string? TextContains = null)
 {
     public L12AtomicAbility ToAbility(L12CardDefinition card, string text, int sequence)
         => new($"{card.Id}:ability:{sequence}", card.Id, sequence, text, Trigger, Atoms,
@@ -490,8 +492,20 @@ public static class L12VerifiedAtomicPrograms
         new ReadOnlyDictionary<string, L12VerifiedAtomicProgram>(Build());
 
     public static IReadOnlyCollection<L12VerifiedAtomicProgram> All => Programs.Values.ToArray();
-    public static L12VerifiedAtomicProgram? Find(string cardId, string trigger)
-        => Programs.GetValueOrDefault(Key(cardId, trigger));
+    public static L12VerifiedAtomicProgram? Find(string cardId, string trigger, string? abilityText = null)
+        => Resolve(Programs.Values, cardId, trigger, abilityText);
+
+    public static L12VerifiedAtomicProgram? Resolve(IEnumerable<L12VerifiedAtomicProgram> programs,
+        string cardId, string trigger, string? abilityText)
+    {
+        var candidates = programs.Where(program => program.CardId.Equals(cardId, StringComparison.OrdinalIgnoreCase)
+            && program.Trigger.Equals(trigger, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (candidates.Length == 1) return candidates[0];
+        if (candidates.Length == 0 || string.IsNullOrWhiteSpace(abilityText)) return null;
+        var matched = candidates.Where(program => !string.IsNullOrWhiteSpace(program.TextContains)
+            && abilityText.Contains(program.TextContains, StringComparison.Ordinal)).ToArray();
+        return matched.Length == 1 ? matched[0] : null;
+    }
 
     private static Dictionary<string, L12VerifiedAtomicProgram> Build()
     {
@@ -547,7 +561,7 @@ public static class L12VerifiedAtomicPrograms
             Program("S02-DS05", "disaster",
                 Atom(L12AtomKinds.DamageMaster, "双方主宰各受到 1 点非致命伤害", ("amount", "1"), ("target", "both"), ("lethal", "false"), ("neutralSource", "true"), ("reason", "〈暴怒之罪〉"))),
         };
-        return programs.ToDictionary(program => Key(program.CardId, program.Trigger), StringComparer.OrdinalIgnoreCase);
+        return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
 
     private static L12VerifiedAtomicProgram Program(string cardId, string trigger, params L12EffectAtom[] operations)
@@ -557,7 +571,7 @@ public static class L12VerifiedAtomicPrograms
             Atom(L12AtomKinds.Trigger, trigger, ("timing", trigger))
         };
         atoms.AddRange(operations);
-        return new L12VerifiedAtomicProgram(cardId, trigger, atoms.Select((atom, index) => atom with
+        var normalizedAtoms = atoms.Select((atom, index) => atom with
         {
             AtomId = $"atom-{index + 1}",
             Order = index + 1,
@@ -570,7 +584,10 @@ public static class L12VerifiedAtomicPrograms
                 L12AtomKinds.Duration => "duration",
                 _ => "resolution",
             },
-        }).ToArray());
+        }).ToArray();
+        var signature = string.Join('|', normalizedAtoms.Select(atom => $"{atom.Kind}:{atom.Stage}:{string.Join(',', atom.Parameters.OrderBy(item => item.Key).Select(item => $"{item.Key}={item.Value}"))}"));
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signature)))[..12].ToLowerInvariant();
+        return new L12VerifiedAtomicProgram(cardId, trigger, normalizedAtoms, $"{cardId}:{trigger}:{hash}");
     }
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
@@ -581,7 +598,6 @@ public static class L12VerifiedAtomicPrograms
             descriptor.RuntimeExecutable, "verified-runtime");
     }
 
-    private static string Key(string cardId, string trigger) => $"{cardId}:{trigger}";
 }
 
 public interface IL12AtomicRuntime

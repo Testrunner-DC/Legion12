@@ -105,6 +105,20 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
+    public void MultipleVerifiedProgramsAtTheSameTimingNeverBindByTriggerAlone()
+    {
+        var first = new L12VerifiedAtomicProgram("TEST", "enter", [Atom("a1", L12AtomKinds.Draw, 1)],
+            "TEST:enter:draw", "抽取1张牌");
+        var second = new L12VerifiedAtomicProgram("TEST", "enter", [Atom("a1", L12AtomKinds.HealMaster, 1)],
+            "TEST:enter:heal", "恢复1点生命");
+
+        Assert.Null(L12VerifiedAtomicPrograms.Resolve([first, second], "TEST", "enter", null));
+        Assert.Null(L12VerifiedAtomicPrograms.Resolve([first, second], "TEST", "enter", "登场时可选择效果"));
+        Assert.Same(first, L12VerifiedAtomicPrograms.Resolve([first, second], "TEST", "enter", "登场时抽取1张牌"));
+        Assert.Same(second, L12VerifiedAtomicPrograms.Resolve([first, second], "TEST", "enter", "登场时恢复1点生命"));
+    }
+
+    [Fact]
     public void AbilityIdentitySurvivesAbilityReorderingButInvalidatesChangedStructure()
     {
         var original = new L12AtomicAbility("legacy", "TEST", 1, "登场时 可抽取1张牌。", "enter",
