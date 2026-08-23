@@ -286,7 +286,7 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
-    public void RevealAtomsRequireOpponentConfirmationAndPublicCardLog()
+    public void RevealAtomsUseNonBlockingBattlefieldAnimationAndPublicCardLog()
     {
         foreach (var cardId in new[] { "S02-0501", "S02-0509", "S02-0514", "S02-0518", "S02-0521", "S02-05M2" })
         {
@@ -297,8 +297,11 @@ public sealed class AtomicEffectsTests
             Assert.All(revealAtoms, atom =>
             {
                 Assert.Equal("both-players", atom.Parameters.GetValueOrDefault("visibility"));
-                Assert.Equal("required", atom.Parameters.GetValueOrDefault("opponentConfirmation"));
+                Assert.Equal("battlefield-overlay-no-mask", atom.Parameters.GetValueOrDefault("presentation"));
+                Assert.Equal("3000", atom.Parameters.GetValueOrDefault("durationMs"));
+                Assert.Equal("none", atom.Parameters.GetValueOrDefault("opponentConfirmation"));
                 Assert.Equal("public-card-link", atom.Parameters.GetValueOrDefault("log"));
+                Assert.DoesNotContain("确认", atom.Label);
             });
         }
     }

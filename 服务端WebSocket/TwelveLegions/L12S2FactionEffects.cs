@@ -2273,13 +2273,8 @@ public sealed partial class L12GameEngine
                 player.Hand.Remove(shown);
                 player.Library.Insert(0, shown);
                 item.Data["heracles-shown-cost"] = shown.CurrentCost.ToString();
-                AddEvent("reveal", item.Controller, $"展示〈{shown.Name}〉并放回牌库顶部", shown);
-                var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && target.CurrentCost <= shown.CurrentCost)
-                    .Select(target => target!.InstanceId).ToArray();
-                if (targets.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", $"选择对方1张费用不高于{shown.CurrentCost}的军团并击杀", targets, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-heracles-promotion-kill" });
+                AddEvent("reveal", item.Controller, $"赫拉克勒斯·晋升展示手牌中的〈{shown.Name}〉并放回牌库顶部", shown);
+                ContinueHeraclesPromotionTargetChoice(item);
                 return true;
             }
             case "s2-heracles-promotion-kill":
@@ -3268,6 +3263,23 @@ public sealed partial class L12GameEngine
                 ["action"] = "s2-glory-search", ["layout"] = "single-row", ["previewMode"] = "library-search",
                 ["displayCardIds"] = string.Join('|', choices),
             });
+    }
+
+    private void ContinueHeraclesPromotionTargetChoice(L12StackItem item)
+    {
+        var maxCost = int.TryParse(item.Data.GetValueOrDefault("heracles-shown-cost"), out var parsed) ? parsed : -1;
+        var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+            .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && target.CurrentCost <= maxCost)
+            .Select(target => target!.InstanceId)
+            .ToArray();
+        if (targets.Length == 0)
+        {
+            FinishStackItem(item);
+            return;
+        }
+        CreatePrompt(item.Controller, "target", $"选择对方1张费用不高于{maxCost}的军团并击杀", targets, 1, 1,
+            "card-effect", item.StackItemId,
+            data: new Dictionary<string, string> { ["action"] = "s2-heracles-promotion-kill" });
     }
 
     private void ApplyS2Shock(L12StackItem item, L12CardInstance source)

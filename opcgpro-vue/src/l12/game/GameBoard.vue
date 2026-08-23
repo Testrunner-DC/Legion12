@@ -43,10 +43,14 @@ const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
+const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
 const lastHiddenRevealSequence = ref(0)
+const lastPublicRevealSequence = ref(0)
+const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string }> = []
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
+let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 const controlledPlayerIndex = computed(() => {
   if (!l12State.gmEnabled) return props.game.you
   const pendingPrompt = props.game.prompts?.[0]
@@ -229,6 +233,30 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
   hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, 3000)
 })
+function showNextPublicReveal() {
+  if (publicReveal.value || !publicRevealQueue.length) return
+  publicReveal.value = publicRevealQueue.shift() ?? null
+  if (!publicReveal.value) return
+  if (publicRevealTimer) clearTimeout(publicRevealTimer)
+  publicRevealTimer = setTimeout(() => {
+    publicReveal.value = null
+    publicRevealTimer = null
+    showNextPublicReveal()
+  }, 3000)
+}
+watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
+  const fresh = (props.game.recentEvents ?? [])
+    .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
+      && (event.type === 'reveal' || event.text.includes('展示')))
+    .sort((left, right) => left.sequence - right.sequence)
+  for (const event of fresh) {
+    const names = event.cards?.map(card => `〈${card.name}〉`).join('、') ?? ''
+    const owner = event.playerIndex === props.game.you ? '我方' : '对手'
+    publicRevealQueue.push({ sequence: event.sequence, cards: event.cards ?? [], text: `${owner}展示卡牌${names}` })
+    lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
+  }
+  showNextPublicReveal()
+})
 const hiddenLogTypes = new Set([
   'phase', 'phase-detail', 'draw-skipped', 'prompt', 'prompt-resolved', 'priority-pass',
   'stack-push', 'stack-deferred', 'stack-open', 'stack-resolve', 'match-created',
@@ -283,8 +311,17 @@ function updateScale() {
     : Math.min(window.innerWidth / 1440, window.innerHeight / 900)
   window.requestAnimationFrame(updateInspectorFloatRect)
 }
-onMounted(() => { updateScale(); window.addEventListener('resize', updateScale) })
-onBeforeUnmount(() => { window.removeEventListener('resize', updateScale); if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer) })
+onMounted(() => {
+  lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
+  lastPublicRevealSequence.value = lastHiddenRevealSequence.value
+  updateScale()
+  window.addEventListener('resize', updateScale)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateScale)
+  if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
+  if (publicRevealTimer) clearTimeout(publicRevealTimer)
+})
 
 function command(type: string, extra: Record<string, unknown> = {}) {
   if (props.readOnly) return
@@ -641,6 +678,17 @@ function statusTexts(card: Card) {
               <PhaseTrack :phase="phasePlaybackPhase ?? game.phase" :round="game.round" :active-side="game.activePlayer === game.you ? 'my' : 'opponent'" />
             </div>
             <PhasePlayback :events="game.recentEvents ?? []" @phase-change="phasePlaybackPhase = $event" />
+            <Teleport to="body">
+              <Transition name="public-reveal">
+                <div v-if="publicReveal" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
+                  <div class="public-reveal-cards">
+                    <img v-for="card in publicReveal.cards" :key="card.instanceId" :src="card.imageUrl" :alt="card.name"
+                      :class="{ horizontal: isHorizontalCardType(card.cardType) }" />
+                  </div>
+                  <strong>{{ publicReveal.text }}</strong>
+                </div>
+              </Transition>
+            </Teleport>
             <div v-if="mode === 'attack' && selectedId && !combat" class="board-mode-hint">请选择进攻对象</div>
             <div v-if="combat" class="combat-presentation">
               <i class="combat-trace"/>
@@ -750,6 +798,7 @@ function statusTexts(card: Card) {
 <style scoped>
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;padding:9px 18px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:12px;font-weight:900;pointer-events:none}
+.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards img{width:118px;height:165px;object-fit:contain;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards img.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;letter-spacing:.04em;text-align:center}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:7px}.combat-versus em{color:#e5bd60;font-size:18px;font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:10px}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
 .record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:10px;white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:8px;line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
 .disaster-zone {

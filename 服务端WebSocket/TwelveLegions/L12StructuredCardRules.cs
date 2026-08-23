@@ -200,7 +200,7 @@ public static class L12StructuredCardRules
         [
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
             new(L12AtomKinds.SelectTarget, "选择手牌中的 1 张军团", "target", new() { ["zone"] = "controller.hand", ["filter"] = "card-type=legion", ["min"] = "1", ["max"] = "1" }),
-            PublicReveal("展示所选军团并由对手确认"),
+            PublicReveal("公开展示所选军团"),
             new(L12AtomKinds.MoveZone, "将展示军团放回牌库顶部", "cost", new() { ["from"] = "controller.hand", ["to"] = "controller.library-top", ["reason"] = "promotion-enter-cost" }),
             new(L12AtomKinds.SelectTarget, "选择对方费用不高于展示军团费用的军团", "target", new() { ["zone"] = "opponent.field", ["filter"] = "card-type=legion;cost<=revealed-card.cost", ["min"] = "1", ["max"] = "1" }),
             new(L12AtomKinds.MoveZone, "击杀所选军团", "resolution", new() { ["from"] = "opponent.field", ["to"] = "owner.graveyard", ["reason"] = "effect-kill" }),
@@ -346,7 +346,7 @@ public static class L12StructuredCardRules
         [
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
             new(L12AtomKinds.SelectTarget, "选择手牌中的 1 张战术卡", "target", new() { ["zone"] = "controller.hand", ["filter"] = "card-type=tactic", ["min"] = "1", ["max"] = "1" }),
-            PublicReveal("展示所选战术并由对手确认"),
+            PublicReveal("公开展示所选战术"),
             new(L12AtomKinds.ModifyTroops, "此军团兵力 +1000", "resolution", new() { ["operation"] = "add", ["value"] = "1000" }),
             new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
         ]),
@@ -476,7 +476,7 @@ public static class L12StructuredCardRules
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
             new(L12AtomKinds.Special, "查看牌库顶部 3 张牌", "resolution", new() { ["operation"] = "inspect-library-top", ["amount"] = "3", ["visibility"] = "controller-only" }),
             new(L12AtomKinds.SelectTarget, "选择其中 1 张〈柏拉图〉以外的【奥林匹斯】卡牌", "target", new() { ["zone"] = "controller.inspected-library", ["filter"] = "faction=olympus;card-id!=S02-0514", ["min"] = "1", ["max"] = "1" }),
-            PublicReveal("展示所选卡牌并由对手确认"),
+            PublicReveal("公开展示所选卡牌"),
             new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "controller.hand" }),
             new(L12AtomKinds.SelectTarget, "自选其余卡牌顺序", "target", new() { ["zone"] = "controller.inspected-library", ["operation"] = "reorder-all", ["destination"] = "controller.library-bottom" }),
             new(L12AtomKinds.MoveZone, "其余卡牌按所选顺序返回牌库底部", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "controller.library-bottom", ["order"] = "player-selected" }),
@@ -601,7 +601,7 @@ public static class L12StructuredCardRules
             GodPowerCost(2, true),
             new(L12AtomKinds.Special, "查看我方牌库", "resolution", new() { ["operation"] = "inspect-library", ["visibility"] = "controller-only" }),
             new(L12AtomKinds.SelectTarget, "选择牌库中 1 张【奥林匹斯】卡牌", "target", new() { ["zone"] = "controller.library", ["filter"] = "faction=olympus", ["min"] = "1", ["max"] = "1" }),
-            PublicReveal("展示所选卡牌并由对手确认"),
+            PublicReveal("公开展示所选卡牌"),
             new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.library", ["to"] = "controller.hand" }),
             new(L12AtomKinds.Shuffle, "重洗牌库", "resolution", new() { ["zone"] = "controller.library" }),
         ]),
@@ -681,7 +681,7 @@ public static class L12StructuredCardRules
             GodPowerCost(1, false),
             new(L12AtomKinds.Special, "查看牌库顶部 3 张牌", "resolution", new() { ["operation"] = "inspect-library-top", ["amount"] = "3", ["visibility"] = "controller-only" }),
             new(L12AtomKinds.SelectTarget, "选择其中 1 张【奥林匹斯】卡牌", "target", new() { ["zone"] = "controller.inspected-library", ["filter"] = "faction=olympus", ["min"] = "1", ["max"] = "1" }),
-            PublicReveal("展示所选卡牌并由对手确认"),
+            PublicReveal("公开展示所选卡牌"),
             new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.inspected-library", ["to"] = "controller.hand" }),
             new(L12AtomKinds.SelectTarget, "自选其余卡牌顺序", "target", new() { ["zone"] = "controller.inspected-library", ["operation"] = "reorder-all" }),
             new(L12AtomKinds.SelectMode, "选择其余卡牌全部返回牌库顶部或底部", "target", new() { ["options"] = "library-top|library-bottom" }),
@@ -736,7 +736,7 @@ public static class L12StructuredCardRules
         [
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
             new(L12AtomKinds.SelectTarget, "选择墓地中的 1 张【晋升者】军团", "target", new() { ["zone"] = "controller.graveyard", ["filter"] = "card-type=legion;trait=晋升者", ["min"] = "1", ["max"] = "1" }),
-            PublicReveal("展示所选【晋升者】军团并由对手确认"),
+            PublicReveal("公开展示所选【晋升者】军团"),
             new(L12AtomKinds.MoveZone, "将所选卡牌加入手牌", "resolution", new() { ["from"] = "controller.graveyard", ["to"] = "controller.hand" }),
         ]),
     ]);
@@ -754,7 +754,9 @@ public static class L12StructuredCardRules
         new(L12AtomKinds.Visibility, label, "resolution", new()
         {
             ["visibility"] = "both-players",
-            ["opponentConfirmation"] = "required",
+            ["presentation"] = "battlefield-overlay-no-mask",
+            ["durationMs"] = "3000",
+            ["opponentConfirmation"] = "none",
             ["log"] = "public-card-link",
         });
 

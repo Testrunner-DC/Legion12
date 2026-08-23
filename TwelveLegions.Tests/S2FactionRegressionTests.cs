@@ -389,6 +389,56 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void HeraclesPromotionRevealIsPublicAndDoesNotBlockOnOpponentConfirmation()
+    {
+        var game = Create(63132);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var foundation = Card("S02-0502", "heracles-reveal-foundation");
+        var promoted = Card("S02-0501", "heracles-reveal-promotion");
+        var shown = Card("S02-0503", "heracles-revealed-legion");
+        var target = Card("S02-0504", "heracles-reveal-target");
+        player.Field[0][0] = foundation;
+        opponent.Field[0][0] = target;
+        player.Hand.Clear();
+        player.Hand.AddRange([promoted, shown]);
+        for (var index = 0; index < 2; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"heracles-reveal-power-{index}", CardId = "S02-05C1", IsGodPower = true,
+            });
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", promoted.InstanceId)).Accepted);
+        var foundationPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: foundationPrompt.PromptId,
+            Choice: foundation.InstanceId)).Accepted);
+        var triggerOrder = Assert.Single(game.State.PendingPrompts);
+        var promotionTrigger = triggerOrder.ValidChoices.Single(id =>
+            triggerOrder.Data.GetValueOrDefault($"trigger:{id}") == "promotion-enter");
+        var enterTrigger = triggerOrder.ValidChoices.Single(id =>
+            triggerOrder.Data.GetValueOrDefault($"trigger:{id}") == "enter");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: triggerOrder.PromptId,
+            CardInstanceIds: [promotionTrigger, enterTrigger])).Accepted);
+        PassResponses(game);
+
+        var revealChoice = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-heracles-promotion-show", revealChoice.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: revealChoice.PromptId,
+            Choice: shown.InstanceId)).Accepted);
+
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, targetPrompt.PlayerIndex);
+        Assert.Equal("s2-heracles-promotion-kill", targetPrompt.Data["action"]);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "information-confirm");
+        var revealEvent = Assert.Single(game.State.Events, actionEvent => actionEvent.Type == "reveal"
+            && actionEvent.Cards.Any(card => card.InstanceId == shown.InstanceId));
+        Assert.Contains("赫拉克勒斯·晋升展示手牌中的", revealEvent.Text);
+        Assert.Contains("〈阿喀琉斯·晋升〉", revealEvent.Text);
+    }
+
+    [Fact]
     public void AchillesMayAttackLegionsOnSummonOnlyWhenItEnteredByPromotion()
     {
         var ordinaryGame = Create(63130);
