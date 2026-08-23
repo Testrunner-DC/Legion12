@@ -302,7 +302,7 @@ public sealed class L12AtomicEffectCatalog
         {
             var descriptor = L12EffectAtomRegistry.Get(source.Kind);
             atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", source.Kind, source.Label, atoms.Count + 1,
-                source.Parameters, descriptor.RuntimeExecutable || source.Kind == L12AtomKinds.Special,
+                source.Parameters, descriptor.RuntimeExecutable,
                 "shared-structured-rule", source.Stage));
         }
         var legacyDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Legacy);

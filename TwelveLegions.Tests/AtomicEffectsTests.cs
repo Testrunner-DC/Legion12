@@ -43,6 +43,18 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
+    public void SpecializedDomainAtomsRemainNonExecutableUntilTheirRuntimeProgramIsVerified()
+    {
+        var structuredSpecialAtoms = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
+            .Where(ability => ability.HasLegacyFallback)
+            .SelectMany(ability => ability.Atoms)
+            .Where(atom => atom.Kind == L12AtomKinds.Special).ToArray();
+
+        Assert.NotEmpty(structuredSpecialAtoms);
+        Assert.All(structuredSpecialAtoms, atom => Assert.False(atom.RuntimeExecutable));
+    }
+
+    [Fact]
     public void LegacyFallbackIsAnExplicitSingleExecutionBoundary()
     {
         var ability = new L12AtomicAbility("test", "TEST", 1, "测试", "主动",
