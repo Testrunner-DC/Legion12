@@ -34,6 +34,9 @@ public sealed partial class L12GameEngine
                     else if (atom.Parameters.GetValueOrDefault("key") == "opponent.nextActiveTacticSurcharge"
                         && atom.Parameters.GetValueOrDefault("operation") == "increment")
                         opponent.NextActiveTacticSurcharge += AtomicInt(atom, "value");
+                    else if (atom.Parameters.GetValueOrDefault("key") == "controller.freeTacticCount"
+                        && atom.Parameters.GetValueOrDefault("operation") == "increment")
+                        controller.FreeTacticCount += AtomicInt(atom, "value");
                     else if (atom.Parameters.GetValueOrDefault("key") == "source.hidden")
                         source.Hidden = bool.Parse(atom.Parameters.GetValueOrDefault("value") ?? "false");
                     else if (atom.Parameters.GetValueOrDefault("key") == "source.canAttackLegionsOnSummonUntilTurn"

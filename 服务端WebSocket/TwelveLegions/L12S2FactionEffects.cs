@@ -244,16 +244,6 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "hand-card", "抽取2张牌后弃置1张手牌", player.Hand.Select(candidate => candidate.InstanceId), 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" });
                 return true;
-            case "S02-0509":
-                player.FreeTacticCount++;
-                AddEvent("effect", item.Controller, $"{card.Name}使本回合下一张战术无需消耗费用", card);
-                FinishStackItem(item);
-                return true;
-            case "S02-0505":
-                card.HasCharge = true;
-                AddEvent("effect", item.Controller, $"{card.Name}获得冲锋", card);
-                FinishStackItem(item);
-                return true;
             case "S02-0507":
                 CreatePrompt(item.Controller, "optional", "是否抽取1张牌？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-atalanta-entry-draw" });
@@ -852,11 +842,6 @@ public sealed partial class L12GameEngine
                 return true;
             case "S02-0508":
                 return PromptS2FlipMorale(item, card);
-            case "S02-0512":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "该军团阵亡时抽牌，牌库为空");
-                else AddEvent("draw", item.Controller, $"{card.Name}阵亡时抽取1张牌", card);
-                FinishStackItem(item);
-                return true;
             case "S02-0609":
                 AdvanceTrial(item.Controller, 1, card);
                 FinishStackItem(item);

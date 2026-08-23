@@ -120,6 +120,31 @@ public sealed class AtomicEffectsTests
         Assert.False(ability.HasLegacyFallback);
     }
 
+    [Theory]
+    [InlineData("S02-0505", "enter", L12AtomKinds.Keyword, "charge")]
+    [InlineData("S02-0509", "enter", L12AtomKinds.SetState, "controller.freeTacticCount")]
+    [InlineData("S02-0512", "death", L12AtomKinds.Draw, "1")]
+    public void SecondOlympusBatchUsesVerifiedRuntimePrograms(
+        string cardId, string trigger, string expectedKind, string expectedValue)
+    {
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find(cardId, trigger));
+        var operation = Assert.Single(program.Atoms, atom => atom.Kind == expectedKind);
+        Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
+
+        if (expectedKind == L12AtomKinds.Keyword)
+            Assert.Equal(expectedValue, operation.Parameters["keyword"]);
+        else if (expectedKind == L12AtomKinds.SetState)
+            Assert.Equal(expectedValue, operation.Parameters["key"]);
+        else
+            Assert.Equal(expectedValue, operation.Parameters["amount"]);
+
+        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == trigger);
+        Assert.Equal("verified", ability.MigrationStatus);
+        Assert.False(ability.HasLegacyFallback);
+        Assert.Equal(program.Atoms, ability.Atoms);
+    }
+
     [Fact]
     public void AbilitySplitterSeparatesIndependentTimingWindows()
     {
