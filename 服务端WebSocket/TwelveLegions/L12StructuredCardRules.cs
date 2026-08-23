@@ -13,6 +13,11 @@ public sealed record L12ConditionalCombatProfile(
 
 public static class L12StructuredCardRules
 {
+    private static readonly HashSet<string> FrontRowTauntCards = new(StringComparer.Ordinal)
+    {
+        "S01-0107", "S01-0204", "S01-0312", "S02-0004", "S02-0007", "S02-0302", "S02-0512", "S02-0615",
+    };
+
     public static string EffectiveFaction(L12PlayerState owner, L12CardInstance card)
     {
         if (!string.Equals(card.Faction, "universal", StringComparison.Ordinal)) return card.Faction;
@@ -23,6 +28,37 @@ public static class L12StructuredCardRules
 
     public static bool HasFaction(L12PlayerState owner, L12CardInstance card, string faction)
         => string.Equals(EffectiveFaction(owner, card), faction, StringComparison.Ordinal);
+
+    public static int HandPlayCostModifier(L12PlayerState controller, L12CardInstance card)
+    {
+        if (!TryGetStructuredAbilities(card.CardId, out var abilities)) return 0;
+        var godPowerCount = controller.Morale.Count(morale => morale.IsGodPower);
+        var modifier = 0;
+        foreach (var ability in abilities.Where(ability => ability.ExecutionModel == "continuous"))
+        {
+            var condition = ability.Atoms.FirstOrDefault(atom => atom.Kind == L12AtomKinds.Condition)
+                ?.Parameters.GetValueOrDefault("expression");
+            if (!HandConditionMatches(condition, godPowerCount)) continue;
+            foreach (var atom in ability.Atoms.Where(atom => atom.Kind == L12AtomKinds.SetState
+                && atom.Parameters.GetValueOrDefault("key") == "source.derived-cost"
+                && atom.Parameters.GetValueOrDefault("operation") == "add"))
+                if (int.TryParse(atom.Parameters.GetValueOrDefault("value"), out var value))
+                    modifier += value;
+        }
+        return modifier;
+    }
+
+    public static bool HasTaunt(L12CardInstance card, int row)
+        => card.TauntUntilTurn >= 0 || (row == 0 && FrontRowTauntCards.Contains(card.CardId));
+
+    private static bool HandConditionMatches(string? expression, int godPowerCount)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !expression.Contains("source.zone=hand", StringComparison.Ordinal))
+            return false;
+        if (expression.Contains("controller.god-power=0", StringComparison.Ordinal)) return godPowerCount == 0;
+        if (expression.Contains("controller.god-power>=5", StringComparison.Ordinal)) return godPowerCount >= 5;
+        return false;
+    }
 
     public static L12ConditionalCombatProfile CombatProfile(L12CardInstance card, int row)
     {
@@ -50,8 +86,11 @@ public static class L12StructuredCardRules
         => string.Equals(EffectiveProfession(card, row), profession, StringComparison.Ordinal);
 
     public static bool TryGetStructuredAbilities(L12CardDefinition card, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
+        => TryGetStructuredAbilities(card.Id, out abilities);
+
+    public static bool TryGetStructuredAbilities(string cardId, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
     {
-        abilities = card.Id switch
+        abilities = cardId switch
         {
             "S02-0501" => HeraclesPromotedAbilities(),
             "S02-0502" => HeraclesAbilities(),

@@ -71,6 +71,94 @@ public sealed class S2FactionRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData("S02-0509", 0, 1)]
+    [InlineData("S02-0512", 0, 1)]
+    [InlineData("S02-0518", 0, 1)]
+    [InlineData("S02-0510", 5, 3)]
+    public void StructuredHandConditionsDriveDisplayedPlayCost(string cardId, int godPowerCount, int discount)
+    {
+        var game = Create(63011 + godPowerCount);
+        var player = game.State.Players[0];
+        var card = Card(cardId, $"structured-cost-{cardId}");
+        player.Hand.Clear();
+        player.Hand.Add(card);
+        AddMorale(player, Math.Max(1, godPowerCount));
+        foreach (var morale in player.Morale.Take(godPowerCount)) morale.IsGodPower = true;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var view = game.SnapshotFor(0).Players[0];
+        var hand = Assert.IsType<L12CardInstance[]>(view.GetType().GetProperty("hand")!.GetValue(view));
+        Assert.Equal(card.Cost - discount, Assert.Single(hand).PlayCost);
+    }
+
+    [Fact]
+    public void OdysseusZeroGodPowerDiscountPaysTheStructuredCost()
+    {
+        var game = Create(63016);
+        var player = game.State.Players[0];
+        var card = Card("S02-0509", "structured-cost-odysseus");
+        player.Hand.Clear();
+        player.Hand.Add(card);
+        AddMorale(player, card.Cost - 1);
+        foreach (var morale in player.Morale)
+        {
+            morale.IsGodPower = false;
+            morale.Tapped = false;
+        }
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(card.Cost - 1, player.Morale.Count(morale => morale.Tapped));
+    }
+
+    [Theory]
+    [InlineData("S01-0107")]
+    [InlineData("S01-0204")]
+    [InlineData("S01-0312")]
+    [InlineData("S02-0004")]
+    [InlineData("S02-0007")]
+    [InlineData("S02-0302")]
+    [InlineData("S02-0512")]
+    [InlineData("S02-0615")]
+    public void EveryPrintedFrontRowTauntUsesTheSharedLegalTargetRule(string cardId)
+    {
+        var game = Create(63017);
+        var attacker = Card("S02-0003", $"taunt-attacker-{cardId}");
+        var taunt = Card(cardId, $"taunt-target-{cardId}");
+        attacker.SummonRound = -1;
+        game.State.Players[1].Field[0][0] = attacker;
+        game.State.Players[0].Field[0][1] = taunt;
+        game.State.ActivePlayer = 1;
+        game.State.Phase = L12Phase.Main;
+
+        var legalTargets = game.SnapshotFor(1).LegalAttackTargets[attacker.InstanceId];
+
+        Assert.Contains(taunt.InstanceId, legalTargets);
+        Assert.DoesNotContain("master", legalTargets);
+    }
+
+    [Fact]
+    public void PrintedFrontRowTauntStopsApplyingAfterMovingToTheBackRow()
+    {
+        var game = Create(63018);
+        var attacker = Card("S02-0003", "back-taunt-attacker");
+        var aeneas = Card("S02-0512", "back-row-aeneas");
+        attacker.SummonRound = -1;
+        game.State.Players[1].Field[0][0] = attacker;
+        game.State.Players[0].Field[1][1] = aeneas;
+        game.State.ActivePlayer = 1;
+        game.State.Phase = L12Phase.Main;
+
+        var legalTargets = game.SnapshotFor(1).LegalAttackTargets[attacker.InstanceId];
+
+        Assert.False(L12StructuredCardRules.HasTaunt(aeneas, 1));
+        Assert.Contains("master", legalTargets);
+    }
     [Fact]
     public void FaithZealotDiscardedByEffectTriggersFreeMasterAbilityWithoutUsingItsTurnCount()
     {

@@ -354,9 +354,7 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0605") modifier -= PublicLegions(player).Count(target => target.Faction == "otherworld");
         if (card.CardId == "S02-0611" && PublicLegions(player).Any(target => target.CardId == "S02-0612")) modifier -= 2;
         if (card.CardId == "S02-0612" && PublicLegions(player).Any(target => target.CardId == "S02-0611")) modifier -= 2;
-        var godPowerCount = player.Morale.Count(morale => morale.IsGodPower);
-        if (card.CardId is "S02-0512" or "S02-0518" && godPowerCount == 0) modifier--;
-        if (card.CardId == "S02-0510" && godPowerCount >= 5) modifier -= 3;
+        modifier += L12StructuredCardRules.HandPlayCostModifier(player, card);
         if (card.CardId == "S02-0601" && player.S2ArthurDiscountUntilTurn >= State.TurnSerial) modifier -= 3;
         if (card.CardId == "S01-0403" && player.UsedAbilities.Contains("s2-fortune-next-uesugi")) modifier -= 2;
         if (useSelfDamageDiscount && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1) modifier--;
@@ -462,8 +460,8 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("〈风暴乱象〉生效时军团无法发动远程进攻");
             if (isRanged && target.CannotBeRanged) return CommandResult.Reject("目标无法被远程进攻");
             var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
-                : defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
-            if (taunts.Length > 0 && !HasS1Taunt(target)) return CommandResult.Reject("对方前排存在带有挑衅的军团");
+                : defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden).ToArray();
+            if (taunts.Length > 0 && !HasS1Taunt(target, targetRow)) return CommandResult.Reject("对方前排存在带有挑衅的军团");
             attackTarget = target;
         }
         else if (command.Target.Type == "master")
@@ -603,7 +601,7 @@ public sealed partial class L12GameEngine
             else
             {
                 var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
-                    : defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
+                    : defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden).ToArray();
                 if (taunts.Length > 0) error = "对方前排存在带有挑衅的军团";
             }
         }

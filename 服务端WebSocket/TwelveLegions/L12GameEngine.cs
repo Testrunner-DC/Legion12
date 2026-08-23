@@ -277,7 +277,7 @@ public sealed partial class L12GameEngine
         if (!CanAct(viewer)) return result;
         var player = State.Players[viewer];
         var defender = State.Players[1 - viewer];
-        var taunts = defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden)
+        var taunts = defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden)
             .Select(card => card!.InstanceId).ToHashSet();
         for (var row = 0; row < 2; row++)
         for (var slot = 0; slot < 3; slot++)
