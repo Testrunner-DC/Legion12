@@ -104,6 +104,22 @@ public sealed class AtomicEffectsTests
         Assert.True(catalog.AtomicEffects.Coverage().VerifiedAbilities >= L12VerifiedAtomicPrograms.All.Count);
     }
 
+    [Theory]
+    [InlineData("S02-0511")]
+    [InlineData("S02-0517")]
+    public void CanAttackLegionsOnSummonProgramsAreVerifiedAndDoNotFallBackToLegacy(string cardId)
+    {
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find(cardId, "enter"));
+        var state = Assert.Single(program.Atoms, atom => atom.Kind == L12AtomKinds.SetState);
+        Assert.Equal("source.canAttackLegionsOnSummonUntilTurn", state.Parameters["key"]);
+        Assert.Equal("current-turn", state.Parameters["value"]);
+
+        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == "enter");
+        Assert.Equal("verified", ability.MigrationStatus);
+        Assert.False(ability.HasLegacyFallback);
+    }
+
     [Fact]
     public void AbilitySplitterSeparatesIndependentTimingWindows()
     {

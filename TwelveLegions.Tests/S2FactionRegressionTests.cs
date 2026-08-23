@@ -2232,6 +2232,27 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(8, master.GetProperty("Hp").GetInt32());
     }
 
+    [Theory]
+    [InlineData("S02-0511")]
+    [InlineData("S02-0517")]
+    public void EnterTurnAttackLegionPermissionUsesVerifiedAtomicRuntime(string cardId)
+    {
+        var game = Create(63001 + cardId[^1]);
+        var player = game.State.Players[0];
+        var card = Card(cardId, $"atomic-enter-{cardId}");
+        player.Hand.Clear();
+        player.Hand.Add(card);
+        AddMorale(player, card.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0));
+        PassResponses(game);
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(game.State.TurnSerial, card.CanAttackLegionsOnSummonUntilTurn);
+    }
+
     [Fact]
     public void WukongUsesFourHumanAssistedStructuredAbilities()
     {

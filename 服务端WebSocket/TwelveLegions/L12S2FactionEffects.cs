@@ -249,10 +249,6 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, $"{card.Name}使本回合下一张战术无需消耗费用", card);
                 FinishStackItem(item);
                 return true;
-            case "S02-0517":
-                card.CanAttackLegionsOnSummonUntilTurn = State.TurnSerial;
-                FinishStackItem(item);
-                return true;
             case "S02-0505":
                 card.HasCharge = true;
                 AddEvent("effect", item.Controller, $"{card.Name}获得冲锋", card);
@@ -261,10 +257,6 @@ public sealed partial class L12GameEngine
             case "S02-0507":
                 CreatePrompt(item.Controller, "optional", "是否抽取1张牌？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-atalanta-entry-draw" });
-                return true;
-            case "S02-0511":
-                card.CanAttackLegionsOnSummonUntilTurn = State.TurnSerial;
-                FinishStackItem(item);
                 return true;
             case "S02-0515":
                 if (!player.Morale.Any(morale => morale.IsGodPower))

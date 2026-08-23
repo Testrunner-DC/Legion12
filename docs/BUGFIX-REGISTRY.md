@@ -998,3 +998,4 @@
 - 修改：每条 Bug 新增持久化审计时间线，记录操作人、动作、前后值、评论和时间；后台增加全文检索、优先级筛选、对局 JSON 链接及追加处理记录；新增只读 `Get-L12BugQueue.ps1` 和工作流文档，脚本不含更新/关闭接口，确保读取反馈不会改变服务器状态。
 - 验证：`PlatformStoreTests` 覆盖建立记录、管理员更新、检索和重载持久化；前端 UI 契约与生产构建通过。
 - 防回滚：后台不得再以覆盖单字段替代历史；Codex 从服务器读取 Bug 后必须先输出方案，未获得用户确认不得修改代码或 Bug 状态；部署仍须用户明确指令。
+| FEAT-20260823-60 | 原子运行时/登场状态 | 珀洛特埃与彭忒西勒亚的“登场回合可进攻对方军团”仍分别由旧卡号分支执行，后台原子组合与实战不是同一来源。 | 建立 `source.canAttackLegionsOnSummonUntilTurn=current-turn` 公共状态原子，由验证原子程序同时驱动后台与实战；删除两条旧分支。 | 全卡池检索同类登场状态；两张卡逐卡真实登场验证；原子能力验证且不得回退 legacy；旧分支审计由 208 降至 206。 | `L12VerifiedAtomicPrograms`、`TryResolveVerifiedAtomicProgram`、`S2FactionRegressionTests`、`AtomicEffectsTests`、原子分支审计 | 已修复（2026-08-23） |
