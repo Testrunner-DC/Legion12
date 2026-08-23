@@ -239,9 +239,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private IReadOnlyList<OutgoingMessage> AuthenticateSession(Guid sessionId, JsonElement root)
     {
         var account = _platform.AuthenticateToken(GetString(root, "authToken"));
-        return account is null
-            ? [new OutgoingMessage(sessionId, new { type = "authenticationRequired", message = "请先登录账号" })]
-            : [new OutgoingMessage(sessionId, _rooms.Connect(sessionId, account.Username))];
+        if (account is null)
+            return [new OutgoingMessage(sessionId, new { type = "authenticationRequired", message = "请先登录账号" })];
+        var session = new OutgoingMessage(sessionId, _rooms.Connect(sessionId, account.Username));
+        return new[] { session }.Concat(_rooms.RecoveryState(sessionId)).ToArray();
     }
 
     private static int GetInt(JsonElement root, string propertyName, int fallback = 0)

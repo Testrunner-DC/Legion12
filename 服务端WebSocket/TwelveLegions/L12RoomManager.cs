@@ -30,7 +30,7 @@ public sealed class L12RoomManager
         public L12GameEngine? Game { get; set; }
         public long CommandSequence { get; set; }
         public bool IsSandbox { get; init; }
-        public Guid? GmControllerSessionId { get; init; }
+        public Guid? GmControllerSessionId { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
     }
 
@@ -48,8 +48,48 @@ public sealed class L12RoomManager
     public object Connect(Guid sessionId, string? requestedName)
     {
         var name = NormalizeName(requestedName);
+        var disconnected = _sessions.FirstOrDefault(pair =>
+            pair.Key != sessionId && !pair.Value.Connected && !pair.Value.IsVirtual
+            && pair.Value.RoomCode is not null
+            && string.Equals(pair.Value.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (disconnected.Value is not null)
+        {
+            var recovered = disconnected.Value;
+            recovered.Connected = true;
+            _sessions[sessionId] = recovered;
+            if (recovered.RoomCode is not null && _rooms.TryGetValue(recovered.RoomCode, out var room))
+            {
+                lock (room.Sessions)
+                {
+                    var playerSlot = room.Sessions.IndexOf(disconnected.Key);
+                    if (playerSlot >= 0) room.Sessions[playerSlot] = sessionId;
+                }
+                lock (room.Spectators)
+                {
+                    var spectatorSlot = room.Spectators.IndexOf(disconnected.Key);
+                    if (spectatorSlot >= 0) room.Spectators[spectatorSlot] = sessionId;
+                }
+                if (room.GmControllerSessionId == disconnected.Key) room.GmControllerSessionId = sessionId;
+            }
+            _sessions.TryRemove(disconnected.Key, out _);
+            return new { type = "session", sessionId, name, recovered = true, roomCode = recovered.RoomCode };
+        }
         _sessions[sessionId] = new Session { Id = sessionId, Name = name };
-        return new { type = "session", sessionId, name };
+        return new { type = "session", sessionId, name, recovered = false, roomCode = (string?)null };
+    }
+
+    /// <summary>
+    /// 同账号重新握手后立即恢复房间、完整对局快照、待处理 Prompt 与可见信息。
+    /// WebSocket 只负责连接；权威状态仍由房间和 L12GameEngine 持有。
+    /// </summary>
+    public IReadOnlyList<OutgoingMessage> RecoveryState(Guid sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)
+            || session.RoomCode is null
+            || !_rooms.TryGetValue(session.RoomCode, out var room)) return [];
+        return room.Game is null
+            ? BroadcastRoom(room)
+            : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
     }
 
     public IReadOnlyList<OutgoingMessage> CreateRoom(Guid sessionId, L12RoomOptions? options = null)

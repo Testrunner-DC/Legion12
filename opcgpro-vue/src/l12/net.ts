@@ -86,12 +86,14 @@ export function connect(): Promise<void> {
       socket.send(JSON.stringify({ type: 'hello', authToken }))
     }
     socket.onmessage = (event) => {
+      // 新连接已经接管后，丢弃旧 WebSocket 迟到的消息，避免恢复快照被旧状态回滚。
+      if (l12State.socket !== socket) return
       const message = JSON.parse(String(event.data))
       if (message.type === 'session') {
         l12State.sessionId = message.sessionId
         l12State.nickname = message.name
         l12State.status = 'online'
-        l12State.notice = ''
+        l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
         reconnectAttempts = 0
         startHeartbeat(socket)
         if (!settled) { settled = true; resolve() }
@@ -111,24 +113,36 @@ export function connect(): Promise<void> {
         l12State.pendingAction = false
         l12State.notice = message.message || ''
       }
-      else if (message.type === 'gameState') { l12State.game = message.state; l12State.spectating = Boolean(message.spectating); l12State.gmEnabled = Boolean(message.gmEnabled); l12State.pendingAction = false }
+      else if (message.type === 'gameState') {
+        const incoming = message.state as GameState
+        const current = l12State.game
+        // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
+        if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {
+          l12State.game = incoming
+          l12State.spectating = Boolean(message.spectating)
+          l12State.gmEnabled = Boolean(message.gmEnabled)
+          l12State.pendingAction = false
+          if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
+        }
+      }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') { l12State.notice = message.message; l12State.pendingAction = false }
     }
     socket.onerror = () => {
-      if (l12State.socket === socket) l12State.status = 'offline'
+      if (l12State.socket !== socket) return
+      l12State.status = 'offline'
       l12State.notice = '暂时无法连接服务器，正在自动重试。'
       if (!settled) { settled = true; reject(new Error(l12State.notice)) }
     }
     socket.onclose = () => {
-      clearHeartbeat()
       if (l12State.socket === socket) {
+        clearHeartbeat()
         l12State.socket = null
         l12State.status = 'offline'
         l12State.pendingAction = false
         l12State.gmEnabled = false
+        if (!settled) { settled = true; reject(new Error(l12State.notice || '连接已关闭')) }
+        scheduleReconnect()
       }
-      if (!settled) { settled = true; reject(new Error(l12State.notice || '连接已关闭')) }
-      scheduleReconnect()
     }
   })
   connectPromise = pending.finally(() => { connectPromise = null })

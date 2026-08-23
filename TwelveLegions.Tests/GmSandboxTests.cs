@@ -198,6 +198,47 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public async Task DisconnectedAccountReclaimsItsSeatAndReceivesAuthoritativeRecoveryState()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-room-recovery", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var originalHost = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        manager.Connect(originalHost, "重连甲");
+        manager.Connect(guest, "重连乙");
+        var created = manager.CreateRoom(originalHost);
+        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload, WebJson).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, roomCode);
+        await manager.SetReadyAsync(originalHost, true);
+        await manager.SetReadyAsync(guest, true);
+        manager.Disconnect(originalHost);
+
+        var replacementHost = Guid.NewGuid();
+        var sessionPayload = JsonSerializer.SerializeToElement(manager.Connect(replacementHost, "重连甲"), WebJson);
+        Assert.True(sessionPayload.GetProperty("recovered").GetBoolean());
+        Assert.Equal(roomCode, sessionPayload.GetProperty("roomCode").GetString());
+
+        var recovery = manager.RecoveryState(replacementHost);
+        var room = recovery.Where(message => message.SessionId == replacementHost)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .Single(payload => payload.GetProperty("type").GetString() == "roomState");
+        var self = room.GetProperty("players").EnumerateArray()
+            .Single(player => player.GetProperty("playerIndex").GetInt32() == 0);
+        Assert.True(self.GetProperty("connected").GetBoolean());
+        var game = recovery.Where(message => message.SessionId == replacementHost)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .Single(payload => payload.GetProperty("type").GetString() == "gameState");
+        Assert.True(game.GetProperty("state").GetProperty("revision").GetInt64() >= 0);
+
+        var staleAction = await manager.HandleActionAsync(originalHost,
+            JsonSerializer.SerializeToElement(new { type = "passResponse" }));
+        var stalePayload = JsonSerializer.SerializeToElement(Assert.Single(staleAction).Payload, WebJson);
+        Assert.Equal("error", stalePayload.GetProperty("type").GetString());
+    }
+
+    [Fact]
     public void GmSnapshotExposesBothPromptOwnersWithoutLeakingThemToNormalPlayers()
     {
         var game = new L12GameEngine(Catalog, "gm-prompts", "GMPROMPTS", 1207,
