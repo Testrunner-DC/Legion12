@@ -62,7 +62,9 @@ public sealed record L12AtomicAbility(
     bool HasLegacyFallback,
     string MappingSource,
     decimal Confidence,
-    string ExecutionModel = "legacy");
+    string ExecutionModel = "legacy",
+    string ReviewStatus = "unreviewed",
+    string ReviewSource = "automatic");
 
 public sealed record L12AtomicCardEffect(
     string CardId,
@@ -77,7 +79,9 @@ public sealed record L12AtomicCardEffect(
     int AtomCount,
     int ExecutableAtomCount,
     int LegacyAtomCount,
-    string[] AtomKinds);
+    string[] AtomKinds,
+    string ReviewStatus = "unreviewed",
+    string ReviewSource = "automatic");
 
 public sealed record L12AtomicCoverage(
     int TotalCards,
@@ -215,9 +219,15 @@ public sealed class L12AtomicEffectCatalog
             : legacy == 0 ? "declarative-ready"
             : executable == 0 ? "legacy-backed"
             : "partially-atomized";
+        var reviewStatus = abilities.Any(ability => ability.ReviewStatus == "confirmed") ? "confirmed"
+            : abilities.Any(ability => ability.ReviewStatus == "human-assisted") ? "human-assisted"
+            : "unreviewed";
+        var reviewSource = string.Join("+", abilities.Select(ability => ability.ReviewSource)
+            .Where(source => source != "automatic").Distinct(StringComparer.Ordinal));
         return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType, card.ImageUrl,
             text, abilities, status, atomCount, executable, legacy,
-            abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray());
+            abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray(),
+            reviewStatus, string.IsNullOrEmpty(reviewSource) ? "automatic" : reviewSource);
     }
 
     private static L12AtomicAbility BuildStructuredAbility(
@@ -228,6 +238,8 @@ public sealed class L12AtomicEffectCatalog
             {
                 ExecutionModel = template.ExecutionModel,
                 MappingSource = "shared-structured-rule+verified-runtime-program",
+                ReviewStatus = template.ReviewStatus,
+                ReviewSource = template.ReviewSource,
             };
         var atoms = new List<L12EffectAtom>();
         var triggerDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Trigger);
@@ -241,8 +253,15 @@ public sealed class L12AtomicEffectCatalog
                 source.Parameters, descriptor.RuntimeExecutable || source.Kind == L12AtomKinds.Special,
                 "shared-structured-rule", source.Stage));
         }
+        var legacyDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Legacy);
+        atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", L12AtomKinds.Legacy, "调用现有权威卡效分支", atoms.Count + 1,
+            new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
+            {
+                ["reason"] = "人工结构已审查，尚未完成逐卡运行时等价迁移",
+            }), legacyDescriptor.RuntimeExecutable, "migration-guard", "resolution"));
         return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, template.Text,
-            template.Trigger, atoms, "verified", false, "shared-structured-rule", 1m, template.ExecutionModel);
+            template.Trigger, atoms, "partially-atomized", true, "shared-structured-rule+legacy-runtime", 1m, template.ExecutionModel,
+            template.ReviewStatus, template.ReviewSource);
     }
 
     private static string[] SplitAbilities(string text)

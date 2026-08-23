@@ -15,10 +15,12 @@ export interface EffectAtom {
 export interface AtomicAbility {
   abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
   migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number; executionModel: string
+  reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed'; reviewSource: string
 }
 export interface AtomicCardEffect {
   cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string
   abilities: AtomicAbility[]; migrationStatus: string; atomCount: number; executableAtomCount: number; legacyAtomCount: number; atomKinds: string[]
+  reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed'; reviewSource: string
 }
 export interface AtomicCoverage {
   totalCards: number; cardsWithText: number; totalAbilities: number; totalAtoms: number; declarativeReadyAbilities: number

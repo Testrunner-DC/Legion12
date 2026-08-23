@@ -112,7 +112,9 @@ public sealed class AtomicEffectsTests
         Assert.Contains(wuZetian.Abilities, ability => ability.Trigger == "death" && ability.MigrationStatus == "verified");
 
         var yoshitsune = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0409"));
-        Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "attack" && ability.MigrationStatus == "verified");
+        Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "attack"
+            && ability.MigrationStatus == "partially-atomized"
+            && ability.HasLegacyFallback);
         Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "after-attack" && ability.MigrationStatus == "verified");
     }
 
@@ -136,6 +138,57 @@ public sealed class AtomicEffectsTests
         Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "activated");
         Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "after-attack"
             && ability.MappingSource.Contains("verified-runtime-program", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void UserReviewedOlympusCardsExposeReviewMarkersAndRequestedAbilityBoundaries()
+    {
+        var assisted = new[] { "S02-0501", "S02-0503", "S02-0504", "S02-0505", "S02-0507", "S02-0508", "S02-0509", "S02-0510", "S02-0511", "S02-0512" };
+        Assert.All(assisted, cardId =>
+        {
+            var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+            Assert.Equal("human-assisted", card.ReviewStatus);
+            Assert.All(card.Abilities, ability =>
+            {
+                Assert.Equal("human-assisted", ability.ReviewStatus);
+                Assert.Equal("user-20260823", ability.ReviewSource);
+            });
+        });
+
+        Assert.All(new[] { "S02-0502", "S02-0506" }, cardId =>
+        {
+            var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+            Assert.Equal("confirmed", card.ReviewStatus);
+            Assert.All(card.Abilities, ability => Assert.Equal("confirmed", ability.ReviewStatus));
+        });
+
+        var promotedAchilles = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-0503"));
+        Assert.Contains(promotedAchilles.Abilities, ability => ability.ExecutionModel == "replacement" || ability.ExecutionModel == "granted-continuous");
+        Assert.Contains(promotedAchilles.Abilities, ability => ability.ExecutionModel == "keyword-definition"
+            && ability.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("keywordRef") == "taunt"));
+
+        var hippolyta = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-0510"));
+        Assert.Contains(hippolyta.Abilities.SelectMany(ability => ability.Atoms), atom =>
+            atom.Parameters.GetValueOrDefault("operation") == "enable-free-front-back-move"
+            && atom.Parameters.GetValueOrDefault("button") == "免费位移");
+    }
+
+    [Fact]
+    public void RevealAtomsRequireOpponentConfirmationAndPublicCardLog()
+    {
+        foreach (var cardId in new[] { "S02-0501", "S02-0509" })
+        {
+            var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+            var revealAtoms = card.Abilities.SelectMany(ability => ability.Atoms)
+                .Where(atom => atom.Kind == L12AtomKinds.Visibility).ToArray();
+            Assert.NotEmpty(revealAtoms);
+            Assert.All(revealAtoms, atom =>
+            {
+                Assert.Equal("both-players", atom.Parameters.GetValueOrDefault("visibility"));
+                Assert.Equal("required", atom.Parameters.GetValueOrDefault("opponentConfirmation"));
+                Assert.Equal("public-card-link", atom.Parameters.GetValueOrDefault("log"));
+            });
+        }
     }
 
     private static L12EffectAtom Atom(string id, string kind, int order)

@@ -21,7 +21,8 @@ const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const inspectorAnchor = ref<HTMLElement | null>(null)
 const inspectorFloatStyle = ref<Record<string, string>>({})
-const mode = ref<'play' | 'attack' | 'move' | 'cavalryMove'>('play')
+type BoardMode = 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'
+const mode = ref<BoardMode>('play')
 const mulliganIds = ref<string[]>([])
 const defenseIds = ref<string[]>([])
 const supportId = ref<string | null>(null)
@@ -304,11 +305,14 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   }
   if (!selectedId.value) return
   if (mode.value === 'play' && !playArmed.value) return
-  command(mode.value === 'move' || mode.value === 'cavalryMove' ? mode.value : 'playCard', {
+  const commandType = mode.value === 'freeMove' ? 'move'
+    : mode.value === 'move' || mode.value === 'cavalryMove' ? mode.value : 'playCard'
+  command(commandType, {
     cardInstanceId: selectedId.value, row, slot,
     ...(mode.value === 'play' ? { targetPlayerIndex: me.value.playerIndex } : {}),
   })
   selectedId.value = null
+  mode.value = 'play'
   playArmed.value = false
 }
 function togglePaymentResource(instanceId: string) {
@@ -407,7 +411,7 @@ function playFromHand(card: Card) {
   command('playCard', { cardInstanceId: card.instanceId })
   selectedId.value = null
 }
-function fieldAction(action: 'attack' | 'move' | 'cavalryMove', card: Card) {
+function fieldAction(action: Exclude<BoardMode, 'play'>, card: Card) {
   selectedId.value = card.instanceId
   focusCard.value = card
   mode.value = action
@@ -524,7 +528,7 @@ function statusTexts(card: Card) {
             <PlayerMat :player="me" side="my" :active="game.activePlayer === me.playerIndex && !combat"
               :viewer-player-index="game.you"
               :turn-serial="game.turnSerial"
-              :selected-id="supportId || selectedId" :move-mode="mode === 'move'" :cavalry-move-mode="mode === 'cavalryMove'"
+              :selected-id="supportId || selectedId" :move-mode="mode === 'move'" :free-move-mode="mode === 'freeMove'" :cavalry-move-mode="mode === 'cavalryMove'"
               :placement-mode="mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'"
               :placement-row="isCounter(selectedHandCard) ? 1 : null" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction" :round="game.round"

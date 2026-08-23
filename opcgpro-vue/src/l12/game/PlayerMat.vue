@@ -11,6 +11,7 @@ const props = defineProps<{
   selectedId?: string | null
   attackMode?: boolean
   moveMode?: boolean
+  freeMoveMode?: boolean
   cavalryMoveMode?: boolean
   placementMode?: boolean
   placementRow?: number | null
@@ -38,7 +39,7 @@ const emit = defineEmits<{
   master: []
   focus: [card: Card]
   graveyard: [playerIndex: number]
-  cardAction: [action: 'attack' | 'move' | 'cavalryMove', card: Card]
+  cardAction: [action: 'attack' | 'move' | 'freeMove' | 'cavalryMove', card: Card]
   ability: [card: Card, ability: string]
   factionAbility: [ability: string]
   selectCard: [card: Card]
@@ -128,11 +129,17 @@ function canCavalryMove(card: Card) {
   if (card.lastCavalryMoveTurn === props.turnSerial) return false
   return props.player.field.some(row => row.some(slotCard => !slotCard))
 }
+function canFreeMove(card: Card, row: number, slot: number) {
+  if (props.side !== 'my' || !props.actionsEnabled || card.tapped || card.hidden) return false
+  const restedHippolyta = props.player.field.flat().some(unit => unit?.cardId === 'S02-0510' && unit.tapped)
+  return restedHippolyta && !props.player.field[1 - row][slot]
+}
 function isMoveTarget(row: number, slot: number) {
-  if ((!props.moveMode && !props.cavalryMoveMode) || !props.selectedId || props.player.field[row][slot]) return false
+  if ((!props.moveMode && !props.freeMoveMode && !props.cavalryMoveMode) || !props.selectedId || props.player.field[row][slot]) return false
   for (let sourceRow = 0; sourceRow < 2; sourceRow++) {
     for (let sourceSlot = 0; sourceSlot < 3; sourceSlot++) {
       if (props.player.field[sourceRow][sourceSlot]?.instanceId !== props.selectedId) continue
+      if (props.freeMoveMode) return sourceSlot === slot && sourceRow !== row
       return Boolean(props.cavalryMoveMode)
         || Math.abs(sourceRow - row) + Math.abs(sourceSlot - slot) === 1
     }
@@ -278,12 +285,14 @@ function beginCardAbility(card: Card) {
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">
             <template v-if="player.field[row][slot]">
-              <div v-if="canUseAbilities(player.field[row][slot]!) && selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !cavalryMoveMode"
+              <div v-if="canUseAbilities(player.field[row][slot]!) && selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !freeMoveMode && !cavalryMoveMode"
                 class="card-context-actions field-actions">
                 <button v-if="canAttack(player.field[row][slot]!, row)" :class="{ active: attackMode }"
                   @click.stop="emit('cardAction', 'attack', player.field[row][slot]!)">{{ attackMode ? '选择目标' : '进攻' }}</button>
                 <button v-if="canMove(player.field[row][slot]!, row, slot)" :class="{ active: moveMode }"
                   @click.stop="emit('cardAction', 'move', player.field[row][slot]!)">{{ moveMode ? '选择位置' : '移动' }}</button>
+                <button v-if="canFreeMove(player.field[row][slot]!, row, slot)" :class="{ active: freeMoveMode }"
+                  @click.stop="emit('cardAction', 'freeMove', player.field[row][slot]!)">{{ freeMoveMode ? '选择前后位置' : '免费位移' }}</button>
                 <button v-if="canCavalryMove(player.field[row][slot]!)" :class="{ active: cavalryMoveMode }"
                   @click.stop="emit('cardAction', 'cavalryMove', player.field[row][slot]!)">{{ cavalryMoveMode ? '选择任意位置' : '骑兵位移' }}</button>
                 <button v-if="canTrial(player.field[row][slot]!)"

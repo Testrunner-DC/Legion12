@@ -2,7 +2,7 @@
 import type { GameState, PlayerView } from '../types'
 
 defineProps<{
-  game: GameState; me: PlayerView; mode: 'play' | 'attack' | 'move' | 'cavalryMove'; selectedId: string | null;
+  game: GameState; me: PlayerView; mode: 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'; selectedId: string | null;
   mulliganCount: number; defenseCount: number; defenseTargetType: string | null;
   supportId: string | null; canSupport: boolean; busy?: boolean
 }>()
