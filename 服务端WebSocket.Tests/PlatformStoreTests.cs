@@ -158,4 +158,44 @@ public sealed class PlatformStoreTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void ConfirmingOneAbilityDoesNotConfirmTheWholeMultiAbilityCard()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var abilities = new[]
+            {
+                new L12AtomicAbility("TEST-001:A1", "TEST-001", 1, "能力一", "active", [],
+                    "legacy-backed", true, "test", 1m),
+                new L12AtomicAbility("TEST-001:A2", "TEST-001", 2, "能力二", "enter", [],
+                    "legacy-backed", true, "test", 1m),
+            };
+            var effect = new L12AtomicCardEffect("TEST-001", "测试卡", "S02", "neutral", "legion", null,
+                "能力一。能力二。", abilities, "legacy-backed", 0, 0, 0, []);
+
+            store.SaveEffectReview(admin, effect.CardId, abilities[0].AbilityId, "confirmed", "只确认能力一");
+            var partlyReviewed = store.ApplyEffectReviews(effect);
+
+            Assert.Equal("human-assisted", partlyReviewed.ReviewStatus);
+            Assert.Equal("confirmed", partlyReviewed.Abilities[0].ReviewStatus);
+            Assert.Equal("unreviewed", partlyReviewed.Abilities[1].ReviewStatus);
+
+            store.SaveEffectReview(admin, effect.CardId, abilities[1].AbilityId, "confirmed", "确认能力二");
+            var fullyReviewed = store.ApplyEffectReviews(effect);
+            Assert.Equal("confirmed", fullyReviewed.ReviewStatus);
+            Assert.All(fullyReviewed.Abilities, ability => Assert.Equal("confirmed", ability.ReviewStatus));
+
+            store.SaveEffectReview(admin, effect.CardId, abilities[1].AbilityId, "rejected", "能力二需重拆");
+            var rejected = store.ApplyEffectReviews(effect);
+            Assert.Equal("rejected", rejected.ReviewStatus);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

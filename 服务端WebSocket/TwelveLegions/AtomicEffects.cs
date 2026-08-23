@@ -101,6 +101,26 @@ public sealed record L12AtomicEffectPage(
     int PageSize,
     L12AtomicCoverage Coverage);
 
+public static class L12EffectReviewAggregation
+{
+    public static string CardStatus(IReadOnlyList<L12AtomicAbility> abilities, string fallback = "unreviewed")
+    {
+        if (abilities.Count == 0) return fallback;
+        if (abilities.Any(ability => ability.ReviewStatus == "rejected")) return "rejected";
+        if (abilities.All(ability => ability.ReviewStatus == "confirmed")) return "confirmed";
+        if (abilities.Any(ability => ability.ReviewStatus is "confirmed" or "human-assisted")) return "human-assisted";
+        return abilities.All(ability => ability.ReviewStatus == "unreviewed") ? "unreviewed" : fallback;
+    }
+
+    public static string CardSource(IReadOnlyList<L12AtomicAbility> abilities, string fallback = "automatic")
+    {
+        var sources = abilities.Select(ability => ability.ReviewSource)
+            .Where(source => !string.IsNullOrWhiteSpace(source) && source != "automatic")
+            .Distinct(StringComparer.Ordinal).ToArray();
+        return sources.Length == 0 ? fallback : string.Join("+", sources);
+    }
+}
+
 /// <summary>
 /// 卡效原子注册表是规则内核和后台可视化共用的唯一词典。新增原子必须先在这里登记，
 /// 禁止前端自行猜测颜色、分类或执行能力。
@@ -219,15 +239,12 @@ public sealed class L12AtomicEffectCatalog
             : legacy == 0 ? "declarative-ready"
             : executable == 0 ? "legacy-backed"
             : "partially-atomized";
-        var reviewStatus = abilities.Any(ability => ability.ReviewStatus == "confirmed") ? "confirmed"
-            : abilities.Any(ability => ability.ReviewStatus == "human-assisted") ? "human-assisted"
-            : "unreviewed";
-        var reviewSource = string.Join("+", abilities.Select(ability => ability.ReviewSource)
-            .Where(source => source != "automatic").Distinct(StringComparer.Ordinal));
+        var reviewStatus = L12EffectReviewAggregation.CardStatus(abilities);
+        var reviewSource = L12EffectReviewAggregation.CardSource(abilities);
         return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType, card.ImageUrl,
             text, abilities, status, atomCount, executable, legacy,
             abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray(),
-            reviewStatus, string.IsNullOrEmpty(reviewSource) ? "automatic" : reviewSource);
+            reviewStatus, reviewSource);
     }
 
     private static L12AtomicAbility BuildStructuredAbility(

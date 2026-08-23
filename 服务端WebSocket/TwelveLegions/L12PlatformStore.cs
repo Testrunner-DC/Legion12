@@ -449,10 +449,10 @@ public sealed class L12PlatformStore
                     && string.Equals(row.AbilityId, ability.AbilityId, StringComparison.OrdinalIgnoreCase));
                 return review is null ? ability : ability with { ReviewStatus = review.Status, ReviewSource = $"后台人工确认：{review.Reviewer}" };
             }).ToArray();
-            var status = cardReview?.Status ?? (abilities.Any(item => item.ReviewStatus == "rejected") ? "rejected"
-                : abilities.Any(item => item.ReviewStatus == "confirmed") ? "confirmed"
-                : abilities.Any(item => item.ReviewStatus == "human-assisted") ? "human-assisted" : effect.ReviewStatus);
-            var source = cardReview is null ? effect.ReviewSource : $"后台人工确认：{cardReview.Reviewer}";
+            var status = cardReview?.Status ?? L12EffectReviewAggregation.CardStatus(abilities, effect.ReviewStatus);
+            var source = cardReview is null
+                ? L12EffectReviewAggregation.CardSource(abilities, effect.ReviewSource)
+                : $"后台人工确认：{cardReview.Reviewer}";
             return effect with { Abilities = abilities, ReviewStatus = status, ReviewSource = source };
         }
     }
