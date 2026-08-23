@@ -19,6 +19,9 @@ const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
 const platform = read('../src/l12/platform.ts')
 const decks = read('../src/l12/decks.ts')
+const deckOrdering = read('../src/l12/deckOrdering.ts')
+const deckShare = read('../src/l12/site/deckShare.ts')
+const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.ps1')
@@ -72,6 +75,7 @@ const contracts = [
   [deckEditor.includes('<option value="all">全部</option><option value="S01">S1</option><option value="S02">S2</option>'), '牌库编辑器卡池筛选必须明确为全部、S1、S2'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
+  [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckLibrary.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
   [deckEditor.includes('牌库删除后不可找回') && deckEditor.includes('继续删除') && deckEditor.includes('pendingDeleteName') && !deckEditor.includes('@click="onDelete'), '全部牌库删除入口必须先经过统一确认弹框'],
   [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'") && gamePage.includes('l12State.room.sandbox'), '对局结束或退出沙盒返回大厅前必须退出房间'],
   [sandbox.includes('createSandbox') && !sandbox.includes('沙盒服务器适配器尚未接入'), '单人测试沙盒必须连接正式规则内核，不得回退为占位页'],

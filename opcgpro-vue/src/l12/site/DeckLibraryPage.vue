@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
+import { compareDeckCardIds } from '../deckOrdering'
 import { ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { l12State } from '@/l12/net'
 
@@ -53,10 +54,7 @@ const filteredPublished = computed(() => {
       : (b.likes + b.copies) - (a.likes + a.copies))
 })
 const selectedGroups = computed(() => selected.value ? [...selected.value.deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
-  .sort(([left], [right]) => {
-    const a = byId.value.get(left); const b = byId.value.get(right)
-    return (a?.cost ?? 99) - (b?.cost ?? 99) || (a?.number || left).localeCompare(b?.number || right)
-  }) : [])
+  .sort(([left], [right]) => compareDeckCardIds(left, right, byId.value, byId.value.get(selected.value!.deck.masterId)?.faction)) : [])
 const selectedCurve = computed(() => {
   const curve = Array(9).fill(0) as number[]
   selectedGroups.value.forEach(([id, count]) => curve[Math.min(8, byId.value.get(id)?.cost ?? 0)] += count)

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { masterProfileUrl } from './specialAssets'
+import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
   MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
@@ -72,7 +73,7 @@ const entries = computed(() => Object.entries(counts.value)
   .filter(([, count]) => count > 0)
   .map(([id, count]) => ({ card: byId.value.get(id)!, count }))
   .filter(entry => entry.card)
-  .sort((a, b) => (a.card.cost ?? 99) - (b.card.cost ?? 99) || a.card.number.localeCompare(b.card.number)))
+  .sort((a, b) => compareDeckCards(a.card, b.card, selectedMaster.value?.faction)))
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   const master = selectedMaster.value

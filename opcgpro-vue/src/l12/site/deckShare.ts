@@ -1,4 +1,5 @@
 import type { DeckCard, SavedL12Deck } from '@/l12/decks'
+import { compareDeckCardIds } from '@/l12/deckOrdering'
 
 interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
 
@@ -39,11 +40,9 @@ function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, wi
 
 export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[]) {
   const byId = new Map(catalog.map(card => [card.id, card]))
+  const masterFaction = byId.get(deck.masterId)?.faction
   const groups = [...deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
-    .sort(([left], [right]) => {
-      const a = byId.get(left); const b = byId.get(right)
-      return (a?.cost ?? 99) - (b?.cost ?? 99) || (a?.number || left).localeCompare(b?.number || right)
-    })
+    .sort(([left], [right]) => compareDeckCardIds(left, right, byId, masterFaction))
   const columns = Math.min(10, Math.max(5, Math.ceil(groups.length / 2)))
   const rows = Math.max(1, Math.ceil(groups.length / columns))
   const canvas = document.createElement('canvas')
