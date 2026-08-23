@@ -60,6 +60,7 @@ const contracts = [
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)"), '叠放卡牌必须由公共卡牌组件合并为圆形卡图，并可进入统一详情'],
   [cardTile.includes('position:static!important') && cardTile.includes('object-position:center 14%'), '圆形叠放卡图不得被全局卡图定位规则覆盖'],
   [playerMat.includes("entry.id === 'trialAdvance'") && playerMat.includes('function canTrial') && playerMat.includes("'trialAdvance')"), '试炼军团必须拥有与进攻、移动并列的直接试炼按钮'],
+  [playerMat.includes("@click.stop=\"!trial.hidden && selectZoneCard(trial)\""), '试炼卡必须复用公开区域卡牌能力入口，不能只有查看详情而无法发动'],
   [playerMat.includes('aspect-ratio:8/5') && playerMat.includes('.trial-card b{position:absolute;left:50%;top:50%'), '试炼卡必须保持横版比例并将进度数字置于中央'],
   [playerMat.includes('class="master-marker-track"') && playerMat.includes('.master-marker-track{position:absolute') && playerMat.includes('top:-39px'), '主宰附近圆形标识必须复用同一轨道并与主宰保持间距'],
   [!playerMat.includes('class="rune-zone"') && !playerMat.includes('class="canopic-track"'), '符文与卡诺匹斯不得恢复各自独立的定位父级'],

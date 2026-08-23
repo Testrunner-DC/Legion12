@@ -253,7 +253,7 @@ function beginCardAbility(card: Card) {
           <button v-for="trial in player.specialZones.trials" :key="trial.instanceId" type="button" class="trial-card"
             :class="{ concealed: trial.hidden, 'own-concealed': trial.hidden && side === 'my', inactive: !trial.hidden && !trial.trialCompleted }"
             :title="trial.hidden ? '对方未揭示的试炼' : trial.name"
-            @mouseenter="!trial.hidden && emit('focus', trial)" @focus="!trial.hidden && emit('focus', trial)" @click.stop="!trial.hidden && emit('focus', trial)">
+            @mouseenter="!trial.hidden && emit('focus', trial)" @focus="!trial.hidden && emit('focus', trial)" @click.stop="!trial.hidden && selectZoneCard(trial)">
             <img :src="trial.hidden ? '/assets/l12/trial-back.png' : (trial.imageUrl || '/assets/l12/trial-back.png')" :alt="trial.hidden ? '试炼牌背' : trial.name" />
             <b v-if="trial.instanceId === currentTrialInstanceId">{{ trial.trialProgress ?? player.specialZones?.trialLevel ?? 0 }}</b>
           </button>

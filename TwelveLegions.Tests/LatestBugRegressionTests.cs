@@ -548,6 +548,79 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void ZeroMoraleMoveCanBePaidByClickingAnActiveTombGuard()
+    {
+        var game = CreateWithFirstMaster("S01-02M1", 64102);
+        var player = game.State.Players[0];
+        var mover = Card("S02-0003", "zero-morale-mover");
+        var guard = Card("S01-0212", "zero-morale-tomb-guard");
+        mover.SummonRound = -1;
+        guard.SummonRound = -1;
+        player.Morale.Clear();
+        player.Field[0][0] = mover;
+        player.Field[0][2] = guard;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var begin = game.Handle(0, new L12Command("move", mover.InstanceId, Row: 1, Slot: 0));
+
+        Assert.True(begin.Accepted, begin.Error);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.Equal("move-morale-choice", payment.Continuation);
+        Assert.Equal([guard.InstanceId], payment.ValidChoices);
+        Assert.Equal("请选择支付费用的陵墓守卫", payment.Text);
+
+        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [guard.InstanceId]));
+
+        Assert.True(paid.Accepted, paid.Error);
+        Assert.Same(mover, player.Field[1][0]);
+        Assert.Null(player.Field[0][0]);
+        Assert.True(guard.Tapped);
+    }
+
+    [Fact]
+    public void TrialCardCompletionAndCompletedTrialAbilityAreSeparateActions()
+    {
+        var completionGame = Create(64103);
+        var completionPlayer = completionGame.State.Players[0];
+        var completableTrial = Card("S02-06S4", "completable-trial-card");
+        completableTrial.TrialProgress = 8;
+        completionPlayer.SpecialZones.Trials.Clear();
+        completionPlayer.SpecialZones.Trials.Add(completableTrial);
+        completionGame.State.ActivePlayer = 0;
+        completionGame.State.Phase = L12Phase.Main;
+
+        var completion = completionGame.Handle(0, new L12Command("activateAbility",
+            completableTrial.InstanceId, Ability: "completeTrial"));
+
+        Assert.True(completion.Accepted, completion.Error);
+        PassResponses(completionGame);
+        Assert.True(completableTrial.TrialCompleted);
+
+        var completedAbilityGame = Create(64104);
+        var completedPlayer = completedAbilityGame.State.Players[0];
+        var completedTrial = Card("S02-06S5", "completed-trial-card");
+        var restedLegion = Card("S02-0610", "completed-trial-target");
+        completedTrial.TrialCompleted = true;
+        restedLegion.Tapped = true;
+        completedPlayer.SpecialZones.Trials.Clear();
+        completedPlayer.SpecialZones.Trials.Add(completedTrial);
+        completedPlayer.SpecialZones.Runes = 1;
+        completedPlayer.Field[0][0] = restedLegion;
+        completedAbilityGame.State.ActivePlayer = 0;
+        completedAbilityGame.State.Phase = L12Phase.Main;
+
+        var activated = completedAbilityGame.Handle(0, new L12Command("activateAbility",
+            completedTrial.InstanceId, Ability: "fenianReady"));
+
+        Assert.True(activated.Accepted, activated.Error);
+        var target = Assert.Single(completedAbilityGame.State.PendingPrompts);
+        Assert.Contains(restedLegion.InstanceId, target.ValidChoices);
+    }
+
+    [Fact]
     public void WorldUpheavalRevealsLibraryTopAndBlocksMatchingProfessionLegion()
     {
         var game = Create(6411);
