@@ -33,7 +33,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-0503", "S02-0602",
+        "S02-0503", "S02-0602", "S02-0606", "S02-0611", "S02-0608",
     };
 
     private static bool IsS2FactionAfterAttackCard(string cardId) => S2FactionAfterAttackCards.Contains(cardId);
@@ -811,6 +811,15 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, $"{card.Name}因击杀军团，在我方下个回合开始前于前排获得挑衅", card);
             }
             FinishStackItem(item);
+            return true;
+        }
+        if (card.CardId is "S02-0606" or "S02-0611" or "S02-0608")
+        {
+            var killed = item.Data.GetValueOrDefault("killed") == "true";
+            var granted = card.CardId != "S02-0608"
+                || State.Players[item.Controller].UsedAbilities.Remove($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}");
+            FinishStackItem(item);
+            if (killed && granted) BeginPiercingAttack(item.Controller, card);
             return true;
         }
         if (card.CardId != "S02-0602" || item.Data.GetValueOrDefault("killed") != "true") return false;

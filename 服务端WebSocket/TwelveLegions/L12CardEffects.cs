@@ -197,6 +197,12 @@ public sealed partial class L12GameEngine
     {
         var card = FindSource(item);
         if (card is null || State.PendingDefense is null) { FinishStackItem(item); return; }
+        if (State.PendingDefense.SuppressAttackTriggers)
+        {
+            AddEvent("effect", item.Controller, "贯穿进攻不触发【进攻时】效果", card);
+            FinishStackItem(item);
+            return;
+        }
         var player = State.Players[item.Controller];
         switch (card.CardId)
         {

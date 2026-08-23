@@ -513,4 +513,237 @@ public sealed class LatestBugRegressionTests
         Assert.False(result.Accepted);
         Assert.Contains("天地异变", result.Error);
     }
+
+    [Fact]
+    public void BaseAchillesLethalReplacementPreservesTroopsAndReadyState()
+    {
+        var game = Create(6420);
+        var defender = game.State.Players[0];
+        var attackerPlayer = game.State.Players[1];
+        var achilles = Card("S02-0504", "base-achilles-replacement");
+        var attacker = Card("S02-0502", "lethal-attacker");
+        attacker.Troops = 5000;
+        achilles.Troops = 4000;
+        achilles.Tapped = false;
+        achilles.SummonRound = 0;
+        attacker.SummonRound = 0;
+        defender.Field[0][0] = achilles;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[1] = new L12CardInstance?[3];
+        defender.Morale.Clear();
+        defender.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "achilles-god-power",
+            CardId = "S02-05C1",
+            IsGodPower = true,
+            Tapped = false,
+        });
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", achilles.InstanceId))).Accepted);
+        PassResponses(game);
+        var replacement = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "combat-lethal-replacement");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: replacement.PromptId,
+            Choice: "yes")).Accepted);
+
+        Assert.Same(achilles, defender.Field[0][0]);
+        Assert.Equal(4000, achilles.Troops);
+        Assert.False(achilles.Tapped);
+        Assert.True(defender.Morale[0].Tapped);
+        Assert.False(defender.Morale[0].IsGodPower);
+        Assert.Equal(1000, attacker.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "replacement"
+            && entry.Text.Contains("保持当时状态"));
+    }
+
+    [Theory]
+    [InlineData("S02-0606")]
+    [InlineData("S02-0611")]
+    public void NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger(string cardId)
+    {
+        var game = Create(6421);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card(cardId, $"piercing-{cardId}");
+        var target = Card("S01-0102", $"piercing-target-{cardId}");
+        attacker.Troops = 5000;
+        target.Troops = 1000;
+        attacker.SummonRound = target.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[0][0] = target;
+        defender.Field[1] = new L12CardInstance?[3];
+        defender.Hand.Clear();
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        for (var step = 0; step < 12 && (!defender.Graveyard.Contains(target)
+                 || game.State.PendingDefense?.Target.Type != "master"); step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Contains(target, defender.Graveyard);
+        Assert.NotNull(game.State.PendingDefense);
+        Assert.Equal("master", game.State.PendingDefense!.Target.Type);
+        Assert.True(game.State.PendingDefense.SuppressAttackTriggers);
+        Assert.Equal(4000, attacker.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "piercing"
+            && entry.Text.Contains("剩余兵力4000") && entry.Text.Contains("不触发【进攻时】效果"));
+    }
+
+    [Fact]
+    public void PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack()
+    {
+        var game = Create(6425);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card("S02-0606", "piercing-shared-validation");
+        var killedTaunt = Card("S01-0107", "piercing-killed-taunt");
+        var remainingTaunt = Card("S02-0004", "piercing-remaining-taunt");
+        attacker.Troops = 5000;
+        killedTaunt.Troops = 1000;
+        attacker.SummonRound = killedTaunt.SummonRound = remainingTaunt.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[0][0] = killedTaunt;
+        defender.Field[0][1] = remainingTaunt;
+        defender.Field[1] = new L12CardInstance?[3];
+        defender.Hand.Clear();
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", killedTaunt.InstanceId))).Accepted);
+        for (var step = 0; step < 12 && !defender.Graveyard.Contains(killedTaunt); step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Contains(killedTaunt, defender.Graveyard);
+        Assert.Null(game.State.PendingDefense);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("挑衅"));
+    }
+
+    [Fact]
+    public void AbsoluteDefenseNegatesTrapWithoutSwallowingTakedaEnterEffect()
+    {
+        var game = Create(6422);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var takeda = Card("S02-0401", "nested-stack-takeda");
+        var absoluteDefense = Card("S01-0016", "nested-stack-absolute-defense");
+        var trap = Card("S01-0018", "nested-stack-trap");
+        var discard = Card("S01-0003", "nested-stack-discard");
+        owner.Hand.Clear();
+        owner.Hand.Add(takeda);
+        owner.Hand.Add(discard);
+        AddReadyMorale(owner, 8);
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        owner.Field[1][0] = absoluteDefense;
+        trap.Hidden = true;
+        trap.SetRound = 0;
+        opponent.Field[1][0] = trap;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", takeda.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var trapWindow = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(trap.InstanceId, trapWindow.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: trapWindow.PromptId,
+            Choice: trap.InstanceId)).Accepted);
+        var defenseWindow = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(absoluteDefense.InstanceId, defenseWindow.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: defenseWindow.PromptId,
+            Choice: absoluteDefense.InstanceId)).Accepted);
+        var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("stack-response-discard", discardPrompt.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+
+        Assert.Same(takeda, owner.Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-negated"
+            && entry.Text.Contains("落穴陷阱"));
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "card-effect"
+            && prompt.StackItemId == game.State.EffectStack.LastOrDefault()?.StackItemId);
+    }
+
+    [Fact]
+    public void NegatedTrapStillReturnsToLubuEnterEffectAndTiantingZeroMoraleTrigger()
+    {
+        var game = Create(6423);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var lubu = Card("S01-0101", "nested-stack-lubu");
+        var absoluteDefense = Card("S01-0016", "nested-stack-lubu-defense");
+        var trap = Card("S01-0018", "nested-stack-lubu-trap");
+        var discard = Card("S01-0003", "nested-stack-lubu-discard");
+        var enemyTarget = Card("S01-0102", "nested-stack-lubu-target");
+        owner.Hand.Clear();
+        lubu.CostModifier = -lubu.Cost;
+        owner.Hand.Add(lubu);
+        owner.Hand.Add(discard);
+        AddReadyMorale(owner, 2);
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        owner.Field[1][0] = absoluteDefense;
+        trap.Hidden = true;
+        trap.SetRound = 0;
+        opponent.Field[1][0] = trap;
+        opponent.Field[0][0] = enemyTarget;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", lubu.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var trapWindow = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: trapWindow.PromptId,
+            Choice: trap.InstanceId)).Accepted);
+        var defenseWindow = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: defenseWindow.PromptId,
+            Choice: absoluteDefense.InstanceId)).Accepted);
+        var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+
+        var optional = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "card-effect" && prompt.Data.GetValueOrDefault("action") == "lubu-kill");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId,
+            Choice: enemyTarget.InstanceId)).Accepted);
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "faction-zero-recovery");
+    }
+
+    [Fact]
+    public void WorldRingMakesUniversalCardsUseOwnersFactionForSharedFilters()
+    {
+        var game = Create(6424);
+        var owner = game.State.Players[0];
+        var universal = Card("S01-0004", "ring-universal-card");
+        Assert.False(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction));
+        owner.Relic = Card("S02-0008", "world-ring");
+        Assert.True(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction));
+    }
 }

@@ -900,10 +900,12 @@ public sealed partial class L12GameEngine
     }
 
     private bool RemoveFromField(L12PlayerState player, L12CardInstance card, bool toGraveyard, string reason = "离场",
-        bool queueDeathTrigger = true, L12FieldLeaveKind leaveKind = L12FieldLeaveKind.Defeat)
+        bool queueDeathTrigger = true, L12FieldLeaveKind leaveKind = L12FieldLeaveKind.Defeat,
+        bool bypassLethalReplacement = false)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
+        if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason)) return false;
         if (isDefeat && TryPreventS1FactionDeath(player, card)) return false;
         if (isDefeat && card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
         {
@@ -945,6 +947,62 @@ public sealed partial class L12GameEngine
         }
         RecalculateContinuousTroops();
         return true;
+    }
+
+    private string AchillesReplacementKey(L12CardInstance card)
+        => $"s2-achilles-lethal-replacement:{card.InstanceId}:{State.TurnSerial}";
+
+    private bool CanUseAchillesLethalReplacement(L12PlayerState controller, L12CardInstance card)
+        => card.CardId == "S02-0504"
+            && FindOnField(controller, card.InstanceId, out var row, out _) is not null
+            && row == 0
+            && !controller.UsedAbilities.Contains(AchillesReplacementKey(card))
+            && !controller.UsedAbilities.Contains($"pending:{AchillesReplacementKey(card)}")
+            && controller.Morale.Any(morale => morale.IsGodPower && !morale.Tapped);
+
+    private bool TryOfferEffectLethalReplacement(L12PlayerState controller, L12CardInstance card, string reason)
+    {
+        // 天灾结算拥有最高优先级，不建立通常的替代/阵亡/离场响应窗口。
+        if (State.Phase == L12Phase.Disaster
+            || State.EffectStack.Any(item => item.Trigger == "disaster")) return false;
+        if (!CanUseAchillesLethalReplacement(controller, card))
+            return controller.UsedAbilities.Contains($"pending:{AchillesReplacementKey(card)}");
+        controller.UsedAbilities.Add($"pending:{AchillesReplacementKey(card)}");
+        CreatePrompt(controller.PlayerIndex, "optional",
+            $"〈{card.Name}〉即将阵亡，是否消耗并翻转1神力，代替承受本次致命效果？",
+            ["yes", "no"], 1, 1, "effect-lethal-replacement", isPrivate: false,
+            data: new Dictionary<string, string>
+            {
+                ["cardInstanceId"] = card.InstanceId,
+                ["reason"] = reason,
+                ["preservedTroops"] = card.Troops.ToString(),
+                ["preservedTapped"] = card.Tapped ? "true" : "false",
+                ["yes"] = "消耗并翻转1神力，保持当前兵力与活跃/休整状态",
+                ["no"] = "不发动",
+            });
+        return true;
+    }
+
+    private void ResolveEffectLethalReplacement(int playerIndex, L12Prompt prompt, string choice)
+    {
+        var player = State.Players[playerIndex];
+        var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
+        var card = FindOnField(player, cardId, out _, out _);
+        if (card is null) return;
+        player.UsedAbilities.Remove($"pending:{AchillesReplacementKey(card)}");
+        var applied = choice == "yes" && CanUseAchillesLethalReplacement(player, card)
+            && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1);
+        if (applied)
+        {
+            player.UsedAbilities.Add(AchillesReplacementKey(card));
+            card.Troops = int.Parse(prompt.Data["preservedTroops"]);
+            card.Tapped = prompt.Data["preservedTapped"] == "true";
+            AddEvent("replacement", playerIndex,
+                $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态", card);
+            return;
+        }
+        RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
+            bypassLethalReplacement: true);
     }
 
     private bool MoveFieldCardToZone(L12PlayerState player, L12CardInstance card, string destination, string reason, bool queueLeaveTrigger = true)

@@ -332,6 +332,12 @@ public sealed partial class L12GameEngine
             case "stack-response-puppet-slot":
                 ResolvePuppetResponseSlot(playerIndex, prompt, chosen[0]);
                 break;
+            case "combat-lethal-replacement":
+                ResolveCombatLethalReplacement(playerIndex, prompt, chosen[0]);
+                break;
+            case "effect-lethal-replacement":
+                ResolveEffectLethalReplacement(playerIndex, prompt, chosen[0]);
+                break;
             case "card-effect":
             case "disaster-effect":
             case "active-ability":
@@ -892,6 +898,27 @@ public sealed partial class L12GameEngine
             return;
         }
         var item = State.EffectStack[^1];
+        // 无效状态必须先于响应类型分派处理。否则已被〈绝对防御〉无效的
+        // 〈落穴陷阱〉仍会进入 response-negate 分支，继续无效原登场效果。
+        if (item.Negated)
+        {
+            State.PendingPrompts.RemoveAll(prompt => prompt.StackItemId == item.StackItemId);
+            AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
+            if (item.Trigger == "attack")
+            {
+                var pending = State.PendingDefense;
+                if (pending is not null)
+                {
+                    var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
+                    RevertPendingCombatTroopsModifiers(pending, attacker);
+                }
+                State.PendingDefense = null;
+                State.Phase = L12Phase.Main;
+                AddEvent("attack-ended", item.Controller, "本次进攻被抵挡");
+            }
+            FinishStackItem(item);
+            return;
+        }
         if (item.Trigger == "response-negate")
         {
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
@@ -909,25 +936,6 @@ public sealed partial class L12GameEngine
             var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.SourceInstanceId);
             if (card is not null) { player.Hand.Remove(card); player.Graveyard.Add(card); }
             AddEvent("defense", item.Controller, "佣兵部队抵挡本次进攻", card is null ? [] : [card]);
-            FinishStackItem(item);
-            return;
-        }
-        if (item.Negated)
-        {
-            State.PendingPrompts.RemoveAll(prompt => prompt.StackItemId == item.StackItemId);
-            AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
-            if (item.Trigger == "attack")
-            {
-                var pending = State.PendingDefense;
-                if (pending is not null)
-                {
-                    var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
-                    RevertPendingCombatTroopsModifiers(pending, attacker);
-                }
-                State.PendingDefense = null;
-                State.Phase = L12Phase.Main;
-                AddEvent("attack-ended", item.Controller, "本次进攻被抵挡");
-            }
             FinishStackItem(item);
             return;
         }

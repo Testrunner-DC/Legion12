@@ -255,6 +255,13 @@ public sealed class L12PendingDefense
     public int MasterDamage { get; set; } = 1;
     public int TemporaryAttackerTroopsBonus { get; set; }
     public int TemporaryDefenderTroopsPenalty { get; set; }
+    /// <summary>贯穿等规则生成的进攻仍进入通常响应/抵挡流程，但不会建立【进攻时】卡效。</summary>
+    public bool SuppressAttackTriggers { get; set; }
+    /// <summary>同一次交战内“即将阵亡”替代效果的决定；true=代替，false=不代替。</summary>
+    public Dictionary<string, bool> LethalReplacementDecisions { get; } = new(StringComparer.Ordinal);
+    public List<string> DeclaredBlockIds { get; } = [];
+    public string? DeclaredSupportId { get; set; }
+    public bool ForceInvalidDefense { get; set; }
 }
 
 public sealed class L12Prompt

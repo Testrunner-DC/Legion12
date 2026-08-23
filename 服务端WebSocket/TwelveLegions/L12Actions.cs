@@ -468,23 +468,8 @@ public sealed partial class L12GameEngine
         }
         else if (command.Target.Type == "master")
         {
-            if (attacker.CardId == "S01-0212" && State.Players[playerIndex].MasterId == "S02-02M1")
-                return CommandResult.Reject("奈芙蒂斯使我方陵墓守卫无法进攻主宰");
-            if (attacker.Troops <= 2000 && HasFrontRowLowTroopMasterProtection(defender))
-                return CommandResult.Reject("对方前排军团使主宰无法被兵力不高于2000的军团进攻");
-            if (State.ActiveDisaster?.CardId == "S02-DS02" && attacker.Troops <= 2000)
-                return CommandResult.Reject("〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰");
-            if (State.ActiveDisaster?.CardId == "S02-DS05" && HasMandatoryDisasterLegionTarget(attacker, row, defender))
-                return CommandResult.Reject("〈暴怒之罪〉生效时必须优先进攻范围内的对方军团");
-            var disasterAllowsBackMaster = State.Players[playerIndex].UsedAbilities.Contains("ds01-back-master")
-                && HasRangeInPosition(attacker, row);
-            if (row != 0 && !disasterAllowsBackMaster
-                && attacker.CanAttackMasterOnSummonUntilTurn != State.TurnSerial
-                && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
-                return CommandResult.Reject("后排远程军团不能进攻主宰");
-            var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
-                : defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
-            if (taunts.Length > 0) return CommandResult.Reject("对方前排存在带有挑衅的军团");
+            if (!CanAttackMasterTarget(playerIndex, attacker, row, defender, out var masterAttackError))
+                return CommandResult.Reject(masterAttackError);
         }
         else return CommandResult.Reject("无效进攻目标");
 
@@ -593,6 +578,38 @@ public sealed partial class L12GameEngine
     private static bool CanAttackFromRow(L12CardInstance card, int row)
         => row == 0 || (row == 1 && HasRangeInPosition(card, row));
 
+    private bool CanAttackMasterTarget(int playerIndex, L12CardInstance attacker, int row,
+        L12PlayerState defender, out string error)
+    {
+        error = string.Empty;
+        if (defender.MasterCannotBeAttackedUntilTurn >= State.TurnSerial)
+            error = "对方主宰当前不能被进攻";
+        else if (attacker.CardId == "S01-0212" && State.Players[playerIndex].MasterId == "S02-02M1")
+            error = "奈芙蒂斯使我方陵墓守卫无法进攻主宰";
+        else if (attacker.Troops <= 2000 && HasFrontRowLowTroopMasterProtection(defender))
+            error = "对方前排军团使主宰无法被兵力不高于2000的军团进攻";
+        else if (State.ActiveDisaster?.CardId == "S02-DS02" && attacker.Troops <= 2000)
+            error = "〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰";
+        else if (State.ActiveDisaster?.CardId == "S02-DS05" && HasMandatoryDisasterLegionTarget(attacker, row, defender))
+            error = "〈暴怒之罪〉生效时必须优先进攻范围内的对方军团";
+        else
+        {
+            var disasterAllowsBackMaster = State.Players[playerIndex].UsedAbilities.Contains("ds01-back-master")
+                && HasRangeInPosition(attacker, row);
+            if (row != 0 && !disasterAllowsBackMaster
+                && attacker.CanAttackMasterOnSummonUntilTurn != State.TurnSerial
+                && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
+                error = "后排远程军团不能进攻主宰";
+            else
+            {
+                var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
+                    : defender.Field[0].Where(card => card is not null && HasS1Taunt(card) && !card.Hidden).ToArray();
+                if (taunts.Length > 0) error = "对方前排存在带有挑衅的军团";
+            }
+        }
+        return error.Length == 0;
+    }
+
     private CommandResult ResolveDefense(int playerIndex, L12Command command)
     {
         var pending = State.PendingDefense;
@@ -700,6 +717,10 @@ public sealed partial class L12GameEngine
         }
 
         var killedTarget = false;
+        pending.DeclaredBlockIds.Clear();
+        pending.DeclaredBlockIds.AddRange(declaredBlockIds);
+        pending.DeclaredSupportId = declaredSupportId;
+        pending.ForceInvalidDefense = forceInvalid;
         if (pending.Target.Type == "master")
         {
             var ids = forceInvalid ? [] : declaredBlockIds;
@@ -743,16 +764,27 @@ public sealed partial class L12GameEngine
             if (!supported)
             {
                 var targetTroops = target.Troops;
-                target.Troops -= attacker.Troops;
-                if (!attacker.HasAttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss)) attacker.Troops -= targetTroops;
+                var attackerTroops = attacker.Troops;
+                var attackerTakesDamage = !attacker.HasAttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
+                if (targetTroops - attackerTroops <= 0
+                    && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();
+                if (attackerTakesDamage && attackerTroops - targetTroops <= 0
+                    && TryOfferCombatLethalReplacement(attackerPlayer, attacker, pending)) return CommandResult.Ok();
+
+                var targetReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(target.InstanceId);
+                var attackerReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(attacker.InstanceId);
+                if (!targetReplaced) target.Troops -= attackerTroops;
+                if (attackerTakesDamage && !attackerReplaced) attacker.Troops -= targetTroops;
                 var simultaneousDeaths = new List<(int Controller, L12CardInstance Card)>();
                 if (target.Troops <= 0)
                 {
                     killedTarget = true;
-                    if (RemoveFromField(defender, target, true, "阵亡", queueDeathTrigger: false))
+                    if (RemoveFromField(defender, target, true, "阵亡", queueDeathTrigger: false,
+                            bypassLethalReplacement: true))
                         simultaneousDeaths.Add((defender.PlayerIndex, target));
                 }
-                if (attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true, "阵亡", queueDeathTrigger: false))
+                if (attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true, "阵亡", queueDeathTrigger: false,
+                        bypassLethalReplacement: true))
                     simultaneousDeaths.Add((attackerPlayer.PlayerIndex, attacker));
                 QueueSimultaneousDeathTriggers(simultaneousDeaths);
                 AddEvent("combat", playerIndex, attacker.HasAttackNoLoss || pending.IsRanged && pending.RangedNoLoss
@@ -768,6 +800,74 @@ public sealed partial class L12GameEngine
         QueueAfterAttackEffects(pending.AttackerPlayer, attacker, killedTarget);
         QueueS1PostAttackReactions(pending.AttackerPlayer);
         return CommandResult.Ok();
+    }
+
+    private bool TryOfferCombatLethalReplacement(L12PlayerState controller, L12CardInstance card, L12PendingDefense pending)
+    {
+        if (!CanUseAchillesLethalReplacement(controller, card)) return false;
+        if (pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)) return false;
+        CreatePrompt(controller.PlayerIndex, "optional",
+            $"〈{card.Name}〉即将阵亡，是否消耗并翻转1神力，代替承受本次致命进攻？",
+            ["yes", "no"], 1, 1, "combat-lethal-replacement", isPrivate: false,
+            data: new Dictionary<string, string>
+            {
+                ["cardInstanceId"] = card.InstanceId,
+                ["preservedTroops"] = card.Troops.ToString(),
+                ["preservedTapped"] = card.Tapped ? "true" : "false",
+                ["yes"] = "消耗并翻转1神力，保持当前兵力与活跃/休整状态",
+                ["no"] = "不发动",
+            });
+        return true;
+    }
+
+    private void ResolveCombatLethalReplacement(int playerIndex, L12Prompt prompt, string choice)
+    {
+        var pending = State.PendingDefense;
+        if (pending is null) return;
+        var player = State.Players[playerIndex];
+        var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
+        var card = FindOnField(player, cardId, out _, out _);
+        if (card is null) return;
+        var applied = choice == "yes" && CanUseAchillesLethalReplacement(player, card)
+            && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1);
+        pending.LethalReplacementDecisions[card.InstanceId] = applied;
+        if (applied)
+        {
+            player.UsedAbilities.Add(AchillesReplacementKey(card));
+            card.Troops = int.Parse(prompt.Data["preservedTroops"]);
+            card.Tapped = prompt.Data["preservedTapped"] == "true";
+            AddEvent("replacement", playerIndex,
+                $"{card.Name}消耗并翻转1神力，代替承受致命进攻并保持当时状态", card);
+        }
+        ResolveDefenseCore(1 - pending.AttackerPlayer, pending.DeclaredBlockIds,
+            pending.DeclaredSupportId, pending.ForceInvalidDefense);
+    }
+
+    private void BeginPiercingAttack(int playerIndex, L12CardInstance attacker)
+    {
+        var player = State.Players[playerIndex];
+        if (State.Phase == L12Phase.GameOver
+            || FindOnField(player, attacker.InstanceId, out var row, out _) is null) return;
+        var opponent = State.Players[1 - playerIndex];
+        if (!CanAttackMasterTarget(playerIndex, attacker, row, opponent, out var error))
+        {
+            AddEvent("effect-failed", playerIndex, $"{attacker.Name}的贯穿进攻失败：{error}", attacker);
+            return;
+        }
+        State.PendingDefense = new L12PendingDefense
+        {
+            AttackerPlayer = playerIndex,
+            AttackerInstanceId = attacker.InstanceId,
+            Target = new L12AttackTarget("master"),
+            SureHit = attacker.HasSureHit,
+            MasterDamage = 1,
+            SuppressAttackTriggers = true,
+        };
+        State.Phase = L12Phase.Defense;
+        AddEvent("piercing", playerIndex,
+            $"贯穿：{attacker.Name}以剩余兵力{attacker.Troops}对{opponent.Name}的主宰发动1次进攻；此次进攻不触发【进攻时】效果",
+            attacker);
+        PushEffect(playerIndex, attacker, "attack", "贯穿进攻（不触发【进攻时】效果）");
     }
 
     private CommandResult Move(int playerIndex, L12Command command)
