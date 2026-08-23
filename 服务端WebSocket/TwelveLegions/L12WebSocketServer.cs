@@ -108,12 +108,13 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             IsAdmin(request) ? Results.Ok(_platform.Accounts()) : Results.Unauthorized());
         _app.MapPut("/api/admin/accounts/{id}/role", (HttpRequest request, string id, RoleRequest body) =>
             !IsAdmin(request) ? Results.Unauthorized() : _platform.SetRole(id, body.Role ?? string.Empty) ? Results.Ok() : Results.BadRequest());
-        _app.MapGet("/api/admin/bugs", (HttpRequest request, string? status) =>
-            IsAdmin(request) ? Results.Ok(_platform.Bugs(status)) : Results.Unauthorized());
+        _app.MapGet("/api/admin/bugs", (HttpRequest request, string? status, string? priority, string? assignee, string? search) =>
+            IsAdmin(request) ? Results.Ok(_platform.Bugs(status, priority, assignee, search)) : Results.Unauthorized());
         _app.MapPatch("/api/admin/bugs/{id}", (HttpRequest request, string id, BugUpdateRequest body) =>
         {
-            if (!IsAdmin(request)) return Results.Unauthorized();
-            var updated = _platform.UpdateBug(id, body.Status, body.Priority, body.Assignee, body.AdminNotes);
+            var actor = _platform.Authenticate(request.Headers.Authorization);
+            if (actor?.Role != "admin") return Results.Unauthorized();
+            var updated = _platform.UpdateBug(actor, id, body.Status, body.Priority, body.Assignee, body.AdminNotes, body.Comment);
             return updated is null ? Results.NotFound() : Results.Ok(updated);
         });
         _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
@@ -351,4 +352,4 @@ public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewP
 public sealed record RoleRequest(string? Role);
 public sealed record ContentRequest(string? Value);
 public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode, string? MatchId, string? Version);
-public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes);
+public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes, string? Comment);

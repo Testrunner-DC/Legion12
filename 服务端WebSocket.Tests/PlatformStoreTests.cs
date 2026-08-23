@@ -103,12 +103,20 @@ public sealed class PlatformStoreTests
             var account = store.Register("BugReporter", "password-123").Account;
             var report = store.AddBug(account, "Battle issue", "Steps and expected result", "/game", "ROOM01", "match-1", "test");
             Assert.Equal("new", report.Status);
-            var updated = store.UpdateBug(report.Id, "confirmed", "high", "Admin", "reproduced");
+            Assert.Single(report.History);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var updated = store.UpdateBug(admin, report.Id, "confirmed", "high", "Admin", "reproduced", "已在测试沙盒复现");
             Assert.NotNull(updated);
             Assert.Equal("confirmed", updated!.Status);
             Assert.Equal("high", updated.Priority);
             Assert.Equal("Admin", updated.Assignee);
+            Assert.Contains(updated.History, audit => audit.Action == "comment" && audit.ActorName == "Admin");
+            Assert.Contains(updated.History, audit => audit.Action == "status" && audit.ToValue == "confirmed");
             Assert.Single(store.Bugs("confirmed"));
+            Assert.Single(store.Bugs(null, "high", "admin", "match-1"));
+
+            var reloaded = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Contains(reloaded.Bugs("confirmed").Single().History, audit => audit.Action == "comment");
         }
         finally
         {

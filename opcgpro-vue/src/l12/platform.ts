@@ -4,8 +4,9 @@ import { disconnect, l12State } from './net'
 export interface PlatformAccount { id: string; username: string; role: string; createdAt: string; publicHistory: boolean }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
-  version: string; status: string; priority: string; assignee?: string; adminNotes?: string; createdAt: string; updatedAt: string
+  version: string; status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
 }
+export interface BugAudit { id: string; actorName: string; action: string; fromValue?: string; toValue?: string; comment?: string; createdAt: string }
 export interface EffectAtomDescriptor {
   kind: string; category: string; label: string; description: string; runtimeExecutable: boolean; kernelContract: string
 }
@@ -102,8 +103,12 @@ export async function getPublicContent(key: string) {
 export const adminApi = {
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
   setRole: (id: string, role: string) => platformRequest<void>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
-  bugs: (status = '') => platformRequest<BugReport[]>(`/api/admin/bugs${status ? `?status=${encodeURIComponent(status)}` : ''}`),
-  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>>) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  bugs: (query: { status?: string; priority?: string; assignee?: string; search?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value) })
+    return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
+  },
+  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   getContent: getPublicContent,
   setContent: (key: string, value: string) => platformRequest<void>(`/api/admin/content/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ value }) }),
   effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),

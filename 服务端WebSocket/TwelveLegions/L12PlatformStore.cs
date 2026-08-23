@@ -9,7 +9,9 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
 public sealed record L12BugReportView(string Id, string? ReporterId, string ReporterName, string Title, string Description,
     string Page, string? RoomCode, string? MatchId, string Version, string Status, string Priority, string? Assignee,
-    string? AdminNotes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
+    string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
 
 public sealed class L12PlatformStore
 {
@@ -39,8 +41,21 @@ public sealed class L12PlatformStore
         public string Priority { get; set; } = "normal";
         public string? Assignee { get; set; }
         public string? AdminNotes { get; set; }
+        public List<BugAuditRow> History { get; set; } = [];
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class BugAuditRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string? ActorId { get; set; }
+        public string ActorName { get; set; } = "系统";
+        public string Action { get; set; } = string.Empty;
+        public string? FromValue { get; set; }
+        public string? ToValue { get; set; }
+        public string? Comment { get; set; }
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
     private sealed class SessionRow
@@ -220,27 +235,65 @@ public sealed class L12PlatformStore
             MatchId = matchId,
             Version = string.IsNullOrWhiteSpace(version) ? "dev" : version.Trim(),
         };
+        row.History.Add(NewBugAudit(account, "created", null, "new", "提交 Bug 反馈"));
         lock (_gate) { _data.BugReports.Insert(0, row); Save(); }
         return ToView(row);
     }
 
-    public IReadOnlyList<L12BugReportView> Bugs(string? status)
+    public IReadOnlyList<L12BugReportView> Bugs(string? status, string? priority = null, string? assignee = null, string? search = null)
     {
         lock (_gate) return _data.BugReports
             .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status)
+            .Where(row => string.IsNullOrWhiteSpace(priority) || row.Priority == priority)
+            .Where(row => string.IsNullOrWhiteSpace(assignee)
+                || string.Equals(row.Assignee, assignee.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Where(row => MatchesBugSearch(row, search))
             .OrderByDescending(row => row.CreatedAt).Select(ToView).ToArray();
     }
 
-    public L12BugReportView? UpdateBug(string id, string? status, string? priority, string? assignee, string? notes)
+    public L12BugReportView? UpdateBug(L12AccountView actor, string id, string? status, string? priority,
+        string? assignee, string? notes, string? comment = null)
     {
         lock (_gate)
         {
             var row = _data.BugReports.FirstOrDefault(item => item.Id == id);
             if (row is null) return null;
-            if (status is "new" or "confirmed" or "in-progress" or "resolved" or "closed") row.Status = status;
-            if (priority is "low" or "normal" or "high" or "critical") row.Priority = priority;
-            row.Assignee = string.IsNullOrWhiteSpace(assignee) ? null : assignee.Trim();
-            row.AdminNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+            var changed = false;
+            if (status is "new" or "confirmed" or "in-progress" or "resolved" or "closed"
+                && row.Status != status)
+            {
+                row.History.Add(NewBugAudit(actor, "status", row.Status, status, null));
+                row.Status = status;
+                changed = true;
+            }
+            if (priority is "low" or "normal" or "high" or "critical"
+                && row.Priority != priority)
+            {
+                row.History.Add(NewBugAudit(actor, "priority", row.Priority, priority, null));
+                row.Priority = priority;
+                changed = true;
+            }
+            var nextAssignee = string.IsNullOrWhiteSpace(assignee) ? null : assignee.Trim();
+            if (!string.Equals(row.Assignee, nextAssignee, StringComparison.Ordinal))
+            {
+                row.History.Add(NewBugAudit(actor, "assignee", row.Assignee, nextAssignee, null));
+                row.Assignee = nextAssignee;
+                changed = true;
+            }
+            var nextNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+            if (!string.Equals(row.AdminNotes, nextNotes, StringComparison.Ordinal))
+            {
+                row.History.Add(NewBugAudit(actor, "notes", row.AdminNotes, nextNotes, null));
+                row.AdminNotes = nextNotes;
+                changed = true;
+            }
+            if (!string.IsNullOrWhiteSpace(comment))
+            {
+                row.History.Add(NewBugAudit(actor, "comment", null, null,
+                    comment.Trim()[..Math.Min(comment.Trim().Length, 2000)]));
+                changed = true;
+            }
+            if (!changed) return ToView(row);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             Save();
             return ToView(row);
@@ -346,7 +399,29 @@ public sealed class L12PlatformStore
     private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
         row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
-        row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes, row.CreatedAt, row.UpdatedAt);
+        row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
+        row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt);
+    private static L12BugAuditView ToView(BugAuditRow row) => new(row.Id, row.ActorId, row.ActorName, row.Action,
+        row.FromValue, row.ToValue, row.Comment, row.CreatedAt);
+
+    private static BugAuditRow NewBugAudit(L12AccountView? actor, string action, string? fromValue,
+        string? toValue, string? comment) => new()
+    {
+        ActorId = actor?.Id,
+        ActorName = actor?.Username ?? "匿名玩家",
+        Action = action,
+        FromValue = fromValue,
+        ToValue = toValue,
+        Comment = comment,
+    };
+
+    private static bool MatchesBugSearch(BugRow row, string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return true;
+        var query = search.Trim();
+        return new[] { row.Id, row.ReporterName, row.Title, row.Description, row.Page, row.RoomCode, row.MatchId, row.Assignee }
+            .Any(value => value?.Contains(query, StringComparison.OrdinalIgnoreCase) == true);
+    }
 
     private static DataFile Load(string path)
     {
@@ -357,6 +432,7 @@ public sealed class L12PlatformStore
             data.Sessions ??= [];
             data.Decks ??= [];
             data.BugReports ??= [];
+            foreach (var bug in data.BugReports) bug.History ??= [];
             data.Content ??= new(StringComparer.OrdinalIgnoreCase);
             return data;
         }
