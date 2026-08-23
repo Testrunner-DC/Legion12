@@ -123,4 +123,39 @@ public sealed class PlatformStoreTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void AdminWorkflowPersistsDraftPublishRoleAndEffectReviewAudit()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var store = new L12PlatformStore(path);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var editor = store.Register("ContentEditor", "password-123").Account!;
+            Assert.True(store.SetRole(admin, editor.Id, "editor"));
+
+            var draft = store.SaveContentDraft(admin, "home.hero.title", "新的首页标题");
+            Assert.Equal("draft", draft.Status);
+            Assert.Equal(string.Empty, store.GetContent("home.hero.title"));
+            var published = store.PublishContent(admin, "home.hero.title");
+            Assert.Equal("published", published.Status);
+            Assert.Equal("新的首页标题", store.GetContent("home.hero.title"));
+
+            var review = store.SaveEffectReview(admin, "S01-0001", "S01-0001:A1", "confirmed", "已核对规则书");
+            Assert.Equal("confirmed", review.Status);
+            Assert.Contains(store.AdminAudit(), row => row.Category == "account" && row.Target == "ContentEditor");
+            Assert.Contains(store.AdminAudit("content"), row => row.Action == "publish" && row.Target == "home.hero.title");
+            Assert.Contains(store.AdminAudit("effect"), row => row.Comment == "已核对规则书");
+
+            var reloaded = new L12PlatformStore(path);
+            Assert.Equal("新的首页标题", reloaded.GetContent("home.hero.title"));
+            Assert.Contains(reloaded.AdminAudit("effect"), row => row.Target == "S01-0001/S01-0001:A1");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

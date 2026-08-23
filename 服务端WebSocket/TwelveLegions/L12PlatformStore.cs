@@ -12,6 +12,12 @@ public sealed record L12BugReportView(string Id, string? ReporterId, string Repo
     string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
     string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
+public sealed record L12AdminAuditView(string Id, string ActorId, string ActorName, string Category, string Action,
+    string Target, string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
+public sealed record L12ContentEntryView(string Key, string DraftValue, string PublishedValue, string Status,
+    string? UpdatedBy, DateTimeOffset? UpdatedAt, string? PublishedBy, DateTimeOffset? PublishedAt);
+public sealed record L12EffectReviewView(string CardId, string? AbilityId, string Status, string Note,
+    string Reviewer, DateTimeOffset UpdatedAt);
 
 public sealed class L12PlatformStore
 {
@@ -58,6 +64,42 @@ public sealed class L12PlatformStore
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    private sealed class AdminAuditRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string ActorId { get; set; } = string.Empty;
+        public string ActorName { get; set; } = "系统";
+        public string Category { get; set; } = string.Empty;
+        public string Action { get; set; } = string.Empty;
+        public string Target { get; set; } = string.Empty;
+        public string? FromValue { get; set; }
+        public string? ToValue { get; set; }
+        public string? Comment { get; set; }
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class ContentRow
+    {
+        public string Key { get; set; } = string.Empty;
+        public string DraftValue { get; set; } = string.Empty;
+        public string PublishedValue { get; set; } = string.Empty;
+        public string Status { get; set; } = "published";
+        public string? UpdatedBy { get; set; }
+        public DateTimeOffset? UpdatedAt { get; set; }
+        public string? PublishedBy { get; set; }
+        public DateTimeOffset? PublishedAt { get; set; }
+    }
+
+    private sealed class EffectReviewRow
+    {
+        public string CardId { get; set; } = string.Empty;
+        public string? AbilityId { get; set; }
+        public string Status { get; set; } = "unreviewed";
+        public string Note { get; set; } = string.Empty;
+        public string Reviewer { get; set; } = string.Empty;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     private sealed class SessionRow
     {
         public string TokenHash { get; set; } = string.Empty;
@@ -83,6 +125,9 @@ public sealed class L12PlatformStore
         public List<DeckRow> Decks { get; set; } = [];
         public List<BugRow> BugReports { get; set; } = [];
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<ContentRow> ContentEntries { get; set; } = [];
+        public List<EffectReviewRow> EffectReviews { get; set; } = [];
+        public List<AdminAuditRow> AdminAudit { get; set; } = [];
     }
 
     private static readonly string[] ForbiddenNames =
@@ -208,18 +253,23 @@ public sealed class L12PlatformStore
         }
     }
 
-    public bool SetRole(string accountId, string role)
+    public bool SetRole(L12AccountView actor, string accountId, string role)
     {
         if (role is not ("player" or "referee" or "organizer" or "editor" or "admin")) return false;
         lock (_gate)
         {
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
             if (row is null || string.Equals(row.Username, "Admin", StringComparison.Ordinal)) return false;
+            var previous = row.Role;
             row.Role = role;
+            AddAdminAudit(actor, "account", "role", row.Username, previous, role, null);
             Save();
             return true;
         }
     }
+
+    public bool SetRole(string accountId, string role)
+        => SetRole(new L12AccountView("system", "系统", "admin", DateTimeOffset.UtcNow, false), accountId, role);
 
     public L12BugReportView AddBug(L12AccountView? account, string title, string description, string page,
         string? roomCode, string? matchId, string version)
@@ -302,12 +352,119 @@ public sealed class L12PlatformStore
 
     public string GetContent(string key, string fallback = "")
     {
-        lock (_gate) return _data.Content.GetValueOrDefault(key, fallback);
+        lock (_gate)
+        {
+            var entry = _data.ContentEntries.FirstOrDefault(row => string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase));
+            return entry?.PublishedValue ?? _data.Content.GetValueOrDefault(key, fallback);
+        }
     }
 
     public void SetContent(string key, string value)
     {
-        lock (_gate) { _data.Content[key] = value; Save(); }
+        lock (_gate)
+        {
+            _data.Content[key] = value;
+            var entry = EnsureContentEntry(key);
+            entry.DraftValue = value;
+            entry.PublishedValue = value;
+            entry.Status = "published";
+            Save();
+        }
+    }
+
+    public L12ContentEntryView GetContentEntry(string key)
+    {
+        lock (_gate) return ToView(EnsureContentEntry(key));
+    }
+
+    public L12ContentEntryView SaveContentDraft(L12AccountView actor, string key, string value)
+    {
+        lock (_gate)
+        {
+            var row = EnsureContentEntry(key);
+            var previous = row.DraftValue;
+            row.DraftValue = value;
+            row.Status = row.DraftValue == row.PublishedValue ? "published" : "draft";
+            row.UpdatedBy = actor.Username;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            AddAdminAudit(actor, "content", "save-draft", key, previous, value, null);
+            Save();
+            return ToView(row);
+        }
+    }
+
+    public L12ContentEntryView PublishContent(L12AccountView actor, string key)
+    {
+        lock (_gate)
+        {
+            var row = EnsureContentEntry(key);
+            var previous = row.PublishedValue;
+            row.PublishedValue = row.DraftValue;
+            row.Status = "published";
+            row.PublishedBy = actor.Username;
+            row.PublishedAt = DateTimeOffset.UtcNow;
+            _data.Content[key] = row.PublishedValue;
+            AddAdminAudit(actor, "content", "publish", key, previous, row.PublishedValue, null);
+            Save();
+            return ToView(row);
+        }
+    }
+
+    public L12EffectReviewView SaveEffectReview(L12AccountView actor, string cardId, string? abilityId,
+        string status, string? note)
+    {
+        if (status is not ("unreviewed" or "human-assisted" or "confirmed" or "rejected"))
+            throw new ArgumentException("无效的审查状态", nameof(status));
+        lock (_gate)
+        {
+            var row = _data.EffectReviews.FirstOrDefault(item =>
+                string.Equals(item.CardId, cardId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.AbilityId, abilityId, StringComparison.OrdinalIgnoreCase));
+            var previous = row?.Status;
+            if (row is null)
+            {
+                row = new EffectReviewRow { CardId = cardId, AbilityId = abilityId };
+                _data.EffectReviews.Add(row);
+            }
+            row.Status = status;
+            row.Note = note?.Trim() ?? string.Empty;
+            row.Reviewer = actor.Username;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            AddAdminAudit(actor, "effect", "review", abilityId is null ? cardId : $"{cardId}/{abilityId}",
+                previous, status, row.Note);
+            Save();
+            return ToView(row);
+        }
+    }
+
+    public L12AtomicCardEffect ApplyEffectReviews(L12AtomicCardEffect effect)
+    {
+        lock (_gate)
+        {
+            var cardReview = _data.EffectReviews.LastOrDefault(row => row.AbilityId is null
+                && string.Equals(row.CardId, effect.CardId, StringComparison.OrdinalIgnoreCase));
+            var abilities = effect.Abilities.Select(ability =>
+            {
+                var review = _data.EffectReviews.LastOrDefault(row => string.Equals(row.CardId, effect.CardId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(row.AbilityId, ability.AbilityId, StringComparison.OrdinalIgnoreCase));
+                return review is null ? ability : ability with { ReviewStatus = review.Status, ReviewSource = $"后台人工确认：{review.Reviewer}" };
+            }).ToArray();
+            var status = cardReview?.Status ?? (abilities.Any(item => item.ReviewStatus == "rejected") ? "rejected"
+                : abilities.Any(item => item.ReviewStatus == "confirmed") ? "confirmed"
+                : abilities.Any(item => item.ReviewStatus == "human-assisted") ? "human-assisted" : effect.ReviewStatus);
+            var source = cardReview is null ? effect.ReviewSource : $"后台人工确认：{cardReview.Reviewer}";
+            return effect with { Abilities = abilities, ReviewStatus = status, ReviewSource = source };
+        }
+    }
+
+    public L12AtomicEffectPage ApplyEffectReviews(L12AtomicEffectPage page)
+        => page with { Items = page.Items.Select(ApplyEffectReviews).ToArray() };
+
+    public IReadOnlyList<L12AdminAuditView> AdminAudit(string? category = null, int limit = 200)
+    {
+        lock (_gate) return _data.AdminAudit
+            .Where(row => string.IsNullOrWhiteSpace(category) || row.Category == category)
+            .OrderByDescending(row => row.CreatedAt).Take(Math.Clamp(limit, 1, 1000)).Select(ToView).ToArray();
     }
 
     private void EnsureRootAdmin()
@@ -403,6 +560,40 @@ public sealed class L12PlatformStore
         row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt);
     private static L12BugAuditView ToView(BugAuditRow row) => new(row.Id, row.ActorId, row.ActorName, row.Action,
         row.FromValue, row.ToValue, row.Comment, row.CreatedAt);
+    private static L12AdminAuditView ToView(AdminAuditRow row) => new(row.Id, row.ActorId, row.ActorName,
+        row.Category, row.Action, row.Target, row.FromValue, row.ToValue, row.Comment, row.CreatedAt);
+    private static L12ContentEntryView ToView(ContentRow row) => new(row.Key, row.DraftValue, row.PublishedValue,
+        row.Status, row.UpdatedBy, row.UpdatedAt, row.PublishedBy, row.PublishedAt);
+    private static L12EffectReviewView ToView(EffectReviewRow row) => new(row.CardId, row.AbilityId, row.Status,
+        row.Note, row.Reviewer, row.UpdatedAt);
+
+    private ContentRow EnsureContentEntry(string key)
+    {
+        var row = _data.ContentEntries.FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (row is not null) return row;
+        var published = _data.Content.GetValueOrDefault(key, string.Empty);
+        row = new ContentRow { Key = key, DraftValue = published, PublishedValue = published, Status = "published" };
+        _data.ContentEntries.Add(row);
+        return row;
+    }
+
+    private void AddAdminAudit(L12AccountView actor, string category, string action, string target,
+        string? fromValue, string? toValue, string? comment)
+    {
+        _data.AdminAudit.Add(new AdminAuditRow
+        {
+            ActorId = actor.Id,
+            ActorName = actor.Username,
+            Category = category,
+            Action = action,
+            Target = target,
+            FromValue = fromValue,
+            ToValue = toValue,
+            Comment = comment,
+        });
+        if (_data.AdminAudit.Count > 5000)
+            _data.AdminAudit = _data.AdminAudit.OrderByDescending(row => row.CreatedAt).Take(5000).ToList();
+    }
 
     private static BugAuditRow NewBugAudit(L12AccountView? actor, string action, string? fromValue,
         string? toValue, string? comment) => new()
@@ -434,6 +625,9 @@ public sealed class L12PlatformStore
             data.BugReports ??= [];
             foreach (var bug in data.BugReports) bug.History ??= [];
             data.Content ??= new(StringComparer.OrdinalIgnoreCase);
+            data.ContentEntries ??= [];
+            data.EffectReviews ??= [];
+            data.AdminAudit ??= [];
             return data;
         }
         catch { return new DataFile(); }

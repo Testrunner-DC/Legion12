@@ -16,18 +16,21 @@ export interface EffectAtom {
 export interface AtomicAbility {
   abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
   migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number; executionModel: string
-  reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed'; reviewSource: string
+  reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
 }
 export interface AtomicCardEffect {
   cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string
   abilities: AtomicAbility[]; migrationStatus: string; atomCount: number; executableAtomCount: number; legacyAtomCount: number; atomKinds: string[]
-  reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed'; reviewSource: string
+  reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
 }
 export interface AtomicCoverage {
   totalCards: number; cardsWithText: number; totalAbilities: number; totalAtoms: number; declarativeReadyAbilities: number
   verifiedAbilities: number; legacyBackedAbilities: number; byStatus: Record<string, number>; byAtomKind: Record<string, number>
 }
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
+export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string }
+export interface EffectReview { cardId: string; abilityId?: string; status: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; note: string; reviewer: string; updatedAt: string }
+export interface AdminAudit { id: string; actorName: string; category: string; action: string; target: string; fromValue?: string; toValue?: string; comment?: string; createdAt: string }
 
 function loadAccount(): PlatformAccount | null {
   try { return JSON.parse(localStorage.getItem('l12-account') || 'null') as PlatformAccount | null } catch { return null }
@@ -39,6 +42,7 @@ export const platformState = reactive({
 })
 
 export const isAdmin = computed(() => platformState.account?.role === 'admin')
+export const canAccessAdmin = computed(() => platformState.account?.role === 'admin' || platformState.account?.role === 'editor')
 
 export function apiBase() {
   try {
@@ -109,8 +113,9 @@ export const adminApi = {
     return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
   },
   updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  getContent: getPublicContent,
-  setContent: (key: string, value: string) => platformRequest<void>(`/api/admin/content/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
+  saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  publishContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}/publish`, { method: 'POST' }),
   effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),
   effectCoverage: () => platformRequest<AtomicCoverage>('/api/admin/effects/coverage'),
   effects: (query: { search?: string; status?: string; product?: string; atomKind?: string; page?: number; pageSize?: number } = {}) => {
@@ -119,4 +124,6 @@ export const adminApi = {
     return platformRequest<AtomicEffectPage>(`/api/admin/effects${params.size ? `?${params}` : ''}`)
   },
   effect: (cardId: string) => platformRequest<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
+  reviewEffect: (cardId: string, body: { abilityId?: string; status: string; note?: string }) => platformRequest<EffectReview>(`/api/admin/effects/${encodeURIComponent(cardId)}/review`, { method: 'PUT', body: JSON.stringify(body) }),
+  audit: (category = '') => platformRequest<AdminAudit[]>(`/api/admin/audit${category ? `?category=${encodeURIComponent(category)}` : ''}`),
 }

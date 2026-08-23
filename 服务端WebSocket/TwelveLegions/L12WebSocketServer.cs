@@ -107,7 +107,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/admin/accounts", (HttpRequest request) =>
             IsAdmin(request) ? Results.Ok(_platform.Accounts()) : Results.Unauthorized());
         _app.MapPut("/api/admin/accounts/{id}/role", (HttpRequest request, string id, RoleRequest body) =>
-            !IsAdmin(request) ? Results.Unauthorized() : _platform.SetRole(id, body.Role ?? string.Empty) ? Results.Ok() : Results.BadRequest());
+        {
+            var actor = _platform.Authenticate(request.Headers.Authorization);
+            return actor?.Role != "admin" ? Results.Unauthorized()
+                : _platform.SetRole(actor, id, body.Role ?? string.Empty) ? Results.Ok() : Results.BadRequest();
+        });
         _app.MapGet("/api/admin/bugs", (HttpRequest request, string? status, string? priority, string? assignee, string? search) =>
             IsAdmin(request) ? Results.Ok(_platform.Bugs(status, priority, assignee, search)) : Results.Unauthorized());
         _app.MapPatch("/api/admin/bugs/{id}", (HttpRequest request, string id, BugUpdateRequest body) =>
@@ -118,27 +122,45 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return updated is null ? Results.NotFound() : Results.Ok(updated);
         });
         _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
-        _app.MapPut("/api/admin/content/{key}", (HttpRequest request, string key, ContentRequest body) =>
+        _app.MapGet("/api/admin/content/{key}", (HttpRequest request, string key) =>
+            IsContentEditor(request) ? Results.Ok(_platform.GetContentEntry(key)) : Results.Unauthorized());
+        _app.MapPut("/api/admin/content/{key}/draft", (HttpRequest request, string key, ContentRequest body) =>
         {
-            if (!IsAdmin(request)) return Results.Unauthorized();
-            _platform.SetContent(key, body.Value ?? string.Empty);
-            return Results.Ok(new { key, body.Value });
+            var actor = _platform.Authenticate(request.Headers.Authorization);
+            if (actor is null || actor.Role is not ("admin" or "editor")) return Results.Unauthorized();
+            return Results.Ok(_platform.SaveContentDraft(actor, key, body.Value ?? string.Empty));
+        });
+        _app.MapPost("/api/admin/content/{key}/publish", (HttpRequest request, string key) =>
+        {
+            var actor = _platform.Authenticate(request.Headers.Authorization);
+            return actor is null || actor.Role is not ("admin" or "editor")
+                ? Results.Unauthorized() : Results.Ok(_platform.PublishContent(actor, key));
         });
         _app.MapGet("/api/admin/effect-atoms", (HttpRequest request) =>
-            IsAdmin(request) ? Results.Ok(L12EffectAtomRegistry.All) : Results.Unauthorized());
+            IsEffectEditor(request) ? Results.Ok(L12EffectAtomRegistry.All) : Results.Unauthorized());
         _app.MapGet("/api/admin/effects/coverage", (HttpRequest request) =>
-            IsAdmin(request) ? Results.Ok(_catalog.AtomicEffects.Coverage()) : Results.Unauthorized());
+            IsEffectEditor(request) ? Results.Ok(_catalog.AtomicEffects.Coverage()) : Results.Unauthorized());
         _app.MapGet("/api/admin/effects", (HttpRequest request, string? search, string? status, string? product,
             string? atomKind, int? page, int? pageSize) =>
-            IsAdmin(request)
-                ? Results.Ok(_catalog.AtomicEffects.Query(search, status, product, atomKind, page ?? 1, pageSize ?? 50))
+            IsEffectEditor(request)
+                ? Results.Ok(_platform.ApplyEffectReviews(_catalog.AtomicEffects.Query(search, status, product, atomKind, page ?? 1, pageSize ?? 50)))
                 : Results.Unauthorized());
         _app.MapGet("/api/admin/effects/{cardId}", (HttpRequest request, string cardId) =>
         {
-            if (!IsAdmin(request)) return Results.Unauthorized();
+            if (!IsEffectEditor(request)) return Results.Unauthorized();
             var effect = _catalog.AtomicEffects.Find(cardId);
-            return effect is null ? Results.NotFound() : Results.Ok(effect);
+            return effect is null ? Results.NotFound() : Results.Ok(_platform.ApplyEffectReviews(effect));
         });
+        _app.MapPut("/api/admin/effects/{cardId}/review", (HttpRequest request, string cardId, EffectReviewRequest body) =>
+        {
+            var actor = _platform.Authenticate(request.Headers.Authorization);
+            if (actor is null || actor.Role is not ("admin" or "editor")) return Results.Unauthorized();
+            if (_catalog.AtomicEffects.Find(cardId) is null) return Results.NotFound();
+            try { return Results.Ok(_platform.SaveEffectReview(actor, cardId, body.AbilityId, body.Status ?? "unreviewed", body.Note)); }
+            catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
+        });
+        _app.MapGet("/api/admin/audit", (HttpRequest request, string? category, int? limit) =>
+            IsAdmin(request) ? Results.Ok(_platform.AdminAudit(category, limit ?? 200)) : Results.Unauthorized());
         _app.Map("/ws", async context =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
@@ -341,6 +363,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     }
 
     private bool IsAdmin(HttpRequest request) => _platform.Authenticate(request.Headers.Authorization)?.Role == "admin";
+    private bool IsContentEditor(HttpRequest request) => _platform.Authenticate(request.Headers.Authorization)?.Role is "admin" or "editor";
+    private bool IsEffectEditor(HttpRequest request) => _platform.Authenticate(request.Headers.Authorization)?.Role is "admin" or "editor";
 
     public async ValueTask DisposeAsync()
     {
@@ -352,5 +376,6 @@ public sealed record AuthRequest(string? Username, string? Password);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 public sealed record RoleRequest(string? Role);
 public sealed record ContentRequest(string? Value);
+public sealed record EffectReviewRequest(string? AbilityId, string? Status, string? Note);
 public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode, string? MatchId, string? Version);
 public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes, string? Comment);
