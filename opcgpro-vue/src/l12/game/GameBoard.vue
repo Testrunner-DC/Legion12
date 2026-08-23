@@ -14,7 +14,17 @@ import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
 import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 
-const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; embedded?: boolean }>(), { readOnly: false, embedded: false })
+type GmPlacementRequest = {
+  type: 'placeCard' | 'playHandCard'
+  targetPlayer: number
+  cardId?: string
+  cardInstanceId?: string
+  cardName: string
+  cardType: string
+  triggerEffects: boolean
+}
+const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; embedded?: boolean; gmPlacement?: GmPlacementRequest | null }>(), { readOnly: false, embedded: false, gmPlacement: null })
+const emit = defineEmits<{ gmPlacementResolved: [] }>()
 const scale = ref(1)
 const compactViewport = ref(false)
 const selectedId = ref<string | null>(null)
@@ -49,6 +59,10 @@ const controlledPlayerIndex = computed(() => {
 })
 const me = computed(() => props.game.players[controlledPlayerIndex.value])
 const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value])
+// The sandbox actor may change for prompts, but the observing player's board orientation never changes.
+const viewMe = computed(() => props.game.players[props.game.you])
+const viewEnemy = computed(() => props.game.players[1 - props.game.you])
+function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
 const defenseTargetType = computed(() => props.game.pendingDefense?.target.type ?? null)
 const isMyMain = computed(() => props.game.phase === 'Main' && props.game.activePlayer === controlledPlayerIndex.value)
 const activeMorale = computed(() =>
@@ -281,6 +295,65 @@ function toggle(list: string[], id: string) {
   const index = list.indexOf(id)
   if (index >= 0) list.splice(index, 1); else list.push(id)
 }
+function selectedHandIdsFor(playerIndex: number) {
+  if (!isControlledPlayer(playerIndex)) return []
+  if (props.game.phase === 'Mulligan') return mulliganIds.value
+  if (props.game.phase === 'Defense') return defenseIds.value
+  return selectedId.value ? [selectedId.value] : []
+}
+function playableHandIdsFor(playerIndex: number) {
+  return isControlledPlayer(playerIndex) && !l12State.pendingAction ? handPlayableIds.value : []
+}
+function selectHandFor(playerIndex: number, card: Card) {
+  if (isControlledPlayer(playerIndex)) selectHand(card)
+  else focusCard.value = card
+}
+function playFromHandFor(playerIndex: number, card: Card) {
+  if (isControlledPlayer(playerIndex)) playFromHand(card)
+}
+function slotFor(playerIndex: number, row: number, slot: number, card: Card | null) {
+  if (props.gmPlacement && props.gmPlacement.targetPlayer === playerIndex) {
+    if (card) { focusCard.value = card; return }
+    gmAction({
+      type: props.gmPlacement.type,
+      targetPlayer: playerIndex,
+      row,
+      slot,
+      triggerEffects: props.gmPlacement.triggerEffects,
+      ...(props.gmPlacement.cardId ? { cardId: props.gmPlacement.cardId } : {}),
+      ...(props.gmPlacement.cardInstanceId ? { cardInstanceId: props.gmPlacement.cardInstanceId } : {}),
+    })
+    emit('gmPlacementResolved')
+    return
+  }
+  if (isControlledPlayer(playerIndex)) ownSlot(row, slot, card)
+  else enemySlot(row, slot, card)
+}
+function masterFor(playerIndex: number) {
+  if (isControlledPlayer(playerIndex)) masterPlayerIndex.value = playerIndex
+  else enemyMaster()
+}
+function fieldActionFor(playerIndex: number, action: 'attack' | 'move' | 'freeMove' | 'cavalryMove', card: Card) {
+  if (isControlledPlayer(playerIndex)) fieldAction(action, card)
+}
+function activateAbilityFor(playerIndex: number, card: Card, ability: string) {
+  if (isControlledPlayer(playerIndex)) activateAbility(card, ability)
+}
+function activateFactionAbilityFor(playerIndex: number, ability: string) {
+  if (isControlledPlayer(playerIndex)) activateFactionAbility(ability)
+}
+function selectPublicCardFor(playerIndex: number, card: Card) {
+  focusCard.value = card
+  if (isControlledPlayer(playerIndex)) selectPublicCard(card)
+}
+function targetableIdsFor(playerIndex: number) {
+  if (boardTargetPrompt.value) return boardTargetableIds.value
+  return isControlledPlayer(playerIndex) ? promotionFoundationTargetIds.value : selectedAttackTargets.value
+}
+function selectionModeFor(playerIndex: number) {
+  return Boolean(boardTargetPrompt.value || (isControlledPlayer(playerIndex)
+    && (boardSlotPrompt.value || promotionFoundationTargetIds.value.length)))
+}
 function selectHand(card: Card) {
   focusCard.value = card
   if (props.game.phase === 'Mulligan') return toggle(mulliganIds.value, card.instanceId)
@@ -509,23 +582,36 @@ function statusTexts(card: Card) {
         </aside>
 
         <main class="board-center">
-          <HandArea v-if="l12State.gmEnabled" :cards="enemy.hand" :dim-unplayable="false" @focus="focusCard = $event" />
-          <HandArea v-else hidden :count="enemy.handCount || 0" />
+          <HandArea v-if="l12State.gmEnabled" :cards="viewEnemy.hand"
+            :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
+            :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
+            :show-play-action="isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+            @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
+          <HandArea v-else hidden :count="viewEnemy.handCount || 0" />
           <div class="felt-board">
-            <PlayerMat :player="enemy" side="opponent" :active="game.activePlayer === enemy.playerIndex && !combat"
-              :viewer-player-index="controlledPlayerIndex" :selected-id="selectedId" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction"
-              :placement-mode="mode === 'play' && playArmed && isInfiltrator(selectedHandCard)"
-              :turn-serial="game.turnSerial" :hidden-reveal-card="hiddenRevealCard"
-              :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)" :selection-mode="Boolean(boardTargetPrompt)"
-              :targetable-ids="boardTargetPrompt ? boardTargetableIds : combat ? [] : selectedAttackTargets"
+            <PlayerMat :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
+              :active="game.activePlayer === viewEnemy.playerIndex && !combat" :viewer-player-index="game.you"
+              :selected-id="selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+              :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
+              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
+              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard"
+              :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
+              :move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'cavalryMove'"
+              :selection-mode="selectionModeFor(viewEnemy.playerIndex)" :targetable-ids="targetableIdsFor(viewEnemy.playerIndex)"
+              :prompt-slot-ids="isControlledPlayer(viewEnemy.playerIndex) ? (boardSlotPrompt?.validChoices ?? []) : []"
+              :attackable-ids="isControlledPlayer(viewEnemy.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewEnemy.playerIndex) ? responsePlayableIds : []"
               :selected-target-ids="boardTargetIds"
-              :combat-attacker-id="combat?.attackerOwner.playerIndex === enemy.playerIndex ? combat.attacker.instanceId : null"
-              :combat-target-id="combat?.targetOwner.playerIndex === enemy.playerIndex ? combat.target?.instanceId : null"
-              :combat-target-master="combat?.targetOwner.playerIndex === enemy.playerIndex && !combat.target"
+              :combat-attacker-id="combat?.attackerOwner.playerIndex === viewEnemy.playerIndex ? combat.attacker.instanceId : null"
+              :combat-target-id="combat?.targetOwner.playerIndex === viewEnemy.playerIndex ? combat.target?.instanceId : null"
+              :combat-target-master="combat?.targetOwner.playerIndex === viewEnemy.playerIndex && !combat.target"
               :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
-              :master-targetable="!combat && selectedAttackTargets.includes('master')" @slot="enemySlot" @master="enemyMaster"
-              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @ability="activateAbility"
-              @select-card="selectPublicCard" @payment-resource="togglePaymentResource" />
+              :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
+              @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
+              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event"
+              @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
+              @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
+              @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
+              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" />
             <div class="board-seam">
               <div class="disaster-zone" @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
                 <img class="disaster-card-image"
@@ -552,33 +638,40 @@ function statusTexts(card: Card) {
                   :support-id="supportId" :can-support="Boolean(eligibleSupportId)" :busy="l12State.pendingAction" @command="command" />
               </div>
             </div>
-            <PlayerMat :player="me" side="my" :active="game.activePlayer === me.playerIndex && !combat"
-              :viewer-player-index="controlledPlayerIndex"
-              :turn-serial="game.turnSerial"
-              :selected-id="supportId || selectedId" :move-mode="mode === 'move'" :free-move-mode="mode === 'freeMove'" :cavalry-move-mode="mode === 'cavalryMove'"
-              :placement-mode="mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))"
-              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'"
-              :placement-row="isCounter(selectedHandCard) ? 1 : null" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction" :round="game.round"
-              :attackable-ids="attackableIds" :response-playable-ids="responsePlayableIds"
-              :selection-mode="Boolean(boardTargetPrompt || boardSlotPrompt || promotionFoundationTargetIds.length)" :targetable-ids="boardTargetPrompt ? boardTargetableIds : promotionFoundationTargetIds" :prompt-slot-ids="boardSlotPrompt?.validChoices ?? []"
-              :selected-target-ids="boardTargetIds"
-              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
-              :combat-attacker-id="combat?.attackerOwner.playerIndex === me.playerIndex ? combat.attacker.instanceId : null"
-              :combat-target-id="combat?.targetOwner.playerIndex === me.playerIndex ? combat.target?.instanceId : null"
-              :combat-target-master="combat?.targetOwner.playerIndex === me.playerIndex && !combat.target" :hidden-reveal-card="hiddenRevealCard"
-              @slot="ownSlot" @master="masterPlayerIndex = me.playerIndex" @focus="focusCard = $event" @graveyard="graveyardPlayer = $event" @card-action="fieldAction"
-              @select-card="selectPublicCard" @ability="activateAbility" @faction-ability="activateFactionAbility"
+            <PlayerMat :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
+              :active="game.activePlayer === viewMe.playerIndex && !combat" :viewer-player-index="game.you"
+              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard"
+              :selected-id="supportId || selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+              :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
+              :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
+              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
+              :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
+              :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
+              :prompt-slot-ids="isControlledPlayer(viewMe.playerIndex) ? (boardSlotPrompt?.validChoices ?? []) : []"
+              :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
+              :selected-target-ids="boardTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
+              :combat-target-id="combat?.targetOwner.playerIndex === viewMe.playerIndex ? combat.target?.instanceId : null"
+              :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"
+              :master-targetable="!isControlledPlayer(viewMe.playerIndex) && !combat && selectedAttackTargets.includes('master')"
+              @slot="(row, slot, card) => slotFor(viewMe.playerIndex, row, slot, card)" @master="masterFor(viewMe.playerIndex)"
+              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event"
+              @card-action="(action, card) => fieldActionFor(viewMe.playerIndex, action, card)"
+              @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
+              @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
+              @faction-ability="ability => activateFactionAbilityFor(viewMe.playerIndex, ability)"
               @payment-resource="togglePaymentResource" />
           </div>
-          <HandArea :cards="me.hand" :selected-ids="game.phase === 'Mulligan' ? mulliganIds : game.phase === 'Defense' ? defenseIds : selectedId ? [selectedId] : []"
-            :playable-ids="l12State.pendingAction ? [] : handPlayableIds" :dim-unplayable="game.phase !== 'Mulligan'"
-            :show-play-action="isMyMain && !l12State.pendingAction" @select="selectHand" @play="playFromHand" @focus="focusCard = $event" />
+          <HandArea :cards="viewMe.hand" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
+            :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
+            :show-play-action="isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+            @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
         </main>
 
         <aside class="board-rail right-rail">
           <section class="grand-panel player-panel">
-            <h3>对手</h3><strong>{{ enemy.name }}</strong><span>{{ enemy.master.masterName }} · 血量 {{ enemy.master.hp }}</span>
-            <hr/><h3>我方</h3><strong class="mine">{{ me.name }}</strong><span>{{ me.master.masterName }} · 血量 {{ me.master.hp }}</span>
+            <h3>对手</h3><strong>{{ viewEnemy.name }}</strong><span>{{ viewEnemy.master.masterName }} · 血量 {{ viewEnemy.master.hp }}</span>
+            <hr/><h3>我方</h3><strong class="mine">{{ viewMe.name }}</strong><span>{{ viewMe.master.masterName }} · 血量 {{ viewMe.master.hp }}</span>
           </section>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <div class="event-list">
@@ -602,11 +695,15 @@ function statusTexts(card: Card) {
             :support-id="supportId" :can-support="Boolean(eligibleSupportId)" :busy="l12State.pendingAction" @command="command" /></section>
         </aside>
       </div>
-      <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[me, enemy]" :initial-player="graveyardPlayer"
+      <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
         :own-player-index="game.you" :can-activate-osiris="canActivateOsiris"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === game.you"
-        :can-activate="!readOnly && masterPlayerIndex === game.you && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />
+        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />
+      <div v-if="gmPlacement && !readOnly" class="board-target-controls gm-placement-controls">
+        <strong>GM：请选择〈{{ gmPlacement.cardName }}〉的登场位置</strong><span>直接点击目标玩家的绿色高亮空位</span>
+        <button @click="emit('gmPlacementResolved')">取消</button>
+      </div>
       <div v-if="boardTargetPrompt && !readOnly" class="board-target-controls">
         <strong>{{ boardTargetPrompt.text }}</strong><span>已选择 {{ boardTargetIds.length }}/{{ boardTargetPrompt.maxChoose }}</span>
         <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>

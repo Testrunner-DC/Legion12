@@ -745,9 +745,12 @@ public sealed partial class L12GameEngine
         }
         if (card.CardId == "S02-0607")
         {
-            var choices = Enumerable.Range(0, player.SpecialZones.Runes).Select(count => $"runes:{count}").ToArray();
-            CreatePrompt(item.Controller, "optional", "高文：选择本次进攻消耗的符文数量", choices, 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gawain-runes" });
+            var choices = Enumerable.Range(1, player.SpecialZones.Runes).Select(index => $"rune:{index}").ToArray();
+            CreatePrompt(item.Controller, "resource-payment", "高文：请直接点击本次进攻要消耗的符文", choices, 0, player.SpecialZones.Runes,
+                "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-gawain-runes", ["choiceMode"] = "resource-payment", ["resourceKind"] = "rune",
+                });
             return true;
         }
         if (card.CardId == "S02-0608")
@@ -2387,7 +2390,7 @@ public sealed partial class L12GameEngine
             case "s2-gawain-runes":
             {
                 var source = FindSource(item);
-                var count = int.TryParse(chosen[0].Split(':').LastOrDefault(), out var parsed) ? parsed : 0;
+                var count = chosen.Count;
                 if (source is not null && count > 0 && player.SpecialZones.Runes >= count && L12S2ZoneOps.SpendRunes(player, count))
                 {
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "高文");

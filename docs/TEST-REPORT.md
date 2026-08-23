@@ -115,3 +115,14 @@
 - `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1`：卡池248/248，旧卡号分支208处，未高于209基线。
 - 条件费用：S02-0509、S02-0510、S02-0512、S02-0518 的显示费用与实际支付统一读取结构化能力原子；补回奥德修斯“神力为0张时登场费用-1”。
 - 挑衅：全卡池8张前排印刷挑衅统一使用带排位的合法目标查询，军团处于后排时不再错误限制进攻目标；动作结算、主宰目标和合法目标快照使用同一入口。
+
+## 2026-08-23 沙盒固定视角、资源点击、GM 选位与有效响应回归
+
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore`：266/266 通过，0失败、0跳过。
+- `dotnet test .\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj --configuration Release --filter "FullyQualifiedName~PlatformStoreTests"`：4/4 通过。
+- `npm run build`：UI 契约 71/71 通过；Vue/TypeScript 类型检查及 Vite 生产构建通过。
+- 沙盒：观察视角与动作控制方分离，我方固定在下方、对方固定在上方；双方手牌及 Prompt 均由沙盒创建者操作，切换动作方不再翻转棋盘。
+- GM：从目录或手牌选择军团后进入棋盘选位，仅合法空位可提交；圣物与战术仍按原规则立即执行。
+- 符文：高文与槲寄生统一使用场面符文圆形支付，后端按玩家实际点击的 `rune:N` 结算。
+- 响应：默认仅在权威合法动作集合非空时打开窗口；无覆盖反击且无合法手牌响应时自动让过，戏法师的傀儡等合法响应仍会正常出现。
+- 误跑 `GrandUMIServer.Tests` 全集会因仓库不包含 GrandUMI 历史 `卡牌数据` 而报告45项环境失败；正式发布门禁只运行上述 `PlatformStoreTests`，本轮按发布脚本口径验证4/4通过。

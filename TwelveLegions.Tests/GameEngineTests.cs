@@ -78,6 +78,17 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void DefaultResponseModeSkipsWindowsWithoutAnyLegalResponse()
+    {
+        var game = new L12GameEngine(Catalog, "response-meaningful", "MEANING", 1208,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        var card = PutCardInHand(game, 0, "S01-0103");
+
+        Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+    }
+
+    [Fact]
     public void ProductionResponseModeOffersAnonymousPassEvenWhenNoResponseCardExists()
     {
         var game = new L12GameEngine(Catalog, "response-privacy", "PRIVACY", 1207,

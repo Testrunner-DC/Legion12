@@ -239,7 +239,10 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
         var runePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-mistletoe-rune-cost", runePrompt.Continuation);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId, Choice: "runes:2")).Accepted);
+        Assert.Equal("resource-payment", runePrompt.Kind);
+        Assert.Equal(["rune:1", "rune:2"], runePrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
+            CardInstanceIds: ["rune:1", "rune:2"])).Accepted);
         PassResponses(game);
 
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
@@ -251,6 +254,33 @@ public sealed class S2FactionRegressionTests
         Assert.Null(game.State.Players[1].Field[0][0]);
         Assert.Contains(target, game.State.Players[1].Graveyard);
         Assert.Equal(target.BaseTroops, target.Troops);
+    }
+
+    [Fact]
+    public void GawainConsumesTheRunesClickedOnTheBoard()
+    {
+        var game = Create(63121);
+        var player = game.State.Players[0];
+        var gawain = Card("S02-0607", "gawain-rune-payment");
+        gawain.SummonRound = 0;
+        player.Field[0][0] = gawain;
+        player.SpecialZones.Runes = 3;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", gawain.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var runePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-gawain-runes", runePrompt.Data["action"]);
+        Assert.Equal("resource-payment", runePrompt.Kind);
+        Assert.Equal(["rune:1", "rune:2", "rune:3"], runePrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
+            CardInstanceIds: ["rune:1", "rune:2"])).Accepted);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Equal(gawain.BaseTroops + 2000, gawain.Troops);
+        Assert.Equal(3, game.State.PendingDefense?.MasterDamage);
     }
 
     [Fact]

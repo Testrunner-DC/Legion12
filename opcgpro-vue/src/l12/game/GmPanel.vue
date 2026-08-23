@@ -5,14 +5,24 @@ import type { Card, GameState } from '@/l12/types'
 import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 
 const props = defineProps<{ game: GameState }>()
+const emit = defineEmits<{
+  armPlacement: [request: {
+    type: 'placeCard' | 'playHandCard'
+    targetPlayer: number
+    cardId?: string
+    cardInstanceId?: string
+    cardName: string
+    cardType: string
+    triggerEffects: boolean
+  }]
+}>()
 const open = ref(true)
 const targetMode = ref<'self' | 'opponent'>('self')
 const selectedCatalogCard = ref<SandboxCatalogCard | null>(null)
 const pickerOpen = ref(false)
 const destination = ref('hand')
 const handDestination = ref('graveyard')
-const row = ref(0)
-const slot = ref(0)
+
 const triggerEffects = ref(true)
 const selectedInstanceId = ref('')
 const selectedHandInstanceId = ref('')
@@ -51,9 +61,27 @@ function run(type: string, extra: Record<string, unknown> = {}) {
   gmAction({ type, targetPlayer: targetPlayer.value, ...extra })
 }
 function addCard() { if (selectedCatalogCard.value) run('addCard', { cardId: selectedCatalogCard.value.id, destination: destination.value, value: count.value }) }
-function placeCard() { if (selectedCatalogCard.value) run('placeCard', { cardId: selectedCatalogCard.value.id, row: row.value, slot: slot.value, triggerEffects: triggerEffects.value }) }
+function placeCard() {
+  const card = selectedCatalogCard.value
+  if (!card) return
+  if (card.cardType === 'legion') {
+    emit('armPlacement', { type: 'placeCard', targetPlayer: targetPlayer.value, cardId: card.id, cardName: card.nameZh, cardType: card.cardType, triggerEffects: triggerEffects.value })
+    open.value = false
+    return
+  }
+  run('placeCard', { cardId: card.id, triggerEffects: triggerEffects.value })
+}
 function moveHandCard() { if (selectedHandCard.value) run('moveHandCard', { cardInstanceId: selectedHandCard.value.instanceId, destination: handDestination.value }) }
-function playHandCard() { if (selectedHandCard.value) run('playHandCard', { cardInstanceId: selectedHandCard.value.instanceId, row: row.value, slot: slot.value, triggerEffects: triggerEffects.value }) }
+function playHandCard() {
+  const card = selectedHandCard.value
+  if (!card) return
+  if (card.cardType === 'legion') {
+    emit('armPlacement', { type: 'playHandCard', targetPlayer: targetPlayer.value, cardInstanceId: card.instanceId, cardName: card.name, cardType: card.cardType, triggerEffects: triggerEffects.value })
+    open.value = false
+    return
+  }
+  run('playHandCard', { cardInstanceId: card.instanceId, triggerEffects: triggerEffects.value })
+}
 function selectCatalogCard(card: SandboxCatalogCard) { selectedCatalogCard.value = card; pickerOpen.value = false }
 function onKeydown(event: KeyboardEvent) {
   if (event.key.toLowerCase() !== 't' || event.ctrlKey || event.metaKey || event.altKey) return
@@ -93,7 +121,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
     <section><h3>卡牌与区域</h3><button class="card-choice" @click="pickerOpen = true"><img v-if="selectedCatalogCard?.imageUrl" :src="selectedCatalogCard.imageUrl" :alt="selectedCatalogCard.nameZh"/><span><b>{{ selectedCatalogCard?.nameZh || '选择卡片' }}</b><small>{{ selectedCatalogCard?.number || '从完整卡牌档案筛选' }}</small></span></button><select v-model="destination"><option value="hand">加入手牌</option><option value="library-top">置于牌库顶部</option><option value="library-bottom">置于牌库底部</option><option value="graveyard">置入墓地</option><option value="removed">移出游戏</option></select><div class="number-row"><input v-model.number="count" type="number" min="1" max="20"/><button class="primary" :disabled="!selectedCatalogCard" @click="addCard">连续放置</button></div></section>
 
-    <section><h3>无视费用打出</h3><div class="compact"><label>排<select v-model.number="row"><option :value="0">前排</option><option :value="1">后排</option></select></label><label>格<select v-model.number="slot"><option :value="0">1</option><option :value="1">2</option><option :value="2">3</option></select></label></div><label class="check"><input v-model="triggerEffects" type="checkbox"/>执行登场时/战术效果</label><button class="primary" :disabled="!selectedCatalogCard" @click="placeCard">打出所选卡片到场上</button></section>
+    <section><h3>无视费用打出</h3><p class="hint">军团会返回棋盘，由你直接点击目标玩家的绿色空位；其他卡牌按其区域立即打出。</p><label class="check"><input v-model="triggerEffects" type="checkbox"/>执行登场时/战术效果</label><button class="primary" :disabled="!selectedCatalogCard" @click="placeCard">打出所选卡片</button></section>
 
     <section><h3>{{ targetMode === 'self' ? '我方' : '对方' }}手牌（GM 可操作）</h3><div class="gm-hand"><button v-for="card in targetHand" :key="card.instanceId" :class="{ active: selectedHandInstanceId === card.instanceId }" @click="selectedHandInstanceId = card.instanceId"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.name"/><span>{{ card.name }}</span></button><p v-if="!targetHand.length">该方没有手牌</p></div><select v-model="handDestination"><option value="graveyard">置入墓地</option><option value="library-top">置于牌库顶部</option><option value="library-bottom">置于牌库底部</option><option value="removed">移出游戏</option></select><button :disabled="!selectedHandCard" @click="moveHandCard">移动所选手牌</button><button class="primary" :disabled="!selectedHandCard" @click="playHandCard">无视费用打出所选手牌</button></section>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import GmPanel from './game/GmPanel.vue'
@@ -8,6 +8,15 @@ import { gameAction, l12State, leaveRoom } from './net'
 const router = useRouter()
 const game = computed(() => l12State.game)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
+const gmPlacement = ref<{
+  type: 'placeCard' | 'playHandCard'
+  targetPlayer: number
+  cardId?: string
+  cardInstanceId?: string
+  cardName: string
+  cardType: string
+  triggerEffects: boolean
+} | null>(null)
 function surrender() {
   if (!game.value || game.value.phase === 'GameOver' || !window.confirm('确定要投降并结束本局对战吗？')) return
   gameAction({ type: 'surrender' })
@@ -25,8 +34,9 @@ function returnToLobby() {
       <button @click="returnToLobby">返回大厅</button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div>
-    <GameBoard :game="game" :read-only="l12State.spectating" />
-    <GmPanel v-if="l12State.gmEnabled" :game="game" />
+    <GameBoard :game="game" :read-only="l12State.spectating" :gm-placement="gmPlacement"
+      @gm-placement-resolved="gmPlacement = null" />
+    <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" />
 
     <Transition name="fade">
       <button v-if="l12State.notice" class="toast" @click="l12State.notice = ''">{{ l12State.notice }}</button>

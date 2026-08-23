@@ -44,20 +44,22 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0622" && command.Choice?.Contains("runes:", StringComparison.Ordinal) != true)
         {
             var maximum = Math.Min(player.SpecialZones.Runes, (card.Cost + 1) / 2);
-            var choices = Enumerable.Range(0, maximum + 1).Select(count => $"runes:{count}").ToArray();
-            var data = new Dictionary<string, string>
+            if (maximum == 0)
             {
-                ["cardInstanceId"] = card.InstanceId,
-                ["choiceMode"] = "instant",
-            };
-            foreach (var choice in choices)
-            {
-                var count = int.Parse(choice.AsSpan("runes:".Length));
-                data[choice] = $"消耗{count}符文（登场费用-{count * 2}）";
+                command = command with { Choice = "runes:0" };
             }
-            CreatePrompt(playerIndex, "option", "〈槲寄生符咒〉：选择要消耗的符文数量", choices, 1, 1,
-                "s2-mistletoe-rune-cost", data: data);
-            return CommandResult.Ok();
+            else
+            {
+                var choices = Enumerable.Range(1, maximum).Select(index => $"rune:{index}").ToArray();
+                CreatePrompt(playerIndex, "resource-payment", "〈槲寄生符咒〉：请直接点击要消耗的符文", choices, 0, maximum,
+                    "s2-mistletoe-rune-cost", data: new Dictionary<string, string>
+                    {
+                        ["cardInstanceId"] = card.InstanceId,
+                        ["choiceMode"] = "resource-payment",
+                        ["resourceKind"] = "rune",
+                    });
+                return CommandResult.Ok();
+            }
         }
 
         var mayUseSelfDamageDiscount = card.CardType == "legion" && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1;

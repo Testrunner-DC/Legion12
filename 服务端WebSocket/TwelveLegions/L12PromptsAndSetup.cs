@@ -373,7 +373,7 @@ public sealed partial class L12GameEngine
             case "s2-mistletoe-rune-cost":
             {
                 var result = PlayCard(prompt.PlayerIndex, new L12Command(
-                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Choice: chosen[0]));
+                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Choice: $"runes:{chosen.Count}"));
                 if (!result.Accepted) return result;
                 break;
             }

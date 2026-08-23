@@ -7,6 +7,7 @@ import { factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets
 const props = defineProps<{
   player: PlayerView
   side: 'my' | 'opponent'
+  controllable?: boolean
   viewerPlayerIndex?: number
   selectedId?: string | null
   attackMode?: boolean
@@ -102,7 +103,7 @@ const masterCard = computed<Card>(() => ({
   abilities: props.player.master.abilities,
 }))
 function canAttack(card: Card, row: number) {
-  if (props.side !== 'my') return false
+  if (!props.controllable) return false
   if (props.attackableIds) return props.attackableIds.includes(card.instanceId)
   return Boolean(props.actionsEnabled && !card.cannotAttack && (row === 0 || card.hasRangeBonus) && !card.tapped && !card.hidden && (card.summonRound < (props.round ?? 0) || card.hasCharge))
 }
@@ -120,17 +121,17 @@ function isPlacementDestination(row: number, card: Card | null) {
   return !card || Boolean(props.placementCanReplaceCounter && row === 1 && isCounterTactic(card))
 }
 function canMove(card: Card, row: number, slot: number) {
-  if (props.side !== 'my' || !props.actionsEnabled || card.tapped || card.hidden || spendableMorale.value < 1) return false
+  if (!props.controllable || !props.actionsEnabled || card.tapped || card.hidden || spendableMorale.value < 1) return false
   return [[row - 1, slot], [row + 1, slot], [row, slot - 1], [row, slot + 1]]
     .some(([nextRow, nextSlot]) => nextRow >= 0 && nextRow < 2 && nextSlot >= 0 && nextSlot < 3 && !props.player.field[nextRow][nextSlot])
 }
 function canCavalryMove(card: Card) {
-  if (props.side !== 'my' || !props.actionsEnabled || card.tapped || card.hidden || card.profession !== '骑兵') return false
+  if (!props.controllable || !props.actionsEnabled || card.tapped || card.hidden || card.profession !== '骑兵') return false
   if (card.lastCavalryMoveTurn === props.turnSerial) return false
   return props.player.field.some(row => row.some(slotCard => !slotCard))
 }
 function canFreeMove(card: Card, row: number, slot: number) {
-  if (props.side !== 'my' || !props.actionsEnabled || card.tapped || card.hidden) return false
+  if (!props.controllable || !props.actionsEnabled || card.tapped || card.hidden) return false
   const restedHippolyta = props.player.field.flat().some(unit => unit?.cardId === 'S02-0510' && unit.tapped)
   return restedHippolyta && !props.player.field[1 - row][slot]
 }
@@ -171,7 +172,7 @@ function canTrial(card: Card) {
     && card.summonRound < (props.round ?? 0) && currentTrialInstanceId.value)
 }
 function canUseAbilities(card: Card) {
-  return props.side === 'my' || (card.cardId === 'S01-0004' && card.ownerIndex === props.viewerPlayerIndex)
+  return Boolean(props.controllable) || (card.cardId === 'S01-0004' && card.ownerIndex === props.viewerPlayerIndex)
 }
 function selectZoneCard(card: Card) {
   emit('focus', card)
@@ -192,6 +193,10 @@ function handleSlot(row: number, slot: number, card: Card | null) {
 function selectMoralePayment(instanceId: string) {
   if (props.paymentChoiceIds?.includes(instanceId)) emit('paymentResource', instanceId)
 }
+function selectRunePayment(index: number) {
+  const choiceId = `rune:${index}`
+  if (props.paymentChoiceIds?.includes(choiceId)) emit('paymentResource', choiceId)
+}
 function beginCardAbility(card: Card) {
   const entries = modalAbilities(card)
   if (!entries.length) return
@@ -207,22 +212,26 @@ function beginCardAbility(card: Card) {
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
         class="master-marker-track" :class="{ runes: player.faction === 'otherworld', canopic: Boolean(player.specialZones?.canopicTrack?.length) }">
         <template v-if="player.faction === 'otherworld'">
-          <span v-for="index in 3" :key="index" class="rune-orb" :class="{ active: index <= (player.specialZones?.runes ?? 0) }" :title="index <= (player.specialZones?.runes ?? 0) ? '可用符文' : '未获得符文'">
+          <button v-for="index in 3" :key="index" type="button" class="rune-orb"
+            :class="{ active: index <= (player.specialZones?.runes ?? 0), payable: paymentChoiceIds?.includes(`rune:${index}`), selected: paymentSelectedIds?.includes(`rune:${index}`) }"
+            :disabled="!paymentChoiceIds?.includes(`rune:${index}`)"
+            :title="paymentChoiceIds?.includes(`rune:${index}`) ? '点击选择此符文' : (index <= (player.specialZones?.runes ?? 0) ? '可用符文' : '未获得符文')"
+            @click="selectRunePayment(index)">
             <img :src="roundCardUrl('S02-06S1')" alt="符文" />
-          </span>
+          </button>
         </template>
         <template v-else>
           <button v-for="card in player.specialZones?.canopicTrack ?? []" :key="card.cardId" type="button"
-            class="canopic-orb" :class="{ completed: card.completed, activatable: side === 'my' && canopicComplete }"
+            class="canopic-orb" :class="{ completed: card.completed, activatable: controllable && canopicComplete }"
             :title="`${card.name}${card.completed ? '（已置入）' : '（未完成）'}`"
             @mouseenter="emit('focus', card)" @focus="emit('focus', card)"
-            @click.stop="emit('focus', card); side === 'my' && canopicComplete && emit('ability', masterCard, 'isisVictory')">
+            @click.stop="emit('focus', card); controllable && canopicComplete && emit('ability', masterCard, 'isisVictory')">
             <img v-if="roundCardUrl(card.cardId, card.imageUrl)" :src="roundCardUrl(card.cardId, card.imageUrl)" :alt="card.name" />
           </button>
         </template>
       </div>
       <div class="master-column">
-        <button class="mini-master" :class="{ targetable: side === 'opponent' && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
+        <button class="mini-master" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
           @mouseenter="emit('focus', masterCard)" @focus="emit('focus', masterCard)" @click="emit('master')">
           <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" />
           <span>{{ player.master.masterName }}</span>
@@ -272,15 +281,15 @@ function beginCardAbility(card: Card) {
         <template v-for="row in (side === 'opponent' ? [1, 0] : [0, 1])" :key="row">
           <div v-for="slot in [0,1,2]" :key="slot" class="formation-slot" role="button" tabindex="0"
             :class="{
-              targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (side === 'opponent' && attackMode)),
+              targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`) && side === 'my') || isPlacementDestination(row, player.field[row][slot]) || (side === 'my' && isMoveTarget(row, slot)),
+              available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`) && controllable) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
               source: selectedId === player.field[row][slot]?.instanceId,
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
               'payment-resource': paymentChoiceIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'payment-selected': paymentSelectedIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              'resource-ready': side === 'my' && player.faction === 'taiyangcheng' && player.field[row][slot]?.cardId === 'S01-0212' && !player.field[row][slot]?.tapped,
+              'resource-ready': controllable && player.faction === 'taiyangcheng' && player.field[row][slot]?.cardId === 'S01-0212' && !player.field[row][slot]?.tapped,
               [counterState(player.field[row][slot])]: Boolean(counterState(player.field[row][slot]))
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">
@@ -358,13 +367,13 @@ function beginCardAbility(card: Card) {
           <p v-if="!factionActions.length">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
           <div v-if="factionActions.length" class="faction-effect-actions">
             <button v-for="entry in factionActions" :key="entry.id"
-              :disabled="side !== 'my' || !actionsEnabled || entry.enabled === false || entry.triggerOnly"
+              :disabled="!controllable || !actionsEnabled || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
               @click="emit('factionAbility', entry.id); factionOpen = false">
               {{ entry.label }}
             </button>
           </div>
-          <span v-if="side === 'my' && !actionsEnabled" class="faction-action-hint">仅在我方主要阶段可以发动</span>
+          <span v-if="controllable && !actionsEnabled" class="faction-action-hint">仅在我方主要阶段可以发动</span>
         </div>
       </section>
     </div>
@@ -405,7 +414,7 @@ function beginCardAbility(card: Card) {
 .formation-slot.prompt-selected{z-index:10;border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.68)!important}.formation-slot.prompt-selected::after{content:'已选择';position:absolute;z-index:12;right:4px;top:4px;padding:3px 6px;background:#f1c75b;color:#15120a;font-size:8px;font-weight:900}
 .morale-orb{box-sizing:border-box;width:22px;height:22px;min-width:22px;padding:0;border:1px solid #7d8581;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:#151a1a;transition:filter .16s,box-shadow .16s,border-color .16s}.morale-orb img{width:14px;height:14px;object-fit:contain}.morale-orb.active-morale{background:var(--faction-morale-active,#b4b2af);border-color:var(--faction-morale-border,#eee);box-shadow:inset 0 0 0 1px rgba(255,255,255,.36),0 0 6px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 76%,transparent);filter:saturate(1.15) brightness(1.1)}.active-turn .morale-orb.active-morale{box-shadow:inset 0 0 0 1px rgba(255,255,255,.52),0 0 11px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 92%,transparent);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-morale{background:var(--faction-morale-rested,#555);border-color:#4d5350;box-shadow:inset 0 0 0 3px rgba(0,0,0,.38);filter:saturate(.35) brightness(.52)}.morale-orb.active-god-power{background:#0091be;border-color:#baf4ff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 0 9px rgba(0,145,190,.72);filter:saturate(1.18) brightness(1.12)}.active-turn .morale-orb.active-god-power{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55),0 0 13px rgba(0,174,222,.9);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-god-power{background:#264c57;border-color:#465b61;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35);filter:saturate(.35) brightness(.5)}.morale-orb.unused{opacity:.25}.morale-orb.payable{cursor:pointer;border-color:#72e29f;box-shadow:0 0 9px rgba(82,213,138,.75)}.morale-orb.selected{border:3px solid #fff0a0;box-shadow:0 0 12px #f1c75b}.morale-orb:disabled:not(.payable){cursor:default}
 .faction-tianting{--faction-morale-active:#dbbc00;--faction-morale-rested:#665a08;--faction-morale-border:#fff0a0}.faction-otherworld{--faction-morale-active:#31873f;--faction-morale-rested:#173e20;--faction-morale-border:#9be5a7}.faction-gaotianyuan{--faction-morale-active:#db0d17;--faction-morale-rested:#681118;--faction-morale-border:#ffacb0}.faction-asgard{--faction-morale-active:#342f2f;--faction-morale-rested:#1c1919;--faction-morale-border:#b9aeae}.faction-taiyangcheng{--faction-morale-active:#74227e;--faction-morale-rested:#38123d;--faction-morale-border:#dfa3e6}.faction-universal{--faction-morale-active:#b4b2af;--faction-morale-rested:#555451;--faction-morale-border:#f0efeb}.faction-olympus{--faction-morale-active:#075b76;--faction-morale-rested:#173844;--faction-morale-border:#86d7ee}
-.master-column{position:relative;display:grid;align-content:start;justify-items:center;gap:5px;min-width:88px}.master-column .mini-master{position:relative;inset:auto}.master-marker-track{position:absolute;z-index:9;left:8px;top:-39px;display:flex;width:178px;height:32px;align-items:center;justify-content:flex-start;gap:5px;pointer-events:auto}.master-marker-track.canopic{justify-content:space-between;gap:3px}.special-lane{display:none;position:absolute;z-index:6;left:188px;right:4px;top:0;bottom:0;pointer-events:none}.special-lane.visible{display:grid;align-content:center;justify-items:center}.trial-zone{position:relative;z-index:6;display:grid;gap:6px;width:112px;pointer-events:auto}.trial-card{position:relative;width:112px;height:auto;aspect-ratio:8/5;padding:0;border:1px solid #8dc6b2;background:#080b0b;overflow:hidden;box-shadow:0 6px 16px #000}.trial-card img{width:100%;height:100%;object-fit:contain}.trial-card.inactive img{filter:grayscale(.85) brightness(.52)}.trial-card.concealed img{filter:none}.trial-card b{position:absolute;left:50%;top:50%;display:grid;min-width:30px;height:30px;place-items:center;padding:0 6px;border:2px solid #79c889;border-radius:50%;background:#102e17ed;color:#fff;font-size:16px;box-shadow:0 0 11px rgba(49,135,63,.82);transform:translate(-50%,-50%)}.rune-orb{width:32px;height:32px;min-width:32px;border:1px solid #596661;border-radius:50%;overflow:hidden;background:#111;filter:grayscale(1) brightness(.38)}.rune-orb.active{border-color:#80d69c;filter:none;box-shadow:0 0 8px rgba(49,135,63,.7)}.rune-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.1)}
+.master-column{position:relative;display:grid;align-content:start;justify-items:center;gap:5px;min-width:88px}.master-column .mini-master{position:relative;inset:auto}.master-marker-track{position:absolute;z-index:9;left:8px;top:-39px;display:flex;width:178px;height:32px;align-items:center;justify-content:flex-start;gap:5px;pointer-events:auto}.master-marker-track.canopic{justify-content:space-between;gap:3px}.special-lane{display:none;position:absolute;z-index:6;left:188px;right:4px;top:0;bottom:0;pointer-events:none}.special-lane.visible{display:grid;align-content:center;justify-items:center}.trial-zone{position:relative;z-index:6;display:grid;gap:6px;width:112px;pointer-events:auto}.trial-card{position:relative;width:112px;height:auto;aspect-ratio:8/5;padding:0;border:1px solid #8dc6b2;background:#080b0b;overflow:hidden;box-shadow:0 6px 16px #000}.trial-card img{width:100%;height:100%;object-fit:contain}.trial-card.inactive img{filter:grayscale(.85) brightness(.52)}.trial-card.concealed img{filter:none}.trial-card b{position:absolute;left:50%;top:50%;display:grid;min-width:30px;height:30px;place-items:center;padding:0 6px;border:2px solid #79c889;border-radius:50%;background:#102e17ed;color:#fff;font-size:16px;box-shadow:0 0 11px rgba(49,135,63,.82);transform:translate(-50%,-50%)}.rune-orb{width:32px;height:32px;min-width:32px;padding:0;border:1px solid #596661;border-radius:50%;overflow:hidden;background:#111;filter:grayscale(1) brightness(.38)}.rune-orb.active{border-color:#80d69c;filter:none;box-shadow:0 0 8px rgba(49,135,63,.7)}.rune-orb.payable{cursor:pointer;box-shadow:0 0 0 2px #75e0a1,0 0 13px rgba(49,135,63,.9)}.rune-orb.selected{border-color:#fff3bd;box-shadow:0 0 0 3px #d8b34d,0 0 15px rgba(216,179,77,.95)}.rune-orb:disabled{cursor:default;opacity:1}.rune-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.1)}
 .canopic-orb{width:32px;height:32px;min-width:32px;padding:0;overflow:hidden;border:1px solid #63555a;border-radius:50%;background:#090a0b;filter:grayscale(1) brightness(.3);cursor:pointer}.canopic-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.12)}.canopic-orb.completed{border-color:#d0aa52;filter:none;box-shadow:0 0 7px rgba(208,170,82,.65)}.canopic-orb.activatable{border-color:#6ee2a0;box-shadow:0 0 9px rgba(82,213,138,.8);animation:canopic-ready 1.25s ease-in-out infinite alternate}@keyframes canopic-ready{to{transform:translateY(-2px);filter:brightness(1.18)}}
 .value-badge{display:grid!important;min-width:25px!important;height:22px!important;place-items:center!important;padding:0 6px!important;border:1px solid #f2f0e6!important;border-radius:2px!important;background:#090b0d!important;color:#fff!important;box-shadow:0 2px 0 #000,0 0 0 1px rgba(0,0,0,.65)!important;font-weight:900!important;line-height:1!important}.value-badge small{margin-left:1px;color:#bfc3c0;font-size:.62em}.pile .pile-count{position:absolute;z-index:8;right:3px;top:3px}.mini-master .master-health{position:absolute;z-index:8;right:3px;bottom:3px;display:inline-flex!important;width:max-content;min-width:44px!important;align-items:center;justify-content:center;white-space:nowrap}.morale-count{display:grid;min-width:42px;height:24px;place-items:center;padding:0 7px;border:1px solid #cbc6b8;background:#080a0b;color:#fff;box-shadow:0 2px 0 #000;font-size:11px;line-height:1;white-space:nowrap}.morale-orb[aria-disabled="true"]{cursor:default}.morale-orb.active-morale[aria-disabled="true"],.morale-orb.active-god-power[aria-disabled="true"]{opacity:1}
 </style>

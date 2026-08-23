@@ -11,10 +11,10 @@ public sealed partial class L12GameEngine
     private readonly bool _autoPassEmptyResponses;
 
     /// <summary>
-    /// 仅供自动化测试选择旧式“无可用反应时自动让过”。正式运行保持 false，
-    /// 以保证有牌/无牌时都经过相同的匿名响应窗口，不泄露私有信息。
+    /// 正式对局仅在当前玩家确实拥有合法响应动作时打开响应窗口。
+    /// 个别协议测试仍可显式传入 false，以覆盖旧式匿名响应窗口。
     /// </summary>
-    public static bool AutoPassEmptyResponsesByDefault { get; set; }
+    public static bool AutoPassEmptyResponsesByDefault { get; set; } = true;
 
     public L12GameState State { get; }
 
