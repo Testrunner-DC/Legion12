@@ -62,6 +62,29 @@ cards/{catalogVersion}/{cardId}/{sha256}/detail-960.avif
 7. 先在沙盒与卡牌档案灰度验证，再切换对战和牌库图生成。
 8. 连续一周记录首屏时间、缓存命中率、404、对象读取次数与流量；确认稳定后停止客户端直连 Steam 图床。
 
+## 已落地的生产工具
+
+生产与上传统一通过 `ops/windows/Publish-L12CardCdn.ps1`，输入、输出都必须位于 C 盘以外。脚本会：
+
+1. 按卡号匹配归档源图，计算完整 SHA-256，并以哈希前 20 位建立不可变对象目录。
+2. 保留原始方向，生成 `original.webp`、240/480/960 三档 WebP 与 960 AVIF。
+3. 生成 `card-assets.manifest.json` 和首屏关键卡 `card-assets.preload.json`；缺图会列入清单并使流水线失败，不会静默发布半套图库。
+4. 默认只生成、不上传；显式传入 `-Upload` 后才使用 S3 兼容 API 写入 R2。
+5. 图片对象使用一年 immutable 缓存，清单使用五分钟缓存；凭据只从环境变量读取，不进入仓库或日志。
+
+示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\windows\Publish-L12CardCdn.ps1 `
+  -SourceDirectory 'D:\L12-assets\original' `
+  -OutputDirectory 'D:\L12-assets\cdn-build' `
+  -CatalogVersion '20260823'
+```
+
+正式上传前设置 `CLOUDFLARE_ACCOUNT_ID`、`R2_BUCKET`、`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`，再追加 `-Upload`。自定义域名、公开访问、CORS 与缓存规则仍须在 Cloudflare 控制台完成一次性配置；工具不会自动修改 DNS 或泄露管理令牌。
+
+开发时可传入 `-CardIds 'S01-01M1','S01-02M3'` 只生产指定卡牌，用于抽样验证；正式发布不传该参数，任意缺图都会让任务失败。
+
 ## 预算档位
 
 | 阶段 | 假设 | R2 月成本预估 | 说明 |
@@ -75,4 +98,3 @@ cards/{catalogVersion}/{cardId}/{sha256}/detail-960.avif
 ## 备选与切换条件
 
 若中国大陆/东亚实测的 R2 延迟或可达性不足，将 **Bunny Storage + Bunny CDN** 作为第二方案；先用相同 240/480/960 图片集做 7 天 A/B 测试，再根据 P75 首图时间、失败率和每 GB 实际成本决定。对象键和清单保持 S3 风格，切换只需更改清单域名，不改卡效、牌库或回放数据。
-
