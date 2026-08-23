@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
-import { gameAction, l12State } from '../net'
+import { gameAction, l12State, sandboxAction } from '../net'
 import { masterProfileUrl } from '../specialAssets'
 
 const props = withDefaults(defineProps<{
@@ -17,15 +17,25 @@ const emit = defineEmits<{
   mulliganToggle: [id: string]
   mulliganConfirm: []
   focusCard: [card: Card]
+  minimizedChange: [minimized: boolean]
 }>()
 
 const prompt = computed(() => props.game.prompts?.find(item => item.promptId !== props.suppressedPromptId) ?? null)
 const waitingPrompt = computed(() => prompt.value ? null : props.game.waitingPrompt ?? null)
-const me = computed(() => props.game.players[props.game.you] ?? props.game.players[0])
+const sandboxActorIndex = computed(() => {
+  if (!l12State.gmEnabled) return props.game.you
+  if (prompt.value) return prompt.value.playerIndex
+  if (props.game.phase === 'Mulligan')
+    return props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? props.game.activePlayer
+  if (props.game.phase === 'Defense' && props.game.pendingDefense)
+    return 1 - props.game.pendingDefense.attackerPlayer
+  return props.game.activePlayer
+})
+const me = computed(() => props.game.players[sandboxActorIndex.value] ?? props.game.players[props.game.you] ?? props.game.players[0])
 const initiativePlayers = computed(() => [me.value, ...props.game.players.filter(player => player.playerIndex !== me.value.playerIndex)])
 const isMulliganPhase = computed(() => props.game.phase === 'Mulligan')
 const isMulligan = computed(() => !props.readOnly && isMulliganPhase.value && !me.value.mulliganDone)
-const waitingDefense = computed(() => !props.suppressDefenseWait && props.game.phase === 'Defense' && props.game.pendingDefense?.attackerPlayer === props.game.you)
+const waitingDefense = computed(() => !l12State.gmEnabled && !props.suppressDefenseWait && props.game.phase === 'Defense' && props.game.pendingDefense?.attackerPlayer === props.game.you)
 const displayKind = computed(() => prompt.value?.kind ?? waitingPrompt.value?.kind ?? (waitingDefense.value ? 'defense-wait' : isMulliganPhase.value ? 'mulligan' : ''))
 const isDisasterPreparation = computed(() => props.game.phase === 'DisasterPreparation')
 const isPreparation = computed(() => isDisasterPreparation.value || ['initiative', 'disaster-ban', 'disaster-pick', 'disaster-reveal', 'mulligan'].includes(displayKind.value))
@@ -74,6 +84,12 @@ watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mull
   draggedChoice.value = null
   placementOrder.value = (prompt.value?.validChoices ?? []).filter(id => id !== 'skip')
 })
+watch(minimized, value => emit('minimizedChange', value), { immediate: true })
+
+function sendAction(command: Record<string, unknown>, actingPlayerIndex = prompt.value?.playerIndex ?? sandboxActorIndex.value) {
+  if (l12State.gmEnabled) sandboxAction(actingPlayerIndex, command)
+  else gameAction(command)
+}
 
 const choiceLabels: Record<string, string> = {
   first: '选择先攻', second: '选择后攻', yes: '是', no: '否', agree: '同意', refuse: '不同意',
@@ -226,17 +242,17 @@ function toggle(id: string) {
 function resolveChoice(choice: string) {
   const p = prompt.value
   if (!p || !p.validChoices.includes(choice)) return
-  gameAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [choice] })
+  sendAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [choice] }, p.playerIndex)
 }
 function confirm() {
   const p = prompt.value
   if (!p || selected.value.length < p.minChoose || selected.value.length > p.maxChoose) return
-  gameAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value] })
+  sendAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value] }, p.playerIndex)
 }
 function resolveSinglePlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
   if (!p || selected.value.length !== 1) return
-  gameAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value], destination })
+  sendAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value], destination }, p.playerIndex)
 }
 function removePlacement(id: string) {
   placementTop.value = placementTop.value.filter(choice => choice !== id)
@@ -280,10 +296,10 @@ function dropPlacement(destination: 'top' | 'bottom', beforeId?: string) {
 function confirmSplitPlacement() {
   const p = prompt.value
   if (!p || unassignedChoices.value.length) return
-  gameAction({
+  sendAction({
     type: 'resolvePrompt', promptId: p.promptId,
     topCardInstanceIds: [...placementTop.value], bottomCardInstanceIds: [...placementBottom.value],
-  })
+  }, p.playerIndex)
 }
 function reorderAll(beforeId: string) {
   const id = draggedChoice.value
@@ -309,11 +325,11 @@ function selectSwapChoice(id: string) {
 function confirmAllPlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
   if (!p || placementOrder.value.length !== p.validChoices.length) return
-  gameAction({
+  sendAction({
     type: 'resolvePrompt', promptId: p.promptId,
     topCardInstanceIds: destination === 'top' ? [...placementOrder.value] : [],
     bottomCardInstanceIds: destination === 'bottom' ? [...placementOrder.value] : [],
-  })
+  }, p.playerIndex)
 }
 const isInfoConfirm = computed(() => ['disaster-reveal', 'disaster-trigger'].includes(prompt.value?.kind ?? ''))
 function waitingText() {
@@ -355,7 +371,7 @@ function kindLabel() {
         <button @click="minimized = false">展开</button>
       </section>
 
-      <section v-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow }" role="dialog" aria-modal="true" :aria-label="prompt.text">
+      <section v-else-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow }" role="dialog" aria-modal="true" :aria-label="prompt.text">
         <header>
           <small>{{ kindLabel() }}</small><h2>{{ prompt.text }}</h2>
           <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>

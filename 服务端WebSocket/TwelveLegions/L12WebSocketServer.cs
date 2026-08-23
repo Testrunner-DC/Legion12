@@ -218,6 +218,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     => SelectCustomDeck(sessionId, deckElement),
                 "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
                 "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
+                "sandboxAction" when root.TryGetProperty("command", out var sandboxCommand)
+                    => await _rooms.HandleSandboxActionAsync(sessionId, GetInt(root, "actingPlayerIndex", -1), sandboxCommand),
                 "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
                 "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
                 "deploymentProbe" => [new OutgoingMessage(sessionId, new

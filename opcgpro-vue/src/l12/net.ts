@@ -197,6 +197,13 @@ export function gameAction(command: Record<string, unknown>) {
   if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
 }
 
+export function sandboxAction(actingPlayerIndex: number, command: Record<string, unknown>) {
+  if (!l12State.gmEnabled || l12State.pendingAction) return
+  l12State.pendingAction = true
+  send({ type: 'sandboxAction', actingPlayerIndex, command })
+  if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
+}
+
 export function gmAction(command: Record<string, unknown>) {
   if (!l12State.gmEnabled || l12State.pendingAction) return
   l12State.pendingAction = true

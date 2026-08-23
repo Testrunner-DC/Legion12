@@ -159,14 +159,16 @@ public sealed partial class L12GameEngine
             }).ToArray();
 
         var prompts = State.PendingPrompts
-            .Where(prompt => !spectator && prompt.PlayerIndex == viewer)
+            .Where(prompt => !spectator && (prompt.PlayerIndex == viewer || revealAllHands))
             .Select(prompt => (object)new
             {
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
                 prompt.MinChoose, prompt.MaxChoose, prompt.Data,
             }).ToArray();
         // 对手正在处理任何选择时都给出不泄露私密候选内容的等待状态。
-        var waitingPromptSource = State.PendingPrompts.FirstOrDefault(prompt => spectator || prompt.PlayerIndex != viewer);
+        var waitingPromptSource = revealAllHands
+            ? null
+            : State.PendingPrompts.FirstOrDefault(prompt => spectator || prompt.PlayerIndex != viewer);
         object? waitingPrompt = waitingPromptSource is null ? null : new
         {
             waitingPromptSource.PlayerIndex,
@@ -205,7 +207,7 @@ public sealed partial class L12GameEngine
             BuildSessionDisasterSnapshot(viewer, revealAllDisasters),
             State.DisasterPreparationStep,
             waitingPrompt, prompts, stack, State.PendingDefense, State.Winner, State.WinnerReason, players, lastAction,
-            recentEvents, spectator ? [] : BuildLegalAttackTargets(viewer), ComputeStateHash());
+            recentEvents, spectator ? [] : BuildLegalAttackTargets(revealAllHands ? State.ActivePlayer : viewer), ComputeStateHash());
     }
 
     private object[] BuildChosenDisasterSnapshot(int viewer, bool revealAll)

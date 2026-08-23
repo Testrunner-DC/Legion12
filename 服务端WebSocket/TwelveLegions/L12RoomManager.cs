@@ -283,6 +283,44 @@ public sealed class L12RoomManager
         finally { room.Gate.Release(); }
     }
 
+    /// <summary>
+    /// 单人测试沙盒的规则内操作通道。沙盒创建者可以明确指定由哪一方执行普通
+    /// L12Command；正式房间、观战者和虚拟对手均不能使用，避免把 GM 权限混入
+    /// 普通 gameAction 或复制一套结算规则。
+    /// </summary>
+    public async Task<IReadOnlyList<OutgoingMessage>> HandleSandboxActionAsync(
+        Guid sessionId, int actingPlayerIndex, JsonElement commandElement)
+    {
+        if (!TryGetMembership(sessionId, out _, out var room, out var error)) return Error(sessionId, error);
+        if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
+            return Error(sessionId, "沙盒代行操作只允许由单人测试沙盒的创建者执行", "actionRejected");
+        if (actingPlayerIndex is < 0 or > 1)
+            return Error(sessionId, "沙盒代行玩家无效", "actionRejected");
+
+        await room.Gate.WaitAsync();
+        try
+        {
+            if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始");
+            L12Command? command;
+            try
+            {
+                command = commandElement.Deserialize<L12Command>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException) { return Error(sessionId, "沙盒操作格式错误", "actionRejected"); }
+            if (command is null || string.IsNullOrWhiteSpace(command.Type))
+                return Error(sessionId, "缺少沙盒操作类型", "actionRejected");
+
+            var result = room.Game.Handle(actingPlayerIndex, command);
+            room.CommandSequence++;
+            await _recorder.AppendAsync(room.Game, room.CommandSequence, actingPlayerIndex,
+                commandElement.GetRawText(), result);
+            if (!result.Accepted) return Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected");
+            if (room.Game.State.Phase == L12Phase.GameOver) await _recorder.CompleteAsync(room.Game);
+            return BroadcastGame(room);
+        }
+        finally { room.Gate.Release(); }
+    }
+
     public IReadOnlyList<OutgoingMessage> Disconnect(Guid sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return [];

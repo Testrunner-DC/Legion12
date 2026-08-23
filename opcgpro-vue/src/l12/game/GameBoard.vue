@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { destructionRoundBackUrl } from '../specialAssets'
-import { gameAction, gmAction, l12State } from '../net'
+import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
@@ -34,12 +34,23 @@ const paymentResourceIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
 const customDisasterSlot = ref<number | null>(null)
+const promptMinimized = ref(false)
 const lastHiddenRevealSequence = ref(0)
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
-const me = computed(() => props.game.players[props.game.you])
-const enemy = computed(() => props.game.players[1 - props.game.you])
+const controlledPlayerIndex = computed(() => {
+  if (!l12State.gmEnabled) return props.game.you
+  const pendingPrompt = props.game.prompts?.[0]
+  if (pendingPrompt) return pendingPrompt.playerIndex
+  if (props.game.phase === 'Mulligan')
+    return props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? props.game.activePlayer
+  if (props.game.phase === 'Defense' && props.game.pendingDefense)
+    return 1 - props.game.pendingDefense.attackerPlayer
+  return props.game.activePlayer
+})
+const me = computed(() => props.game.players[controlledPlayerIndex.value])
+const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value])
 const defenseTargetType = computed(() => props.game.pendingDefense?.target.type ?? null)
-const isMyMain = computed(() => props.game.phase === 'Main' && props.game.activePlayer === props.game.you)
+const isMyMain = computed(() => props.game.phase === 'Main' && props.game.activePlayer === controlledPlayerIndex.value)
 const activeMorale = computed(() =>
   me.value.morale.filter(card => !card.tapped).length
   + (me.value.temporaryMorale ?? 0)
@@ -87,7 +98,7 @@ const responsePlayableIds = computed(() => {
 const handPlayableIds = computed(() => {
   if (isMyMain.value) return playableIds.value
   if (responsePlayableIds.value.length) return responsePlayableIds.value
-  if (props.game.phase === 'Defense' && props.game.activePlayer !== props.game.you && defenseTargetType.value === 'master')
+  if (props.game.phase === 'Defense' && props.game.activePlayer !== controlledPlayerIndex.value && defenseTargetType.value === 'master')
     return (me.value.hand ?? []).filter(card => card.cardType === 'legion').map(card => card.instanceId)
   return []
 })
@@ -111,7 +122,7 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
 const paymentChoiceIds = computed(() => resourceSelectionPrompt.value?.validChoices ?? [])
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
   ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
-const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
+const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && focusCard.value && (
   graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
   || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
   || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
@@ -148,7 +159,7 @@ function focusSessionDisaster(card: DisasterCardView, index?: number) {
 }
 function replaceCustomDisaster(card: SandboxCatalogCard) {
   if (customDisasterSlot.value === null) return
-  gmAction({ type: 'replaceDisaster', targetPlayer: props.game.you, slot: customDisasterSlot.value, cardId: card.id })
+  gmAction({ type: 'replaceDisaster', targetPlayer: controlledPlayerIndex.value, slot: customDisasterSlot.value, cardId: card.id })
   customDisasterSlot.value = null
 }
 const boardSlotPreview = computed<Card | null>(() => {
@@ -175,6 +186,20 @@ const boardSlotPreview = computed<Card | null>(() => {
 })
 watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
 watch(() => resourceSelectionPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
+watch(controlledPlayerIndex, () => {
+  selectedId.value = null
+  focusCard.value = null
+  mode.value = 'play'
+  playArmed.value = false
+  mulliganIds.value = []
+  defenseIds.value = []
+  supportId.value = null
+  boardTargetIds.value = []
+  paymentResourceIds.value = []
+  graveyardPlayer.value = null
+  masterPlayerIndex.value = null
+  promptMinimized.value = false
+})
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const event = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'hidden-reveal' && item.cards?.length)
   if (!event?.cards?.[0] || event.sequence <= lastHiddenRevealSequence.value) return
@@ -248,7 +273,8 @@ function command(type: string, extra: Record<string, unknown> = {}) {
     extra.cardInstanceIds = defenseIds.value
     if (supportId.value && !Object.prototype.hasOwnProperty.call(extra, 'supportInstanceId')) extra.supportInstanceId = supportId.value
   }
-  gameAction({ type, ...extra })
+  if (l12State.gmEnabled) sandboxAction(controlledPlayerIndex.value, { type, ...extra })
+  else gameAction({ type, ...extra })
   if (type === 'resolveDefense') { defenseIds.value = []; supportId.value = null }
 }
 function toggle(list: string[], id: string) {
@@ -340,7 +366,7 @@ function enemySlot(row: number, slot: number, card: Card | null) {
     playArmed.value = false
     return
   }
-  if (mode.value === 'play' && card && isInfiltrator(card) && card.ownerIndex === props.game.you) {
+  if (mode.value === 'play' && card && isInfiltrator(card) && card.ownerIndex === controlledPlayerIndex.value) {
     selectedId.value = selectedId.value === card.instanceId ? null : card.instanceId
     focusCard.value = card
     playArmed.value = false
@@ -483,10 +509,11 @@ function statusTexts(card: Card) {
         </aside>
 
         <main class="board-center">
-          <HandArea hidden :count="enemy.handCount || 0" />
+          <HandArea v-if="l12State.gmEnabled" :cards="enemy.hand" :dim-unplayable="false" @focus="focusCard = $event" />
+          <HandArea v-else hidden :count="enemy.handCount || 0" />
           <div class="felt-board">
             <PlayerMat :player="enemy" side="opponent" :active="game.activePlayer === enemy.playerIndex && !combat"
-              :viewer-player-index="game.you" :selected-id="selectedId" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction"
+              :viewer-player-index="controlledPlayerIndex" :selected-id="selectedId" :actions-enabled="!readOnly && isMyMain && !l12State.pendingAction"
               :placement-mode="mode === 'play' && playArmed && isInfiltrator(selectedHandCard)"
               :turn-serial="game.turnSerial" :hidden-reveal-card="hiddenRevealCard"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)" :selection-mode="Boolean(boardTargetPrompt)"
@@ -526,7 +553,7 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat :player="me" side="my" :active="game.activePlayer === me.playerIndex && !combat"
-              :viewer-player-index="game.you"
+              :viewer-player-index="controlledPlayerIndex"
               :turn-serial="game.turnSerial"
               :selected-id="supportId || selectedId" :move-mode="mode === 'move'" :free-move-mode="mode === 'freeMove'" :cavalry-move-mode="mode === 'cavalryMove'"
               :placement-mode="mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))"
@@ -597,7 +624,7 @@ function statusTexts(card: Card) {
           @click="confirmResourcePayment">{{ resourceSelectionPrompt.kind === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
       </div>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
-        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" />
+        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" />
     </div>
   </div>
   <SandboxCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>

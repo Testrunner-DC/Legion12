@@ -198,6 +198,71 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void GmSnapshotExposesBothPromptOwnersWithoutLeakingThemToNormalPlayers()
+    {
+        var game = new L12GameEngine(Catalog, "gm-prompts", "GMPROMPTS", 1207,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        game.State.PendingPrompts.Clear();
+        game.State.PendingPrompts.Add(new L12Prompt
+        {
+            PromptId = "prompt-0", PlayerIndex = 0, Kind = "optional", Text = "甲选择",
+            ValidChoices = ["yes", "no"], MinChoose = 1, MaxChoose = 1,
+            IsPrivate = true, Continuation = "test",
+        });
+        game.State.PendingPrompts.Add(new L12Prompt
+        {
+            PromptId = "prompt-1", PlayerIndex = 1, Kind = "optional", Text = "乙选择",
+            ValidChoices = ["yes", "no"], MinChoose = 1, MaxChoose = 1,
+            IsPrivate = true, Continuation = "test",
+        });
+
+        var normal = JsonSerializer.SerializeToElement(game.SnapshotFor(0), WebJson);
+        Assert.Equal(["prompt-0"], normal.GetProperty("prompts").EnumerateArray()
+            .Select(item => item.GetProperty("promptId").GetString()!).ToArray());
+        Assert.Equal(1, normal.GetProperty("waitingPrompt").GetProperty("playerIndex").GetInt32());
+
+        var gm = JsonSerializer.SerializeToElement(game.SnapshotForGm(0), WebJson);
+        Assert.Equal(["prompt-0", "prompt-1"], gm.GetProperty("prompts").EnumerateArray()
+            .Select(item => item.GetProperty("promptId").GetString()!).ToArray());
+        Assert.Equal(JsonValueKind.Null, gm.GetProperty("waitingPrompt").ValueKind);
+    }
+
+    [Fact]
+    public async Task SandboxControllerCanIssueNormalRulesCommandsForEitherPlayerOnlyInSandbox()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-sandbox-actions", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+
+        var normalHost = Guid.NewGuid();
+        manager.Connect(normalHost, "正式玩家");
+        manager.CreateRoom(normalHost);
+        var rejected = await manager.HandleSandboxActionAsync(normalHost, 1,
+            JsonSerializer.SerializeToElement(new { type = "surrender" }));
+        var rejectedPayload = JsonSerializer.SerializeToElement(Assert.Single(rejected).Payload, WebJson);
+        Assert.Equal("actionRejected", rejectedPayload.GetProperty("type").GetString());
+
+        var sandboxHost = Guid.NewGuid();
+        manager.Connect(sandboxHost, "沙盒控制者");
+        await manager.CreateSandboxAsync(sandboxHost, new L12SandboxRequest());
+        var accepted = await manager.HandleSandboxActionAsync(sandboxHost, 1,
+            JsonSerializer.SerializeToElement(new { type = "surrender" }));
+        var state = accepted
+            .Where(message => message.SessionId == sandboxHost)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .Single(payload => payload.GetProperty("type").GetString() == "gameState")
+            .GetProperty("state");
+        Assert.Equal(0, state.GetProperty("winner").GetInt32());
+        Assert.Contains("投降", state.GetProperty("winnerReason").GetString());
+
+        var invalidPlayer = await manager.HandleSandboxActionAsync(sandboxHost, 2,
+            JsonSerializer.SerializeToElement(new { type = "endTurn" }));
+        var invalidPayload = JsonSerializer.SerializeToElement(Assert.Single(invalidPlayer).Payload, WebJson);
+        Assert.Equal("actionRejected", invalidPayload.GetProperty("type").GetString());
+    }
+
+    [Fact]
     public void CustomSandboxKeepsFourVisibleSlotsAndFinalDisasterLocked()
     {
         var game = new L12GameEngine(Catalog, "gm-custom-disaster", "GMCUSTOM", 1206,
