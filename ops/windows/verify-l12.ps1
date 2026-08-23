@@ -49,6 +49,8 @@ $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
 $originalLocation = Get-Location
 $stagingDirectory = $null
+$frontendBuildDirectory = $null
+$frontendCardsLink = $null
 
 try {
     Set-Location $repoRoot
@@ -73,8 +75,23 @@ try {
     Write-Host "[L12 验证] 运行平台持久化测试..."
     Invoke-External dotnet test ".\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj" --configuration Release --filter "FullyQualifiedName~PlatformStoreTests"
 
-    Write-Host "[L12 验证] 安装锁定依赖并构建前端..."
-    Push-Location (Join-Path $repoRoot "opcgpro-vue")
+    Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
+    $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"
+    $frontendBuildDirectory = Join-Path $artifactDirectory "frontend-$([Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $frontendBuildDirectory -Force | Out-Null
+    $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
+    if ($null -ne $robocopy) {
+        & $robocopy.Source $frontendSourceRoot $frontendBuildDirectory /E `
+            /XD (Join-Path $frontendSourceRoot "node_modules") (Join-Path $frontendSourceRoot "dist") (Join-Path $frontendSourceRoot "public\cards") `
+            /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "复制隔离前端构建目录失败（robocopy 退出码 $LASTEXITCODE）" }
+    }
+    else {
+        throw "Windows 发布验证缺少 robocopy，无法安全隔离开发中的 node_modules"
+    }
+    $frontendCardsLink = Join-Path $frontendBuildDirectory "public\cards"
+    New-Item -ItemType Junction -Path $frontendCardsLink -Target (Join-Path $frontendSourceRoot "public\cards") | Out-Null
+    Push-Location $frontendBuildDirectory
     try {
         Invoke-External $npmExecutable ci --prefer-offline --no-audit
         Invoke-External $npmExecutable run build
@@ -102,7 +119,7 @@ try {
         Remove-Item -Force
 
     Write-Host "[L12 验证] 汇总前端运行产物（卡图单独缓存）..."
-    $frontendDistRoot = (Resolve-Path ".\opcgpro-vue\dist").Path
+    $frontendDistRoot = (Resolve-Path (Join-Path $frontendBuildDirectory "dist")).Path
     $frontendCardsRoot = Join-Path $frontendDistRoot "cards"
     $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
     if ($null -ne $robocopy) {
@@ -152,6 +169,17 @@ try {
 }
 finally {
     Set-Location $originalLocation
+    if ($null -ne $frontendCardsLink -and (Test-Path -LiteralPath $frontendCardsLink)) {
+        Remove-Item -LiteralPath $frontendCardsLink -Force
+    }
+    if ($null -ne $frontendBuildDirectory -and (Test-Path -LiteralPath $frontendBuildDirectory)) {
+        $resolvedFrontendBuild = (Resolve-Path -LiteralPath $frontendBuildDirectory).Path
+        $resolvedOutputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path
+        if (-not $resolvedFrontendBuild.StartsWith($resolvedOutputRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "拒绝清理输出目录以外的前端构建目录：$resolvedFrontendBuild"
+        }
+        Remove-Item -LiteralPath $resolvedFrontendBuild -Recurse -Force
+    }
     if ($null -ne $stagingDirectory -and (Test-Path -LiteralPath $stagingDirectory)) {
         Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
     }
