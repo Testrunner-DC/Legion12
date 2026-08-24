@@ -244,7 +244,47 @@ public sealed partial class L12GameEngine
         };
         if (data is not null)
             foreach (var pair in data) candidate.Data[pair.Key] = pair.Value;
+        candidate.Data.TryAdd("triggerEffectText", ResolveTriggeredEffectDisplayText(card, trigger, text));
         return candidate;
+    }
+
+    private static string ResolveTriggeredEffectDisplayText(L12CardInstance card, string trigger, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(card.EffectText)) return fallback;
+        var lines = card.EffectText.Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length == 0) return fallback;
+
+        string[] markers = trigger switch
+        {
+            "promotion-enter" => ["晋升登场"],
+            "enter" => ["登场时"],
+            "death" => ["阵亡时"],
+            "leave" or "play" => ["离场时"],
+            "after-attack" or "trojan-after-attack" => ["进攻后"],
+            "forge-ready-after-kill" => ["击杀"],
+            "master-morale-return" => ["主宰效果返还", "返还4张及以上"],
+            "medjed-master-damage" => ["主宰受到伤害时"],
+            "discard-trigger" => ["弃置时", "从牌库弃置", "从手牌弃置"],
+            "s2-after-opponent-tactic" => ["战术效果结算成功", "战术卡效果结算成功"],
+            "morrigan-enemy-death" => ["对方军团阵亡时"],
+            "nephthys-own-death" => ["我方军团阵亡时"],
+            "trial-complete" => ["触发"],
+            _ => [],
+        };
+        foreach (var marker in markers)
+        {
+            var matched = lines.FirstOrDefault(line => line.Contains(marker, StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(matched)) return matched;
+        }
+
+        var fallbackMarker = fallback.Replace("【", string.Empty, StringComparison.Ordinal)
+            .Replace("】", string.Empty, StringComparison.Ordinal)
+            .Replace("效果", string.Empty, StringComparison.Ordinal)
+            .Trim();
+        var fallbackMatch = lines.FirstOrDefault(line => fallbackMarker.Length >= 2
+            && line.Contains(fallbackMarker, StringComparison.Ordinal));
+        return fallbackMatch ?? string.Join(' ', lines);
     }
 
     private bool HasDeathTrigger(L12CardInstance card)
@@ -309,6 +349,9 @@ public sealed partial class L12GameEngine
         if (State.IsResolvingStack) State.DeferredEffectStack.Add(item);
         else State.EffectStack.Add(item);
         var source = FindSource(item);
+        AddEvent("effect-trigger", candidate.Controller,
+            candidate.Data.GetValueOrDefault("triggerEffectText", candidate.Text),
+            source is null ? [] : [source]);
         AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{candidate.Text}进入同一时点触发批次",
             source is null ? [] : [source]);
     }

@@ -198,6 +198,23 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void TriggeredCardEffectPublishesOriginalEffectLineForBoardAnimation()
+    {
+        var game = new L12GameEngine(Catalog, "gm-trigger-animation", "GMTRIGGER", 1206,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0512", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var aeneas = game.State.Players[0].Field[0][0]!;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: aeneas.InstanceId)).Accepted);
+
+        var animation = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger");
+        Assert.Equal("阵亡时 可抽取1张牌。", animation.Text);
+        Assert.Contains(animation.Cards, card => card.CardId == "S02-0512");
+    }
+
+    [Fact]
     public async Task AcceptingFriendInvitationCreatesRoomWithInitiatorAsHost()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-friend-room", Guid.NewGuid().ToString("N"));

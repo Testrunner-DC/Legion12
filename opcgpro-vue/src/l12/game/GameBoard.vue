@@ -247,12 +247,16 @@ function showNextPublicReveal() {
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.type === 'reveal' || event.text.includes('展示')))
+      && (event.type === 'effect-trigger' || event.type === 'reveal' || event.text.includes('展示')))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
     const names = event.cards?.map(card => `〈${card.name}〉`).join('、') ?? ''
     const owner = event.playerIndex === props.game.you ? '我方' : '对手'
-    publicRevealQueue.push({ sequence: event.sequence, cards: event.cards ?? [], text: `${owner}展示卡牌${names}` })
+    publicRevealQueue.push({
+      sequence: event.sequence,
+      cards: event.cards ?? [],
+      text: event.type === 'effect-trigger' ? event.text : `${owner}展示卡牌${names}`,
+    })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
   showNextPublicReveal()
@@ -267,6 +271,7 @@ const events = computed(() => [...(props.game.recentEvents ?? [])]
 const eventLabels: Record<string, string> = {
   play: '出牌', attack: '进攻', combat: '战斗', defense: '抵挡', support: '支援', move: '位移',
   response: '响应', 'counter-set': '盖伏', effect: '效果', 'faction-effect': '阵营',
+  'effect-trigger': '触发',
   'effect-negated': '无效', 'initiative-choice': '先后攻', mulligan: '调度', cost: '费用',
   disaster: '天灾', 'disaster-active': '天灾', 'disaster-value': '天灾', damage: '伤害',
   heal: '恢复', leave: '离场', put: '登场', search: '检索', reveal: '展示', return: '返回',

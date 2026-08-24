@@ -598,6 +598,9 @@ public sealed class LatestBugRegressionTests
         Assert.True(completion.Accepted, completion.Error);
         PassResponses(completionGame);
         Assert.True(completableTrial.TrialCompleted);
+        var trialAnimation = Assert.Single(completionGame.State.Events, entry => entry.Type == "effect-trigger");
+        Assert.Equal("触发 可查看我方牌库，选择1张【彼界】军团展示并加入手牌。随后重洗牌库。", trialAnimation.Text);
+        Assert.Contains(trialAnimation.Cards, card => card.InstanceId == completableTrial.InstanceId);
 
         var completedAbilityGame = Create(64104);
         var completedPlayer = completedAbilityGame.State.Players[0];

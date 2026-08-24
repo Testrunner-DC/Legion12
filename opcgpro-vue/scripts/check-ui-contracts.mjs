@@ -54,7 +54,7 @@ const contracts = [
   [deckEditor.includes("deck.name === activeDeckName") && deckEditor.includes('.saved-list b{color:#f1eee5}') && deckEditor.includes('.saved-list span{color:#aab4b0}') && deckEditor.includes('.saved-list article.active{border-color:#86e8ee;background:#123e42'), '牌库编辑器左下牌库列表及当前牌库状态必须保持高对比'],
   [board.includes('card.playCost ?? card.currentCost ?? card.cost'), '手牌可打出校验必须使用服务端动态费用'],
   [board.includes('class="event-message"') && board.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
-  [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('z-index:2147483000') && board.includes("event.type === 'reveal'") && board.includes('}, 3000)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示卡必须在全局最上层播放三秒无蒙版非阻塞动画，不得使用确认弹框'],
+  [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('z-index:2147483000') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'reveal'") && board.includes('}, 3000)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示卡与触发式效果必须在全局最上层播放三秒无蒙版非阻塞动画，不得使用确认弹框'],
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list'), '效果模式选项必须使用纵向宽按钮'],
   [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
   [!deckEditor.includes('STARTER COPY') && !deckEditor.includes('importPreset'), '牌库编辑器不得重新引入 Starter Copy 区块'],
