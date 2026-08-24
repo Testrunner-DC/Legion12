@@ -109,6 +109,66 @@ public sealed class MatchRecorder : IAsyncDisposable
         return matches;
     }
 
+    public async Task<IReadOnlyList<L12MatchSummary>> ListMatchesForPlayerAsync(string playerName, int limit = 50)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
+                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
+            FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+            WHERE m.player_0=$player OR m.player_1=$player
+            GROUP BY m.match_id ORDER BY m.started_utc DESC LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$player", playerName);
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 200));
+        var matches = new List<L12MatchSummary>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) matches.Add(ReadSummary(reader));
+        return matches;
+    }
+
+    public async Task<IReadOnlyList<L12RankingMatch>> ListRankingMatchesAsync(int limit = 500)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,e.state_json
+            FROM matches m
+            LEFT JOIN match_events e ON e.id=(
+                SELECT latest.id FROM match_events latest
+                WHERE latest.match_id=m.match_id ORDER BY latest.sequence DESC LIMIT 1
+            )
+            WHERE m.ended_utc IS NOT NULL
+            ORDER BY m.started_utc DESC LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 2000));
+        var matches = new List<L12RankingMatch>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var master0 = string.Empty;
+            var master1 = string.Empty;
+            var firstPlayer = 0;
+            if (!reader.IsDBNull(5))
+            {
+                using var state = JsonDocument.Parse(reader.GetString(5));
+                var root = state.RootElement;
+                firstPlayer = ReadInt(root, "FirstPlayer", "firstPlayer");
+                if (TryProperty(root, "Players", "players", out var players) && players.ValueKind == JsonValueKind.Array)
+                {
+                    if (players.GetArrayLength() > 0) master0 = ReadString(players[0], "MasterName", "masterName");
+                    if (players.GetArrayLength() > 1) master1 = ReadString(players[1], "MasterName", "masterName");
+                }
+            }
+            matches.Add(new L12RankingMatch(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetInt32(4), master0, master1, firstPlayer));
+        }
+        return matches;
+    }
+
     public async Task<L12MatchDetail?> GetMatchAsync(string matchId)
     {
         await using var connection = new SqliteConnection(_connectionString);
@@ -149,6 +209,23 @@ public sealed class MatchRecorder : IAsyncDisposable
         return new L12MatchDetail(summary, events);
     }
 
+    public async Task<L12MatchDetail?> GetMatchForPlayerAsync(string matchId, string playerName)
+    {
+        var detail = await GetMatchAsync(matchId);
+        return detail is not null && (string.Equals(detail.Match.Player0, playerName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(detail.Match.Player1, playerName, StringComparison.OrdinalIgnoreCase)) ? detail : null;
+    }
+
+    private static bool TryProperty(JsonElement element, string pascal, string camel, out JsonElement value)
+        => element.TryGetProperty(pascal, out value) || element.TryGetProperty(camel, out value);
+
+    private static int ReadInt(JsonElement element, string pascal, string camel)
+        => TryProperty(element, pascal, camel, out var value) && value.TryGetInt32(out var result) ? result : 0;
+
+    private static string ReadString(JsonElement element, string pascal, string camel)
+        => TryProperty(element, pascal, camel, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty : string.Empty;
+
     private static L12MatchSummary ReadSummary(SqliteDataReader reader) => new(
         reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
         reader.GetString(4), reader.GetString(5), reader.GetString(6),
@@ -168,3 +245,7 @@ public sealed record L12RecordedCommand(
     string? Error, long Revision, string StateHash, JsonElement State);
 
 public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12RecordedCommand> Commands);
+
+public sealed record L12RankingMatch(
+    string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,
+    string Master0, string Master1, int FirstPlayer);

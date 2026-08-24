@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { l12State } from './net'
+import { platformRequest } from './platform'
 import type { ActionEvent, Card, GameState, Phase, PlayerView } from './types'
 import GameBoard from './game/GameBoard.vue'
 
@@ -41,17 +41,6 @@ const error = ref('')
 const playing = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 let playbackTimer: ReturnType<typeof setInterval> | null = null
-
-const apiBase = computed(() => {
-  try {
-    const url = new URL(l12State.endpoint)
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-    url.pathname = '/api/matches'
-    url.search = ''
-    url.hash = ''
-    return url.toString().replace(/\/$/, '')
-  } catch { return 'http://localhost:8080/api/matches' }
-})
 
 const currentCommand = computed(() => detail.value?.commands[selectedStep.value] ?? null)
 const routineEventTypes = new Set([
@@ -154,9 +143,7 @@ async function loadMatches() {
   loading.value = true
   error.value = ''
   try {
-    const response = await fetch(`${apiBase.value}?limit=100`)
-    if (!response.ok) throw new Error(`服务器返回 ${response.status}`)
-    matches.value = await response.json()
+    matches.value = await platformRequest<MatchSummary[]>('/api/matches?limit=100')
     if (matches.value[0]) await selectMatch(matches.value[0])
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '读取对局记录失败'
@@ -168,9 +155,7 @@ async function selectMatch(match: MatchSummary) {
   loading.value = true
   error.value = ''
   try {
-    const response = await fetch(`${apiBase.value}/${encodeURIComponent(match.matchId)}`)
-    if (!response.ok) throw new Error(`服务器返回 ${response.status}`)
-    detail.value = await response.json()
+    detail.value = await platformRequest<MatchDetail>(`/api/matches/${encodeURIComponent(match.matchId)}`)
     selectedStep.value = Math.max(0, detail.value!.commands.length - 1)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '读取对局详情失败'

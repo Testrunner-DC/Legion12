@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { l12State } from '@/l12/net'
-import { loadDeckCatalog } from '@/l12/decks'
+import { platformRequest } from '@/l12/platform'
 
-interface MatchSummary { matchId: string; player0: string; player1: string; startedUtc: string; endedUtc?: string | null; winner?: number | null }
+interface RankingMatch { player0: string; player1: string; startedUtc: string; endedUtc: string; winner: number | null; master0: string; master1: string; firstPlayer: number }
 interface PlayerRow { name: string; games: number; wins: number; losses: number }
 interface MasterGame { master0: string; master1: string; winner: number | null; firstPlayer: number }
 
@@ -12,28 +11,16 @@ const masterView = ref<'table' | 'matrix'>('table')
 const period = ref<'7' | '30' | 'all'>('30')
 const loading = ref(false)
 const error = ref('')
-const summaries = ref<MatchSummary[]>([])
+const summaries = ref<RankingMatch[]>([])
 const masterGames = ref<MasterGame[]>([])
 const masterNames = ref<string[]>([])
 
-function api(path = '') {
-  try { const url = new URL(l12State.endpoint); url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'; url.pathname = `/api/matches${path}`; url.search = ''; return url.toString() } catch { return `http://localhost:8080/api/matches${path}` }
-}
 onMounted(async () => {
   loading.value = true
   try {
-    const cards = await loadDeckCatalog()
-    masterNames.value = cards.filter(card => card.cardType === 'master').map(card => card.nameZh)
-    const response = await fetch(`${api()}?limit=500`)
-    if (!response.ok) throw new Error(`服务器返回 ${response.status}`)
-    summaries.value = await response.json()
-    const completed = summaries.value.filter(match => match.endedUtc).slice(0, 120)
-    const details = await Promise.all(completed.map(async match => { try { const result = await fetch(api(`/${encodeURIComponent(match.matchId)}`)); return result.ok ? await result.json() : null } catch { return null } }))
-    masterGames.value = details.flatMap(detail => {
-      const state = detail?.commands?.at(-1)?.state
-      const players = state?.Players ?? []
-      return players.length >= 2 ? [{ master0: players[0].MasterName || players[0].masterName, master1: players[1].MasterName || players[1].masterName, winner: detail.match.winner, firstPlayer: state.FirstPlayer ?? state.firstPlayer ?? 0 }] : []
-    })
+    summaries.value = await platformRequest<RankingMatch[]>('/api/rankings?limit=500')
+    masterGames.value = summaries.value.filter(match => match.master0 && match.master1)
+    masterNames.value = [...new Set(masterGames.value.flatMap(match => [match.master0, match.master1]))]
   } catch (reason) { error.value = reason instanceof Error ? reason.message : '排行榜加载失败' } finally { loading.value = false }
 })
 

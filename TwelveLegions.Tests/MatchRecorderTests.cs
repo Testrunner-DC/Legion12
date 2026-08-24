@@ -22,11 +22,24 @@ public sealed class MatchRecorderTests
             var rejectedPlayer = 1 - game.State.ActivePlayer;
             var rejected = game.Handle(rejectedPlayer, new L12Command("endTurn"));
             await recorder.AppendAsync(game, 2, rejectedPlayer, "{\"type\":\"endTurn\"}", rejected);
+            await recorder.CompleteAsync(game);
 
             var matches = await recorder.ListMatchesAsync();
             var detail = await recorder.GetMatchAsync("record-test");
+            var ownMatches = await recorder.ListMatchesForPlayerAsync("甲");
+            var unrelatedMatches = await recorder.ListMatchesForPlayerAsync("丙");
+            var ownDetail = await recorder.GetMatchForPlayerAsync("record-test", "乙");
+            var forbiddenDetail = await recorder.GetMatchForPlayerAsync("record-test", "丙");
+            var rankings = await recorder.ListRankingMatchesAsync();
             Assert.Single(matches);
+            Assert.Single(ownMatches);
+            Assert.Empty(unrelatedMatches);
             Assert.NotNull(detail);
+            Assert.NotNull(ownDetail);
+            Assert.Null(forbiddenDetail);
+            Assert.Single(rankings);
+            Assert.Equal("甲", rankings[0].Player0);
+            Assert.False(string.IsNullOrWhiteSpace(rankings[0].Master0));
             Assert.Equal(2, detail.Commands.Count);
             Assert.True(detail.Commands[0].Accepted);
             Assert.False(detail.Commands[1].Accepted);

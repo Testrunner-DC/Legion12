@@ -50,12 +50,20 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         });
         _app.UseWebSockets();
         _app.MapGet("/health", () => Results.Ok(new { service = "twelve-legions", cards = _cardCount }));
-        _app.MapGet("/api/matches", async (int? limit) => Results.Ok(await _recorder.ListMatchesAsync(limit ?? 50)));
-        _app.MapGet("/api/matches/{matchId}", async (string matchId) =>
+        _app.MapGet("/api/matches", async (HttpRequest request, int? limit) =>
         {
-            var match = await _recorder.GetMatchAsync(matchId);
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized()
+                : Results.Ok(await _recorder.ListMatchesForPlayerAsync(account.Username, limit ?? 50));
+        });
+        _app.MapGet("/api/matches/{matchId}", async (HttpRequest request, string matchId) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var match = await _recorder.GetMatchForPlayerAsync(matchId, account.Username);
             return match is null ? Results.NotFound() : Results.Ok(match);
         });
+        _app.MapGet("/api/rankings", async (int? limit) => Results.Ok(await _recorder.ListRankingMatchesAsync(limit ?? 500)));
         _app.MapPost("/api/auth/register", (AuthRequest request) =>
         {
             var result = _platform.Register(request.Username ?? string.Empty, request.Password ?? string.Empty);

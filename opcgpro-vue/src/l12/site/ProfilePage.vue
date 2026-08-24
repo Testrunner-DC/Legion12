@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { l12State } from '@/l12/net'
-import { changePassword, login, logout, platformState, register } from '@/l12/platform'
+import { changePassword, login, logout, platformRequest, platformState, register } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 
 interface Match { player0: string; player1: string; winner?: number | null; endedUtc?: string | null; startedUtc: string }
@@ -12,8 +12,7 @@ const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '', currentPassword: '', newPassword: '' })
 const authBusy = ref(false)
 
-function api() { try { const url = new URL(l12State.endpoint); url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'; url.pathname = '/api/matches'; url.search = '?limit=500'; return url.toString() } catch { return 'http://localhost:8080/api/matches?limit=500' } }
-onMounted(async () => { try { const response = await fetch(api()); if (response.ok) matches.value = await response.json() } catch {} })
+onMounted(async () => { if (platformState.account) try { matches.value = await platformRequest<Match[]>('/api/matches?limit=200') } catch {} })
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 async function submitAuth() {
   authBusy.value = true; notice.value = ''
@@ -33,7 +32,7 @@ async function submitPassword() {
   finally { authBusy.value = false }
 }
 function signOut() { logout(); notice.value = '已退出账号' }
-const myMatches = computed(() => matches.value.filter(match => match.player0 === l12State.nickname || match.player1 === l12State.nickname))
+const myMatches = computed(() => matches.value)
 const wins = computed(() => myMatches.value.filter(match => match.winner === (match.player0 === l12State.nickname ? 0 : 1)).length)
 const losses = computed(() => myMatches.value.filter(match => match.endedUtc && match.winner !== null && match.winner !== undefined && match.winner !== (match.player0 === l12State.nickname ? 0 : 1)).length)
 </script>
