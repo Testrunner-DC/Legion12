@@ -24,8 +24,7 @@ const mainNav = [
 ]
 const battleNav = [
   { to: '/', icon: 'home', label: '返回主页' },
-  { to: '/battle', icon: 'battle', label: '对战主页' },
-  { to: '/battle/lobby', icon: 'home', label: '大厅' },
+  { to: '/battle', icon: 'battle', label: '大厅' },
   { to: '/battle/tournaments', icon: 'tournament', label: '赛事中心' },
   { to: '/decks?from=%2Fbattle', icon: 'decks', label: '牌库' },
   { to: '/battle/rankings', icon: 'ranking', label: '排行榜' },
@@ -60,7 +59,7 @@ const connectionLabel = computed(() => ({ online: '连接正常', connecting: '�
 
 watch(() => route.fullPath, () => { mobileOpen.value = false })
 watch(settings, value => localStorage.setItem('l12-site-settings-v1', JSON.stringify(value)), { deep: true })
-function enterFriendRoom() { void router.push('/battle/lobby') }
+function enterFriendRoom() { void router.push('/battle') }
 let presenceTimer = 0
 async function refreshPresence() {
   if (!platformState.account || !platformState.token) {

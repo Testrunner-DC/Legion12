@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const shell = read('../src/l12/site/SiteShell.vue')
+const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
 const gameActions = read('../src/l12/game/GameActions.vue')
@@ -32,6 +33,7 @@ const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 const contracts = [
   [shell.includes('const siteBrandIcon = defaultSiteLogoUrl'), '主页入口必须引用默认网页图标'],
   [!shell.includes('/assets/l12/card-back-navy.png'), '主页入口不得回退为卡背'],
+  [shell.includes("{ to: '/battle', icon: 'battle', label: '大厅' }") && !shell.includes("label: '对战主页'") && router.includes("{ path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue')") && router.includes("{ path: '/battle/lobby', redirect: '/battle' }"), '对战区域必须直接以大厅为主页，不得恢复多余的对战主页层级'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
   [board.includes('border-radius:50%') && board.includes('.session-disaster-strip'), '本局天灾必须保持圆形缩略图'],
   [board.includes('<Teleport to="body" :disabled="!modalInspectorVisible">'), '弹框期间必须复用原选中卡牌详情框'],
