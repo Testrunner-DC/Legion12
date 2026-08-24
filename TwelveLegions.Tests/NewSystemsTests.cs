@@ -1025,7 +1025,7 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
-    public void RangedLegionsAreIdentifiedByTheCanonicalEffectSentence()
+    public void EveryPrintedRangedRuleUsesTheSharedConditionalCombatProfile()
     {
         var ranged = Catalog.Cards.Values
             .Where(card => card.Effect?.Contains("进攻距离+1，远程进攻无损。", StringComparison.Ordinal) == true)
@@ -1043,9 +1043,56 @@ public sealed class NewSystemsTests
                 Faction = definition.Faction,
                 EffectText = definition.Effect,
             };
-            Assert.True(instance.HasRangeBonus);
-            Assert.True(instance.HasRangedNoLoss);
+            var front = L12StructuredCardRules.CombatProfile(instance, 0);
+            var back = L12StructuredCardRules.CombatProfile(instance, 1);
+            if (definition.Id is "S01-0409" or "S02-0507")
+            {
+                Assert.False(front.HasRangeBonus);
+                Assert.False(front.HasRangedNoLoss);
+                Assert.True(back.HasRangeBonus);
+                Assert.True(back.HasRangedNoLoss);
+            }
+            else if (definition.Effect?.Contains("「位于前排」进攻距离+1", StringComparison.Ordinal) == true)
+            {
+                Assert.True(front.HasRangeBonus);
+                Assert.True(front.HasRangedNoLoss);
+                Assert.False(back.HasRangeBonus);
+                Assert.False(back.HasRangedNoLoss);
+            }
+            else
+            {
+                Assert.True(front.HasRangeBonus);
+                Assert.True(front.HasRangedNoLoss);
+                Assert.True(back.HasRangeBonus);
+                Assert.True(back.HasRangedNoLoss);
+            }
         }
+    }
+
+    [Theory]
+    [InlineData("S01-0409", 2000, null)]
+    [InlineData("S02-0507", 3000, "弓手")]
+    public void BackRowConditionalCombatRulesSetAttackTroopsAndDerivedProfession(
+        string cardId, int troops, string? profession)
+    {
+        var definition = Catalog.Cards[cardId];
+        var instance = new L12CardInstance
+        {
+            InstanceId = $"test-{cardId}",
+            CardId = definition.Id,
+            Name = definition.NameZh,
+            CardType = definition.CardType,
+            Faction = definition.Faction,
+            Profession = definition.Profession,
+            EffectText = definition.Effect,
+        };
+
+        var front = L12StructuredCardRules.CombatProfile(instance, 0);
+        var back = L12StructuredCardRules.CombatProfile(instance, 1);
+
+        Assert.Null(front.AttackTroopsSetValue);
+        Assert.Equal(troops, back.AttackTroopsSetValue);
+        Assert.Equal(profession ?? definition.Profession, back.EffectiveProfession);
     }
 
     [Fact]

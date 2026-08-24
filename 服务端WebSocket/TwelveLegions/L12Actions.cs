@@ -460,7 +460,8 @@ public sealed partial class L12GameEngine
             isRanged = row == 1 || targetRow == 1;
             if (isRanged && State.ActiveDisaster?.CardId == "S02-DS04")
                 return CommandResult.Reject("〈风暴乱象〉生效时军团无法发动远程进攻");
-            if (isRanged && target.CannotBeRanged) return CommandResult.Reject("目标无法被远程进攻");
+            if (isRanged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged)
+                return CommandResult.Reject("目标无法被远程进攻");
             var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
                 : defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden).ToArray();
             if (taunts.Length > 0 && !HasS1Taunt(target, targetRow)) return CommandResult.Reject("对方前排存在带有挑衅的军团");
@@ -489,6 +490,10 @@ public sealed partial class L12GameEngine
 
         attacker.Tapped = true;
         var combatProfile = L12StructuredCardRules.CombatProfile(attacker, row);
+        var attackNoLoss = combatProfile.HasAttackNoLoss
+            || attacker.AttackNoLossUntilTurn >= State.TurnSerial
+            || attacker.NextAttackNoLossUses > 0;
+        if (attacker.NextAttackNoLossUses > 0) attacker.NextAttackNoLossUses--;
         var temporaryAttackerTroopsBonus = 0;
         if (combatProfile.AttackTroopsSetValue is { } setAttackTroops)
         {
@@ -534,6 +539,7 @@ public sealed partial class L12GameEngine
             Target = command.Target,
             IsRanged = isRanged,
             RangedNoLoss = combatProfile.HasRangedNoLoss,
+            AttackNoLoss = attackNoLoss,
             SureHit = attacker.HasSureHit,
             MasterDamage = damage,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
@@ -553,9 +559,9 @@ public sealed partial class L12GameEngine
     private static bool HasRangeInPosition(L12CardInstance card, int row)
         => L12StructuredCardRules.CombatProfile(card, row).HasRangeBonus;
 
-    private static bool HasFrontRowLowTroopMasterProtection(L12PlayerState defender)
+    private static bool HasFrontRowLowTroopMasterProtection(L12PlayerState defender, int attackerTroops)
         => defender.Field[0].Any(card => card is not null && !card.Hidden && IsFieldLegion(card)
-            && card.EffectText?.Contains("我方主宰无法被兵力不高于2000的军团进攻", StringComparison.Ordinal) == true);
+            && L12StructuredCardRules.ProtectsMasterFromTroops(card, 0, attackerTroops));
 
     private bool HasMandatoryDisasterLegionTarget(L12CardInstance attacker, int row, L12PlayerState defender)
     {
@@ -569,7 +575,7 @@ public sealed partial class L12GameEngine
             if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
             var ranged = row == 1 || targetRow == 1;
             if (ranged && State.ActiveDisaster?.CardId == "S02-DS04") continue;
-            if (ranged && target.CannotBeRanged) continue;
+            if (ranged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged) continue;
             return true;
         }
         return false;
@@ -586,7 +592,7 @@ public sealed partial class L12GameEngine
             error = "对方主宰当前不能被进攻";
         else if (attacker.CardId == "S01-0212" && State.Players[playerIndex].MasterId == "S02-02M1")
             error = "奈芙蒂斯使我方陵墓守卫无法进攻主宰";
-        else if (attacker.Troops <= 2000 && HasFrontRowLowTroopMasterProtection(defender))
+        else if (HasFrontRowLowTroopMasterProtection(defender, attacker.Troops))
             error = "对方前排军团使主宰无法被兵力不高于2000的军团进攻";
         else if (State.ActiveDisaster?.CardId == "S02-DS02" && attacker.Troops <= 2000)
             error = "〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰";
@@ -765,7 +771,7 @@ public sealed partial class L12GameEngine
             {
                 var targetTroops = target.Troops;
                 var attackerTroops = attacker.Troops;
-                var attackerTakesDamage = !attacker.HasAttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
+                var attackerTakesDamage = !pending.AttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
                 if (targetTroops - attackerTroops <= 0
                     && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();
                 if (attackerTakesDamage && attackerTroops - targetTroops <= 0
@@ -787,7 +793,7 @@ public sealed partial class L12GameEngine
                         bypassLethalReplacement: true))
                     simultaneousDeaths.Add((attackerPlayer.PlayerIndex, attacker));
                 QueueSimultaneousDeathTriggers(simultaneousDeaths);
-                AddEvent("combat", playerIndex, attacker.HasAttackNoLoss || pending.IsRanged && pending.RangedNoLoss
+                AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
                     ? "进攻无损：被进攻军团承受兵力减损，进攻军团不减损"
                     : "双方军团同时造成等同于当前兵力的兵力减损", attacker, target);
             }

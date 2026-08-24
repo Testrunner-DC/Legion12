@@ -251,6 +251,7 @@ public sealed class L12PendingDefense
     public required L12AttackTarget Target { get; set; }
     public bool IsRanged { get; init; }
     public bool RangedNoLoss { get; init; }
+    public bool AttackNoLoss { get; init; }
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
     public int TemporaryAttackerTroopsBonus { get; set; }

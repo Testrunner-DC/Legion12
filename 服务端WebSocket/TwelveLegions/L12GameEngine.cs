@@ -295,7 +295,7 @@ public sealed partial class L12GameEngine
                 if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial) continue;
                 if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
                 var isRanged = row == 1 || targetRow == 1;
-                if (isRanged && target.CannotBeRanged) continue;
+                if (isRanged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged) continue;
                 if (taunts.Count > 0 && !taunts.Contains(target.InstanceId)) continue;
                 targets.Add(target.InstanceId);
             }

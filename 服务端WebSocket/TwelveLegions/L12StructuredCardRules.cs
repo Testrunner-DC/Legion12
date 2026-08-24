@@ -8,14 +8,39 @@ public sealed record L12ConditionalCombatProfile(
     string? EffectiveProfession,
     bool HasRangeBonus,
     bool HasRangedNoLoss,
+    bool HasAttackNoLoss,
+    bool CannotBeRanged,
     int? AttackTroopsSetValue,
     string ConditionExpression);
 
 public static class L12StructuredCardRules
 {
-    private static readonly HashSet<string> FrontRowTauntCards = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> AlwaysRangedCards = new(StringComparer.Ordinal)
     {
-        "S01-0107", "S01-0204", "S01-0312", "S02-0004", "S02-0007", "S02-0302", "S02-0512", "S02-0615",
+        "S01-0003", "S01-0110", "S01-0111", "S01-0112", "S01-0113", "S01-0114", "S01-0116",
+        "S01-0208", "S01-0209", "S01-0210", "S01-0211", "S01-0214", "S01-0309", "S01-0313",
+        "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416", "S02-0003", "S02-0204",
+        "S02-0304", "S02-0614", "S02-0617", "S02-0618",
+    };
+
+    private static readonly HashSet<string> FrontOnlyRangedCards = new(StringComparer.Ordinal)
+    {
+        "S01-0115", "S01-0213", "S01-0316", "S01-0415", "S02-0619",
+    };
+
+    private static readonly HashSet<string> FrontRowTauntOverlayCards = new(StringComparer.Ordinal)
+    {
+        "S01-0107", "S01-0204", "S01-0312", "S02-0004", "S02-0007", "S02-0302", "S02-0615",
+    };
+
+    private static readonly HashSet<string> AlwaysAttackNoLossCards = new(StringComparer.Ordinal)
+    {
+        "S01-0110", "S02-0001",
+    };
+
+    private static readonly HashSet<string> CannotBeRangedCards = new(StringComparer.Ordinal)
+    {
+        "S01-0110", "S02-0007",
     };
 
     public static string EffectiveFaction(L12PlayerState owner, L12CardInstance card)
@@ -49,7 +74,12 @@ public static class L12StructuredCardRules
     }
 
     public static bool HasTaunt(L12CardInstance card, int row)
-        => card.TauntUntilTurn >= 0 || (row == 0 && FrontRowTauntCards.Contains(card.CardId));
+    {
+        if (card.TauntUntilTurn >= 0) return true;
+        var abilities = GetCombatRuleAbilities(card.CardId);
+        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .Any(ability => AbilityGrantsKeyword(ability, abilities, "taunt"));
+    }
 
     private static bool HandConditionMatches(string? expression, int godPowerCount)
     {
@@ -62,28 +92,110 @@ public static class L12StructuredCardRules
 
     public static L12ConditionalCombatProfile CombatProfile(L12CardInstance card, int row)
     {
-        var frontOnlyRanged = card.EffectText?.Contains("「位于前排」进攻距离+1", StringComparison.Ordinal) == true;
-        var backOnlyRanged = card.CardId is "S01-0409" or "S02-0507";
-        var ranged = card.HasRangeBonus
-            && (!frontOnlyRanged || row == 0)
-            && (!backOnlyRanged || row == 1);
-        var rangedNoLoss = card.HasRangedNoLoss && ranged;
-
-        return card.CardId switch
+        var profession = card.Profession;
+        var ranged = false;
+        var rangedNoLoss = false;
+        var attackNoLoss = false;
+        var cannotBeRanged = false;
+        int? attackTroopsSetValue = null;
+        var matchedConditions = new List<string>();
+        var abilities = GetCombatRuleAbilities(card.CardId);
+        foreach (var ability in abilities.Where(ability => ConditionMatchesRow(ability, row)))
         {
-            "S01-0409" when row == 1 => new(card.Profession, true, true, 2000, "source.row=back"),
-            "S02-0507" when row == 1 => new("弓手", true, true, 3000, "source.row=back"),
-            "S01-0409" or "S02-0507" => new(card.Profession, false, false, null, "source.row=back"),
-            _ => new(card.Profession, ranged, rangedNoLoss, null,
-                frontOnlyRanged ? "source.row=front" : "always"),
-        };
+            var expression = ConditionExpression(ability);
+            if (!string.IsNullOrWhiteSpace(expression)) matchedConditions.Add(expression);
+            if (IsContinuous(ability.ExecutionModel))
+            {
+                foreach (var atom in ability.Atoms)
+                {
+                    if (atom.Kind == L12AtomKinds.SetState
+                        && atom.Parameters.GetValueOrDefault("key") == "source.derived-profession")
+                        profession = atom.Parameters.GetValueOrDefault("value") ?? profession;
+                    if (atom.Kind != L12AtomKinds.AttackRule) continue;
+                    ranged |= atom.Parameters.GetValueOrDefault("rangeBonus") == "1";
+                    rangedNoLoss |= atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true";
+                    attackNoLoss |= atom.Parameters.GetValueOrDefault("attackNoLoss") == "true";
+                    cannotBeRanged |= atom.Parameters.GetValueOrDefault("cannotBeRanged") == "true";
+                }
+            }
+            if (ability.Trigger != "attack") continue;
+            foreach (var atom in ability.Atoms.Where(atom => atom.Kind == L12AtomKinds.ModifyTroops
+                && atom.Parameters.GetValueOrDefault("operation") == "set"))
+                if (int.TryParse(atom.Parameters.GetValueOrDefault("value"), out var setValue))
+                    attackTroopsSetValue = setValue;
+        }
+
+        return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, attackTroopsSetValue,
+            matchedConditions.Count == 0 ? "always" : string.Join(';', matchedConditions.Distinct(StringComparer.Ordinal)));
     }
+
+    public static bool ProtectsMasterFromTroops(L12CardInstance card, int row, int attackerTroops)
+        => GetCombatRuleAbilities(card.CardId)
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .SelectMany(ability => ability.Atoms)
+            .Where(atom => atom.Kind == L12AtomKinds.AttackRule)
+            .Select(atom => atom.Parameters.GetValueOrDefault("protectMasterFromTroopsAtMost"))
+            .Any(value => int.TryParse(value, out var threshold) && attackerTroops <= threshold);
 
     public static string? EffectiveProfession(L12CardInstance card, int row)
         => CombatProfile(card, row).EffectiveProfession;
 
     public static bool HasProfession(L12CardInstance card, int row, string profession)
         => string.Equals(EffectiveProfession(card, row), profession, StringComparison.Ordinal);
+
+    public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatRuleAbilities(string cardId)
+    {
+        var result = new List<L12StructuredAbilityTemplate>();
+        if (TryGetStructuredAbilities(cardId, out var structured)) result.AddRange(structured);
+        result.AddRange(GetCombatOverlayAbilities(cardId));
+        return result;
+    }
+
+    public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatOverlayAbilities(string cardId)
+    {
+        var result = new List<L12StructuredAbilityTemplate>();
+        if (AlwaysRangedCards.Contains(cardId)) result.Add(RangedAbility());
+        if (FrontOnlyRangedCards.Contains(cardId)) result.Add(RangedAbility(frontOnly: true));
+        if (FrontRowTauntOverlayCards.Contains(cardId)) result.Add(FrontRowTauntAbility());
+        if (cardId == "S02-0101") result.Add(FrontRowMasterProtectionAbility());
+        if (AlwaysAttackNoLossCards.Contains(cardId)) result.Add(AttackNoLossAbility());
+        if (CannotBeRangedCards.Contains(cardId)) result.Add(CannotBeRangedAbility());
+        return result;
+    }
+
+    private static bool AbilityGrantsKeyword(L12StructuredAbilityTemplate ability,
+        IReadOnlyList<L12StructuredAbilityTemplate> abilities, string keyword)
+    {
+        if (ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword
+            && atom.Parameters.GetValueOrDefault("keywordRef") == keyword)) return true;
+        foreach (var atom in ability.Atoms.Where(atom => atom.Kind == L12AtomKinds.SetState))
+        {
+            var reference = atom.Parameters.GetValueOrDefault("abilityRef");
+            if (string.IsNullOrWhiteSpace(reference)) continue;
+            var separator = reference.LastIndexOf(':');
+            if (separator < 0 || !int.TryParse(reference[(separator + 1)..], out var sequence)) continue;
+            if (sequence < 1 || sequence > abilities.Count) continue;
+            if (abilities[sequence - 1].Atoms.Any(candidate => candidate.Kind == L12AtomKinds.Keyword
+                && candidate.Parameters.GetValueOrDefault("keywordRef") == keyword)) return true;
+        }
+        return false;
+    }
+
+    private static bool IsContinuous(string executionModel)
+        => executionModel is "continuous" or "granted-continuous";
+
+    private static string? ConditionExpression(L12StructuredAbilityTemplate ability)
+        => ability.Atoms.FirstOrDefault(atom => atom.Kind == L12AtomKinds.Condition)
+            ?.Parameters.GetValueOrDefault("expression");
+
+    private static bool ConditionMatchesRow(L12StructuredAbilityTemplate ability, int row)
+    {
+        var expression = ConditionExpression(ability);
+        if (string.IsNullOrWhiteSpace(expression)) return true;
+        if (expression.Contains("source.row=front", StringComparison.Ordinal) && row != 0) return false;
+        if (expression.Contains("source.row=back", StringComparison.Ordinal) && row != 1) return false;
+        return true;
+    }
 
     public static bool TryGetStructuredAbilities(L12CardDefinition card, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
         => TryGetStructuredAbilities(card.Id, out abilities);
@@ -442,6 +554,43 @@ public static class L12StructuredCardRules
                 new(L12AtomKinds.AttackRule, "远程进攻无损", "resolution", new() { ["rangedNoLoss"] = "true" }),
                 new(L12AtomKinds.Duration, "位于战场期间持续", "duration", new() { ["duration"] = "while-on-field" }),
             ]);
+
+    private static L12StructuredAbilityTemplate FrontRowTauntAbility() =>
+        new("static", "continuous", "「位于前排」获得【挑衅】。",
+        [
+            new(L12AtomKinds.Condition, "位于前排", "condition", new() { ["expression"] = "source.row=front" }),
+            new(L12AtomKinds.Keyword, "【挑衅】规则引用", "resolution", new()
+            {
+                ["keywordRef"] = "taunt",
+                ["targetRule"] = "opponent-must-attack-taunt-legion",
+            }),
+            new(L12AtomKinds.Duration, "位于前排期间持续", "duration", new() { ["duration"] = "while-source-row-front" }),
+        ]);
+
+    private static L12StructuredAbilityTemplate FrontRowMasterProtectionAbility() =>
+        new("static", "continuous", "「位于前排」我方主宰无法被兵力不高于2000的军团进攻。",
+        [
+            new(L12AtomKinds.Condition, "位于前排", "condition", new() { ["expression"] = "source.row=front" }),
+            new(L12AtomKinds.AttackRule, "保护我方主宰免受兵力不高于 2000 的军团进攻", "resolution", new()
+            {
+                ["protectMasterFromTroopsAtMost"] = "2000",
+            }),
+            new(L12AtomKinds.Duration, "位于前排期间持续", "duration", new() { ["duration"] = "while-source-row-front" }),
+        ]);
+
+    private static L12StructuredAbilityTemplate AttackNoLossAbility() =>
+        new("static", "continuous", "进攻无损。",
+        [
+            new(L12AtomKinds.AttackRule, "进攻无损", "resolution", new() { ["attackNoLoss"] = "true" }),
+            new(L12AtomKinds.Duration, "位于战场期间持续", "duration", new() { ["duration"] = "while-on-field" }),
+        ]);
+
+    private static L12StructuredAbilityTemplate CannotBeRangedAbility() =>
+        new("static", "continuous", "无法被远程进攻。",
+        [
+            new(L12AtomKinds.AttackRule, "无法被远程进攻", "resolution", new() { ["cannotBeRanged"] = "true" }),
+            new(L12AtomKinds.Duration, "位于战场期间持续", "duration", new() { ["duration"] = "while-on-field" }),
+        ]);
 
     private static L12StructuredAtomTemplate GodPowerCost(int amount, bool flip) =>
         new(L12AtomKinds.Special, flip ? $"消耗并翻转 {amount} 神力" : $"消耗 {amount} 神力", "cost", new()

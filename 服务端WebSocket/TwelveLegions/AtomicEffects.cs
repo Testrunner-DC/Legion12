@@ -261,9 +261,15 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicCardEffect BuildCard(L12CardDefinition card)
     {
         var text = card.Effect?.Trim() ?? string.Empty;
-        var abilities = (L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
-            ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToArray()
-            : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToArray())
+        var sourceAbilities = L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
+            ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToList()
+            : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+        foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
+        {
+            if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text)) continue;
+            sourceAbilities.Add(BuildStructuredAbility(card, overlay, sourceAbilities.Count + 1));
+        }
+        var abilities = sourceAbilities
             .Select((ability, index) => L12AtomicAbilityIdentity.Assign(card.Id, ability, index + 1)).ToArray();
         var legacy = abilities.Sum(ability => ability.Atoms.Count(atom => atom.Kind == L12AtomKinds.Legacy));
         var executable = abilities.Sum(ability => ability.Atoms.Count(atom => atom.RuntimeExecutable));
