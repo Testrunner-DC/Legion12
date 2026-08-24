@@ -54,6 +54,7 @@ public sealed partial class L12GameEngine
             "playHandCard" => GmPlayHandCard(command),
             "destroyCard" => GmDestroyCard(command),
             "returnCardToHand" => GmReturnCardToHand(command),
+            "resetCardEffects" => GmResetCardEffects(command),
             "setCardState" => GmSetCardState(command),
             "setTroops" => GmSetTroops(command),
             "startAttack" => GmStartAttack(command),
@@ -469,6 +470,42 @@ public sealed partial class L12GameEngine
         State.Phase = phase;
         AddEvent("gm", command.TargetPlayer, $"[GM] 将玩家{command.TargetPlayer + 1}设为回合玩家并跳转至{GmPhaseLabel(phase)}");
         return CommandResult.Ok();
+    }
+
+    private CommandResult GmResetCardEffects(L12GmCommand command)
+    {
+        var card = FindPublicCard(command.CardInstanceId, out var controllerIndex);
+        if (card is null || controllerIndex != command.TargetPlayer)
+            return CommandResult.Reject("目标卡牌不在该玩家场上");
+        if (State.PendingPrompts.Any(prompt => prompt.Data.Values.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
+            || State.EffectStack.Any(item => item.SourceInstanceId == card.InstanceId))
+            return CommandResult.Reject("该卡牌仍有待处理的选择或效果，请完成结算后再重置");
+
+        var sourceIds = card.AttachedCards.Prepend(card).Select(source => source.InstanceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var resetKeys = State.Players[controllerIndex].UsedAbilities
+            .Where(key => sourceIds.Any(sourceId => IsCardOncePerTurnUsageKey(key, sourceId)))
+            .ToArray();
+        foreach (var key in resetKeys)
+            State.Players[controllerIndex].UsedAbilities.Remove(key);
+
+        AddEvent("gm", controllerIndex,
+            $"[GM] 重置〈{card.Name}〉的回合1次效果限制（{resetKeys.Length}项）", card);
+        return CommandResult.Ok();
+    }
+
+    private static bool IsCardOncePerTurnUsageKey(string key, string sourceInstanceId)
+    {
+        var prefixes = new[]
+        {
+            $"active:{sourceInstanceId}:",
+            $"trigger:faith-zealot:{sourceInstanceId}",
+            $"trigger:limu-morale:{sourceInstanceId}:",
+            $"gustav-ready:{sourceInstanceId}:",
+            $"alice-ready:{sourceInstanceId}:",
+            $"s2-achilles-lethal-replacement:{sourceInstanceId}:",
+        };
+        return prefixes.Any(prefix => key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     private CommandResult GmAdvancePhase()

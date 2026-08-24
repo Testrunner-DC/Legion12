@@ -94,6 +94,7 @@ const contracts = [
   [gmPanel.includes('targetHand') && gmPanel.includes("run('moveHandCard'") && gmPanel.includes("run('playHandCard'"), 'GM 必须能查看并操作双方真实手牌实例'],
   [gmPanel.indexOf('主宰、天灾与阶段') < gmPanel.indexOf('卡牌与区域') && gmPanel.includes("run('nextPhase')"), 'GM 主宰、天灾与阶段必须位于卡牌与区域上方并可进入下一阶段'],
   [gmPanel.includes("run('returnCardToHand'") && gmPanel.includes('返回手牌'), 'GM 场上卡牌必须提供返回所有者手牌的操作'],
+  [gmPanel.includes("run('resetCardEffects'") && gmPanel.includes('重置效果'), 'GM 场上卡牌必须提供重置所选卡牌回合1次效果限制的操作'],
   [!gmPanel.includes('手牌（GM 可操作）') && !gmPanel.includes('自动切换该方为回合玩家') && !gmPanel.includes('军团会返回棋盘'), 'GM 面板不得保留重复权限文字及已要求删除的说明'],
   [gameActions.includes("game.activePlayer !== me.playerIndex") && gameActions.includes("game.activePlayer === me.playerIndex") && !gameActions.includes('game.activePlayer !== game.you'), '沙盒双方抵挡、支援和阶段操作必须依据当前代操作玩家而非登录座位'],
   [gmPanel.includes("emit('armPlacement'") && gamePage.includes(':gm-placement="gmPlacement"') && board.includes("emit('gmPlacementResolved')") && board.includes('GM：请选择'), 'GM 打出军团必须回到棋盘并点击目标玩家的绿色空位'],

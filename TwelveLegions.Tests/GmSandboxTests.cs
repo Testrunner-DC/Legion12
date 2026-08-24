@@ -283,6 +283,34 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void GmResetsSelectedCardsOncePerTurnEffectsWithoutRemovingTimedBuffs()
+    {
+        var game = new L12GameEngine(Catalog, "gm-reset-effects", "GMRESET", 1210,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0504",
+            Row: 0, Slot: 0, TriggerEffects: false)).Accepted);
+        var card = game.State.Players[0].Field[0][0]!;
+        var usages = new[]
+        {
+            $"active:{card.InstanceId}:test",
+            $"trigger:faith-zealot:{card.InstanceId}",
+            $"s2-achilles-lethal-replacement:{card.InstanceId}:{game.State.TurnSerial}",
+        };
+        foreach (var usage in usages) game.State.Players[0].UsedAbilities.Add(usage);
+        var timedBuff = $"s2-artemis-buff:{card.InstanceId}:{game.State.TurnSerial}";
+        game.State.Players[0].UsedAbilities.Add(timedBuff);
+
+        var result = game.HandleGm(new L12GmCommand("resetCardEffects", 0,
+            CardInstanceId: card.InstanceId));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.All(usages, usage => Assert.DoesNotContain(usage, game.State.Players[0].UsedAbilities));
+        Assert.Contains(timedBuff, game.State.Players[0].UsedAbilities);
+        Assert.Contains(game.State.Events, entry => entry.Type == "gm"
+            && entry.Text.Contains("重置") && entry.Text.Contains("3项"));
+    }
+
+    [Fact]
     public async Task DisconnectedAccountReclaimsItsSeatAndReceivesAuthoritativeRecoveryState()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-room-recovery", Guid.NewGuid().ToString("N"));
