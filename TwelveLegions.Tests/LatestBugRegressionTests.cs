@@ -392,7 +392,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void PromotionLegionKeepsNormalEntryModeAfterManualResourceSelection()
+    public void PromotionLegionKeepsNormalEntryModeWhenAllAvailableResourcesAreForced()
     {
         var game = Create(6406);
         var player = game.State.Players[0];
@@ -416,14 +416,12 @@ public sealed class LatestBugRegressionTests
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-promotion-mode", mode.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "normal")).Accepted);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("play-morale-choice", payment.Continuation);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: player.Morale.Select(card => card.InstanceId).ToList())).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
 
         Assert.Same(promoted, player.Field[0][0]);
         Assert.Same(foundation, player.Field[0][1]);
         Assert.DoesNotContain(promoted, player.Hand);
+        Assert.All(player.Morale, card => Assert.True(card.Tapped));
     }
 
     [Fact]
@@ -548,7 +546,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void ZeroMoraleMoveCanBePaidByClickingAnActiveTombGuard()
+    public void ZeroMoraleMoveAutomaticallyUsesTheOnlyAvailableTombGuard()
     {
         var game = CreateWithFirstMaster("S01-02M1", 64102);
         var player = game.State.Players[0];
@@ -565,16 +563,7 @@ public sealed class LatestBugRegressionTests
         var begin = game.Handle(0, new L12Command("move", mover.InstanceId, Row: 1, Slot: 0));
 
         Assert.True(begin.Accepted, begin.Error);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("resource-payment", payment.Kind);
-        Assert.Equal("move-morale-choice", payment.Continuation);
-        Assert.Equal([guard.InstanceId], payment.ValidChoices);
-        Assert.Equal("请选择支付费用的陵墓守卫", payment.Text);
-
-        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: [guard.InstanceId]));
-
-        Assert.True(paid.Accepted, paid.Error);
+        Assert.Empty(game.State.PendingPrompts);
         Assert.Same(mover, player.Field[1][0]);
         Assert.Null(player.Field[0][0]);
         Assert.True(guard.Tapped);

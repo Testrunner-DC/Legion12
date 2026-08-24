@@ -97,7 +97,7 @@ public sealed partial class L12GameEngine
         if (paymentChoice is not null) return paymentChoice;
         var paid = command.CardInstanceIds is not null
             ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds)
-            : TryConsumeMorale(player, cost, allowTombGuards: false);
+            : TryConsumeMorale(player, cost);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         if (card.CardType == "legion")
         {
@@ -387,7 +387,7 @@ public sealed partial class L12GameEngine
         if (paymentChoice is not null) return paymentChoice;
         var paid = command.CardInstanceIds is not null
             ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds)
-            : TryConsumeMorale(player, cost, allowTombGuards: false);
+            : TryConsumeMorale(player, cost);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         player.Hand.Remove(card);
         if (player.Field[1][slot] is not null)
@@ -900,7 +900,7 @@ public sealed partial class L12GameEngine
         }
         if (!hasTenkaFreeMove && !hasHippolytaFreeFrontBackMove && !(command.CardInstanceIds is not null
             ? TryConsumeSelectedResources(player, 1, command.CardInstanceIds)
-            : TryConsumeMorale(player, 1, allowTombGuards: false)))
+            : TryConsumeMorale(player, 1)))
             return CommandResult.Reject("移动需要消耗 1 张活跃士气");
         player.Field[sourceRow][sourceSlot] = null;
         player.Field[targetRow][targetSlot] = card;

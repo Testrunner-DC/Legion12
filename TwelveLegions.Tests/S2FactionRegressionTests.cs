@@ -662,10 +662,7 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", forge.InstanceId,
             Ability: "forgePromotionDiscount")).Accepted);
-        var forgePayment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("resource-payment", forgePayment.Kind);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: forgePayment.PromptId,
-            CardInstanceIds: [player.Morale[0].InstanceId])).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         PassResponses(game);
         Assert.Equal(1, player.NextS2PromotionGodPowerDiscount);
 
