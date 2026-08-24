@@ -219,6 +219,41 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
+    public void OptionalDrawMigrationMatchesTheActualCardPoolInsteadOfExampleNames()
+    {
+        var expectedPrograms = new HashSet<(string CardId, string Trigger)>
+        {
+            ("S01-0115", "enter"),
+            ("S01-0301", "death"),
+            ("S01-0309", "death"),
+            ("S01-0405", "attack"),
+            ("S01-0409", "after-attack"),
+            ("S01-0413", "enter"),
+            ("S02-0104", "enter"),
+            ("S02-0203", "death"),
+            ("S02-0402", "death"),
+            ("S02-0507", "enter"),
+            ("S02-0507", "promotion-enter"),
+            ("S02-0512", "death"),
+        };
+        var actualPrograms = L12VerifiedAtomicPrograms.All
+            .Where(program => program.Atoms.Any(atom => atom.Kind == L12AtomKinds.Optional)
+                && program.Atoms.Any(atom => atom.Kind == L12AtomKinds.Draw
+                    && atom.Parameters.GetValueOrDefault("amount") == "1"))
+            .Select(program => (program.CardId, program.Trigger))
+            .ToHashSet();
+
+        Assert.Equal(expectedPrograms, actualPrograms);
+
+        // 这些名称曾作为“无目标抽牌”示例出现，但卡面并不属于该簇：
+        // 奥拉夫二世是抽二弃一的复合效果，土方岁三与增殖的甲虫没有纯抽牌能力。
+        Assert.Contains("抽取2张牌，并弃置1张手牌", Catalog.Cards["S01-0306"].Effect);
+        Assert.DoesNotContain("抽取", Catalog.Cards["S01-0406"].Effect);
+        Assert.DoesNotContain("抽取", Catalog.Cards["S02-0201"].Effect);
+        Assert.DoesNotContain(actualPrograms, item => item.CardId is "S01-0306" or "S01-0406" or "S02-0201");
+    }
+
+    [Fact]
     public void AbilitySplitterSeparatesIndependentTimingWindows()
     {
         var wuZetian = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0102"));
