@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
       <section v-else-if="modal === 'updates'" class="site-modal update-modal">
         <header><div><small>CHANGELOG</small><h2>更新日志</h2></div><button @click="modal = null">×</button></header>
         <article><time>当前开发版</time><h3>官方网站框架与导航升级</h3><ul><li>建立官网、资料库、牌库社区与对战器四个产品域。</li><li>新增独立页面路由、桌面侧栏与移动端导航。</li><li>规划牌库码、牌库图和 JSON 回放交换能力。</li></ul></article>
-        <article><time>对战内核</time><h3>S1 完整回归与 S2 持续接入</h3><ul><li>响应堆叠、目标预声明、派生兵力与牌库操作已纳入公共框架。</li><li>当前仍为开发测试环境，卡效覆盖情况以测试报告为准。</li></ul></article>
+        <article><time>对战内核</time><h3>S01 完整回归与 S02 持续接入</h3><ul><li>响应堆叠、目标预声明、派生兵力与牌库操作已纳入公共框架。</li><li>当前仍为开发测试环境，卡效覆盖情况以测试报告为准。</li></ul></article>
       </section>
 
       <section v-else class="site-modal online-modal">

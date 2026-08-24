@@ -103,7 +103,7 @@ onMounted(() => { if (canAccessAdmin.value) { loadContent(); loadEffects(); if (
             <header><div><h2>全卡效能力清单</h2><p>后台与规则内核读取同一份原子注册表；状态不会因画出节点而自动视为已迁移。</p></div><button @click="loadEffects()">刷新</button></header>
             <div class="effect-filters">
               <input v-model="effectSearch" placeholder="卡号 / 卡名 / 原文" @keyup.enter="loadEffects(true)"/>
-              <select v-model="effectProduct" @change="loadEffects(true)"><option value="">全部弹次</option><option value="S01">S01</option><option value="S02">S02</option></select>
+              <select v-model="effectProduct" @change="loadEffects(true)"><option value="">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option></select>
               <select v-model="effectStatus" @change="loadEffects(true)"><option value="">全部状态</option><option value="verified">实战已验证</option><option value="legacy-backed">旧实现兜底</option><option value="partially-atomized">部分原子化</option><option value="declarative-ready">声明就绪</option><option value="no-effect">无卡效</option></select>
               <select v-model="effectAtomKind" @change="loadEffects(true)"><option value="">全部原子</option><option v-for="atom in effectAtoms" :key="atom.kind" :value="atom.kind">{{ atom.label }}</option></select>
               <button @click="loadEffects(true)">查询</button>

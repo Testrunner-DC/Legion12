@@ -32,8 +32,8 @@ export const homeContentFields: HomeContentField[] = [
   { id: 'replayLinkLabel', key: 'home.replayLinkLabel', label: '复盘链接文字', defaultValue: '对局复盘工具' },
   { id: 'developmentTitle', key: 'home.developmentTitle', label: '开发状态标题', defaultValue: '开发状态' },
   { id: 'battleStatus', key: 'home.battleStatus', label: '对战框架状态', defaultValue: '可测试' },
-  { id: 's1Status', key: 'home.s1Status', label: 'S1 卡效状态', defaultValue: '回归中' },
-  { id: 's2Status', key: 'home.s2Status', label: 'S2 卡效状态', defaultValue: '接入中' },
+  { id: 's1Status', key: 'home.s1Status', label: 'S01 卡效状态', defaultValue: '回归中' },
+  { id: 's2Status', key: 'home.s2Status', label: 'S02 卡效状态', defaultValue: '接入中' },
   { id: 'mobileStatus', key: 'home.mobileStatus', label: '移动端状态', defaultValue: '适配中' },
 ]
 

@@ -41,7 +41,7 @@ const featureLabels = computed(() => content.featureLabels.split(/\r?\n/).map(it
     <section class="official-columns">
       <article><header><small>OFFICIAL</small><h2>{{ content.newsTitle }}</h2></header><div class="empty-block"><template v-if="content.latestNews"><b>最新公告</b><span>{{ content.latestNews }}</span></template><template v-else><b>{{ content.newsEmptyTitle }}</b><span>{{ content.newsEmptyText }}</span></template></div></article>
       <article><header><small>RULES & FAQ</small><h2>{{ content.rulesTitle }}</h2></header><router-link to="/cards">{{ content.cardLinkLabel }} <b>→</b></router-link><a href="#" @click.prevent>{{ content.rulesLinkLabel }} <b>→</b></a><router-link to="/records">{{ content.replayLinkLabel }} <b>→</b></router-link></article>
-      <article><header><small>DEVELOPMENT</small><h2>{{ content.developmentTitle }}</h2></header><div class="status-line"><span>对战框架</span><b>{{ content.battleStatus }}</b></div><div class="status-line"><span>S1 卡效</span><b>{{ content.s1Status }}</b></div><div class="status-line"><span>S2 卡效</span><b>{{ content.s2Status }}</b></div><div class="status-line"><span>移动端</span><b>{{ content.mobileStatus }}</b></div></article>
+      <article><header><small>DEVELOPMENT</small><h2>{{ content.developmentTitle }}</h2></header><div class="status-line"><span>对战框架</span><b>{{ content.battleStatus }}</b></div><div class="status-line"><span>S01 卡效</span><b>{{ content.s1Status }}</b></div><div class="status-line"><span>S02 卡效</span><b>{{ content.s2Status }}</b></div><div class="status-line"><span>移动端</span><b>{{ content.mobileStatus }}</b></div></article>
     </section>
   </div>
 </template>

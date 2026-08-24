@@ -28,7 +28,7 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
   <div class="grand-shell">
     <header class="grand-topbar">
       <div class="top-brand"><b>XII</b><span>十二军团<small>ONLINE BATTLE</small></span></div>
-      <div class="top-center">服务器权威制 · S1 卡效持续验证</div>
+      <div class="top-center">服务器权威制 · S01 卡效持续验证</div>
       <div class="top-user"><i :class="l12State.status"/><span>{{ l12State.nickname || '游客' }}</span><small>{{ l12State.status }}</small></div>
     </header>
 
@@ -88,7 +88,7 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
         </section>
         <section class="home-actions">
           <button class="mode-card primary-mode" @click="view = 'room'"><i>⚔</i><div><small>FRIENDLY MATCH</small><h2>友谊对战</h2><p>使用六位房间码建立 1v1 对局</p></div><b>→</b></button>
-          <button class="mode-card" @click="view = 'cards'"><i>▦</i><div><small>CARD ARCHIVE</small><h2>卡牌档案</h2><p>已收录 248 张 S1–S2 卡牌数据</p></div><b>→</b></button>
+          <button class="mode-card" @click="view = 'cards'"><i>▦</i><div><small>CARD ARCHIVE</small><h2>卡牌档案</h2><p>已收录 248 张 S01–S02 卡牌数据</p></div><b>→</b></button>
           <button class="mode-card" @click="router.push('/deck-editor')"><i>▤</i><div><small>DECK BUILDER</small><h2>牌库编辑器</h2><p>建立、校验并保存 40–50 张自定义牌库</p></div><b>→</b></button>
           <button class="mode-card" @click="view = 'replay'"><i>↺</i><div><small>MATCH RECORDS</small><h2>对局记录</h2><p>SQLite 完整记录 · 逐操作快照回看</p></div><b>→</b></button>
         </section>
@@ -116,7 +116,7 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
     <aside class="grand-info-rail">
       <section class="grand-panel"><p class="kicker">SERVER</p><h3>连接状态</h3><div class="server-line"><i :class="l12State.status"/><span>{{ l12State.status }}</span></div><small>{{ l12State.endpoint }}</small></section>
       <section class="grand-panel"><p class="kicker">TEST DECKS</p><h3>预设军团</h3><article><b>天廷</b><span>杨戬 · 40+8</span></article><article><b>高天原</b><span>须佐之男 · 40+8</span></article><article><b>太阳城</b><span>梅杰德 · 40+8</span></article><article><b>阿斯加德</b><span>洛基 · 40+8</span></article></section>
-      <section class="grand-panel rail-grow"><p class="kicker">DEVELOPMENT</p><h3>当前范围</h3><ul><li>房间码 1v1</li><li>四套 S1 预组选择</li><li>SQLite 快照回看</li><li>S1 卡效持续回归</li></ul></section>
+      <section class="grand-panel rail-grow"><p class="kicker">DEVELOPMENT</p><h3>当前范围</h3><ul><li>房间码 1v1</li><li>四套 S01 预组选择</li><li>SQLite 快照回看</li><li>S01 卡效持续回归</li></ul></section>
       <p v-if="l12State.notice" class="notice">{{ l12State.notice }}</p>
     </aside>
   </div>

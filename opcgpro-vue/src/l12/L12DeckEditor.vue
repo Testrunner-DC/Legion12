@@ -290,7 +290,7 @@ onBeforeUnmount(closeDeckImage)
         </article>
         <label>搜索<input v-model="query" placeholder="卡名、编号、效果"/></label>
         <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
-        <label>卡池<select v-model="productFilter"><option value="all">全部</option><option value="S01">S1</option><option value="S02">S2</option></select></label>
+        <label>卡池<select v-model="productFilter"><option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option></select></label>
         <label>费用<select v-model="costFilter"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
         <label>天灾等级<select v-model="disasterFilter"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
         <label>排序<select v-model="sortMode"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>

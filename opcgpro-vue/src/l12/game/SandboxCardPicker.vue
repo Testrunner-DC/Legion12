@@ -94,7 +94,7 @@ const filtered = computed(() => {
           <input v-model="query" type="search" placeholder="搜索卡名、编号或效果文字" autofocus/>
           <select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ cardTypeLabel(key) }}</option></select>
           <select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] ?? key }}</option></select>
-          <select v-model="product"><option value="all">S1 + S2</option><option value="S01">S1</option><option value="S02">S2</option></select>
+          <select v-model="product"><option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option></select>
           <select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value">{{ value }}</option></select>
           <select v-model="disaster"><option value="all">全部天灾等级</option><option value="none">无天灾等级</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select>
         </div>
