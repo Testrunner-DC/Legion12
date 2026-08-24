@@ -309,6 +309,11 @@ public sealed class L12PendingActivation
     public List<L12ActivationSelectionStep> SelectionSteps { get; init; } = [];
     public int CurrentStep { get; set; }
     public List<string> DeclaredTargets { get; } = [];
+    /// <summary>
+    /// 非空时表示这不是主动效果，而是尚未进入堆叠的触发效果声明。
+    /// 目标与费用全部声明完成后，才会把对应候选压入堆叠。
+    /// </summary>
+    public string? TriggerCandidateId { get; init; }
 }
 
 public sealed class L12FreeMasterActivation
@@ -419,6 +424,7 @@ public sealed class L12GameState
     public List<L12StackItem> EffectStack { get; } = [];
     public List<L12StackItem> DeferredEffectStack { get; } = [];
     public List<L12TriggerBatch> PendingTriggerBatches { get; } = [];
+    public List<L12TriggerCandidate> PendingTriggerStackCandidates { get; } = [];
     public List<L12AuthorityEvent> AuthorityEvents { get; } = [];
     public L12ResponseWindow? ResponseWindow { get; set; }
     public bool IsResolvingStack { get; set; }

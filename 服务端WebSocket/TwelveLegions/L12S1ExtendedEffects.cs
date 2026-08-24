@@ -317,6 +317,11 @@ public sealed partial class L12GameEngine
                 return true;
             case "S01-0112":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    if (!string.IsNullOrWhiteSpace(declared)) MoveGraveToHand(player, declared);
+                    FinishStackItem(item); return true;
+                }
                 var choices = player.Graveyard.Where(candidate => candidate.CardType == "tactic" && candidate.CurrentCost <= 4)
                     .Select(candidate => candidate.InstanceId).ToList();
                 if (State.DisasterValue > 4 || choices.Count == 0) { FinishStackItem(item); return true; }
@@ -326,11 +331,29 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "S01-0115":
+                if (item.Data.TryGetValue("declaredTargets", out var jingkeTarget))
+                {
+                    if (!string.IsNullOrWhiteSpace(jingkeTarget)) KillTarget(jingkeTarget, "被荆轲阵亡效果击杀");
+                    FinishStackItem(item); return true;
+                }
                 if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return true; }
                 PromptEnemyLegion(item, "jingke-kill", "荆轲阵亡：可返还1士气，击杀对方最多1张兵力不高于2000的军团", target => target.Troops <= 2000, true);
                 return true;
             case "S01-0403":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    var slots = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).ToArray();
+                    for (var index = 0; index < Math.Min(selected.Length, slots.Length); index++)
+                    {
+                        var counter = player.Hand.FirstOrDefault(card => card.InstanceId == selected[index]);
+                        if (counter is null || !IsCounterTactic(counter.CardId)) continue;
+                        player.Hand.Remove(counter); counter.Hidden = true; counter.SetRound = State.Round;
+                        player.Field[1][slots[index]] = counter;
+                    }
+                    FinishStackItem(item); return true;
+                }
                 var choices = player.Hand.Where(candidate => IsCounterTactic(candidate.CardId)).Select(candidate => candidate.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
                 choices.Add("skip");
@@ -340,6 +363,12 @@ public sealed partial class L12GameEngine
             }
             case "S01-0407":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    if (selected.Length == 2) SummonFromHand(player, selected[0], selected[1], tapped: true);
+                    FinishStackItem(item); return true;
+                }
                 var choices = player.Hand.Where(candidate => candidate.CardType == "legion" && candidate.Faction == "gaotianyuan" && candidate.CurrentCost <= 3)
                     .Select(candidate => candidate.InstanceId).ToList();
                 if (choices.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }

@@ -260,6 +260,12 @@ public sealed partial class L12GameEngine
             case "S01-0108":
             {
                 if (State.ActivePlayer == item.Controller) { FinishStackItem(item); return; }
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    var morale = State.Players[1 - item.Controller].Morale.FirstOrDefault(card => card.InstanceId == declared);
+                    if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
+                    FinishStackItem(item); return;
+                }
                 var choices = State.Players[1 - item.Controller].Morale.Where(morale => morale.Tapped).Select(morale => morale.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "target-morale", "选择对方 1 张休整士气，使其下个重置阶段无法转为活跃", choices, 1, 1,

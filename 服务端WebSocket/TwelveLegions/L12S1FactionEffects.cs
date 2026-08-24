@@ -256,6 +256,11 @@ public sealed partial class L12GameEngine
             case "S01-0206": PromptOwnLegion(item, "saladin-move", "萨拉丁阵亡：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
             case "S01-0207":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    if (!string.IsNullOrWhiteSpace(declared)) MoveGraveToLibraryTop(player, declared);
+                    FinishStackItem(item); return true;
+                }
                 var choices = player.Graveyard.Where(candidate => CanEnterHandOrLibrary(candidate) && candidate.CardId != "S01-0207" && candidate.Faction == "taiyangcheng" && candidate.CurrentCost <= 4)
                     .Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "图坦卡蒙阵亡：可将墓地1张费用不高于4的其他【太阳城】卡牌放回牌库顶部", choices, 1, 1,
@@ -264,6 +269,12 @@ public sealed partial class L12GameEngine
             case "S01-0209": if (player.Hand.Count < State.Players[1 - item.Controller].Hand.Count) { DamageMaster(1 - item.Controller, 1, "纳芙蒂蒂阵亡效果"); HealMaster(item.Controller, 1, "纳芙蒂蒂阵亡效果", legionEffect: true); } FinishStackItem(item); return true;
             case "S01-0210":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    if (selected.Length == 2) SummonFromAnyPrivateZone(player, selected[0], selected[1], tapped: false);
+                    FinishStackItem(item); return true;
+                }
                 var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion" && candidate.Faction == "taiyangcheng" && candidate.CurrentCost <= 2)
                     .Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "尼托克丽丝阵亡：选择墓地1张费用不高于2的【太阳城】军团活跃登场", choices, 1, 1,
@@ -271,7 +282,13 @@ public sealed partial class L12GameEngine
             }
             case "S01-0302": HealMaster(item.Controller, 1, "金发哈拉尔阵亡效果", legionEffect: true); FinishStackItem(item); return true;
             case "S01-0303": CreatePrompt(item.Controller, "optional", "传奇的拉格纳阵亡：是否抽取1张并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-one" }); return true;
-            case "S01-0304": PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
+            case "S01-0304":
+                if (item.Data.TryGetValue("declaredTargets", out var haraldTarget))
+                {
+                    if (!string.IsNullOrWhiteSpace(haraldTarget)) KillTarget(haraldTarget, "被无情者哈拉尔阵亡效果击杀");
+                    FinishStackItem(item); return true;
+                }
+                PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
             case "S01-0305":
                 if (player.Graveyard.Count < 4 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "勇士比约恩阵亡：是否令主宰受到1点伤害并将墓地4张牌返回牌库底部，使其休整登场？", ["yes", "no"], 1, 1,
@@ -281,6 +298,16 @@ public sealed partial class L12GameEngine
             case "S01-0308": SummonAsgardFromGrave(item, 3); return true;
             case "S01-0313":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    var target = FindOnField(State.Players[1 - item.Controller], declared, out _, out _);
+                    if (target is not null && !target.Tapped)
+                    {
+                        target.Tapped = true;
+                        AddEvent("effect", item.Controller, "神箭奥德尔将目标转为休整", card);
+                    }
+                    FinishStackItem(item); return true;
+                }
                 var choices = PublicLegions(State.Players[1 - item.Controller]).Where(target => !target.Tapped).Select(target => target.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-target", "神箭奥德尔阵亡：可将对方1张活跃军团转为休整", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "oddr-tap" }); return true;

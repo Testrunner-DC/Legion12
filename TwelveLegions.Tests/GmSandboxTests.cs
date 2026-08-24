@@ -215,6 +215,42 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void TargetedDeathTriggerDeclaresTargetAndPaysCostBeforeEnteringStack()
+    {
+        var game = new L12GameEngine(Catalog, "trigger-declaration", "TRIGGERDECL", 1207,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        Assert.True(game.HandleGm(new L12GmCommand("addMorale", 0, Value: 1)).Accepted);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S01-0115", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 1, "S01-0002", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var jingKe = game.State.Players[0].Field[0][0]!;
+        var target = game.State.Players[1].Field[0][0]!;
+        target.Troops = 2000;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: jingKe.InstanceId)).Accepted);
+
+        Assert.Empty(game.State.EffectStack);
+        var declaration = Assert.Single(game.State.PendingActivations,
+            activation => activation.TriggerCandidateId is not null);
+        var prompt = Assert.Single(game.State.PendingPrompts,
+            candidate => candidate.Continuation == "pending-activation");
+        Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        var moraleBefore = game.State.Players[0].Morale.Count;
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+
+        Assert.DoesNotContain(game.State.PendingActivations, activation => activation.ActivationId == declaration.ActivationId);
+        Assert.Equal(moraleBefore - 1, game.State.Players[0].Morale.Count);
+        Assert.DoesNotContain(game.State.Players[1].Field.SelectMany(row => row),
+            card => card?.InstanceId == target.InstanceId);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            candidate => candidate.Continuation == "card-effect");
+    }
+
+    [Fact]
     public async Task AcceptingFriendInvitationCreatesRoomWithInitiatorAsHost()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-friend-room", Guid.NewGuid().ToString("N"));

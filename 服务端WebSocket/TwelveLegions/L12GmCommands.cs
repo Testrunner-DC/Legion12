@@ -461,6 +461,7 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Clear();
         State.PendingActivations.Clear();
         State.PendingTriggerBatches.Clear();
+        State.PendingTriggerStackCandidates.Clear();
         State.PendingDefense = null;
         State.EffectStack.Clear();
         State.DeferredEffectStack.Clear();

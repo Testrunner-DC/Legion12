@@ -9,6 +9,10 @@ public sealed partial class L12GameEngine
 
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<L12ActivationSelectionStep> selectionSteps)
+        => BeginPendingActivationSequence(playerIndex, source, ability, selectionSteps, null);
+
+    private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
+        IEnumerable<L12ActivationSelectionStep> selectionSteps, string? triggerCandidateId)
     {
         var steps = selectionSteps.Select(step => new L12ActivationSelectionStep
         {
@@ -34,6 +38,7 @@ public sealed partial class L12GameEngine
             MinChoose = first.MinChoose,
             MaxChoose = first.MaxChoose,
             SelectionSteps = steps,
+            TriggerCandidateId = triggerCandidateId,
         };
         State.PendingActivations.Add(activation);
         CreateActivationStepPrompt(activation);
@@ -94,6 +99,11 @@ public sealed partial class L12GameEngine
             State.PendingActivations.Remove(activation);
             ClearFreeMasterActivation(activation);
             AddEvent("ability-cancelled", prompt.PlayerIndex, "已取消发动，未支付费用且未进入堆叠");
+            if (activation.TriggerCandidateId is not null)
+            {
+                State.PendingTriggerStackCandidates.RemoveAll(candidate => candidate.CandidateId == activation.TriggerCandidateId);
+                AdvanceTriggerBatches();
+            }
             return;
         }
         var step = activation.SelectionSteps[activation.CurrentStep];
@@ -119,6 +129,12 @@ public sealed partial class L12GameEngine
             return;
         }
         State.PendingActivations.Remove(activation);
+
+        if (activation.TriggerCandidateId is not null)
+        {
+            CompleteTriggerDeclaration(activation);
+            return;
+        }
 
         var player = State.Players[prompt.PlayerIndex];
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
@@ -308,13 +324,19 @@ public sealed partial class L12GameEngine
     private void AdvanceTriggerBatches()
     {
         if (State.PendingPrompts.Any(prompt => prompt.Continuation == "trigger-batch-order")) return;
+        AdvancePendingTriggerStackCandidates();
+        if (State.PendingTriggerStackCandidates.Count > 0
+            || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)) return;
         while (State.PendingTriggerBatches.Count > 0)
         {
             var batch = State.PendingTriggerBatches[0];
             State.PendingTriggerBatches.RemoveAt(0);
             if (batch.Candidates.Count == 1)
             {
-                AddTriggerCandidateToStack(batch.Candidates[0]);
+                State.PendingTriggerStackCandidates.Add(batch.Candidates[0]);
+                AdvancePendingTriggerStackCandidates();
+                if (State.PendingTriggerStackCandidates.Count > 0
+                    || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)) return;
                 continue;
             }
             var data = new Dictionary<string, string> { ["batchId"] = batch.BatchId, ["choiceMode"] = "ordered" };
@@ -341,9 +363,20 @@ public sealed partial class L12GameEngine
         State.PendingTriggerBatches.Remove(batch);
         var byId = batch.Candidates.ToDictionary(candidate => candidate.CandidateId, StringComparer.OrdinalIgnoreCase);
         // 玩家选择的是结算顺序；堆叠后进先出，因此反向压栈。
-        foreach (var id in chosen.AsEnumerable().Reverse()) AddTriggerCandidateToStack(byId[id]);
+        foreach (var id in chosen.AsEnumerable().Reverse()) State.PendingTriggerStackCandidates.Add(byId[id]);
         AddEvent("trigger-order", batch.Controller, $"{State.Players[batch.Controller].Name} 已排列同一时点的 {chosen.Count} 个触发效果");
         AdvanceTriggerBatches();
+    }
+
+    private void AdvancePendingTriggerStackCandidates()
+    {
+        while (State.PendingTriggerStackCandidates.Count > 0)
+        {
+            var candidate = State.PendingTriggerStackCandidates[0];
+            if (!candidate.Data.ContainsKey("declaration-complete") && TryBeginTriggerDeclaration(candidate)) return;
+            State.PendingTriggerStackCandidates.RemoveAt(0);
+            AddTriggerCandidateToStack(candidate);
+        }
     }
 
     private void AddTriggerCandidateToStack(L12TriggerCandidate candidate)
@@ -367,6 +400,124 @@ public sealed partial class L12GameEngine
             source is null ? [] : [source]);
         AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{candidate.Text}进入同一时点触发批次",
             source is null ? [] : [source]);
+    }
+
+    private bool TryBeginTriggerDeclaration(L12TriggerCandidate candidate)
+    {
+        if (candidate.Trigger != "death") return false;
+        var player = State.Players[candidate.Controller];
+        var opponent = State.Players[1 - candidate.Controller];
+        var source = FindPromptCard(candidate.Controller, candidate.SourceInstanceId)
+            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        var steps = new List<L12ActivationSelectionStep>();
+        if (candidate.SourceCardId == "S01-0108" && State.ActivePlayer != candidate.Controller)
+        {
+            steps.Add(TriggerStep("target-morale", "花木兰：选择对方1张休整士气，使其下个重置阶段无法转为活跃",
+                opponent.Morale.Where(card => card.Tapped).Select(card => card.InstanceId), 1));
+        }
+        else if (candidate.SourceCardId == "S01-0112" && State.DisasterValue <= 4)
+        {
+            steps.Add(TriggerStep("grave-card", "孙武：可选择墓地1张费用不高于4的战术卡回到手牌",
+                player.Graveyard.Where(card => card.CardType == "tactic" && card.CurrentCost <= 4).Select(card => card.InstanceId), 0));
+        }
+        else if (candidate.SourceCardId == "S01-0115" && CanReturnMorale(player, 1))
+        {
+            steps.Add(TriggerStep("field-legion", "荆轲：可选择对方最多1张兵力不高于2000的军团",
+                PublicLegions(opponent).Where(card => card.Troops <= 2000).Select(card => card.InstanceId), 0));
+            if (NeedsManualReturnMoraleSelection(player, 1))
+                steps.Add(new L12ActivationSelectionStep
+                {
+                    Kind = "resource-return", Text = "请选择返还的士气",
+                    ValidChoices = player.Morale.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1,
+                    SkipWhenPreviousStepEmpty = true,
+                });
+        }
+        else if (candidate.SourceCardId == "S01-0403")
+        {
+            steps.Add(TriggerStep("hand-card", "上杉谦信：选择手牌中最多2张反击战术置入后排",
+                player.Hand.Where(card => IsCounterTactic(card.CardId)).Select(card => card.InstanceId), 0, 2));
+        }
+        else if (candidate.SourceCardId == "S01-0407")
+        {
+            steps.Add(TriggerStep("hand-card", "坂本龙马：可选择手牌1张费用不高于3的【高天原】军团休整登场",
+                player.Hand.Where(card => card.CardType == "legion" && card.Faction == "gaotianyuan" && card.CurrentCost <= 3)
+                    .Select(card => card.InstanceId), 0));
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "slot", Text = "选择该军团休整登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                MinChoose = 1, MaxChoose = 1, SkipWhenPreviousStepEmpty = true,
+            });
+        }
+        else if (candidate.SourceCardId == "S01-0207")
+        {
+            steps.Add(TriggerStep("grave-card", "图坦卡蒙：可将墓地1张费用不高于4的其他【太阳城】卡牌放回牌库顶部",
+                player.Graveyard.Where(card => CanEnterHandOrLibrary(card) && card.CardId != "S01-0207"
+                    && card.Faction == "taiyangcheng" && card.CurrentCost <= 4).Select(card => card.InstanceId), 0));
+        }
+        else if (candidate.SourceCardId == "S01-0210")
+        {
+            steps.Add(TriggerStep("grave-card", "尼托克丽丝：选择墓地1张费用不高于2的【太阳城】军团活跃登场",
+                player.Graveyard.Where(card => card.CardType == "legion" && card.Faction == "taiyangcheng" && card.CurrentCost <= 2)
+                    .Select(card => card.InstanceId), 0));
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "slot", Text = "选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                MinChoose = 1, MaxChoose = 1, SkipWhenPreviousStepEmpty = true,
+            });
+        }
+        else if (candidate.SourceCardId == "S01-0304")
+        {
+            steps.Add(TriggerStep("field-legion", "无情者哈拉尔：选择对方1张兵力不高于2000的军团并击杀",
+                PublicLegions(opponent).Where(card => card.Troops <= 2000).Select(card => card.InstanceId), 1));
+        }
+        else if (candidate.SourceCardId == "S01-0313")
+        {
+            steps.Add(TriggerStep("field-legion", "神箭奥德尔：可选择对方1张活跃军团转为休整",
+                PublicLegions(opponent).Where(card => !card.Tapped).Select(card => card.InstanceId), 0));
+        }
+        else return false;
+        if (steps.Count == 0 || steps[0].ValidChoices.Count == 0) return false;
+        BeginPendingActivationSequence(candidate.Controller, source, "trigger-declaration", steps, candidate.CandidateId);
+        return true;
+    }
+
+    private static L12ActivationSelectionStep TriggerStep(string kind, string text, IEnumerable<string> choices,
+        int min, int max = 1) => new()
+    {
+        Kind = kind, Text = text, ValidChoices = choices.ToList(), MinChoose = min, MaxChoose = max,
+    };
+
+    private void CompleteTriggerDeclaration(L12PendingActivation activation)
+    {
+        var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
+        if (candidate is null) { AdvanceTriggerBatches(); return; }
+        var declared = activation.DeclaredTargets.ToList();
+        if (candidate.SourceCardId == "S01-0115" && declared.Count > 0)
+        {
+            var moraleId = declared.FirstOrDefault(id => State.Players[candidate.Controller].Morale.Any(card => card.InstanceId == id));
+            if (moraleId is not null)
+            {
+                if (!ReturnSelectedMoraleById(State.Players[candidate.Controller], [moraleId], 1))
+                {
+                    State.PendingTriggerStackCandidates.Remove(candidate);
+                    AddEvent("ability-rejected", candidate.Controller, "返还士气已失效，效果未进入堆叠");
+                    AdvanceTriggerBatches();
+                    return;
+                }
+                declared.Remove(moraleId);
+            }
+            else if (!ReturnMorale(State.Players[candidate.Controller], 1))
+            {
+                State.PendingTriggerStackCandidates.Remove(candidate);
+                AddEvent("ability-rejected", candidate.Controller, "返还士气失败，效果未进入堆叠");
+                AdvanceTriggerBatches();
+                return;
+            }
+            candidate.Data["return-morale-prepaid"] = "true";
+        }
+        candidate.Data["declaredTargets"] = string.Join('|', declared);
+        candidate.Data["declaration-complete"] = "true";
+        AdvanceTriggerBatches();
     }
 
     private void RecalculateContinuousTroops()
