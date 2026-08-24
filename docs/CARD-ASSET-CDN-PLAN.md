@@ -64,6 +64,8 @@ cards/{catalogVersion}/{cardId}/{sha256}/detail-960.avif
 
 ## 已落地的生产工具
 
+源图归档通过 `ops/windows/Prepare-L12CardArchive.ps1` 完成：S02 本地卡图按卡号复制到 D 盘归档，S01 的 Steam 来源按卡号下载到同一目录；已有非空文件默认复用，失败下载使用临时文件且不会污染正式归档。
+
 生产与上传统一通过 `ops/windows/Publish-L12CardCdn.ps1`，输入、输出都必须位于 C 盘以外。脚本会：
 
 1. 按卡号匹配归档源图，计算完整 SHA-256，并以哈希前 20 位建立不可变对象目录。
@@ -75,6 +77,9 @@ cards/{catalogVersion}/{cardId}/{sha256}/detail-960.avif
 示例：
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\windows\Prepare-L12CardArchive.ps1 `
+  -ArchiveDirectory 'D:\L12-assets\original'
+
 powershell -ExecutionPolicy Bypass -File .\ops\windows\Publish-L12CardCdn.ps1 `
   -SourceDirectory 'D:\L12-assets\original' `
   -OutputDirectory 'D:\L12-assets\cdn-build' `
