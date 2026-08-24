@@ -142,6 +142,7 @@ const boardSlotTargetPlayerIndex = computed(() => {
 })
 const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =>
   prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment'
+  || prompt.kind === 'resource-return' || prompt.data?.choiceMode === 'resource-return'
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
   || prompt.kind === 'target-morale',
 ) ?? null)
@@ -794,7 +795,10 @@ function statusTexts(card: Card) {
         <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
         <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">不发动</button>
         <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
-          @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
+          @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return'
+            ? '确认返还'
+            : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
+              ? '确认支付' : '确认选择' }}</button>
       </div>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" />

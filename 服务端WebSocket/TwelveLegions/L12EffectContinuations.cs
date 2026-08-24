@@ -29,20 +29,16 @@ public sealed partial class L12GameEngine
         switch (action)
         {
             case "effect-morale-payment": ContinueEffectMoralePayment(item, prompt, chosen); break;
+            case "effect-morale-return": ContinueEffectMoraleReturn(item, prompt, chosen); break;
             case "lubu-kill":
-                if (chosen[0] != "skip" && ReturnMorale(player, 2)) KillTarget(chosen[0], "被吕布击杀");
-                FinishStackItem(item); break;
+                if (chosen[0] != "skip") BeginEffectMoraleReturn(item, 2, "lubu-kill", new() { ["target"] = chosen[0] });
+                else FinishStackItem(item); break;
             case "wuzetian-lock":
-                if (chosen.Count > 0 && ReturnMorale(player, 1))
-                    foreach (var id in chosen)
-                    {
-                        var target = FindOnField(State.Players[1 - item.Controller], id, out _, out _);
-                        if (target is not null) target.CannotUntapUntilRound = State.Round + 1;
-                    }
-                FinishStackItem(item); break;
+                if (chosen.Count > 0) BeginEffectMoraleReturn(item, 1, "wuzetian-lock", new() { ["targets"] = string.Join('|', chosen) });
+                else FinishStackItem(item); break;
             case "mulan-charge":
-                if (chosen[0] == "yes" && source is not null && ReturnMorale(player, 1)) source.HasCharge = true;
-                FinishStackItem(item); break;
+                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "mulan-charge");
+                else FinishStackItem(item); break;
             case "kusanagi-enter-kill":
             case "divine-punishment-kill":
             case "honda-kill-zero":
@@ -75,32 +71,14 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "march-kill":
-                if (chosen[0] != "skip" && ReturnMorale(player, 2)) KillTarget(chosen[0], "被神妙行军击杀");
-                FinishStackItem(item); break;
+                if (chosen[0] != "skip") BeginEffectMoraleReturn(item, 2, "march-kill", new() { ["target"] = chosen[0] });
+                else FinishStackItem(item); break;
             case "hanxin-attack":
-                if (chosen[0] == "yes" && source is not null && ReturnMorale(player, 1))
-                {
-                    source.Troops += 1000;
-                    source.HasStrongAttack = true;
-                    if (State.PendingDefense is not null)
-                    {
-                        var pending = State.PendingDefense;
-                        pending.MasterDamage += 1;
-                    }
-                }
-                FinishStackItem(item); break;
+                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "hanxin-attack");
+                else FinishStackItem(item); break;
             case "guanyu-attack":
-                if (chosen[0] == "yes" && source is not null && ReturnMorale(player, 1))
-                {
-                    source.Troops += 1000;
-                    source.HasSureHit = true;
-                    if (State.PendingDefense is not null)
-                    {
-                        var pending = State.PendingDefense;
-                        pending.SureHit = true;
-                    }
-                }
-                FinishStackItem(item); break;
+                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "guanyu-attack");
+                else FinishStackItem(item); break;
             case "inaihime-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);
@@ -120,9 +98,8 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); break;
             }
             case "lubu-ready":
-                if (chosen[0] == "yes" && source is not null && ReturnMorale(player, 4))
-                    ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃");
-                FinishStackItem(item); break;
+                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 4, "lubu-ready");
+                else FinishStackItem(item); break;
             case "katsura-return":
                 if (chosen[0] == "yes" && source is not null)
                 {
@@ -288,16 +265,7 @@ public sealed partial class L12GameEngine
             player.Library.Remove(card); player.Library.Add(card); FinishStackItem(item); return;
         }
         if (choice == "top") { FinishStackItem(item); return; }
-        if (!ReturnMorale(player, 1)) { FinishStackItem(item); return; }
-        var slots = EmptySlots(player).ToArray();
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "lijing-slot",
-            ["previewCardId"] = card.InstanceId
-        };
-        AddPromptCardData(data, card);
-        CreatePrompt(item.Controller, "slot", "请直接点击战场上的高亮空位，使展示的军团活跃登场", slots, 1, 1,
-            "card-effect", item.StackItemId, data: data);
+        BeginEffectMoraleReturn(item, 1, "lijing-recruit", new() { ["card"] = card.InstanceId });
     }
 
     private void CompleteLiJingRecruit(L12StackItem item, string slotChoice)
@@ -326,10 +294,8 @@ public sealed partial class L12GameEngine
 
     private void ContinueLiuBeiCard(L12StackItem item, string choice)
     {
-        if (choice == "skip" || !ReturnMorale(State.Players[item.Controller], 1)) { FinishStackItem(item); return; }
-        item.Data["summon"] = choice;
-        CreatePrompt(item.Controller, "slot", "选择活跃登场位置", EmptySlots(State.Players[item.Controller]), 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "liubei-slot" });
+        if (choice == "skip") { FinishStackItem(item); return; }
+        BeginEffectMoraleReturn(item, 1, "liubei-summon", new() { ["card"] = choice });
     }
 
     private void CompleteLiuBeiEnter(L12StackItem item, string slotChoice)

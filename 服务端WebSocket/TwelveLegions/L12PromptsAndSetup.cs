@@ -401,6 +401,12 @@ public sealed partial class L12GameEngine
                 if (!result.Accepted) return result;
                 break;
             }
+            case "active-return-choice":
+            {
+                var result = ResolveActiveReturnMoraleChoice(prompt, chosen);
+                if (!result.Accepted) return result;
+                break;
+            }
             case "move-morale-choice":
             {
                 var result = ResolveMoveResourcePayment(prompt, chosen);
@@ -496,6 +502,20 @@ public sealed partial class L12GameEngine
         if (source is null) return CommandResult.Reject("主动效果来源已不在合法区域");
         return CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data.GetValueOrDefault("ability") ?? string.Empty,
             prompt.Data.GetValueOrDefault("target"), selectedResourceIds: chosen);
+    }
+
+    private CommandResult ResolveActiveReturnMoraleChoice(L12Prompt prompt, List<string> chosen)
+    {
+        var player = State.Players[prompt.PlayerIndex];
+        var sourceId = prompt.Data.GetValueOrDefault("sourceId") ?? string.Empty;
+        var source = FindOnField(player, sourceId, out _, out _)
+            ?? (player.Relic?.InstanceId == sourceId ? player.Relic : null)
+            ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == sourceId)
+            ?? (prompt.Data.GetValueOrDefault("sourceCardId") == player.MasterId ? CreateActiveMasterSource(player, sourceId) : null)
+            ?? (sourceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(prompt.Data.GetValueOrDefault("sourceCardId") ?? string.Empty, sourceId) : null);
+        if (source is null) return CommandResult.Reject("主动效果来源已不在合法区域");
+        return CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data.GetValueOrDefault("ability") ?? string.Empty,
+            prompt.Data.GetValueOrDefault("target"), selectedReturnIds: chosen);
     }
 
     private void ResolveInitiativeChoice(int playerIndex, string choice)

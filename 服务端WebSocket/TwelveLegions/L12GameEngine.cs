@@ -794,11 +794,28 @@ public sealed partial class L12GameEngine
 
     private static bool CanReturnMorale(L12PlayerState player, int count) => player.Morale.Count >= count;
 
+    private static bool NeedsManualReturnMoraleSelection(L12PlayerState player, int count, bool requireActive = false)
+    {
+        var eligible = player.Morale.Where(card => !requireActive || !card.Tapped).ToArray();
+        if (count <= 0 || eligible.Length <= count) return false;
+        // 只有选择会改变公开结算结果时才询问：活跃/休整、普通/神力，以及返还后进入墓地的黑色莲花。
+        return eligible.Select(card => $"{card.Tapped}:{card.IsGodPower}:{card.CardId == "S02-0010"}")
+            .Distinct(StringComparer.Ordinal).Skip(1).Any();
+    }
+
     private bool ReturnMorale(L12PlayerState player, int count)
     {
         if (!CanReturnMorale(player, count)) return false;
         var returned = player.Morale.OrderByDescending(card => card.Tapped).Take(count).ToArray();
         return ReturnSelectedMorale(player, returned);
+    }
+
+    private bool ReturnSelectedMoraleById(L12PlayerState player, IReadOnlyCollection<string> selectedIds,
+        int count, bool requireActive = false)
+    {
+        if (selectedIds.Count != count || selectedIds.Distinct(StringComparer.Ordinal).Count() != count) return false;
+        var selected = player.Morale.Where(card => selectedIds.Contains(card.InstanceId)).ToArray();
+        return selected.Length == count && ReturnSelectedMorale(player, selected, requireActive);
     }
 
     private bool ReturnSelectedMorale(L12PlayerState player, IReadOnlyCollection<L12MoraleCard> returned, bool requireActive = false)

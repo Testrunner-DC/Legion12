@@ -198,7 +198,8 @@ public sealed partial class L12GameEngine
         return null;
     }
 
-    private CommandResult? TryCommitS2UniversalActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey)
+    private CommandResult? TryCommitS2UniversalActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey,
+        bool returnMoralePrepaid = false)
     {
         if (ability == "disableCounters" && source.CardId == "S02-0003")
         {
@@ -212,7 +213,7 @@ public sealed partial class L12GameEngine
         if (ability == "shennongReset" && source.CardId == "S02-0104")
         {
             if (source.Tapped) return CommandResult.Reject("神农鼎必须为活跃状态");
-            if (!ReturnMorale(State.Players[playerIndex], 1)) return CommandResult.Reject("需要返还1张士气");
+            if (!returnMoralePrepaid && !ReturnMorale(State.Players[playerIndex], 1)) return CommandResult.Reject("需要返还1张士气");
             source.Tapped = true;
             PushEffect(playerIndex, source, "active", "主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
@@ -387,10 +388,8 @@ public sealed partial class L12GameEngine
                 else FinishStackItem(item);
                 break;
             case "s2-qianyang-draw":
-                if (chosen[0] == "yes" && ReturnMorale(State.Players[item.Controller], 1)
-                    && !Draw(State.Players[item.Controller], 1))
-                    SetWinner(1 - item.Controller, "〈乾坤 阳〉抽牌时牌库为空");
-                FinishStackItem(item);
+                if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "qianyang-draw");
+                else FinishStackItem(item);
                 break;
             case "s2-magician-remove-counter":
                 if (chosen[0] != "skip")

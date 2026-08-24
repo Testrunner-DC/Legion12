@@ -279,6 +279,10 @@ public sealed class S2UniversalEffectsTests
         var choice = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("lijing-choice", choice.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choice.PromptId, Choice: "recruit")).Accepted);
+        var returnPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", returnPrompt.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
+            CardInstanceIds: [returnPrompt.ValidChoices[0]])).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("lijing-slot", slot.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "0:1")).Accepted);
@@ -553,6 +557,10 @@ public sealed class S2UniversalEffectsTests
             CardInstanceIds: [target.InstanceId])).Accepted);
         var drawPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "yes")).Accepted);
+        var returnPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", returnPrompt.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
+            CardInstanceIds: [converted.InstanceId])).Accepted);
 
         Assert.Contains(player.Graveyard, card => card.InstanceId == lotus.InstanceId && card.CardId == "S02-0010");
         Assert.DoesNotContain(player.MoraleDeck, card => card.InstanceId == lotus.InstanceId);
@@ -694,6 +702,10 @@ public sealed class S2UniversalEffectsTests
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
             CardInstanceIds: ["drawCycle"])).Accepted);
+        var returnPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", returnPrompt.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
+            CardInstanceIds: [returnPrompt.ValidChoices[0]])).Accepted);
 
         Assert.True(shennong.Tapped);
         Assert.DoesNotContain(usedKey, player.UsedAbilities);
@@ -719,6 +731,10 @@ public sealed class S2UniversalEffectsTests
             CardInstanceIds: [target.InstanceId])).Accepted);
         var drawPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "yes")).Accepted);
+        var returnPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", returnPrompt.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
+            CardInstanceIds: [returnPrompt.ValidChoices[0]])).Accepted);
 
         Assert.Contains(target, game.State.Players[1].Graveyard);
         Assert.Equal(2, player.Morale.Count);

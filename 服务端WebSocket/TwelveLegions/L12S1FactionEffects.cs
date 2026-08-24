@@ -453,10 +453,9 @@ public sealed partial class L12GameEngine
             case "palace-kill":
             {
                 var target = FindOnField(enemy, chosen[0], out _, out _); if (target is null) { FinishStackItem(item); return true; }
-                var paid = target.CurrentCost; if (!ReturnMorale(player, paid)) { FinishStackItem(item); return true; } KillTarget(target.InstanceId, "被凌霄宝殿击杀");
-                var choices = player.Graveyard.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "tianting") && card.CurrentCost <= paid).Select(card => card.InstanceId).ToList(); choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "选择墓地1张费用不高于返还士气数量的【天廷】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "palace-revive" }); return true;
+                var paid = target.CurrentCost;
+                BeginEffectMoraleReturn(item, paid, "palace-kill", new() { ["target"] = target.InstanceId, ["paid"] = paid.ToString() });
+                return true;
             }
             case "palace-revive": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
@@ -579,7 +578,8 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private CommandResult? TryCommitS1FactionActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards)
+    private CommandResult? TryCommitS1FactionActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards,
+        bool returnMoralePrepaid = false)
     {
         var player = State.Players[playerIndex];
         bool ConsumeMorale(int cost) => useTombGuards switch
@@ -604,13 +604,13 @@ public sealed partial class L12GameEngine
             case "palaceExchange" when source.CardId == "S01-01D1":
             {
                 var declared = DeclaredEnemyTarget(playerIndex, target); if (source.Tapped || declared is null) return CommandResult.Reject("凌霄宝殿必须为活跃状态且目标合法");
-                var paid = declared.CurrentCost; if (!ReturnMorale(player, paid)) return CommandResult.Reject("士气不足以支付所选目标费用");
+                var paid = declared.CurrentCost; if (!returnMoralePrepaid && !ReturnMorale(player, paid)) return CommandResult.Reject("士气不足以支付所选目标费用");
                 source.Tapped = true; player.MasterTapped = true; target = declared.InstanceId; break;
             }
             case "mengpoSilence" when source.CardId == "S01-01M2":
                 if (!string.IsNullOrWhiteSpace(target) && DeclaredEnemyTarget(playerIndex, target) is null)
                     return CommandResult.Reject("目标不再合法");
-                if (!ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
             case "mengpoMorale" when source.CardId == "S01-01M2": if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || player.Hand.Count == 0) return CommandResult.Reject("士气需少于对方，且需弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
                 if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target, card => card.Troops <= 4000) is null) return CommandResult.Reject("目标不再合法");

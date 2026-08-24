@@ -392,30 +392,13 @@ public sealed partial class L12GameEngine
             case "teach-death-discard":
                 MoveHandToGrave(player, chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "mozi-immortal":
-                if (chosen.Contains("skip") || !ReturnMorale(player, 1)) { FinishStackItem(item); return true; }
-                foreach (var id in chosen)
-                {
-                    var target = FindOnField(player, id, out _, out _);
-                    if (target is null) continue;
-                    target.ImmortalUses = 1; target.ImmortalUntilTurn = ExpiryAtNextOwnStart(item.Controller);
-                }
-                FinishStackItem(item); return true;
+                if (chosen.Contains("skip")) { FinishStackItem(item); return true; }
+                BeginEffectMoraleReturn(item, 1, "mozi-immortal", new() { ["targets"] = string.Join('|', chosen) }); return true;
             case "zhuge-disaster":
                 AdjustDisasterValue(int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "zhuge-peek-pay":
-                if (chosen[0] == "no" || !ReturnMorale(player, 1)) { FinishStackItem(item); return true; }
-                if (player.Library.Count == 0) { FinishStackItem(item); return true; }
-                var top = player.Library[0];
-                player.Library.RemoveAt(0);
-                AddEvent("reveal", item.Controller, $"诸葛亮展示 {top.Name}", top);
-                if (top.CardType == "artifact")
-                {
-                    player.Resolving.Add(top);
-                    item.Data["zhuge-card"] = top.InstanceId;
-                    CreatePrompt(item.Controller, "option", "将展示的圣物活跃登场，或加入手牌？", ["play", "hand"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "zhuge-artifact" });
-                }
-                else { AddCardToHandByEffect(player, top, "library", $"诸葛亮将{top.Name}加入手牌"); FinishStackItem(item); }
+                if (chosen[0] == "no") { FinishStackItem(item); return true; }
+                BeginEffectMoraleReturn(item, 1, "zhuge-peek");
                 return true;
             case "zhuge-artifact":
             {
@@ -431,14 +414,14 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             }
             case "sunwu-free-tactic":
-                if (chosen[0] == "yes" && ReturnMorale(player, 1)) player.FreeTacticCount++;
-                FinishStackItem(item); return true;
+                if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "free-tactic");
+                else FinishStackItem(item); return true;
             case "sunwu-recover":
                 if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]);
                 FinishStackItem(item); return true;
             case "jingke-kill":
-                if (chosen[0] != "skip" && ReturnMorale(player, 1)) KillTarget(chosen[0], "被荆轲击杀");
-                FinishStackItem(item); return true;
+                if (chosen[0] != "skip") BeginEffectMoraleReturn(item, 1, "jingke-kill", new() { ["target"] = chosen[0] });
+                else FinishStackItem(item); return true;
             case "nobunaga-kill":
             case "kenshin-kill":
             case "hijikata-attack-kill":
@@ -562,13 +545,8 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             }
             case "empty-city-block":
-                if (chosen[0] == "yes" && ReturnMorale(player, 1))
-                {
-                    var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
-                    if (targetStack is not null) targetStack.Negated = true;
-                    if (!player.Field[0].Any(card => card is not null && IsFieldLegion(card))) Draw(player, 1);
-                }
-                FinishStackItem(item); return true;
+                if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "empty-city-block");
+                else FinishStackItem(item); return true;
             case "last-stand-mode":
             {
                 var rested = PublicLegions(enemy).Where(card => card.Tapped).ToArray();
@@ -660,7 +638,8 @@ public sealed partial class L12GameEngine
         return TryBeginS1FactionActiveAbility(playerIndex, source, ability);
     }
 
-    private CommandResult? TryCommitS1ExtendedActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards)
+    private CommandResult? TryCommitS1ExtendedActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards,
+        bool returnMoralePrepaid = false)
     {
         var player = State.Players[playerIndex];
         bool ConsumeMorale(int cost) => useTombGuards switch
@@ -674,7 +653,7 @@ public sealed partial class L12GameEngine
             case "extendedRange" when source.CardId is "S01-0003" or "S01-0113":
             {
                 if (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1) return CommandResult.Reject("该效果只能在后排发动");
-                var paid = source.CardId == "S01-0003" ? ConsumeMorale(2) : ReturnMorale(player, 1);
+                var paid = source.CardId == "S01-0003" ? ConsumeMorale(2) : returnMoralePrepaid || ReturnMorale(player, 1);
                 if (!paid) return CommandResult.Reject(source.CardId == "S01-0003" ? "需要消耗2张活跃士气" : "需要返还1张士气");
                 player.UsedAbilities.Add(onceKey); break;
             }
@@ -690,7 +669,7 @@ public sealed partial class L12GameEngine
                         return CommandResult.Reject("声明的手牌目标或位置不再合法");
                 }
                 if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
-                ReturnMorale(player, 1); RemoveFromField(player, source, true, "被西施效果弃置",
+                if (!returnMoralePrepaid) ReturnMorale(player, 1); RemoveFromField(player, source, true, "被西施效果弃置",
                     leaveKind: L12FieldLeaveKind.Discard); break;
             }
             case "destroyInfiltrator" when source.CardId == "S01-0004":
@@ -700,7 +679,7 @@ public sealed partial class L12GameEngine
                 if (!source.Hidden) return CommandResult.Reject("服部半藏当前已经为正面");
                 break;
             default:
-                return TryCommitS1FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards);
+                return TryCommitS1FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards, returnMoralePrepaid);
         }
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;

@@ -84,7 +84,8 @@ public sealed partial class L12GameEngine
     }
 
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
-        bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null)
+        bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null,
+        IReadOnlyCollection<string>? selectedReturnIds = null)
     {
         var player = State.Players[playerIndex];
         var onceKey = $"active:{source.InstanceId}:{ability}";
@@ -93,6 +94,28 @@ public sealed partial class L12GameEngine
         if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
         var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
         var moraleCost = GetActiveAbilityMoraleCost(source, ability) + disasterMasterSurcharge;
+        var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);
+        var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
+        if (returnCost > 0 && ValidateActiveReturnPrepayment(playerIndex, source, ability, target) is { } returnError)
+            return CommandResult.Reject(returnError);
+        if (returnCost > 0 && selectedReturnIds is null
+            && NeedsManualReturnMoraleSelection(player, returnCost, requireActiveReturn))
+        {
+            CreateReturnMoralePrompt(playerIndex, returnCost, "active-return-choice", null,
+                new Dictionary<string, string>
+                {
+                    ["sourceId"] = source.InstanceId, ["sourceCardId"] = source.CardId, ["ability"] = ability,
+                    ["target"] = target ?? string.Empty,
+                }, requireActiveReturn);
+            return CommandResult.Ok();
+        }
+        var returnPrepaid = false;
+        if (selectedReturnIds is not null)
+        {
+            if (!ReturnSelectedMoraleById(player, selectedReturnIds, returnCost, requireActiveReturn))
+                return CommandResult.Reject("选择的返还士气已失效或数量不正确");
+            returnPrepaid = true;
+        }
         if (disasterMasterSurcharge > 0 && ActiveResourceCount(player) < moraleCost)
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
         if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
@@ -123,6 +146,16 @@ public sealed partial class L12GameEngine
             false => TryConsumeMorale(player, cost, preferTombGuards: false, allowTombGuards: false),
             _ => TryConsumeMorale(player, cost),
         };
+        bool ReturnMoraleCost(int cost, bool requireActive = false)
+        {
+            if (returnPrepaid && cost == returnCost && requireActive == requireActiveReturn)
+            {
+                returnPrepaid = false;
+                return true;
+            }
+            if (requireActive) return ReturnActiveMorale(player, cost);
+            return ReturnMorale(player, cost);
+        }
         var moraleReturnedByMasterEffect = 0;
         switch (ability)
         {
@@ -142,7 +175,7 @@ public sealed partial class L12GameEngine
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
                 player.UsedAbilities.Add(onceKey); break;
             case "nonLethal" when source.CardId == "S01-01M1":
-                if (!ReturnMorale(player, 4)) return CommandResult.Reject("需要返还 4 张士气");
+                if (!ReturnMoraleCost(4)) return CommandResult.Reject("需要返还 4 张士气");
                 moraleReturnedByMasterEffect = 4;
                 player.UsedAbilities.Add(onceKey); break;
             case "frontBuff" when source.CardId == "S01-04M2":
@@ -157,10 +190,10 @@ public sealed partial class L12GameEngine
             case "searchBrothers" when source.CardId == "S01-0105":
                 if (source.Tapped) return CommandResult.Reject("刘备必须为活跃状态");
                 if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还 1 张士气");
-                source.Tapped = true; ReturnMorale(player, 1); break;
+                source.Tapped = true; if (!ReturnMoraleCost(1)) return CommandResult.Reject("需要返还 1 张士气"); break;
             case "artifactDraw" when source.CardId == "S01-0117":
                 if (source.Tapped) return CommandResult.Reject("山河社稷图必须为活跃状态");
-                if (!ReturnActiveMorale(player, 1)) return CommandResult.Reject("需要返还 1 张活跃士气");
+                if (!ReturnMoraleCost(1, requireActive: true)) return CommandResult.Reject("需要返还 1 张活跃士气");
                 source.Tapped = true; break;
             case "artifactSearch" when source.CardId == "S01-0117":
             {
@@ -185,9 +218,9 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add(onceKey); break;
             default:
             {
-                var result = TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey)
+                var result = TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey, returnPrepaid)
                     ?? TryCommitS2FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
-                    ?? TryCommitS1ExtendedActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
+                    ?? TryCommitS1ExtendedActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards, returnPrepaid)
                     ?? CommandResult.Reject("该卡没有此主动效果");
                 if (!result.Accepted || disasterMasterSurcharge == 0) return result;
                 if (!ConsumeMorale(disasterMasterSurcharge))
