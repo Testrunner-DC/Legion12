@@ -142,7 +142,11 @@ const disasterHistory = computed(() => [
   },
 ])
 function cardFor(id: string) { return allCards().find(card => card.instanceId === id) }
-function label(id: string) { return choiceLabels[id] ?? prompt.value?.data?.[id] ?? cardFor(id)?.name ?? id.replace(':', ' 排第 ') }
+function label(id: string) {
+  const base = choiceLabels[id] ?? prompt.value?.data?.[id] ?? cardFor(id)?.name ?? id.replace(':', ' 排第 ')
+  const zone = prompt.value?.data?.[`${id}:zone`]
+  return zone ? `${base} · ${zone}` : base
+}
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }
 function numberData(id: string, key: string) {
   const value = prompt.value?.data?.[`${id}:${key}`]

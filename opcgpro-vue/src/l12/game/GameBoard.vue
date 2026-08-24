@@ -131,8 +131,9 @@ const boardTargetPrompt = computed(() => {
 })
 const boardTargetableIds = computed(() => boardTargetPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
 const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
-  (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot') && prompt.validChoices.length > 0
-  && prompt.validChoices.every(id => /^\d+:\d+$/.test(id)),
+  (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot')
+  && prompt.validChoices.some(id => id !== 'skip')
+  && prompt.validChoices.filter(id => id !== 'skip').every(id => /^\d+:\d+$/.test(id)),
 ) ?? null)
 const boardSlotTargetPlayerIndex = computed(() => {
   const raw = boardSlotPrompt.value?.data?.targetPlayerIndex
@@ -785,6 +786,8 @@ function statusTexts(card: Card) {
         <img v-if="boardSlotPreview?.imageUrl" :src="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name"
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
         <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
+        <button v-if="boardSlotPrompt.validChoices.includes('skip')"
+          @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">取消</button>
       </div>
       <div v-if="resourceSelectionPrompt && !readOnly" class="board-target-controls resource-payment-controls">
         <strong>{{ resourceSelectionPrompt.text }}</strong>

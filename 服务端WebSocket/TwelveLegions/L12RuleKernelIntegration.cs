@@ -17,6 +17,7 @@ public sealed partial class L12GameEngine
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
             MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
+            ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
         }).ToList();
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose)) return CommandResult.Reject("没有足够的合法目标");
@@ -64,14 +65,16 @@ public sealed partial class L12GameEngine
             }
             promptKind = "slot";
         }
-        CreatePrompt(activation.Controller, promptKind, step.Text, step.ValidChoices, step.MinChoose,
+        var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
+        {
+            ["activationId"] = activation.ActivationId,
+            ["activationStep"] = activation.CurrentStep.ToString(),
+        };
+        CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
-            data: new Dictionary<string, string>
-            {
-                ["activationId"] = activation.ActivationId,
-                ["activationStep"] = activation.CurrentStep.ToString(),
-            });
+            data: promptData);
     }
 
     private IEnumerable<string> AdjacentEmptySlots(L12PlayerState player, int row, int slot)
@@ -86,6 +89,13 @@ public sealed partial class L12GameEngine
         if (!prompt.Data.TryGetValue("activationId", out var activationId)) return;
         var activation = State.PendingActivations.FirstOrDefault(item => item.ActivationId == activationId);
         if (activation is null) return;
+        if (chosen.Count == 1 && chosen[0] == "skip")
+        {
+            State.PendingActivations.Remove(activation);
+            ClearFreeMasterActivation(activation);
+            AddEvent("ability-cancelled", prompt.PlayerIndex, "已取消发动，未支付费用且未进入堆叠");
+            return;
+        }
         var step = activation.SelectionSteps[activation.CurrentStep];
         if (chosen.Count < step.MinChoose || chosen.Count > step.MaxChoose
             || chosen.Any(id => !step.ValidChoices.Contains(id, StringComparer.OrdinalIgnoreCase)))
@@ -146,6 +156,9 @@ public sealed partial class L12GameEngine
     {
         if (choice is "yes" or "no" or "skip" or "top" or "bottom") return true;
         if (choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)) return true;
+        if (choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(choice.AsSpan("rune:".Length), out var runeIndex))
+            return runeIndex >= 1 && runeIndex <= State.Players[controller].SpecialZones.Runes;
         // PendingActivation 也用于士气/神力等真实资源的预声明。士气不是
         // L12CardInstance，不能仅依赖 FindPromptCard 校验，否则合法选择会在支付前被误判失效。
         if (State.Players[controller].Morale.Any(card => card.InstanceId == choice)) return true;

@@ -921,11 +921,36 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:debuff")).Accepted);
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId, Choice: target.InstanceId)).Accepted);
-
         Assert.True(merlin.Tapped);
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Same(target, game.State.Players[1].Field[0][0]);
         Assert.Equal(target.BaseTroops - 3000, target.Troops);
+    }
+
+    [Fact]
+    public void OtherworldRuneOptionsUseEffectTextAndCanBeCancelledBeforeAutomaticPayment()
+    {
+        var game = CreateWithFirstMaster("S02-06M1", 63081);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.MoraleDeck.Clear();
+        player.MoraleDeck.Add(new L12MoraleCard { InstanceId = "otherworld-faction", CardId = "S02-06C1" });
+        player.SpecialZones.Runes = 1;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "runeUse"));
+        Assert.True(activation.Accepted, activation.Error);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("消耗1符文：当前试炼进度+1", mode.Data["mode:trial"]);
+        Assert.Equal("消耗1符文：抽取1张牌", mode.Data["mode:draw"]);
+        Assert.Contains("skip", mode.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "skip")).Accepted);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.DoesNotContain(player.UsedAbilities, key => key.Contains("runeUse", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1165,6 +1190,32 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", arthur.InstanceId, Row: 0, Slot: 1)).Accepted);
         Assert.True(arthur.HasCharge);
+    }
+
+    [Fact]
+    public void ArthurEntryUsesOneRuneInsteadOfMoraleForKingsSword()
+    {
+        var game = Create(6308);
+        var player = game.State.Players[0];
+        var arthur = Card("S02-0601", "s2-arthur-rune-cost");
+        player.Hand.Add(arthur);
+        AddMorale(player, arthur.Cost);
+        player.SpecialZones.Runes = 1;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", arthur.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-arthur-sword", prompt.Data["action"]);
+        Assert.Contains("消耗1符文", prompt.Data["yes"]);
+
+        var moraleAfterPlayingArthur = player.Morale.Count(card => !card.Tapped);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Equal(moraleAfterPlayingArthur, player.Morale.Count(card => !card.Tapped));
+        Assert.Contains(arthur.AttachedCards, card => card.CardId == "S02-06S2");
     }
 
     [Fact]
@@ -2157,13 +2208,13 @@ public sealed class S2FactionRegressionTests
             Ability: "magatamaMove")).Accepted);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", target.Continuation);
-        Assert.Equal([legion.InstanceId], target.ValidChoices);
+        Assert.Equal([legion.InstanceId, "skip"], target.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
             Choice: legion.InstanceId)).Accepted);
 
         var slot = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("slot", slot.Kind);
-        Assert.Equal(["0:0", "0:2", "1:1"], slot.ValidChoices.OrderBy(value => value));
+        Assert.Equal(["0:0", "0:2", "1:1", "skip"], slot.ValidChoices.OrderBy(value => value));
         Assert.DoesNotContain("1:0", slot.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
             Choice: "1:1")).Accepted);

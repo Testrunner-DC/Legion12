@@ -217,12 +217,12 @@ public sealed partial class L12GameEngine
         switch (card.CardId)
         {
             case "S02-0601":
-                if (!player.Morale.Any(morale => !morale.Tapped)) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "亚瑟王：是否消耗1士气，将〈王者之剑〉叠放在此军团下方？",
+                if (player.SpecialZones.Runes < 1) { FinishStackItem(item); return true; }
+                CreatePrompt(item.Controller, "optional", "亚瑟王：是否消耗1符文，将〈王者之剑〉叠放在此军团下方？",
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string>
                     {
-                        ["action"] = "s2-arthur-sword", ["yes"] = "消耗1士气并叠放〈王者之剑〉", ["no"] = "不发动",
+                        ["action"] = "s2-arthur-sword", ["yes"] = "消耗1符文并叠放〈王者之剑〉", ["no"] = "不发动",
                     });
                 return true;
             case "S02-0102":
@@ -981,14 +981,27 @@ public sealed partial class L12GameEngine
             var choices = PublicLegions(player).Where(card => card.Faction == "otherworld")
                 .Select(card => card.InstanceId).ToArray();
             if (choices.Length == 0) return CommandResult.Reject("我方战场没有可选择的【彼界】军团");
-            return BeginPendingActivation(playerIndex, source, ability, choices,
-                "莫瑞甘：选择我方1张【彼界】军团，本回合其下一次击杀对方军团后转为活跃");
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep { Kind = "active-target", Text = "莫瑞甘：选择我方1张【彼界】军团，本回合其下一次击杀对方军团后转为活跃", ValidChoices = choices.ToList() },
+            ]);
         }
         if (ability == "runeUse" && source.CardId == "S02-06C1")
         {
             if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("符文效果本回合已经发动");
             if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
-            return BeginPendingActivation(playerIndex, source, ability, ["mode:trial", "mode:draw"], "符文：选择试炼+1，或抽取1张牌");
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "option", Text = "彼界阵营效果：选择效果", ValidChoices = ["mode:trial", "mode:draw"],
+                    ChoiceLabels = new Dictionary<string, string>
+                    {
+                        ["mode:trial"] = "消耗1符文：当前试炼进度+1",
+                        ["mode:draw"] = "消耗1符文：抽取1张牌",
+                    },
+                },
+            ]);
         }
         if (ability == "merlinRune" && source.CardId == "S02-0603")
         {
@@ -999,7 +1012,15 @@ public sealed partial class L12GameEngine
             if (!enemy.Any() && !tactics.Any()) return CommandResult.Reject("没有可选择的目标或可检索的主动战术");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
-                new L12ActivationSelectionStep { Kind = "option", Text = "梅林：选择效果", ValidChoices = ["mode:debuff", "mode:search"], MinChoose = 1, MaxChoose = 1 },
+                new L12ActivationSelectionStep
+                {
+                    Kind = "option", Text = "梅林：选择效果", ValidChoices = ["mode:debuff", "mode:search"], MinChoose = 1, MaxChoose = 1,
+                    ChoiceLabels = new Dictionary<string, string>
+                    {
+                        ["mode:debuff"] = "消耗1符文：选择对方1张军团，本回合兵力-3000",
+                        ["mode:search"] = "消耗1符文：检索1张费用不高于4的主动战术",
+                    },
+                },
                 new L12ActivationSelectionStep { Kind = "active-target", Text = "梅林：声明对应的军团或牌库中的主动战术", ValidChoices = enemy.Concat(tactics).ToList(), MinChoose = 1, MaxChoose = 1 },
             ]);
         }
@@ -1089,7 +1110,10 @@ public sealed partial class L12GameEngine
                         && (card.CardId == "S02-0610" || card.BaseTroops <= 4000))
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) return CommandResult.Reject("没有符合条件的休整军团");
-                return BeginPendingActivation(playerIndex, source, ability, choices, "选择我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃", ValidChoices = choices.ToList() },
+                ]);
             }
             if (ability == "crusadeTrialNoLoss")
             {
@@ -1097,14 +1121,20 @@ public sealed partial class L12GameEngine
                 var choices = PublicLegions(player).Where(card => card.CardId is "S02-0604" or "S02-0610" or "S02-0614")
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) return CommandResult.Reject("战场上没有【试炼军团】");
-                return BeginPendingActivation(playerIndex, source, ability, choices, "选择我方1张【试炼军团】，本回合下一次进攻无损");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张【试炼军团】，本回合下一次进攻无损", ValidChoices = choices.ToList() },
+                ]);
             }
             if (ability == "crusadeRichardPiercing")
             {
                 if (player.SpecialZones.Runes < 2) return CommandResult.Reject("需要消耗2符文");
                 var choices = PublicLegions(player).Where(card => card.CardId == "S02-0608").Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) return CommandResult.Reject("战场上没有〈狮心王理查一世〉");
-                return BeginPendingActivation(playerIndex, source, ability, choices, "选择我方1张〈狮心王理查一世〉");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈狮心王理查一世〉", ValidChoices = choices.ToList() },
+                ]);
             }
             if (player.SpecialZones.Runes < 2 || player.Hand.Count == 0) return CommandResult.Reject("需要消耗2符文并弃置1张手牌");
             var grave = player.Graveyard.Where(card => card.Faction == "otherworld").Select(card => card.InstanceId).ToArray();
@@ -1384,10 +1414,11 @@ public sealed partial class L12GameEngine
         if (ability == "runeUse" && source.CardId == "S02-06C1")
         {
             if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
-            if (target is not ("mode:trial" or "mode:draw")) return CommandResult.Reject("符文效果选项不合法");
+            var mode = target;
+            if (mode is not ("mode:trial" or "mode:draw")) return CommandResult.Reject("符文效果选项不合法");
             L12S2ZoneOps.SpendRunes(player, 1);
             player.UsedAbilities.Add(onceKey);
-            PushEffect(playerIndex, source, "active", "符文效果", data: new Dictionary<string, string> { ["ability"] = ability, ["mode"] = target });
+            PushEffect(playerIndex, source, "active", "符文效果", data: new Dictionary<string, string> { ["ability"] = ability, ["mode"] = mode });
             return CommandResult.Ok();
         }
         if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
@@ -1396,6 +1427,7 @@ public sealed partial class L12GameEngine
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             var runeCost = ability == "fenianReady" || ability == "crusadeTrialNoLoss" ? 1 : 2;
             if (player.SpecialZones.Runes < runeCost) return CommandResult.Reject($"需要消耗{runeCost}符文");
+            L12CardInstance? discardCost = null;
             if (ability == "fenianReady")
             {
                 var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
@@ -1418,11 +1450,15 @@ public sealed partial class L12GameEngine
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
                 var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "otherworld");
                 if (discard is null || recover is null) return CommandResult.Reject("弃置或回收的卡牌已不合法");
-                player.Hand.Remove(discard);
-                player.Graveyard.Add(discard);
-                AddEvent("cost", playerIndex, $"弃置〈{discard.Name}〉支付十字军东征费用", discard);
+                discardCost = discard;
             }
-            L12S2ZoneOps.SpendRunes(player, runeCost);
+            if (!L12S2ZoneOps.SpendRunes(player, runeCost)) return CommandResult.Reject($"需要消耗{runeCost}符文");
+            if (discardCost is not null)
+            {
+                player.Hand.Remove(discardCost);
+                player.Graveyard.Add(discardCost);
+                AddEvent("cost", playerIndex, $"弃置〈{discardCost.Name}〉支付十字军东征费用", discardCost);
+            }
             player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "已完成试炼的主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
@@ -1794,7 +1830,7 @@ public sealed partial class L12GameEngine
             case "s2-arthur-sword":
             {
                 var arthur = FindSource(item);
-                if (chosen[0] == "yes" && arthur is not null && TryConsumeMorale(player, 1))
+                if (chosen[0] == "yes" && arthur is not null && L12S2ZoneOps.SpendRunes(player, 1))
                 {
                     var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
                         ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
