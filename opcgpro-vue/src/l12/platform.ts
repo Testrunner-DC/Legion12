@@ -2,6 +2,11 @@ import { computed, reactive } from 'vue'
 import { disconnect, l12State } from './net'
 
 export interface PlatformAccount { id: string; username: string; role: string; createdAt: string; publicHistory: boolean }
+export interface PlatformFriend {
+  accountId: string; username: string; status: 'none' | 'pending' | 'accepted'
+  direction: 'none' | 'incoming' | 'outgoing'; createdAt: string; online?: boolean
+}
+export interface PlatformPresence { accountId: string; username: string; online: boolean }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
   version: string; status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
@@ -126,4 +131,18 @@ export const adminApi = {
   effect: (cardId: string) => platformRequest<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
   reviewEffect: (cardId: string, body: { abilityId?: string; status: string; note?: string }) => platformRequest<EffectReview>(`/api/admin/effects/${encodeURIComponent(cardId)}/review`, { method: 'PUT', body: JSON.stringify(body) }),
   audit: (category = '') => platformRequest<AdminAudit[]>(`/api/admin/audit${category ? `?category=${encodeURIComponent(category)}` : ''}`),
+}
+
+export const friendApi = {
+  presence: () => platformRequest<PlatformPresence[]>('/api/presence'),
+  players: (search = '') => platformRequest<PlatformFriend[]>(`/api/players${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  friends: () => platformRequest<PlatformFriend[]>('/api/friends'),
+  requests: () => platformRequest<PlatformFriend[]>('/api/friends/requests'),
+  request: (accountId: string) => platformRequest<{ message: string }>('/api/friends/requests', {
+    method: 'POST', body: JSON.stringify({ accountId }),
+  }),
+  resolve: (requesterId: string, accept: boolean) => platformRequest<{ message: string }>(`/api/friends/requests/${encodeURIComponent(requesterId)}/resolve`, {
+    method: 'POST', body: JSON.stringify({ accept }),
+  }),
+  remove: (accountId: string) => platformRequest<void>(`/api/friends/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
 }

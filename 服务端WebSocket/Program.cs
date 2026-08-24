@@ -14,7 +14,7 @@ await using var recorder = new MatchRecorder(Path.Combine(runtimePath, "matches.
 await recorder.InitializeAsync();
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks);
 
-var rooms = new L12RoomManager(catalog, recorder);
+var rooms = new L12RoomManager(catalog, recorder, platform);
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
 
 Console.WriteLine("Twelve Legions online battle server");

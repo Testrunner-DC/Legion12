@@ -1,39 +1,89 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { l12State } from '@/l12/net'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { l12State, resolveFriendInvitation } from '@/l12/net'
+import { friendApi, login, platformState, register, type PlatformPresence } from '@/l12/platform'
 import { defaultSiteLogoUrl } from '@/l12/specialAssets'
 import SiteIcon from './SiteIcon.vue'
 
 const siteBrandIcon = defaultSiteLogoUrl
 
 const route = useRoute()
+const router = useRouter()
 const mobileOpen = ref(false)
 const modal = ref<'settings' | 'updates' | 'online' | null>(null)
 
-const nav = [
+const mainNav = [
   { to: '/', icon: 'home', label: '主页' },
   { to: '/news', icon: 'news', label: '资讯' },
-  { to: '/lobby', icon: 'battle', label: '大厅' },
-  { to: '/tournaments', icon: 'tournament', label: '赛事中心' },
+  { to: '/battle', icon: 'battle', label: '对战' },
   { to: '/decks', icon: 'decks', label: '牌库' },
-  { to: '/friends', icon: 'friends', label: '好友' },
   { to: '/cards', icon: 'archive', label: '卡牌图鉴' },
   { to: '/rules', icon: 'rules', label: '规则' },
-  { to: '/rankings', icon: 'ranking', label: '排行榜' },
   { to: '/me', icon: 'profile', label: '我的' },
-  { to: '/records', icon: 'records', label: '对局记录' },
 ]
+const battleNav = [
+  { to: '/', icon: 'home', label: '返回主页' },
+  { to: '/battle', icon: 'battle', label: '对战主页' },
+  { to: '/battle/lobby', icon: 'home', label: '大厅' },
+  { to: '/battle/tournaments', icon: 'tournament', label: '赛事中心' },
+  { to: '/decks?from=%2Fbattle', icon: 'decks', label: '牌库' },
+  { to: '/battle/rankings', icon: 'ranking', label: '排行榜' },
+  { to: '/battle/friends', icon: 'friends', label: '好友' },
+  { to: '/battle/records', icon: 'records', label: '对局记录' },
+]
+const nav = computed(() => route.meta.section === 'battle' ? battleNav : mainNav)
+const accountGate = computed(() => route.meta.requiresAccount === true && !platformState.account)
+const authMode = ref<'login' | 'register'>('login')
+const auth = reactive({ username: '', password: '' })
+const authBusy = ref(false)
+const authNotice = ref('')
+async function submitAuth() {
+  authBusy.value = true
+  authNotice.value = ''
+  try {
+    if (authMode.value === 'login') await login(auth.username, auth.password)
+    else await register(auth.username, auth.password)
+    auth.password = ''
+  } catch (error) {
+    authNotice.value = error instanceof Error ? error.message : '登录失败'
+  } finally { authBusy.value = false }
+}
 
 const stored = (() => {
   try { return JSON.parse(localStorage.getItem('l12-site-settings-v1') || '{}') } catch { return {} }
 })()
 const settings = reactive({ animation: stored.animation ?? 'standard', sound: stored.sound ?? true, cardSize: stored.cardSize ?? 'auto' })
-const onlineCount = computed(() => l12State.status === 'online' ? 1 : 0)
+const onlinePlayers = ref<PlatformPresence[]>([])
+const onlineCount = computed(() => onlinePlayers.value.length)
 const connectionLabel = computed(() => ({ online: '连接正常', connecting: '连接中', offline: '未连接' }[l12State.status]))
 
 watch(() => route.fullPath, () => { mobileOpen.value = false })
 watch(settings, value => localStorage.setItem('l12-site-settings-v1', JSON.stringify(value)), { deep: true })
+function enterFriendRoom() { void router.push('/battle/lobby') }
+let presenceTimer = 0
+async function refreshPresence() {
+  if (!platformState.account || !platformState.token) {
+    onlinePlayers.value = []
+    return
+  }
+  try { onlinePlayers.value = await friendApi.presence() } catch { onlinePlayers.value = [] }
+}
+function answerInvitation(accept: boolean) {
+  if (!l12State.friendInvitation) return
+  resolveFriendInvitation(l12State.friendInvitation.invitationId, accept)
+  if (!accept) l12State.friendInvitation = null
+}
+watch(() => platformState.account?.id, () => void refreshPresence())
+onMounted(() => {
+  window.addEventListener('l12-friend-room-created', enterFriendRoom)
+  void refreshPresence()
+  presenceTimer = window.setInterval(() => void refreshPresence(), 15_000)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('l12-friend-room-created', enterFriendRoom)
+  window.clearInterval(presenceTimer)
+})
 </script>
 
 <template>
@@ -82,8 +132,31 @@ watch(settings, value => localStorage.setItem('l12-site-settings-v1', JSON.strin
 
       <section v-else class="site-modal online-modal">
         <header><div><small>ONLINE</small><h2>在线玩家</h2></div><button @click="modal = null">×</button></header>
-        <div v-if="l12State.status === 'online'" class="online-entry"><i/><div><b>{{ l12State.nickname || '当前玩家' }}</b><span>在线 · 当前设备</span></div></div>
-        <div v-else class="modal-empty">连接服务器后可查看在线玩家并直接进入允许观战的对局。</div>
+        <div v-for="player in onlinePlayers" :key="player.accountId" class="online-entry"><i/><div><b>{{ player.username }}</b><span>{{ player.accountId === platformState.account?.id ? '在线 · 当前账号' : '在线' }}</span></div></div>
+        <div v-if="onlinePlayers.length === 0" class="modal-empty">登录并连接服务器后可查看在线玩家。</div>
+      </section>
+    </div>
+
+    <div v-if="accountGate" class="site-modal-mask account-gate">
+      <section class="site-modal auth-modal">
+        <header><div><small>BATTLE ACCOUNT</small><h2>登录后进入对战</h2></div><button title="返回主页" @click="router.push('/')">×</button></header>
+        <p>对战、赛事、好友、排行榜和个人对局记录使用同一账号身份。</p>
+        <div class="auth-tabs"><button :class="{ active: authMode === 'login' }" @click="authMode = 'login'">登录</button><button :class="{ active: authMode === 'register' }" @click="authMode = 'register'">注册</button></div>
+        <label>用户名<input v-model="auth.username" maxlength="20" autocomplete="username"/></label>
+        <label>密码<input v-model="auth.password" type="password" maxlength="128" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" @keyup.enter="submitAuth"/></label>
+        <p v-if="authNotice" class="auth-notice">{{ authNotice }}</p>
+        <button class="auth-submit" :disabled="authBusy || !auth.username.trim() || !auth.password" @click="submitAuth">{{ authMode === 'login' ? '登录并进入' : '注册并进入' }}</button>
+        <button class="auth-home" @click="router.push('/')">返回主页</button>
+      </section>
+    </div>
+
+    <div v-if="l12State.friendInvitation" class="site-modal-mask invitation-gate">
+      <section class="site-modal invitation-modal">
+        <header><div><small>FRIEND BATTLE</small><h2>好友对战邀请</h2></div></header>
+        <p><b>{{ l12State.friendInvitation.fromName }}</b> 邀请你进行友谊战。</p>
+        <div class="invite-code"><span>预留房间码</span><strong>{{ l12State.friendInvitation.roomCode }}</strong></div>
+        <p class="invite-note">接受后将直接创建房间：发起方成为房主，你将自动进入整备室，无需再输入房间码。</p>
+        <div class="invite-actions"><button class="quiet" @click="answerInvitation(false)">拒绝</button><button @click="answerInvitation(true)">接受并进入房间</button></div>
       </section>
     </div>
   </div>
@@ -95,4 +168,6 @@ watch(settings, value => localStorage.setItem('l12-site-settings-v1', JSON.strin
 .utility-icon{position:relative;display:grid;place-items:center}.utility-icon>i{position:absolute;top:-7px;right:-9px;display:grid!important;min-width:15px!important;width:auto!important;height:15px!important;place-items:center;padding:0 3px;border-radius:8px!important;background:#71303a;color:#fff;font:900 8px monospace!important;font-style:normal}.site-utilities .connection .utility-icon>i{top:auto;right:-5px;bottom:-3px;width:7px!important;min-width:7px!important;height:7px!important;padding:0;border-radius:50%!important;background:#6b7272}.site-utilities .connection.online .utility-icon>i{background:#55c99a!important;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting .utility-icon>i{background:#d7b15f!important}
 .site-brand img{border-color:rgba(255,255,255,.42);border-radius:4px}
 @media(max-width:760px){.mobile-brand img{width:30px;height:30px;border:1px solid rgba(255,255,255,.42);border-radius:3px;object-fit:cover}.mobile-brand b{display:none}}
+.auth-modal>p{color:#87939a;font-size:11px;line-height:1.7}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.auth-tabs button,.auth-home{padding:11px;border:1px solid #46535b;background:#080e13;color:#9aa3a7;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-modal label{display:block;margin:13px 0;color:#abb3b6;font-size:10px;font-weight:900}.auth-modal input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #4b5860;background:#080e13;color:#fff}.auth-submit{width:100%;margin-top:16px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.auth-submit:disabled{opacity:.45}.auth-home{width:100%;margin-top:8px}.auth-notice{padding:9px!important;border-left:3px solid #a72e39;background:#291016;color:#e5aab0!important}.account-gate{z-index:140}
+.invitation-gate{z-index:160}.invitation-modal>p{color:#aeb6ba;line-height:1.7}.invite-code{display:flex;align-items:center;justify-content:space-between;margin:18px 0;padding:14px;border:1px solid #4e5b63;background:#080e13}.invite-code span{color:#79868d;font-size:10px}.invite-code strong{color:#f0d478;font:900 22px monospace;letter-spacing:.18em}.invite-note{font-size:11px}.invite-actions{display:grid;grid-template-columns:1fr 1.7fr;gap:10px;margin-top:20px}.invite-actions button{padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.invite-actions button.quiet{border-color:#4a565e;background:#0a1117;color:#929da2}
 </style>

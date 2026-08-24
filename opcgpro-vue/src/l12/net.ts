@@ -62,6 +62,7 @@ export const l12State = reactive({
   gmEnabled: false,
   pendingAction: false,
   notice: '',
+  friendInvitation: null as null | { invitationId: string; roomCode: string; fromAccountId: string; fromName: string },
 })
 
 export function connect(): Promise<void> {
@@ -105,6 +106,14 @@ export function connect(): Promise<void> {
         socket.close()
       }
       else if (message.type === 'roomState') l12State.room = message
+      else if (message.type === 'friendInvitation') l12State.friendInvitation = message
+      else if (message.type === 'friendInvitationResolved') l12State.friendInvitation = null
+      else if (message.type === 'friendRoomCreated') {
+        l12State.friendInvitation = null
+        l12State.notice = message.message || '好友房间已创建'
+        window.dispatchEvent(new CustomEvent('l12-friend-room-created', { detail: message }))
+      }
+      else if (message.type === 'friendInvitationSent' || message.type === 'friendInvitationRejected') l12State.notice = message.message || ''
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
         l12State.room = null
         l12State.game = null
@@ -199,6 +208,8 @@ export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12
   send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
 }
 export const joinRoom = (roomCode: string) => { l12State.spectating = false; send({ type: 'joinRoom', roomCode }) }
+export const inviteFriend = (accountId: string) => send({ type: 'inviteFriend', accountId })
+export const resolveFriendInvitation = (invitationId: string, accept: boolean) => send({ type: 'resolveFriendInvitation', invitationId, accept })
 export const spectateRoom = (roomCode: string) => send({ type: 'spectateRoom', roomCode })
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })

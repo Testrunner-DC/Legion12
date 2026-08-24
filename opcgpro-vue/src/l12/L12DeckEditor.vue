@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { masterProfileUrl } from './specialAssets'
 import { compareDeckCards } from './deckOrdering'
@@ -11,6 +11,8 @@ import {
 } from './decks'
 
 const router = useRouter()
+const route = useRoute()
+const returnTo = computed(() => typeof route.query.returnTo === 'string' && route.query.returnTo.startsWith('/') ? route.query.returnTo : '/decks')
 const catalog = ref<DeckCard[]>([])
 const savedDecks = ref<Record<string, SavedL12Deck>>({})
 const loading = ref(true)
@@ -265,7 +267,7 @@ onBeforeUnmount(closeDeckImage)
 <template>
   <div class="deck-builder-shell">
     <header class="deck-builder-topbar">
-      <button class="back-button" @click="router.push('/decks')">← 返回牌库</button>
+      <button class="back-button" @click="router.push(returnTo)">← 返回上一级</button>
       <div><small>GRANDUMI FRAMEWORK · LEGION12 STYLE</small><h1>牌库编辑器</h1></div>
       <label>牌库名称<input v-model="deckName" maxlength="24"/></label>
       <div class="deck-total" :class="{ valid: !validation }"><b>{{ totalCards }}</b><span>/ 40–50<span v-if="tombGuardCount"> ＋ 陵墓守卫 {{ tombGuardCount }}</span></span></div>

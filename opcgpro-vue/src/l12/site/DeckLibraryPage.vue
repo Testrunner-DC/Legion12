@@ -5,6 +5,7 @@ import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardP
 import { compareDeckCardIds } from '../deckOrdering'
 import { ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { l12State } from '@/l12/net'
+import { useRoute } from 'vue-router'
 
 interface PublishedDeck { id: string; deck: SavedL12Deck; author: string; likes: number; copies: number; liked: boolean; official?: boolean }
 
@@ -21,6 +22,9 @@ const showPublish = ref(false)
 const factionFilter = ref('all')
 const sortMode = ref<'popular' | 'newest' | 'name'>('popular')
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
+const route = useRoute()
+const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
+const editorLink = (deckName?: string) => ({ path: '/deck-editor', query: { ...(deckName ? { deck: deckName } : {}), returnTo: returnTo.value } })
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -120,13 +124,13 @@ function importFromCode() {
 
 <template>
   <div class="deck-page">
-    <header class="page-head"><div><small>DECK LIBRARY</small><h1>牌库</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link to="/deck-editor">＋ 新建牌库</router-link></header>
+    <header class="page-head"><div><small>DECK LIBRARY</small><h1>牌库</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link :to="editorLink()">＋ 新建牌库</router-link></header>
     <div class="deck-tabs"><button :class="{ active: tab === 'mine' }" @click="tab = 'mine'">我的牌库</button><button :class="{ active: tab === 'plaza' }" @click="tab = 'plaza'">牌库广场</button></div>
 
     <template v-if="tab === 'mine'">
       <section class="import-panel"><input v-model="importCode" placeholder="粘贴 L12D1 开头的牌库码"/><button :disabled="!importCode.trim()" @click="importFromCode">导入牌库码</button><button :disabled="!mine.length" @click="showPublish = true">发布牌库</button></section>
-      <section v-if="mine.length" class="mine-grid"><article v-for="deck in mine" :key="deck.name"><div class="deck-banner"><img v-if="byId.get(deck.masterId)?.imageUrl" :src="byId.get(deck.masterId)?.imageUrl"/><span>{{ byId.get(deck.masterId)?.nameZh || '主宰' }}</span></div><h2>{{ deck.name }}</h2><p>{{ deck.cardIds.length }} 张主牌 · {{ deck.moraleIds.length }} 张士气</p><div><router-link :to="`/deck-editor?deck=${encodeURIComponent(deck.name)}`">编辑</router-link><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button></div></article></section>
-      <div v-else class="empty-state"><b>还没有自定义牌库</b><p>从编辑器新建牌库，或粘贴其他玩家分享的牌库码。</p><router-link to="/deck-editor">打开牌库编辑器</router-link></div>
+      <section v-if="mine.length" class="mine-grid"><article v-for="deck in mine" :key="deck.name"><div class="deck-banner"><img v-if="byId.get(deck.masterId)?.imageUrl" :src="byId.get(deck.masterId)?.imageUrl"/><span>{{ byId.get(deck.masterId)?.nameZh || '主宰' }}</span></div><h2>{{ deck.name }}</h2><p>{{ deck.cardIds.length }} 张主牌 · {{ deck.moraleIds.length }} 张士气</p><div><router-link :to="editorLink(deck.name)">编辑</router-link><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button></div></article></section>
+      <div v-else class="empty-state"><b>还没有自定义牌库</b><p>从编辑器新建牌库，或粘贴其他玩家分享的牌库码。</p><router-link :to="editorLink()">打开牌库编辑器</router-link></div>
     </template>
 
     <template v-else>

@@ -198,6 +198,42 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public async Task AcceptingFriendInvitationCreatesRoomWithInitiatorAsHost()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-friend-room", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var hostAccount = platform.Register("邀请者", "password-a").Account!;
+        var guestAccount = platform.Register("受邀者", "password-b").Account!;
+        Assert.True(platform.SendFriendRequest(hostAccount.Id, guestAccount.Id).Success);
+        Assert.True(platform.ResolveFriendRequest(guestAccount.Id, hostAccount.Id, true).Success);
+        var manager = new L12RoomManager(Catalog, recorder, platform);
+        var host = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        manager.Connect(host, hostAccount.Id, hostAccount.Username);
+        manager.Connect(guest, guestAccount.Id, guestAccount.Username);
+
+        var invitationMessages = manager.InviteFriend(host, guestAccount.Id);
+        var invitation = JsonSerializer.SerializeToElement(invitationMessages.Single(message => message.SessionId == guest).Payload, WebJson);
+        Assert.Equal("friendInvitation", invitation.GetProperty("type").GetString());
+        var invitationId = invitation.GetProperty("invitationId").GetString();
+        var roomCode = invitation.GetProperty("roomCode").GetString();
+
+        var accepted = manager.ResolveFriendInvitation(guest, invitationId, true)
+            .Select(message => (message.SessionId, Payload: JsonSerializer.SerializeToElement(message.Payload, WebJson))).ToArray();
+        Assert.Contains(accepted, message => message.SessionId == host
+            && message.Payload.GetProperty("type").GetString() == "friendRoomCreated");
+        var hostRoom = accepted.Single(message => message.SessionId == host
+            && message.Payload.GetProperty("type").GetString() == "roomState").Payload;
+        var guestRoom = accepted.Single(message => message.SessionId == guest
+            && message.Payload.GetProperty("type").GetString() == "roomState").Payload;
+        Assert.Equal(roomCode, hostRoom.GetProperty("roomCode").GetString());
+        Assert.Equal(0, hostRoom.GetProperty("yourPlayerIndex").GetInt32());
+        Assert.Equal(1, guestRoom.GetProperty("yourPlayerIndex").GetInt32());
+    }
+
+    [Fact]
     public void GmReturnsControlledFieldCardToItsOwnerAndResetsFieldState()
     {
         var game = new L12GameEngine(Catalog, "gm-return-hand", "GMRETURN", 1208,

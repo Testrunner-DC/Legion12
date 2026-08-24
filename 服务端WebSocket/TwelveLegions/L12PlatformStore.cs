@@ -5,6 +5,8 @@ using System.Text.Json;
 namespace TwelveLegions.Server;
 
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt, bool PublicHistory);
+public sealed record L12FriendView(string AccountId, string Username, string Status, string Direction,
+    DateTimeOffset CreatedAt);
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
 public sealed record L12BugReportView(string Id, string? ReporterId, string ReporterName, string Title, string Description,
@@ -119,11 +121,21 @@ public sealed class L12PlatformStore
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    private sealed class FriendRow
+    {
+        public string RequesterId { get; set; } = string.Empty;
+        public string AddresseeId { get; set; } = string.Empty;
+        public string Status { get; set; } = "pending";
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     private sealed class DataFile
     {
         public List<AccountRow> Accounts { get; set; } = [];
         public List<SessionRow> Sessions { get; set; } = [];
         public List<DeckRow> Decks { get; set; } = [];
+        public List<FriendRow> Friends { get; set; } = [];
         public List<BugRow> BugReports { get; set; } = [];
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public List<ContentRow> ContentEntries { get; set; } = [];
@@ -213,6 +225,88 @@ public sealed class L12PlatformStore
     public IReadOnlyList<L12AccountView> Accounts()
     {
         lock (_gate) return _data.Accounts.OrderBy(row => row.CreatedAt).Select(ToView).ToArray();
+    }
+
+    public IReadOnlyList<L12FriendView> FindPlayers(string accountId, string? search)
+    {
+        var query = (search ?? string.Empty).Trim();
+        lock (_gate) return _data.Accounts.Where(row => row.Id != accountId)
+            .Where(row => query.Length == 0 || row.Username.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(row => row.Username).Take(30).Select(row => ToFriendView(accountId, row)).ToArray();
+    }
+
+    public IReadOnlyList<L12FriendView> Friends(string accountId)
+    {
+        lock (_gate) return _data.Friends.Where(row => row.Status == "accepted"
+                && (row.RequesterId == accountId || row.AddresseeId == accountId))
+            .Select(row => row.RequesterId == accountId ? row.AddresseeId : row.RequesterId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => _data.Accounts.FirstOrDefault(account => account.Id == id))
+            .Where(row => row is not null).Select(row => ToFriendView(accountId, row!))
+            .OrderBy(row => row.Username).ToArray();
+    }
+
+    public IReadOnlyList<L12FriendView> FriendRequests(string accountId)
+    {
+        lock (_gate) return _data.Friends.Where(row => row.Status == "pending"
+                && (row.RequesterId == accountId || row.AddresseeId == accountId))
+            .OrderByDescending(row => row.CreatedAt).Select(row =>
+            {
+                var otherId = row.RequesterId == accountId ? row.AddresseeId : row.RequesterId;
+                var other = _data.Accounts.First(account => account.Id == otherId);
+                return new L12FriendView(other.Id, other.Username, "pending",
+                    row.AddresseeId == accountId ? "incoming" : "outgoing", row.CreatedAt);
+            }).ToArray();
+    }
+
+    public (bool Success, string Message) SendFriendRequest(string accountId, string targetAccountId)
+    {
+        if (accountId == targetAccountId) return (false, "不能添加自己为好友");
+        lock (_gate)
+        {
+            if (_data.Accounts.All(row => row.Id != targetAccountId)) return (false, "玩家不存在");
+            var existing = FindFriendRow(accountId, targetAccountId);
+            if (existing?.Status == "accepted") return (false, "你们已经是好友");
+            if (existing?.Status == "pending") return (false, "好友申请已存在");
+            _data.Friends.Add(new FriendRow { RequesterId = accountId, AddresseeId = targetAccountId });
+            Save();
+            return (true, "好友申请已发送");
+        }
+    }
+
+    public (bool Success, string Message) ResolveFriendRequest(string accountId, string requesterId, bool accept)
+    {
+        lock (_gate)
+        {
+            var row = _data.Friends.FirstOrDefault(item => item.Status == "pending"
+                && item.RequesterId == requesterId && item.AddresseeId == accountId);
+            if (row is null) return (false, "好友申请不存在或已处理");
+            if (accept)
+            {
+                row.Status = "accepted";
+                row.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+            else _data.Friends.Remove(row);
+            Save();
+            return (true, accept ? "已成为好友" : "已拒绝好友申请");
+        }
+    }
+
+    public bool RemoveFriend(string accountId, string friendId)
+    {
+        lock (_gate)
+        {
+            var row = FindFriendRow(accountId, friendId);
+            if (row is null) return false;
+            _data.Friends.Remove(row);
+            Save();
+            return true;
+        }
+    }
+
+    public bool AreFriends(string firstAccountId, string secondAccountId)
+    {
+        lock (_gate) return FindFriendRow(firstAccountId, secondAccountId)?.Status == "accepted";
     }
 
     public IReadOnlyList<L12AccountDeckView> Decks(string accountId)
@@ -572,6 +666,17 @@ public sealed class L12PlatformStore
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
     private static L12AccountView ToView(AccountRow row) => new(row.Id, row.Username, row.Role, row.CreatedAt, row.PublicHistory);
+    private L12FriendView ToFriendView(string viewerId, AccountRow row)
+    {
+        var relation = FindFriendRow(viewerId, row.Id);
+        var direction = relation is null ? "none" : relation.AddresseeId == viewerId ? "incoming" : "outgoing";
+        return new L12FriendView(row.Id, row.Username, relation?.Status ?? "none", direction,
+            relation?.CreatedAt ?? row.CreatedAt);
+    }
+
+    private FriendRow? FindFriendRow(string firstAccountId, string secondAccountId)
+        => _data.Friends.FirstOrDefault(row => (row.RequesterId == firstAccountId && row.AddresseeId == secondAccountId)
+            || (row.RequesterId == secondAccountId && row.AddresseeId == firstAccountId));
     private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
         row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
@@ -641,6 +746,7 @@ public sealed class L12PlatformStore
             data.Accounts ??= [];
             data.Sessions ??= [];
             data.Decks ??= [];
+            data.Friends ??= [];
             data.BugReports ??= [];
             foreach (var bug in data.BugReports) bug.History ??= [];
             data.Content ??= new(StringComparer.OrdinalIgnoreCase);

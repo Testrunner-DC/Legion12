@@ -78,6 +78,55 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var result = _platform.ChangePassword(account.Id, body.CurrentPassword ?? string.Empty, body.NewPassword ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
+        _app.MapGet("/api/players", (HttpRequest request, string? search) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.FindPlayers(account.Id, search)
+                .Select(player => new { player.AccountId, player.Username, player.Status, player.Direction,
+                    player.CreatedAt, online = _rooms.IsAccountOnline(player.AccountId) }));
+        });
+        _app.MapGet("/api/presence", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var online = _rooms.OnlineAccountIds();
+            return Results.Ok(_platform.Accounts()
+                .Where(player => online.Contains(player.Id))
+                .OrderBy(player => player.Username)
+                .Select(player => new { accountId = player.Id, player.Username, online = true }));
+        });
+        _app.MapGet("/api/friends", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.Friends(account.Id)
+                .Select(player => new { player.AccountId, player.Username, player.Status, player.Direction,
+                    player.CreatedAt, online = _rooms.IsAccountOnline(player.AccountId) }));
+        });
+        _app.MapGet("/api/friends/requests", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.FriendRequests(account.Id));
+        });
+        _app.MapPost("/api/friends/requests", (HttpRequest request, FriendRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var result = _platform.SendFriendRequest(account.Id, body.AccountId ?? string.Empty);
+            return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapPost("/api/friends/requests/{requesterId}/resolve", (HttpRequest request, string requesterId, FriendResolveRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var result = _platform.ResolveFriendRequest(account.Id, requesterId, body.Accept);
+            return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapDelete("/api/friends/{friendId}", (HttpRequest request, string friendId) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            return _platform.RemoveFriend(account.Id, friendId) ? Results.Ok() : Results.NotFound();
+        });
         _app.MapGet("/api/decks", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -240,6 +289,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "createRoom" => CreateRoom(sessionId, root),
                 "createSandbox" => await CreateSandboxAsync(sessionId, root),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
+                "inviteFriend" => _rooms.InviteFriend(sessionId, GetString(root, "accountId")),
+                "resolveFriendInvitation" => _rooms.ResolveFriendInvitation(sessionId,
+                    GetString(root, "invitationId"), GetBool(root, "accept", false)),
                 "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),
                 "leaveRoom" => _rooms.LeaveRoom(sessionId),
                 "selectDeck" => _rooms.SelectDeck(sessionId, GetInt(root, "deckIndex")),
@@ -269,7 +321,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         var account = _platform.AuthenticateToken(GetString(root, "authToken"));
         if (account is null)
             return [new OutgoingMessage(sessionId, new { type = "authenticationRequired", message = "请先登录账号" })];
-        var session = new OutgoingMessage(sessionId, _rooms.Connect(sessionId, account.Username));
+        var session = new OutgoingMessage(sessionId, _rooms.Connect(sessionId, account.Id, account.Username));
         return new[] { session }.Concat(_rooms.RecoveryState(sessionId)).ToArray();
     }
 
@@ -380,6 +432,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 
 public sealed record AuthRequest(string? Username, string? Password);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+public sealed record FriendRequest(string? AccountId);
+public sealed record FriendResolveRequest(bool Accept);
 public sealed record RoleRequest(string? Role);
 public sealed record ContentRequest(string? Value);
 public sealed record EffectReviewRequest(string? AbilityId, string? Status, string? Note);

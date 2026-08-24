@@ -227,4 +227,35 @@ public sealed class PlatformStoreTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void FriendRequestRequiresAcceptanceAndPersistsAcrossReload()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var store = new L12PlatformStore(path);
+            var first = store.Register("好友甲", "password-a").Account!;
+            var second = store.Register("好友乙", "password-b").Account!;
+
+            Assert.True(store.SendFriendRequest(first.Id, second.Id).Success);
+            var incoming = Assert.Single(store.FriendRequests(second.Id));
+            Assert.Equal(first.Id, incoming.AccountId);
+            Assert.Equal("incoming", incoming.Direction);
+            Assert.False(store.AreFriends(first.Id, second.Id));
+            Assert.True(store.ResolveFriendRequest(second.Id, first.Id, true).Success);
+            Assert.True(store.AreFriends(first.Id, second.Id));
+            Assert.Single(store.Friends(first.Id));
+
+            var reloaded = new L12PlatformStore(path);
+            Assert.True(reloaded.AreFriends(first.Id, second.Id));
+            Assert.True(reloaded.RemoveFriend(first.Id, second.Id));
+            Assert.Empty(reloaded.Friends(first.Id));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

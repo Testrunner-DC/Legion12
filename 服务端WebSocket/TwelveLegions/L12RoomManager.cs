@@ -10,6 +10,7 @@ public sealed class L12RoomManager
     private sealed class Session
     {
         public required Guid Id { get; init; }
+        public string? AccountId { get; init; }
         public required string Name { get; set; }
         public string? RoomCode { get; set; }
         public int? PlayerIndex { get; set; }
@@ -18,6 +19,15 @@ public sealed class L12RoomManager
         public bool IsSpectator { get; set; }
         public bool IsVirtual { get; init; }
         public bool Connected { get; set; } = true;
+    }
+
+    private sealed class FriendInvitation
+    {
+        public required string Id { get; init; }
+        public required string RoomCode { get; init; }
+        public required string FromAccountId { get; init; }
+        public required string ToAccountId { get; init; }
+        public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     }
 
     private sealed class Room
@@ -36,22 +46,25 @@ public sealed class L12RoomManager
 
     private readonly L12Catalog _catalog;
     private readonly MatchRecorder _recorder;
+    private readonly L12PlatformStore? _platform;
     private readonly ConcurrentDictionary<Guid, Session> _sessions = new();
     private readonly ConcurrentDictionary<string, Room> _rooms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, FriendInvitation> _friendInvitations = new(StringComparer.OrdinalIgnoreCase);
 
-    public L12RoomManager(L12Catalog catalog, MatchRecorder recorder)
+    public L12RoomManager(L12Catalog catalog, MatchRecorder recorder, L12PlatformStore? platform = null)
     {
         _catalog = catalog;
         _recorder = recorder;
+        _platform = platform;
     }
 
-    public object Connect(Guid sessionId, string? requestedName)
+    public object Connect(Guid sessionId, string accountId, string? requestedName)
     {
         var name = NormalizeName(requestedName);
         var disconnected = _sessions.FirstOrDefault(pair =>
             pair.Key != sessionId && !pair.Value.Connected && !pair.Value.IsVirtual
             && pair.Value.RoomCode is not null
-            && string.Equals(pair.Value.Name, name, StringComparison.OrdinalIgnoreCase));
+            && string.Equals(pair.Value.AccountId, accountId, StringComparison.OrdinalIgnoreCase));
         if (disconnected.Value is not null)
         {
             var recovered = disconnected.Value;
@@ -74,8 +87,89 @@ public sealed class L12RoomManager
             _sessions.TryRemove(disconnected.Key, out _);
             return new { type = "session", sessionId, name, recovered = true, roomCode = recovered.RoomCode };
         }
-        _sessions[sessionId] = new Session { Id = sessionId, Name = name };
+        _sessions[sessionId] = new Session { Id = sessionId, AccountId = accountId, Name = name };
         return new { type = "session", sessionId, name, recovered = false, roomCode = (string?)null };
+    }
+
+    public object Connect(Guid sessionId, string? requestedName)
+        => Connect(sessionId, $"legacy:{NormalizeName(requestedName).ToLowerInvariant()}", requestedName);
+
+    public bool IsAccountOnline(string accountId)
+        => _sessions.Values.Any(session => session.Connected && !session.IsVirtual && session.AccountId == accountId);
+
+    public IReadOnlySet<string> OnlineAccountIds()
+        => _sessions.Values
+            .Where(session => session.Connected && !session.IsVirtual && !string.IsNullOrWhiteSpace(session.AccountId))
+            .Select(session => session.AccountId!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<OutgoingMessage> InviteFriend(Guid sessionId, string? targetAccountId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
+            return Error(sessionId, "会话不存在");
+        if (sender.RoomCode is not null) return Error(sessionId, "请先离开当前房间再邀请好友");
+        var targetId = (targetAccountId ?? string.Empty).Trim();
+        if (_platform is null || !_platform.AreFriends(sender.AccountId, targetId)) return Error(sessionId, "只能邀请已成为好友的玩家");
+        var recipients = _sessions.Values.Where(session => session.Connected && session.AccountId == targetId).ToArray();
+        if (recipients.Length == 0) return Error(sessionId, "该好友当前不在线");
+        if (recipients.Any(session => session.RoomCode is not null)) return Error(sessionId, "该好友已在房间或对局中");
+
+        var invitation = new FriendInvitation
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomCode = GenerateAvailableRoomCode(),
+            FromAccountId = sender.AccountId,
+            ToAccountId = targetId,
+        };
+        _friendInvitations[invitation.Id] = invitation;
+        var payload = new
+        {
+            type = "friendInvitation", invitationId = invitation.Id, invitation.RoomCode,
+            fromAccountId = sender.AccountId, fromName = sender.Name,
+        };
+        return recipients.Select(recipient => new OutgoingMessage(recipient.Id, payload))
+            .Append(new OutgoingMessage(sessionId, new
+            {
+                type = "friendInvitationSent", invitationId = invitation.Id, invitation.RoomCode,
+                targetAccountId = targetId, message = $"邀请已发送，预留房间码 {invitation.RoomCode}",
+            })).ToArray();
+    }
+
+    public IReadOnlyList<OutgoingMessage> ResolveFriendInvitation(Guid sessionId, string? invitationId, bool accept)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var recipient) || recipient.AccountId is null)
+            return Error(sessionId, "会话不存在");
+        var id = (invitationId ?? string.Empty).Trim();
+        if (!_friendInvitations.TryRemove(id, out var invitation)
+            || invitation.ToAccountId != recipient.AccountId
+            || invitation.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10))
+            return Error(sessionId, "邀请不存在或已失效");
+        var senders = _sessions.Values.Where(session => session.Connected
+            && session.AccountId == invitation.FromAccountId).ToArray();
+        if (!accept)
+            return senders.Select(sender => new OutgoingMessage(sender.Id,
+                    new { type = "friendInvitationRejected", invitationId = id, message = $"{recipient.Name} 拒绝了对战邀请" }))
+                .Append(new OutgoingMessage(sessionId, new { type = "friendInvitationResolved", invitationId = id }))
+                .ToArray();
+        var host = senders.FirstOrDefault(session => session.RoomCode is null);
+        if (host is null) return Error(sessionId, "发起方已离线或进入其他房间");
+        if (recipient.RoomCode is not null) return Error(sessionId, "你已在其他房间");
+
+        var room = new Room { Code = invitation.RoomCode, Options = NormalizeOptions(null) };
+        if (!_rooms.TryAdd(room.Code, room)) return Error(sessionId, "预留房间码已失效，请重新邀请");
+        room.Sessions.Add(host.Id);
+        room.Sessions.Add(sessionId);
+        host.RoomCode = recipient.RoomCode = room.Code;
+        host.PlayerIndex = 0;
+        recipient.PlayerIndex = 1;
+        host.SelectedDeckIndex = 0;
+        recipient.SelectedDeckIndex = Math.Min(1, _catalog.PresetDecks.Count - 1);
+        var created = room.Sessions.Select(memberId => new OutgoingMessage(memberId, new
+        {
+            type = "friendRoomCreated", roomCode = room.Code, hostAccountId = host.AccountId,
+            message = "好友已接受邀请，已直接创建房间",
+        }));
+        return created.Concat(BroadcastRoom(room)).ToArray();
     }
 
     /// <summary>
@@ -194,7 +288,13 @@ public sealed class L12RoomManager
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
         if (room.Game is null) return Error(sessionId, "对局尚未开始");
         if (room.Options.Spectating == "disabled") return Error(sessionId, "该房间禁止观战");
-        if (room.Options.Spectating == "friends") return Error(sessionId, "该房间仅限好友观战；好友身份校验尚未接入");
+        if (room.Options.Spectating == "friends")
+        {
+            if (session.AccountId is null) return Error(sessionId, "请先登录账号");
+            var playerAccounts = room.Sessions.Select(id => _sessions[id].AccountId).Where(id => id is not null).ToArray();
+            if (_platform is null || !playerAccounts.Any(accountId => _platform.AreFriends(session.AccountId, accountId!)))
+                return Error(sessionId, "该房间仅限参赛玩家的好友观战");
+        }
         lock (room.Spectators)
         {
             room.Spectators.Add(sessionId);
@@ -478,6 +578,14 @@ public sealed class L12RoomManager
     {
         const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         return new string(Enumerable.Range(0, 6).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]).ToArray());
+    }
+
+    private string GenerateAvailableRoomCode()
+    {
+        string code;
+        do { code = GenerateRoomCode(); }
+        while (_rooms.ContainsKey(code) || _friendInvitations.Values.Any(invitation => invitation.RoomCode == code));
+        return code;
     }
 
     private static L12RoomOptions NormalizeOptions(L12RoomOptions? options, bool allowCustom = false)
