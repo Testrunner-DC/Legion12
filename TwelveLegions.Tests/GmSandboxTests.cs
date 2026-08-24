@@ -198,6 +198,55 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void GmReturnsControlledFieldCardToItsOwnerAndResetsFieldState()
+    {
+        var game = new L12GameEngine(Catalog, "gm-return-hand", "GMRETURN", 1208,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        var legion = Catalog.Cards.Values.First(card => card.CardType == "legion");
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 1, legion.Id,
+            Row: 0, Slot: 1, TriggerEffects: false)).Accepted);
+        var controlled = game.State.Players[1].Field[0][1]!;
+        controlled.OwnerIndex = 0;
+        controlled.Tapped = true;
+        controlled.Troops = Math.Max(1, controlled.BaseTroops + 2000);
+
+        var returned = game.HandleGm(new L12GmCommand("returnCardToHand", 1,
+            CardInstanceId: controlled.InstanceId));
+
+        Assert.True(returned.Accepted, returned.Error);
+        Assert.Null(game.State.Players[1].Field[0][1]);
+        Assert.Contains(game.State.Players[0].Hand, card => card.InstanceId == controlled.InstanceId);
+        Assert.DoesNotContain(game.State.Players[1].Hand, card => card.InstanceId == controlled.InstanceId);
+        Assert.Equal(controlled.BaseTroops, controlled.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "gm" && entry.Text.Contains("所有者手牌"));
+    }
+
+    [Fact]
+    public void GmNextPhaseExecutesEachEnteredPhaseInsteadOfOnlyChangingItsLabel()
+    {
+        var game = new L12GameEngine(Catalog, "gm-next-phase", "GMNEXT", 1209,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        var legion = Catalog.Cards.Values.First(card => card.CardType == "legion");
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, legion.Id,
+            Row: 0, Slot: 0, TriggerEffects: false)).Accepted);
+        var unit = game.State.Players[0].Field[0][0]!;
+        unit.Tapped = true;
+        Assert.True(game.HandleGm(new L12GmCommand("setPhase", 0, Phase: "Disaster")).Accepted);
+
+        Assert.True(game.HandleGm(new L12GmCommand("nextPhase")).Accepted);
+        Assert.Equal(L12Phase.Reset, game.State.Phase);
+        Assert.False(unit.Tapped);
+        Assert.True(game.HandleGm(new L12GmCommand("nextPhase")).Accepted);
+        Assert.Equal(L12Phase.Draw, game.State.Phase);
+        Assert.True(game.HandleGm(new L12GmCommand("nextPhase")).Accepted);
+        Assert.Equal(L12Phase.Morale, game.State.Phase);
+        Assert.NotEmpty(game.State.Players[0].Morale);
+        Assert.True(game.HandleGm(new L12GmCommand("nextPhase")).Accepted);
+        Assert.Equal(L12Phase.Main, game.State.Phase);
+        Assert.Contains(game.State.Events, entry => entry.Type == "gm" && entry.Text.Contains("推进至主要阶段"));
+    }
+
+    [Fact]
     public async Task DisconnectedAccountReclaimsItsSeatAndReceivesAuthoritativeRecoveryState()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-room-recovery", Guid.NewGuid().ToString("N"));

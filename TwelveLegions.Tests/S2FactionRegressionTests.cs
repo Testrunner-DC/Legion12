@@ -1481,6 +1481,7 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         Assert.Same(sword, player.Field[0][0]);
+        Assert.Null(player.Relic);
         Assert.Equal(5000, sword.Troops);
         Assert.Equal(5000, sword.SetTroopsValue);
         Assert.Equal(int.MaxValue, sword.SetTroopsUntilTurn);

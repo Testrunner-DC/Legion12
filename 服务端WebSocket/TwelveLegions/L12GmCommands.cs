@@ -53,6 +53,7 @@ public sealed partial class L12GameEngine
             "moveHandCard" => GmMoveHandCard(command),
             "playHandCard" => GmPlayHandCard(command),
             "destroyCard" => GmDestroyCard(command),
+            "returnCardToHand" => GmReturnCardToHand(command),
             "setCardState" => GmSetCardState(command),
             "setTroops" => GmSetTroops(command),
             "startAttack" => GmStartAttack(command),
@@ -70,6 +71,7 @@ public sealed partial class L12GameEngine
             "triggerDisaster" => GmTriggerDisaster(),
             "replaceDisaster" => GmReplaceDisaster(command),
             "setPhase" => GmSetPhase(command),
+            "nextPhase" => GmAdvancePhase(),
             _ => CommandResult.Reject("未知 GM 操作"),
         };
 
@@ -224,6 +226,40 @@ public sealed partial class L12GameEngine
         if (relic is null) return CommandResult.Reject("目标卡牌不在该玩家场上");
         DiscardRelic(player, relic);
         AddEvent("gm", command.TargetPlayer, $"[GM] 将〈{relic.Name}〉置入墓地", relic);
+        return CommandResult.Ok();
+    }
+
+    private CommandResult GmReturnCardToHand(L12GmCommand command)
+    {
+        var card = FindPublicCard(command.CardInstanceId, out var controllerIndex);
+        if (card is null || controllerIndex != command.TargetPlayer)
+            return CommandResult.Reject("目标卡牌不在该玩家场上");
+
+        var controller = State.Players[controllerIndex];
+        if (FindOnField(controller, card.InstanceId, out _, out _) is not null)
+        {
+            if (!MoveFieldCardToZone(controller, card, "hand", "被 GM 返回手牌"))
+                return CommandResult.Reject("目标卡牌无法返回手牌");
+        }
+        else
+        {
+            var inRelicZone = controller.Relic?.InstanceId == card.InstanceId
+                || controller.ExtraRelics.Any(candidate => candidate.InstanceId == card.InstanceId);
+            if (!inRelicZone) return CommandResult.Reject("目标卡牌不在可返回手牌的场上区域");
+
+            if (controller.Relic?.InstanceId == card.InstanceId) controller.Relic = null;
+            else controller.ExtraRelics.Remove(card);
+            if (card.AttachedCards.Count > 0)
+                DiscardAttachedCards(card, $"{card.Name}离开圣物区");
+            var owner = CardOwner(card, controller);
+            ResetCardAfterLeavingField(card);
+            owner.Hand.Add(card);
+            AddEvent("leave", controllerIndex, $"{card.Name}被 GM 返回所有者手牌", card);
+            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(controllerIndex, card));
+            RecalculateContinuousTroops();
+        }
+
+        AddEvent("gm", controllerIndex, $"[GM] 将〈{card.Name}〉返回所有者手牌", card);
         return CommandResult.Ok();
     }
 
@@ -432,6 +468,69 @@ public sealed partial class L12GameEngine
         State.ActivePlayer = command.TargetPlayer;
         State.Phase = phase;
         AddEvent("gm", command.TargetPlayer, $"[GM] 将玩家{command.TargetPlayer + 1}设为回合玩家并跳转至{GmPhaseLabel(phase)}");
+        return CommandResult.Ok();
+    }
+
+    private CommandResult GmAdvancePhase()
+    {
+        if (State.PendingDefense is not null || State.PendingPrompts.Count > 0 || State.EffectStack.Count > 0
+            || State.PendingActivations.Count > 0 || State.PendingTriggerBatches.Count > 0
+            || State.ResponseWindow is not null)
+            return CommandResult.Reject("当前仍有待处理的选择、响应、触发或战斗，完成后才能进入下一阶段");
+
+        var playerIndex = State.ActivePlayer;
+        var player = State.Players[playerIndex];
+        switch (State.Phase)
+        {
+            case L12Phase.Disaster:
+                State.Phase = L12Phase.Reset;
+                if (player.MasterId == "S02-06D1")
+                {
+                    AdvanceTrial(playerIndex, 1, CreateCard(player.MasterId, $"master-{playerIndex}"));
+                    L12S2ZoneOps.GainRunes(player, 1);
+                    AddEvent("runes", playerIndex, "彼界 阿瓦隆在回合开始时获得1符文");
+                }
+                AddEvent("phase", playerIndex, "执行重置阶段");
+                Untap(player);
+                AddEvent("phase-detail", playerIndex, "将本回合玩家所有可以重置的士气、军团与圣物转为活跃");
+                break;
+            case L12Phase.Reset:
+                State.Phase = L12Phase.Draw;
+                AddEvent("phase", playerIndex, "执行抽牌阶段");
+                if (State.Round == 1 && playerIndex == State.FirstPlayer)
+                    AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
+                else if (player.MasterId == "S01-03M1")
+                {
+                    Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
+                    AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
+                }
+                else if (!Draw(player, 1))
+                {
+                    SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
+                }
+                else AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+                break;
+            case L12Phase.Draw:
+                State.Phase = L12Phase.Morale;
+                AddEvent("phase", playerIndex, "执行士气阶段");
+                var moraleAdded = AddMorale(player, State.Round == 1 && playerIndex == State.FirstPlayer ? 1 : 2);
+                AddEvent("phase-detail", playerIndex, $"从士气牌库追加 {moraleAdded} 张士气");
+                break;
+            case L12Phase.Morale:
+                State.Phase = L12Phase.Main;
+                AddEvent("phase", playerIndex, "进入主要阶段");
+                if (DisastersEnabled) BeginMainPhaseDisasterEffect();
+                break;
+            case L12Phase.Main:
+                return EndTurn(playerIndex);
+            case L12Phase.End:
+                CompleteEndTurn(playerIndex);
+                break;
+            default:
+                return CommandResult.Reject("当前阶段不能由 GM 进入下一阶段");
+        }
+
+        AddEvent("gm", playerIndex, $"[GM] 推进至{GmPhaseLabel(State.Phase)}");
         return CommandResult.Ok();
     }
 
