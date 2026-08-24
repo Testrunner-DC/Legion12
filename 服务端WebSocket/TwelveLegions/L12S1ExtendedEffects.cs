@@ -142,12 +142,6 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, "秦良玉从士气牌库追加1张休整士气", card);
                 FinishStackItem(item);
                 return true;
-            case "S01-0115":
-                if (player.Morale.Count <= 7)
-                    CreatePrompt(item.Controller, "optional", "荆轲：是否抽取1张牌？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "jingke-draw" });
-                else FinishStackItem(item);
-                return true;
             case "S01-0402":
                 PromptEnemyLegion(item, "nobunaga-kill", "织田信长：击杀对方1张费用不高于4的军团", target => target.CurrentCost <= 4, false);
                 return true;
@@ -441,9 +435,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             case "sunwu-recover":
                 if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]);
-                FinishStackItem(item); return true;
-            case "jingke-draw":
-                if (chosen[0] == "yes") Draw(player, 1);
                 FinishStackItem(item); return true;
             case "jingke-kill":
                 if (chosen[0] != "skip" && ReturnMorale(player, 1)) KillTarget(chosen[0], "被荆轲击杀");

@@ -269,7 +269,6 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "尼托克丽丝阵亡：选择墓地1张费用不高于2的【太阳城】军团活跃登场", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "nitocris-summon" }); return true;
             }
-            case "S01-0301": CreatePrompt(item.Controller, "optional", "贝奥武夫阵亡：是否抽取1张牌？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-draw-one" }); return true;
             case "S01-0302": HealMaster(item.Controller, 1, "金发哈拉尔阵亡效果", legionEffect: true); FinishStackItem(item); return true;
             case "S01-0303": CreatePrompt(item.Controller, "optional", "传奇的拉格纳阵亡：是否抽取1张并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-one" }); return true;
             case "S01-0304": PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
@@ -280,7 +279,6 @@ public sealed partial class L12GameEngine
             case "S01-0306": CreatePrompt(item.Controller, "optional", "奥拉夫二世阵亡：是否抽2张牌并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-two" }); return true;
             case "S01-0307": RecoverAsgard(item, 3, legionOnly: false); return true;
             case "S01-0308": SummonAsgardFromGrave(item, 3); return true;
-            case "S01-0309": if (player.Hp <= State.Players[1 - item.Controller].Hp) Draw(player, 1); FinishStackItem(item); return true;
             case "S01-0313":
             {
                 var choices = PublicLegions(State.Players[1 - item.Controller]).Where(target => !target.Tapped).Select(target => target.InstanceId).ToList(); choices.Add("skip");
@@ -445,7 +443,6 @@ public sealed partial class L12GameEngine
                 if (source is null) FinishStackItem(item);
                 else BeginQueuedSummons(item, [source.InstanceId], tapped: true, "勇士比约恩：选择其休整登场的位置");
                 return true;
-            case "death-draw-one": if (chosen[0] == "yes") Draw(player, 1); FinishStackItem(item); return true;
             case "death-cycle-one": if (chosen[0] == "yes") { Draw(player, 1); PromptDiscard(item, item.Controller, 1, "弃置1张手牌", "death-cycle-discard"); } else FinishStackItem(item); return true;
             case "death-cycle-two": if (chosen[0] == "yes") { Draw(player, 2); PromptDiscard(item, item.Controller, 1, "弃置1张手牌", "death-cycle-discard"); } else FinishStackItem(item); return true;
             case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true); FinishStackItem(item); return true;

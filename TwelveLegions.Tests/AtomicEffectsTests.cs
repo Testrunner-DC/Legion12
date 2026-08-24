@@ -190,15 +190,32 @@ public sealed class AtomicEffectsTests
         Assert.Equal(program.Atoms, ability.Atoms);
     }
 
-    [Fact]
-    public void OptionalAeneasDeathDrawIsNotMisreportedAsUnconditionalVerifiedRuntime()
+    [Theory]
+    [InlineData("S01-0115", "enter")]
+    [InlineData("S01-0301", "death")]
+    [InlineData("S01-0309", "death")]
+    [InlineData("S01-0405", "attack")]
+    [InlineData("S01-0409", "after-attack")]
+    [InlineData("S01-0413", "enter")]
+    [InlineData("S02-0203", "death")]
+    [InlineData("S02-0402", "death")]
+    [InlineData("S02-0512", "death")]
+    [InlineData("S02-0104", "enter")]
+    [InlineData("S02-0507", "enter")]
+    [InlineData("S02-0507", "promotion-enter")]
+    public void OptionalDrawProgramsPauseBeforeDrawingAndDoNotFallBackToLegacy(string cardId, string trigger)
     {
-        Assert.Null(L12VerifiedAtomicPrograms.Find("S02-0512", "death"));
-        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S02-0512"));
-        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == "death");
-        Assert.True(ability.HasLegacyFallback);
-        Assert.NotEqual("verified", ability.MigrationStatus);
-        Assert.Contains(ability.Atoms, atom => atom.Kind == L12AtomKinds.Optional);
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find(cardId, trigger));
+        var optionalIndex = Array.FindIndex(program.Atoms.ToArray(), atom => atom.Kind == L12AtomKinds.Optional);
+        var drawIndex = Array.FindIndex(program.Atoms.ToArray(), atom => atom.Kind == L12AtomKinds.Draw);
+        Assert.True(optionalIndex >= 0);
+        Assert.True(drawIndex > optionalIndex);
+
+        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == trigger);
+        Assert.False(ability.HasLegacyFallback);
+        Assert.Equal("verified", ability.MigrationStatus);
+        Assert.Equal(program.Atoms, ability.Atoms);
     }
 
     [Fact]

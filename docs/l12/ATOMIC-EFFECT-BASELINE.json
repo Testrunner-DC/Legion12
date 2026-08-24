@@ -1,8 +1,8 @@
 {
-  "capturedAt": "2026-08-21",
+  "capturedAt": "2026-08-24",
   "catalogCards": 248,
   "cardsWithEffectText": 248,
-  "legacyCardCaseOccurrences": 209,
-  "legacyUniqueCardIds": 167,
+  "legacyCardCaseOccurrences": 195,
+  "legacyUniqueCardIds": 161,
   "rule": "Legacy card case count may only decrease during migration."
 }

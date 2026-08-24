@@ -117,11 +117,13 @@ public sealed class S2FactionRegressionTests
     }
 
     [Theory]
-    [InlineData("S02-0203")]
-    [InlineData("S02-0301")]
-    [InlineData("S02-0402")]
-    [InlineData("S02-0512")]
-    public void OptionalDeathDrawClusterMayDeclineWithoutDrawingOrDiscarding(string cardId)
+    [InlineData("S01-0301", "verified-atomic-optional")]
+    [InlineData("S01-0309", "verified-atomic-optional")]
+    [InlineData("S02-0203", "verified-atomic-optional")]
+    [InlineData("S02-0301", "s2-optional-death-draw")]
+    [InlineData("S02-0402", "verified-atomic-optional")]
+    [InlineData("S02-0512", "verified-atomic-optional")]
+    public void OptionalDeathDrawClusterMayDeclineWithoutDrawingOrDiscarding(string cardId, string expectedAction)
     {
         var game = Create(63012);
         var player = game.State.Players[0];
@@ -135,11 +137,41 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0, CardInstanceId: source.InstanceId)).Accepted);
         PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-optional-death-draw", prompt.Data["action"]);
+        Assert.Equal(expectedAction, prompt.Data["action"]);
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
         Assert.Empty(player.Hand);
         Assert.Single(player.Library);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData("S01-0301")]
+    [InlineData("S01-0309")]
+    [InlineData("S02-0203")]
+    [InlineData("S02-0402")]
+    [InlineData("S02-0512")]
+    public void VerifiedOptionalDeathDrawResumesAfterYesAndDrawsExactlyOnce(string cardId)
+    {
+        var game = Create(63013);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        var drawn = Card("S02-0504", $"verified-optional-draw-{cardId}");
+        player.Library.Add(drawn);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, cardId, Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var source = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0, CardInstanceId: source.InstanceId)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("verified-atomic-optional", prompt.Data["action"]);
+        Assert.Empty(player.Hand);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+        Assert.Same(drawn, Assert.Single(player.Hand));
+        Assert.Empty(player.Library);
         Assert.Empty(game.State.PendingPrompts);
     }
 

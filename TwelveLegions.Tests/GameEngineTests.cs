@@ -427,6 +427,10 @@ public sealed class GameEngineTests
         }
 
         Assert.True(game.Handle(1, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var optional = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("verified-atomic-optional", optional.Data.GetValueOrDefault("action"));
+        Assert.Empty(player.Hand);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "yes")).Accepted);
         Assert.Single(player.Hand);
         Assert.Contains(game.State.Events, item => item.Type == "effect" && item.Text.Contains("抽取 1 张牌"));
     }

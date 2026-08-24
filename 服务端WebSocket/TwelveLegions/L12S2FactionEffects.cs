@@ -247,10 +247,6 @@ public sealed partial class L12GameEngine
                         ["no"] = "不发动",
                     });
                 return true;
-            case "S02-0507":
-                CreatePrompt(item.Controller, "optional", "是否抽取1张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-atalanta-entry-draw" });
-                return true;
             case "S02-0515":
                 if (!player.Morale.Any(morale => morale.IsGodPower))
                 {
@@ -526,10 +522,6 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-perseus-promotion-lock" });
                 return;
             }
-            case "S02-0507":
-                CreatePrompt(item.Controller, "optional", "是否抽取1张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-atalanta-promotion-draw" });
-                return;
             default:
                 FinishStackItem(item);
                 return;
@@ -870,10 +862,6 @@ public sealed partial class L12GameEngine
                 else FinishStackItem(item);
                 return true;
             }
-            case "S02-0203":
-            case "S02-0402":
-            case "S02-0512":
-                return PromptOptionalS2DeathDraw(item, card, discardAfterDraw: false);
             default:
                 return false;
         }
@@ -2243,11 +2231,6 @@ public sealed partial class L12GameEngine
                     DamageMasterNonLethal(0, 1, "赫拉克勒斯·晋升的登场时效果");
                     DamageMasterNonLethal(1, 1, "赫拉克勒斯·晋升的登场时效果");
                 }
-                FinishStackItem(item);
-                return true;
-            case "s2-atalanta-entry-draw":
-            case "s2-atalanta-promotion-draw":
-                if (chosen[0] == "yes" && !Draw(player, 1)) SetWinner(1 - item.Controller, "阿塔兰忒·晋升效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
             case "s2-perseus-recover-promotion":

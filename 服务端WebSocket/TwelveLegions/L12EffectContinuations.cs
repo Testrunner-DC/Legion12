@@ -14,6 +14,11 @@ public sealed partial class L12GameEngine
         var action = prompt.Data.GetValueOrDefault("action") ?? string.Empty;
         var source = FindSource(item);
         var player = State.Players[item.Controller];
+        if (action == "verified-atomic-optional")
+        {
+            ContinueVerifiedAtomicOptional(item, chosen[0]);
+            return;
+        }
         if (action.StartsWith("s2-", StringComparison.Ordinal))
         {
             if (ContinueS2CounterEffect(item, prompt, chosen)) return;

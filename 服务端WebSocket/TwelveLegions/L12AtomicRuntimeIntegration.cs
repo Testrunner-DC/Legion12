@@ -15,8 +15,10 @@ public sealed partial class L12GameEngine
 
         var controller = State.Players[item.Controller];
         var opponent = State.Players[1 - item.Controller];
-        foreach (var atom in program.Atoms)
+        for (var atomIndex = item.Step; atomIndex < program.Atoms.Count; atomIndex++)
         {
+            var atom = program.Atoms[atomIndex];
+            item.Step = atomIndex + 1;
             switch (atom.Kind)
             {
                 case L12AtomKinds.Trigger:
@@ -28,6 +30,16 @@ public sealed partial class L12GameEngine
                         return true;
                     }
                     break;
+                case L12AtomKinds.Optional:
+                    CreatePrompt(item.Controller, "optional", atom.Parameters.GetValueOrDefault("prompt") ?? atom.Label,
+                        ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                        data: new Dictionary<string, string>
+                        {
+                            ["action"] = "verified-atomic-optional",
+                            ["yes"] = atom.Parameters.GetValueOrDefault("yes") ?? "发动",
+                            ["no"] = atom.Parameters.GetValueOrDefault("no") ?? "不发动",
+                        });
+                    return true;
                 case L12AtomKinds.SetState:
                     if (atom.Parameters.GetValueOrDefault("key") == "controller.nextLegionChargeMaxCost")
                         controller.NextLegionChargeMaxCost = AtomicInt(atom, "value");
@@ -98,11 +110,23 @@ public sealed partial class L12GameEngine
             "controller.hand<=5" => controller.Hand.Count <= 5,
             "controller.hand<=4" => controller.Hand.Count <= 4,
             "controller.hand<=opponent.hand" => controller.Hand.Count <= opponent.Hand.Count,
+            "controller.morale<=7" => controller.Morale.Count <= 7,
+            "controller.hp<=opponent.hp" => controller.Hp <= opponent.Hp,
             "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
             "source.hidden=true" => source.Hidden,
             "item.killed=true" => item.Data.GetValueOrDefault("killed") == "true",
             _ => throw new InvalidOperationException($"Unsupported verified atomic condition: {expression}"),
         };
+
+    private void ContinueVerifiedAtomicOptional(L12StackItem item, string choice)
+    {
+        if (!choice.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            FinishStackItem(item);
+            return;
+        }
+        TryResolveVerifiedAtomicProgram(item);
+    }
 
     private static int AtomicInt(L12EffectAtom atom, string key)
         => int.TryParse(atom.Parameters.GetValueOrDefault(key), out var value)

@@ -49,15 +49,6 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-ring-discard" });
                 return true;
             }
-            case "S02-0104":
-                CreatePrompt(item.Controller, "optional", "神农鼎：是否抽取1张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-shennong-draw", ["choiceMode"] = "instant",
-                        ["yes"] = "抽取1张牌", ["no"] = "不抽牌",
-                    });
-                return true;
             default:
                 return false;
         }
@@ -383,11 +374,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 break;
             }
-            case "s2-shennong-draw":
-                if (chosen[0] == "yes" && !Draw(State.Players[item.Controller], 1))
-                    SetWinner(1 - item.Controller, "〈神农鼎〉抽牌时牌库为空");
-                FinishStackItem(item);
-                break;
             case "s2-qianyang-kill":
                 KillTarget(chosen[0], "被〈乾坤 阳〉击杀");
                 if (CanReturnMorale(State.Players[item.Controller], 1))
