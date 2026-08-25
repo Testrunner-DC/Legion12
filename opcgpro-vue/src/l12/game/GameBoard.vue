@@ -44,13 +44,19 @@ const paymentResourceIds = ref<string[]>([])
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
 const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | null>(null)
+const diceReveal = ref<{ sequence: number; values: number[]; animatedValues: number[]; text: string; settled: boolean } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
+const lastDiceSequence = ref(0)
 const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string }> = []
+const diceRevealQueue: Array<{ sequence: number; values: number[]; text: string }> = []
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
+let diceRollTimer: ReturnType<typeof setInterval> | null = null
+let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
+let diceHideTimer: ReturnType<typeof setTimeout> | null = null
 const controlledPlayerIndex = computed(() => {
   if (!l12State.gmEnabled) return props.game.you
   const pendingPrompt = props.game.prompts?.[0]
@@ -248,6 +254,35 @@ function showNextPublicReveal() {
     showNextPublicReveal()
   }, 3000)
 }
+function diceValuesFromEvent(event: ActionEvent) {
+  const result = event.text.match(/结果为\s*([1-6])/)?.[1]
+  if (result) return [Number(result)]
+  const rollText = event.text.split('掷骰：')[1] ?? ''
+  return [...rollText.matchAll(/(?:^|\s)([1-6])(?=，|,|。|$)/g)].map(match => Number(match[1])).slice(-2)
+}
+function showNextDiceReveal() {
+  if (diceReveal.value || !diceRevealQueue.length) return
+  const next = diceRevealQueue.shift()
+  if (!next) return
+  const values = next.values.length ? next.values : [1]
+  diceReveal.value = { ...next, values, animatedValues: values.map(() => 1 + Math.floor(Math.random() * 6)), settled: false }
+  diceRollTimer = setInterval(() => {
+    if (diceReveal.value) diceReveal.value.animatedValues = values.map(() => 1 + Math.floor(Math.random() * 6))
+  }, 90)
+  diceSettleTimer = setTimeout(() => {
+    if (diceRollTimer) clearInterval(diceRollTimer)
+    diceRollTimer = null
+    if (diceReveal.value) {
+      diceReveal.value.animatedValues = [...values]
+      diceReveal.value.settled = true
+    }
+  }, 900)
+  diceHideTimer = setTimeout(() => {
+    diceReveal.value = null
+    diceHideTimer = null
+    showNextDiceReveal()
+  }, 2200)
+}
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
@@ -265,6 +300,16 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   }
   showNextPublicReveal()
 })
+watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
+  const fresh = (props.game.recentEvents ?? [])
+    .filter(event => event.type === 'dice' && event.sequence > lastDiceSequence.value)
+    .sort((left, right) => left.sequence - right.sequence)
+  for (const event of fresh) {
+    diceRevealQueue.push({ sequence: event.sequence, values: diceValuesFromEvent(event), text: event.text })
+    lastDiceSequence.value = Math.max(lastDiceSequence.value, event.sequence)
+  }
+  showNextDiceReveal()
+})
 const hiddenLogTypes = new Set([
   'phase', 'phase-detail', 'draw-skipped', 'prompt', 'prompt-resolved', 'priority-pass',
   'stack-push', 'stack-deferred', 'stack-open', 'stack-resolve', 'match-created',
@@ -279,6 +324,7 @@ const eventLabels: Record<string, string> = {
   'effect-negated': '无效', 'initiative-choice': '先后攻', mulligan: '调度', cost: '费用',
   disaster: '天灾', 'disaster-active': '天灾', 'disaster-value': '天灾', damage: '伤害',
   'disaster-reveal': '天灾',
+  dice: '掷骰',
   heal: '恢复', leave: '离场', put: '登场', search: '检索', reveal: '展示', return: '返回',
   discard: '弃置', reorder: '排序', 'game-over': '胜负', 'extra-turn': '追加回合',
 }
@@ -324,6 +370,7 @@ function updateScale() {
 onMounted(() => {
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
+  lastDiceSequence.value = lastHiddenRevealSequence.value
   updateScale()
   window.addEventListener('resize', updateScale)
 })
@@ -331,6 +378,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateScale)
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
+  if (diceRollTimer) clearInterval(diceRollTimer)
+  if (diceSettleTimer) clearTimeout(diceSettleTimer)
+  if (diceHideTimer) clearTimeout(diceHideTimer)
 })
 
 function command(type: string, extra: Record<string, unknown> = {}) {
@@ -698,6 +748,14 @@ function statusTexts(card: Card) {
                   <strong>{{ publicReveal.text }}</strong>
                 </div>
               </Transition>
+              <Transition name="dice-reveal">
+                <div v-if="diceReveal" :key="diceReveal.sequence" class="dice-reveal-animation" :class="{ settled: diceReveal.settled }" data-ui-contract="dice-event-animation">
+                  <div class="dice-reveal-values">
+                    <b v-for="(value, index) in diceReveal.animatedValues" :key="index">{{ value }}</b>
+                  </div>
+                  <strong>{{ diceReveal.text }}</strong>
+                </div>
+              </Transition>
             </Teleport>
             <div v-if="mode === 'attack' && selectedId && !combat" class="board-mode-hint">请选择进攻对象</div>
             <div v-if="combat" class="combat-presentation">
@@ -844,4 +902,5 @@ function statusTexts(card: Card) {
 .session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:44px;min-width:44px;height:44px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:center 18%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:hidden!important;transform-origin:left top;pointer-events:none}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
+.dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:44px;line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 </style>
