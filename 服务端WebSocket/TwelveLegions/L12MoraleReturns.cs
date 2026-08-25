@@ -157,8 +157,7 @@ public sealed partial class L12GameEngine
                 if (source is not null)
                 {
                     source.Troops += 1000;
-                    source.HasStrongAttack = true;
-                    if (State.PendingDefense is not null) State.PendingDefense.MasterDamage += 1;
+                    GrantStrongAttack(source);
                 }
                 FinishStackItem(item);
                 break;

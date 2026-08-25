@@ -227,7 +227,7 @@ public sealed partial class L12GameEngine
             case "S01-0301":
                 CreatePrompt(item.Controller, "optional", "贝奥武夫：是否令我方主宰受到1点伤害，自身兵力+2000？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "beowulf-buff" }); return true;
-            case "S01-0302": if (player.Hp <= 6) card.HasStrongAttack = true; FinishStackItem(item); return true;
+            case "S01-0302": if (player.Hp <= 6) GrantStrongAttack(card); FinishStackItem(item); return true;
             case "S01-0306":
             {
                 var choices = player.Graveyard.Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");
@@ -422,7 +422,7 @@ public sealed partial class L12GameEngine
             }
             case "canopic-one":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) { target.Troops += 2000; target.HasStrongAttack = true; }
+                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) { target.Troops += 2000; GrantStrongAttack(target); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             }
             case "canopic-four":
@@ -455,7 +455,7 @@ public sealed partial class L12GameEngine
                     if (target is not null)
                         RemoveFromField(player, target, true, "被美尼斯弃置", leaveKind: L12FieldLeaveKind.Discard);
                     source.Troops += 2000;
-                    source.HasStrongAttack = true;
+                    GrantStrongAttack(source);
                 }
                 FinishStackItem(item); return true;
             case "saladin-move": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["saladin-unit"] = chosen[0]; CreatePrompt(item.Controller, "slot", "选择陵墓守卫位移后的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "saladin-slot" }); } return true;
@@ -468,7 +468,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip" && source is not null)
                 {
                     var selected = player.Graveyard.FirstOrDefault(card => card.InstanceId == chosen[0]);
-                    if (selected is not null) { MoveGraveToLibraryBottom(player, [selected]); source.HasStrongAttack = true; }
+                    if (selected is not null) { MoveGraveToLibraryBottom(player, [selected]); GrantStrongAttack(source); }
                 }
                 FinishStackItem(item); return true;
             case "gustav-attack-choice":

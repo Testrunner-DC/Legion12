@@ -6,6 +6,21 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private void GrantStrongAttack(L12CardInstance card)
+    {
+        var alreadyAppliedToCurrentAttack = card.HasStrongAttack
+            || card.AttachedCards.Any(attached => attached.CardId == "S02-06S2");
+        card.HasStrongAttack = true;
+
+        var pending = State.PendingDefense;
+        if (!alreadyAppliedToCurrentAttack
+            && pending is not null
+            && pending.AttackerInstanceId == card.InstanceId
+            && pending.Target.Type == "master")
+        {
+            pending.MasterDamage += 1;
+        }
+    }
     private readonly L12Catalog _catalog;
     private readonly Random _random;
     private readonly bool _autoPassEmptyResponses;

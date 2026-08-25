@@ -189,7 +189,7 @@ public sealed partial class L12GameEngine
                 var legion = FindOnField(player, item.Data["target"], out _, out _);
                 if (legion is not null)
                 {
-                    if (item.Data["buff"] == "buff:strong") legion.HasStrongAttack = true;
+                    if (item.Data["buff"] == "buff:strong") GrantStrongAttack(legion);
                     else legion.HasShock = true;
                     player.UsedAbilities.Add($"s2-artemis-buff:{legion.InstanceId}:{State.TurnSerial}");
                 }

@@ -645,7 +645,7 @@ public sealed partial class L12GameEngine
         }
         if (card.CardId == "S02-0501")
         {
-            card.HasStrongAttack = true;
+            GrantStrongAttack(card);
             AddEvent("effect", item.Controller, $"{card.Name}本回合获得强攻", card);
             FinishStackItem(item);
             return true;

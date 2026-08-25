@@ -371,7 +371,7 @@ public sealed partial class L12GameEngine
             case "kusanagiStrong":
             {
                 var target = FindOnField(player, item.Data["target"], out _, out _);
-                if (target is not null) target.HasStrongAttack = true;
+                if (target is not null) GrantStrongAttack(target);
                 FinishStackItem(item); return;
             }
             case "factionAddActive":

@@ -179,7 +179,7 @@ public sealed partial class L12GameEngine
             case "s2-bors-strong":
                 if (source is not null)
                 {
-                    source.HasStrongAttack = true;
+                    GrantStrongAttack(source);
                     AddEvent("effect", item.Controller, $"〈{source.Name}〉获得强攻", source);
                 }
                 FinishStackItem(item); break;

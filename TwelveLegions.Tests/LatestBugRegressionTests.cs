@@ -190,6 +190,32 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void StrongAttackGrantedDuringAttackUpdatesTheCurrentMasterDamageSnapshot()
+    {
+        var game = Create(6497);
+        var player = game.State.Players[0];
+        var olaf = Card("S01-0306", "olaf-current-attack");
+        var graveCard = Card("S01-0001", "olaf-grave-cost");
+        olaf.SummonRound = 0;
+        player.Field[0][0] = olaf;
+        player.Graveyard.Clear();
+        player.Graveyard.Add(graveCard);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", olaf.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var effect = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "olaf-strong");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: effect.PromptId,
+            CardInstanceIds: [graveCard.InstanceId])).Accepted);
+
+        Assert.True(olaf.HasStrongAttack);
+        Assert.Equal(2, game.State.PendingDefense?.MasterDamage);
+    }
+
+    [Fact]
     public void ForgedOrdersTargetsTheOpponentDestinationInsteadOfTheControllersMatchingSlot()
     {
         var game = Create(6421);
