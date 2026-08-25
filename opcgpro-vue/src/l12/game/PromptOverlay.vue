@@ -94,7 +94,12 @@ function sendAction(command: Record<string, unknown>, actingPlayerIndex = prompt
 const choiceLabels: Record<string, string> = {
   first: '选择先攻', second: '选择后攻', yes: '是', no: '否', agree: '同意', refuse: '不同意',
   pass: '不响应', skip: '不发动', top: '牌库顶部', bottom: '牌库底部', recruit: '活跃登场',
-  confirm: '确认信息',
+  confirm: '确认信息', cancel: '取消', discard: '弃置', suppress: '使其失去效果',
+  front: '前排', back: '后排', single: '选择1张', all: '全部', field: '战场', hand: '手牌',
+  play: '打出', draw: '抽取1张牌', heal: '恢复1点生命', normal: '普通登场', extra: '支付额外费用',
+  rune: '获得1枚符文', trial: '试炼进度+1', 'row-cost': '前后位移无需消耗费用',
+  'front-attack': '本回合可进攻对方军团', 'free-move': '本回合下一次前后位移无需消耗费用',
+  promotion: '晋升登场',
   'free-tactic': '主动战术无需消耗费用', 'back-master': '后排远程军团可进攻主宰',
 }
 
@@ -143,7 +148,9 @@ const disasterHistory = computed(() => [
 ])
 function cardFor(id: string) { return allCards().find(card => card.instanceId === id) }
 function label(id: string) {
-  const base = choiceLabels[id] ?? prompt.value?.data?.[id] ?? cardFor(id)?.name ?? id.replace(':', ' 排第 ')
+  // 服务端携带的文本是当前卡效的权威描述；通用协议标签只作为兜底。
+  // 例如〈杜阿特之门〉的 kill/recover 必须显示完整效果，而不是内部 choice id。
+  const base = prompt.value?.data?.[id] ?? choiceLabels[id] ?? cardFor(id)?.name ?? id.replace(':', ' 排第 ')
   const zone = prompt.value?.data?.[`${id}:zone`]
   return zone ? `${base} · ${zone}` : base
 }

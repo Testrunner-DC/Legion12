@@ -56,6 +56,8 @@ const contracts = [
   [board.includes('class="event-message"') && board.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('z-index:2147483000') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'reveal'") && board.includes('}, 3000)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示卡与触发式效果必须在全局最上层播放三秒无蒙版非阻塞动画，不得使用确认弹框'],
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list'), '效果模式选项必须使用纵向宽按钮'],
+  [prompt.includes('prompt.value?.data?.[id] ?? choiceLabels[id]') && prompt.includes("front: '前排'") && prompt.includes("trial: '试炼进度+1'"), '效果选项必须优先显示服务端效果原文，并为通用协议选项提供中文兜底'],
+  [playerMat.includes('entry.enabled === false || entry.triggerOnly') && playerMat.includes('.faction-effect-actions button:disabled'), '不可发动与仅触发时发动的效果必须保留可查看文本、灰置且不可点击'],
   [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
   [!deckEditor.includes('STARTER COPY') && !deckEditor.includes('importPreset'), '牌库编辑器不得重新引入 Starter Copy 区块'],
   [specialAssets.includes('masterProfileUrl') && prompt.includes('masterProfileUrl(player.master.masterId'), '先后手掷骰必须使用官方主宰头像资源'],
