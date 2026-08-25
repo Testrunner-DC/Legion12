@@ -336,7 +336,7 @@ public sealed partial class L12GameEngine
             var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId);
             if (card is null) continue;
             MoveHandToGrave(player, card.InstanceId, causedByEffect: true);
-            Draw(player, 1);
+            Draw(player, 1, logEffectDraw: false);
             AddEvent("effect", owner, $"{player.Name} 因〈神之天平〉抽取 1 张牌", card);
         }
         FinishStackItem(item);

@@ -48,7 +48,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "agree")
                 {
                     for (var index = 0; index < 2; index++)
-                        if (!Draw(State.Players[index], 1)) SetWinner(1 - index, "议和谈判抽牌时牌库为空");
+                        if (!Draw(State.Players[index], 1, logEffectDraw: false)) SetWinner(1 - index, "议和谈判抽牌时牌库为空");
                     AddEvent("effect", prompt.PlayerIndex, "双方同意议和谈判并各抽取 1 张牌", source is null ? [] : [source]);
                 }
                 else AddEvent("effect", prompt.PlayerIndex, "对方不同意议和谈判，双方不额外抽牌");

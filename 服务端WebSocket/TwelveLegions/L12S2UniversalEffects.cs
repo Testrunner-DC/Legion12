@@ -425,7 +425,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (player.Hand.Count <= 4)
         {
-            if (!Draw(player, 1)) SetWinner(1 - item.Controller, "〈防御部署〉抽牌时牌库为空");
+            if (!Draw(player, 1, logEffectDraw: false)) SetWinner(1 - item.Controller, "〈防御部署〉抽牌时牌库为空");
             else AddEvent("draw", item.Controller, "〈防御部署〉因手牌不高于4张抽取1张牌", source is null ? [] : [source]);
         }
         FinishStackItem(item);

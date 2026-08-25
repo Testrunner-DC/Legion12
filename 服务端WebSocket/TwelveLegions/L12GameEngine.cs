@@ -765,13 +765,22 @@ public sealed partial class L12GameEngine
         && State.PendingPrompts.Count == 0
         && State.EffectStack.Count == 0;
 
-    private bool Draw(L12PlayerState player, int count)
+    private bool Draw(L12PlayerState player, int count, bool logEffectDraw = true)
     {
         var result = L12LibraryOps.Draw(player, count);
         if (!result.Success) return false;
-        if (State.IsResolvingStack || State.EffectStack.Count > 0)
+        if (State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
+        {
+            if (logEffectDraw && result.Cards.Count > 0)
+            {
+                var source = FindSource(origin);
+                AddEvent("draw", player.PlayerIndex,
+                    $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
+                    source is null ? [] : [source]);
+            }
             foreach (var card in result.Cards)
                 NotifyCardAddedToHandByEffect(player, card, "library", $"{player.Name}因效果将{card.Name}加入手牌");
+        }
         return true;
     }
 

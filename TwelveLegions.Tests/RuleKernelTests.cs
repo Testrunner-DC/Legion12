@@ -278,6 +278,10 @@ public sealed class RuleKernelTests
         Assert.Empty(player.Morale);
         Assert.Contains(xishi, player.Graveyard);
         Assert.Equal(handBefore + 1, player.Hand.Count);
+        var drawEvent = Assert.Single(game.State.Events, entry => entry.Type == "draw");
+        Assert.Contains("〈西施〉", drawEvent.Text);
+        Assert.Contains("抽取 1 张牌", drawEvent.Text);
+        Assert.DoesNotContain(player.Hand[^1].Name, drawEvent.Text);
     }
 
     [Fact]
