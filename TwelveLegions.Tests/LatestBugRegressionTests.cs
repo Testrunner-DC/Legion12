@@ -190,6 +190,36 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void ImhotepEnterEffectOffersEveryLegalSixCostSunCityLegionInGraveyard()
+    {
+        var game = Create(6414);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var imhotep = Card("S02-0204", "imhotep-enter-source");
+        var paladin = Card("S02-0202", "imhotep-grave-paladin");
+        player.Hand.Clear();
+        player.Hand.Add(imhotep);
+        player.Graveyard.Add(paladin);
+        while (opponent.Hand.Count < 2)
+            opponent.Hand.Add(Card("S01-0001", $"imhotep-opponent-hand-{opponent.Hand.Count}"));
+        AddReadyMorale(player, 3);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", imhotep.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("optional-card", prompt.Kind);
+        Assert.Contains(paladin.InstanceId, prompt.ValidChoices);
+        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [paladin.InstanceId])).Accepted);
+        Assert.Contains(paladin, player.Hand);
+        Assert.DoesNotContain(paladin, player.Graveyard);
+    }
+
+    [Fact]
     public void StrongAttackGrantedDuringAttackUpdatesTheCurrentMasterDamageSnapshot()
     {
         var game = Create(6497);
