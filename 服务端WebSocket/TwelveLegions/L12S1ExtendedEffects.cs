@@ -1034,7 +1034,11 @@ public sealed partial class L12GameEngine
             case "S01-0320":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
                     AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "复仇血鹰");
-                var asgard = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).Take(2).ToArray();
+                var asgard = player.Graveyard
+                    .Where(card => card.InstanceId != item.SourceInstanceId
+                        && CanEnterHandOrLibrary(card)
+                        && L12StructuredCardRules.HasFaction(player, card, "asgard"))
+                    .Select(card => card.InstanceId).ToArray();
                 if (asgard.Length < 2) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "cards", "复仇血鹰：选择墓地2张【阿斯加德】卡牌", asgard, 2, 2, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "blood-eagle-pick" }); return;

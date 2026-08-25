@@ -36,7 +36,17 @@ public static partial class L12SpecialDeckRules
         => HasRule(card.Effect, "游戏开始时置入墓地");
 
     public static bool CannotEnterHandOrLibrary(L12CardInstance card)
-        => HasRule(card.EffectText, "不能进入手牌和牌库");
+        => HasRule(card.EffectText, "不能进入手牌和牌库")
+           || IsDerivedSpecialCard(card);
+
+    /// <summary>
+    /// 由主宰或其他规则在主牌库以外产生的衍生卡，不得被通用的回手、回牌库、
+    /// 检索等效果带入普通区域。专属效果仍可直接在其规定区域之间移动它们。
+    /// </summary>
+    public static bool IsDerivedSpecialCard(L12CardInstance card)
+        => card.CardType == "token"
+           || card.CardId == "S02-01S1"
+           || card.Traits.Any(trait => trait.EndsWith("专属", StringComparison.Ordinal));
 
     public static bool AlwaysReturnsToOwnerGraveyard(L12CardInstance card)
         => HasRule(card.EffectText, "以任何形式离场")

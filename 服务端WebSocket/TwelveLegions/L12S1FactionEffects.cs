@@ -170,7 +170,10 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional", "夺命诗人埃吉尔：是否令主宰受到1点伤害并弃置牌库顶部2张牌？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "egil-pay" }); return true;
             case "S01-0317":
-                Mill(player, 2, "神剑格拉墨"); PromptEnemyByTroops(item, "gram-bottom", "神剑格拉墨：选择对方1张兵力不高于3000的军团返回牌库底部", 3000, true); return true;
+                Mill(player, 2, "神剑格拉墨");
+                PromptEnemyByTroops(item, "gram-bottom", "神剑格拉墨：选择对方1张兵力不高于3000的军团返回牌库底部",
+                    3000, true, predicate: card => !L12SpecialDeckRules.IsDerivedSpecialCard(card));
+                return true;
             default: return false;
         }
     }
@@ -436,7 +439,9 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
                 DamageMaster(item.Controller, 1, "夺命诗人埃吉尔效果"); Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
             case "egil-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.Troops -= 2000; FinishStackItem(item); return true; }
-            case "gram-bottom": if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]); FinishStackItem(item); return true;
+            case "gram-bottom":
+                if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
+                FinishStackItem(item); return true;
             case "duat-mode":
                 if (chosen[0] == "kill") PromptEnemyByTroops(item, "duat-kill", "杜阿特之门：击杀对方1张兵力不高于5000的军团", 5000, false);
                 else RecoverSunCard(item, "S01-0221"); return true;
@@ -623,7 +628,9 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivation(playerIndex, source, ability, choices,
                     "孟婆：选择对方最多1张军团，本回合失去「阵亡时」效果", min: 0, max: 1);
             case "sunBottomEnemy":
-                choices = PublicLegions(enemy).Where(card => card.Troops <= 4000).Select(card => card.InstanceId).ToArray();
+                choices = PublicLegions(enemy).Where(card => card.Troops <= 4000
+                        && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
+                    .Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "众神之乡：选择返回牌库底部的军团");
             case "ankhReady":
                 if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
@@ -682,7 +689,9 @@ public sealed partial class L12GameEngine
                 if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
             case "mengpoMorale" when source.CardId == "S01-01M2": if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || player.Hand.Count == 0) return CommandResult.Reject("士气需少于对方，且需弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
-                if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target, card => card.Troops <= 4000) is null) return CommandResult.Reject("目标不再合法");
+                if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target,
+                        card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is null)
+                    return CommandResult.Reject("目标不再合法");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "ankhReady" when source.CardId == "S01-0215":
                 if (source.Tapped) return CommandResult.Reject("安卡神杯必须为活跃状态");
@@ -888,10 +897,13 @@ public sealed partial class L12GameEngine
         PromptEnemyByTroops(item, "thutmose-kill", "选择对方1张兵力不高于1000的军团并击杀", 1000, true);
     }
 
-    private void PromptEnemyByTroops(L12StackItem item, string action, string text, int maxTroops, bool optional, int? row = null)
+    private void PromptEnemyByTroops(L12StackItem item, string action, string text, int maxTroops, bool optional,
+        int? row = null, Func<L12CardInstance, bool>? predicate = null)
     {
         var enemy = State.Players[1 - item.Controller];
-        var choices = PublicLegions(enemy).Where(target => target.Troops <= maxTroops && (row is null || FindOnField(enemy, target.InstanceId, out var targetRow, out _) is not null && targetRow == row))
+        var choices = PublicLegions(enemy).Where(target => target.Troops <= maxTroops
+                && (predicate?.Invoke(target) ?? true)
+                && (row is null || FindOnField(enemy, target.InstanceId, out var targetRow, out _) is not null && targetRow == row))
             .Select(target => target.InstanceId).ToList();
         if (optional) choices.Add("skip");
         if (choices.Count == 0) { FinishStackItem(item); return; }
@@ -1138,7 +1150,8 @@ public sealed partial class L12GameEngine
     {
         var enemy = State.Players[1 - controller];
         var card = FindOnField(enemy, instanceId, out _, out _);
-        if (card is not null) MoveFieldCardToZone(enemy, card, "library-bottom", "返回牌库底部");
+        if (card is not null && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
+            MoveFieldCardToZone(enemy, card, "library-bottom", "返回牌库底部");
     }
 
     private void PromptFirstEmptySlot(L12StackItem item, string action, string text)

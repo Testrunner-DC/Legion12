@@ -42,6 +42,7 @@ public sealed class ExtendedCardEffectsTests
             Cost = definition.Cost ?? 0, EffectText = definition.Effect,
             BaseTroops = definition.Troops ?? 0, Troops = definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
+            Traits = [.. definition.Traits], Profession = definition.Profession,
         };
     }
 
@@ -561,6 +562,68 @@ public sealed class ExtendedCardEffectsTests
         Assert.DoesNotContain(solar.Library, card => card.InstanceId == guard.InstanceId);
         Assert.Contains(solar.Graveyard, card => card.InstanceId == guard.InstanceId);
         Assert.Contains(game.State.Events, item => item.Type == "replacement" && item.Cards.Any(card => card.InstanceId == guard.InstanceId));
+    }
+
+    [Fact]
+    public void GenericReturnToLibraryEffectsCannotChooseDerivedSpecialCards()
+    {
+        var game = Create(3, 2);
+        var asgard = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        ReadyMain(game, 0);
+        var xiaotian = Card("S02-01S1", "test-derived-xiaotian");
+        var legalTarget = Card("S01-0003", "test-legal-target");
+        opponent.Field[0][0] = xiaotian;
+        opponent.Field[0][1] = legalTarget;
+        var gram = TakeCard(asgard, "S01-0317");
+
+        Assert.True(game.Handle(0, new L12Command("playCard", gram.InstanceId)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("gram-bottom", prompt.Data["action"]);
+        Assert.DoesNotContain(xiaotian.InstanceId, prompt.ValidChoices);
+        Assert.Contains(legalTarget.InstanceId, prompt.ValidChoices);
+    }
+
+    [Fact]
+    public void BloodEagleOffersEveryOtherLegalAsgardCardFromTheGraveyard()
+    {
+        var game = Create(3, 2);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        game.State.Round = 2;
+        var bloodEagle = Card("S01-0320", "test-blood-eagle-source");
+        bloodEagle.Hidden = true;
+        bloodEagle.SetRound = 0;
+        player.Field[1][0] = bloodEagle;
+        var fallen = Card("S01-0309", "test-blood-eagle-fallen");
+        player.Field[0][0] = fallen;
+        var graveA = Card("S01-0311", "test-blood-eagle-grave-a");
+        var graveB = Card("S01-0312", "test-blood-eagle-grave-b");
+        var graveC = Card("S01-0313", "test-blood-eagle-grave-c");
+        player.Graveyard.AddRange([graveA, graveB, graveC]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: fallen.InstanceId)).Accepted);
+        PassResponses(game);
+
+        var triggerOrder = game.State.PendingPrompts.FirstOrDefault(candidate => candidate.Kind == "trigger-order");
+        if (triggerOrder is not null)
+        {
+            var ordered = triggerOrder.ValidChoices
+                .OrderByDescending(id => triggerOrder.Data.GetValueOrDefault($"sourceInstance:{id}") == bloodEagle.InstanceId)
+                .ToList();
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: triggerOrder.PromptId,
+                CardInstanceIds: ordered)).Accepted);
+            PassResponses(game);
+        }
+
+        var prompt = Assert.Single(game.State.PendingPrompts,
+            candidate => candidate.Data.GetValueOrDefault("action") == "blood-eagle-pick");
+        Assert.DoesNotContain(bloodEagle.InstanceId, prompt.ValidChoices);
+        Assert.Contains(graveA.InstanceId, prompt.ValidChoices);
+        Assert.Contains(graveB.InstanceId, prompt.ValidChoices);
+        Assert.Contains(graveC.InstanceId, prompt.ValidChoices);
     }
 
     [Theory]
