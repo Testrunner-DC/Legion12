@@ -933,6 +933,46 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void ThorHammerGraveyardAbilityPredeclaresOrderedCostAndSlotBeforeReviving()
+    {
+        var game = CreateWithFirstMaster("S02-03M1", 63021);
+        var player = game.State.Players[0];
+        player.Graveyard.Clear();
+        var hammer = Card("S02-0301", "thor-hammer-grave");
+        var first = Card("S02-0001", "thor-hammer-cost-1");
+        var second = Card("S02-0002", "thor-hammer-cost-2");
+        var third = Card("S02-0003", "thor-hammer-cost-3");
+        player.Graveyard.AddRange([hammer, first, second, third]);
+        game.State.Phase = L12Phase.Main;
+
+        var snapshotJson = JsonSerializer.Serialize(game.SnapshotFor(0));
+        Assert.Contains("thorHammerRevive", snapshotJson);
+
+        var begin = game.Handle(0, new L12Command("activateAbility", hammer.InstanceId,
+            Ability: "thorHammerRevive"));
+        Assert.True(begin.Accepted, begin.Error);
+        var costPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("grave-card", costPrompt.Kind);
+        Assert.DoesNotContain(hammer.InstanceId, costPrompt.ValidChoices);
+        Assert.Empty(game.State.EffectStack);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: costPrompt.PromptId,
+            CardInstanceIds: [second.InstanceId, first.InstanceId, third.InstanceId])).Accepted);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", slotPrompt.Kind);
+        var slot = slotPrompt.ValidChoices[0];
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: slot)).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(hammer, player.Graveyard);
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == hammer.InstanceId && !card.Tapped);
+        Assert.Equal(new[] { second.InstanceId, first.InstanceId, third.InstanceId },
+            player.Library.TakeLast(3).Select(card => card.InstanceId).ToArray());
+        Assert.Equal(game.State.TurnSerial, hammer.CanAttackMasterOnSummonUntilTurn);
+    }
+
+    [Fact]
     public void AsgardEntryHealsMaster()
     {
         var game = Create(6302);
@@ -2670,6 +2710,8 @@ public sealed class S2FactionRegressionTests
         Assert.Null(owner.Relic);
         Assert.Equal(6, owner.Hand.Count);
         Assert.Contains(owner.Hand, card => card.CardId == "S02-0301");
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.CardId == "S02-0301"));
         Assert.Equal(L12Phase.Mulligan, game.State.Phase);
     }
 
