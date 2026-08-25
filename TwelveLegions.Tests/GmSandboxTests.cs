@@ -215,6 +215,38 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void TombConstructDeathCreatesOneSharedDeathOrLeaveAbility()
+    {
+        var game = new L12GameEngine(Catalog, "gm-tomb-construct", "GMTOMB", 12061,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S01-0204", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var construct = game.State.Players[0].Field[0][0]!;
+        var guardDefinition = Catalog.Cards["S01-0212"];
+        construct.AttachedCards.Add(new L12CardInstance
+        {
+            InstanceId = "tomb-construct-guard",
+            CardId = guardDefinition.Id,
+            Name = guardDefinition.NameZh,
+            CardType = guardDefinition.CardType,
+            Faction = guardDefinition.Faction,
+            ImageUrl = guardDefinition.ImageUrl,
+            Cost = guardDefinition.Cost ?? 0,
+            EffectText = guardDefinition.Effect,
+            BaseTroops = guardDefinition.Troops ?? 0,
+            Troops = guardDefinition.Troops ?? 0,
+        });
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: construct.InstanceId)).Accepted);
+
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "trigger-batch-order");
+        Assert.Single(game.State.Events,
+            entry => entry.Type == "effect-trigger" && entry.Cards.Any(card => card.CardId == "S01-0204"));
+    }
+
+    [Fact]
     public void TargetedDeathTriggerDeclaresTargetAndPaysCostBeforeEnteringStack()
     {
         var game = new L12GameEngine(Catalog, "trigger-declaration", "TRIGGERDECL", 1207,

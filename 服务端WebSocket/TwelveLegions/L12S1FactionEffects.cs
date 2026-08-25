@@ -16,7 +16,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S1FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S01-0201", "S01-0204", "S01-0206", "S01-0207", "S01-0209", "S01-0210",
+        "S01-0201", "S01-0206", "S01-0207", "S01-0209", "S01-0210",
         "S01-0301", "S01-0302", "S01-0303", "S01-0304", "S01-0305", "S01-0306", "S01-0307", "S01-0308", "S01-0309", "S01-0313",
     };
 
