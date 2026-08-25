@@ -1071,6 +1071,7 @@
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/16931538212790103288/C91B58622F582BF974F4BA7CD0DB56E032554BE1/",
     "cost": 6,
     "troops": 5000,
+    "disasterLevel": 2,
     "effect": "可对我方主宰造成1点伤害：此军团登场费用-1。登场时 若对方主宰血量高于我方，可对其造成1点伤害。阵亡时 击杀对方1张兵力不高于2000的军团。",
     "traits": [
       "阿斯加德"
@@ -1087,6 +1088,7 @@
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/13818099488007629208/20B5A9077E048E09291B23FB1A261E5479F87FED/",
     "cost": 5,
     "troops": 5000,
+    "disasterLevel": 1,
     "effect": "若我方主宰血量不高于6，此军团登场费用-1。阵亡时 可对我方主宰造成1点伤害，并将墓地4张卡牌自选顺序返回我方牌库底部：此军团可重新休整登场。",
     "traits": [
       "阿斯加德"
@@ -1103,6 +1105,7 @@
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/13501145447577248414/E921C517686A0BAF93010130AD9A15BCCA96930E/",
     "cost": 5,
     "troops": 5000,
+    "disasterLevel": 1,
     "effect": "若我方主宰血量不高于6，此军团登场费用-1。进攻时 可将墓地1张卡牌置入我方牌库底部：此军团本回合获得强攻。（进攻对主宰造成额外1点伤害）阵亡时 可抽取2张牌，并弃置1张手牌。",
     "traits": [
       "阿斯加德"
@@ -1119,6 +1122,7 @@
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/16875901029346064608/085456AC07AB5D609CD112669BF8D3255195EC82/",
     "cost": 5,
     "troops": 4000,
+    "disasterLevel": 1,
     "effect": "我方回合 可弃置此军团：对我方主宰造成1点伤害，将手牌中1张天灾等级2的军团活跃登场。阵亡时 将墓地1张费用不高于3的【阿斯加德】卡牌加入手牌。",
     "traits": [
       "阿斯加德"
@@ -1135,6 +1139,7 @@
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/12104770743528047679/674DBEBAF4FC6D60D5393BD87AE33F21342CFFEF/",
     "cost": 5,
     "troops": 4000,
+    "disasterLevel": 1,
     "effect": "可对我方主宰造成1点伤害：此军团登场费用-1。此军团对对方主宰造成伤害时：对方弃置1张手牌。阵亡时 将墓地1张费用不高于3的【阿斯加德】军团活跃登场。",
     "traits": [
       "阿斯加德"
@@ -1451,6 +1456,7 @@
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/14523446411526992463/B5FB7A663D2283B10E3DB42A21105916AF527D48/",
     "cost": 5,
     "troops": 5000,
+    "disasterLevel": 1,
     "effect": "登场时 击杀对方1张费用不高于2和1张费用不高于1的军团。进攻时 可消耗1士气：击杀对方1张费用不高于1的军团。",
     "traits": [
       "高天原"
