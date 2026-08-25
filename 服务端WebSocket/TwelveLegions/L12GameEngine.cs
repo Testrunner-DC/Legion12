@@ -158,7 +158,7 @@ public sealed partial class L12GameEngine
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
-                field = SnapshotField(player, revealCounters: true), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
+                field = SnapshotField(player, revealCounters: true), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
                 player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
             : new
@@ -169,7 +169,7 @@ public sealed partial class L12GameEngine
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, player.Morale,
-                field = SnapshotField(player, revealCounters: false), player.Relic, player.ExtraRelics, player.Resolving, player.Graveyard, graveyardCount = player.Graveyard.Count,
+                field = SnapshotField(player, revealCounters: false), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
                 removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
@@ -427,12 +427,29 @@ public sealed partial class L12GameEngine
                     || !player.Graveyard.Any(card => card.CardId == "S01-02M2"))
                     return view with { Enabled = false, DisabledReason = "需要完成5种卡诺匹斯圣物且复苏的奥西里斯位于墓地" };
             }
+            if (view.Id == "thorHammerRevive")
+            {
+                if (player.MasterId != "S02-03M1" || !player.Graveyard.Any(card => card.InstanceId == sourceInstanceId))
+                    return view with { Enabled = false, DisabledReason = "仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果" };
+                if (player.Graveyard.Count(card => card.InstanceId != sourceInstanceId && CanEnterHandOrLibrary(card)) < 3)
+                    return view with { Enabled = false, DisabledReason = "墓地中需要另有3张可返回牌库的卡牌" };
+                if (!EmptySlots(player).Any())
+                    return view with { Enabled = false, DisabledReason = "战场没有空位" };
+            }
             var match = System.Text.RegularExpressions.Regex.Match(view.Label, @"消耗\s*(\d+)\s*士气");
             if (match.Success && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)
                 return view with { Enabled = false, DisabledReason = $"需要{cost}张活跃士气" };
             return view;
         }).ToList();
     }
+
+    private L12CardInstance[] SnapshotGraveyard(L12PlayerState player)
+        => player.Graveyard.Select(card =>
+        {
+            var snapshot = card.Clone();
+            snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+            return snapshot;
+        }).ToArray();
 
     private static object?[][] SnapshotField(L12PlayerState player, bool revealCounters)
         => player.Field.Select(row => row.Select(card =>

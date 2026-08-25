@@ -138,7 +138,7 @@ public sealed class L12CardInstance
     public int ImmortalUses { get; set; }
     public int ImmortalUntilTurn { get; set; } = -1;
     public int SuppressDeathUntilTurn { get; set; } = -1;
-    public List<L12AbilityView> Abilities { get; init; } = [];
+    public List<L12AbilityView> Abilities { get; set; } = [];
     public List<L12TimedModifier> TimedModifiers { get; init; } = [];
     public List<L12CardInstance> AttachedCards { get; init; } = [];
 

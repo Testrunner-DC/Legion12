@@ -186,6 +186,8 @@ public sealed partial class L12GameEngine
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == activation.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId)
+            ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId
+                && IsLegalGraveyardActiveAbilitySource(player, card, activation.Ability))
             ?? (activation.SourceCardId == player.MasterId ? CreateActiveMasterSource(player, activation.SourceInstanceId) : null)
             ?? (activation.SourceInstanceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
         if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(prompt.PlayerIndex, id)))

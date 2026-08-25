@@ -11,6 +11,8 @@ public sealed partial class L12GameEngine
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == command.CardInstanceId
+                && IsLegalGraveyardActiveAbilitySource(player, card, ability))
+            ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == command.CardInstanceId
                 && card.CardId == "S01-02M2" && ability == "isisVictory");
         if (source is null && ability == "destroyInfiltrator"
             && FindPublicCard(command.CardInstanceId, out _) is { CardId: "S01-0004" } infiltrator)
@@ -82,6 +84,9 @@ public sealed partial class L12GameEngine
         var result = CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data["ability"], chosen[0]);
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
     }
+
+    private static bool IsLegalGraveyardActiveAbilitySource(L12PlayerState player, L12CardInstance card, string ability)
+        => card.CardId == "S02-0301" && ability == "thorHammerRevive" && player.MasterId == "S02-03M1";
 
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
         bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null,
