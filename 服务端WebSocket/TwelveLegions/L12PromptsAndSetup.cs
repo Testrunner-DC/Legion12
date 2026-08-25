@@ -762,7 +762,10 @@ public sealed partial class L12GameEngine
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
                 && player.Hand.Count > 0)
                 choices.Add(card.InstanceId);
-            if (card.CardId == "S01-0018" && top.Controller != playerIndex && timing.Trigger == "enter")
+            // 〈落穴陷阱〉只响应“军团登场时”。军团与圣物共用 enter 堆叠时点，
+            // 因此不能只判断触发名；否则圣物的【登场时】效果也会错误开放响应。
+            if (card.CardId == "S01-0018" && top.Controller != playerIndex && timing.Trigger == "enter"
+                && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard))
                 choices.Add(card.InstanceId);
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
             if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);

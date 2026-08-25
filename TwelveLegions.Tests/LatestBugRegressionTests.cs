@@ -1019,6 +1019,34 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void PitfallCannotRespondToAnArtifactEnterEffect()
+    {
+        var game = Create(6426);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var cauldron = Card("S02-0104", "pitfall-artifact-source");
+        var trap = Card("S01-0018", "pitfall-artifact-trap");
+        owner.Hand.Clear();
+        owner.Hand.Add(cauldron);
+        AddReadyMorale(owner, cauldron.Cost);
+        trap.Hidden = true;
+        trap.SetRound = 0;
+        opponent.Field[1][0] = trap;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+        Assert.True(game.Handle(0, new L12Command("playCard", cauldron.InstanceId)).Accepted);
+
+        Assert.Same(cauldron, owner.Relic);
+        Assert.Same(trap, opponent.Field[1][0]);
+        Assert.True(trap.Hidden);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(trap.InstanceId));
+        Assert.Contains(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "card-effect" && prompt.StackItemId is not null);
+    }
+
+    [Fact]
     public void WorldRingMakesUniversalCardsUseOwnersFactionForSharedFilters()
     {
         var game = Create(6424);
