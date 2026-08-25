@@ -1838,6 +1838,47 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void PoisonNegatesEveryMoraleReadyEventFromOneAmaterasuEffect()
+    {
+        var game = CreateWithFirstMaster("S01-04M1", 63201);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Hand.Clear();
+        player.Hand.Add(Card("S02-0003", "amaterasu-poison-discard"));
+        player.Hand.Add(Card("S02-0007", "poison-forced-discard"));
+        AddMorale(player, 2);
+        foreach (var morale in player.Morale) morale.Tapped = true;
+        var poison = Card("S02-0018", "amaterasu-poison-counter");
+        poison.Hidden = true;
+        poison.SetRound = 0;
+        opponent.Field[1][0] = poison;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "amaterasuReady"));
+        Assert.True(activation.Accepted, activation.Error);
+        PassResponses(game);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
+            Choice: "amaterasu-poison-discard")).Accepted);
+
+        var poisonResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, poisonResponse.PlayerIndex);
+        Assert.Contains(poison.InstanceId, poisonResponse.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: poisonResponse.PromptId,
+            Choice: poison.InstanceId)).Accepted);
+        PassResponses(game);
+        var forcedDiscard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-poison-discard", forcedDiscard.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: forcedDiscard.PromptId,
+            Choice: forcedDiscard.ValidChoices[0])).Accepted);
+        PassResponses(game);
+
+        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+    }
+
+    [Fact]
     public void MorriganGainsOneRuneOnEnemyDeathAndCanMarkAnOtherworldLegionToReadyAfterItsNextKill()
     {
         var game = CreateWithFirstMaster("S02-06M1", 6321);

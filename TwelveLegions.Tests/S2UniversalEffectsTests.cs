@@ -286,6 +286,55 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    public void SamePlayerCanUseTwoS2CountersAtTheSameOriginalAuthorityTiming()
+    {
+        var game = Create(seed: 6226);
+        var attacker = Instance("S02-0004", "s2-chain-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var first = SetCounter(game, 0, "S02-0015", slot: 0);
+        var second = SetCounter(game, 0, "S02-0015", slot: 1);
+        var blocker = Instance("S02-0004", "s2-chain-blocker");
+        game.State.Players[1].Hand.Add(blocker);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [blocker.InstanceId])).Accepted);
+
+        var firstResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(first.InstanceId, firstResponse.ValidChoices);
+        Assert.Contains(second.InstanceId, firstResponse.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstResponse.PromptId,
+            Choice: first.InstanceId)).Accepted);
+
+        // 对方无合法响应时会被公共响应框架自动让过，优先权直接回到原玩家。
+        var secondResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, secondResponse.PlayerIndex);
+        Assert.Contains(second.InstanceId, secondResponse.ValidChoices);
+    }
+
+    [Fact]
+    public void S2CounterTacticCanBeSetNormallyInABackLineSlot()
+    {
+        var game = Create(seed: 6227);
+        var counter = TakeCard(game, 0, "S02-0017");
+        AddMorale(game.State.Players[0], 2);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("playCard", counter.InstanceId, Row: 1, Slot: 1));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Same(counter, game.State.Players[0].Field[1][1]);
+        Assert.True(counter.Hidden);
+        Assert.DoesNotContain(counter, game.State.Players[0].Hand);
+    }
+
+    [Fact]
     public void RuinedRitualSuppressesADeckSummonedLegionsEnterEffectAndReducesTroops()
     {
         var game = new L12GameEngine(Catalog, "s2-ruin", "S2RUIN", 6221, ["甲", "乙"], [0, 4], skipPreparation: true);
@@ -349,6 +398,13 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: counter.InstanceId)).Accepted);
         var select = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-plunder-return", select.Data["action"]);
+        Assert.All(select.ValidChoices, choice =>
+        {
+            Assert.StartsWith("对方手牌 ", select.Data[choice]);
+            Assert.Equal("/assets/l12/card-back-official.png", select.Data[$"{choice}:image"]);
+            Assert.DoesNotContain(game.State.Players[0].Hand.Select(card => card.Name),
+                name => select.Data[choice].Contains(name, StringComparison.Ordinal));
+        });
         var returnedId = select.ValidChoices[0];
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: select.PromptId, Choice: returnedId)).Accepted);
 

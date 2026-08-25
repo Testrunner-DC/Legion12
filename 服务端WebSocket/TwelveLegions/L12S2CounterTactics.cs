@@ -8,7 +8,7 @@ public sealed partial class L12GameEngine
             return top.Controller != playerIndex
                 && top.Trigger is not ("s2-reaction" or "disaster" or "authority-event");
         var timing = ResponseTimingContext(top);
-        if (timing.Trigger != "authority-event" || top.Controller == playerIndex) return false;
+        if (timing.Trigger != "authority-event" || timing.Controller == playerIndex) return false;
         var eventType = timing.Data.GetValueOrDefault("eventType");
         return cardId switch
         {
@@ -94,7 +94,7 @@ public sealed partial class L12GameEngine
                     "粮草掠夺：选择对方1张手牌返回其牌库顶部，随后我方抽取1张牌");
                 return;
             case "S02-0018":
-                target.Negated = true;
+                NegateEffectReadyBatch(target);
                 if (affected.Hand.Count == 0) { FinishStackItem(item); return; }
                 CreatePrompt(affectedPlayer, "hand-card", "毒药发作：弃置1张手牌",
                     affected.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId, isPrivate: true,
@@ -160,9 +160,28 @@ public sealed partial class L12GameEngine
         var opponent = State.Players[target.Controller];
         if (opponent.Hand.Count == 0) { FinishStackItem(item); return; }
         var data = new Dictionary<string, string> { ["action"] = action, ["targetStackId"] = target.StackItemId };
-        foreach (var card in opponent.Hand) AddPromptCardData(data, card);
+        for (var index = 0; index < opponent.Hand.Count; index++)
+        {
+            var card = opponent.Hand[index];
+            data[card.InstanceId] = $"对方手牌 {index + 1}";
+            data[$"{card.InstanceId}:image"] = "/assets/l12/card-back-official.png";
+        }
         CreatePrompt(item.Controller, "opponent-hand-card", text, opponent.Hand.Select(card => card.InstanceId),
             1, 1, "card-effect", item.StackItemId, isPrivate: true, data: data);
+    }
+
+    private void NegateEffectReadyBatch(L12StackItem target)
+    {
+        target.Negated = true;
+        var originStackId = target.Data.GetValueOrDefault("originStackId");
+        if (string.IsNullOrWhiteSpace(originStackId)) return;
+        foreach (var sibling in State.EffectStack.Concat(State.DeferredEffectStack))
+        {
+            if (sibling.Trigger == "authority-event"
+                && sibling.Data.GetValueOrDefault("eventType") == "effect-ready"
+                && sibling.Data.GetValueOrDefault("originStackId") == originStackId)
+                sibling.Negated = true;
+        }
     }
 
     private bool ContinueS2CounterEffect(L12StackItem item, L12Prompt prompt, List<string> chosen)

@@ -29,6 +29,8 @@ public sealed partial class L12GameEngine
         };
         if (data is not null)
             foreach (var pair in data) authorityEvent.Data[pair.Key] = pair.Value;
+        if (State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
+            authorityEvent.Data["originStackId"] = origin.StackItemId;
         State.AuthorityEvents.Add(authorityEvent);
 
         var item = new L12StackItem

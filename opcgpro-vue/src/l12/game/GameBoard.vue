@@ -77,6 +77,7 @@ const activeMorale = computed(() =>
 const counterIds = new Set([
   'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
   'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
+  'S02-0015', 'S02-0016', 'S02-0017', 'S02-0018',
 ])
 const isCounter = (card?: Card | null) => Boolean(card && (card.cardType === 'counter-tactic' || counterIds.has(card.cardId)))
 const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
