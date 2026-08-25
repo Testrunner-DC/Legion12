@@ -2336,6 +2336,7 @@ public sealed class S2FactionRegressionTests
 
         var xiaotian = Assert.IsType<L12CardInstance>(player.Field[0][1]);
         Assert.Equal("S02-01S1", xiaotian.CardId);
+        Assert.False(xiaotian.HasPrintedCost);
         Assert.False(xiaotian.Tapped);
         Assert.Equal(2000, xiaotian.Troops);
     }

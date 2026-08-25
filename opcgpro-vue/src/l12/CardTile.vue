@@ -21,7 +21,7 @@ const attachedGroups = computed(() => {
 <template>
   <button class="card-tile" :class="[{ selected, tapped: card.tapped, compact, 'horizontal-card': isHorizontalCardType(card.cardType) }, `type-${card.cardType}`]" @click="$emit('select')">
     <img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.name" @error="($event.target as HTMLImageElement).style.display='none'" />
-    <span v-if="!card.hidden" class="card-cost" :class="costState" :title="displayCost === card.cost ? `印刷费用 ${card.cost}` : `当前费用 ${displayCost}；印刷费用 ${card.cost}`">{{ displayCost }}</span>
+    <span v-if="!card.hidden && card.hasPrintedCost !== false" class="card-cost" :class="costState" :title="displayCost === card.cost ? `印刷费用 ${card.cost}` : `当前费用 ${displayCost}；印刷费用 ${card.cost}`">{{ displayCost }}</span>
     <span v-if="!card.hidden" class="card-name">{{ card.name }}</span>
     <span v-if="!card.hidden && (card.cardType === 'legion' || card.cardId === 'S01-0417' && card.troops > 0)" class="card-power"
       :class="{ boosted: card.troops > card.baseTroops, weakened: card.troops < card.baseTroops }"

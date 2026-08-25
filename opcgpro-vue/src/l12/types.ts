@@ -17,6 +17,7 @@ export interface Card {
   imageUrl?: string
   effectText?: string
   cost: number
+  hasPrintedCost?: boolean
   baseTroops: number
   troops: number
   disasterLevel: number

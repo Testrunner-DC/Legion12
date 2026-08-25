@@ -78,6 +78,8 @@ public sealed class L12CardInstance
     public required string Faction { get; init; }
     public string? ImageUrl { get; init; }
     public int Cost { get; init; }
+    /// <summary>卡面是否实际印刷费用；与支付计算使用的数值0分开保存。</summary>
+    public bool HasPrintedCost { get; init; } = true;
     public int CostModifier { get; set; }
     /// <summary>由当前公开场面持续产生的费用修正，与限时/一次性 CostModifier 分层计算。</summary>
     public int ContinuousCostModifier { get; set; }

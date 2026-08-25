@@ -587,6 +587,7 @@ public sealed partial class L12GameEngine
             ImageUrl = card.ImageUrl,
             EffectText = card.Effect,
             Cost = card.Cost ?? 0,
+            HasPrintedCost = card.Cost.HasValue,
             BaseTroops = card.Troops ?? 0,
             Troops = card.Troops ?? 0,
             DisasterLevel = card.DisasterLevel ?? 0,
