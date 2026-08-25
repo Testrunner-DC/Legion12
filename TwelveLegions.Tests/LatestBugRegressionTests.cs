@@ -83,6 +83,33 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void SiegeCatapultExtendedRangeKeepsEnemyBackLineAndMasterTogether()
+    {
+        var game = Create(6415);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var catapult = Card("S01-0003", "siege-catapult");
+        var backTarget = Card("S01-0002", "enemy-back-line");
+        player.Field[1][1] = catapult;
+        enemy.Field[1][2] = backTarget;
+        AddReadyMorale(player, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.False(game.SnapshotFor(0).LegalAttackTargets.ContainsKey(catapult.InstanceId));
+
+        var activation = game.Handle(0, new L12Command("activateAbility", catapult.InstanceId,
+            Ability: "extendedRange"));
+        Assert.True(activation.Accepted, activation.Error);
+        PassResponses(game);
+
+        var after = game.SnapshotFor(0).LegalAttackTargets[catapult.InstanceId];
+        Assert.Contains(backTarget.InstanceId, after);
+        Assert.Contains("master", after);
+    }
+
+    [Fact]
     public void HuntingMomentCannotBePlayedBeforeItsFourCardGraveyardCostIsLegal()
     {
         var game = Create(6414);
