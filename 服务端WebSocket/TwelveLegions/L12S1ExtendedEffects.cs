@@ -955,11 +955,12 @@ public sealed partial class L12GameEngine
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {
         if (top.Controller == playerIndex) return false;
+        var timing = ResponseTimingContext(top);
         return cardId switch
         {
-            "S01-0019" => top.Trigger is "attack" or "enter" or "play" or "active" or "disaster",
-            "S01-0020" or "S01-0120" => top.Trigger == "attack",
-            "S01-0224" => top.Trigger is "play" or "active" && FindSource(top)?.CardType is "tactic" or "artifact",
+            "S01-0019" => timing.Trigger is "attack" or "enter" or "play" or "active" or "disaster",
+            "S01-0020" or "S01-0120" => timing.Trigger == "attack",
+            "S01-0224" => timing.Trigger is "play" or "active" && FindSource(timing)?.CardType is "tactic" or "artifact",
             _ => false,
         };
     }

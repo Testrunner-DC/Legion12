@@ -260,6 +260,32 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    public void BothPlayersCanRespondAtTheOriginalAttackTimingAfterAReactionIsStacked()
+    {
+        var game = Create(seed: 6225);
+        var attacker = Instance("S02-0004", "response-chain-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var firstAmbush = SetCounter(game, 0, "S01-0019");
+        var secondAmbush = SetCounter(game, 1, "S01-0019");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+
+        var defenderResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(secondAmbush.InstanceId, defenderResponse.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: defenderResponse.PromptId,
+            Choice: secondAmbush.InstanceId)).Accepted);
+
+        var attackerResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, attackerResponse.PlayerIndex);
+        Assert.Contains(firstAmbush.InstanceId, attackerResponse.ValidChoices);
+    }
+
+    [Fact]
     public void RuinedRitualSuppressesADeckSummonedLegionsEnterEffectAndReducesTroops()
     {
         var game = new L12GameEngine(Catalog, "s2-ruin", "S2RUIN", 6221, ["甲", "乙"], [0, 4], skipPreparation: true);

@@ -7,11 +7,12 @@ public sealed partial class L12GameEngine
         if (cardId == "S02-0106")
             return top.Controller != playerIndex
                 && top.Trigger is not ("s2-reaction" or "disaster" or "authority-event");
-        if (top.Trigger != "authority-event" || top.Controller == playerIndex) return false;
-        var eventType = top.Data.GetValueOrDefault("eventType");
+        var timing = ResponseTimingContext(top);
+        if (timing.Trigger != "authority-event" || top.Controller == playerIndex) return false;
+        var eventType = timing.Data.GetValueOrDefault("eventType");
         return cardId switch
         {
-            "S02-0015" => eventType == "defense" && top.Data.GetValueOrDefault("action") is "block" or "support",
+            "S02-0015" => eventType == "defense" && timing.Data.GetValueOrDefault("action") is "block" or "support",
             "S02-0016" => eventType == "non-hand-entry",
             "S02-0017" => eventType == "effect-hand-add",
             "S02-0018" => eventType == "effect-ready",
@@ -147,8 +148,12 @@ public sealed partial class L12GameEngine
     }
 
     private L12StackItem? TargetAuthorityStackItem(L12StackItem response)
-        => State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == response.Targets.FirstOrDefault()
-            && candidate.Trigger == "authority-event");
+    {
+        var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == response.Targets.FirstOrDefault());
+        if (target is null) return null;
+        var timing = ResponseTimingContext(target);
+        return timing.Trigger == "authority-event" ? timing : null;
+    }
 
     private void PromptS2OpponentHandChoice(L12StackItem item, L12StackItem target, string action, string text)
     {

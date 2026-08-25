@@ -749,6 +749,7 @@ public sealed partial class L12GameEngine
         if (State.ResponseWindow is null || State.EffectStack.Count == 0) return;
         var playerIndex = State.ResponseWindow.PriorityPlayer;
         var top = State.EffectStack[^1];
+        var timing = ResponseTimingContext(top);
         var player = State.Players[playerIndex];
         var choices = new List<string>();
         var protectedFromCounters = top.Controller != playerIndex && IsProtectedFromCounterTactics(top);
@@ -760,14 +761,14 @@ public sealed partial class L12GameEngine
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
                 && player.Hand.Count > 0)
                 choices.Add(card.InstanceId);
-            if (card.CardId == "S01-0018" && top.Controller != playerIndex && top.Trigger == "enter")
+            if (card.CardId == "S01-0018" && top.Controller != playerIndex && timing.Trigger == "enter")
                 choices.Add(card.InstanceId);
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
             if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
         }
-        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion" && top.Controller != playerIndex)
+        if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion" && top.Controller != playerIndex)
             choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
-        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "master" && top.Controller != playerIndex
+        if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "master" && top.Controller != playerIndex
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
         if (_autoPassEmptyResponses && choices.Count == 0)
@@ -783,6 +784,22 @@ public sealed partial class L12GameEngine
         responseData["choiceMode"] = "instant";
         CreatePrompt(playerIndex, "response", $"是否响应堆叠顶部：{top.SourceName}－{top.Text}", choices,
             1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+    }
+
+    private L12StackItem ResponseTimingContext(L12StackItem top)
+    {
+        var current = top;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (current.Trigger is "reaction" or "s2-reaction" or "response-negate" or "response-block" or "response-retarget-master")
+        {
+            if (!visited.Add(current.StackItemId)) break;
+            var targetId = current.Targets.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(targetId)) break;
+            var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == targetId);
+            if (target is null) break;
+            current = target;
+        }
+        return current;
     }
 
     private bool IsProtectedFromCounterTactics(L12StackItem top)
