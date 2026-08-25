@@ -1034,6 +1034,32 @@ public sealed class S2FactionRegressionTests
         Assert.True(card.CannotAttack);
     }
 
+    [Theory]
+    [InlineData("S02-0603")]
+    [InlineData("S02-0606")]
+    [InlineData("S02-0607")]
+    [InlineData("S02-0618")]
+    public void OtherworldMandatoryEntryRuneCardsShareTheVerifiedRuntime(string cardId)
+    {
+        var game = Create(63040 + cardId[^1]);
+        var player = game.State.Players[0];
+        var card = Card(cardId, $"verified-rune-entry-{cardId}");
+        player.Hand.Clear();
+        player.Hand.Add(card);
+        AddMorale(player, card.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0));
+        PassResponses(game);
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Same(card, player.Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "runes" && entry.Cards.Any(eventCard => eventCard.CardId == cardId)
+            && entry.Text.Contains("获得1符文", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void MerlinDeclaresModeAndTargetBeforeSpendingRune()
     {

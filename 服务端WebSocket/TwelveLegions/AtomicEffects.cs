@@ -20,6 +20,7 @@ public static class L12AtomKinds
     public const string HealMaster = "operation.heal-master";
     public const string Draw = "operation.draw";
     public const string AddMorale = "operation.add-morale";
+    public const string GainRune = "operation.gain-rune";
     public const string ModifyTroops = "operation.modify-troops";
     public const string MoveZone = "operation.move-zone";
     public const string Ready = "operation.ready";
@@ -177,6 +178,7 @@ public static class L12EffectAtomRegistry
             [L12AtomKinds.HealMaster] = new(L12AtomKinds.HealMaster, "结算", "恢复生命", "恢复主宰生命且不超过上限。", true, "HealMaster"),
             [L12AtomKinds.Draw] = new(L12AtomKinds.Draw, "牌库", "抽牌", "从牌库顶抽牌；空牌库按规则判负。", true, "LibraryOps.Draw"),
             [L12AtomKinds.AddMorale] = new(L12AtomKinds.AddMorale, "结算", "追加士气", "从士气牌库追加活跃或休整士气。", true, "MoraleOps.Add"),
+            [L12AtomKinds.GainRune] = new(L12AtomKinds.GainRune, "专属资源", "获得符文", "在彼界专属区域获得指定数量的符文。", true, "L12S2ZoneOps.GainRunes"),
             [L12AtomKinds.ModifyTroops] = new(L12AtomKinds.ModifyTroops, "数值", "修改兵力", "通过派生兵力层叠加临时、持续或设定值修正。", true, "DerivedStats"),
             [L12AtomKinds.MoveZone] = new(L12AtomKinds.MoveZone, "区域", "移动区域", "在手牌、牌库、墓地、战场、圣物区、额外区和移出区之间移动。", true, "ZoneMove"),
             [L12AtomKinds.Ready] = new(L12AtomKinds.Ready, "状态", "转为活跃", "使合法对象转为活跃。", true, "ReadyCardByEffect"),
@@ -594,6 +596,14 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.SetState, "本回合可进攻对方军团",
                     ("key", "source.canAttackLegionsOnSummonUntilTurn"), ("value", "current-turn"),
                     ("event", "{source} 本回合可进攻对方军团"))),
+            Program("S02-0603", "enter",
+                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("S02-0606", "enter",
+                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("S02-0607", "enter",
+                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("S02-0618", "enter",
+                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             Program("S01-DS02", "disaster",
                 Atom(L12AtomKinds.DamageMaster, "双方主宰各受到 1 点非致命伤害", ("amount", "1"), ("target", "both"), ("lethal", "false"), ("neutralSource", "true"), ("reason", "〈百鬼夜行〉"))),
             Program("S02-DS05", "disaster",

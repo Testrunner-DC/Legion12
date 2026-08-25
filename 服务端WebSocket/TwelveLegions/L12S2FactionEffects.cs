@@ -339,14 +339,6 @@ public sealed partial class L12GameEngine
                         ["action"] = "s2-amakine-entry-rune", ["yes"] = "获得1符文", ["no"] = "不发动",
                     });
                 return true;
-            case "S02-0603":
-            case "S02-0606":
-            case "S02-0607":
-            case "S02-0618":
-                L12S2ZoneOps.GainRunes(player, 1);
-                AddEvent("runes", item.Controller, $"{card.Name}使我方获得1符文", card);
-                FinishStackItem(item);
-                return true;
             case "S02-0612":
                 card.HasCharge = true;
                 FinishStackItem(item);

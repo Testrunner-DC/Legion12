@@ -69,6 +69,13 @@ public sealed partial class L12GameEngine
                     EmitVerifiedAtomicEvent(atom, item.Controller, source, added);
                     break;
                 }
+                case L12AtomKinds.GainRune:
+                {
+                    var before = controller.SpecialZones.Runes;
+                    L12S2ZoneOps.GainRunes(controller, AtomicInt(atom, "amount"));
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source, controller.SpecialZones.Runes - before);
+                    break;
+                }
                 case L12AtomKinds.Draw:
                 {
                     var amount = AtomicInt(atom, "amount");

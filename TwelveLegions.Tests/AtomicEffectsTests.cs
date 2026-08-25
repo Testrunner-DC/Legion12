@@ -191,6 +191,25 @@ public sealed class AtomicEffectsTests
     }
 
     [Theory]
+    [InlineData("S02-0603")]
+    [InlineData("S02-0606")]
+    [InlineData("S02-0607")]
+    [InlineData("S02-0618")]
+    public void OtherworldEntryRuneProgramsUseTheVerifiedRuntimeWithoutLegacyFallback(string cardId)
+    {
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find(cardId, "enter"));
+        var operation = Assert.Single(program.Atoms, atom => atom.Kind == L12AtomKinds.GainRune);
+        Assert.Equal("1", operation.Parameters["amount"]);
+        Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
+
+        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == "enter");
+        Assert.Equal("verified", ability.MigrationStatus);
+        Assert.False(ability.HasLegacyFallback);
+        Assert.Equal(program.Atoms, ability.Atoms);
+    }
+
+    [Theory]
     [InlineData("S01-0115", "enter")]
     [InlineData("S01-0301", "death")]
     [InlineData("S01-0309", "death")]
