@@ -26,16 +26,14 @@ public sealed partial class L12GameEngine
         State.ActiveDisaster = disaster;
         State.DisasterValue = 0;
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
-        var data = new Dictionary<string, string>
-        {
-            ["opening"] = opening ? "true" : "false",
-            ["previewCardId"] = disaster.InstanceId
-        };
-        AddPromptCardData(data, disaster);
-        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
-            CreatePrompt(playerIndex, "disaster-trigger", $"天灾〈{disaster.Name}〉已触发", [], 0, 0,
-                "disaster-trigger-confirm", isPrivate: false, data: new Dictionary<string, string>(data));
+        if (!HasTriggeredDisasterEffect(disaster))
+            AddEvent("disaster-reveal", null, $"天灾〈{disaster.Name}〉公开", disaster);
+        PushEffect(State.ActivePlayer, disaster, "disaster", "天灾触发效果",
+            data: new Dictionary<string, string> { ["opening"] = opening ? "true" : "false" });
     }
+
+    private static bool HasTriggeredDisasterEffect(L12CardInstance disaster)
+        => disaster.EffectText?.Contains("触发", StringComparison.Ordinal) == true;
 
     private void ResolveDisasterEffect(L12StackItem item)
     {

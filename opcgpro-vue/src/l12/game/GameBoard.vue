@@ -251,7 +251,7 @@ function showNextPublicReveal() {
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.type === 'effect-trigger' || event.type === 'reveal' || event.text.includes('展示')))
+      && (event.type === 'effect-trigger' || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示')))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
     const names = event.cards?.map(card => `〈${card.name}〉`).join('、') ?? ''
@@ -259,7 +259,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
     publicRevealQueue.push({
       sequence: event.sequence,
       cards: event.cards ?? [],
-      text: event.type === 'effect-trigger' ? event.text : `${owner}展示卡牌${names}`,
+      text: event.type === 'effect-trigger' || event.type === 'disaster-reveal' ? event.text : `${owner}展示卡牌${names}`,
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
@@ -278,6 +278,7 @@ const eventLabels: Record<string, string> = {
   'effect-trigger': '触发',
   'effect-negated': '无效', 'initiative-choice': '先后攻', mulligan: '调度', cost: '费用',
   disaster: '天灾', 'disaster-active': '天灾', 'disaster-value': '天灾', damage: '伤害',
+  'disaster-reveal': '天灾',
   heal: '恢复', leave: '离场', put: '登场', search: '检索', reveal: '展示', return: '返回',
   discard: '弃置', reorder: '排序', 'game-over': '胜负', 'extra-turn': '追加回合',
 }

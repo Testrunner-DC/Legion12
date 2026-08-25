@@ -292,11 +292,6 @@ public sealed class NewSystemsTests
         game.State.DisasterDeck.Add(CreateInstance("S01-DS06", "test-divine-balance"));
 
         Assert.True(game.Handle(game.State.ActivePlayer, new L12Command("endTurn")).Accepted);
-        var confirmations = game.State.PendingPrompts.Where(prompt => prompt.Continuation == "disaster-trigger-confirm").ToArray();
-        Assert.Equal(2, confirmations.Length);
-        foreach (var confirmation in confirmations)
-            Assert.True(game.Handle(confirmation.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: confirmation.PromptId)).Accepted);
 
         while (game.State.PendingPrompts.Count == 1 && game.State.PendingPrompts[0].Kind == "response")
         {
@@ -744,43 +739,37 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
-    public void TriggeredDisasterIsShownToBothPlayersAndEachConfirmationDismissesIndependently()
+    public void ContinuousOnlyDisasterUsesPublicRevealAnimationWithoutConfirmation()
     {
-        var game = Create(preparation: true, seed: 5523);
-        var initiative = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(initiative.PlayerIndex,
-            new L12Command("resolvePrompt", PromptId: initiative.PromptId, Choice: "first")).Accepted);
-        while (game.State.Phase == L12Phase.DisasterPreparation)
-        {
-            foreach (var prompt in game.State.PendingPrompts.ToArray())
-            {
-                var choice = prompt.ValidChoices.FirstOrDefault();
-                Assert.True(game.Handle(prompt.PlayerIndex,
-                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
-            }
-        }
-
-        Assert.True(game.Handle(0, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+        var game = Create(seed: 5523);
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS08", "continuous-disaster"));
         game.State.DisasterValue = 9;
-        Assert.True(game.Handle(1, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
-        var triggers = game.State.PendingPrompts.Where(prompt => prompt.Kind == "disaster-trigger").ToArray();
-        Assert.Equal(2, triggers.Length);
-        var preview = triggers[0].Data["previewCardId"];
-        Assert.All(triggers, prompt =>
-        {
-            Assert.Equal(preview, prompt.Data["previewCardId"]);
-            Assert.True(prompt.Data.ContainsKey($"{preview}:image"));
-            Assert.True(prompt.Data.ContainsKey($"{preview}:effect"));
-        });
+        Assert.True(game.Handle(game.State.ActivePlayer, new L12Command("endTurn")).Accepted);
 
-        Assert.True(game.Handle(triggers[0].PlayerIndex,
-            new L12Command("resolvePrompt", PromptId: triggers[0].PromptId)).Accepted);
-        Assert.Empty(game.SnapshotFor(triggers[0].PlayerIndex).Prompts);
-        Assert.NotNull(game.SnapshotFor(triggers[0].PlayerIndex).WaitingPrompt);
-        Assert.Contains(game.State.PendingPrompts, prompt => prompt.PromptId == triggers[1].PromptId);
-        Assert.True(game.Handle(triggers[1].PlayerIndex,
-            new L12Command("resolvePrompt", PromptId: triggers[1].PromptId)).Accepted);
-        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "stack-response");
+        var reveal = Assert.Single(game.State.Events, entry => entry.Type == "disaster-reveal");
+        Assert.Contains(reveal.Cards, card => card.CardId == "S01-DS08");
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "disaster-trigger");
+        Assert.Contains(game.State.Events, entry => entry.Type == "disaster-active" && entry.Cards.Any(card => card.CardId == "S01-DS08"));
+    }
+
+    [Fact]
+    public void TriggeredDisasterStartsItsEffectWithoutExtraRevealConfirmation()
+    {
+        var game = Create(seed: 55231);
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS02", "triggered-disaster"));
+        game.State.DisasterValue = 9;
+        var hpBefore = game.State.Players.Select(player => player.Hp).ToArray();
+
+        Assert.True(game.Handle(game.State.ActivePlayer, new L12Command("endTurn")).Accepted);
+
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "disaster-trigger");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "disaster-reveal");
+        Assert.Equal(hpBefore[0] - 1, game.State.Players[0].Hp);
+        Assert.Equal(hpBefore[1] - 1, game.State.Players[1].Hp);
     }
 
     [Fact]
