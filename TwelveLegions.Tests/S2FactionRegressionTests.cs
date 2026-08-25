@@ -178,6 +178,37 @@ public sealed class S2FactionRegressionTests
     }
 
     [Theory]
+    [InlineData("S02-0205", "〈黄金圣甲虫〉")]
+    [InlineData("S02-0305", "〈安德华拉诺特〉")]
+    public void ArtifactZonePlayRestrictionsBlockEveryArtifactFromHandAndReachTheSnapshot(string blockerId, string reasonPrefix)
+    {
+        var game = Create(630111);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Relic = Card(blockerId, $"artifact-blocker-{blockerId}");
+        var differentArtifact = Card("S02-0520", $"blocked-different-{blockerId}");
+        var sameArtifact = Card(blockerId, $"blocked-same-{blockerId}");
+        player.Hand.AddRange([differentArtifact, sameArtifact]);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var hand = snapshot.GetProperty("players")[0].GetProperty("hand");
+        Assert.All(hand.EnumerateArray(), card =>
+            Assert.StartsWith(reasonPrefix, card.GetProperty("playBlockedReason").GetString()));
+
+        var differentResult = game.Handle(0, new L12Command("playCard", differentArtifact.InstanceId));
+        var sameResult = game.Handle(0, new L12Command("playCard", sameArtifact.InstanceId));
+        Assert.False(differentResult.Accepted);
+        Assert.False(sameResult.Accepted);
+        Assert.StartsWith(reasonPrefix, differentResult.Error);
+        Assert.StartsWith(reasonPrefix, sameResult.Error);
+        Assert.Contains(differentArtifact, player.Hand);
+        Assert.Contains(sameArtifact, player.Hand);
+    }
+
+    [Theory]
     [InlineData("S01-0301", "verified-atomic-optional")]
     [InlineData("S01-0309", "verified-atomic-optional")]
     [InlineData("S02-0203", "verified-atomic-optional")]

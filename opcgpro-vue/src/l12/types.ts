@@ -35,6 +35,7 @@ export interface Card {
   hidden?: boolean
   currentCost?: number
   playCost?: number
+  playBlockedReason?: string
   tapped: boolean
   summonRound: number
   cannotAttack?: boolean

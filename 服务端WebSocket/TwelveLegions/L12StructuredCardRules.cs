@@ -54,6 +54,19 @@ public static class L12StructuredCardRules
     public static bool HasFaction(L12PlayerState owner, L12CardInstance card, string faction)
         => string.Equals(EffectiveFaction(owner, card), faction, StringComparison.Ordinal);
 
+    public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
+    {
+        if (card.CardType != "artifact") return null;
+        var artifactZone = controller.Relic is null
+            ? controller.ExtraRelics
+            : controller.ExtraRelics.Prepend(controller.Relic);
+        if (artifactZone.Any(source => source.CardId == "S02-0305"))
+            return "〈安德华拉诺特〉使我方无法从手牌打出圣物";
+        if (artifactZone.Any(source => source.CardId == "S02-0205"))
+            return "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物";
+        return null;
+    }
+
     public static int HandPlayCostModifier(L12PlayerState controller, L12CardInstance card)
     {
         if (!TryGetStructuredAbilities(card.CardId, out var abilities)) return 0;

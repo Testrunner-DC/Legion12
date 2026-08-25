@@ -83,6 +83,8 @@ public sealed class L12CardInstance
     public int ContinuousCostModifier { get; set; }
     /// <summary>当前场面下从手牌打出此牌实际需要支付的费用，仅用于快照显示。</summary>
     public int? PlayCost { get; set; }
+    /// <summary>当前公开场面下禁止从手牌打出此牌的权威原因；为空表示未被静态规则禁止。</summary>
+    public string? PlayBlockedReason { get; set; }
     public string? EffectText { get; init; }
     public int BaseTroops { get; init; }
     public int Troops { get; set; }

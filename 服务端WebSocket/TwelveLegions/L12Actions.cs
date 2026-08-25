@@ -16,8 +16,8 @@ public sealed partial class L12GameEngine
         if (card.CardId != "S01-0004" && command.TargetPlayerIndex is not null && command.TargetPlayerIndex != playerIndex)
             return CommandResult.Reject("该卡牌不能置入对方战场");
         var targetBattlefield = State.Players[targetPlayerIndex];
-        if (card.CardType == "artifact" && player.Relic?.CardId == "S02-0305")
-            return CommandResult.Reject("〈安德华拉诺特〉使我方无法从手牌打出圣物");
+        if (L12StructuredCardRules.HandPlayBlockReason(player, card) is { } playBlockReason)
+            return CommandResult.Reject(playBlockReason);
         if (State.ActiveDisaster?.CardId == "S02-DS01" && card.CardType == "legion"
             && player.Library.FirstOrDefault() is { } visibleTop
             && !string.IsNullOrWhiteSpace(card.Profession)

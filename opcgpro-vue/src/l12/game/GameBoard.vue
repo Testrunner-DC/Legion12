@@ -96,6 +96,7 @@ const playableIds = computed(() => {
   const hasLegionDestination = me.value.field.some((row, rowIndex) => row.some(card => !card || (rowIndex === 1 && isCounter(card))))
   const hasInfiltratorDestination = hasLegionDestination || enemy.value.field.some(row => row.some(card => !card))
   return (me.value.hand ?? [])
+    .filter(card => !card.playBlockedReason)
     .filter(card => !(props.game.activeDisaster?.cardId === 'S02-DS01' && card.cardType === 'legion'
       && card.profession && card.profession === me.value.libraryTop?.profession))
     .filter(card => canPromote(card) || ((card.playCost ?? card.currentCost ?? card.cost) <= activeMorale.value

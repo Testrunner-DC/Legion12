@@ -1160,6 +1160,7 @@ public sealed partial class L12GameEngine
                 ? Math.Min(State.Players[playerIndex].SpecialZones.Runes, (card.Cost + 1) / 2)
                 : 0;
             snapshot.PlayCost = GetPlayCost(playerIndex, card, selfDamageDiscount, spentRunes);
+            snapshot.PlayBlockedReason = L12StructuredCardRules.HandPlayBlockReason(State.Players[playerIndex], card);
             return snapshot;
         }).ToArray();
 
