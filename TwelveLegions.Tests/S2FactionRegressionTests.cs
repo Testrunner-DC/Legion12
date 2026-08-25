@@ -1012,6 +1012,174 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void SquireDeathAdvancesTheCurrentTrialThroughTheSharedAtomicRuntime()
+    {
+        var game = Create(63023);
+        var player = game.State.Players[0];
+        var trial = Card("S02-06S4", "squire-death-trial");
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0609", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var squire = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: squire.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(1, trial.TrialProgress);
+        Assert.Equal(1, player.SpecialZones.TrialLevel);
+        Assert.Contains(game.State.Events, entry => entry.Type == "trial" && entry.Text.Contains("0 → 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void JoanDeathHealsBothMastersThroughTheSharedAtomicRuntime()
+    {
+        var game = Create(63024);
+        game.State.Players[0].Hp = game.State.Players[0].MaxHp - 2;
+        game.State.Players[1].Hp = game.State.Players[1].MaxHp - 2;
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0613", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var joan = Assert.IsType<L12CardInstance>(game.State.Players[0].Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: joan.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(game.State.Players[0].MaxHp - 1, game.State.Players[0].Hp);
+        Assert.Equal(game.State.Players[1].MaxHp - 1, game.State.Players[1].Hp);
+    }
+
+    [Fact]
+    public void RagnarEntryGainsChargeThroughTheSharedAtomicRuntimeWhenMasterIsLow()
+    {
+        var game = Create(63025);
+        var player = game.State.Players[0];
+        player.Hp = 7;
+        var ragnar = Card("S01-0303", "ragnar-atomic-entry");
+        player.Hand.Add(ragnar);
+        AddMorale(player, ragnar.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", ragnar.InstanceId, Row: 0, Slot: 0,
+            Choice: "normal-cost"));
+
+        Assert.True(play.Accepted, play.Error);
+        PassResponses(game);
+        Assert.True(ragnar.HasCharge);
+    }
+
+    [Fact]
+    public void RuthlessHaraldEntryDamageIsOptionalAndUsesTheSharedAtomicRuntime()
+    {
+        var game = Create(63026);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Hp = 5;
+        opponent.Hp = 8;
+        var harald = Card("S01-0304", "ruthless-harald-atomic-entry");
+        player.Hand.Add(harald);
+        AddMorale(player, harald.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", harald.InstanceId, Row: 0, Slot: 0,
+            Choice: "normal-cost"));
+        Assert.True(play.Accepted, play.Error);
+        PassResponses(game);
+        var optional = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("verified-atomic-optional", optional.Data["action"]);
+        Assert.Equal(8, opponent.Hp);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "yes")).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(7, opponent.Hp);
+    }
+
+    [Fact]
+    public void GoldenHaraldAttackGainsStrongAttackThroughTheSharedAtomicRuntime()
+    {
+        var game = Create(63027);
+        var player = game.State.Players[0];
+        player.Hp = 6;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S01-0302", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var harald = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+        harald.SummonRound = game.State.Round - 1;
+        harald.Tapped = false;
+
+        var attack = game.Handle(0, new L12Command("attack", harald.InstanceId,
+            Target: new L12AttackTarget("master")));
+
+        Assert.True(attack.Accepted, attack.Error);
+        Assert.True(harald.HasStrongAttack);
+        Assert.Equal(2, game.State.PendingDefense?.MasterDamage);
+    }
+
+    [Theory]
+    [InlineData("S01-0303", 8)]
+    [InlineData("S01-0304", 8)]
+    public void AsgardConditionalEntryAtomsDoNothingWhenTheirConditionIsFalse(string cardId, int opponentHp)
+    {
+        var game = Create(cardId == "S01-0303" ? 63028 : 63029);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Hp = 8;
+        opponent.Hp = opponentHp;
+        var card = Card(cardId, $"{cardId}-false-condition");
+        player.Hand.Add(card);
+        AddMorale(player, card.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0,
+            Choice: "normal-cost"));
+
+        Assert.True(play.Accepted, play.Error);
+        PassResponses(game);
+        Assert.False(card.HasCharge);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Equal(opponentHp, opponent.Hp);
+    }
+
+    [Fact]
+    public void MiyamotoEntryGainsChargeOnlyWhenNoOtherFrontLegionExists()
+    {
+        var emptyFront = Create(63030);
+        var emptyPlayer = emptyFront.State.Players[0];
+        emptyPlayer.Hp = 8;
+        var miyamoto = Card("S01-0405", "miyamoto-atomic-entry");
+        emptyPlayer.Hand.Add(miyamoto);
+        AddMorale(emptyPlayer, miyamoto.Cost);
+        emptyFront.State.ActivePlayer = 0;
+        emptyFront.State.Phase = L12Phase.Main;
+
+        var accepted = emptyFront.Handle(0, new L12Command("playCard", miyamoto.InstanceId, Row: 0, Slot: 0));
+        Assert.True(accepted.Accepted, accepted.Error);
+        PassResponses(emptyFront);
+        Assert.True(miyamoto.HasCharge);
+
+        var occupiedFront = Create(63031);
+        var occupiedPlayer = occupiedFront.State.Players[0];
+        Assert.True(occupiedFront.HandleGm(new L12GmCommand("placeCard", 0, "S01-0302", Row: 0, Slot: 1,
+            TriggerEffects: false)).Accepted);
+        var blockedMiyamoto = Card("S01-0405", "miyamoto-blocked-entry");
+        occupiedPlayer.Hand.Add(blockedMiyamoto);
+        AddMorale(occupiedPlayer, blockedMiyamoto.Cost);
+        occupiedFront.State.ActivePlayer = 0;
+        occupiedFront.State.Phase = L12Phase.Main;
+
+        accepted = occupiedFront.Handle(0, new L12Command("playCard", blockedMiyamoto.InstanceId, Row: 0, Slot: 0));
+        Assert.True(accepted.Accepted, accepted.Error);
+        PassResponses(occupiedFront);
+        Assert.False(blockedMiyamoto.HasCharge);
+    }
+
+    [Fact]
     public void AsgardTacticMillsBeforeItDebuffsTheChosenEnemy()
     {
         var game = Create(6303);

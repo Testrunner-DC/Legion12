@@ -231,8 +231,15 @@ public sealed class AtomicEffectsTests
 
     [Theory]
     [InlineData("S01-0302", "death", "operation.heal-master")]
+    [InlineData("S01-0302", "attack", "operation.keyword")]
+    [InlineData("S01-0303", "enter", "operation.keyword")]
+    [InlineData("S01-0304", "enter", "operation.damage-master")]
+    [InlineData("S01-0405", "enter", "operation.keyword")]
     [InlineData("S02-0301", "enter", "operation.set-state")]
     [InlineData("S02-0302", "enter", "operation.heal-master")]
+    [InlineData("S02-0501", "attack", "operation.keyword")]
+    [InlineData("S02-0609", "death", "operation.advance-trial")]
+    [InlineData("S02-0613", "death", "operation.heal-master")]
     public void SimpleMasterPermissionAndHealingEffectsUseVerifiedRuntimePrograms(
         string cardId, string trigger, string operation)
     {

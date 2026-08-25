@@ -148,12 +148,6 @@ public sealed partial class L12GameEngine
             }
             case "S01-0301":
                 Mill(player, 2, "贝奥武夫"); FinishStackItem(item); return true;
-            case "S01-0303":
-                if (player.Hp <= 7) card.HasCharge = true;
-                FinishStackItem(item); return true;
-            case "S01-0304":
-                if (State.Players[1 - item.Controller].Hp > player.Hp) DamageMaster(1 - item.Controller, 1, "无情者哈拉尔登场效果");
-                FinishStackItem(item); return true;
             case "S01-0309":
             {
                 var choices = player.Hand.Concat(player.Graveyard).Where(candidate => candidate.CardId == "S01-0310").Select(candidate => candidate.InstanceId).ToList();
@@ -230,7 +224,6 @@ public sealed partial class L12GameEngine
             case "S01-0301":
                 CreatePrompt(item.Controller, "optional", "贝奥武夫：是否令我方主宰受到1点伤害，自身兵力+2000？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "beowulf-buff" }); return true;
-            case "S01-0302": if (player.Hp <= 6) GrantStrongAttack(card); FinishStackItem(item); return true;
             case "S01-0306":
             {
                 var choices = player.Graveyard.Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");

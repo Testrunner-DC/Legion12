@@ -628,13 +628,6 @@ public sealed partial class L12GameEngine
             ApplyS2Shock(item, card);
             item.Data["shockApplied"] = "true";
         }
-        if (card.CardId == "S02-0501")
-        {
-            GrantStrongAttack(card);
-            AddEvent("effect", item.Controller, $"{card.Name}本回合获得强攻", card);
-            FinishStackItem(item);
-            return true;
-        }
         if (card.CardId == "S02-0509")
         {
             var tactics = player.Hand.Where(candidate => candidate.CardType == "tactic")
@@ -837,15 +830,6 @@ public sealed partial class L12GameEngine
                 return true;
             case "S02-0508":
                 return PromptS2FlipMorale(item, card);
-            case "S02-0609":
-                AdvanceTrial(item.Controller, 1, card);
-                FinishStackItem(item);
-                return true;
-            case "S02-0613":
-                HealMaster(0, 1, $"{card.Name}阵亡时效果", legionEffect: true);
-                HealMaster(1, 1, $"{card.Name}阵亡时效果", legionEffect: true);
-                FinishStackItem(item);
-                return true;
             case "S02-0615":
                 if (item.Data.GetValueOrDefault("cause") != "effect") { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "option", $"{card.Name}因效果阵亡：选择我方主宰增加1点血量，或抽取1张牌",

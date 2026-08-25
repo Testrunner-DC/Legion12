@@ -14,12 +14,13 @@ public sealed partial class L12GameEngine
     };
 
     private static bool HasImmediateEffect(L12CardInstance card, string trigger)
-        => trigger == "enter" ? ImmediateEnterCards.Contains(card.CardId) || HasS1ExtendedImmediateEffect(card.CardId, trigger)
+        => L12VerifiedAtomicPrograms.Find(card.CardId, trigger) is not null
+            || (trigger == "enter" ? ImmediateEnterCards.Contains(card.CardId) || HasS1ExtendedImmediateEffect(card.CardId, trigger)
                 || HasS2UniversalImmediateEffect(card.CardId, trigger)
                 || HasS2FactionImmediateEffect(card.CardId, trigger)
             : ImmediateTactics.Contains(card.CardId) || HasS1ExtendedImmediateEffect(card.CardId, trigger)
                 || HasS2UniversalImmediateEffect(card.CardId, trigger)
-                || HasS2FactionImmediateEffect(card.CardId, trigger);
+                || HasS2FactionImmediateEffect(card.CardId, trigger));
 
     private void ResolveOnPlayContinuousEffects(int playerIndex, L12CardInstance card)
     {
@@ -123,13 +124,6 @@ public sealed partial class L12GameEngine
                         "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "mulan-charge" });
                 else FinishStackItem(item);
                 return;
-            case "S01-0405":
-                if (!player.Field[0].Any(other => other is not null && other.InstanceId != card.InstanceId))
-                {
-                    card.HasCharge = true;
-                    AddEvent("effect", item.Controller, "宫本武藏因我方前排没有其他军团而获得冲锋", card);
-                }
-                FinishStackItem(item); return;
             case "S01-0415":
                 AddEvent("hidden-reveal", item.Controller, $"{card.Name}展示后发动隐匿", card);
                 card.Hidden = true;

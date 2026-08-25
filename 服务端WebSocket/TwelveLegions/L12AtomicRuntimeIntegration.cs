@@ -63,6 +63,8 @@ public sealed partial class L12GameEngine
                     break;
                 case L12AtomKinds.Keyword:
                     if (atom.Parameters.GetValueOrDefault("keyword") == "charge") source.HasCharge = true;
+                    else if (atom.Parameters.GetValueOrDefault("keyword") == "strong-attack") GrantStrongAttack(source);
+                    else throw new InvalidOperationException($"Unsupported verified atomic keyword: {atom.Parameters.GetValueOrDefault("keyword")}");
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
                 case L12AtomKinds.AddMorale:
@@ -79,6 +81,9 @@ public sealed partial class L12GameEngine
                     EmitVerifiedAtomicEvent(atom, item.Controller, source, controller.SpecialZones.Runes - before);
                     break;
                 }
+                case L12AtomKinds.AdvanceTrial:
+                    AdvanceTrial(item.Controller, AtomicInt(atom, "amount"), source);
+                    break;
                 case L12AtomKinds.Draw:
                 {
                     var amount = AtomicInt(atom, "amount");
@@ -91,8 +96,12 @@ public sealed partial class L12GameEngine
                     break;
                 }
                 case L12AtomKinds.HealMaster:
-                    HealMaster(item.Controller, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
-                        legionEffect: source.CardType == "legion");
+                    var healTargets = atom.Parameters.GetValueOrDefault("target") == "both"
+                        ? new[] { 0, 1 }
+                        : new[] { item.Controller };
+                    foreach (var target in healTargets)
+                        HealMaster(target, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
+                            legionEffect: source.CardType == "legion");
                     break;
                 case L12AtomKinds.DamageMaster when atom.Parameters.GetValueOrDefault("target") == "both"
                     && atom.Parameters.GetValueOrDefault("lethal") == "false":
@@ -100,6 +109,10 @@ public sealed partial class L12GameEngine
                         neutralSource: atom.Parameters.GetValueOrDefault("neutralSource") == "true");
                     DamageMasterNonLethal(1, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
                         neutralSource: atom.Parameters.GetValueOrDefault("neutralSource") == "true");
+                    break;
+                case L12AtomKinds.DamageMaster when atom.Parameters.GetValueOrDefault("target") == "opponent":
+                    DamageMaster(1 - item.Controller, AtomicInt(atom, "amount"), atom.Parameters.GetValueOrDefault("reason") ?? source.Name,
+                        sourcePlayer: item.Controller);
                     break;
                 case L12AtomKinds.ModifyTroops when atom.Parameters.GetValueOrDefault("operation") == "set":
                     source.Troops = AtomicInt(atom, "value");
@@ -122,6 +135,11 @@ public sealed partial class L12GameEngine
             "controller.hand<=opponent.hand" => controller.Hand.Count <= opponent.Hand.Count,
             "controller.morale<=7" => controller.Morale.Count <= 7,
             "controller.hp<=opponent.hp" => controller.Hp <= opponent.Hp,
+            "controller.hp<=7" => controller.Hp <= 7,
+            "controller.hp<=6" => controller.Hp <= 6,
+            "opponent.hp>controller.hp" => opponent.Hp > controller.Hp,
+            "controller.front.other-legions=0" => controller.Field[0].All(candidate => candidate is null
+                || candidate.InstanceId == source.InstanceId || !IsFieldLegion(candidate)),
             "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
             "source.hidden=true" => source.Hidden,
             "item.killed=true" => item.Data.GetValueOrDefault("killed") == "true",

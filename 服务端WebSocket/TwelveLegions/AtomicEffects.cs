@@ -21,6 +21,7 @@ public static class L12AtomKinds
     public const string Draw = "operation.draw";
     public const string AddMorale = "operation.add-morale";
     public const string GainRune = "operation.gain-rune";
+    public const string AdvanceTrial = "operation.advance-trial";
     public const string ModifyTroops = "operation.modify-troops";
     public const string MoveZone = "operation.move-zone";
     public const string Ready = "operation.ready";
@@ -179,6 +180,7 @@ public static class L12EffectAtomRegistry
             [L12AtomKinds.Draw] = new(L12AtomKinds.Draw, "牌库", "抽牌", "从牌库顶抽牌；空牌库按规则判负。", true, "LibraryOps.Draw"),
             [L12AtomKinds.AddMorale] = new(L12AtomKinds.AddMorale, "结算", "追加士气", "从士气牌库追加活跃或休整士气。", true, "MoraleOps.Add"),
             [L12AtomKinds.GainRune] = new(L12AtomKinds.GainRune, "专属资源", "获得符文", "在彼界专属区域获得指定数量的符文。", true, "L12S2ZoneOps.GainRunes"),
+            [L12AtomKinds.AdvanceTrial] = new(L12AtomKinds.AdvanceTrial, "专属资源", "推进试炼", "推进当前未完成试炼，并同步公开进度与对局记录。", true, "AdvanceTrial"),
             [L12AtomKinds.ModifyTroops] = new(L12AtomKinds.ModifyTroops, "数值", "修改兵力", "通过派生兵力层叠加临时、持续或设定值修正。", true, "DerivedStats"),
             [L12AtomKinds.MoveZone] = new(L12AtomKinds.MoveZone, "区域", "移动区域", "在手牌、牌库、墓地、战场、圣物区、额外区和移出区之间移动。", true, "ZoneMove"),
             [L12AtomKinds.Ready] = new(L12AtomKinds.Ready, "状态", "转为活跃", "使合法对象转为活跃。", true, "ReadyCardByEffect"),
@@ -539,6 +541,9 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Condition, "我方手牌数量不高于对方", ("expression", "controller.hand<=opponent.hand")),
                 OptionalDraw("宫本武藏"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "宫本武藏效果抽牌时牌库为空"), ("event", "宫本武藏抽取 1 张牌"))),
+            Program("S01-0405", "enter",
+                Atom(L12AtomKinds.Condition, "我方前排没有其他军团", ("expression", "controller.front.other-legions=0")),
+                Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source}因我方前排没有其他军团而获得冲锋"))),
             Program("S01-0409", "after-attack",
                 Atom(L12AtomKinds.Condition, "本次进攻击杀对象", ("expression", "item.killed=true")),
                 OptionalDraw("源义经"),
@@ -552,6 +557,17 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "贝奥武夫阵亡效果抽牌时牌库为空"), ("event", "贝奥武夫阵亡时抽取 1 张牌"))),
             Program("S01-0302", "death",
                 Atom(L12AtomKinds.HealMaster, "我方主宰增加 1 点血量", ("amount", "1"), ("reason", "金发哈拉尔阵亡效果"))),
+            Program("S01-0302", "attack",
+                Atom(L12AtomKinds.Condition, "我方主宰血量不高于 6", ("expression", "controller.hp<=6")),
+                Atom(L12AtomKinds.Keyword, "本回合获得强攻", ("keyword", "strong-attack"), ("event", "{source} 本回合获得强攻"))),
+            Program("S01-0303", "enter",
+                Atom(L12AtomKinds.Condition, "我方主宰血量不高于 7", ("expression", "controller.hp<=7")),
+                Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
+            Program("S01-0304", "enter",
+                Atom(L12AtomKinds.Condition, "对方主宰血量高于我方", ("expression", "opponent.hp>controller.hp")),
+                Atom(L12AtomKinds.Optional, "可对对方主宰造成 1 点伤害",
+                    ("prompt", "无情者哈拉尔：是否对对方主宰造成1点伤害？"), ("yes", "对对方主宰造成1点伤害"), ("no", "不发动")),
+                Atom(L12AtomKinds.DamageMaster, "对方主宰受到 1 点伤害", ("amount", "1"), ("target", "opponent"), ("reason", "无情者哈拉尔登场效果"))),
             Program("S01-0309", "death",
                 Atom(L12AtomKinds.Condition, "我方主宰血量不高于对方", ("expression", "controller.hp<=opponent.hp")),
                 OptionalDraw("布伦希尔德"),
@@ -587,6 +603,8 @@ public static class L12VerifiedAtomicPrograms
                     ("event", "{source} 本回合可进攻对方主宰"))),
             Program("S02-0302", "enter",
                 Atom(L12AtomKinds.HealMaster, "我方主宰增加 1 点血量", ("amount", "1"), ("reason", "步行者罗洛登场时效果"))),
+            Program("S02-0501", "attack",
+                Atom(L12AtomKinds.Keyword, "本回合获得强攻", ("keyword", "strong-attack"), ("event", "{source}本回合获得强攻"))),
             Program("S02-0014", "play",
                 Atom(L12AtomKinds.Condition, "我方手牌不高于 4 张", ("expression", "controller.hand<=4")),
                 Atom(L12AtomKinds.Draw, "抽取 2 张牌", ("amount", "2"), ("emptyLossReason", "〈瞬间的思路〉抽牌时牌库为空"), ("eventType", "draw"), ("event", "〈瞬间的思路〉抽取 2 张牌"))),
@@ -612,6 +630,10 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             Program("S02-0618", "enter",
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("S02-0609", "death",
+                Atom(L12AtomKinds.AdvanceTrial, "试炼 +1", ("amount", "1"))),
+            Program("S02-0613", "death",
+                Atom(L12AtomKinds.HealMaster, "双方主宰增加 1 点血量", ("amount", "1"), ("target", "both"), ("reason", "圣女贞德阵亡时效果"))),
             Program("S02-0612", "enter",
                 Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
             Program("S02-0616", "enter",

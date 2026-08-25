@@ -136,3 +136,12 @@
 - 人工确认：S02-0521、S02-05M2、S02-05C1、S02-05C1A 标记 confirmed；S02-0502、S02-0506 的原有确认保持不变。
 - 信息可见性：柏拉图、忒修斯、荣耀之路与普罗米修斯的展示均包含双方可见、对手确认和日志卡名链接策略。
 - 迁移声明：本批只完成后台/实战共用的结构化定义与审查状态，不把旧权威分支误报为已迁移；实战仍只走唯一 legacy 兜底。
+
+## 2026-08-26 规则书关键词基线与条件触发迁移
+
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --configuration Release --no-restore`：405/405通过，0失败、0跳过。
+- `dotnet test .\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~PlatformStoreTests"`：8/8通过。
+- `npm run check:ui-contracts`：88/88通过；`npm run build` 的Vue/TypeScript类型检查与Vite生产构建通过。
+- 新增规则书五类效果、八个正式关键词、进攻距离、弓手职介能力与核心概念基线文档。
+- 新增并实战迁移试炼推进、双方主宰恢复、条件强攻、条件冲锋和条件可选伤害；后续扫描又迁移宫本武藏条件冲锋与赫拉克勒斯·晋升进攻时强攻。
+- 验证原子由37项增至44项；旧卡号 `case` 分支由187处/154卡降至181处/151卡，原子棘轮收紧为181。
