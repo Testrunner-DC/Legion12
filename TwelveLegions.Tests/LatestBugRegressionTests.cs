@@ -83,6 +83,52 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void HuntingMomentCannotBePlayedBeforeItsFourCardGraveyardCostIsLegal()
+    {
+        var game = Create(6414);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Graveyard.Clear();
+        player.Morale.Clear();
+        AddReadyMorale(player, 3);
+        var huntingMoment = Card("S01-0319", "hunting-moment");
+        player.Hand.Add(huntingMoment);
+        for (var index = 0; index < 3; index++)
+            player.Graveyard.Add(Card("S01-0001", $"hunting-cost-{index}"));
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var blockedSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var blockedCard = Assert.Single(blockedSnapshot.GetProperty("players")[0]
+            .GetProperty("hand").EnumerateArray());
+        Assert.Contains("墓地至少有4张", blockedCard.GetProperty("playBlockedReason").GetString());
+
+        var rejected = game.Handle(0, new L12Command("playCard", huntingMoment.InstanceId));
+        Assert.False(rejected.Accepted);
+        Assert.Contains("墓地至少有4张", rejected.Error);
+        Assert.Contains(huntingMoment, player.Hand);
+        Assert.Equal(3, player.Morale.Count(card => !card.Tapped));
+        Assert.Empty(player.Resolving);
+
+        player.Graveyard.Add(Card("S01-0002", "hunting-cost-3"));
+        var legalSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var legalCard = Assert.Single(legalSnapshot.GetProperty("players")[0]
+            .GetProperty("hand").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, legalCard.GetProperty("playBlockedReason").ValueKind);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", huntingMoment.InstanceId)).Accepted);
+        PassResponses(game);
+        var costOrder = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("hunt-return", costOrder.Data["action"]);
+        Assert.Equal(4, costOrder.MinChoose);
+        Assert.Equal(4, costOrder.MaxChoose);
+        Assert.DoesNotContain(huntingMoment, player.Hand);
+        Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
+    }
+
+    [Fact]
     public void InfiltratorCanEnterEitherBattlefieldButCannotReplaceOpponentCounter()
     {
         var game = Create(6415);
