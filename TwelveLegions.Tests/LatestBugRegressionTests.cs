@@ -216,6 +216,39 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void TimedSureHitAgainstLegionsPreventsBothBlockingAndSupporting()
+    {
+        var game = new L12GameEngine(Catalog, "sure-hit-regression", "SUREHIT", 6498,
+            ["甲", "乙"], [0, 0], skipPreparation: true, autoPassEmptyResponses: false);
+        var attacker = Card("S01-0003", "fearless-attacker");
+        var defender = Card("S01-0003", "fearless-target");
+        var blocker = Card("S01-0003", "fearless-blocker");
+        var mercenary = Card("S01-0002", "fearless-mercenary");
+        attacker.SummonRound = 0;
+        attacker.SureHitAgainstLegionsUntilTurn = 2;
+        defender.SummonRound = 0;
+        blocker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = defender;
+        game.State.Players[1].Field[1][0] = blocker;
+        game.State.Players[1].Hand.Add(mercenary);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
+        Assert.True(game.State.PendingDefense?.SureHit);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain(mercenary.InstanceId, response.ValidChoices);
+
+        PassResponses(game);
+        Assert.Null(game.State.PendingDefense);
+        Assert.False(blocker.Tapped);
+    }
+
+    [Fact]
     public void ForgedOrdersTargetsTheOpponentDestinationInsteadOfTheControllersMatchingSlot()
     {
         var game = Create(6421);

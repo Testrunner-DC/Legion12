@@ -766,7 +766,8 @@ public sealed partial class L12GameEngine
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
             if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
         }
-        if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion" && top.Controller != playerIndex)
+        if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion"
+            && State.PendingDefense.SureHit != true && top.Controller != playerIndex)
             choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
         if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "master" && top.Controller != playerIndex
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))

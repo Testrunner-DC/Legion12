@@ -508,7 +508,8 @@ public sealed partial class L12GameEngine
             IsRanged = isRanged,
             RangedNoLoss = combatProfile.HasRangedNoLoss,
             AttackNoLoss = attackNoLoss,
-            SureHit = attacker.HasSureHit,
+            SureHit = attacker.HasSureHit
+                || (attackTarget is not null && attacker.SureHitAgainstLegionsUntilTurn >= State.TurnSerial),
             MasterDamage = damage,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
             TemporaryDefenderTroopsPenalty = temporaryDefenderTroopsPenalty,
