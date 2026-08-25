@@ -332,17 +332,6 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-claudia-debuff", ["skip"] = "不发动" });
                 return true;
             }
-            case "S02-0616":
-                CreatePrompt(item.Controller, "optional", "阿麦金：是否获得1符文？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-amakine-entry-rune", ["yes"] = "获得1符文", ["no"] = "不发动",
-                    });
-                return true;
-            case "S02-0612":
-                card.HasCharge = true;
-                FinishStackItem(item);
-                return true;
             case "S02-0608":
                 AdvanceTrial(item.Controller, 2, card);
                 card.ImmortalUses = Math.Max(card.ImmortalUses, 1);
@@ -2159,16 +2148,6 @@ public sealed partial class L12GameEngine
                 var nephthysScarabId = item.Data.GetValueOrDefault("nephthys-scarab");
                 if (!string.IsNullOrWhiteSpace(nephthysScarabId))
                     SummonFromAnyPrivateZone(player, nephthysScarabId, chosen[0], tapped: false);
-                FinishStackItem(item);
-                return true;
-            case "s2-amakine-entry-rune":
-                if (chosen[0] == "yes")
-                {
-                    L12S2ZoneOps.GainRunes(player, 1);
-                    var amakine = FindSource(item);
-                    if (amakine is null) AddEvent("runes", item.Controller, "阿麦金使我方获得1符文");
-                    else AddEvent("runes", item.Controller, "阿麦金使我方获得1符文", amakine);
-                }
                 FinishStackItem(item);
                 return true;
             case "s2-amakine-top-place":

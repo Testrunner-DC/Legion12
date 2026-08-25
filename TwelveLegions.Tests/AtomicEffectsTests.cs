@@ -209,6 +209,26 @@ public sealed class AtomicEffectsTests
         Assert.Equal(program.Atoms, ability.Atoms);
     }
 
+    [Fact]
+    public void AmakineOptionalEntryRuneAndScathachChargeUseVerifiedRuntimePrograms()
+    {
+        var amakine = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find("S02-0616", "enter"));
+        Assert.True(Array.FindIndex(amakine.Atoms.ToArray(), atom => atom.Kind == L12AtomKinds.Optional)
+            < Array.FindIndex(amakine.Atoms.ToArray(), atom => atom.Kind == L12AtomKinds.GainRune));
+        Assert.Equal("1", Assert.Single(amakine.Atoms, atom => atom.Kind == L12AtomKinds.GainRune).Parameters["amount"]);
+
+        var scathach = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find("S02-0612", "enter"));
+        Assert.Equal("charge", Assert.Single(scathach.Atoms, atom => atom.Kind == L12AtomKinds.Keyword).Parameters["keyword"]);
+
+        foreach (var cardId in new[] { "S02-0612", "S02-0616" })
+        {
+            var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+            var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == "enter");
+            Assert.Equal("verified", ability.MigrationStatus);
+            Assert.False(ability.HasLegacyFallback);
+        }
+    }
+
     [Theory]
     [InlineData("S01-0115", "enter")]
     [InlineData("S01-0301", "death")]

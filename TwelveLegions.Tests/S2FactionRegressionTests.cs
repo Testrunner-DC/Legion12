@@ -1060,6 +1060,54 @@ public sealed class S2FactionRegressionTests
             && entry.Text.Contains("获得1符文", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("yes", 1)]
+    [InlineData("no", 0)]
+    public void AmakineOptionalEntryRuneUsesTheVerifiedOptionalContinuation(string choice, int expectedRunes)
+    {
+        var game = Create(63047 + expectedRunes);
+        var player = game.State.Players[0];
+        var amakine = Card("S02-0616", $"verified-amakine-{choice}");
+        player.Hand.Clear();
+        player.Hand.Add(amakine);
+        AddMorale(player, amakine.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", amakine.InstanceId, Row: 1, Slot: 0));
+        PassResponses(game);
+
+        Assert.True(play.Accepted, play.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("verified-atomic-optional", prompt.Data["action"]);
+        Assert.Equal("获得1符文", prompt.Data["yes"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        Assert.Equal(expectedRunes, player.SpecialZones.Runes);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
+    public void ScathachEntryChargeUsesTheVerifiedKeywordRuntime()
+    {
+        var game = Create(63049);
+        var player = game.State.Players[0];
+        var scathach = Card("S02-0612", "verified-scathach-charge");
+        player.Hand.Clear();
+        player.Hand.Add(scathach);
+        AddMorale(player, scathach.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", scathach.InstanceId, Row: 0, Slot: 0));
+        PassResponses(game);
+
+        Assert.True(play.Accepted, play.Error);
+        Assert.True(scathach.HasCharge);
+        Assert.Same(scathach, player.Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Cards.Any(card => card.CardId == "S02-0612")
+            && entry.Text.Contains("获得冲锋", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void MerlinDeclaresModeAndTargetBeforeSpendingRune()
     {
