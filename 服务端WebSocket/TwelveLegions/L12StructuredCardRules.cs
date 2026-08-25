@@ -35,12 +35,12 @@ public static class L12StructuredCardRules
 
     private static readonly HashSet<string> AlwaysAttackNoLossCards = new(StringComparer.Ordinal)
     {
-        "S01-0110", "S02-0001",
+        "S01-0101", "S02-0002",
     };
 
     private static readonly HashSet<string> CannotBeRangedCards = new(StringComparer.Ordinal)
     {
-        "S01-0110", "S02-0007",
+        "S01-0101", "S02-0007",
     };
 
     public static string EffectiveFaction(L12PlayerState owner, L12CardInstance card)

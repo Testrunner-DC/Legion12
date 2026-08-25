@@ -1069,6 +1069,42 @@ public sealed class NewSystemsTests
         }
     }
 
+    [Fact]
+    public void EveryPrintedPermanentCombatRuleMatchesTheSharedCombatProfile()
+    {
+        var attackNoLoss = Catalog.Cards.Values
+            .Where(card => card.Effect?.Split('\n')
+                .Any(line => line.TrimStart().StartsWith("进攻无损", StringComparison.Ordinal)) == true)
+            .Select(card => card.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var cannotBeRanged = Catalog.Cards.Values
+            .Where(card => card.Effect?.Contains("无法被远程进攻", StringComparison.Ordinal) == true)
+            .Select(card => card.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("S01-0101", attackNoLoss);
+        Assert.Contains("S02-0002", attackNoLoss);
+        Assert.DoesNotContain("S01-0110", attackNoLoss);
+        Assert.DoesNotContain("S02-0001", attackNoLoss);
+
+        foreach (var definition in Catalog.Cards.Values)
+        {
+            var instance = new L12CardInstance
+            {
+                InstanceId = $"combat-{definition.Id}",
+                CardId = definition.Id,
+                Name = definition.NameZh,
+                CardType = definition.CardType,
+                Faction = definition.Faction,
+                Profession = definition.Profession,
+                EffectText = definition.Effect,
+            };
+            var profile = L12StructuredCardRules.CombatProfile(instance, 0);
+            Assert.Equal(attackNoLoss.Contains(definition.Id), profile.HasAttackNoLoss);
+            Assert.Equal(cannotBeRanged.Contains(definition.Id), profile.CannotBeRanged);
+        }
+    }
+
     [Theory]
     [InlineData("S01-0409", 2000, null)]
     [InlineData("S02-0507", 3000, "弓手")]
