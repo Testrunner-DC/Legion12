@@ -586,13 +586,6 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add("trigger:medjedDamageResponse");
                 BeginQueuedSummons(item, [chosen[0]], tapped: false, "梅杰德：选择〈陵墓守卫〉活跃登场的位置");
                 return true;
-            case "valhalla-kill5": if (chosen[0] != "skip") KillTarget(chosen[0], "被英灵殿击杀"); PromptEnemyByTroops(item, "valhalla-kill1", "英灵殿：可击杀对方1张兵力不高于1000的军团", 1000, true); return true;
-            case "valhalla-kill1": if (chosen[0] != "skip") KillTarget(chosen[0], "被英灵殿击杀"); FinishStackItem(item); return true;
-            case "valkyrie-pick":
-            {
-                var selected = player.Graveyard.First(card => card.InstanceId == chosen[0]); var pair = player.Graveyard.Take(2).ToArray(); player.Graveyard.Remove(selected); AddCardToHandByEffect(player, selected, "graveyard", $"{selected.Name}因效果加入手牌");
-                MoveGraveToLibraryBottom(player, pair.Where(card => card.InstanceId != selected.InstanceId)); FinishStackItem(item); return true;
-            }
             case "yomi-kill3": if (chosen[0] != "skip") KillTarget(chosen[0], "被黄泉之门击杀"); PromptEnemyLegion(item, "yomi-kill1", "黄泉之门：可击杀对方1张费用不高于1的军团", target => target.CurrentCost <= 1, true); return true;
             case "yomi-kill1": if (chosen[0] != "skip") KillTarget(chosen[0], "被黄泉之门击杀"); FinishStackItem(item); return true;
             case "amaterasu-debuff":
@@ -644,6 +637,57 @@ public sealed partial class L12GameEngine
                 choices = player.Graveyard.Where(card => card.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).ToArray();
                 return BeginPendingActivation(playerIndex, source, ability, choices, "神剑格拉墨：依次选择4张【阿斯加德】军团返回牌库底部", 4, 4);
+            case "valhallaKill":
+            {
+                var graveChoices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToList();
+                if (graveChoices.Count < 2) return CommandResult.Reject("墓地需要至少2张可返回牌库的卡牌");
+                var lowTargets = PublicLegions(enemy).Where(card => card.Troops <= 1000).Select(card => card.InstanceId).ToList();
+                var broadTargets = PublicLegions(enemy).Where(card => card.Troops <= 5000).Select(card => card.InstanceId).ToList();
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "card", Text = "英灵殿：依次选择墓地2张卡牌返回牌库底部",
+                        ValidChoices = graveChoices, MinChoose = 2, MaxChoose = 2,
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "enemy-unselected-required", Text = "英灵殿：选择对方1张兵力不高于1000的军团",
+                        ValidChoices = lowTargets.Count == 0 ? ["mode:none"] : lowTargets, MinChoose = 1, MaxChoose = 1,
+                        ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["mode:none"] = "没有合法目标，继续结算",
+                        },
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "enemy-unselected-required", Text = "英灵殿：选择另一张兵力不高于5000的军团",
+                        ValidChoices = broadTargets.Count == 0 ? ["mode:none"] : broadTargets, MinChoose = 1, MaxChoose = 1,
+                        ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["mode:none"] = "没有其他合法目标，继续结算",
+                        },
+                    },
+                ]);
+            }
+            case "valkyrieRecover":
+            {
+                var graveChoices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToList();
+                if (graveChoices.Count < 2) return CommandResult.Reject("墓地需要至少2张可处理的卡牌");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "card", Text = "瓦尔基里：选择墓地2张牌",
+                        ValidChoices = graveChoices, MinChoose = 2, MaxChoose = 2,
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "declared-card", Text = "瓦尔基里：选择其中1张加入手牌，另1张返回牌库底部",
+                        ValidChoices = graveChoices, MinChoose = 1, MaxChoose = 1,
+                    },
+                ]);
+            }
             case "medjedDebuff":
             case "amaterasuKill":
                 choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
@@ -729,8 +773,40 @@ public sealed partial class L12GameEngine
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); player.UsedAbilities.Add(onceKey); break;
             case "valhallaRecover" when source.CardId == "S01-03D1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
-            case "valhallaKill" when source.CardId == "S01-03D1": if (source.Tapped || player.Graveyard.Count < 2) return CommandResult.Reject("英灵殿需为活跃，墓地需至少2张牌"); source.Tapped = true; player.MasterTapped = true; break;
-            case "valkyrieRecover" when source.CardId == "S01-03M1": if (!ConsumeMorale(1) || player.Hp <= 1) return CommandResult.Reject("需要1张活跃士气且主宰血量需高于1"); DamageMaster(playerIndex, 1, "瓦尔基里主宰效果"); player.UsedAbilities.Add(onceKey); break;
+            case "valhallaKill" when source.CardId == "S01-03D1":
+            {
+                var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (source.Tapped || ids.Length != 4) return CommandResult.Reject("英灵殿需为活跃并完成全部对象声明");
+                var graveCards = ids.Take(2).Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card))).ToArray();
+                if (graveCards.Any(card => card is null) || graveCards.Select(card => card!.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
+                    return CommandResult.Reject("需要选择墓地2张不同的合法卡牌");
+                var lowTarget = ids[2] == "mode:none" ? null : DeclaredEnemyTarget(playerIndex, ids[2], card => card.Troops <= 1000);
+                var broadTarget = ids[3] == "mode:none" ? null : DeclaredEnemyTarget(playerIndex, ids[3], card => card.Troops <= 5000);
+                if (ids[2] != "mode:none" && lowTarget is null || ids[3] != "mode:none" && broadTarget is null
+                    || lowTarget is not null && broadTarget?.InstanceId == lowTarget.InstanceId)
+                    return CommandResult.Reject("英灵殿声明的击杀目标不再合法");
+                if (lowTarget is null && PublicLegions(State.Players[1 - playerIndex]).Any(card => card.Troops <= 1000)
+                    || broadTarget is null && PublicLegions(State.Players[1 - playerIndex]).Any(card => card.Troops <= 5000 && card.InstanceId != lowTarget?.InstanceId))
+                    return CommandResult.Reject("仍存在必须选择的合法击杀目标");
+                source.Tapped = true;
+                player.MasterTapped = true;
+                MoveGraveToLibraryBottom(player, graveCards.Cast<L12CardInstance>());
+                break;
+            }
+            case "valkyrieRecover" when source.CardId == "S01-03M1":
+            {
+                var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (ids.Length != 3 || player.Hp <= 1 || ActiveResourceCount(player) < 1)
+                    return CommandResult.Reject("需要完成墓地选择、1张活跃士气且主宰血量需高于1");
+                var pair = ids.Take(2).Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card))).ToArray();
+                if (pair.Any(card => card is null) || pair.Select(card => card!.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
+                    || !ids.Take(2).Contains(ids[2], StringComparer.OrdinalIgnoreCase))
+                    return CommandResult.Reject("瓦尔基里声明的墓地卡牌不再合法");
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
+                DamageMaster(playerIndex, 1, "瓦尔基里主宰效果");
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             case "lokiCycle" when source.CardId == "S01-03M2":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "lokiHeal" when source.CardId == "S01-03M2":
@@ -822,11 +898,30 @@ public sealed partial class L12GameEngine
             }
             case "valhallaDiscount": player.NextFactionLegionDiscount = Math.Max(player.NextFactionLegionDiscount, 1); FinishStackItem(item); return true;
             case "valhallaRecover": Mill(player, 2, "英灵殿"); RecoverAsgard(item, int.MaxValue, false); return true;
-            case "valhallaKill": MoveGraveToLibraryBottom(player, player.Graveyard.Take(2)); PromptEnemyByTroops(item, "valhalla-kill5", "英灵殿：击杀对方1张兵力不高于5000的军团", 5000, true); return true;
+            case "valhallaKill":
+            {
+                var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
+                if (ids.Length == 4)
+                {
+                    if (ids[2] != "mode:none") KillTarget(ids[2], "被英灵殿击杀");
+                    if (ids[3] != "mode:none") KillTarget(ids[3], "被英灵殿击杀");
+                }
+                FinishStackItem(item); return true;
+            }
             case "valkyrieRecover":
             {
-                var choices = player.Graveyard.Take(2).Select(card => card.InstanceId).ToArray(); if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "card", "瓦尔基里：选择其中1张加入手牌，其余返回牌库底部", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "valkyrie-pick" }); return true;
+                var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
+                if (ids.Length != 3) { FinishStackItem(item); return true; }
+                var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == ids[2]);
+                var bottomCard = player.Graveyard.FirstOrDefault(card => ids.Take(2).Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase)
+                    && card.InstanceId != ids[2]);
+                if (handCard is not null)
+                {
+                    player.Graveyard.Remove(handCard);
+                    AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}因瓦尔基里效果加入手牌");
+                }
+                if (bottomCard is not null) MoveGraveToLibraryBottom(player, [bottomCard]);
+                FinishStackItem(item); return true;
             }
             case "lokiCycle": Draw(player, 1); PromptDiscard(item, item.Controller, 1, "洛基：弃置1张手牌", "death-cycle-discard"); return true;
             case "lokiHeal":

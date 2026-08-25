@@ -11,6 +11,18 @@ public sealed class ExtendedCardEffectsTests
     private static L12GameEngine Create(int firstDeck, int secondDeck, int seed = 9012)
         => new(Catalog, "extended-effects", "EFFECT", seed, ["甲", "乙"], [firstDeck, secondDeck], skipPreparation: true);
 
+    private static L12GameEngine CreateWithFirstMaster(string masterId, int seed = 9012)
+    {
+        var baseDeck = Catalog.DeckAt(2);
+        var firstDeck = new L12PresetDeckDefinition
+        {
+            Name = $"{masterId}测试牌库", MasterId = masterId,
+            CardIds = [.. baseDeck.CardIds], MoraleIds = [.. baseDeck.MoraleIds], SpecialIds = [.. baseDeck.SpecialIds],
+        };
+        return new L12GameEngine(Catalog, "extended-effects", "EFFECT", seed,
+            ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true);
+    }
+
     private static void ReadyMain(L12GameEngine game, int playerIndex)
     {
         game.State.ActivePlayer = playerIndex;
@@ -624,6 +636,79 @@ public sealed class ExtendedCardEffectsTests
         Assert.Contains(graveA.InstanceId, prompt.ValidChoices);
         Assert.Contains(graveB.InstanceId, prompt.ValidChoices);
         Assert.Contains(graveC.InstanceId, prompt.ValidChoices);
+    }
+
+    [Fact]
+    public void ValhallaDeclaresGraveCardsAndBothDistinctKillTargetsBeforePayingItsRestCost()
+    {
+        var game = Create(3, 2);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        ReadyMain(game, 0);
+        var valhalla = Card("S01-03D1", "test-valhalla");
+        player.Relic = valhalla;
+        var graveA = Card("S01-0309", "test-valhalla-grave-a");
+        var graveB = Card("S01-0311", "test-valhalla-grave-b");
+        var graveC = Card("S01-0312", "test-valhalla-grave-c");
+        player.Graveyard.AddRange([graveA, graveB, graveC]);
+        var low = Card("S01-0004", "test-valhalla-low");
+        var broad = Card("S01-0003", "test-valhalla-broad");
+        enemy.Field[0][0] = low;
+        enemy.Field[0][1] = broad;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", valhalla.InstanceId, Ability: "valhallaKill")).Accepted);
+        var gravePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(graveC.InstanceId, gravePrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: gravePrompt.PromptId,
+            CardInstanceIds: [graveA.InstanceId, graveB.InstanceId])).Accepted);
+        Assert.False(valhalla.Tapped);
+
+        var lowPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(low.InstanceId, lowPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: lowPrompt.PromptId, Choice: low.InstanceId)).Accepted);
+        var broadPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain(low.InstanceId, broadPrompt.ValidChoices);
+        Assert.Contains(broad.InstanceId, broadPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: broadPrompt.PromptId, Choice: broad.InstanceId)).Accepted);
+
+        Assert.True(valhalla.Tapped);
+        Assert.DoesNotContain(graveA, player.Graveyard);
+        Assert.DoesNotContain(graveB, player.Graveyard);
+        PassResponses(game);
+        Assert.DoesNotContain(low, enemy.Field.SelectMany(row => row).Where(card => card is not null));
+        Assert.DoesNotContain(broad, enemy.Field.SelectMany(row => row).Where(card => card is not null));
+    }
+
+    [Fact]
+    public void ValkyrieDeclaresTwoCardsAndTheirDestinationsBeforePayingItsCosts()
+    {
+        var game = CreateWithFirstMaster("S01-03M1");
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var graveA = Card("S01-0309", "test-valkyrie-grave-a");
+        var graveB = Card("S01-0311", "test-valkyrie-grave-b");
+        var graveC = Card("S01-0312", "test-valkyrie-grave-c");
+        player.Graveyard.AddRange([graveA, graveB, graveC]);
+        var hpBefore = player.Hp;
+        var activeMoraleBefore = player.Morale.Count(card => !card.Tapped);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "valkyrieRecover")).Accepted);
+        var pairPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(graveC.InstanceId, pairPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pairPrompt.PromptId,
+            CardInstanceIds: [graveA.InstanceId, graveB.InstanceId])).Accepted);
+        Assert.Equal(hpBefore, player.Hp);
+        Assert.Equal(activeMoraleBefore, player.Morale.Count(card => !card.Tapped));
+
+        var destinationPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(new[] { graveA.InstanceId, graveB.InstanceId }.Order(), destinationPrompt.ValidChoices.Where(id => id != "skip").Order());
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: destinationPrompt.PromptId, Choice: graveB.InstanceId)).Accepted);
+        Assert.Equal(hpBefore - 1, player.Hp);
+        Assert.Equal(activeMoraleBefore - 1, player.Morale.Count(card => !card.Tapped));
+        PassResponses(game);
+        Assert.Contains(graveB, player.Hand);
+        Assert.Equal(graveA, player.Library[^1]);
+        Assert.Contains(graveC, player.Graveyard);
     }
 
     [Theory]

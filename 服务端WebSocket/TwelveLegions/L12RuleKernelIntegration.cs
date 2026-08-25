@@ -83,6 +83,41 @@ public sealed partial class L12GameEngine
             }
             promptKind = "slot";
         }
+        else if (step.Kind == "declared-card")
+        {
+            var choices = activation.DeclaredTargets
+                .Where(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "此前声明的卡牌已失效，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "card";
+        }
+        else if (step.Kind == "enemy-unselected-required")
+        {
+            var choices = step.ValidChoices
+                .Where(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)
+                    && !activation.DeclaredTargets.Contains(id, StringComparer.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            step.ValidChoices.Clear();
+            if (choices.Count == 0)
+            {
+                step.ValidChoices.Add("mode:none");
+                step.ChoiceLabels["mode:none"] = "没有其他合法目标，继续结算";
+                promptKind = "option";
+            }
+            else
+            {
+                step.ValidChoices.AddRange(choices);
+                promptKind = "active-target";
+            }
+        }
         var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
