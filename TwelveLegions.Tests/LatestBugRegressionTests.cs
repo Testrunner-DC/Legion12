@@ -1046,6 +1046,36 @@ public sealed class LatestBugRegressionTests
             prompt => prompt.Continuation == "card-effect" && prompt.StackItemId is not null);
     }
 
+    [Theory]
+    [InlineData("S01-0201")]
+    [InlineData("S01-0202")]
+    public void SummonTurnCounterTacticProtectionComesFromStructuredRules(string cardId)
+    {
+        var game = Create(6427);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var protectedLegion = Card(cardId, $"structured-counter-protection-{cardId}");
+        var ambush = Card("S01-0019", $"structured-counter-ambush-{cardId}");
+        owner.Hand.Clear();
+        owner.Hand.Add(protectedLegion);
+        AddReadyMorale(owner, protectedLegion.Cost);
+        ambush.Hidden = true;
+        ambush.SetRound = 0;
+        opponent.Field[1][0] = ambush;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", protectedLegion.InstanceId, Row: 0, Slot: 0));
+
+        Assert.True(played.Accepted, played.Error);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(ambush.InstanceId));
+        Assert.Same(ambush, opponent.Field[1][0]);
+        Assert.True(ambush.Hidden);
+        Assert.Same(protectedLegion, owner.Field[0][0]);
+    }
+
     [Fact]
     public void WorldRingMakesUniversalCardsUseOwnersFactionForSharedFilters()
     {

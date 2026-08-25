@@ -43,6 +43,13 @@ public static class L12StructuredCardRules
         "S01-0101", "S02-0007",
     };
 
+    // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
+    // 响应窗口只查询这一处结构化规则，禁止再从 EffectText.Contains 推断。
+    private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards = new(StringComparer.Ordinal)
+    {
+        "S01-0201", "S01-0202",
+    };
+
     public static string EffectiveFaction(L12PlayerState owner, L12CardInstance card)
     {
         if (!string.Equals(card.Faction, "universal", StringComparison.Ordinal)) return card.Faction;
@@ -155,6 +162,9 @@ public static class L12StructuredCardRules
 
     public static bool HasProfession(L12CardInstance card, int row, string profession)
         => string.Equals(EffectiveProfession(card, row), profession, StringComparison.Ordinal);
+
+    public static bool HasSummonTurnCounterTacticProtection(L12CardInstance card, int currentRound)
+        => card.SummonRound == currentRound && SummonTurnCounterTacticProtectionCards.Contains(card.CardId);
 
     public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatRuleAbilities(string cardId)
     {

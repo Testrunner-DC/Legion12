@@ -811,8 +811,8 @@ public sealed partial class L12GameEngine
     {
         if (top.Trigger == "disaster") return true;
         var source = FindSource(top);
-        return source is not null && source.SummonRound == State.Round
-            && source.EffectText?.Contains("此军团登场回合不受反击战术效果影响", StringComparison.Ordinal) == true;
+        return source is not null
+            && L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
     }
 
     private void ResolveStackResponse(int playerIndex, L12Prompt prompt, string choice)
