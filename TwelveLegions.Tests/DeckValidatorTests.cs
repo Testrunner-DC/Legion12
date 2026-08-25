@@ -55,6 +55,52 @@ public sealed class DeckValidatorTests
         Assert.Contains("阵营不符", factionError);
     }
 
+    [Theory]
+    [InlineData("S01-0216", "taiyangcheng")]
+    [InlineData("S01-0217", "taiyangcheng")]
+    [InlineData("S01-0218", "taiyangcheng")]
+    [InlineData("S01-0219", "taiyangcheng")]
+    [InlineData("S01-0220", "taiyangcheng")]
+    [InlineData("S02-0008", "tianting")]
+    [InlineData("S02-0301", "asgard")]
+    public void LimitOneCardsAreRejectedAtTheSecondCopy(string cardId, string faction)
+    {
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == faction);
+        var cards = preset.CardIds.ToList();
+        while (cards.Count(id => id == cardId) < 2)
+        {
+            var replace = cards.FindIndex(id => id != cardId && !L12SpecialDeckRules.DoesNotCountTowardMainDeck(Catalog.Cards[id]));
+            Assert.True(replace >= 0);
+            cards[replace] = cardId;
+        }
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = $"限1-{cardId}",
+            MasterId = preset.MasterId,
+            CardIds = cards,
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        };
+
+        Assert.False(L12DeckValidator.TryValidate(Catalog, submission, out _, out var error));
+        Assert.Contains("最多 1 张", error);
+    }
+
+    [Fact]
+    public void CatalogKeepsTheCompleteLimitOneCardSet()
+    {
+        var limited = Catalog.Cards.Values
+            .Where(card => card.DeckLimit == 1)
+            .Select(card => card.Id)
+            .Order()
+            .ToArray();
+
+        Assert.Equal([
+            "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
+            "S02-0008", "S02-0301",
+        ], limited);
+    }
+
     [Fact]
     public void TombGuardsDoNotCountTowardMainDeckButRemainLimitedToThreeCopies()
     {

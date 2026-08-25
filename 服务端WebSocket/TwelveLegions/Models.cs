@@ -39,6 +39,7 @@ public sealed class L12CardDefinition
     public int? Troops { get; init; }
     public int? DisasterLevel { get; init; }
     public int? TrialValue { get; init; }
+    public int DeckLimit { get; init; } = 3;
     public List<string> Traits { get; init; } = [];
     public string? Profession { get; init; }
     public string? Effect { get; init; }

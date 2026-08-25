@@ -37,10 +37,16 @@ public static class L12DeckValidator
             return false;
         }
         var excessive = submission.CardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault(group => group.Count() > 3);
+            .Select(group => new
+            {
+                Id = group.Key,
+                Count = group.Count(),
+                Limit = catalog.Cards.TryGetValue(group.Key, out var card) ? card.DeckLimit : 3,
+            })
+            .FirstOrDefault(group => group.Count > group.Limit);
         if (excessive is not null)
         {
-            error = $"同编号卡牌最多 3 张：{excessive.Key}";
+            error = $"同编号卡牌最多 {excessive.Limit} 张：{excessive.Id}";
             return false;
         }
         foreach (var cardId in submission.CardIds)

@@ -13,6 +13,7 @@ export interface DeckCard {
   troops?: number
   disasterLevel?: number
   trialValue?: number
+  deckLimit?: number
   traits?: string[]
   profession?: string
   effect?: string
@@ -44,6 +45,7 @@ interface LookupCard {
   attack?: number | null
   disasterLevel?: number | null
   trialValue?: number | null
+  deckLimit?: number | null
   image?: string
   effectText?: string
   tags?: string[]
@@ -101,6 +103,7 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
       troops: card.attack ?? undefined,
       disasterLevel: card.disasterLevel ?? undefined,
       trialValue: card.trialValue ?? undefined,
+      deckLimit: card.deckLimit ?? undefined,
       traits: card.tags ?? [],
       profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
@@ -218,7 +221,8 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     if (!card || !MAIN_DECK_TYPES.has(card.cardType)) return `无效主牌：${id}`
     if (card.faction !== 'universal' && card.faction !== master.faction) return `${card.nameZh} 与主宰阵营不符`
     const count = (counts.get(id) || 0) + 1
-    if (count > 3) return `${card.nameZh} 同编号最多 3 张`
+    const limit = card.deckLimit ?? 3
+    if (count > limit) return `${card.nameZh} 同编号最多 ${limit} 张`
     counts.set(id, count)
   }
   const moraleCount = master.faction === 'taiyangcheng' ? 6 : 8

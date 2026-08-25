@@ -861,6 +861,7 @@
     "faction": "taiyangcheng",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/13280487222023819351/F08FED7A5CE8FBA8FD7DD865D6C5C6E193C1D48D/",
     "cost": 0,
+    "deckLimit": 1,
     "effect": "规则上，名字包含<卡诺匹斯>的圣物不计入圣物区上限。登场时 查看我方牌库，选择1张名字包含<卡诺匹斯罐>的圣物展示并加入手牌，重洗牌库。随后我方主宰增加1点血量，并弃置此圣物。"
   },
   {
@@ -872,6 +873,7 @@
     "faction": "taiyangcheng",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/11954310526599156471/ED999F8947E008F37DA7EF23802885E50F5FB0FB/",
     "cost": 0,
+    "deckLimit": 1,
     "effect": "规则上，名字包含<卡诺匹斯>的圣物不计入圣物区上限。登场时 选择我方1张【太阳城】军团，本回合兵力+2000并获得强攻。随后弃置此圣物。（进攻对主宰造成额外1点伤害）"
   },
   {
@@ -883,6 +885,7 @@
     "faction": "taiyangcheng",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/9257856656734667177/3AE8DB38D4D9FCDBBD2B8B67BF33E19F8A7F9520/",
     "cost": 0,
+    "deckLimit": 1,
     "effect": "规则上，名字包含<卡诺匹斯>的圣物不计入圣物区上限。登场时 本回合我方从手牌中打出的下1张战术卡无需消耗费用。随后弃置此圣物。"
   },
   {
@@ -894,6 +897,7 @@
     "faction": "taiyangcheng",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/10343602239879502782/9BE2F506A44976D82102458E2D80DBC0A0AC1477/",
     "cost": 0,
+    "deckLimit": 1,
     "effect": "规则上，名字包含<卡诺匹斯>的圣物不计入圣物区上限。登场时 本回合获得2点临时士气。随后弃置此圣物。"
   },
   {
@@ -905,6 +909,7 @@
     "faction": "taiyangcheng",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/11967749791714323056/D5C5F524468D4E92E1952AC143C6242933B10A29/",
     "cost": 0,
+    "deckLimit": 1,
     "effect": "规则上，名字包含<卡诺匹斯>的圣物不计入圣物区上限。登场时 选择我方最多2张【太阳城】军团，直到我方下个回合开始前获得免死。随后弃置此圣物。（仅1次，即将阵亡时，将兵力在本回合变为1000作为代替）"
   },
   {

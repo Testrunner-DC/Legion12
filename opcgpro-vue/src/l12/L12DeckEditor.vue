@@ -145,7 +145,8 @@ function toggleTrial(card: DeckCard) {
 function add(card: DeckCard) {
   if (!selectedMaster.value) { notice.value = '请先选择主宰'; return }
   const count = counts.value[card.id] || 0
-  if (count >= 3) { notice.value = '同编号卡牌最多 3 张'; return }
+  const limit = card.deckLimit ?? 3
+  if (count >= limit) { notice.value = `同编号卡牌最多 ${limit} 张`; return }
   if (card.id !== 'S01-0212' && totalCards.value >= 50) { notice.value = '主牌库最多 50 张'; return }
   counts.value = { ...counts.value, [card.id]: count + 1 }
   selected.value = card
@@ -324,7 +325,7 @@ onBeforeUnmount(closeDeckImage)
             <div class="pool-count-controls">
               <button :disabled="!(counts[card.id] || 0)" aria-label="减少一张" @click.stop="remove(card.id)">−</button>
               <strong>{{ counts[card.id] || 0 }}</strong>
-              <button :disabled="!masterId || (counts[card.id] || 0) >= 3 || (card.id !== 'S01-0212' && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
+              <button :disabled="!masterId || (counts[card.id] || 0) >= (card.deckLimit ?? 3) || (card.id !== 'S01-0212' && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
             </div>
           </article>
         </div>
@@ -348,7 +349,7 @@ onBeforeUnmount(closeDeckImage)
         <div class="deck-entries"><article v-for="entry in entries" :key="entry.card.id" @click="selected = entry.card">
           <img v-if="entry.card.imageUrl" class="deck-entry-banner" :src="entry.card.imageUrl" :alt="entry.card.nameZh" loading="lazy"/>
           <span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong>
-          <button aria-label="增加一张" :disabled="entry.count >= 3 || (entry.card.id !== 'S01-0212' && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
+          <button aria-label="增加一张" :disabled="entry.count >= (entry.card.deckLimit ?? 3) || (entry.card.id !== 'S01-0212' && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
           <button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button>
         </article><p v-if="!entries.length">从中间卡池加入卡牌，双击卡面也可快速加入。</p></div>
         <section v-if="trialCapacity" class="selected-trials">
