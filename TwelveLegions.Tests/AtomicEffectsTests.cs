@@ -230,6 +230,24 @@ public sealed class AtomicEffectsTests
     }
 
     [Theory]
+    [InlineData("S01-0302", "death", "operation.heal-master")]
+    [InlineData("S02-0301", "enter", "operation.set-state")]
+    [InlineData("S02-0302", "enter", "operation.heal-master")]
+    public void SimpleMasterPermissionAndHealingEffectsUseVerifiedRuntimePrograms(
+        string cardId, string trigger, string operation)
+    {
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find(cardId, trigger));
+        Assert.Contains(program.Atoms, atom => atom.Kind == operation);
+        Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
+
+        var card = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find(cardId));
+        var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == trigger);
+        Assert.Equal("verified", ability.MigrationStatus);
+        Assert.False(ability.HasLegacyFallback);
+        Assert.Equal(program.Atoms, ability.Atoms);
+    }
+
+    [Theory]
     [InlineData("S01-0115", "enter")]
     [InlineData("S01-0301", "death")]
     [InlineData("S01-0309", "death")]

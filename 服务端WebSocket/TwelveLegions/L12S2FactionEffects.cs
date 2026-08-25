@@ -337,15 +337,6 @@ public sealed partial class L12GameEngine
                 card.ImmortalUses = Math.Max(card.ImmortalUses, 1);
                 card.ImmortalUntilTurn = Math.Max(card.ImmortalUntilTurn, ExpiryAtNextOwnStart(item.Controller));
                 return PromptS2RichardEntryAttach(item, card);
-            case "S02-0301":
-                card.CanAttackMasterOnSummonUntilTurn = State.TurnSerial;
-                AddEvent("effect", item.Controller, "此军团本回合可以进攻对方主宰", card);
-                FinishStackItem(item);
-                return true;
-            case "S02-0302":
-                HealMaster(item.Controller, 1, "该军团登场时效果", legionEffect: true);
-                FinishStackItem(item);
-                return true;
             case "S02-0404":
             {
                 var choices = player.Library

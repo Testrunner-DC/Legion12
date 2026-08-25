@@ -299,7 +299,6 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "尼托克丽丝阵亡：选择墓地1张费用不高于2的【太阳城】军团活跃登场", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "nitocris-summon" }); return true;
             }
-            case "S01-0302": HealMaster(item.Controller, 1, "金发哈拉尔阵亡效果", legionEffect: true); FinishStackItem(item); return true;
             case "S01-0303": CreatePrompt(item.Controller, "optional", "传奇的拉格纳阵亡：是否抽取1张并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-one" }); return true;
             case "S01-0304":
                 if (item.Data.TryGetValue("declaredTargets", out var haraldTarget))

@@ -149,6 +149,15 @@ public static class L12StructuredCardRules
                     attackTroopsSetValue = setValue;
         }
 
+        // 职介本身是规则能力的来源，而不只是展示标签。任何持续效果将军团
+        // “视为【弓手】”后，都必须立即获得弓手的完整职介能力，禁止再要求
+        // 每张赋予职介的卡重复写距离与远程无损，或在进攻流程中按卡号特判。
+        if (string.Equals(profession, "弓手", StringComparison.Ordinal))
+        {
+            ranged = true;
+            rangedNoLoss = true;
+        }
+
         return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, attackTroopsSetValue,
             matchedConditions.Count == 0 ? "always" : string.Join(';', matchedConditions.Distinct(StringComparer.Ordinal)));
     }

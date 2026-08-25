@@ -1276,6 +1276,32 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void DerivedArcherProfessionAlwaysGrantsTheCompleteProfessionCombatAbility()
+    {
+        var definition = Catalog.Cards["S02-0507"];
+        var atalanta = new L12CardInstance
+        {
+            InstanceId = "derived-archer-profession",
+            CardId = definition.Id,
+            Name = definition.NameZh,
+            CardType = definition.CardType,
+            Faction = definition.Faction,
+            Profession = definition.Profession,
+            EffectText = definition.Effect,
+        };
+
+        var front = L12StructuredCardRules.CombatProfile(atalanta, 0);
+        var back = L12StructuredCardRules.CombatProfile(atalanta, 1);
+
+        Assert.NotEqual("弓手", front.EffectiveProfession);
+        Assert.False(front.HasRangeBonus);
+        Assert.False(front.HasRangedNoLoss);
+        Assert.Equal("弓手", back.EffectiveProfession);
+        Assert.True(back.HasRangeBonus);
+        Assert.True(back.HasRangedNoLoss);
+    }
+
+    [Fact]
     public void TiantingFactionEffectsUseTheMoraleCardRules()
     {
         var game = Create(seed: 8861);

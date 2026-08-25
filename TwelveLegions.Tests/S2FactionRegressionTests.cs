@@ -994,6 +994,24 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void GoldenHaraldDeathHealsMasterThroughTheSharedAtomicRuntime()
+    {
+        var game = Create(63022);
+        var player = game.State.Players[0];
+        player.Hp = player.MaxHp - 2;
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S01-0302", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var harald = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: harald.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(player.MaxHp - 1, player.Hp);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("金发哈拉尔", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AsgardTacticMillsBeforeItDebuffsTheChosenEnemy()
     {
         var game = Create(6303);

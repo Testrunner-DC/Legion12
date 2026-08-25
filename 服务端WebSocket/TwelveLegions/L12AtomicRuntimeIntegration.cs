@@ -54,6 +54,9 @@ public sealed partial class L12GameEngine
                     else if (atom.Parameters.GetValueOrDefault("key") == "source.canAttackLegionsOnSummonUntilTurn"
                         && atom.Parameters.GetValueOrDefault("value") == "current-turn")
                         source.CanAttackLegionsOnSummonUntilTurn = State.TurnSerial;
+                    else if (atom.Parameters.GetValueOrDefault("key") == "source.canAttackMasterOnSummonUntilTurn"
+                        && atom.Parameters.GetValueOrDefault("value") == "current-turn")
+                        source.CanAttackMasterOnSummonUntilTurn = State.TurnSerial;
                     else
                         throw new InvalidOperationException($"Unsupported verified atomic state key: {atom.Parameters.GetValueOrDefault("key")}");
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
