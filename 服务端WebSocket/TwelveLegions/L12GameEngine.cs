@@ -813,9 +813,17 @@ public sealed partial class L12GameEngine
     private bool ReturnSelectedMoraleById(L12PlayerState player, IReadOnlyCollection<string> selectedIds,
         int count, bool requireActive = false)
     {
+        if (!CanReturnSelectedMoraleById(player, selectedIds, count, requireActive)) return false;
+        var selected = player.Morale.Where(card => selectedIds.Contains(card.InstanceId)).ToArray();
+        return ReturnSelectedMorale(player, selected, requireActive);
+    }
+
+    private static bool CanReturnSelectedMoraleById(L12PlayerState player,
+        IReadOnlyCollection<string> selectedIds, int count, bool requireActive = false)
+    {
         if (selectedIds.Count != count || selectedIds.Distinct(StringComparer.Ordinal).Count() != count) return false;
         var selected = player.Morale.Where(card => selectedIds.Contains(card.InstanceId)).ToArray();
-        return selected.Length == count && ReturnSelectedMorale(player, selected, requireActive);
+        return selected.Length == count && selected.All(card => !requireActive || !card.Tapped);
     }
 
     private bool ReturnSelectedMorale(L12PlayerState player, IReadOnlyCollection<L12MoraleCard> returned, bool requireActive = false)

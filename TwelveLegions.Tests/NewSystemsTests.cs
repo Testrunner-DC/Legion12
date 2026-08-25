@@ -128,6 +128,77 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void PrideMasterEffectStagesReturnAndPaymentWithoutDoubleCharging()
+    {
+        var game = Create(seed: 5534);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].MasterId == "S01-01M1");
+        var player = game.State.Players[owner];
+        AddAllMorale(player);
+        foreach (var morale in player.Morale) morale.Tapped = true;
+        var readyOrdinaryA = player.Morale[0];
+        var readyOrdinaryB = player.Morale[1];
+        var readyGodPower = player.Morale[2];
+        readyOrdinaryA.Tapped = false;
+        readyOrdinaryB.Tapped = false;
+        readyGodPower.Tapped = false;
+        readyGodPower.IsGodPower = true;
+        var selectedReturn = player.Morale.Where(card => card.Tapped).Take(3)
+            .Append(readyOrdinaryA).Select(card => card.InstanceId).ToArray();
+        var originalCount = player.Morale.Count;
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS06", "pride-return-disaster");
+
+        Assert.True(game.Handle(owner,
+            new L12Command("activateAbility", $"master-{owner}", Ability: "nonLethal")).Accepted);
+        var returnPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", returnPrompt.Kind);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
+            CardInstanceIds: [.. selectedReturn])).Accepted);
+
+        // 返还选择只是声明；复合费用全部确认前不得改变资源。
+        Assert.Equal(originalCount, player.Morale.Count);
+        var paymentPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", paymentPrompt.Kind);
+        Assert.DoesNotContain(readyOrdinaryA.InstanceId, paymentPrompt.ValidChoices);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            CardInstanceIds: [readyGodPower.InstanceId])).Accepted);
+
+        Assert.Equal(originalCount - 4, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, morale => selectedReturn.Contains(morale.InstanceId));
+        Assert.True(readyGodPower.Tapped);
+        Assert.Equal(4, player.ReturnedMoraleThisTurn);
+    }
+
+    [Fact]
+    public void PrideMasterEffectInsufficientPostReturnPaymentDoesNotMutateMorale()
+    {
+        var game = Create(seed: 5535);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].MasterId == "S01-01M1");
+        var player = game.State.Players[owner];
+        AddAllMorale(player);
+        while (player.Morale.Count > 4)
+        {
+            player.MoraleDeck.Add(player.Morale[^1]);
+            player.Morale.RemoveAt(player.Morale.Count - 1);
+        }
+        foreach (var morale in player.Morale) morale.Tapped = false;
+        var ids = player.Morale.Select(card => card.InstanceId).ToArray();
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS06", "pride-insufficient-disaster");
+
+        var result = game.Handle(owner,
+            new L12Command("activateAbility", $"master-{owner}", Ability: "nonLethal"));
+
+        Assert.False(result.Accepted);
+        Assert.Equal(ids, player.Morale.Select(card => card.InstanceId));
+        Assert.Equal(0, player.ReturnedMoraleThisTurn);
+    }
+
+    [Fact]
     public void DivineBalanceLetsBothPlayersDiscardSimultaneously()
     {
         var game = Create(seed: 5528);

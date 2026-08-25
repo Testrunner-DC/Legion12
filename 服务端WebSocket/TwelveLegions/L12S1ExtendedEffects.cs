@@ -697,9 +697,10 @@ public sealed partial class L12GameEngine
                     if (handCard is null || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
                         return CommandResult.Reject("声明的手牌目标或位置不再合法");
                 }
-                if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
-                if (!returnMoralePrepaid) ReturnMorale(player, 1); RemoveFromField(player, source, true, "被西施效果弃置",
-                    leaveKind: L12FieldLeaveKind.Discard); break;
+                if (!returnMoralePrepaid && !CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
+                if (!returnMoralePrepaid) ReturnMorale(player, 1);
+                RemoveFromField(player, source, true, "被西施效果弃置", leaveKind: L12FieldLeaveKind.Discard);
+                break;
             }
             case "destroyInfiltrator" when source.CardId == "S01-0004":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗2张活跃士气");

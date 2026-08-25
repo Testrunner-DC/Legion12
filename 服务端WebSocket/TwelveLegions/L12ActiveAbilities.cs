@@ -98,7 +98,8 @@ public sealed partial class L12GameEngine
         var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
         if (returnCost > 0 && ValidateActiveReturnPrepayment(playerIndex, source, ability, target) is { } returnError)
             return CommandResult.Reject(returnError);
-        if (returnCost > 0 && selectedReturnIds is null
+        var declaredReturnIds = selectedReturnIds?.ToArray();
+        if (returnCost > 0 && declaredReturnIds is null
             && NeedsManualReturnMoraleSelection(player, returnCost, requireActiveReturn))
         {
             CreateReturnMoralePrompt(playerIndex, returnCost, "active-return-choice", null,
@@ -109,24 +110,36 @@ public sealed partial class L12GameEngine
                 }, requireActiveReturn);
             return CommandResult.Ok();
         }
-        var returnPrepaid = false;
-        if (selectedReturnIds is not null)
-        {
-            if (!ReturnSelectedMoraleById(player, selectedReturnIds, returnCost, requireActiveReturn))
-                return CommandResult.Reject("选择的返还士气已失效或数量不正确");
-            returnPrepaid = true;
-        }
-        if (disasterMasterSurcharge > 0 && ActiveResourceCount(player) < moraleCost)
+        if (returnCost > 0 && declaredReturnIds is null)
+            declaredReturnIds = player.Morale.Where(card => !requireActiveReturn || !card.Tapped)
+                .OrderByDescending(card => card.Tapped).Take(returnCost).Select(card => card.InstanceId).ToArray();
+        if (declaredReturnIds is not null
+            && !CanReturnSelectedMoraleById(player, declaredReturnIds, returnCost, requireActiveReturn))
+            return CommandResult.Reject("选择的返还士气已失效或数量不正确");
+        if (disasterMasterSurcharge > 0 && ActiveResourceCountExcluding(player, declaredReturnIds) < moraleCost)
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
         if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
-            && NeedsManualOrdinaryResourcePayment(player, moraleCost))
+            && NeedsManualOrdinaryResourcePayment(player, moraleCost, declaredReturnIds))
         {
-            CreateResourcePaymentPrompt(playerIndex, moraleCost, "active-morale-choice", null, new Dictionary<string, string>
+            var paymentData = new Dictionary<string, string>
             {
                 ["sourceId"] = source.InstanceId, ["sourceCardId"] = source.CardId, ["ability"] = ability,
                 ["target"] = target ?? string.Empty,
-            });
+            };
+            if (declaredReturnIds is not null) paymentData["returnIds"] = string.Join('|', declaredReturnIds);
+            CreateResourcePaymentPrompt(playerIndex, moraleCost, "active-morale-choice", null, paymentData,
+                declaredReturnIds);
             return CommandResult.Ok();
+        }
+        if (selectedResourceIds is not null
+            && !CanConsumeSelectedResources(player, moraleCost, selectedResourceIds, declaredReturnIds))
+            return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+        var returnPrepaid = false;
+        if (declaredReturnIds is not null)
+        {
+            if (!ReturnSelectedMoraleById(player, declaredReturnIds, returnCost, requireActiveReturn))
+                return CommandResult.Reject("选择的返还士气已失效或数量不正确");
+            returnPrepaid = true;
         }
         if (selectedResourceIds is not null)
         {

@@ -39,12 +39,14 @@ public sealed partial class L12GameEngine
             ? PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped)
             : [];
 
-    private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost)
+    private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost,
+        IReadOnlyCollection<string>? excludedMoraleIds = null)
     {
         var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
         if (visibleCost <= 0) return false;
 
-        var morale = player.Morale.Where(card => !card.Tapped).ToArray();
+        var excluded = excludedMoraleIds?.ToHashSet(StringComparer.Ordinal) ?? [];
+        var morale = player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
         var guards = ActiveTombGuardResources(player).ToArray();
         var candidateCount = morale.Length + guards.Length;
         // 所有公开资源都必须支付时没有选择空间；直接支付可避免只有一个合法答案的空弹框。
@@ -61,11 +63,12 @@ public sealed partial class L12GameEngine
     }
 
     private void CreateResourcePaymentPrompt(int playerIndex, int totalCost, string continuation, string? stackItemId,
-        Dictionary<string, string> data)
+        Dictionary<string, string> data, IReadOnlyCollection<string>? excludedMoraleIds = null)
     {
         var player = State.Players[playerIndex];
+        var excluded = excludedMoraleIds?.ToHashSet(StringComparer.Ordinal) ?? [];
         var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
-        var availableMorale = player.Morale.Where(card => !card.Tapped).ToArray();
+        var availableMorale = player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
         var availableGuards = ActiveTombGuardResources(player).ToArray();
         var choices = availableMorale.Select(card => card.InstanceId)
             .Concat(availableGuards.Select(card => card.InstanceId))
@@ -88,18 +91,39 @@ public sealed partial class L12GameEngine
 
     private bool TryConsumeSelectedResources(L12PlayerState player, int totalCost, IReadOnlyCollection<string> selectedIds)
     {
-        if (totalCost < 0 || ActiveResourceCount(player) < totalCost) return false;
+        if (!CanConsumeSelectedResources(player, totalCost, selectedIds)) return false;
         var temporary = Math.Min(totalCost, player.TemporaryMorale);
         var visibleCost = totalCost - temporary;
-        if (selectedIds.Count != visibleCost || selectedIds.Distinct(StringComparer.Ordinal).Count() != visibleCost) return false;
         var morale = player.Morale.Where(card => selectedIds.Contains(card.InstanceId) && !card.Tapped).ToArray();
         var guards = ActiveTombGuardResources(player)
             .Where(card => selectedIds.Contains(card.InstanceId)).ToArray();
-        if (morale.Length + guards.Length != visibleCost) return false;
         player.TemporaryMorale -= temporary;
         foreach (var card in morale) card.Tapped = true;
         foreach (var card in guards) card.Tapped = true;
         return true;
+    }
+
+    private bool CanConsumeSelectedResources(L12PlayerState player, int totalCost,
+        IReadOnlyCollection<string> selectedIds, IReadOnlyCollection<string>? excludedMoraleIds = null)
+    {
+        if (totalCost < 0) return false;
+        var excluded = excludedMoraleIds?.ToHashSet(StringComparer.Ordinal) ?? [];
+        var temporary = Math.Min(totalCost, player.TemporaryMorale);
+        var visibleCost = totalCost - temporary;
+        if (selectedIds.Count != visibleCost || selectedIds.Distinct(StringComparer.Ordinal).Count() != visibleCost)
+            return false;
+        var morale = player.Morale.Where(card => selectedIds.Contains(card.InstanceId)
+            && !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
+        var guards = ActiveTombGuardResources(player).Where(card => selectedIds.Contains(card.InstanceId)).ToArray();
+        return morale.Length + guards.Length == visibleCost;
+    }
+
+    private int ActiveResourceCountExcluding(L12PlayerState player, IReadOnlyCollection<string>? excludedMoraleIds)
+    {
+        var excluded = excludedMoraleIds?.ToHashSet(StringComparer.Ordinal) ?? [];
+        return player.TemporaryMorale
+            + player.Morale.Count(card => !card.Tapped && !excluded.Contains(card.InstanceId))
+            + ActiveTombGuardResources(player).Count();
     }
 
     private void CompleteEffectMoralePayment(L12StackItem item, string afterPayment, IReadOnlyDictionary<string, string> data)
