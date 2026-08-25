@@ -167,7 +167,10 @@ public sealed partial class L12GameEngine
             player.NextS2SunDisasterLegionDiscount = 0;
         if (card.CardType == "legion" && card.Faction == "olympus" && player.NextS2OlympusLegionDiscount > 0)
             player.NextS2OlympusLegionDiscount = 0;
-        if (card.CardType == "tactic" && player.FreeTacticCount > 0) player.FreeTacticCount--;
+        if (card.CardType == "tactic" && player.FreeTacticCount > 0)
+            player.FreeTacticCount--;
+        else if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
+            player.UsedAbilities.Remove("ds01-free-tactic");
 
         var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
         if (HasImmediateEffect(card, trigger))
@@ -341,11 +344,12 @@ public sealed partial class L12GameEngine
 
     private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0)
     {
-        if (card.CardType == "tactic" && (State.Players[playerIndex].UsedAbilities.Contains("ds01-free-tactic")
-            || State.Players[playerIndex].FreeTacticCount > 0)) return 0;
-        if (card.CardType == "tactic" && IsCounterTactic(card.CardId)) return card.CurrentCost;
-        var modifier = card.CostModifier;
         var player = State.Players[playerIndex];
+        var counterTactic = card.CardType == "tactic" && IsCounterTactic(card.CardId);
+        if (card.CardType == "tactic" && (player.FreeTacticCount > 0
+            || (!counterTactic && player.UsedAbilities.Contains("ds01-free-tactic")))) return 0;
+        if (counterTactic) return card.CurrentCost;
+        var modifier = card.CostModifier;
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId)) modifier += player.NextActiveTacticSurcharge;
         if (card.CardId is "S01-0104" or "S01-0107" or "S01-0114"
             && State.Players[playerIndex].Morale.Count < State.Players[1 - playerIndex].Morale.Count)
@@ -383,8 +387,7 @@ public sealed partial class L12GameEngine
         var slot = command.Slot.Value;
         if (player.Field[1][slot] is { CardType: not "tactic" }) return CommandResult.Reject("该后排阵地已有军团");
         var freeFromDisaster = State.ActiveDisaster?.CardId == "S01-DS03";
-        var freeFromEffect = !freeFromDisaster && (player.FreeTacticCount > 0
-            || player.UsedAbilities.Contains("ds01-free-tactic"));
+        var freeFromEffect = !freeFromDisaster && player.FreeTacticCount > 0;
         var cost = freeFromDisaster || freeFromEffect ? 0 : 2;
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("覆盖反击战术需要消耗 2 张活跃士气");
         var paymentChoice = EnsurePlayResourcePaymentChoice(playerIndex, card, command, cost);
@@ -406,11 +409,7 @@ public sealed partial class L12GameEngine
         card.SetRound = State.Round;
         card.SummonRound = State.Round;
         player.Field[1][slot] = card;
-        if (freeFromEffect)
-        {
-            if (player.FreeTacticCount > 0) player.FreeTacticCount--;
-            else player.UsedAbilities.Remove("ds01-free-tactic");
-        }
+        if (freeFromEffect) player.FreeTacticCount--;
         AddEvent("counter-set", playerIndex, $"{player.Name} 在后排覆盖 1 张反击战术");
         return CommandResult.Ok();
     }

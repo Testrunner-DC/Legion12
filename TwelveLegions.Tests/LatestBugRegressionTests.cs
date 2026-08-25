@@ -539,6 +539,32 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void DimMorningStarFreeActiveTacticDoesNotDiscountCounterAndIsConsumedByActiveTactic()
+    {
+        var game = Create(64031);
+        var player = game.State.Players[0];
+        var counter = Card("S01-0016", "morning-star-counter");
+        var active = Card("S01-0012", "morning-star-active");
+        player.Hand.Clear();
+        player.Hand.AddRange([counter, active]);
+        AddReadyMorale(player, 2);
+        player.UsedAbilities.Add("ds01-free-tactic");
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var initialHand = SnapshotHand(game, 0);
+        Assert.Equal(2, Assert.Single(initialHand, card => card.InstanceId == counter.InstanceId).PlayCost);
+        Assert.Equal(0, Assert.Single(initialHand, card => card.InstanceId == active.InstanceId).PlayCost);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", counter.InstanceId, Row: 1, Slot: 0)).Accepted);
+        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Contains("ds01-free-tactic", player.UsedAbilities);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", active.InstanceId)).Accepted);
+        Assert.DoesNotContain("ds01-free-tactic", player.UsedAbilities);
+    }
+
+    [Fact]
     public void DefeatedLegionLeavesImmediatelyAndResetsAllTransientFieldState()
     {
         var game = Create(6404);
