@@ -1623,6 +1623,37 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void PrometheusMasterSnapshotAndRealMasterActivationConsumeButDoNotFlipGodPower()
+    {
+        var game = CreateWithFirstMaster("S02-05M2", 63150);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        var godPower = new L12MoraleCard
+        {
+            InstanceId = "prometheus-real-power", CardId = "S02-05C1", Tapped = false, IsGodPower = true,
+        };
+        player.Morale.Add(godPower);
+        player.Library.AddRange([
+            Card("S02-0502", "prometheus-real-olympus"),
+            Card("S02-0003", "prometheus-real-second"),
+            Card("S02-0402", "prometheus-real-third"),
+        ]);
+        game.State.Phase = L12Phase.Main;
+
+        var snapshot = JsonSerializer.Serialize(game.SnapshotFor(0));
+        Assert.Contains("prometheusTopThree", snapshot);
+        var activation = game.Handle(0, new L12Command("activateAbility", player.MasterId,
+            Ability: "prometheusTopThree"));
+        Assert.True(activation.Accepted, activation.Error);
+        Assert.True(godPower.Tapped);
+        Assert.True(godPower.IsGodPower);
+        PassResponses(game);
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "s2-prometheus-pick");
+    }
+
+    [Fact]
     public void HannibalConsumesGodPowerWithoutFlippingItBackToMorale()
     {
         var game = Create(63151);
