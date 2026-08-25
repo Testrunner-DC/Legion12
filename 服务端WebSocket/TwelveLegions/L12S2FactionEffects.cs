@@ -301,12 +301,25 @@ public sealed partial class L12GameEngine
                 return true;
             case "S02-0617":
             {
-                var squires = player.Hand.Concat(player.Library).Concat(player.Graveyard)
-                    .Where(candidate => candidate.CardId == "S02-0609").Select(candidate => candidate.InstanceId).ToList();
-                squires.Add("skip");
+                var candidates = player.Hand.Concat(player.Library).Concat(player.Graveyard)
+                    .Where(candidate => candidate.CardId == "S02-0609").ToArray();
+                var squires = candidates.Select(candidate => candidate.InstanceId).Append("skip").ToArray();
+                var data = new Dictionary<string, string>
+                {
+                    ["action"] = "s2-robin-summon-squire",
+                    ["skip"] = "不发动",
+                    ["layout"] = "single-row",
+                    ["displayCardIds"] = string.Join('|', candidates.Select(candidate => candidate.InstanceId)),
+                };
+                foreach (var candidate in candidates)
+                {
+                    AddPromptCardData(data, candidate);
+                    data[$"{candidate.InstanceId}:zone"] = player.Hand.Contains(candidate) ? "手牌"
+                        : player.Library.Contains(candidate) ? "牌库" : "墓地";
+                }
                 CreatePrompt(item.Controller, "optional-card", "罗宾汉：可从手牌、牌库或墓地选择1张〈侍从骑士〉活跃登场",
                     squires, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-robin-summon-squire", ["skip"] = "不发动" });
+                    data: data);
                 return true;
             }
             case "S02-0619":

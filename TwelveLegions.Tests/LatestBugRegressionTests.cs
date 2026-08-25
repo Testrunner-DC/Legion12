@@ -1077,6 +1077,165 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void RunePowerCompletesOptionalPaymentSearchRevealAndBottomOrder()
+    {
+        var game = Create(6428);
+        var player = game.State.Players[0];
+        var runePower = Card("S02-0620", "rune-power-flow");
+        var eligible = Card("S02-0609", "rune-power-eligible");
+        var neutral = Card("S01-0003", "rune-power-neutral");
+        var sameName = Card("S02-0620", "rune-power-same-name");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(runePower);
+        player.Library.AddRange([eligible, neutral, sameName]);
+        AddReadyMorale(player, runePower.Cost + 1);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", runePower.InstanceId));
+        Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+        var pay = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rune-power-pay-choice", pay.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pay.PromptId, Choice: "yes")).Accepted);
+        if (game.State.PendingPrompts.SingleOrDefault()?.Kind == "resource-payment")
+        {
+            var resource = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: resource.PromptId,
+                CardInstanceIds: resource.ValidChoices.Take(1).ToList())).Accepted);
+        }
+
+        var pick = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rune-power-pick", pick.Data["action"]);
+        Assert.Contains(eligible.InstanceId, pick.ValidChoices);
+        Assert.DoesNotContain(neutral.InstanceId, pick.ValidChoices);
+        Assert.DoesNotContain(sameName.InstanceId, pick.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pick.PromptId,
+            Choice: eligible.InstanceId)).Accepted);
+
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rune-power-bottom-order", order.Data["action"]);
+        var ordered = game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            BottomCardInstanceIds: [sameName.InstanceId, neutral.InstanceId]));
+        Assert.True(ordered.Accepted, ordered.Error);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Contains(eligible, player.Hand);
+        Assert.Equal([sameName.InstanceId, neutral.InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal" && entry.Cards.Any(card => card.InstanceId == eligible.InstanceId));
+    }
+
+    [Fact]
+    public void RobinLabelsSquireSourceAndSummonsTheChosenCardIntoASelectedSlot()
+    {
+        var game = Create(6429);
+        var player = game.State.Players[0];
+        var robin = Card("S02-0617", "robin-flow");
+        var squire = Card("S02-0609", "robin-library-squire");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(robin);
+        player.Library.Add(squire);
+        AddReadyMorale(player, robin.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", robin.InstanceId, Row: 0, Slot: 0));
+        Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+        var choose = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-robin-summon-squire", choose.Data["action"]);
+        Assert.Equal("牌库", choose.Data[$"{squire.InstanceId}:zone"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choose.PromptId,
+            Choice: squire.InstanceId)).Accepted);
+
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("queued-summon-slot", slot.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:2")).Accepted);
+        Assert.Same(squire, player.Field[1][2]);
+        Assert.False(squire.Tapped);
+        Assert.DoesNotContain(squire, player.Library);
+    }
+
+    [Fact]
+    public void RyomaCanAtomicallySwapTwoChosenRestedLegions()
+    {
+        var game = Create(6430);
+        var player = game.State.Players[0];
+        var ryoma = Card("S01-0407", "ryoma-flow");
+        var first = Card("S01-0401", "ryoma-first");
+        var second = Card("S01-0402", "ryoma-second");
+        first.Tapped = true;
+        second.Tapped = true;
+        player.Hand.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(ryoma);
+        player.Field[0][0] = first;
+        player.Field[1][2] = second;
+        AddReadyMorale(player, ryoma.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", ryoma.InstanceId, Row: 0, Slot: 1));
+        Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+        var choose = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("ryoma-pick", choose.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choose.PromptId,
+            CardInstanceIds: [first.InstanceId, second.InstanceId])).Accepted);
+
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("ryoma-slot", slot.Data["action"]);
+        Assert.Contains("1:2", slot.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:2")).Accepted);
+        Assert.Same(second, player.Field[0][0]);
+        Assert.Same(first, player.Field[1][2]);
+    }
+
+    [Fact]
+    public void EnterEffectControllerRegainsResponsePriorityAfterOpponentAmbush()
+    {
+        var game = Create(6431);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var entering = Card("S01-0114", "enter-response-source");
+        var absoluteDefense = Card("S01-0016", "enter-response-defense");
+        var ambush = Card("S01-0019", "enter-response-ambush");
+        var discardCost = Card("S01-0003", "enter-response-discard");
+        owner.Hand.Clear();
+        owner.Morale.Clear();
+        owner.Hand.AddRange([entering, discardCost]);
+        AddReadyMorale(owner, entering.Cost);
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        owner.Field[1][0] = absoluteDefense;
+        ambush.Hidden = true;
+        ambush.SetRound = 0;
+        opponent.Field[1][0] = ambush;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0));
+        Assert.True(played.Accepted, played.Error);
+        var opponentResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, opponentResponse.PlayerIndex);
+        Assert.Contains(ambush.InstanceId, opponentResponse.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: opponentResponse.PromptId,
+            Choice: ambush.InstanceId)).Accepted);
+
+        var ownerResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, ownerResponse.PlayerIndex);
+        Assert.Contains(absoluteDefense.InstanceId, ownerResponse.ValidChoices);
+    }
+
+    [Fact]
     public void WorldRingMakesUniversalCardsUseOwnersFactionForSharedFilters()
     {
         var game = Create(6424);
