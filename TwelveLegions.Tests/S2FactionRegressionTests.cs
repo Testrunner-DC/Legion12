@@ -73,6 +73,67 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void ArthurDeathDeclaresHandCardAndBattlefieldSlotBeforeEnteringStack()
+    {
+        var game = Create(63000);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        var knight = Card("S02-0604", "arthur-declared-knight");
+        player.Hand.Add(knight);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0601", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var arthur = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: arthur.InstanceId)).Accepted);
+        PassResponses(game);
+        var cardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", cardPrompt.Continuation);
+        Assert.Contains(knight.InstanceId, cardPrompt.ValidChoices);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceCardId == "S02-0601");
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: cardPrompt.PromptId,
+            Choice: knight.InstanceId)).Accepted);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", slotPrompt.Kind);
+        var slot = slotPrompt.ValidChoices[0];
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: slot)).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(knight, player.Hand);
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == knight.InstanceId && !card.Tapped);
+    }
+
+    [Fact]
+    public void TheseusDeathDeclaresPromotionRecoveryAndRevealsItBeforeResolution()
+    {
+        var game = Create(63001);
+        var player = game.State.Players[0];
+        var promotion = Card("S02-0501", "theseus-declared-promotion");
+        player.Graveyard.Add(promotion);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0518", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var theseus = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: theseus.InstanceId)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", prompt.Continuation);
+        Assert.Contains(promotion.InstanceId, prompt.ValidChoices);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: promotion.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(promotion, player.Hand);
+        Assert.DoesNotContain(promotion, player.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "return"
+            && entry.Cards.Any(card => card.InstanceId == promotion.InstanceId));
+    }
+
+    [Fact]
     public void HeraclesMayDeclineItsDrawTwoDiscardOneEnterEffect()
     {
         var game = Create(63010);

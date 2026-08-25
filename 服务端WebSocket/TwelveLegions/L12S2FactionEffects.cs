@@ -23,7 +23,7 @@ public sealed partial class L12GameEngine
 
     private static readonly HashSet<string> S2FactionDeathCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S02-01S1", "S02-0202", "S02-0203", "S02-0301", "S02-0402", "S02-0508", "S02-0512", "S02-0601", "S02-0609", "S02-0613", "S02-0615",
+        "S02-01S1", "S02-0202", "S02-0203", "S02-0301", "S02-0402", "S02-0508", "S02-0512", "S02-0518", "S02-0601", "S02-0609", "S02-0613", "S02-0615",
     };
 
     private static readonly HashSet<string> S2PromotionEnterCards = new(StringComparer.OrdinalIgnoreCase)
@@ -818,6 +818,12 @@ public sealed partial class L12GameEngine
         {
             case "S02-0601":
             {
+                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                {
+                    var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    if (selected.Length == 2) SummonFromAnyPrivateZone(player, selected[0], selected[1], tapped: false);
+                    FinishStackItem(item); return true;
+                }
                 var choices = player.Hand.Where(candidate => candidate.CardType == "legion" && candidate.HasTrait("圆桌骑士") && candidate.CurrentCost <= 4)
                     .Select(candidate => candidate.InstanceId).Append("skip").ToList();
                 if (choices.Count == 1 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
@@ -826,6 +832,15 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-arthur-summon", ["skip"] = "不发动" });
                 return true;
             }
+            case "S02-0518":
+                if (item.Data.TryGetValue("declaredTargets", out var theseusDeclared))
+                {
+                    if (!string.IsNullOrWhiteSpace(theseusDeclared)) MoveGraveToHand(player, theseusDeclared);
+                    FinishStackItem(item);
+                    return true;
+                }
+                FinishStackItem(item);
+                return true;
             case "S02-01S1":
                 CreatePrompt(item.Controller, "optional", "哮天犬·稚阵亡：是否从士气牌库追加1张休整士气？",
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,

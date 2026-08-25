@@ -68,6 +68,21 @@ public sealed partial class L12GameEngine
             }
             promptKind = "slot";
         }
+        else if (step.Kind == "unused-slot")
+        {
+            var player = State.Players[activation.Controller];
+            var choices = EmptySlots(player)
+                .Except(activation.DeclaredTargets, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "可用战场位置不足，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
         var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
@@ -460,6 +475,27 @@ public sealed partial class L12GameEngine
                 player.Graveyard.Where(card => CanEnterHandOrLibrary(card) && card.CardId != "S01-0207"
                     && card.Faction == "taiyangcheng" && card.CurrentCost <= 4).Select(card => card.InstanceId), 0));
         }
+        else if (candidate.SourceCardId == "S01-0204")
+        {
+            var attachedIds = source.LastKnownAttachedCardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var guards = player.Graveyard
+                .Where(card => card.CardId == "S01-0212" && attachedIds.Contains(card.InstanceId))
+                .Take(EmptySlots(player).Count()).Select(card => card.InstanceId).ToList();
+            candidate.Data["declaredCardIds"] = string.Join('|', guards);
+            for (var index = 0; index < guards.Count; index++)
+                steps.Add(TriggerStep("unused-slot", $"陵墓构造体：选择第{index + 1}张〈陵墓守卫〉休整登场的位置",
+                    EmptySlots(player), 1));
+        }
+        else if (candidate.SourceCardId == "S01-0206")
+        {
+            steps.Add(TriggerStep("field-legion", "萨拉丁：可选择我方1张〈陵墓守卫〉进行位移",
+                PublicLegions(player).Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId), 0));
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "unused-slot", Text = "选择〈陵墓守卫〉位移后的位置", ValidChoices = EmptySlots(player).ToList(),
+                MinChoose = 1, MaxChoose = 1, SkipWhenPreviousStepEmpty = true,
+            });
+        }
         else if (candidate.SourceCardId == "S01-0210")
         {
             steps.Add(TriggerStep("grave-card", "尼托克丽丝：选择墓地1张费用不高于2的【太阳城】军团活跃登场",
@@ -476,10 +512,56 @@ public sealed partial class L12GameEngine
             steps.Add(TriggerStep("field-legion", "无情者哈拉尔：选择对方1张兵力不高于2000的军团并击杀",
                 PublicLegions(opponent).Where(card => card.Troops <= 2000).Select(card => card.InstanceId), 1));
         }
+        else if (candidate.SourceCardId == "S01-0305")
+        {
+            var graveCards = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId)
+                .Select(card => card.InstanceId).ToList();
+            steps.Add(TriggerStep("order", "勇士比约恩：选择墓地4张牌并决定返回牌库底部的顺序；完成声明后主宰受到1点伤害",
+                graveCards, 4, 4));
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "unused-slot", Text = "选择〈勇士比约恩〉休整登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                MinChoose = 1, MaxChoose = 1,
+            });
+        }
+        else if (candidate.SourceCardId == "S01-0307")
+        {
+            steps.Add(TriggerStep("grave-card", "阿尔维达：可选择墓地1张费用不高于3的【阿斯加德】卡牌加入手牌",
+                player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && card.CurrentCost <= 3).Select(card => card.InstanceId), 0));
+        }
+        else if (candidate.SourceCardId == "S01-0308")
+        {
+            steps.Add(TriggerStep("grave-card", "血斧艾瑞克：可选择墓地1张费用不高于3的【阿斯加德】军团活跃登场",
+                player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && card.CardType == "legion" && card.CurrentCost <= 3).Select(card => card.InstanceId), 0));
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "unused-slot", Text = "选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                MinChoose = 1, MaxChoose = 1, SkipWhenPreviousStepEmpty = true,
+            });
+        }
         else if (candidate.SourceCardId == "S01-0313")
         {
             steps.Add(TriggerStep("field-legion", "神箭奥德尔：可选择对方1张活跃军团转为休整",
                 PublicLegions(opponent).Where(card => !card.Tapped).Select(card => card.InstanceId), 0));
+        }
+        else if (candidate.SourceCardId == "S02-0518")
+        {
+            steps.Add(TriggerStep("grave-card", "忒修斯：可选择墓地1张【晋升者】军团展示并加入手牌",
+                player.Graveyard.Where(card => card.CardType == "legion" && card.HasTrait("晋升者"))
+                    .Select(card => card.InstanceId), 0));
+        }
+        else if (candidate.SourceCardId == "S02-0601")
+        {
+            steps.Add(TriggerStep("hand-card", "亚瑟王：可选择手牌1张费用不高于4的【圆桌骑士】军团活跃登场",
+                player.Hand.Where(card => card.CardType == "legion" && card.HasTrait("圆桌骑士") && card.CurrentCost <= 4)
+                    .Select(card => card.InstanceId), 0));
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "unused-slot", Text = "选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                MinChoose = 1, MaxChoose = 1, SkipWhenPreviousStepEmpty = true,
+            });
         }
         else return false;
         if (steps.Count == 0 || steps[0].ValidChoices.Count == 0) return false;
@@ -520,6 +602,13 @@ public sealed partial class L12GameEngine
                 return;
             }
             candidate.Data["return-morale-prepaid"] = "true";
+        }
+        else if (candidate.SourceCardId == "S01-0305" && declared.Count == 5)
+        {
+            DamageMaster(candidate.Controller, 1, "勇士比约恩阵亡效果");
+            candidate.Data["declaredGraveOrder"] = string.Join('|', declared.Take(4));
+            candidate.Data["declaredSlot"] = declared[4];
+            declared.Clear();
         }
         candidate.Data["declaredTargets"] = string.Join('|', declared);
         candidate.Data["declaration-complete"] = "true";

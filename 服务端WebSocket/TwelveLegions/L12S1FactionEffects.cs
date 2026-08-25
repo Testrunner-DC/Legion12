@@ -250,10 +250,26 @@ public sealed partial class L12GameEngine
         {
             case "S01-0201": ApplySunKingAttack(item); return true;
             case "S01-0204":
+                if (item.Data.TryGetValue("declaredCardIds", out var declaredGuards)
+                    && item.Data.TryGetValue("declaredTargets", out var declaredGuardSlots))
+                {
+                    var guardIds = declaredGuards.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    var slots = declaredGuardSlots.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    for (var index = 0; index < Math.Min(guardIds.Length, slots.Length); index++)
+                        SummonFromAnyPrivateZone(player, guardIds[index], slots[index], tapped: true);
+                    FinishStackItem(item); return true;
+                }
                 var attachedIds = card.LastKnownAttachedCardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
                 BeginQueuedSummons(item, player.Graveyard.Where(candidate => candidate.CardId == "S01-0212" && attachedIds.Contains(candidate.InstanceId)).Select(candidate => candidate.InstanceId), tapped: true,
                     "陵墓构造体：选择陵墓守卫休整登场的位置"); return true;
-            case "S01-0206": PromptOwnLegion(item, "saladin-move", "萨拉丁阵亡：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
+            case "S01-0206":
+                if (item.Data.TryGetValue("declaredTargets", out var saladinDeclared))
+                {
+                    var selected = saladinDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    if (selected.Length == 2) MoveOwnCardToSlot(player, selected[0], selected[1]);
+                    FinishStackItem(item); return true;
+                }
+                PromptOwnLegion(item, "saladin-move", "萨拉丁阵亡：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
             case "S01-0207":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
@@ -290,12 +306,38 @@ public sealed partial class L12GameEngine
                 }
                 PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
             case "S01-0305":
+                if (item.Data.TryGetValue("declaredGraveOrder", out var declaredGraveOrder)
+                    && item.Data.TryGetValue("declaredSlot", out var declaredBjornSlot))
+                {
+                    var ordered = declaredGraveOrder.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
+                        .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
+                    if (ordered.Length == 4)
+                    {
+                        MoveGraveToLibraryBottom(player, ordered);
+                        SummonFromAnyPrivateZone(player, card.InstanceId, declaredBjornSlot, tapped: true);
+                    }
+                    FinishStackItem(item); return true;
+                }
                 if (player.Graveyard.Count < 4 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "勇士比约恩阵亡：是否令主宰受到1点伤害并将墓地4张牌返回牌库底部，使其休整登场？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "bjorn-revive-choice" }); return true;
             case "S01-0306": CreatePrompt(item.Controller, "optional", "奥拉夫二世阵亡：是否抽2张牌并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-two" }); return true;
-            case "S01-0307": RecoverAsgard(item, 3, legionOnly: false); return true;
-            case "S01-0308": SummonAsgardFromGrave(item, 3); return true;
+            case "S01-0307":
+                if (item.Data.TryGetValue("declaredTargets", out var alvidaDeclared))
+                {
+                    if (!string.IsNullOrWhiteSpace(alvidaDeclared)) MoveGraveToHand(player, alvidaDeclared);
+                    FinishStackItem(item); return true;
+                }
+                RecoverAsgard(item, 3, legionOnly: false); return true;
+            case "S01-0308":
+                if (item.Data.TryGetValue("declaredTargets", out var erikDeclared))
+                {
+                    var selected = erikDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    if (selected.Length == 2) SummonFromAnyPrivateZone(player, selected[0], selected[1], tapped: false);
+                    FinishStackItem(item); return true;
+                }
+                SummonAsgardFromGrave(item, 3); return true;
             case "S01-0313":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
