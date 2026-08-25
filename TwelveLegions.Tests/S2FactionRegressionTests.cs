@@ -605,8 +605,10 @@ public sealed class S2FactionRegressionTests
         var promotionPlayer = promotionGame.State.Players[0];
         var foundation = Card("S02-0504", "achilles-promotion-foundation");
         var promoted = Card("S02-0503", "achilles-promotion-entry");
+        var enemy = Card("S02-0604", "achilles-promotion-target");
         foundation.SummonRound = -1;
         promotionPlayer.Field[0][0] = foundation;
+        promotionGame.State.Players[1].Field[0][0] = enemy;
         promotionPlayer.Hand.Clear();
         promotionPlayer.Hand.Add(promoted);
         for (var index = 0; index < 2; index++)
@@ -624,6 +626,8 @@ public sealed class S2FactionRegressionTests
         PassResponses(promotionGame);
 
         Assert.Equal(promotionGame.State.TurnSerial, promoted.CanAttackLegionsOnSummonUntilTurn);
+        Assert.Contains(enemy.InstanceId,
+            promotionGame.SnapshotFor(0).LegalAttackTargets[promoted.InstanceId]);
     }
 
     [Fact]
@@ -1740,6 +1744,32 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void KusanagiKeepsItsOriginalArtifactEntryTurnWhenPlacedAsALegion()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 63155);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-same-turn-legion");
+        sword.SummonRound = game.State.Round;
+        player.Relic = sword;
+        AddMorale(player, 2);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "S01-04M2",
+            Ability: "kusanagi")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "0:0")).Accepted);
+        PassResponses(game);
+
+        Assert.Same(sword, player.Field[0][0]);
+        Assert.Equal(game.State.Round, sword.SummonRound);
+        Assert.DoesNotContain(sword.InstanceId, game.SnapshotFor(0).LegalAttackTargets.Keys);
+
+        game.State.Round++;
+        Assert.Contains("master", game.SnapshotFor(0).LegalAttackTargets[sword.InstanceId]);
+    }
+
+    [Fact]
     public void PlayingANewArtifactReplacesKusanagiEvenWhileItIsALegion()
     {
         var game = CreateWithFirstMaster("S01-04M2", 63153);
@@ -2653,8 +2683,10 @@ public sealed class S2FactionRegressionTests
         var game = Create(63001 + cardId[^1]);
         var player = game.State.Players[0];
         var card = Card(cardId, $"atomic-enter-{cardId}");
+        var enemy = Card("S02-0604", $"atomic-enter-target-{cardId}");
         player.Hand.Clear();
         player.Hand.Add(card);
+        game.State.Players[1].Field[0][0] = enemy;
         AddMorale(player, card.Cost);
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
@@ -2664,6 +2696,7 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(result.Accepted, result.Error);
         Assert.Equal(game.State.TurnSerial, card.CanAttackLegionsOnSummonUntilTurn);
+        Assert.Contains(enemy.InstanceId, game.SnapshotFor(0).LegalAttackTargets[card.InstanceId]);
     }
 
     [Fact]

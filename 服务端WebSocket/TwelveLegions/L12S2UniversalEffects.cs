@@ -44,9 +44,14 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                CreatePrompt(item.Controller, "hand-card", "万物统御之戒：弃置1张手牌",
-                    player.Hand.Select(candidate => candidate.InstanceId), 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-ring-discard" });
+                CreatePrompt(item.Controller, "optional", "万物统御之戒：是否弃置1张手牌，检索1张【通用】卡牌？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-ring-start", ["choiceMode"] = "instant",
+                        ["yes"] = "弃置1张手牌，检索1张【通用】卡牌",
+                        ["no"] = "不发动",
+                    });
                 return true;
             }
             default:
@@ -301,6 +306,17 @@ public sealed partial class L12GameEngine
             case "s2-black-lotus-morale":
                 if (chosen[0] == "yes") BeginEffectMoralePayment(item, 3, "s2-black-lotus-morale");
                 else FinishStackItem(item);
+                break;
+            case "s2-ring-start":
+                if (chosen[0] == "no")
+                {
+                    FinishStackItem(item);
+                    break;
+                }
+                CreatePrompt(item.Controller, "hand-card", "万物统御之戒：弃置1张手牌",
+                    State.Players[item.Controller].Hand.Select(candidate => candidate.InstanceId), 1, 1,
+                    "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-ring-discard" });
                 break;
             case "s2-ring-discard":
             {

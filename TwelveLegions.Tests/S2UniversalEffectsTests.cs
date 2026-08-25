@@ -566,6 +566,10 @@ public sealed class S2UniversalEffectsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", ring.InstanceId)).Accepted);
+        var optionalPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-ring-start", optionalPrompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optionalPrompt.PromptId,
+            Choice: "yes")).Accepted);
         var discardPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-ring-discard", discardPrompt.Data["action"]);
         var discardedId = discardPrompt.ValidChoices[0];
@@ -580,6 +584,29 @@ public sealed class S2UniversalEffectsTests
 
         Assert.Contains(player.Graveyard, card => card.InstanceId == discardedId);
         Assert.Contains(player.Hand, card => card.InstanceId == searchedId && card.Faction == "universal");
+        Assert.Same(ring, player.Relic);
+    }
+
+    [Fact]
+    public void RingMayDeclineItsOptionalEntryEffectWithoutDiscarding()
+    {
+        var game = Create(seed: 62051);
+        var player = game.State.Players[0];
+        var ring = TakeCard(game, 0, "S02-0008");
+        AddMorale(player, 3);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        var handIds = player.Hand.Where(card => card.InstanceId != ring.InstanceId)
+            .Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("playCard", ring.InstanceId)).Accepted);
+        var optionalPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optionalPrompt.PromptId,
+            Choice: "no")).Accepted);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(handIds, player.Hand.Select(card => card.InstanceId));
         Assert.Same(ring, player.Relic);
     }
 
