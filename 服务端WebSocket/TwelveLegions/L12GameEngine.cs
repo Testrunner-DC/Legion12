@@ -277,32 +277,25 @@ public sealed partial class L12GameEngine
         if (!CanAct(viewer)) return result;
         var player = State.Players[viewer];
         var defender = State.Players[1 - viewer];
-        var taunts = defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden)
-            .Select(card => card!.InstanceId).ToHashSet();
         for (var row = 0; row < 2; row++)
         for (var slot = 0; slot < 3; slot++)
         {
             var attacker = player.Field[row][slot];
             if (attacker is null || attacker.CannotAttack || attacker.Tapped || attacker.Hidden
-                || !CanAttackFromRow(attacker, row)
-                || (attacker.SummonRound >= State.Round && !attacker.HasCharge)) continue;
+                || !CanAttackFromRow(attacker, row)) continue;
             var targets = new List<string>();
             for (var targetRow = 0; targetRow < 2; targetRow++)
             for (var targetSlot = 0; targetSlot < 3; targetSlot++)
             {
                 var target = defender.Field[targetRow][targetSlot];
-                if (target is null || target.Hidden || !IsFieldLegion(target)) continue;
-                if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial) continue;
-                if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
-                var isRanged = row == 1 || targetRow == 1;
-                if (isRanged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged) continue;
-                if (taunts.Count > 0 && !taunts.Contains(target.InstanceId)) continue;
-                targets.Add(target.InstanceId);
+                if (target is null) continue;
+                var declared = new L12AttackTarget("legion", target.InstanceId);
+                if (TryValidateAttackTarget(viewer, attacker, row, declared, out _, out _, out _))
+                    targets.Add(target.InstanceId);
             }
-            var disasterAllowsBackMaster = player.UsedAbilities.Contains("ds01-back-master")
-                && HasRangeInPosition(attacker, row);
-            if (taunts.Count == 0 && (row == 0 || disasterAllowsBackMaster
-                || attacker.CanAttackBackAndMasterUntilTurn == State.TurnSerial)) targets.Add("master");
+            if (TryValidateAttackTarget(viewer, attacker, row, new L12AttackTarget("master"),
+                    out _, out _, out _))
+                targets.Add("master");
             if (targets.Count > 0) result[attacker.InstanceId] = targets.ToArray();
         }
         return result;

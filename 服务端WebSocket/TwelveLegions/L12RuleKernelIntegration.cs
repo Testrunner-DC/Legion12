@@ -63,9 +63,7 @@ public sealed partial class L12GameEngine
             step.ValidChoices.AddRange(choices);
             if (step.ValidChoices.Count < step.MinChoose)
             {
-                State.PendingActivations.Remove(activation);
-                ClearFreeMasterActivation(activation);
-                AddEvent("ability-rejected", activation.Controller, "所选军团没有可位移的相邻空位，效果未支付费用也未入栈");
+                RejectPendingActivation(activation, "所选军团没有可位移的相邻空位，效果未支付费用也未入栈");
                 return;
             }
             promptKind = "slot";
@@ -110,9 +108,7 @@ public sealed partial class L12GameEngine
         if (chosen.Count < step.MinChoose || chosen.Count > step.MaxChoose
             || chosen.Any(id => !step.ValidChoices.Contains(id, StringComparer.OrdinalIgnoreCase)))
         {
-            State.PendingActivations.Remove(activation);
-            ClearFreeMasterActivation(activation);
-            AddEvent("ability-rejected", prompt.PlayerIndex, "目标声明已失效，效果未支付费用也未入栈");
+            RejectPendingActivation(activation, "目标声明已失效，效果未支付费用也未入栈");
             return;
         }
         activation.DeclaredTargets.AddRange(chosen);
@@ -151,6 +147,16 @@ public sealed partial class L12GameEngine
         var result = CommitActiveAbility(prompt.PlayerIndex, source, activation.Ability,
             activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets));
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
+    }
+
+    private void RejectPendingActivation(L12PendingActivation activation, string reason)
+    {
+        State.PendingActivations.Remove(activation);
+        ClearFreeMasterActivation(activation);
+        AddEvent("ability-rejected", activation.Controller, reason);
+        if (activation.TriggerCandidateId is null) return;
+        State.PendingTriggerStackCandidates.RemoveAll(candidate => candidate.CandidateId == activation.TriggerCandidateId);
+        AdvanceTriggerBatches();
     }
 
     private L12CardInstance CreateActiveMasterSource(L12PlayerState player, string instanceId)

@@ -437,42 +437,10 @@ public sealed partial class L12GameEngine
         if (!CanAttackFromRow(attacker, row)) return CommandResult.Reject("该军团在当前位置无法进攻");
         if (attacker.Tapped) return CommandResult.Reject("休整军团不能进攻");
         if (attacker.Hidden) return CommandResult.Reject("隐匿军团需先翻回正面");
-        if (attacker.SummonRound >= State.Round && !attacker.HasCharge
-            && !(command.Target.Type == "master" && attacker.CanAttackMasterOnSummonUntilTurn == State.TurnSerial)
-            && !(command.Target.Type == "legion" && attacker.CanAttackLegionsOnSummonUntilTurn == State.TurnSerial))
-            return CommandResult.Reject("刚登场的军团不能进攻");
-
+        if (!TryValidateAttackTarget(playerIndex, attacker, row, command.Target,
+                out var attackTarget, out var isRanged, out var attackError))
+            return CommandResult.Reject(attackError);
         var defender = State.Players[1 - playerIndex];
-        var isRanged = false;
-        L12CardInstance? attackTarget = null;
-        if (command.Target.Type == "legion")
-        {
-            var target = FindOnField(defender, command.Target.InstanceId, out var targetRow, out _);
-            if (target is null || target.Hidden || !IsFieldLegion(target)) return CommandResult.Reject("目标不是可进攻军团");
-            if (target.CardId == "S02-0516" && !target.Tapped) return CommandResult.Reject("活跃的汉尼拔无法被进攻");
-            if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !target.Tapped)
-                return CommandResult.Reject("〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团");
-            if (IsProtectedByRestedAmakine(defender, target)) return CommandResult.Reject("休整的阿麦金使活跃的试炼军团不可被进攻");
-            if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
-                return CommandResult.Reject("后排远程军团只能进攻对方前排");
-            if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row))
-                return CommandResult.Reject("近战军团无法进攻对方后排");
-            isRanged = row == 1 || targetRow == 1;
-            if (isRanged && State.ActiveDisaster?.CardId == "S02-DS04")
-                return CommandResult.Reject("〈风暴乱象〉生效时军团无法发动远程进攻");
-            if (isRanged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged)
-                return CommandResult.Reject("目标无法被远程进攻");
-            var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
-                : defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden).ToArray();
-            if (taunts.Length > 0 && !HasS1Taunt(target, targetRow)) return CommandResult.Reject("对方前排存在带有挑衅的军团");
-            attackTarget = target;
-        }
-        else if (command.Target.Type == "master")
-        {
-            if (!CanAttackMasterTarget(playerIndex, attacker, row, defender, out var masterAttackError))
-                return CommandResult.Reject(masterAttackError);
-        }
-        else return CommandResult.Reject("无效进攻目标");
 
         if (State.ActiveDisaster?.CardId == "S01-DS04" && attacker.Troops > 2000)
         {
@@ -554,6 +522,59 @@ public sealed partial class L12GameEngine
                 $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.Troops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.Troops}", attacker, attackTarget);
         PushEffect(playerIndex, attacker, "attack", "进攻宣言与【进攻时】效果");
         return CommandResult.Ok();
+    }
+
+    private bool TryValidateAttackTarget(int playerIndex, L12CardInstance attacker, int row,
+        L12AttackTarget target, out L12CardInstance? attackTarget, out bool isRanged, out string error)
+    {
+        attackTarget = null;
+        isRanged = false;
+        error = string.Empty;
+        if (attacker.SummonRound >= State.Round && !attacker.HasCharge
+            && !(target.Type == "master" && attacker.CanAttackMasterOnSummonUntilTurn == State.TurnSerial)
+            && !(target.Type == "legion" && attacker.CanAttackLegionsOnSummonUntilTurn == State.TurnSerial))
+        {
+            error = "刚登场的军团不能进攻";
+            return false;
+        }
+
+        var defender = State.Players[1 - playerIndex];
+        if (target.Type == "master")
+            return CanAttackMasterTarget(playerIndex, attacker, row, defender, out error);
+        if (target.Type != "legion")
+        {
+            error = "无效进攻目标";
+            return false;
+        }
+
+        var card = FindOnField(defender, target.InstanceId, out var targetRow, out _);
+        if (card is null || card.Hidden || !IsFieldLegion(card)) error = "目标不是可进攻军团";
+        else if (card.CardId == "S02-0516" && !card.Tapped) error = "活跃的汉尼拔无法被进攻";
+        else if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !card.Tapped)
+            error = "〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团";
+        else if (IsProtectedByRestedAmakine(defender, card)) error = "休整的阿麦金使活跃的试炼军团不可被进攻";
+        else if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
+            error = "后排远程军团只能进攻对方前排";
+        else if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row))
+            error = "近战军团无法进攻对方后排";
+        else
+        {
+            isRanged = row == 1 || targetRow == 1;
+            if (isRanged && State.ActiveDisaster?.CardId == "S02-DS04")
+                error = "〈风暴乱象〉生效时军团无法发动远程进攻";
+            else if (isRanged && L12StructuredCardRules.CombatProfile(card, targetRow).CannotBeRanged)
+                error = "目标无法被远程进攻";
+            else
+            {
+                var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
+                    : defender.Field[0].Where(candidate => candidate is not null
+                        && HasS1Taunt(candidate, 0) && !candidate.Hidden).ToArray();
+                if (taunts.Length > 0 && !HasS1Taunt(card, targetRow)) error = "对方前排存在带有挑衅的军团";
+            }
+        }
+        if (!string.IsNullOrEmpty(error)) return false;
+        attackTarget = card;
+        return true;
     }
 
     private static bool HasRangeInPosition(L12CardInstance card, int row)

@@ -199,6 +199,90 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void InvalidTriggerDeclarationRemovesItsCandidateAndDoesNotBlockLaterBatches()
+    {
+        var game = Create(seed: 5536);
+        var source = CreateInstance("S01-0108", "invalid-trigger-source");
+        var candidate = new L12TriggerCandidate
+        {
+            CandidateId = "invalid-trigger-candidate", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, Trigger = "death", Text = "阵亡时效果",
+        };
+        var activation = new L12PendingActivation
+        {
+            ActivationId = "invalid-trigger-activation", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            Ability = "trigger-declaration", Text = "选择目标", ValidChoices = ["still-legal"],
+            SelectionSteps =
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "field-legion", Text = "选择目标", ValidChoices = ["already-invalid"],
+                },
+            ],
+            TriggerCandidateId = candidate.CandidateId,
+        };
+        game.State.PendingTriggerStackCandidates.Add(candidate);
+        game.State.PendingActivations.Add(activation);
+        game.State.PendingPrompts.Add(new L12Prompt
+        {
+            PromptId = "invalid-trigger-prompt", PlayerIndex = 0, Kind = "field-legion", Text = "选择目标",
+            ValidChoices = ["still-legal"], MinChoose = 1, MaxChoose = 1, IsPrivate = true,
+            Continuation = "pending-activation",
+            Data = new Dictionary<string, string> { ["activationId"] = activation.ActivationId },
+        });
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: "invalid-trigger-prompt",
+            Choice: "still-legal")).Accepted);
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Contains(game.State.Events, entry => entry.Type == "ability-rejected");
+    }
+
+    [Fact]
+    public void LegalAttackPreviewAndFormalAttackShareHannibalRestriction()
+    {
+        var game = Create(seed: 5537);
+        var attacker = CreateInstance("S02-0003", "preview-attacker");
+        var hannibal = CreateInstance("S02-0516", "preview-hannibal");
+        attacker.SummonRound = -1;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = hannibal;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var legal = game.SnapshotFor(0).LegalAttackTargets[attacker.InstanceId];
+        Assert.DoesNotContain(hannibal.InstanceId, legal);
+        var result = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", hannibal.InstanceId)));
+        Assert.False(result.Accepted);
+        Assert.Contains("汉尼拔", result.Error);
+    }
+
+    [Fact]
+    public void LegalAttackPreviewAndFormalAttackShareDisasterRangeRestriction()
+    {
+        var game = Create(seed: 5538);
+        var attacker = CreateInstance("S02-0003", "preview-ranged-attacker");
+        var target = CreateInstance("S02-0003", "preview-ranged-target");
+        attacker.SummonRound = -1;
+        game.State.Players[0].Field[1][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS04", "preview-storm");
+
+        var legal = game.SnapshotFor(0).LegalAttackTargets.GetValueOrDefault(attacker.InstanceId) ?? [];
+        Assert.DoesNotContain(target.InstanceId, legal);
+        var result = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId)));
+        Assert.False(result.Accepted);
+        Assert.Contains("风暴乱象", result.Error);
+    }
+
+    [Fact]
     public void DivineBalanceLetsBothPlayersDiscardSimultaneously()
     {
         var game = Create(seed: 5528);
