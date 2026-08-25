@@ -1159,6 +1159,7 @@ public sealed partial class L12GameEngine
         if (fromHand)
         {
             if (HasImmediateEffect(card, "enter")) PushEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
+            QueueS2GrailRoundTableEntry(player.PlayerIndex, card);
         }
         else QueueNonHandEntry(player.PlayerIndex, card, fromLibrary ? "library" : "graveyard");
     }

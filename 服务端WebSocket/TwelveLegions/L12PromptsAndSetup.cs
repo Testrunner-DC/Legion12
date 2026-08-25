@@ -1054,6 +1054,7 @@ public sealed partial class L12GameEngine
         AddEvent("enter", item.Controller, $"{card.Name} 从手牌休整登场于前排，并成为本次进攻目标", card);
         if (HasImmediateEffect(card, "enter"))
             PushEffect(item.Controller, card, "enter", "【登场时】效果");
+        QueueS2GrailRoundTableEntry(item.Controller, card);
         FinishStackItem(item);
     }
 
@@ -1062,7 +1063,8 @@ public sealed partial class L12GameEngine
         if (item.Trigger == "authority-event" && FindAuthorityEvent(item) is { } authorityEvent)
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);
-        var queueAngusTrial = !item.Negated && item.Trigger == "play" && completedSource?.CardType == "tactic";
+        var queueAngusTrial = !item.Negated && completedSource?.CardType == "tactic"
+            && item.Trigger is "play" or "reaction" or "s2-reaction";
         var queueExorcistReturn = !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";

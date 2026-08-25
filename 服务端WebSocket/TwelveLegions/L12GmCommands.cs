@@ -201,6 +201,7 @@ public sealed partial class L12GameEngine
                 ResetCardAfterLeavingField(card);
                 player.Graveyard.Add(card);
             }
+            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(command.TargetPlayer, card);
         }
         else if (player.Resolving.Remove(card))
         {

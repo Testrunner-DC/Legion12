@@ -153,6 +153,7 @@ public sealed partial class L12GameEngine
         QueueAuthorityEvent("non-hand-entry", playerIndex, card,
             $"{card.Name}从{ZoneLabel(originZone)}登场", subjectPlayer: playerIndex,
             targetInstanceId: card.InstanceId, originZone: originZone, destinationZone: "field", causedByEffect: true);
+        QueueS2GrailRoundTableEntry(playerIndex, card);
     }
 
     private void ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason)

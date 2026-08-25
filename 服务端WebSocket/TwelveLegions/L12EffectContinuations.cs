@@ -308,6 +308,7 @@ public sealed partial class L12GameEngine
         AddEvent("put", item.Controller, $"刘备使 {card.Name} 活跃登场", card);
         ApplyDisasterLevelOnEntry(item.Controller, card, deferTriggerUntilStackSettles: true);
         if (HasImmediateEffect(card, "enter")) PushEffect(item.Controller, card, "enter", "【登场时】效果");
+        QueueS2GrailRoundTableEntry(item.Controller, card);
         FinishStackItem(item);
     }
 

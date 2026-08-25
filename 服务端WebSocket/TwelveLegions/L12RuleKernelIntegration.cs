@@ -280,7 +280,8 @@ public sealed partial class L12GameEngine
                 Candidates = planned.ToList(),
             });
         }
-        if (!State.IsResolvingStack) AdvanceTriggerBatches();
+        if (!State.IsResolvingStack && State.EffectStack.Count == 0 && State.ResponseWindow is null)
+            AdvanceTriggerBatches();
     }
 
     private L12TriggerCandidate CreateTriggerCandidate(int controller, L12CardInstance card, string trigger, string text,

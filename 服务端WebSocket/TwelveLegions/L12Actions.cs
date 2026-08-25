@@ -174,6 +174,7 @@ public sealed partial class L12GameEngine
         {
             State.CheckDisasterAfterStack = card.CardType == "legion" && State.DisasterValue > 8;
             PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果");
+            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
         }
         else
         {
@@ -182,6 +183,7 @@ public sealed partial class L12GameEngine
                 ResetCardAfterLeavingField(card);
                 player.Graveyard.Add(card);
             }
+            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
             if (card.CardType == "legion" && State.DisasterValue > 8) BeginDisasterTrigger(opening: false);
         }
         return CommandResult.Ok();
@@ -301,6 +303,8 @@ public sealed partial class L12GameEngine
             candidates.Add(CreateTriggerCandidate(playerIndex, promoted, "promotion-enter", "【晋升登场】效果"));
         if (HasImmediateEffect(promoted, "enter"))
             candidates.Add(CreateTriggerCandidate(playerIndex, promoted, "enter", "【登场时】效果"));
+        if (BuildS2GrailRoundTableEntryCandidate(playerIndex, promoted) is { } grailCandidate)
+            candidates.Add(grailCandidate);
         if (candidates.Count > 0)
         {
             State.CheckDisasterAfterStack = State.DisasterValue > 8;

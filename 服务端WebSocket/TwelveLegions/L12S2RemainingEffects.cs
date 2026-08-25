@@ -205,6 +205,11 @@ public sealed partial class L12GameEngine
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "s2-angus-trial", ["yes"] = "试炼+1", ["no"] = "不发动" });
                 return true;
+            case "grailRoundTableRune" when item.SourceCardId == "S02-06S4":
+                CreatePrompt(item.Controller, "optional", "寻找圣杯之旅：我方【圆桌骑士】登场，是否获得1符文？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "s2-grail-round-table-rune", ["yes"] = "获得1符文", ["no"] = "不发动" });
+                return true;
             case "anderstorpRingDraw" when item.SourceCardId == "S02-0305":
                 CreatePrompt(item.Controller, "optional", "安德华拉诺特：我方主宰受到伤害，是否抽取1张牌？",
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
@@ -310,6 +315,19 @@ public sealed partial class L12GameEngine
             case "s2-angus-trial":
                 if (chosen[0] == "yes") AdvanceTrial(item.Controller, 1, CreateCard("S02-06M2", $"master-{item.Controller}"));
                 FinishStackItem(item); return true;
+            case "s2-grail-round-table-rune":
+            {
+                var player = State.Players[item.Controller];
+                var key = $"trigger:grail-round-table:{State.TurnSerial}";
+                var pendingKey = $"{key}:pending";
+                player.UsedAbilities.Remove(pendingKey);
+                if (chosen[0] == "yes" && player.UsedAbilities.Add(key))
+                {
+                    L12S2ZoneOps.GainRunes(player, 1);
+                    AddEvent("runes", item.Controller, "〈寻找圣杯之旅〉使我方获得1符文", FindSource(item) is { } trial ? [trial] : []);
+                }
+                FinishStackItem(item); return true;
+            }
             case "s2-ring-draw":
                 if (chosen[0] == "yes" && !Draw(State.Players[item.Controller], 1))
                     SetWinner(1 - item.Controller, "〈安德华拉诺特〉效果抽牌时牌库为空");
@@ -396,13 +414,31 @@ public sealed partial class L12GameEngine
     private void QueueS2AngusTacticTrial(int playerIndex, L12CardInstance tactic)
     {
         var player = State.Players[playerIndex];
-        var key = $"trigger:angus-tactic:{State.Round}";
+        var key = $"trigger:angus-tactic:{State.TurnSerial}";
         if (player.MasterId != "S02-06M2" || !player.UsedAbilities.Add(key)) return;
         var master = CreateCard("S02-06M2", $"master-{playerIndex}");
         QueueTriggerCandidates([
             CreateTriggerCandidate(playerIndex, master, "active", "战术效果结算成功时效果",
                 new Dictionary<string, string> { ["ability"] = "angusTacticTrial", ["tactic"] = tactic.CardId })
         ]);
+    }
+
+    private L12TriggerCandidate? BuildS2GrailRoundTableEntryCandidate(int playerIndex, L12CardInstance legion)
+    {
+        var player = State.Players[playerIndex];
+        var key = $"trigger:grail-round-table:{State.TurnSerial}";
+        var pendingKey = $"{key}:pending";
+        var trial = player.SpecialZones.Trials.FirstOrDefault(card => card.CardId == "S02-06S4" && card.TrialCompleted);
+        if (State.ActivePlayer != playerIndex || legion.CardType != "legion" || !legion.HasTrait("圆桌骑士")
+            || trial is null || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
+        return CreateTriggerCandidate(playerIndex, trial, "active", "我方【圆桌骑士】登场时效果",
+            new Dictionary<string, string> { ["ability"] = "grailRoundTableRune", ["entered"] = legion.InstanceId });
+    }
+
+    private void QueueS2GrailRoundTableEntry(int playerIndex, L12CardInstance legion)
+    {
+        var candidate = BuildS2GrailRoundTableEntryCandidate(playerIndex, legion);
+        if (candidate is not null) QueueTriggerCandidates([candidate]);
     }
 
     private L12TriggerCandidate? BuildArtemisRangedDeathCandidate(int owner, L12CardInstance defeated)

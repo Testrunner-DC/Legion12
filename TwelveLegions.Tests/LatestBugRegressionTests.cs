@@ -249,6 +249,76 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void CompletedGrailTrialOffersOneRuneWhenRoundTableLegionEnters()
+    {
+        var game = Create(6499);
+        var player = game.State.Players[0];
+        var grail = Card("S02-06S4", "grail-entry-trigger");
+        var bors = Card("S02-0605", "grail-round-table-entry");
+        grail.TrialCompleted = true;
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(grail);
+        player.Hand.Clear();
+        player.Hand.Add(bors);
+        AddReadyMorale(player, bors.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 3;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", bors.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-grail-round-table-rune", prompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Contains($"trigger:grail-round-table:{game.State.TurnSerial}", player.UsedAbilities);
+    }
+
+    [Fact]
+    public void AngusCanAdvanceTrialAfterAReactionTacticResolves()
+    {
+        var game = CreateWithFirstMaster("S02-06M2", 6500);
+        var angusPlayer = game.State.Players[0];
+        var attackerPlayer = game.State.Players[1];
+        var trial = Card("S02-06S4", "angus-trial");
+        var counter = Card("S01-0019", "angus-reaction-tactic");
+        var buffTarget = Card("S01-0003", "angus-reaction-target");
+        var attacker = Card("S01-0003", "angus-reaction-attacker");
+        angusPlayer.SpecialZones.Trials.Clear();
+        angusPlayer.SpecialZones.Trials.Add(trial);
+        counter.Hidden = true;
+        counter.SetRound = 0;
+        angusPlayer.Field[1][0] = counter;
+        angusPlayer.Field[0][0] = buffTarget;
+        buffTarget.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        attacker.SummonRound = 0;
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.TurnSerial = 4;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(counter.InstanceId, response.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: counter.InstanceId)).Accepted);
+        PassResponses(game);
+        var ambushTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(buffTarget.InstanceId, ambushTarget.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ambushTarget.PromptId,
+            Choice: buffTarget.InstanceId)).Accepted);
+        PassResponses(game);
+        var angusPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-angus-trial", angusPrompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: angusPrompt.PromptId,
+            Choice: "yes")).Accepted);
+        Assert.Equal(1, trial.TrialProgress);
+    }
+
+    [Fact]
     public void ForgedOrdersTargetsTheOpponentDestinationInsteadOfTheControllersMatchingSlot()
     {
         var game = Create(6421);

@@ -945,6 +945,7 @@ public sealed partial class L12GameEngine
         AddEvent("put", player.PlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         ApplyDisasterLevelOnEntry(player.PlayerIndex, card, deferTriggerUntilStackSettles: true);
         if (HasImmediateEffect(card, "enter")) PushEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
+        QueueS2GrailRoundTableEntry(player.PlayerIndex, card);
     }
 
     private static bool IsCounterTactic(string cardId) => cardId is
