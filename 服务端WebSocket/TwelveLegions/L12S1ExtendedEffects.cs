@@ -103,19 +103,19 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1ExtendedEnter(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0001":
+            case "黑胡子蒂奇":
                 BeginBlackbeardSimultaneousDiscard(item);
                 return true;
-            case "S01-0004":
+            case "无名的渗透者":
                 card.Tapped = true;
                 card.CannotAttack = true;
                 card.CannotSupport = true;
                 AddEvent("effect", item.Controller, "无名的渗透者休整登场，且不可进攻或支援", card);
                 FinishStackItem(item);
                 return true;
-            case "S01-0110":
+            case "墨子":
             {
                 var choices = PublicLegions(player).Where(target => target.Faction == "tianting").Select(target => target.InstanceId).ToList();
                 if (!CanReturnMorale(player, 1) || choices.Count == 0) { FinishStackItem(item); return true; }
@@ -125,7 +125,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "mozi-immortal" });
                 return true;
             }
-            case "S01-0111":
+            case "诸葛亮":
             {
                 var next = State.DisasterDeck.FirstOrDefault();
                 AddEvent("reveal", item.Controller, next is null ? "诸葛亮查看天灾牌库：没有下一张天灾" : $"诸葛亮查看下一张天灾：{next.Name}", next is null ? [] : [next]);
@@ -133,30 +133,30 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "zhuge-disaster" });
                 return true;
             }
-            case "S01-0112":
+            case "孙武":
                 if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "是否返还1士气，使本回合从手牌打出的下1张战术卡无需费用？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "sunwu-free-tactic" });
                 return true;
-            case "S01-0114":
+            case "秦良玉":
                 AddMorale(player, 1, tapped: true);
                 AddEvent("effect", item.Controller, "秦良玉从士气牌库追加1张休整士气", card);
                 FinishStackItem(item);
                 return true;
-            case "S01-0402":
+            case "织田信长":
                 PromptEnemyLegion(item, "nobunaga-kill", "织田信长：击杀对方1张费用不高于4的军团", target => target.CurrentCost <= 4, false);
                 return true;
-            case "S01-0403":
+            case "上杉谦信":
             {
                 var x = State.Players.SelectMany(owner => owner.Field[1]).Count(target => target is { CardType: "tactic" });
                 PromptEnemyLegion(item, "kenshin-kill", $"上杉谦信：击杀对方1张费用不高于{x}的军团", target => target.CurrentCost <= x, false);
                 return true;
             }
-            case "S01-0406":
+            case "土方岁三":
                 item.Data["hijikata-step"] = "2";
                 PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于2的军团", target => target.CurrentCost <= 2, true);
                 return true;
-            case "S01-0407":
+            case "坂本龙马":
             {
                 var choices = PublicLegions(player).Select(target => target.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
@@ -165,11 +165,11 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ryoma-pick" });
                 return true;
             }
-            case "S01-0408":
+            case "高杉晋作":
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "高杉晋作效果抽牌时牌库为空"); FinishStackItem(item); return true; }
                 PromptEnemyLegion(item, "takasugi-debuff", "高杉晋作：选择对方1张军团，本回合费用-2", _ => true, false);
                 return true;
-            case "S01-0411":
+            case "安倍晴明":
             {
                 var choices = PublicLegions(player).Select(target => target.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return true; }
@@ -177,7 +177,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "abe-immortal" });
                 return true;
             }
-            case "S01-0412":
+            case "立花誾千代":
                 PromptEnemyLegion(item, "tachibana-debuff", "立花誾千代：选择对方1张军团，本回合费用-3", _ => true, false);
                 return true;
             default:
@@ -188,16 +188,16 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1ExtendedTactic(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0005":
+            case "万箭齐发":
                 CreatePrompt(item.Controller, "option", "万箭齐发：选择效果", ["front", "back", "single"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "volley-mode" });
                 return true;
-            case "S01-0006":
+            case "邪恶仪式":
                 PromptDiscard(item, item.Controller, 1, "邪恶仪式：弃置1张手牌", "evil-ritual-discard");
                 return true;
-            case "S01-0007":
+            case "野外扎营":
             {
                 var top = player.Library.Take(3).ToArray();
                 item.Data["camp-top"] = string.Join('|', top.Select(candidate => candidate.InstanceId));
@@ -214,13 +214,13 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: data);
                 return true;
             }
-            case "S01-0008":
+            case "兵临城下":
                 foreach (var target in State.Players[1 - item.Controller].Field[0].Where(target => target is not null).Cast<L12CardInstance>()) target.Troops -= 1000;
                 State.Players[1 - item.Controller].BackRowCannotSupport = true;
                 AddEvent("effect", item.Controller, "兵临城下：对方前排军团本回合兵力-1000，后排军团无法支援", card);
                 FinishStackItem(item);
                 return true;
-            case "S01-0009":
+            case "战略转移":
             {
                 var choices = PublicLegions(player).Select(target => target.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return true; }
@@ -228,7 +228,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "strategic-return" });
                 return true;
             }
-            case "S01-0010":
+            case "伪造密令":
             {
                 var choices = PublicLegions(State.Players[1 - item.Controller]).Select(target => target.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
@@ -237,7 +237,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "orders-pick" });
                 return true;
             }
-            case "S01-0011":
+            case "瘟疫感染":
             {
                 var enemy = State.Players[1 - item.Controller];
                 var choices = PublicLegions(enemy).Select(target => target.InstanceId).Concat(enemy.Morale.Select(target => target.InstanceId)).ToArray();
@@ -246,7 +246,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "plague-lock" });
                 return true;
             }
-            case "S01-0013":
+            case "前线侦查":
             {
                 var enemy = State.Players[1 - item.Controller];
                 AddEvent("reveal", item.Controller, $"前线侦查查看对方全部{enemy.Hand.Count}张手牌", enemy.Hand.ToArray());
@@ -255,7 +255,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "scout-pay" });
                 return true;
             }
-            case "S01-0014":
+            case "祭天仪式":
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "祭天仪式抽牌时牌库为空"); FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "option", "祭天仪式：将天灾值增加或减少最多2点", ["-2", "-1", "0", "1", "2"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ritual-disaster" });
@@ -268,22 +268,22 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1ExtendedAttack(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0111":
+            case "诸葛亮":
                 BeginZhugePeek(item);
                 return true;
-            case "S01-0402":
+            case "织田信长":
                 if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "织田信长：是否消耗1士气，使对方所有军团本回合费用-1？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "nobunaga-attack-pay" });
                 return true;
-            case "S01-0406":
+            case "土方岁三":
                 if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "土方岁三：是否消耗1士气，击杀对方1张费用不高于1的军团？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "hijikata-attack-pay" });
                 return true;
-            case "S01-0408":
+            case "高杉晋作":
                 if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "高杉晋作：是否消耗1士气，使对方1张军团本回合费用-2？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "takasugi-attack-pay" });
@@ -296,27 +296,27 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1ExtendedDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0001":
+            case "黑胡子蒂奇":
                 CreatePrompt(item.Controller, "optional", "黑胡子蒂奇阵亡：是否抽取2张牌并弃置1张手牌？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "teach-death" });
                 return true;
-            case "S01-0004":
+            case "无名的渗透者":
             {
                 var ownerIndex = card.OwnerIndex is >= 0 and <= 1 ? card.OwnerIndex.Value : item.Controller;
                 if (!Draw(State.Players[ownerIndex], 1)) SetWinner(1 - ownerIndex, "无名的渗透者所有者因阵亡效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
             }
-            case "S01-0110":
+            case "墨子":
                 if (!Draw(player, 1)) SetWinner(1 - item.Controller, "墨子阵亡效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
-            case "S01-0111":
+            case "诸葛亮":
                 BeginZhugePeek(item);
                 return true;
-            case "S01-0112":
+            case "孙武":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
@@ -331,7 +331,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "sunwu-recover" });
                 return true;
             }
-            case "S01-0115":
+            case "荆轲":
                 if (item.Data.TryGetValue("declaredTargets", out var jingkeTarget))
                 {
                     if (!string.IsNullOrWhiteSpace(jingkeTarget)) KillTarget(jingkeTarget, "被荆轲阵亡效果击杀");
@@ -340,7 +340,7 @@ public sealed partial class L12GameEngine
                 if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return true; }
                 PromptEnemyLegion(item, "jingke-kill", "荆轲阵亡：可返还1士气，击杀对方最多1张兵力不高于2000的军团", target => target.Troops <= 2000, true);
                 return true;
-            case "S01-0403":
+            case "上杉谦信":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
@@ -362,7 +362,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kenshin-set-counters" });
                 return true;
             }
-            case "S01-0407":
+            case "坂本龙马":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
@@ -378,7 +378,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ryoma-summon-card" });
                 return true;
             }
-            case "S01-0412":
+            case "立花誾千代":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
                     AddTimedModifier(target, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "立花誾千代");
                 AddEvent("effect", item.Controller, "立花誾千代阵亡：直到下个我方回合结束前，对方所有军团费用-1", card);
@@ -996,9 +996,9 @@ public sealed partial class L12GameEngine
             source.Hidden = false;
             player.Resolving.Add(source);
         }
-        switch (item.SourceCardId)
+        switch (AtomicFlowKey(item))
         {
-            case "S01-0019":
+            case "伏击":
             {
                 var choices = PublicLegions(player).Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return; }
@@ -1006,24 +1006,24 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ambush-buff" });
                 return;
             }
-            case "S01-0020":
+            case "战斗至黎明":
                 foreach (var target in PublicLegions(player)) target.Troops += 1000;
                 if (player.Library.Count >= 5) Draw(player, 1);
                 FinishStackItem(item); return;
-            case "S01-0120":
+            case "空城计":
                 if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "optional", "空城计：是否返还1士气，抵挡本次进攻？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "empty-city-block" });
                 return;
-            case "S01-0017":
+            case "拼死反抗":
                 CreatePrompt(item.Controller, "option", "拼死反抗：选择1张休整军团-2000，或所有休整军团-1000", ["single", "all"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "last-stand-mode" });
                 return;
-            case "S01-0420":
+            case "切腹仪式":
                 Draw(player, 1);
                 PromptEnemyLegion(item, "seppuku-cost", "切腹仪式：选择对方1张军团，直到下个我方回合结束前费用-2", _ => true, false);
                 return;
-            case "S01-0021":
+            case "摄政皇权":
             {
                 var choices = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 3).Select(card => card.InstanceId).ToList();
                 if (choices.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return; }
@@ -1032,7 +1032,7 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "regency-card" });
                 return;
             }
-            case "S01-0320":
+            case "复仇血鹰":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
                     AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "复仇血鹰");
                 var asgard = player.Graveyard
@@ -1043,17 +1043,17 @@ public sealed partial class L12GameEngine
                 if (asgard.Length < 2) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "cards", "复仇血鹰：选择墓地2张【阿斯加德】卡牌", asgard, 2, 2, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "blood-eagle-pick" }); return;
-            case "S01-0213":
+            case "锡瓦的卡巴":
                 CreatePrompt(item.Controller, "optional", "锡瓦的卡巴：是否从手牌无需费用活跃登场？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kaba-summon" }); return;
-            case "S01-0223":
+            case "不朽之礼":
                 if (!Draw(player, 1)) { FinishStackItem(item); return; }
                 var guard = player.Graveyard.FirstOrDefault(card => card.CardId == "S01-0212");
                 if (guard is not null && EmptySlots(player).Any())
                     BeginQueuedSummons(item, [guard.InstanceId], false, "不朽之礼：选择陵墓守卫活跃登场的位置");
                 else FinishStackItem(item);
                 return;
-            case "S01-0224":
+            case "智慧法典 卷一":
             {
                 var opponent = State.Players[1 - item.Controller];
                 if (opponent.Hand.Count == 0)

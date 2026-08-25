@@ -1,0 +1,1717 @@
+{
+    "generatedAt":  "2026-08-26T03:49:29.7643328+08:00",
+    "summary":  {
+                    "catalogCards":  248,
+                    "cardsWithEffectText":  248,
+                    "legacyCardCaseOccurrences":  0,
+                    "legacyUniqueCardIds":  0,
+                    "baselineLegacyCaseOccurrences":  0,
+                    "identityReferenceAndInferenceTotal":  283,
+                    "branchCounts":  {
+                                         "cardCase":  0,
+                                         "cardConditional":  213,
+                                         "cardSwitchArm":  67,
+                                         "effectTextInference":  3
+                                     }
+                },
+    "occurrences":  [
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  16,
+                            "excerpt":  "if (card.CardId != \"S01-0004\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  21,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S02-DS01\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  26,
+                            "excerpt":  "if (card.CardId == \"S02-0306\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  28,
+                            "excerpt":  "if (card.CardId == \"S02-0306\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  36,
+                            "excerpt":  "if (card.CardType == \"legion\" \u0026\u0026 State.ActiveDisaster?.CardId == \"S01-DS03\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  43,
+                            "excerpt":  "if (card.CardId == \"S02-0622\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  108,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS03\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  153,
+                            "excerpt":  "if (card.CardId == \"S01-0004\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  159,
+                            "excerpt":  "if (card.CardId == \"S01-0403\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  326,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  354,
+                            "excerpt":  "if (card.CardId is \"S01-0104\" or \"S01-0107\" or \"S01-0114\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  357,
+                            "excerpt":  "if (card.CardId == \"S01-0202\" \u0026\u0026 !PublicLegions(player).Any(target =\u003e target.CardId == \"S01-0212\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  358,
+                            "excerpt":  "if (card.CardId == \"S01-0301\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  360,
+                            "excerpt":  "if (card.CardId == \"S01-0302\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  361,
+                            "excerpt":  "if (card.CardId is \"S01-0305\" or \"S01-0306\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  362,
+                            "excerpt":  "if (card.CardId == \"S02-0202\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  363,
+                            "excerpt":  "if (card.CardId == \"S02-0203\" \u0026\u0026 !PublicLegions(player).Any(target =\u003e target.CardId == \"S01-0212\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  364,
+                            "excerpt":  "if (card.CardId == \"S02-0605\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  365,
+                            "excerpt":  "if (card.CardId == \"S02-0611\" \u0026\u0026 PublicLegions(player).Any(target =\u003e target.CardId == \"S02-0612\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  366,
+                            "excerpt":  "if (card.CardId == \"S02-0612\" \u0026\u0026 PublicLegions(player).Any(target =\u003e target.CardId == \"S02-0611\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  368,
+                            "excerpt":  "if (card.CardId == \"S02-0601\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  369,
+                            "excerpt":  "if (card.CardId == \"S01-0403\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  377,
+                            "excerpt":  "if (card.CardType == \"legion\" \u0026\u0026 State.ActiveDisaster?.CardId == \"S02-DS06\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  379,
+                            "excerpt":  "if (card.CardId == \"S02-0622\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  447,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS04\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  498,
+                            "excerpt":  "if (isRanged \u0026\u0026 attackTarget?.CardId == \"S02-0503\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  505,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS02\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  556,
+                            "excerpt":  "else if (card.CardId == \"S02-0516\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  557,
+                            "excerpt":  "else if (State.ActiveDisaster?.CardId == \"S02-DS02\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  567,
+                            "excerpt":  "if (isRanged \u0026\u0026 State.ActiveDisaster?.CardId == \"S02-DS04\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  598,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S02-DS02\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  602,
+                            "excerpt":  "if (ranged \u0026\u0026 State.ActiveDisaster?.CardId == \"S02-DS04\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  618,
+                            "excerpt":  "else if (attacker.CardId == \"S01-0212\" \u0026\u0026 State.Players[playerIndex].MasterId == \"S02-02M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  622,
+                            "excerpt":  "else if (State.ActiveDisaster?.CardId == \"S02-DS02\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  624,
+                            "excerpt":  "else if (State.ActiveDisaster?.CardId == \"S02-DS05\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  763,
+                            "excerpt":  "if (attacker.CardId == \"S01-0308\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  913,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS03\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  957,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS03\""
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  201,
+                            "excerpt":  "\"S02-0501\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  202,
+                            "excerpt":  "\"S02-0503\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  203,
+                            "excerpt":  "\"S02-0505\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  204,
+                            "excerpt":  "\"S02-0507\" =\u003e"
+                        },
+                        {
+                            "category":  "effectTextInference",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Actions.cs",
+                            "line":  6,
+                            "excerpt":  "EffectText?.Contains("
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+                            "line":  36,
+                            "excerpt":  "if (ability != \"discardHolyLock\" \u0026\u0026 source.AttachedCards.Any(card =\u003e card.CardId == \"S02-0013\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+                            "line":  47,
+                            "excerpt":  "if (player.Relic?.CardId != \"S01-0417\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+                            "line":  329,
+                            "excerpt":  "if (sword?.CardId == \"S01-0417\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs",
+                            "line":  171,
+                            "excerpt":  "if (source.CardType == \"master\" \u0026\u0026 PublicLegions(State.Players[playerIndex]).Any(card =\u003e card.CardId == \"S02-0401\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12CardEffects.cs",
+                            "line":  289,
+                            "excerpt":  "if (card?.CardId == \"S01-0204\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12CardEffects.cs",
+                            "line":  322,
+                            "excerpt":  "if (attacker.CardId is \"S01-0101\" or \"S01-0414\" or \"S01-0409\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+                            "line":  8,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+                            "line":  201,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId != \"S01-DS01\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+                            "line":  463,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId != \"S01-DS02\""
+                        },
+                        {
+                            "category":  "effectTextInference",
+                            "file":  "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+                            "line":  36,
+                            "excerpt":  "EffectText?.Contains("
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+                            "line":  319,
+                            "excerpt":  "if (player.Field[row][slot] is null \u0026\u0026 !(State.ActiveDisaster?.CardId == \"S01-DS03\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+                            "line":  458,
+                            "excerpt":  "if (card.CardId == \"S01-0415\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+                            "line":  637,
+                            "excerpt":  "if (DisastersEnabled \u0026\u0026 State.ActiveDisaster?.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+                            "line":  639,
+                            "excerpt":  "if (DisastersEnabled \u0026\u0026 State.ActiveDisaster?.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+                            "line":  702,
+                            "excerpt":  "if (endingPlayer.Relic?.CardId == \"S02-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+                            "line":  741,
+                            "excerpt":  "if (!DisastersEnabled || State.ActiveDisaster?.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+                            "line":  892,
+                            "excerpt":  "if (card.CardId == \"S02-0010\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GmCommands.cs",
+                            "line":  407,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12GmCommands.cs",
+                            "line":  422,
+                            "excerpt":  "if (replacement.CardType != \"destruction\" || replacement.CardId == \"S01-DS10\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  41,
+                            "excerpt":  "if (applyOptionalSetupDefaults \u0026\u0026 player.Library.FirstOrDefault(card =\u003e card.CardId == \"S02-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  54,
+                            "excerpt":  "if (player.Relic?.CardId == \"S02-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  55,
+                            "excerpt":  "if (player.MasterId == \"S02-03M1\" \u0026\u0026 player.Hand.Any(card =\u003e card.CardId == \"S02-0301\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  66,
+                            "excerpt":  "if (player.Library.Any(card =\u003e card.CardId == \"S02-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  70,
+                            "excerpt":  "if (player.MasterId == \"S02-03M1\" \u0026\u0026 player.Library.Any(card =\u003e card.CardId == \"S02-0301\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  288,
+                            "excerpt":  "if (chosen[0] == \"yes\" \u0026\u0026 player.Library.FirstOrDefault(card =\u003e card.CardId == \"S02-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  301,
+                            "excerpt":  "if (chosen[0] == \"yes\" \u0026\u0026 player.Library.FirstOrDefault(card =\u003e card.CardId == \"S02-0301\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  682,
+                            "excerpt":  "if (trigger == \"active\" \u0026\u0026 State.ActiveDisaster?.CardId == \"S02-DS03\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  693,
+                            "excerpt":  "if (State.ActiveDisaster?.CardId == \"S01-DS08\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  762,
+                            "excerpt":  "if (card.CardId == \"S01-0016\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  767,
+                            "excerpt":  "if (card.CardId == \"S01-0018\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  829,
+                            "excerpt":  "if (response.CardId == \"S01-0002\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  834,
+                            "excerpt":  "if (response.CardId == \"S02-0005\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  850,
+                            "excerpt":  "if (response.CardId == \"S01-0016\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  858,
+                            "excerpt":  "if (response.CardId is \"S01-0019\" or \"S01-0020\" or \"S01-0120\" or \"S01-0224\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  863,
+                            "excerpt":  "if (response.CardId is \"S02-0015\" or \"S02-0016\" or \"S02-0017\" or \"S02-0018\""
+                        },
+                        {
+                            "category":  "effectTextInference",
+                            "file":  "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+                            "line":  686,
+                            "excerpt":  "EffectText?.Contains("
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  472,
+                            "excerpt":  "if (candidate.SourceCardId == \"S01-0108\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  477,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0112\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  482,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0115\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  494,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0403\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  499,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0407\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  510,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0207\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  516,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0204\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  527,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0206\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  537,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0210\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  548,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0304\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  553,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  565,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0307\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  571,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0308\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  582,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0313\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  587,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S02-0518\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  593,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S02-0601\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  621,
+                            "excerpt":  "if (candidate.SourceCardId == \"S01-0115\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  644,
+                            "excerpt":  "else if (candidate.SourceCardId == \"S01-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  684,
+                            "excerpt":  "if (card.CardId == \"S01-0204\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  689,
+                            "excerpt":  "if (row == 0 \u0026\u0026 card.CardId is \"S01-0107\" or \"S01-0212\" or \"S01-0312\" or \"S02-0004\" or \"S02-0007\" or \"S02-0615\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  691,
+                            "excerpt":  "if (card.CardId == \"S02-0519\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  692,
+                            "excerpt":  "if (card.CardId == \"S01-0203\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  696,
+                            "excerpt":  "if (card.CardId == \"S01-0212\" \u0026\u0026 owner.MasterId == \"S01-02D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+                            "line":  701,
+                            "excerpt":  "if (adjacentSlot is \u003e= 0 and \u003c 3 \u0026\u0026 owner.Field[row][adjacentSlot]?.CardId == \"S02-0516\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  647,
+                            "excerpt":  "if (ability == \"xishiExchange\" \u0026\u0026 source.CardId == \"S01-0116\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  687,
+                            "excerpt":  "if (!paid) return CommandResult.Reject(source.CardId == \"S01-0003\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  876,
+                            "excerpt":  "if (enemy.Field[1 - row][slot] is null \u0026\u0026 !(State.ActiveDisaster?.CardId == \"S01-DS03\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  1120,
+                            "excerpt":  "if (left.CardId == \"S01-0417\" \u0026\u0026 player.MasterId == \"S01-04M2\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  1122,
+                            "excerpt":  "if (left.CardId == \"S01-0204\""
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  37,
+                            "excerpt":  "\"S01-0003\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  38,
+                            "excerpt":  "\"S01-0004\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  39,
+                            "excerpt":  "\"S01-0105\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  40,
+                            "excerpt":  "\"S01-0109\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  41,
+                            "excerpt":  "\"S01-0113\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  42,
+                            "excerpt":  "\"S01-0116\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  43,
+                            "excerpt":  "\"S01-0117\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  44,
+                            "excerpt":  "\"S01-0415\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  45,
+                            "excerpt":  "\"S01-0417\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  46,
+                            "excerpt":  "\"S01-01C1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  47,
+                            "excerpt":  "\"S01-04C1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  48,
+                            "excerpt":  "\"S01-01M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  49,
+                            "excerpt":  "\"S01-04M2\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  54,
+                            "excerpt":  "\"S02-0003\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  55,
+                            "excerpt":  "\"S02-0104\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  56,
+                            "excerpt":  "\"S02-05C1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  57,
+                            "excerpt":  "\"S02-05C1A\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  58,
+                            "excerpt":  "\"S02-05M2\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  59,
+                            "excerpt":  "\"S02-01M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  60,
+                            "excerpt":  "\"S02-03M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  61,
+                            "excerpt":  "\"S02-0301\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  62,
+                            "excerpt":  "\"S02-05D1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  68,
+                            "excerpt":  "\"S02-05M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  69,
+                            "excerpt":  "\"S02-0510\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  70,
+                            "excerpt":  "\"S02-06D1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  75,
+                            "excerpt":  "\"S02-06M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  76,
+                            "excerpt":  "\"S02-0520\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  81,
+                            "excerpt":  "\"S02-06C1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  86,
+                            "excerpt":  "\"S02-06S3\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  87,
+                            "excerpt":  "\"S02-06S4\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  88,
+                            "excerpt":  "\"S02-06S5\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  93,
+                            "excerpt":  "\"S02-06S6\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  963,
+                            "excerpt":  "\"S01-0019\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+                            "line":  965,
+                            "excerpt":  "\"S01-0224\" =\u003e"
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  358,
+                            "excerpt":  "if (card.CardId != \"S01-0311\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  375,
+                            "excerpt":  "if (item.SourceCardId != \"S01-0308\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  564,
+                            "excerpt":  "if (guard is null || guard.CardId != \"S01-0212\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  621,
+                            "excerpt":  "if (!PublicLegions(player).Any(card =\u003e card.CardId == \"S01-0212\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  735,
+                            "excerpt":  "if (!PublicLegions(player).Any(card =\u003e card.CardId == \"S01-0212\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  949,
+                            "excerpt":  "if (card.CardId != \"S01-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  971,
+                            "excerpt":  "if (slot \u003e= 0 \u0026\u0026 player.Field[0].Where((card, index) =\u003e Math.Abs(index - slot) == 1 \u0026\u0026 card?.CardId == \"S01-0206\""
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  36,
+                            "excerpt":  "\"S01-0214\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  37,
+                            "excerpt":  "\"S01-0215\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  38,
+                            "excerpt":  "\"S01-02C1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  39,
+                            "excerpt":  "\"S01-03C1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  40,
+                            "excerpt":  "\"S01-0307\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  41,
+                            "excerpt":  "\"S01-0314\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  42,
+                            "excerpt":  "\"S01-0317\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  43,
+                            "excerpt":  "\"S01-01D1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  44,
+                            "excerpt":  "\"S01-01M2\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  45,
+                            "excerpt":  "\"S01-02D1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  46,
+                            "excerpt":  "\"S01-02M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  51,
+                            "excerpt":  "\"S01-02M2\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  52,
+                            "excerpt":  "\"S01-02M3\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  57,
+                            "excerpt":  "\"S01-03D1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  58,
+                            "excerpt":  "\"S01-03M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  59,
+                            "excerpt":  "\"S01-03M2\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  60,
+                            "excerpt":  "\"S01-04D1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+                            "line":  61,
+                            "excerpt":  "\"S01-04M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+                            "line":  48,
+                            "excerpt":  "if (item.SourceCardId == \"S02-0106\""
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+                            "line":  15,
+                            "excerpt":  "\"S02-0015\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+                            "line":  16,
+                            "excerpt":  "\"S02-0016\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+                            "line":  17,
+                            "excerpt":  "\"S02-0017\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+                            "line":  18,
+                            "excerpt":  "\"S02-0018\" =\u003e"
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  83,
+                            "excerpt":  "if (card.CardId != \"S02-0006\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  97,
+                            "excerpt":  "if (item.SourceCardId != \"S02-0006\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  129,
+                            "excerpt":  "if (master.CardId == \"S01-01M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  157,
+                            "excerpt":  "if (source?.CardId != \"S02-0102\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  519,
+                            "excerpt":  "if (card.CardId == \"S02-0306\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  538,
+                            "excerpt":  "if (card.CardId == \"S02-0405\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  543,
+                            "excerpt":  "if (card.CardId == \"S02-0406\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  556,
+                            "excerpt":  "if (card.CardId == \"S02-0522\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  561,
+                            "excerpt":  "if (card.CardId == \"S02-0521\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  562,
+                            "excerpt":  "if (card.CardId == \"S02-0620\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  576,
+                            "excerpt":  "if (card.CardId == \"S02-0621\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  593,
+                            "excerpt":  "if (card.CardId == \"S02-0622\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  598,
+                            "excerpt":  "if (card.CardId == \"S02-0307\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  605,
+                            "excerpt":  "if (card.CardId == \"S02-0206\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  615,
+                            "excerpt":  "if (card.CardId != \"S02-0207\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  631,
+                            "excerpt":  "if (card.CardId == \"S02-0509\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  646,
+                            "excerpt":  "if (card.CardId == \"S02-0511\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  658,
+                            "excerpt":  "if (card.CardId == \"S02-0519\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  666,
+                            "excerpt":  "if (card.CardId == \"S02-0516\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  676,
+                            "excerpt":  "if (card.CardId == \"S02-0517\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  687,
+                            "excerpt":  "if (card.CardId == \"S02-0605\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  694,
+                            "excerpt":  "if (card.CardId == \"S02-0606\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  701,
+                            "excerpt":  "if (card.CardId == \"S02-0607\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  711,
+                            "excerpt":  "if (card.CardId == \"S02-0608\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  726,
+                            "excerpt":  "if (card.CardId == \"S02-0612\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  733,
+                            "excerpt":  "if (card.CardId == \"S02-0617\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  736,
+                            "excerpt":  "if (PublicLegions(player).Any(candidate =\u003e candidate.CardId == \"S02-0608\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  740,
+                            "excerpt":  "if (card.CardId != \"S02-0103\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  762,
+                            "excerpt":  "if (card.CardId == \"S02-0503\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  774,
+                            "excerpt":  "if (card.CardId is \"S02-0606\" or \"S02-0611\" or \"S02-0608\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  783,
+                            "excerpt":  "if (card.CardId != \"S02-0602\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  871,
+                            "excerpt":  "if (ability == \"nephthysSacrifice\" \u0026\u0026 source.CardId == \"S02-02M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  880,
+                            "excerpt":  "if (ability == \"avalonRecover\" \u0026\u0026 source.CardId == \"S02-06D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  892,
+                            "excerpt":  "if (ability == \"avalonDebuff\" \u0026\u0026 source.CardId == \"S02-06D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  900,
+                            "excerpt":  "if (ability == \"forgeReadyOnKill\" \u0026\u0026 source.CardId == \"S02-0520\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  924,
+                            "excerpt":  "if (ability == \"godPowerDraw\" \u0026\u0026 source.CardId == \"S02-05C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  932,
+                            "excerpt":  "if (ability == \"factionGainRune\" \u0026\u0026 source.CardId == \"S02-06C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  940,
+                            "excerpt":  "if (ability == \"olympusMoraleFlip\" \u0026\u0026 source.CardId == \"S02-05C1A\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  950,
+                            "excerpt":  "if (ability == \"prometheusTopThree\" \u0026\u0026 source.CardId == \"S02-05M2\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  960,
+                            "excerpt":  "if (ability == \"morriganReadyOnKill\" \u0026\u0026 source.CardId == \"S02-06M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  973,
+                            "excerpt":  "if (ability == \"runeUse\" \u0026\u0026 source.CardId == \"S02-06C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  990,
+                            "excerpt":  "if (ability == \"merlinRune\" \u0026\u0026 source.CardId == \"S02-0603\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1011,
+                            "excerpt":  "if (ability == \"amakineTop\" \u0026\u0026 source.CardId == \"S02-0616\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1017,
+                            "excerpt":  "if (ability == \"galahadGrailReward\" \u0026\u0026 source.CardId == \"S02-0604\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1019,
+                            "excerpt":  "if (!player.SpecialZones.Trials.Any(card =\u003e card.CardId == \"S02-06S4\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1023,
+                            "excerpt":  "if (ability == \"aristotleDiscount\" \u0026\u0026 source.CardId == \"S02-0513\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1025,
+                            "excerpt":  "if (ability == \"scarabSummon\" \u0026\u0026 source.CardId == \"S02-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1031,
+                            "excerpt":  "if (ability == \"scarabDebuff\" \u0026\u0026 source.CardId == \"S02-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1048,
+                            "excerpt":  "if (ability == \"magatamaMove\" \u0026\u0026 source.CardId == \"S02-0404\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1070,
+                            "excerpt":  "if (ability == \"magatamaImmortal\" \u0026\u0026 source.CardId == \"S02-0404\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1202,
+                            "excerpt":  "if (ability == \"nephthysSacrifice\" \u0026\u0026 source.CardId == \"S02-02M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1220,
+                            "excerpt":  "if (ability == \"avalonRecover\" \u0026\u0026 source.CardId == \"S02-06D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1237,
+                            "excerpt":  "if (ability == \"avalonDebuff\" \u0026\u0026 source.CardId == \"S02-06D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1249,
+                            "excerpt":  "if (ability is \"forgePromotionDiscount\" or \"forgeReadyOnKill\" \u0026\u0026 source.CardId == \"S02-0520\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1273,
+                            "excerpt":  "if (ability == \"morriganReadyOnKill\" \u0026\u0026 source.CardId == \"S02-06M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1287,
+                            "excerpt":  "if (ability == \"merlinRune\" \u0026\u0026 source.CardId == \"S02-0603\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1305,
+                            "excerpt":  "if (ability == \"aristotleDiscount\" \u0026\u0026 source.CardId == \"S02-0513\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1313,
+                            "excerpt":  "if (ability == \"imhotepDiscount\" \u0026\u0026 source.CardId == \"S02-0204\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1321,
+                            "excerpt":  "if (ability == \"scarabSummon\" \u0026\u0026 source.CardId == \"S02-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1330,
+                            "excerpt":  "if (ability == \"scarabDebuff\" \u0026\u0026 source.CardId == \"S02-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1347,
+                            "excerpt":  "if (ability == \"magatamaMove\" \u0026\u0026 source.CardId == \"S02-0404\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1365,
+                            "excerpt":  "if (ability == \"magatamaImmortal\" \u0026\u0026 source.CardId == \"S02-0404\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1378,
+                            "excerpt":  "if (ability == \"amakineTop\" \u0026\u0026 source.CardId == \"S02-0616\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1387,
+                            "excerpt":  "if (ability == \"galahadGrailReward\" \u0026\u0026 source.CardId == \"S02-0604\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1389,
+                            "excerpt":  "if (!player.SpecialZones.Trials.Any(card =\u003e card.CardId == \"S02-06S4\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1398,
+                            "excerpt":  "if (ability == \"runeUse\" \u0026\u0026 source.CardId == \"S02-06C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1418,
+                            "excerpt":  "if (chosen is null || !chosen.Tapped || chosen.Faction != \"otherworld\" || (chosen.CardId != \"S02-0610\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1424,
+                            "excerpt":  "if (chosen?.CardId is not (\"S02-0604\" or \"S02-0610\" or \"S02-0614\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1429,
+                            "excerpt":  "if (chosen?.CardId != \"S02-0608\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1457,
+                            "excerpt":  "if (ability == \"margaretMasterDamage\" \u0026\u0026 source?.CardId == \"S02-0304\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1472,
+                            "excerpt":  "if (ability == \"nephthysSacrifice\" \u0026\u0026 source?.CardId == \"S02-02M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1481,
+                            "excerpt":  "if (ability == \"avalonRecover\" \u0026\u0026 source?.CardId == \"S02-06D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1497,
+                            "excerpt":  "if (ability == \"avalonDebuff\" \u0026\u0026 source?.CardId == \"S02-06D1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1508,
+                            "excerpt":  "if (ability == \"forgePromotionDiscount\" \u0026\u0026 source?.CardId == \"S02-0520\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1515,
+                            "excerpt":  "if (ability == \"forgeReadyOnKill\" \u0026\u0026 source?.CardId == \"S02-0520\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1527,
+                            "excerpt":  "if (ability == \"morriganReadyOnKill\" \u0026\u0026 source?.CardId == \"S02-06M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1539,
+                            "excerpt":  "if (ability == \"godPowerDraw\" \u0026\u0026 source?.CardId == \"S02-05C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1545,
+                            "excerpt":  "if (ability == \"factionGainRune\" \u0026\u0026 source?.CardId == \"S02-06C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1552,
+                            "excerpt":  "if (ability == \"olympusMoraleFlip\" \u0026\u0026 source?.CardId == \"S02-05C1A\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1554,
+                            "excerpt":  "if (ability == \"prometheusTopThree\" \u0026\u0026 source?.CardId == \"S02-05M2\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1576,
+                            "excerpt":  "if (ability == \"runeUse\" \u0026\u0026 source?.CardId == \"S02-06C1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1585,
+                            "excerpt":  "if (ability == \"merlinRune\" \u0026\u0026 source?.CardId == \"S02-0603\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1606,
+                            "excerpt":  "if (ability == \"aristotleDiscount\" \u0026\u0026 source?.CardId == \"S02-0513\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1613,
+                            "excerpt":  "if (ability == \"imhotepDiscount\" \u0026\u0026 source?.CardId == \"S02-0204\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1620,
+                            "excerpt":  "if (ability == \"scarabSummon\" \u0026\u0026 source?.CardId == \"S02-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1628,
+                            "excerpt":  "if (ability == \"scarabDebuff\" \u0026\u0026 source?.CardId == \"S02-0205\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1638,
+                            "excerpt":  "if (ability == \"magatamaMove\" \u0026\u0026 source?.CardId == \"S02-0404\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1654,
+                            "excerpt":  "if (ability == \"magatamaImmortal\" \u0026\u0026 source?.CardId == \"S02-0404\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1666,
+                            "excerpt":  "if (ability == \"amakineTop\" \u0026\u0026 item.SourceCardId == \"S02-0616\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1686,
+                            "excerpt":  "if (ability == \"galahadGrailReward\" \u0026\u0026 item.SourceCardId == \"S02-0604\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  1802,
+                            "excerpt":  "if (chosen[0] == \"yes\" \u0026\u0026 margaret is { CardId: \"S02-0304\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  3204,
+                            "excerpt":  "if (squire?.CardId == \"S02-0609\""
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  56,
+                            "excerpt":  "\"S02-02M1\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  60,
+                            "excerpt":  "\"S02-0204\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  61,
+                            "excerpt":  "\"S02-0513\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  62,
+                            "excerpt":  "\"S02-0205\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  67,
+                            "excerpt":  "\"S02-0603\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  68,
+                            "excerpt":  "\"S02-0616\" =\u003e"
+                        },
+                        {
+                            "category":  "cardSwitchArm",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+                            "line":  69,
+                            "excerpt":  "\"S02-0404\" =\u003e"
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+                            "line":  504,
+                            "excerpt":  "if (horse?.CardId != \"S02-0523\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+                            "line":  529,
+                            "excerpt":  "if (State.ActivePlayer != playerIndex || player.Relic?.CardId != \"S02-0305\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+                            "line":  556,
+                            "excerpt":  "if (!attacker.IsMasterLegion || attacker.CardId != \"S02-01M1\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  142,
+                            "excerpt":  "if (card.CardId != \"S02-0002\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  169,
+                            "excerpt":  "if (source is null || source.CardId != \"S02-0001\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  186,
+                            "excerpt":  "if (ability == \"disableCounters\" \u0026\u0026 source.CardId == \"S02-0003\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  188,
+                            "excerpt":  "if (ability == \"shennongReset\" \u0026\u0026 source.CardId == \"S02-0104\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  209,
+                            "excerpt":  "if (ability == \"disableCounters\" \u0026\u0026 source.CardId == \"S02-0003\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  218,
+                            "excerpt":  "if (ability == \"shennongReset\" \u0026\u0026 source.CardId == \"S02-0104\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  232,
+                            "excerpt":  "if (ability == \"disableCounters\" \u0026\u0026 source?.CardId == \"S02-0003\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  239,
+                            "excerpt":  "if (ability == \"shennongReset\" \u0026\u0026 source?.CardId == \"S02-0104\""
+                        },
+                        {
+                            "category":  "cardConditional",
+                            "file":  "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+                            "line":  256,
+                            "excerpt":  "if (source.AttachedCards.All(card =\u003e card.CardId != \"S02-0013\""
+                        }
+                    ]
+}

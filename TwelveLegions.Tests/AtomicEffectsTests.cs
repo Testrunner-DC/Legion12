@@ -117,6 +117,35 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
+    public void EveryMigratedLegacyCaseUsesOneSharedCompositeRouteWithoutLegacyFallback()
+    {
+        var catalog = Catalog;
+        var catalogMappedRoutes = 0;
+        Assert.Equal(178, L12RuntimeEffectRoutes.AllPrograms.Count);
+        foreach (var program in L12RuntimeEffectRoutes.AllPrograms)
+        {
+            Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
+            Assert.Equal(L12AtomKinds.Trigger, program.Atoms[0].Kind);
+            var composite = Assert.Single(program.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow);
+            Assert.True(composite.RuntimeExecutable);
+            Assert.False(string.IsNullOrWhiteSpace(composite.Parameters["flow"]));
+            Assert.Same(program, L12VerifiedAtomicPrograms.Find(program.CardId, program.Trigger));
+
+            var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));
+            var ability = card.Abilities.FirstOrDefault(candidate => candidate.Trigger == program.Trigger
+                && !candidate.HasLegacyFallback
+                && candidate.Atoms.Any(atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow") == composite.Parameters["flow"]));
+            if (ability is not null) catalogMappedRoutes++;
+        }
+
+        // 部分内部路由时机（例如天灾结算、S02 响应窗口）与卡面能力的展示时机不同；
+        // 它们仍由同一注册表驱动实战，但不能用展示层 Trigger 名称强行判等。
+        Assert.True(catalogMappedRoutes >= 150,
+            $"预期绝大多数实战路由可直接映射到卡面能力，实际为 {catalogMappedRoutes}/178。");
+    }
+
+    [Fact]
     public void MultipleVerifiedProgramsAtTheSameTimingNeverBindByTriggerAlone()
     {
         var first = new L12VerifiedAtomicProgram("TEST", "enter", [Atom("a1", L12AtomKinds.Draw, 1)],

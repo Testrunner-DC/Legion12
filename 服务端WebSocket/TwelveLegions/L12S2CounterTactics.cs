@@ -55,9 +55,9 @@ public sealed partial class L12GameEngine
         var affectedPlayer = target.Controller;
         var affected = State.Players[affectedPlayer];
 
-        switch (item.SourceCardId)
+        switch (AtomicFlowKey(item))
         {
-            case "S02-0015":
+            case "地主的胁迫":
             {
                 var excluded = target.Data.GetValueOrDefault("blockIds", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -73,7 +73,7 @@ public sealed partial class L12GameEngine
                     });
                 return;
             }
-            case "S02-0016":
+            case "破败仪式":
             {
                 var modes = new List<string>();
                 if (affected.Hand.Count > 0) modes.Add("discard");
@@ -89,11 +89,11 @@ public sealed partial class L12GameEngine
                     });
                 return;
             }
-            case "S02-0017":
+            case "粮草掠夺":
                 PromptS2OpponentHandChoice(item, target, "s2-plunder-return",
                     "粮草掠夺：选择对方1张手牌返回其牌库顶部，随后我方抽取1张牌");
                 return;
-            case "S02-0018":
+            case "毒药发作":
                 NegateEffectReadyBatch(target);
                 if (affected.Hand.Count == 0) { FinishStackItem(item); return; }
                 CreatePrompt(affectedPlayer, "hand-card", "毒药发作：弃置1张手牌",

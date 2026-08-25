@@ -45,14 +45,14 @@ public sealed partial class L12GameEngine
             ResolveDarkMorningStarMain(item);
             return;
         }
-        switch (disaster.CardId)
+        switch (AtomicFlowKey(item, disaster))
         {
-            case "S01-DS01":
-            case "S01-DS08":
-            case "S01-DS10":
+            case "黯陨晨星":
+            case "虚构的圣杯":
+            case "堙灭":
                 AddEvent("disaster-active", null, $"〈{disaster.Name}〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
-            case "S01-DS03":
+            case "腐秽大地":
                 for (var owner = 0; owner < 2; owner++)
                     for (var slot = 0; slot < 3; slot++)
                     {
@@ -61,24 +61,24 @@ public sealed partial class L12GameEngine
                             queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
                     }
                 FinishStackItem(item); return;
-            case "S01-DS04": BeginThunderWrath(item); return;
-            case "S01-DS05": BeginDragonDescent(item); return;
-            case "S01-DS06": BeginDivineBalance(item); return;
-            case "S01-DS07": BeginApocalypse(item); return;
-            case "S01-DS09": ResolveRagnarok(item); return;
-            case "S02-DS01":
+            case "雷霆天怒": BeginThunderWrath(item); return;
+            case "魔龙降世": BeginDragonDescent(item); return;
+            case "神之天平": BeginDivineBalance(item); return;
+            case "天启默示录": BeginApocalypse(item); return;
+            case "诸神黄昏": ResolveRagnarok(item); return;
+            case "天地异变":
                 AddEvent("disaster-active", null, "〈天地异变〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
-            case "S02-DS02": BeginS2FogDeadEnd(item); return;
-            case "S02-DS03":
+            case "迷雾绝境": BeginS2FogDeadEnd(item); return;
+            case "无眠之夜":
                 for (var owner = 0; owner < 2; owner++)
                     foreach (var card in State.Players[owner].Field.SelectMany(row => row)
                         .Where(card => card is not null && IsDisasterFieldCard(card) && card.BaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
                         RemoveFromField(State.Players[owner], card, true, "因〈无眠之夜〉弃置",
                             queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
                 FinishStackItem(item); return;
-            case "S02-DS04": ResolveS2StormChaos(item); return;
-            case "S02-DS06": BeginS2Pride(item); return;
+            case "风暴乱象": ResolveS2StormChaos(item); return;
+            case "傲慢之罪": BeginS2Pride(item); return;
             default:
                 FinishStackItem(item); return;
         }

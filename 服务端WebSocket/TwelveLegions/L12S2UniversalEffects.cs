@@ -23,9 +23,9 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2UniversalEnter(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S02-0003":
+            case "宫廷魔术师":
             {
                 var choices = State.Players.SelectMany(player => player.Field[1])
                     .Where(target => target is not null && IsCounterTactic(target.CardId))
@@ -37,7 +37,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-magician-remove-counter" });
                 return true;
             }
-            case "S02-0008":
+            case "万物统御之戒":
             {
                 if (player.Hand.Count == 0 || !player.Library.Any(candidate => candidate.Faction == "universal"))
                 {
@@ -62,9 +62,9 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2UniversalTactic(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S02-0009":
+            case "防御部署":
             {
                 var availableSlots = Enumerable.Range(0, 3).Count(slot => player.Field[1][slot] is null);
                 var choices = player.Hand.Where(candidate => IsCounterTactic(candidate.CardId))
@@ -80,7 +80,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-defense-deployment" });
                 return true;
             }
-            case "S02-0010":
+            case "黑色莲花":
                 CreatePrompt(item.Controller, "option", "黑色莲花：将天灾值增加或减少最多1点",
                     ["-1", "0", "1"], 1, 1, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string>
@@ -89,7 +89,7 @@ public sealed partial class L12GameEngine
                         ["-1"] = "天灾值-1", ["0"] = "不改变", ["1"] = "天灾值+1",
                     });
                 return true;
-            case "S02-0011":
+            case "纷乱箭":
             {
                 var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
                     .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && target.BaseTroops <= 2000)
@@ -100,7 +100,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-chaotic-arrows" });
                 return true;
             }
-            case "S02-0012":
+            case "祷告仪式":
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "祷告仪式：是否同意公开下1张天灾卡？",
                     ["agree", "refuse"], 1, 1, "card-effect", item.StackItemId, isPrivate: false,
                     data: new Dictionary<string, string>
@@ -109,7 +109,7 @@ public sealed partial class L12GameEngine
                         ["agree"] = "同意公开", ["refuse"] = "不同意公开",
                     });
                 return true;
-            case "S02-0013":
+            case "神圣伽锁":
             {
                 var opponent = State.Players[1 - item.Controller];
                 var choices = new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
@@ -121,7 +121,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-holy-lock-attach" });
                 return true;
             }
-            case "S02-0105":
+            case "乾坤 阳":
             {
                 var choices = PublicLegions(State.Players[1 - item.Controller])
                     .Where(target => target.BaseTroops <= 3000 && !target.Hidden)

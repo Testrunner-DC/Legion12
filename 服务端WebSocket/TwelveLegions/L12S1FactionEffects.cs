@@ -65,11 +65,11 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionEnter(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0201":
+            case "图特摩斯三世":
                 PromptEnemyByTroops(item, "thutmose-kill", "图特摩斯三世：击杀对方1张兵力不高于5000的军团", 5000, false); return true;
-            case "S01-0202":
+            case "拉美西斯二世":
             {
                 var choices = PublicLegions(player).Where(target => target.InstanceId != card.InstanceId && target.Faction == "taiyangcheng")
                     .Select(target => target.InstanceId).ToList();
@@ -80,7 +80,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "ramses-repeat" });
                 return true;
             }
-            case "S01-0204":
+            case "陵墓构造体":
             {
                 var guards = player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").ToArray();
                 foreach (var guard in guards) { player.Graveyard.Remove(guard); card.AttachedCards.Add(guard); }
@@ -88,7 +88,7 @@ public sealed partial class L12GameEngine
                 RecalculateContinuousTroops();
                 FinishStackItem(item); return true;
             }
-            case "S01-0205":
+            case "霍列姆赫布":
             {
                 var guards = PublicLegions(player).Where(target => target.CardId == "S01-0212").Select(target => target.InstanceId).ToList();
                 guards.Add("skip");
@@ -96,21 +96,21 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "horemheb-charge" });
                 return true;
             }
-            case "S01-0207":
+            case "图坦卡蒙":
             {
                 if (PublicLegions(player).Count() >= PublicLegions(State.Players[1 - item.Controller]).Count()) { FinishStackItem(item); return true; }
                 var guards = player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").Select(candidate => candidate.InstanceId).Take(2).ToArray();
                 BeginQueuedSummons(item, guards, tapped: false, "图坦卡蒙：选择陵墓守卫活跃登场的位置"); return true;
             }
-            case "S01-0208":
+            case "阿伊":
                 BeginQueuedSummons(item, player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").Take(1).Select(candidate => candidate.InstanceId), tapped: true,
                     "阿伊：选择陵墓守卫休整登场的位置"); return true;
-            case "S01-0209":
+            case "纳芙蒂蒂":
                 if (State.Players[1 - item.Controller].Hand.Count >= 6)
                     PromptDiscard(item, 1 - item.Controller, 1, "纳芙蒂蒂：对方弃置1张手牌", "nefertiti-discard");
                 else FinishStackItem(item);
                 return true;
-            case "S01-0210":
+            case "尼托克丽丝":
             {
                 var guards = PublicLegions(player).Where(target => target.CardId == "S01-0212" && target.Tapped).Select(target => target.InstanceId).ToArray();
                 if (guards.Length == 0) { FinishStackItem(item); return true; }
@@ -118,16 +118,16 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "nitocris-ready" });
                 return true;
             }
-            case "S01-0211":
+            case "托勒密十三世":
             {
                 var previousId = player.LastActiveTacticCardId;
                 if (string.IsNullOrEmpty(previousId) || !_catalog.Cards.ContainsKey(previousId)) { FinishStackItem(item); return true; }
                 var copy = CreateCard(previousId, $"repeat-{++State.StackSequence}"); player.Resolving.Add(copy);
                 FinishStackItem(item); PushEffect(item.Controller, copy, "play", "托勒密十三世再次发动的主动战术效果"); return true;
             }
-            case "S01-0215":
+            case "安卡神碑":
                 PromptOwnLegion(item, "ankh-enter", "安卡神碑：选择我方1张陵墓守卫，本回合兵力+2000", target => target.CardId == "S01-0212", false); return true;
-            case "S01-0216":
+            case "卡诺匹斯箱":
             {
                 var choices = player.Library.Where(candidate => candidate.Name.Contains("卡诺匹斯罐", StringComparison.Ordinal)).Select(candidate => candidate.InstanceId).ToArray();
                 if (choices.Length == 0) { HealMaster(item.Controller, 1, "卡诺匹斯箱"); DiscardRelic(player, card); FinishStackItem(item); return true; }
@@ -135,10 +135,10 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "canopic-search" });
                 return true;
             }
-            case "S01-0217": PromptOwnLegion(item, "canopic-one", "卡诺匹斯罐一：选择我方1张【太阳城】军团，兵力+2000并获得强攻", target => target.Faction == "taiyangcheng", false); return true;
-            case "S01-0218": player.FreeTacticCount++; DiscardRelic(player, card); FinishStackItem(item); return true;
-            case "S01-0219": player.TemporaryMorale += 2; DiscardRelic(player, card); FinishStackItem(item); return true;
-            case "S01-0220":
+            case "卡诺匹斯罐 一": PromptOwnLegion(item, "canopic-one", "卡诺匹斯罐一：选择我方1张【太阳城】军团，兵力+2000并获得强攻", target => target.Faction == "taiyangcheng", false); return true;
+            case "卡诺匹斯罐 二": player.FreeTacticCount++; DiscardRelic(player, card); FinishStackItem(item); return true;
+            case "卡诺匹斯罐 三": player.TemporaryMorale += 2; DiscardRelic(player, card); FinishStackItem(item); return true;
+            case "卡诺匹斯罐 四":
             {
                 var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng").Select(target => target.InstanceId).ToList();
                 choices.Add("skip");
@@ -146,9 +146,9 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "canopic-four" });
                 return true;
             }
-            case "S01-0301":
+            case "贝奥武夫":
                 Mill(player, 2, "贝奥武夫"); FinishStackItem(item); return true;
-            case "S01-0309":
+            case "布伦希尔德":
             {
                 var choices = player.Hand.Concat(player.Graveyard).Where(candidate => candidate.CardId == "S01-0310").Select(candidate => candidate.InstanceId).ToList();
                 choices.Add("skip");
@@ -156,14 +156,14 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "brynhild-sigurd" });
                 return true;
             }
-            case "S01-0313":
+            case "神箭奥德尔":
                 CreatePrompt(item.Controller, "optional", "神箭奥德尔：是否令我方主宰受到1点伤害并抽1张牌？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "oddr-draw" }); return true;
-            case "S01-0315": BeginFactionTopSearch(item, 3, "asgard", "S01-0315", "ivar-search"); return true;
-            case "S01-0316":
+            case "无骨者伊瓦尔": BeginFactionTopSearch(item, 3, "asgard", "S01-0315", "ivar-search"); return true;
+            case "夺命诗人埃吉尔":
                 CreatePrompt(item.Controller, "optional", "夺命诗人埃吉尔：是否令主宰受到1点伤害并弃置牌库顶部2张牌？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "egil-pay" }); return true;
-            case "S01-0317":
+            case "神剑格拉墨":
                 Mill(player, 2, "神剑格拉墨");
                 PromptEnemyByTroops(item, "gram-bottom", "神剑格拉墨：选择对方1张兵力不高于3000的军团返回牌库底部",
                     3000, true, predicate: card => !L12SpecialDeckRules.IsDerivedSpecialCard(card));
@@ -175,9 +175,9 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionTactic(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0221":
+            case "杜阿特之门":
                 CreatePrompt(item.Controller, "option", "杜阿特之门：选择击杀军团，或回收太阳城卡牌", ["kill", "recover"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string>
                     {
@@ -185,8 +185,8 @@ public sealed partial class L12GameEngine
                         ["kill"] = "击杀对方1张兵力不高于5000的军团。",
                         ["recover"] = "选择墓地最多1张〈杜阿特之门〉以外的【太阳城】卡牌加入手牌。",
                     }); return true;
-            case "S01-0222": BeginPharaohFestival(item); return true;
-            case "S01-0318":
+            case "法老王的庆典": BeginPharaohFestival(item); return true;
+            case "女武神的召唤":
             {
                 var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, candidate, "asgard") && candidate.CurrentCost <= 5)
@@ -196,7 +196,7 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "card", "女武神的召唤：选择墓地1张费用不高于5的【阿斯加德】军团活跃登场", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "valkyrie-card" }); return true;
             }
-            case "S01-0319":
+            case "猎杀时刻":
                 if (player.Graveyard.Count < 4) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "order", "猎杀时刻：选择墓地4张牌，依选择顺序返回牌库底部", player.Graveyard.Select(card => card.InstanceId), 4, 4,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "hunt-return" }); return true;
@@ -207,31 +207,31 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionAttack(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0201": ApplySunKingAttack(item); return true;
-            case "S01-0203":
+            case "图特摩斯三世": ApplySunKingAttack(item); return true;
+            case "美尼斯":
             {
                 var choices = PublicLegions(player).Where(target => target.InstanceId != card.InstanceId).Select(target => target.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-target", "美尼斯：可弃置我方战场1张军团，自身兵力+2000并获得强攻", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "menes-sacrifice" }); return true;
             }
-            case "S01-0206": PromptOwnLegion(item, "saladin-move", "萨拉丁：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
-            case "S01-0208":
+            case "萨拉丁": PromptOwnLegion(item, "saladin-move", "萨拉丁：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
+            case "阿伊":
                 if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "阿伊：是否消耗1士气，使我方前排1张低兵力军团本回合兵力+2000？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ay-pay" }); return true;
-            case "S01-0301":
+            case "贝奥武夫":
                 CreatePrompt(item.Controller, "optional", "贝奥武夫：是否令我方主宰受到1点伤害，自身兵力+2000？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "beowulf-buff" }); return true;
-            case "S01-0306":
+            case "奥拉夫二世":
             {
                 var choices = player.Graveyard.Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "奥拉夫二世：可将墓地1张牌置入牌库底部，获得强攻", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "olaf-strong" }); return true;
             }
-            case "S01-0310": if (player.Relic?.CardId == "S01-0317" || player.ExtraRelics.Any(relic => relic.CardId == "S01-0317")) card.Troops += 1000; FinishStackItem(item); return true;
-            case "S01-0311":
+            case "齐格鲁德": if (player.Relic?.CardId == "S01-0317" || player.ExtraRelics.Any(relic => relic.CardId == "S01-0317")) card.Troops += 1000; FinishStackItem(item); return true;
+            case "古斯塔夫一世":
                 if (player.Graveyard.Count < 2) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "古斯塔夫一世：是否将墓地2张牌返回牌库底部，使自身本回合兵力+2000？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "gustav-attack-choice" }); return true;
@@ -242,10 +242,10 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0201": ApplySunKingAttack(item); return true;
-            case "S01-0204":
+            case "图特摩斯三世": ApplySunKingAttack(item); return true;
+            case "陵墓构造体":
                 if (item.Data.TryGetValue("declaredCardIds", out var declaredGuards)
                     && item.Data.TryGetValue("declaredTargets", out var declaredGuardSlots))
                 {
@@ -258,7 +258,7 @@ public sealed partial class L12GameEngine
                 var attachedIds = card.LastKnownAttachedCardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
                 BeginQueuedSummons(item, player.Graveyard.Where(candidate => candidate.CardId == "S01-0212" && attachedIds.Contains(candidate.InstanceId)).Select(candidate => candidate.InstanceId), tapped: true,
                     "陵墓构造体：选择陵墓守卫休整登场的位置"); return true;
-            case "S01-0206":
+            case "萨拉丁":
                 if (item.Data.TryGetValue("declaredTargets", out var saladinDeclared))
                 {
                     var selected = saladinDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -266,7 +266,7 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item); return true;
                 }
                 PromptOwnLegion(item, "saladin-move", "萨拉丁阵亡：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
-            case "S01-0207":
+            case "图坦卡蒙":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
@@ -278,8 +278,8 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "图坦卡蒙阵亡：可将墓地1张费用不高于4的其他【太阳城】卡牌放回牌库顶部", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "tutankhamun-top" }); return true;
             }
-            case "S01-0209": if (player.Hand.Count < State.Players[1 - item.Controller].Hand.Count) { DamageMaster(1 - item.Controller, 1, "纳芙蒂蒂阵亡效果"); HealMaster(item.Controller, 1, "纳芙蒂蒂阵亡效果", legionEffect: true); } FinishStackItem(item); return true;
-            case "S01-0210":
+            case "纳芙蒂蒂": if (player.Hand.Count < State.Players[1 - item.Controller].Hand.Count) { DamageMaster(1 - item.Controller, 1, "纳芙蒂蒂阵亡效果"); HealMaster(item.Controller, 1, "纳芙蒂蒂阵亡效果", legionEffect: true); } FinishStackItem(item); return true;
+            case "尼托克丽丝":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
@@ -292,15 +292,15 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "尼托克丽丝阵亡：选择墓地1张费用不高于2的【太阳城】军团活跃登场", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "nitocris-summon" }); return true;
             }
-            case "S01-0303": CreatePrompt(item.Controller, "optional", "传奇的拉格纳阵亡：是否抽取1张并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-one" }); return true;
-            case "S01-0304":
+            case "传奇的拉格纳": CreatePrompt(item.Controller, "optional", "传奇的拉格纳阵亡：是否抽取1张并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-one" }); return true;
+            case "无情者哈拉尔":
                 if (item.Data.TryGetValue("declaredTargets", out var haraldTarget))
                 {
                     if (!string.IsNullOrWhiteSpace(haraldTarget)) KillTarget(haraldTarget, "被无情者哈拉尔阵亡效果击杀");
                     FinishStackItem(item); return true;
                 }
                 PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
-            case "S01-0305":
+            case "勇士比约恩":
                 if (item.Data.TryGetValue("declaredGraveOrder", out var declaredGraveOrder)
                     && item.Data.TryGetValue("declaredSlot", out var declaredBjornSlot))
                 {
@@ -317,15 +317,15 @@ public sealed partial class L12GameEngine
                 if (player.Graveyard.Count < 4 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "勇士比约恩阵亡：是否令主宰受到1点伤害并将墓地4张牌返回牌库底部，使其休整登场？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "bjorn-revive-choice" }); return true;
-            case "S01-0306": CreatePrompt(item.Controller, "optional", "奥拉夫二世阵亡：是否抽2张牌并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-two" }); return true;
-            case "S01-0307":
+            case "奥拉夫二世": CreatePrompt(item.Controller, "optional", "奥拉夫二世阵亡：是否抽2张牌并弃置1张？", ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "death-cycle-two" }); return true;
+            case "阿尔维达":
                 if (item.Data.TryGetValue("declaredTargets", out var alvidaDeclared))
                 {
                     if (!string.IsNullOrWhiteSpace(alvidaDeclared)) MoveGraveToHand(player, alvidaDeclared);
                     FinishStackItem(item); return true;
                 }
                 RecoverAsgard(item, 3, legionOnly: false); return true;
-            case "S01-0308":
+            case "血斧艾瑞克":
                 if (item.Data.TryGetValue("declaredTargets", out var erikDeclared))
                 {
                     var selected = erikDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -333,7 +333,7 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item); return true;
                 }
                 SummonAsgardFromGrave(item, 3); return true;
-            case "S01-0313":
+            case "神箭奥德尔":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {

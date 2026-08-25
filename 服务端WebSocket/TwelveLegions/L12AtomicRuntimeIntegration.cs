@@ -118,6 +118,10 @@ public sealed partial class L12GameEngine
                     source.Troops = AtomicInt(atom, "value");
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
+                case L12AtomKinds.CompositeFlow:
+                    item.Data["atomicFlow"] = atom.Parameters.GetValueOrDefault("flow") ?? source.Name;
+                    ResolveStructuredCompositeFlow(item);
+                    return true;
                 default:
                     throw new InvalidOperationException($"Verified atomic program {program.CardId}/{program.Trigger} contains unsupported atom {atom.Kind}.");
             }

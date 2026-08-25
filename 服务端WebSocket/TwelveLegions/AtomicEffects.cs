@@ -34,6 +34,7 @@ public static class L12AtomKinds
     public const string Visibility = "visibility.policy";
     public const string Special = "special.domain";
     public const string SetState = "operation.set-state";
+    public const string CompositeFlow = "operation.composite-flow";
     public const string Legacy = "legacy.resolve";
 }
 
@@ -193,6 +194,7 @@ public static class L12EffectAtomRegistry
             [L12AtomKinds.Visibility] = new(L12AtomKinds.Visibility, "信息", "可见性", "区分公开、仅控制者、双方分别确认及裁判可见信息。", true, "Snapshot visibility"),
             [L12AtomKinds.Special] = new(L12AtomKinds.Special, "专属机制", "特殊区域/规则", "晋升、神力、试炼、符文、卡诺匹斯、陵墓守卫或天灾专属操作。", false, "Specialized rule kernel"),
             [L12AtomKinds.SetState] = new(L12AtomKinds.SetState, "状态", "设置规则状态", "写入由规则内核定义、具有明确生命周期的权威状态。", true, "Authoritative state mutation"),
+            [L12AtomKinds.CompositeFlow] = new(L12AtomKinds.CompositeFlow, "流程", "执行已验证复合流程", "将尚未拆成最小结算原子的完整能力经统一原子入口调度；流程必须与实战、后台和回放共用同一定义。", true, "Verified composite effect flow"),
             [L12AtomKinds.Legacy] = new(L12AtomKinds.Legacy, "迁移", "旧实现兜底", "尚未由可执行原子完全覆盖的语义，继续调用现有权威实现且不得重复结算。", false, "Legacy effect branch"),
         });
 
@@ -315,14 +317,25 @@ public sealed class L12AtomicEffectCatalog
                 source.Parameters, descriptor.RuntimeExecutable,
                 "shared-structured-rule", source.Stage));
         }
-        var legacyDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Legacy);
-        atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", L12AtomKinds.Legacy, "调用现有权威卡效分支", atoms.Count + 1,
-            new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
-            {
-                ["reason"] = "人工结构已审查，尚未完成逐卡运行时等价迁移",
-            }), legacyDescriptor.RuntimeExecutable, "migration-guard", "resolution"));
+        var route = L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger);
+        if (route is not null)
+        {
+            var routeAtom = route.Atoms.Single(atom => atom.Kind == L12AtomKinds.CompositeFlow);
+            atoms.Add(routeAtom with { AtomId = $"atom-{atoms.Count + 1}", Order = atoms.Count + 1 });
+        }
+        else
+        {
+            var legacyDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Legacy);
+            atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", L12AtomKinds.Legacy, "调用现有权威卡效分支", atoms.Count + 1,
+                new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
+                {
+                    ["reason"] = "人工结构已审查，尚未完成逐卡运行时等价迁移",
+                }), legacyDescriptor.RuntimeExecutable, "migration-guard", "resolution"));
+        }
         return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, template.Text,
-            template.Trigger, atoms, "partially-atomized", true, "shared-structured-rule+legacy-runtime", 1m, template.ExecutionModel,
+            template.Trigger, atoms, route is null ? "partially-atomized" : "verified", route is null,
+            route is null ? "shared-structured-rule+legacy-runtime" : "shared-structured-rule+verified-composite-flow",
+            1m, template.ExecutionModel,
             template.ReviewStatus, template.ReviewSource);
     }
 
@@ -396,14 +409,22 @@ public sealed class L12AtomicEffectCatalog
         if (card.CardType is "disaster" or "destruction" or "trial" || ContainsAny(text, "晋升", "神力", "试炼", "符文", "卡诺匹斯", "陵墓守卫", "天灾"))
             Add(atoms, L12AtomKinds.Special, "进入专属规则内核", new() { ["domain"] = DetectDomain(card, text) }, "inferred");
 
+        var route = L12RuntimeEffectRoutes.FindProgram(card.Id, trigger);
+        if (route is not null)
+        {
+            var routeAtom = route.Atoms.Single(atom => atom.Kind == L12AtomKinds.CompositeFlow);
+            atoms.Add(routeAtom with { AtomId = $"atom-{atoms.Count + 1}", Order = atoms.Count + 1 });
+        }
         var operational = atoms.Any(atom => atom.Kind.StartsWith("operation.", StringComparison.Ordinal)
             || atom.Kind.StartsWith("cost.", StringComparison.Ordinal) || atom.Kind == L12AtomKinds.Special);
-        var needsLegacy = text.Length > 0 && (!operational || atoms.Any(atom => !atom.RuntimeExecutable));
+        var needsLegacy = route is null && text.Length > 0 && (!operational || atoms.Any(atom => !atom.RuntimeExecutable));
         if (needsLegacy)
             Add(atoms, L12AtomKinds.Legacy, "调用现有权威卡效分支", new() { ["reason"] = "尚未通过逐卡等价回归" }, "migration-guard");
-        var status = needsLegacy ? (atoms.Count > 2 ? "partially-atomized" : "legacy-backed") : "declarative-ready";
+        var status = route is not null ? "verified"
+            : needsLegacy ? (atoms.Count > 2 ? "partially-atomized" : "legacy-backed") : "declarative-ready";
         return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, text, trigger, atoms,
-            status, needsLegacy, "card-text+registry", needsLegacy ? 0.70m : 0.90m,
+            status, needsLegacy, route is null ? "card-text+registry" : "card-text+registry+verified-composite-flow",
+            needsLegacy ? 0.70m : 0.90m,
             ExecutionModelFor(trigger, text));
     }
 
@@ -503,7 +524,8 @@ public static class L12VerifiedAtomicPrograms
 
     public static IReadOnlyCollection<L12VerifiedAtomicProgram> All => Programs.Values.ToArray();
     public static L12VerifiedAtomicProgram? Find(string cardId, string trigger, string? abilityText = null)
-        => Resolve(Programs.Values, cardId, trigger, abilityText);
+        => Resolve(Programs.Values, cardId, trigger, abilityText)
+            ?? (abilityText is null ? L12RuntimeEffectRoutes.FindProgram(cardId, trigger) : null);
 
     public static L12VerifiedAtomicProgram? Resolve(IEnumerable<L12VerifiedAtomicProgram> programs,
         string cardId, string trigger, string? abilityText)

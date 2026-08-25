@@ -40,6 +40,11 @@ public sealed partial class L12GameEngine
     private void ResolveCardEffect(L12StackItem item)
     {
         if (TryResolveVerifiedAtomicProgram(item)) return;
+        ResolveStructuredCompositeFlow(item);
+    }
+
+    private void ResolveStructuredCompositeFlow(L12StackItem item)
+    {
         switch (item.Trigger)
         {
             case "enter": ResolveEnterEffect(item); break;
@@ -66,6 +71,12 @@ public sealed partial class L12GameEngine
             default: FinishStackItem(item); break;
         }
     }
+
+    private static string AtomicFlowKey(L12StackItem item, L12CardInstance card)
+        => item.Data.GetValueOrDefault("atomicFlow") ?? card.Name;
+
+    private static string AtomicFlowKey(L12StackItem item)
+        => item.Data.GetValueOrDefault("atomicFlow") ?? item.SourceName;
 
     private L12CardInstance? FindSource(L12StackItem item)
     {
@@ -102,11 +113,11 @@ public sealed partial class L12GameEngine
         var card = FindSource(item);
         if (card is null) { FinishStackItem(item); return; }
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0101": PromptOptionalEnemyLegion(item, "lubu-kill", "可返还 2 张士气：击杀对方 1 张天灾等级 1 或 2 的军团",
+            case "吕布": PromptOptionalEnemyLegion(item, "lubu-kill", "可返还 2 张士气：击杀对方 1 张天灾等级 1 或 2 的军团",
                 target => target.DisasterLevel is 1 or 2, CanReturnMorale(player, 2)); return;
-            case "S01-0102":
+            case "武则天":
             {
                 var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
                     .Where(target => target is { Tapped: true }).Select(target => target!.InstanceId).ToList();
@@ -116,19 +127,19 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "wuzetian-lock" });
                 return;
             }
-            case "S01-0103": BeginLiJingEffect(item); return;
-            case "S01-0105": BeginLiuBeiEnter(item); return;
-            case "S01-0108":
+            case "李靖": BeginLiJingEffect(item); return;
+            case "刘备": BeginLiuBeiEnter(item); return;
+            case "花木兰":
                 if (CanReturnMorale(player, 1))
                     CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使花木兰获得冲锋？", ["yes", "no"], 1, 1,
                         "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "mulan-charge" });
                 else FinishStackItem(item);
                 return;
-            case "S01-0415":
+            case "服部半藏":
                 AddEvent("hidden-reveal", item.Controller, $"{card.Name}展示后发动隐匿", card);
                 card.Hidden = true;
                 FinishStackItem(item); return;
-            case "S01-0416":
+            case "稻姬本多小松":
             {
                 var choices = player.Field[0].Where(target => target is not null
                         && target.InstanceId != card.InstanceId && target.Faction == "gaotianyuan" && target.Troops <= 5000)
@@ -139,7 +150,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "inaihime-buff" });
                 return;
             }
-            case "S01-0417":
+            case "草薙剑":
                 PromptEnemyLegion(item, "kusanagi-enter-kill", "选择对方 1 张费用不高于 2 的军团并击杀",
                     target => target.CurrentCost <= 2, optional: false); return;
             default:
@@ -154,15 +165,15 @@ public sealed partial class L12GameEngine
         var card = FindSource(item);
         if (card is null) { FinishStackItem(item); return; }
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0015":
+            case "议和谈判":
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "议和谈判抽牌时牌库为空"); FinishStackItem(item); return; }
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "是否同意〈议和谈判〉？", ["agree", "refuse"], 1, 1,
                     "card-effect", item.StackItemId, isPrivate: false,
                     data: new Dictionary<string, string> { ["action"] = "peace-talk" });
                 return;
-            case "S01-0118":
+            case "神妙行军":
             {
                 var front = player.Field[0].Where(target => target is not null).Select(target => target!.InstanceId).ToArray();
                 if (front.Length == 0) { FinishStackItem(item); return; }
@@ -171,15 +182,15 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "march-buff" });
                 return;
             }
-            case "S01-0417":
+            case "草薙剑":
                 CreatePrompt(item.Controller, "optional", "是否将离场的〈草薙剑〉放回牌库顶部？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kusanagi-return-top" });
                 return;
-            case "S01-0119": BeginTopDeckReorder(item, 5, "observing-stars"); return;
-            case "S01-0418":
+            case "观星": BeginTopDeckReorder(item, 5, "observing-stars"); return;
+            case "天诛":
                 PromptEnemyLegion(item, "divine-punishment-kill", "选择对方 1 张费用不高于 7 的军团并击杀",
                     target => target.CurrentCost <= 7, optional: false); return;
-            case "S01-0419": BeginOiranGift(item); return;
+            case "花魁的馈赠": BeginOiranGift(item); return;
             default:
                 if (!TryResolveS1ExtendedTactic(item, card) && !TryResolveS2UniversalTactic(item, card)
                     && !TryResolveS2FactionTactic(item, card)) FinishStackItem(item);
@@ -198,27 +209,27 @@ public sealed partial class L12GameEngine
             return;
         }
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0104":
+            case "韩信":
                 if (CanReturnMorale(player, 1))
                     CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使韩信本回合兵力 +1000 并获得强攻？", ["yes", "no"], 1, 1,
                         "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "hanxin-attack" });
                 else FinishStackItem(item);
                 return;
-            case "S01-0106":
+            case "关羽":
                 if (CanReturnMorale(player, 1))
                     CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使关羽本回合兵力 +1000 并获得必中？", ["yes", "no"], 1, 1,
                         "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "guanyu-attack" });
                 else FinishStackItem(item);
                 return;
-            case "S01-0401":
+            case "本多忠胜":
                 foreach (var enemy in State.Players[1 - item.Controller].Field.SelectMany(row => row).Where(target => target is not null))
                     enemy!.CostModifier--;
                 PromptEnemyLegion(item, "honda-kill-zero", "选择对方 1 张当前费用为 0 的军团并击杀",
                     target => target.CurrentCost == 0, optional: false);
                 return;
-            case "S01-0413":
+            case "源博雅":
             {
                 var counters = State.Players[1 - item.Controller].Field[1]
                     .Where(target => target is { CardType: "tactic" }).Select(target => target!.InstanceId).ToArray();
@@ -228,7 +239,7 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "hiromasa-disable" });
                 return;
             }
-            case "S01-0416":
+            case "稻姬本多小松":
             {
                 var choices = player.Field[0].Where(target => target is not null
                         && target.InstanceId != card.InstanceId && target.Faction == "gaotianyuan" && target.Troops <= 5000)
@@ -249,9 +260,9 @@ public sealed partial class L12GameEngine
     {
         var card = FindSource(item);
         if (card is null) { FinishStackItem(item); return; }
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0108":
+            case "花木兰":
             {
                 if (State.ActivePlayer == item.Controller) { FinishStackItem(item); return; }
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
@@ -284,15 +295,15 @@ public sealed partial class L12GameEngine
         var card = FindSource(item);
         if (card is null) { FinishStackItem(item); return; }
         var player = State.Players[item.Controller];
-        switch (card.CardId)
+        switch (AtomicFlowKey(item, card))
         {
-            case "S01-0101":
+            case "吕布":
                 if (CanReturnMorale(player, 4))
                     CreatePrompt(item.Controller, "optional", "是否返还 4 张士气，将吕布转为活跃？", ["yes", "no"], 1, 1,
                         "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "lubu-ready" });
                 else FinishStackItem(item);
                 return;
-            case "S01-0414":
+            case "桂小五郎":
                 CreatePrompt(item.Controller, "optional", "是否将桂小五郎返回牌库顶部？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "katsura-return" });
                 return;

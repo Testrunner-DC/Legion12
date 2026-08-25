@@ -1,6 +1,6 @@
 # 卡效原子化架构
 
-更新日期：2026-08-23
+更新日期：2026-08-26
 
 ## 目标与边界
 
@@ -45,6 +45,15 @@
 - `Data/effects/atoms.schema.json`：可持久化定义的 JSON Schema。
 - 管理后台“卡效原子化”：查看原文、能力拆分、参数、流程图、迁移状态和原始 JSON。
 - `ATOMIC-EFFECT-BASELINE.json` 与 `scripts/audit-l12-atomic-effects.ps1`：阻止卡池漏图和旧分支数量反向增长。
+- `L12RuntimeEffectRoutes.cs`：由结构化路由注册表承接原有逐卡运行入口；后台审计与实战解释器读取同一 `CompositeFlow` 原子。
+
+## 旧卡号分支清零
+
+2026-08-26 已将历史统计口径中的 181 个 `case "Sxx-..."` 全部迁入 178 条结构化运行路由，另有 3 条已完成试炼映射改为按试炼名称处理。`scripts/audit-l12-atomic-effects.ps1 -RequireZero` 会强制卡号 `case` 数量保持为 0；任何后续恢复都会直接失败。
+
+审计同时单列 283 处卡号身份引用或文本推断（213 个状态/集合条件、67 个数据映射 `switch`、3 个文本推断）。这些不是历史“旧卡效 case 分支”：其中包含卡表映射、区域身份、主宰配置和合法的状态查询，因此不能靠删除统计项伪造清零。它们继续由独立棘轮审查，并逐步迁到派生职介、条件战斗配置和结构化数据表。
+
+`operation.composite-flow` 是本次清零使用的过渡执行原子：它消除了逐卡分派并建立单一可审计路由，但并不冒充所有复合卡效都已拆成最细原子。后续人工原子化仍按本文件的能力边界和迁移门槛，将复合流程逐步替换为 condition/cost/target/resolution/duration/visibility 原子。
 
 ## 迁移门槛
 

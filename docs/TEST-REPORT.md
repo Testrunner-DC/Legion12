@@ -145,3 +145,12 @@
 - 新增规则书五类效果、八个正式关键词、进攻距离、弓手职介能力与核心概念基线文档。
 - 新增并实战迁移试炼推进、双方主宰恢复、条件强攻、条件冲锋和条件可选伤害；后续扫描又迁移宫本武藏条件冲锋与赫拉克勒斯·晋升进攻时强攻。
 - 验证原子由37项增至44项；旧卡号 `case` 分支由187处/154卡降至181处/151卡，原子棘轮收紧为181。
+
+## 2026-08-26 历史卡号分支清零
+
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore`：406/406通过，0失败、0跳过；其中原子专项46/46通过。
+- `dotnet test .\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~PlatformStoreTests"`：8/8通过。
+- `npm run check:ui-contracts`：88/88通过；`npm run build` 的Vue/TypeScript类型检查与Vite生产构建通过。
+- `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1 -RequireZero`：248/248张卡进入清单，旧卡号 `case` 为0处/0卡，零分支门禁通过。
+- 178条结构化复合路由逐条通过唯一触发、唯一可执行 `CompositeFlow`、无 legacy 回退和运行时同对象验证；3条已完成试炼映射按试炼名称处理。
+- 曾误跑不属于发布门禁的 GrandUMI 历史测试全集；其45项失败均为仓库不包含外部 `卡牌数据` 目录，正式 `PlatformStoreTests` 8/8通过，未将环境失败计为本批回归结果。
