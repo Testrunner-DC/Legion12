@@ -704,8 +704,8 @@ function statusTexts(card: Card) {
             :show-play-action="isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else hidden :count="viewEnemy.handCount || 0" />
-          <div class="felt-board">
-            <PlayerMat :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
+          <div class="felt-board" data-ui-contract="persistent-board-safe-layout">
+            <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat" :viewer-player-index="game.you"
               :selected-id="selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
@@ -728,7 +728,7 @@ function statusTexts(card: Card) {
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
               @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" />
-            <div class="board-seam">
+            <div class="board-seam" data-ui-contract="phase-safe-track">
               <div class="disaster-zone" @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
                 <img class="disaster-card-image"
                   :src="game.activeDisaster?.imageUrl || '/assets/l12/card-back-disaster.png'"
@@ -773,7 +773,7 @@ function statusTexts(card: Card) {
                   :support-id="supportId" :can-support="Boolean(eligibleSupportId)" :busy="l12State.pendingAction" @command="command" />
               </div>
             </div>
-            <PlayerMat :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
+            <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
               :active="game.activePlayer === viewMe.playerIndex && !combat" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard"
               :selected-id="supportId || selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
@@ -869,6 +869,17 @@ function statusTexts(card: Card) {
 </template>
 
 <style scoped>
+.felt-board{
+  --l12-board-seam-safe-height:76px;
+  display:grid;
+  grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr);
+  align-items:stretch;
+}
+.battlefield-half{min-height:0;align-self:stretch}
+.battlefield-half.opponent-half{grid-row:1}
+.board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
+.battlefield-half.my-half{grid-row:3}
+.board-seam :deep(.l12-phase-track){max-height:calc(var(--l12-board-seam-safe-height) - 12px)}
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;padding:9px 18px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:12px;font-weight:900;pointer-events:none}
 .public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards img{width:118px;height:165px;object-fit:contain;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards img.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;letter-spacing:.04em;text-align:center}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}

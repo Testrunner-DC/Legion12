@@ -4,6 +4,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const shell = read('../src/l12/site/SiteShell.vue')
 const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
+const globalStyle = read('../src/style.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
@@ -46,6 +47,8 @@ const contracts = [
   [!shell.includes('/assets/l12/card-back-navy.png'), '主页入口不得回退为卡背'],
   [shell.includes("{ to: '/battle', icon: 'battle', label: '大厅' }") && !shell.includes("label: '对战主页'") && router.includes("{ path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue')") && router.includes("{ path: '/battle/lobby', redirect: '/battle' }"), '对战区域必须直接以大厅为主页，不得恢复多余的对战主页层级'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
+  [board.includes('data-ui-contract="persistent-board-safe-layout"') && board.includes('data-ui-contract="phase-safe-track"') && board.includes('--l12-board-seam-safe-height:76px') && board.includes('grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr)') && board.includes('class="battlefield-half opponent-half"') && board.includes('class="battlefield-half my-half"'), '双方战场与中央阶段栏必须使用明确三轨安全布局，常驻 UI 不得依赖绝对定位互相覆盖'],
+  [globalStyle.includes('.battle-zone{position:relative}.battle-zone>.morale-rail{position:absolute') && globalStyle.includes('.l12-player-mat.side-opponent .battle-zone>.morale-rail{top:3px}') && globalStyle.includes('.l12-player-mat.side-my .battle-zone>.morale-rail{bottom:3px}'), '士气条必须脱离战场纵向占位并固定在主宰侧通道，不得挤压战场后侵入阶段安全轨道'],
   [board.includes('border-radius:50%') && board.includes('.session-disaster-strip'), '本局天灾必须保持圆形缩略图'],
   [board.includes('<Teleport to="body" :disabled="!modalInspectorVisible">'), '弹框期间必须复用原选中卡牌详情框'],
   [!board.includes('class="modal-card-inspector"'), '不得重新引入第二套弹框卡牌详情'],
