@@ -24,3 +24,30 @@ These rules apply to every change in this repository.
 3. If `origin/main` contains new commits, preserve the authoritative local worktree and integrate the remote commits safely. Never use a destructive reset or checkout. Stop for conflict review rather than choosing one side blindly.
 4. If the branch is current, or after remote changes have been integrated and the full verification passes again, commit that feature or bug fix with a descriptive Chinese commit message and push it to the remote repository.
 5. Record the commit and push result in the task handoff. Do not publish a knowingly failing or partially conflicted tree.
+
+## Automatic task-complexity routing
+
+These rules apply before any implementation plan or task action.
+
+1. Before classification, only perform the minimum read-only inspection needed to understand scope and risk: read applicable `AGENTS.md` and `.codex` configuration, inspect the current branch and `git status`, and locate the directly relevant files or prior registry entries. Do not install dependencies, run broad builds, access external systems, or modify files before classification.
+2. Route the task to exactly one project agent by default:
+   - `l12_fast`: read-only lookup, copy, documentation, catalog work, or deterministic low-risk mechanical edits that do not change game semantics.
+   - `l12_standard`: a known-root-cause local Bug or a bounded single-module UI, data, or card-effect change.
+   - `l12_deep`: an unknown root cause, cross-module change, shared card-effect semantics, rule state machine, Prompt/Stack, combat, zone movement, hidden information, log, or replay behavior.
+   - `l12_critical`: concurrency, WebSocket ordering/recovery, data consistency, privacy/security, authentication/authorization, database or replay integrity, production recovery, release, rollback, or deployment incident.
+3. When a task matches more than one tier, select the highest matching tier. When classification is uncertain, route one tier higher.
+4. An execution agent that discovers work above its assigned tier must stop modifying files, preserve the worktree, report the new risk evidence, and request rerouting. It must not silently expand scope.
+5. The primary agent owns the implementation plan, final diff review, verification evidence, registry/task-ledger updates, and user handoff. Execution-agent output is never accepted without primary-agent verification.
+6. If the runtime cannot dispatch a configured project-agent name, create one execution agent with the exact model and reasoning effort declared in `.codex/agents/` and pass it the corresponding developer instructions. Do not substitute a lower tier silently.
+7. Multi-agent parallelism is reserved for independent read-only audits or disjoint files explicitly approved by the primary agent. Never let multiple agents edit the same rule, protocol, registry, generated data, or configuration file concurrently.
+
+## Change batches and validation tiers
+
+1. Track every accepted change in `docs/TASK-LEDGER.md`; inserted requests are queued and do not replace an in-progress batch unless the user explicitly reprioritizes them.
+2. Each batch contains one shared root cause, its full-pool same-type migration, regression guards, one review, and one synchronization decision. Do not mix unrelated fixes merely to reduce the number of commits.
+3. Use `scripts/verify-l12-change.ps1` during development:
+   - `Focused` while implementing;
+   - `Batch` after the independent feature or Bug is complete;
+   - `Release` only before an authorized synchronization or deployment.
+4. Prefer deterministic engine scenarios or saved sanitized replay/state fixtures over manually recreating a board. Follow `docs/REGRESSION-FIXTURES.md` and never commit passwords, tokens, room secrets, private hands from real matches, or player identifiers.
+5. Before final handoff, compare the final diff with the pre-change baseline and run the rollback-guard checks. Previously fixed UI contracts and rule invariants may not disappear from the same batch.

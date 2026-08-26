@@ -1701,7 +1701,7 @@ public sealed partial class L12GameEngine
             player.SpecialZones.TrialLevel = player.SpecialZones.Trials.Where(card => !card.TrialCompleted).Select(card => card.TrialProgress).DefaultIfEmpty().Max();
             AddEvent("trial", item.Controller, $"完成试炼《{source.Name}》", source);
             AddEvent("effect-trigger", item.Controller,
-                ResolveTriggeredEffectDisplayText(source, "trial-complete", "触发"), source);
+                ResolveTriggeredEffectDisplayText(source, "trial-complete", "触发", item.Data), source);
             if (player.MasterId == "S02-06M2")
             {
                 L12S2ZoneOps.GainRunes(player, 1);

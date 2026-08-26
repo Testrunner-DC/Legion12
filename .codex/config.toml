@@ -1,0 +1,22 @@
+[features]
+multi_agent = true
+
+[agents]
+enabled = true
+max_threads = 4
+
+[agents.l12_fast]
+description = "十二军团快速档：只读查询、文案、档案和低风险机械修改。"
+config_file = "agents/l12-fast.toml"
+
+[agents.l12_standard]
+description = "十二军团标准档：已知根因的局部 Bug、单模块 UI、数据或卡效修改。"
+config_file = "agents/l12-standard.toml"
+
+[agents.l12_deep]
+description = "十二军团深度档：未知根因、跨模块、规则状态机、Prompt、堆叠和战斗内核。"
+config_file = "agents/l12-deep.toml"
+
+[agents.l12_critical]
+description = "十二军团关键档：并发、网络恢复、数据一致性、安全、结算完整性和部署事故。"
+config_file = "agents/l12-critical.toml"

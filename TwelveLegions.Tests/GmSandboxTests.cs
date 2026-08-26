@@ -215,6 +215,21 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public void DirectEnterTriggerPublishesOnlyTheTriggeredAbilityLine()
+    {
+        var game = new L12GameEngine(Catalog, "gm-enter-trigger-animation", "GMENTERTRIGGER", 12062,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0001", Row: 0, Slot: 0,
+            TriggerEffects: true)).Accepted);
+
+        var animation = Assert.Single(game.State.Events,
+            entry => entry.Type == "effect-trigger" && entry.Cards.Any(card => card.CardId == "S02-0001"));
+        Assert.Equal("登场时 对方下个回合手牌中<主动战术>打出的费用+1。", animation.Text);
+        Assert.DoesNotContain("对方 战术的效果结算后", animation.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TombConstructDeathCreatesOneSharedDeathOrLeaveAbility()
     {
         var game = new L12GameEngine(Catalog, "gm-tomb-construct", "GMTOMB", 12061,

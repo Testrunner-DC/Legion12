@@ -710,6 +710,9 @@ public sealed partial class L12GameEngine
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
         if (trigger == "disaster") item.Data["unrespondable"] = "true";
+        if (IsDirectTriggeredEffect(trigger, source, text))
+            AddEvent("effect-trigger", controller,
+                ResolveTriggeredEffectDisplayText(source, trigger, text, item.Data), source);
         if (State.IsResolvingStack)
         {
             State.DeferredEffectStack.Add(item);
