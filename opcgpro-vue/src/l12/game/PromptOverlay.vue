@@ -159,6 +159,10 @@ function numberData(id: string, key: string) {
   const value = prompt.value?.data?.[`${id}:${key}`]
   return value === undefined || value === '' ? undefined : Number(value)
 }
+function booleanData(id: string, key: string) {
+  const value = prompt.value?.data?.[`${id}:${key}`]
+  return value === undefined ? undefined : value === 'true'
+}
 function detailFor(id: string | null) {
   if (!id) return null
   const card = cardFor(id)
@@ -172,7 +176,10 @@ function detailFor(id: string | null) {
     cardType: card?.cardType ?? prompt.value?.data?.[`${id}:cardType`] ?? '',
     traits: card?.traits ?? prompt.value?.data?.[`${id}:traits`]?.split('|').filter(Boolean) ?? [],
     profession: (card?.profession ?? prompt.value?.data?.[`${id}:profession`]) || undefined,
-    cost: card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost'),
+    hasPrintedCost: card?.hasPrintedCost ?? booleanData(id, 'hasPrintedCost'),
+    cost: (card?.hasPrintedCost ?? booleanData(id, 'hasPrintedCost')) === false
+      ? undefined
+      : card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost'),
     troops: card?.troops ?? numberData(id, 'troops'),
     baseTroops: card?.baseTroops ?? numberData(id, 'baseTroops'),
     disasterLevel: card?.disasterLevel ?? numberData(id, 'disasterLevel'),
@@ -194,6 +201,7 @@ function cardObjectFor(id: string): Card | null {
     imageUrl: detail.imageUrl,
     effectText: detail.effectText,
     cost: detail.cost ?? 0,
+    hasPrintedCost: detail.hasPrintedCost ?? detail.cost !== undefined,
     baseTroops: detail.baseTroops ?? detail.troops ?? 0,
     troops: detail.troops ?? detail.baseTroops ?? 0,
     disasterLevel: detail.disasterLevel ?? 0,

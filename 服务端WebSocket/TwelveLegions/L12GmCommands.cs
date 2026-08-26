@@ -238,6 +238,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("目标卡牌不在该玩家场上");
 
         var controller = State.Players[controllerIndex];
+        var vanishes = L12SpecialDeckRules.VanishesWhenLeavingField(card);
         if (FindOnField(controller, card.InstanceId, out _, out _) is not null)
         {
             if (!MoveFieldCardToZone(controller, card, "hand", "被 GM 返回手牌"))
@@ -255,13 +256,24 @@ public sealed partial class L12GameEngine
                 DiscardAttachedCards(card, $"{card.Name}离开圣物区");
             var owner = CardOwner(card, controller);
             ResetCardAfterLeavingField(card);
-            owner.Hand.Add(card);
-            AddEvent("leave", controllerIndex, $"{card.Name}被 GM 返回所有者手牌", card);
+            if (vanishes)
+            {
+                AddEvent("derived-vanished", owner.PlayerIndex,
+                    $"衍生卡〈{card.Name}〉离开圣物区时消灭，不进入其他区域", card);
+                AddEvent("leave", controllerIndex, $"{card.Name}被 GM 移出圣物区", card);
+            }
+            else
+            {
+                owner.Hand.Add(card);
+                AddEvent("leave", controllerIndex, $"{card.Name}被 GM 返回所有者手牌", card);
+            }
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(controllerIndex, card));
             RecalculateContinuousTroops();
         }
 
-        AddEvent("gm", controllerIndex, $"[GM] 将〈{card.Name}〉返回所有者手牌", card);
+        AddEvent("gm", controllerIndex, vanishes
+            ? $"[GM] 令衍生卡〈{card.Name}〉离场；该卡依规则消灭"
+            : $"[GM] 将〈{card.Name}〉返回所有者手牌", card);
         return CommandResult.Ok();
     }
 

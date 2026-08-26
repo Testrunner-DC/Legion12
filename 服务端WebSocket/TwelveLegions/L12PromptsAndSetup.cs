@@ -189,7 +189,8 @@ public sealed partial class L12GameEngine
         data.TryAdd($"{id}:faction", card.Faction);
         if (card.Traits.Count > 0) data.TryAdd($"{id}:traits", string.Join('|', card.Traits));
         if (!string.IsNullOrWhiteSpace(card.Profession)) data.TryAdd($"{id}:profession", card.Profession);
-        data.TryAdd($"{id}:cost", card.CurrentCost.ToString());
+        data.TryAdd($"{id}:hasPrintedCost", card.HasPrintedCost ? "true" : "false");
+        if (card.HasPrintedCost) data.TryAdd($"{id}:cost", card.CurrentCost.ToString());
         data.TryAdd($"{id}:troops", card.Troops.ToString());
         data.TryAdd($"{id}:baseTroops", card.BaseTroops.ToString());
         data.TryAdd($"{id}:disasterLevel", card.DisasterLevel.ToString());

@@ -202,6 +202,7 @@ public sealed partial class L12GameEngine
             {
                 var masterLegion = CreateCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}");
                 masterLegion.OwnerIndex = item.Controller; masterLegion.IsMasterLegion = true; masterLegion.HasCharge = true;
+                masterLegion.SummonRound = State.Round;
                 masterLegion.SetTroopsValue = int.Parse(item.Data["count"]) * 1000;
                 masterLegion.Troops = masterLegion.SetTroopsValue.Value;
                 var (row, slot) = ParseSlot(item.Data["slot"]);

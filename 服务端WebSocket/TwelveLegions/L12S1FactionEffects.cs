@@ -1069,8 +1069,13 @@ public sealed partial class L12GameEngine
     {
         if (player.Relic?.InstanceId == relic.InstanceId) player.Relic = null; else player.ExtraRelics.Remove(relic);
         DiscardAttachedCards(relic, "被叠放的圣物离开圣物区");
+        var owner = CardOwner(relic, player);
         ResetCardAfterLeavingField(relic);
-        if (!player.Graveyard.Contains(relic)) player.Graveyard.Add(relic);
+        if (L12SpecialDeckRules.VanishesWhenLeavingField(relic))
+            AddEvent("derived-vanished", owner.PlayerIndex,
+                $"衍生卡〈{relic.Name}〉离开圣物区时消灭，不进入其他区域", relic);
+        else if (!owner.Graveyard.Contains(relic))
+            owner.Graveyard.Add(relic);
         QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, relic));
     }
 

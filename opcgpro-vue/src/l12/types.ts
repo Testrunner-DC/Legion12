@@ -25,6 +25,9 @@ export interface Card {
   traits?: string[]
   profession?: string
   ownerIndex?: number
+  isMasterLegion?: boolean
+  activeKeywords?: string[]
+  displayBaseTroops?: number
   lastCavalryMoveTurn?: number
   hasCharge?: boolean
   hasStrongAttack?: boolean

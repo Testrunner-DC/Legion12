@@ -133,6 +133,8 @@ public sealed class L12CardInstance
     public bool CannotSupport { get; set; }
     /// <summary>孙悟空等主宰临时作为军团登场时的权威标记。</summary>
     public bool IsMasterLegion { get; set; }
+    /// <summary>当前公开场面中实际生效的关键词；由快照层按位置与限时状态计算。</summary>
+    public List<string> ActiveKeywords { get; set; } = [];
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
@@ -146,6 +148,8 @@ public sealed class L12CardInstance
     public List<L12CardInstance> AttachedCards { get; init; } = [];
 
     public int CurrentCost => Math.Max(0, Cost + CostModifier + ContinuousCostModifier);
+    /// <summary>场面兵力 UI 的比较基准；设定兵力不是兵力增益。</summary>
+    public int DisplayBaseTroops => SetTroopsValue ?? BaseTroops;
     public bool HasRangeBonus => EffectText?.Contains("进攻距离+1", StringComparison.Ordinal) == true;
     public bool HasRangedNoLoss => EffectText?.Contains("远程进攻无损", StringComparison.Ordinal) == true;
     public bool HasAttackNoLoss => EffectText?.Contains("进攻无损", StringComparison.Ordinal) == true

@@ -451,8 +451,8 @@ public sealed partial class L12GameEngine
             return snapshot;
         }).ToArray();
 
-    private static object?[][] SnapshotField(L12PlayerState player, bool revealCounters)
-        => player.Field.Select(row => row.Select(card =>
+    private object?[][] SnapshotField(L12PlayerState player, bool revealCounters)
+        => player.Field.Select((row, rowIndex) => row.Select(card =>
         {
             if (card is null) return null;
             if (card.CardId == "S01-0415" && card.Hidden && !revealCounters)
@@ -473,7 +473,12 @@ public sealed partial class L12GameEngine
                     tapped = false,
                     summonRound = card.SummonRound,
                 };
-            if (revealCounters || !card.Hidden) return (object)card;
+            if (revealCounters || !card.Hidden)
+            {
+                var snapshot = card.Clone();
+                snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
+                return (object)snapshot;
+            }
             return new
             {
                 card.InstanceId,
@@ -492,6 +497,20 @@ public sealed partial class L12GameEngine
                 summonRound = card.SummonRound,
             };
         }).ToArray()).ToArray();
+
+    private List<string> BuildActiveKeywords(L12PlayerState controller, L12CardInstance card, int row)
+    {
+        if (card.Hidden) return [];
+        var keywords = new List<string>();
+        if (card.HasStrongAttack) keywords.Add("强攻");
+        if (card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial) keywords.Add("免死");
+        if (card.HasSureHit) keywords.Add("必中");
+        if (L12StructuredCardRules.HasTaunt(card, row)) keywords.Add("挑衅");
+        if (card.HasCharge && card.SummonRound >= State.Round) keywords.Add("冲锋");
+        if (card.HasShock) keywords.Add("震击");
+        if (controller.UsedAbilities.Contains($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}")) keywords.Add("贯穿");
+        return keywords;
+    }
 
     public string SerializeFullState() => JsonSerializer.Serialize(State);
 
@@ -906,8 +925,16 @@ public sealed partial class L12GameEngine
         {
             var owner = CardOwner(attached, fallbackOwner);
             ResetCardAfterLeavingField(attached);
-            owner.Graveyard.Add(attached);
-            AddEvent("grave", owner.PlayerIndex, $"{reason}，{attached.Name}置入所有者墓地", attached, host);
+            if (L12SpecialDeckRules.VanishesWhenLeavingField(attached))
+            {
+                AddEvent("derived-vanished", owner.PlayerIndex,
+                    $"{reason}，衍生卡〈{attached.Name}〉离场时消灭，不进入其他区域", attached, host);
+            }
+            else
+            {
+                owner.Graveyard.Add(attached);
+                AddEvent("grave", owner.PlayerIndex, $"{reason}，{attached.Name}置入所有者墓地", attached, host);
+            }
         }
         host.AttachedCards.Clear();
         host.Abilities.RemoveAll(view => view.Id == "discardHolyLock");
@@ -999,9 +1026,17 @@ public sealed partial class L12GameEngine
             if (card.AttachedCards.Count > 0)
                 DiscardAttachedCards(card, $"{card.Name}离场");
             ResetCardAfterLeavingField(card);
-            owner.Graveyard.Add(card);
-            if (owner.PlayerIndex != player.PlayerIndex)
-                AddEvent("grave", owner.PlayerIndex, $"{card.Name}置入所有者墓地", card);
+            if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+            {
+                AddEvent("derived-vanished", owner.PlayerIndex,
+                    $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
+            }
+            else
+            {
+                owner.Graveyard.Add(card);
+                if (owner.PlayerIndex != player.PlayerIndex)
+                    AddEvent("grave", owner.PlayerIndex, $"{card.Name}置入所有者墓地", card);
+            }
         }
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueDeathTrigger)
@@ -1088,8 +1123,16 @@ public sealed partial class L12GameEngine
         player.Field[row][slot] = null;
         var owner = CardOwner(card, player);
 
+        if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+        {
+            if (card.AttachedCards.Count > 0)
+                DiscardAttachedCards(card, $"{card.Name}离场");
+            ResetCardAfterLeavingField(card);
+            AddEvent("derived-vanished", owner.PlayerIndex,
+                $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
+        }
         // 规则替代：卡面注明“以任何形式离场均视为置入所有者墓地”的卡统一执行该替代。
-        if (L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard(card))
+        else if (L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard(card))
         {
             ResetCardAfterLeavingField(card);
             owner.Graveyard.Add(card);

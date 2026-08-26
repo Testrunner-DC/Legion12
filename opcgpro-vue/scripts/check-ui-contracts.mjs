@@ -6,6 +6,7 @@ const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
 const globalStyle = read('../src/style.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
+const matchRecords = read('../src/l12/MatchRecords.vue')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
@@ -72,6 +73,7 @@ const contracts = [
   [board.includes("event.type === 'disaster-reveal'") && board.includes("'disaster-reveal': '天灾'"), '无触发效果天灾必须复用公开卡图动画并进入可读日志'],
   [board.includes('data-ui-contract="dice-event-animation"') && board.includes("event.type === 'dice'") && board.includes("dice: '掷骰'") && board.includes('@keyframes l12-dice-roll') && board.includes('z-index:2147483001'), '普通掷骰事件必须在全局最上层播放非阻塞动画并保留可读日志'],
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list'), '效果模式选项必须使用纵向宽按钮'],
+  [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && matchRecords.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
   [prompt.includes('prompt.value?.data?.[id] ?? choiceLabels[id]') && prompt.includes("front: '前排'") && prompt.includes("trial: '试炼进度+1'"), '效果选项必须优先显示服务端效果原文，并为通用协议选项提供中文兜底'],
   [playerMat.includes('entry.enabled === false || entry.triggerOnly') && playerMat.includes('.faction-effect-actions button:disabled'), '不可发动与仅触发时发动的效果必须保留可查看文本、灰置且不可点击'],
   [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
@@ -80,6 +82,8 @@ const contracts = [
   [playerMat.includes('godPowerLogoUrl') && specialAssets.includes('olympus-god-power.png'), '神力必须使用官方神力标志'],
   [lobby.includes('<div class="deck-thumb">库</div>') && lobby.includes('masterProfileUrl(deck.masterId)'), '牌库入口保留“库”标志，具体牌库按钮使用主宰头像'],
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)"), '叠放卡牌必须由公共卡牌组件合并为圆形卡图，并可进入统一详情'],
+  [cardTile.includes('card.activeKeywords') && cardTile.includes('card-keyword-stack') && cardTile.includes('top:25px') && !cardTile.includes('status-strong'), '当前生效关键词必须以完整文字从费用下方向下排列，不得恢复底部单字角标'],
+  [cardTile.includes("props.card.isMasterLegion === true") && cardTile.includes('displayBaseTroops'), '孙悟空等主宰军团化实体必须显示权威兵力且设定兵力不误判为增益'],
   [cardTile.includes('position:static!important') && cardTile.includes('object-position:center 14%'), '圆形叠放卡图不得被全局卡图定位规则覆盖'],
   [playerMat.includes("entry.id === 'trialAdvance'") && playerMat.includes('function canTrial') && playerMat.includes("'trialAdvance')"), '试炼军团必须拥有与进攻、移动并列的直接试炼按钮'],
   [playerMat.includes("@click.stop=\"!trial.hidden && selectZoneCard(trial)\""), '试炼卡必须复用公开区域卡牌能力入口，不能只有查看详情而无法发动'],

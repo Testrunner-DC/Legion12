@@ -2588,6 +2588,8 @@ public sealed class S2FactionRegressionTests
         var prompt = Assert.Single(game.State.PendingPrompts,
             candidate => candidate.Data.GetValueOrDefault("action") == "s2-xiaotian-morale");
         Assert.Equal("s2-xiaotian-morale", prompt.Data["action"]);
+        Assert.Equal("false", prompt.Data[$"{prompt.Data["previewCardId"]}:hasPrintedCost"]);
+        Assert.DoesNotContain($"{prompt.Data["previewCardId"]}:cost", prompt.Data.Keys);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts,
             candidate => candidate.Data.GetValueOrDefault("action") == "s2-xiaotian-slot");
@@ -2599,6 +2601,51 @@ public sealed class S2FactionRegressionTests
         Assert.False(xiaotian.HasPrintedCost);
         Assert.False(xiaotian.Tapped);
         Assert.Equal(2000, xiaotian.Troops);
+    }
+
+    [Fact]
+    public void DerivedCardsVanishOnEveryFieldExitInsteadOfEnteringOrdinaryZones()
+    {
+        var game = Create(6332);
+        var player = game.State.Players[0];
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-01S1", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var returned = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+        Assert.False(returned.HasPrintedCost);
+        Assert.True(game.HandleGm(new L12GmCommand("returnCardToHand", 0,
+            CardInstanceId: returned.InstanceId)).Accepted);
+        AssertDerivedCardIsInNoOrdinaryZone(player, returned.InstanceId);
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-01S1", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        var defeated = Assert.IsType<L12CardInstance>(player.Field[0][0]);
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: defeated.InstanceId)).Accepted);
+        AssertDerivedCardIsInNoOrdinaryZone(player, defeated.InstanceId);
+        Assert.Contains(game.State.Events, entry => entry.Type == "derived-vanished"
+            && entry.Text.Contains("离场时消灭", StringComparison.Ordinal));
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0504", Row: 0, Slot: 1,
+            TriggerEffects: false)).Accepted);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-01S1", Row: 0, Slot: 2,
+            TriggerEffects: false)).Accepted);
+        var host = Assert.IsType<L12CardInstance>(player.Field[0][1]);
+        var attached = Assert.IsType<L12CardInstance>(player.Field[0][2]);
+        player.Field[0][2] = null;
+        host.AttachedCards.Add(attached);
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: host.InstanceId)).Accepted);
+        AssertDerivedCardIsInNoOrdinaryZone(player, attached.InstanceId);
+    }
+
+    private static void AssertDerivedCardIsInNoOrdinaryZone(L12PlayerState player, string instanceId)
+    {
+        Assert.DoesNotContain(player.Hand, card => card.InstanceId == instanceId);
+        Assert.DoesNotContain(player.Library, card => card.InstanceId == instanceId);
+        Assert.DoesNotContain(player.Graveyard, card => card.InstanceId == instanceId);
+        Assert.DoesNotContain(player.Removed, card => card.InstanceId == instanceId);
+        Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card?.InstanceId == instanceId);
     }
 
     [Fact]

@@ -48,6 +48,14 @@ public static partial class L12SpecialDeckRules
            || card.CardId == "S02-01S1"
            || card.Traits.Any(trait => trait.EndsWith("专属", StringComparison.Ordinal));
 
+    /// <summary>
+    /// 规则书“衍生卡/指示物”通则：衍生卡离开战场时直接消灭，
+    /// 不会进入墓地、手牌、牌库或移出游戏区。离场/阵亡触发仍由调用方
+    /// 按最后已知信息建立，只有离场后的区域归属被本规则替代。
+    /// </summary>
+    public static bool VanishesWhenLeavingField(L12CardInstance card)
+        => IsDerivedSpecialCard(card);
+
     public static bool AlwaysReturnsToOwnerGraveyard(L12CardInstance card)
         => HasRule(card.EffectText, "以任何形式离场")
            && HasRule(card.EffectText, "所有者墓地");

@@ -58,12 +58,17 @@ function value<T>(raw: any, pascal: string, camel: string, fallback: T): T {
 }
 function replayCard(raw: any): Card | null {
   if (!raw) return null
+  const traits = value<string[]>(raw, 'Traits', 'traits', [])
+  const replayCardType = value<string>(raw, 'CardType', 'cardType', '')
+  const derivedSpecial = replayCardType === 'token'
+    || traits.some(trait => trait.endsWith('专属'))
   return {
     instanceId: value(raw, 'InstanceId', 'instanceId', ''), cardId: value(raw, 'CardId', 'cardId', ''),
-    name: value(raw, 'Name', 'name', '未知卡牌'), cardType: value(raw, 'CardType', 'cardType', ''), faction: value(raw, 'Faction', 'faction', ''),
-    traits: value(raw, 'Traits', 'traits', []), profession: value(raw, 'Profession', 'profession', undefined),
+    name: value(raw, 'Name', 'name', '未知卡牌'), cardType: replayCardType, faction: value(raw, 'Faction', 'faction', ''),
+    traits, profession: value(raw, 'Profession', 'profession', undefined),
     imageUrl: value(raw, 'ImageUrl', 'imageUrl', undefined), effectText: value(raw, 'EffectText', 'effectText', undefined),
-    cost: value(raw, 'Cost', 'cost', 0), currentCost: value(raw, 'CurrentCost', 'currentCost', value(raw, 'Cost', 'cost', 0)),
+    cost: value(raw, 'Cost', 'cost', 0), hasPrintedCost: value(raw, 'HasPrintedCost', 'hasPrintedCost', !derivedSpecial),
+    currentCost: value(raw, 'CurrentCost', 'currentCost', value(raw, 'Cost', 'cost', 0)),
     baseTroops: value(raw, 'BaseTroops', 'baseTroops', 0), troops: value(raw, 'Troops', 'troops', 0),
     disasterLevel: value(raw, 'DisasterLevel', 'disasterLevel', 0), trialValue: value(raw, 'TrialValue', 'trialValue', 0),
     attachedCards: value<any[]>(raw, 'AttachedCards', 'attachedCards', []).map(replayCard).filter(Boolean) as Card[],

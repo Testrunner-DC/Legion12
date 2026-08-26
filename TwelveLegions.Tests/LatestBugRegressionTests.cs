@@ -1344,4 +1344,42 @@ public sealed class LatestBugRegressionTests
         owner.Relic = Card("S02-0008", "world-ring");
         Assert.True(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction));
     }
+
+    [Fact]
+    public void BattlefieldSnapshotPublishesActiveKeywordsAndMasterLegionTroops()
+    {
+        var game = Create(6432);
+        var player = game.State.Players[0];
+        var wukong = Card("S02-01M1", "wukong-field-view");
+        wukong.IsMasterLegion = true;
+        wukong.HasCharge = true;
+        wukong.SummonRound = game.State.Round;
+        wukong.SetTroopsValue = 4000;
+        wukong.Troops = 4000;
+        player.Field[0][0] = wukong;
+
+        var keywordLegion = Card("S01-0002", "keyword-field-view");
+        keywordLegion.HasStrongAttack = true;
+        keywordLegion.HasSureHit = true;
+        keywordLegion.HasShock = true;
+        keywordLegion.ImmortalUses = 1;
+        keywordLegion.ImmortalUntilTurn = game.State.TurnSerial;
+        keywordLegion.TauntUntilTurn = game.State.TurnSerial;
+        player.UsedAbilities.Add($"crusade-piercing:{keywordLegion.InstanceId}:{game.State.TurnSerial}");
+        player.Field[0][1] = keywordLegion;
+
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        var field = snapshot.GetProperty("players")[0].GetProperty("field");
+        var wukongView = field[0][0];
+        Assert.True(wukongView.GetProperty("isMasterLegion").GetBoolean());
+        Assert.Equal(4000, wukongView.GetProperty("troops").GetInt32());
+        Assert.Equal(4000, wukongView.GetProperty("displayBaseTroops").GetInt32());
+        Assert.Equal(["冲锋"], wukongView.GetProperty("activeKeywords").EnumerateArray()
+            .Select(value => value.GetString()!).ToArray());
+
+        var keywords = field[0][1].GetProperty("activeKeywords").EnumerateArray()
+            .Select(value => value.GetString()!).ToArray();
+        Assert.Equal(["强攻", "免死", "必中", "挑衅", "震击", "贯穿"], keywords);
+    }
 }
