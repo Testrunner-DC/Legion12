@@ -177,17 +177,82 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == beetle.InstanceId && !card.Tapped);
     }
 
-    [Theory]
-    [InlineData("S02-0205", "〈黄金圣甲虫〉")]
-    [InlineData("S02-0305", "〈安德华拉诺特〉")]
-    public void ArtifactZonePlayRestrictionsBlockEveryArtifactFromHandAndReachTheSnapshot(string blockerId, string reasonPrefix)
+    [Fact]
+    public void GoldScarabBlocksOtherArtifactsButAllowsAnotherGoldScarab()
     {
         var game = Create(630111);
         var player = game.State.Players[0];
         player.Hand.Clear();
-        player.Relic = Card(blockerId, $"artifact-blocker-{blockerId}");
-        var differentArtifact = Card("S02-0520", $"blocked-different-{blockerId}");
-        var sameArtifact = Card(blockerId, $"blocked-same-{blockerId}");
+        player.Relic = Card("S02-0205", "artifact-blocker-scarab");
+        var differentArtifact = Card("S02-0520", "blocked-different-scarab");
+        var sameArtifact = Card("S02-0205", "allowed-same-scarab");
+        player.Hand.AddRange([differentArtifact, sameArtifact]);
+        AddMorale(player, sameArtifact.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var hand = snapshot.GetProperty("players")[0].GetProperty("hand");
+        var blockedView = hand.EnumerateArray().Single(card =>
+            card.GetProperty("instanceId").GetString() == differentArtifact.InstanceId);
+        var allowedView = hand.EnumerateArray().Single(card =>
+            card.GetProperty("instanceId").GetString() == sameArtifact.InstanceId);
+        Assert.StartsWith("〈黄金圣甲虫〉", blockedView.GetProperty("playBlockedReason").GetString());
+        Assert.Equal(JsonValueKind.Null, allowedView.GetProperty("playBlockedReason").ValueKind);
+
+        var differentResult = game.Handle(0, new L12Command("playCard", differentArtifact.InstanceId));
+        var sameResult = game.Handle(0, new L12Command("playCard", sameArtifact.InstanceId));
+        Assert.False(differentResult.Accepted);
+        Assert.True(sameResult.Accepted, sameResult.Error);
+        Assert.StartsWith("〈黄金圣甲虫〉", differentResult.Error);
+        Assert.Contains(differentArtifact, player.Hand);
+        Assert.DoesNotContain(sameArtifact, player.Hand);
+    }
+
+    [Fact]
+    public void GoldenScarabDebuffDoesNotRestTheArtifactUsesItsOwnTurnKeyAndKillsAtZero()
+    {
+        var game = Create(630113);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var scarab = Card("S02-0205", "scarab-debuff-source");
+        var discard = Card("S02-0003", "scarab-debuff-discard");
+        var target = Card("S02-0005", "scarab-debuff-target");
+        player.Relic = scarab;
+        player.Hand.Clear();
+        player.Hand.Add(discard);
+        opponent.Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", scarab.InstanceId,
+            Ability: "scarabDebuff")).Accepted);
+        var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            CardInstanceIds: [target.InstanceId])).Accepted);
+        PassResponses(game);
+
+        Assert.False(scarab.Tapped);
+        Assert.Contains(discard, player.Graveyard);
+        Assert.Contains(target, opponent.Graveyard);
+        Assert.False(game.Handle(0, new L12Command("activateAbility", scarab.InstanceId,
+            Ability: "scarabDebuff")).Accepted);
+        Assert.DoesNotContain($"active:{scarab.InstanceId}:scarabSummon", player.UsedAbilities);
+    }
+
+    [Fact]
+    public void AndvaranautBlocksEveryArtifactFromHandAndReachesTheSnapshot()
+    {
+        var game = Create(630112);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Relic = Card("S02-0305", "artifact-blocker-ring");
+        var differentArtifact = Card("S02-0520", "blocked-different-ring");
+        var sameArtifact = Card("S02-0305", "blocked-same-ring");
         player.Hand.AddRange([differentArtifact, sameArtifact]);
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
@@ -196,16 +261,15 @@ public sealed class S2FactionRegressionTests
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var hand = snapshot.GetProperty("players")[0].GetProperty("hand");
         Assert.All(hand.EnumerateArray(), card =>
-            Assert.StartsWith(reasonPrefix, card.GetProperty("playBlockedReason").GetString()));
+            Assert.StartsWith("〈安德华拉诺特〉", card.GetProperty("playBlockedReason").GetString()));
 
-        var differentResult = game.Handle(0, new L12Command("playCard", differentArtifact.InstanceId));
-        var sameResult = game.Handle(0, new L12Command("playCard", sameArtifact.InstanceId));
-        Assert.False(differentResult.Accepted);
-        Assert.False(sameResult.Accepted);
-        Assert.StartsWith(reasonPrefix, differentResult.Error);
-        Assert.StartsWith(reasonPrefix, sameResult.Error);
-        Assert.Contains(differentArtifact, player.Hand);
-        Assert.Contains(sameArtifact, player.Hand);
+        foreach (var card in player.Hand.ToArray())
+        {
+            var result = game.Handle(0, new L12Command("playCard", card.InstanceId));
+            Assert.False(result.Accepted);
+            Assert.StartsWith("〈安德华拉诺特〉", result.Error);
+            Assert.Contains(card, player.Hand);
+        }
     }
 
     [Theory]
@@ -915,6 +979,130 @@ public sealed class S2FactionRegressionTests
         Assert.True(okita.HasCharge);
         Assert.Equal(okita.BaseTroops + 1000, okita.Troops);
         Assert.Contains(okita.TimedModifiers, modifier => modifier.Source == "冲田总司" && modifier.TroopsDelta == 1000);
+    }
+
+    [Fact]
+    public void OkitaAttackMayPlayEligibleTopGaotianyuanLegionForFree()
+    {
+        var game = Create(63191);
+        var player = game.State.Players[0];
+        var okita = Card("S02-0403", "okita-attack-play");
+        var tomoe = Card("S01-0410", "okita-top-tomoe");
+        okita.SummonRound = -1;
+        player.Field[0][0] = okita;
+        player.Library.Clear();
+        player.Library.Add(tomoe);
+        var moraleBefore = player.Morale.Count(card => !card.Tapped);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", okita.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-okita-top", mode.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "play")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-okita-slot", slot.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices[0])).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(tomoe, player.Library);
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == tomoe.InstanceId);
+        Assert.True(tomoe.HasCharge);
+        Assert.Equal(moraleBefore, player.Morale.Count(card => !card.Tapped));
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal" && entry.Cards.Any(card => card.CardId == tomoe.CardId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "play" && entry.Cards.Any(card => card.CardId == tomoe.CardId));
+    }
+
+    [Fact]
+    public void OkitaAttackAddsIneligibleTopCardToHand()
+    {
+        var game = Create(63192);
+        var player = game.State.Players[0];
+        var okita = Card("S02-0403", "okita-attack-hand");
+        var squire = Card("S02-0609", "okita-top-squire");
+        okita.SummonRound = -1;
+        player.Field[0][0] = okita;
+        player.Library.Clear();
+        player.Library.Add(squire);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", okita.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(squire, player.Library);
+        Assert.Contains(squire, player.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal" && entry.Cards.Any(card => card.CardId == squire.CardId));
+        Assert.Contains(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add"
+            && entry.TargetInstanceId == squire.InstanceId);
+    }
+
+    [Fact]
+    public void MercenaryResponseDoesNotSwallowOkitasAttackTrigger()
+    {
+        var game = Create(63193);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var okita = Card("S02-0403", "okita-mercenary-attacker");
+        var target = Card("S01-0102", "okita-mercenary-target");
+        var mercenary = Card("S01-0002", "okita-mercenary-response");
+        var squire = Card("S02-0609", "okita-mercenary-top");
+        okita.SummonRound = target.SummonRound = 0;
+        attackerPlayer.Field[0][0] = okita;
+        attackerPlayer.Library.Clear();
+        attackerPlayer.Library.Add(squire);
+        defender.Field[0][0] = target;
+        defender.Hand.Clear();
+        defender.Hand.Add(mercenary);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", okita.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+
+        L12Prompt? mercenaryWindow = null;
+        for (var step = 0; step < 20 && mercenaryWindow is null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            if (prompt.Kind == "response" && prompt.ValidChoices.Contains(mercenary.InstanceId))
+            {
+                mercenaryWindow = prompt;
+                break;
+            }
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.NotNull(mercenaryWindow);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mercenaryWindow!.PromptId,
+            Choice: mercenary.InstanceId)).Accepted);
+        for (var step = 0; step < 20 && !attackerPlayer.Hand.Contains(squire); step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Contains(squire, attackerPlayer.Hand);
+        Assert.Contains(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add"
+            && entry.TargetInstanceId == squire.InstanceId);
+        Assert.Contains(mercenary, defender.Graveyard);
     }
 
     [Fact]
@@ -2436,6 +2624,62 @@ public sealed class S2FactionRegressionTests
         player.Hand.Add(discounted);
         AddMorale(player, discounted.Cost - 2);
         Assert.True(game.Handle(0, new L12Command("playCard", discounted.InstanceId, Row: 0, Slot: 0)).Accepted);
+        Assert.Equal(0, player.NextS2SunDisasterLegionDiscount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NephthysAndImhotepDiscountsAccumulateInEitherOrder(bool imhotepFirst)
+    {
+        var game = CreateWithFirstMaster("S02-02M1", imhotepFirst ? 63261 : 63262);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Graveyard.Clear();
+        var first = Card("S02-0005", "stacked-discount-first");
+        var second = Card("S02-0007", "stacked-discount-second");
+        var imhotep = Card("S02-0204", "stacked-discount-imhotep");
+        player.Field[0][0] = first;
+        player.Field[1][1] = second;
+        player.Field[1][2] = imhotep;
+        game.State.Phase = L12Phase.Main;
+
+        void ResolveImhotep()
+        {
+            var result = game.Handle(0, new L12Command("activateAbility", imhotep.InstanceId,
+                Ability: "imhotepDiscount"));
+            Assert.True(result.Accepted, result.Error);
+            PassResponses(game);
+        }
+
+        void ResolveNephthys()
+        {
+            var result = game.Handle(0, new L12Command("activateAbility", "master-0",
+                Ability: "nephthysSacrifice"));
+            Assert.True(result.Accepted, result.Error);
+            var choose = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choose.PromptId,
+                CardInstanceIds: [first.InstanceId, second.InstanceId])).Accepted);
+            PassResponses(game);
+        }
+
+        if (imhotepFirst)
+        {
+            ResolveImhotep();
+            ResolveNephthys();
+        }
+        else
+        {
+            ResolveNephthys();
+            ResolveImhotep();
+        }
+
+        Assert.Equal(3, player.NextS2SunDisasterLegionDiscount);
+        var discounted = Card("S01-0203", "stacked-discount-target");
+        player.Hand.Add(discounted);
+        AddMorale(player, discounted.Cost - 3);
+        var play = game.Handle(0, new L12Command("playCard", discounted.InstanceId, Row: 0, Slot: 1));
+        Assert.True(play.Accepted, play.Error);
         Assert.Equal(0, player.NextS2SunDisasterLegionDiscount);
     }
 

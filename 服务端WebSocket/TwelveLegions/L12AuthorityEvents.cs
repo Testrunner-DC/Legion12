@@ -93,7 +93,11 @@ public sealed partial class L12GameEngine
                 var card = FindOnField(State.Players[authorityEvent.ActorPlayer], authorityEvent.SourceInstanceId, out _, out _);
                 if (card is not null && item.Data.GetValueOrDefault("suppressEnter") != "true"
                     && HasImmediateEffect(card, "enter"))
-                    PushEffect(authorityEvent.ActorPlayer, card, "enter", "【登场时】效果");
+                {
+                    if (L12StructuredCardRules.RequiresPreStackEnterCost(card))
+                        BeginYingzhengEnterActivation(authorityEvent.ActorPlayer, card);
+                    else PushEffect(authorityEvent.ActorPlayer, card, "enter", "【登场时】效果");
+                }
                 break;
             }
             case "effect-ready":

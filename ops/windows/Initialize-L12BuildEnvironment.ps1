@@ -12,8 +12,8 @@ if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
     if (-not [string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
         $CacheRoot = $env:L12_WORK_CACHE
     }
-    elseif (Test-Path -LiteralPath "D:\GPT") {
-        $CacheRoot = "D:\GPT\L12-cache"
+    elseif (Test-Path -LiteralPath "D:\GPT\Legion12") {
+        $CacheRoot = "D:\GPT\Legion12\cache\primary"
     }
     else {
         $CacheRoot = Join-Path $repoRoot ".l12-cache"

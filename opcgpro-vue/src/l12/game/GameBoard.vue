@@ -698,7 +698,7 @@ function statusTexts(card: Card) {
         </aside>
 
         <main class="board-center">
-          <HandArea v-if="l12State.gmEnabled" :cards="viewEnemy.hand"
+          <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"

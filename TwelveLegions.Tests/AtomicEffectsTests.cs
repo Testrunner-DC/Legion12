@@ -121,7 +121,7 @@ public sealed class AtomicEffectsTests
     {
         var catalog = Catalog;
         var catalogMappedRoutes = 0;
-        Assert.Equal(178, L12RuntimeEffectRoutes.AllPrograms.Count);
+        Assert.Equal(179, L12RuntimeEffectRoutes.AllPrograms.Count);
         foreach (var program in L12RuntimeEffectRoutes.AllPrograms)
         {
             Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);

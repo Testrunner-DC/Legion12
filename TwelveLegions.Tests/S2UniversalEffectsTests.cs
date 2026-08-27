@@ -154,7 +154,9 @@ public sealed class S2UniversalEffectsTests
 
         var slotPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("stack-response-puppet-slot", slotPrompt.Continuation);
-        Assert.All(slotPrompt.ValidChoices, choice => Assert.StartsWith("0:", choice));
+        Assert.Contains("cancel", slotPrompt.ValidChoices);
+        Assert.All(slotPrompt.ValidChoices.Where(choice => choice != "cancel"),
+            choice => Assert.StartsWith("0:", choice));
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
             Choice: "0:1")).Accepted);
 
@@ -164,6 +166,36 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal("legion", game.State.PendingDefense?.Target.Type);
         Assert.Equal(puppet.InstanceId, game.State.PendingDefense?.Target.InstanceId);
         Assert.Equal(L12Phase.Defense, game.State.Phase);
+    }
+
+    [Fact]
+    public void MagiciansPuppetMayCancelBeforeCommittingAndReturnsToTheSameResponseWindow()
+    {
+        var game = Create(seed: 62151);
+        var attacker = Instance("S02-0003", "puppet-cancel-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var puppet = TakeCard(game, 1, "S02-0005");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var responsePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: responsePrompt.PromptId,
+            Choice: puppet.InstanceId)).Accepted);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "cancel")).Accepted);
+
+        var resumedResponse = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", resumedResponse.Kind);
+        Assert.Equal(1, resumedResponse.PlayerIndex);
+        Assert.Contains(puppet.InstanceId, resumedResponse.ValidChoices);
+        Assert.Contains(puppet, game.State.Players[1].Hand);
+        Assert.False(puppet.Tapped);
+        Assert.Equal("master", game.State.PendingDefense?.Target.Type);
     }
 
     [Fact]

@@ -50,6 +50,13 @@ public static class L12StructuredCardRules
         "S01-0201", "S01-0202",
     };
 
+    // 冒号前存在“先选择并支付登场时效果费用”的卡，必须在效果入栈前完成预声明。
+    // 身份映射集中在结构化规则层；运行时入口只查询规则能力，禁止重新出现分散卡号分支。
+    private static readonly HashSet<string> PreStackEnterCostCards = new(StringComparer.Ordinal)
+    {
+        "S02-0101",
+    };
+
     public static string EffectiveFaction(L12PlayerState owner, L12CardInstance card)
     {
         if (!string.Equals(card.Faction, "universal", StringComparison.Ordinal)) return card.Faction;
@@ -73,7 +80,10 @@ public static class L12StructuredCardRules
             : controller.ExtraRelics.Prepend(controller.Relic);
         if (artifactZone.Any(source => source.CardId == "S02-0305"))
             return "〈安德华拉诺特〉使我方无法从手牌打出圣物";
-        if (artifactZone.Any(source => source.CardId == "S02-0205"))
+        // “其他圣物”不包含另一张〈黄金圣甲虫〉。同名圣物可正常打出并按
+        // 圣物顶替规则处理；不同名圣物仍由此权威查询同时禁用按钮与提交。
+        if (card.CardId != "S02-0205"
+            && artifactZone.Any(source => source.CardId == "S02-0205"))
             return "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物";
         return null;
     }
@@ -178,6 +188,9 @@ public static class L12StructuredCardRules
 
     public static bool HasSummonTurnCounterTacticProtection(L12CardInstance card, int currentRound)
         => card.SummonRound == currentRound && SummonTurnCounterTacticProtectionCards.Contains(card.CardId);
+
+    public static bool RequiresPreStackEnterCost(L12CardInstance card)
+        => PreStackEnterCostCards.Contains(card.CardId);
 
     public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatRuleAbilities(string cardId)
     {

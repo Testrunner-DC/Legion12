@@ -58,16 +58,8 @@ public sealed partial class L12GameEngine
                 var target = FindOnField(player, chosen[0], out _, out _);
                 if (target is not null) target.Troops += 2000;
                 item.Targets.Clear(); item.Targets.Add(chosen[0]);
-                var enemyChoices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(card => card is not null && card.Troops <= 6000 && !card.Hidden).Select(card => card!.InstanceId).ToList();
-                if (CanReturnMorale(player, 2) && enemyChoices.Count > 0)
-                {
-                    enemyChoices.Add("skip");
-                    CreatePrompt(item.Controller, "optional-target", "可返还 2 张士气：击杀对方 1 张兵力不高于 6000 的军团",
-                        enemyChoices, 1, 1, "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string> { ["action"] = "march-kill" });
-                }
-                else FinishStackItem(item);
+                if (source is not null) QueueMarchKillSegment(item, source);
+                FinishStackItem(item);
                 break;
             }
             case "march-kill":

@@ -148,7 +148,7 @@ public sealed partial class L12GameEngine
             player.Resolving.Add(card);
         }
 
-        ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: false);
+        ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: true);
         AddEvent("play", playerIndex, $"{player.Name} 打出 {card.Name}", card);
         if (card.CardId == "S01-0004" && targetPlayerIndex != playerIndex)
             AddEvent("put", targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}", card);
@@ -175,8 +175,11 @@ public sealed partial class L12GameEngine
         var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
         if (HasImmediateEffect(card, trigger))
         {
-            State.CheckDisasterAfterStack = card.CardType == "legion" && State.DisasterValue > 8;
-            PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果");
+            State.CheckDisasterAfterStack |= card.CardType == "legion" && State.DisasterValue > 8;
+            if (trigger == "enter" && L12StructuredCardRules.RequiresPreStackEnterCost(card))
+                BeginYingzhengEnterActivation(playerIndex, card);
+            else
+                PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果");
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
         }
         else
@@ -187,7 +190,7 @@ public sealed partial class L12GameEngine
                 player.Graveyard.Add(card);
             }
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
-            if (card.CardType == "legion" && State.DisasterValue > 8) BeginDisasterTrigger(opening: false);
+            TrySettleScheduledDisasterIfIdle();
         }
         return CommandResult.Ok();
     }
@@ -296,7 +299,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject($"需要{actualCost}张活跃的神力完成晋升");
 
         if (player.NextS2PromotionGodPowerDiscount > 0) player.NextS2PromotionGodPowerDiscount = 0;
-        ApplyDisasterLevelOnEntry(playerIndex, promoted, deferTriggerUntilStackSettles: false);
+        ApplyDisasterLevelOnEntry(playerIndex, promoted, deferTriggerUntilStackSettles: true);
         AddEvent("promotion", playerIndex, $"{player.Name}将〈{promoted.Name}〉叠放至〈{foundation.Name}〉上方晋升登场", promoted, foundation);
         ResolveOnPlayContinuousEffects(playerIndex, promoted);
         RecalculateContinuousTroops();
@@ -310,13 +313,11 @@ public sealed partial class L12GameEngine
             candidates.Add(grailCandidate);
         if (candidates.Count > 0)
         {
-            State.CheckDisasterAfterStack = State.DisasterValue > 8;
+            State.CheckDisasterAfterStack |= State.DisasterValue > 8;
             QueueTriggerCandidates(candidates);
         }
-        else if (State.DisasterValue > 8)
-        {
-            BeginDisasterTrigger(opening: false);
-        }
+        else
+            TrySettleScheduledDisasterIfIdle();
         return CommandResult.Ok();
     }
 
@@ -833,6 +834,22 @@ public sealed partial class L12GameEngine
         return CommandResult.Ok();
     }
 
+    private void ResolveResponseBlockedAttack()
+    {
+        var pending = State.PendingDefense;
+        if (pending is null) return;
+        var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
+        RevertPendingCombatTroopsModifiers(pending, attacker);
+        if (attacker is not null) ReturnWukongMasterLegionAfterAttack(pending.AttackerPlayer, attacker);
+        State.PendingDefense = null;
+        if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
+        AddEvent("attack-ended", 1 - pending.AttackerPlayer, "佣兵部队抵挡本次进攻；已发动的进攻时效果照常结算");
+        if (attacker is not null)
+        {
+            QueueAfterAttackEffects(pending.AttackerPlayer, attacker, killedTarget: false);
+            QueueS1PostAttackReactions(pending.AttackerPlayer);
+        }
+    }
     private bool TryOfferCombatLethalReplacement(L12PlayerState controller, L12CardInstance card, L12PendingDefense pending)
     {
         if (!CanUseAchillesLethalReplacement(controller, card)) return false;

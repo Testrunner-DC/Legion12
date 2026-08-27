@@ -379,6 +379,41 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void DisasterWaitsForRoundTableEntryTriggerToFullyClose()
+    {
+        var game = Create(6509);
+        var player = game.State.Players[0];
+        var grail = Card("S02-06S4", "grail-before-disaster");
+        var bors = Card("S02-0605", "bors-crossing-disaster");
+        grail.TrialCompleted = true;
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(grail);
+        player.Hand.Clear();
+        player.Hand.Add(bors);
+        AddReadyMorale(player, bors.Cost);
+        game.State.DisasterValue = 7;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(Card("S01-DS08", "scheduled-disaster"));
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 3;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", bors.InstanceId, Row: 0, Slot: 0)).Accepted);
+
+        Assert.Null(game.State.ActiveDisaster);
+        Assert.True(game.State.CheckDisasterAfterStack);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-grail-round-table-rune", prompt.Data["action"]);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+        PassResponses(game);
+
+        Assert.Equal("S01-DS08", game.State.ActiveDisaster?.CardId);
+        Assert.False(game.State.CheckDisasterAfterStack);
+    }
+
+    [Fact]
     public void AngusCanAdvanceTrialAfterAReactionTacticResolves()
     {
         var game = CreateWithFirstMaster("S02-06M2", 6500);
@@ -1025,6 +1060,95 @@ public sealed class LatestBugRegressionTests
         Assert.Null(game.State.PendingDefense);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("挑衅"));
+    }
+
+    [Fact]
+    public void PiercingRetargetedByMagiciansPuppetUsesTheRealRemainingTroopsAndBothLegionsDie()
+    {
+        var game = Create(64251);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card("S02-0606", "piercing-puppet-attacker");
+        var firstTarget = Card("S01-0103", "piercing-puppet-first-target");
+        var puppet = Card("S02-0005", "piercing-puppet-response");
+        attacker.Troops = 6000;
+        firstTarget.Troops = 5000;
+        attacker.SummonRound = firstTarget.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[0][0] = firstTarget;
+        defender.Field[1] = new L12CardInstance?[3];
+        defender.Hand.Clear();
+        defender.Hand.Add(puppet);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", firstTarget.InstanceId))).Accepted);
+
+        L12Prompt? puppetWindow = null;
+        for (var step = 0; step < 40 && puppetWindow is null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is not null)
+            {
+                if (game.State.PendingDefense?.Target.Type == "master"
+                    && prompt.Kind == "response" && prompt.ValidChoices.Contains(puppet.InstanceId))
+                {
+                    puppetWindow = prompt;
+                    break;
+                }
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("skip") ? "skip"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices[0];
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+                continue;
+            }
+            if (game.State.Phase == L12Phase.Defense && game.State.PendingDefense is not null)
+            {
+                var defendingPlayer = 1 - game.State.PendingDefense.AttackerPlayer;
+                Assert.True(game.Handle(defendingPlayer,
+                    new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+            }
+        }
+
+        Assert.NotNull(puppetWindow);
+        Assert.Contains(firstTarget, defender.Graveyard);
+        Assert.Equal(1000, attacker.Troops);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: puppetWindow!.PromptId,
+            Choice: puppet.InstanceId)).Accepted);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:1")).Accepted);
+
+        for (var step = 0; step < 20 && (!attackerPlayer.Graveyard.Contains(attacker)
+                 || !defender.Graveyard.Contains(puppet)); step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is not null)
+            {
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("skip") ? "skip"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices[0];
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+                continue;
+            }
+            if (game.State.Phase == L12Phase.Defense && game.State.PendingDefense is not null)
+            {
+                var defendingPlayer = 1 - game.State.PendingDefense.AttackerPlayer;
+                Assert.True(game.Handle(defendingPlayer,
+                    new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+            }
+        }
+
+        Assert.Contains(attacker, attackerPlayer.Graveyard);
+        Assert.Contains(puppet, defender.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "piercing"
+            && entry.Text.Contains("剩余兵力1000"));
     }
 
     [Fact]

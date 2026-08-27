@@ -24,10 +24,12 @@ public sealed partial class L12GameEngine
     private readonly L12Catalog _catalog;
     private readonly Random _random;
     private readonly bool _autoPassEmptyResponses;
+    private readonly bool _concealHiddenResponseAvailability;
 
     /// <summary>
-    /// 正式对局仅在当前玩家确实拥有合法响应动作时打开响应窗口。
-    /// 个别协议测试仍可显式传入 false，以覆盖旧式匿名响应窗口。
+    /// 没有理论合法响应时，正式对局自动让过优先权。
+    /// 响应窗口是否出现另由主宰可用卡池与公开场面决定，不能读取隐藏卡牌身份。
+    /// 个别协议测试仍可显式传入 false，以覆盖始终建立匿名窗口的底层协议。
     /// </summary>
     public static bool AutoPassEmptyResponsesByDefault { get; set; } = true;
 
@@ -42,9 +44,11 @@ public sealed partial class L12GameEngine
         int[] deckIndexes,
         bool skipPreparation = false,
         string disasterMode = "all",
-        bool? autoPassEmptyResponses = null)
+        bool? autoPassEmptyResponses = null,
+        bool? concealHiddenResponseAvailability = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
-            deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses)
+            deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
+            concealHiddenResponseAvailability)
     {
     }
 
@@ -57,13 +61,15 @@ public sealed partial class L12GameEngine
         L12PresetDeckDefinition[] decks,
         bool skipPreparation = false,
         string disasterMode = "all",
-        bool? autoPassEmptyResponses = null)
+        bool? autoPassEmptyResponses = null,
+        bool? concealHiddenResponseAvailability = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
         _catalog = catalog;
         _random = new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
+        _concealHiddenResponseAvailability = concealHiddenResponseAvailability ?? !skipPreparation;
         State = new L12GameState
         {
             MatchId = matchId,

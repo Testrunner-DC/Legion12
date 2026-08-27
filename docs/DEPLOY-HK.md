@@ -18,10 +18,10 @@ Nginx 和 systemd 继续访问 `/opt/legion12-test`，版本切换只原子替�
 开发电脑需要 Git、PowerShell、Node.js、npm、tar、仓库 `global.json` 指定的 .NET SDK，以及服务器 SSH 权限。建议把构建缓存放在 D 盘：
 
 ```powershell
-$env:TEMP = "D:\GPT\L12-deploy-temp"
+$env:TEMP = "D:\GPT\Legion12\artifacts\temp"
 $env:TMP = $env:TEMP
-$env:npm_config_cache = "D:\GPT\L12-deploy-temp\npm-cache"
-$env:L12_DEPLOY_CACHE = "D:\GPT\L12-deploy-artifacts"
+$env:npm_config_cache = "D:\GPT\Legion12\artifacts\temp\npm-cache"
+$env:L12_DEPLOY_CACHE = "D:\GPT\Legion12\artifacts\deploy"
 ```
 
 SSH 公钥加入服务器后验证：
@@ -40,7 +40,7 @@ ssh root@legion12.grand-umi.com "echo SSH连接成功"
 powershell -ExecutionPolicy Bypass -File .\ops\windows\verify-l12.ps1
 ```
 
-它会执行 L12 规则测试、平台持久化测试、前端 UI 契约与生产构建，并生成 Linux 后端运行包。产物默认保存在 `D:\GPT\L12-deploy-artifacts\<commit>`；同一提交重试会校验并复用该产物。需要强制重测时使用 `-Force`。
+它会执行 L12 规则测试、平台持久化测试、前端 UI 契约与生产构建，并生成 Linux 后端运行包。产物默认保存在 `D:\GPT\Legion12\artifacts\deploy\<commit>`；同一提交重试会校验并复用该产物。需要强制重测时使用 `-Force`。
 
 卡图独立按 Git tree hash 打包。服务器已经存在相同卡图版本时，不会再次上传约 388MB 的卡图。
 
@@ -106,15 +106,15 @@ ssh root@legion12.grand-umi.com "journalctl -u legion12-test.service -n 200 --no
 
 ## Windows 构建缓存位置
 
-Windows 完整验证和部署入口会自动初始化本次进程使用的构建缓存。开发电脑存在 D:\GPT 时，默认使用：
+Windows 完整验证和部署入口会自动初始化本次进程使用的构建缓存。开发电脑存在统一项目目录时，默认使用：
 
 ~~~text
-D:\GPT\L12-cache\temp
-D:\GPT\L12-cache\dotnet-home
-D:\GPT\L12-cache\nuget
-D:\GPT\L12-cache\npm
-D:\GPT\L12-cache\corepack
-D:\GPT\L12-deploy-artifacts
+D:\GPT\Legion12\cache\primary\temp
+D:\GPT\Legion12\cache\primary\dotnet-home
+D:\GPT\Legion12\cache\primary\nuget
+D:\GPT\Legion12\cache\primary\npm
+D:\GPT\Legion12\cache\primary\corepack
+D:\GPT\Legion12\artifacts\deploy
 ~~~
 
 这只影响当前验证/部署进程及其子进程，不会修改 Windows 全局 TEMP，也不会删除 C 盘旧缓存。需要临时改用其他磁盘时可传入：

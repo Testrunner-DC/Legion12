@@ -7,6 +7,28 @@ public sealed class GameEngineTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
+    private static L12CardInstance Card(string cardId, string instanceId)
+    {
+        var definition = Catalog.Cards[cardId];
+        return new L12CardInstance
+        {
+            InstanceId = instanceId,
+            CardId = definition.Id,
+            Name = definition.NameZh,
+            CardType = definition.CardType,
+            Faction = definition.Faction,
+            ImageUrl = definition.ImageUrl,
+            Cost = definition.Cost ?? 0,
+            EffectText = definition.Effect,
+            Traits = [.. definition.Traits],
+            Profession = definition.Profession,
+            BaseTroops = definition.Troops ?? 0,
+            Troops = definition.Troops ?? 0,
+            DisasterLevel = definition.DisasterLevel ?? 0,
+            TrialValue = definition.TrialValue ?? 0,
+        };
+    }
+
     private static L12GameEngine Create(int seed = 1206)
         => new(Catalog, "test-match", "ABC123", seed, ["甲", "乙"], [0, 1], skipPreparation: true);
 
@@ -118,6 +140,108 @@ public sealed class GameEngineTests
         Assert.Equal("response", second.Kind);
         Assert.Equal(["pass"], second.ValidChoices);
         Assert.NotEqual(first.PlayerIndex, second.PlayerIndex);
+    }
+
+    [Fact]
+    public void FormalResponseVisibilityUsesCardPoolWithoutRevealingCoveredCardIdentity()
+    {
+        var game = new L12GameEngine(Catalog, "response-card-pool", "POOL", 1209,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            concealHiddenResponseAvailability: true);
+        var entering = PutCardInHand(game, 0, "S01-0103");
+        var defender = game.State.Players[1];
+        var unrelatedCounter = Card("S01-0017", "covered-unrelated");
+        unrelatedCounter.Hidden = true;
+        unrelatedCounter.SetRound = 0;
+        defender.Field[1][0] = unrelatedCounter;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Equal(["pass"], response.ValidChoices);
+
+        Assert.True(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal(2, game.State.Events.Count(item => item.Type == "priority-pass"));
+    }
+
+    [Theory]
+    [InlineData("S01-0017")]
+    [InlineData("S01-0103")]
+    public void FormalResponseVisibilityIgnoresCoveredCardIdentity(string coveredCardId)
+    {
+        var game = new L12GameEngine(Catalog, $"response-covered-{coveredCardId}", "COVERED", 1211,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            concealHiddenResponseAvailability: true);
+        var entering = PutCardInHand(game, 0, "S01-0103");
+        var covered = Card(coveredCardId, $"covered-{coveredCardId}");
+        covered.Hidden = true;
+        covered.SetRound = 0;
+        game.State.Players[1].Field[1][0] = covered;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Equal(["pass"], response.ValidChoices);
+    }
+
+    [Fact]
+    public void FormalResponseVisibilityDoesNotRevealWhetherHandContainsMercenary()
+    {
+        var game = new L12GameEngine(Catalog, "response-hand-pool", "HANDPOOL", 1212,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            concealHiddenResponseAvailability: true);
+        var attacker = Card("S01-0103", "pool-attacker");
+        var target = Card("S01-0104", "pool-target");
+        attacker.SummonRound = 0;
+        target.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Hand.Clear();
+        game.State.Players[1].Hand.Add(Card("S01-0003", "non-response-hand"));
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Equal(["pass"], response.ValidChoices);
+    }
+
+    [Fact]
+    public void FormalResponseVisibilityStillListsOnlyActuallyLegalCards()
+    {
+        var game = new L12GameEngine(Catalog, "response-real-choice", "REAL", 1210,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            concealHiddenResponseAvailability: true);
+        var entering = PutCardInHand(game, 0, "S01-0103");
+        var defender = game.State.Players[1];
+        var ambush = Card("S01-0019", "covered-ambush");
+        ambush.Hidden = true;
+        ambush.SetRound = 0;
+        defender.Field[1][0] = ambush;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Contains(ambush.InstanceId, response.ValidChoices);
+        Assert.Contains("pass", response.ValidChoices);
+        Assert.Equal(2, response.ValidChoices.Count);
     }
 
     [Fact]

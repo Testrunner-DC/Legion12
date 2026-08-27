@@ -186,7 +186,7 @@ public sealed partial class L12GameEngine
         }
         else return CommandResult.Reject("该卡牌类型不能由 GM 打出到场上");
 
-        ApplyDisasterLevelOnEntry(command.TargetPlayer, card, deferTriggerUntilStackSettles: false);
+        ApplyDisasterLevelOnEntry(command.TargetPlayer, card, deferTriggerUntilStackSettles: true);
         AddEvent("gm", command.TargetPlayer,
             $"[GM] 使{(removeFromHand ? "手牌" : string.Empty)}〈{card.Name}〉无视费用打出", card);
         ResolveOnPlayContinuousEffects(command.TargetPlayer, card);
@@ -208,6 +208,7 @@ public sealed partial class L12GameEngine
             ResetCardAfterLeavingField(card);
             player.Graveyard.Add(card);
         }
+        TrySettleScheduledDisasterIfIdle();
         return CommandResult.Ok();
     }
 

@@ -160,6 +160,7 @@ public static class L12RuntimeEffectRoutes
         new("S02-0401", "enter", "武田信玄"),
         new("S02-0402", "enter", "井伊直虎"),
         new("S02-0403", "enter", "冲田总司"),
+        new("S02-0403", "attack", "冲田总司"),
         new("S02-0404", "enter", "八尺琼勾玉"),
         new("S02-0501", "enter", "赫拉克勒斯·晋升"),
         new("S02-0501", "promotion-enter", "赫拉克勒斯·晋升"),

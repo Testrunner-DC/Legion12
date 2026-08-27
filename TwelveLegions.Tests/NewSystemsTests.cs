@@ -926,6 +926,86 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void ShanheSearchPublishesTheSharedEffectHandAddAuthorityEvent()
+    {
+        var game = Create(seed: 88671);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].Library.Concat(game.State.Players[index].Hand)
+                .Any(card => card.CardId == "S01-0117"));
+        var player = game.State.Players[owner];
+        var shanhe = TakeCard(game, owner, "S01-0117");
+        shanhe.Tapped = false;
+        player.Relic = shanhe;
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+
+        var eligible = player.Library.First(card => card.Faction == "tianting");
+        player.Library.Remove(eligible);
+        player.Library.Insert(0, eligible);
+        var discard = player.Hand.First();
+
+        Assert.True(game.Handle(owner,
+            new L12Command("activateAbility", shanhe.InstanceId, Ability: "artifactSearch")).Accepted);
+        var costPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: costPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+
+        var searchPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: searchPrompt.PromptId,
+            Choice: eligible.InstanceId)).Accepted);
+
+        Assert.Contains(game.State.AuthorityEvents, authorityEvent => authorityEvent.Type == "effect-hand-add"
+            && authorityEvent.SourceInstanceId == eligible.InstanceId
+            && authorityEvent.OriginZone == "library"
+            && authorityEvent.DestinationZone == "hand");
+    }
+
+    [Fact]
+    public void MarchSplitsItsIndependentParagraphsIntoSeparateStackItems()
+    {
+        var game = Create(seed: 88672);
+        const int owner = 0;
+        var player = game.State.Players[owner];
+        var enemy = game.State.Players[1 - owner];
+        var march = player.Hand.Concat(player.Library).First(card => card.CardId == "S01-0118");
+        player.Hand.Remove(march);
+        player.Library.Remove(march);
+        player.Hand.Add(march);
+        var friendly = CreateInstance("S01-0109", "march-friendly");
+        friendly.SummonRound = 0;
+        player.Field[0][0] = friendly;
+        // 第二段只可击杀兵力不高于 6000 的军团；使用合法目标验证新堆叠，
+        // 避免首段路由回归被无目标自动结算掩盖。
+        var target = CreateInstance("S01-0402", "march-target");
+        enemy.Field[0][0] = target;
+        AddActiveMorale(player, 5);
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(owner, new L12Command("playCard", march.InstanceId)).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        var buff = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("march-buff", buff.Data["action"]);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: buff.PromptId,
+            Choice: friendly.InstanceId)).Accepted);
+
+        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        var kill = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("march-kill", kill.Data["action"]);
+        Assert.Contains(target.InstanceId, kill.ValidChoices);
+        Assert.Equal("神妙行军-击杀", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        Assert.Contains(game.State.Events, gameEvent => gameEvent.Type == "stack-deferred"
+            && gameEvent.Text.Contains("神妙行军", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void TriggeredEffectStillResolvesAfterItsSourceLeavesTheField()
     {
         var game = Create(seed: 5524);

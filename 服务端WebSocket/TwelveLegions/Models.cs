@@ -272,6 +272,8 @@ public sealed class L12PendingDefense
     public List<string> DeclaredBlockIds { get; } = [];
     public string? DeclaredSupportId { get; set; }
     public bool ForceInvalidDefense { get; set; }
+    /// <summary>佣兵部队等响应已抵挡进攻；仍须结算已发动的【进攻时】效果。</summary>
+    public bool BlockedByResponse { get; set; }
 }
 
 public sealed class L12Prompt

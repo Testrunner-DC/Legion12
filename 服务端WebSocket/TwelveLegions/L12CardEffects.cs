@@ -39,7 +39,10 @@ public sealed partial class L12GameEngine
 
     private void ResolveCardEffect(L12StackItem item)
     {
-        if (TryResolveVerifiedAtomicProgram(item)) return;
+        // 复合能力拆出的后续独立段已经由前一段指定 atomicFlow；若再次从卡牌根程序
+        // 开始执行，会把该 flow 覆盖回第一段并重复提示。后续段直接进入结构化复合路由。
+        if (item.Data.GetValueOrDefault("atomicContinuation") != "true"
+            && TryResolveVerifiedAtomicProgram(item)) return;
         ResolveStructuredCompositeFlow(item);
     }
 
@@ -175,11 +178,33 @@ public sealed partial class L12GameEngine
                 return;
             case "神妙行军":
             {
-                var front = player.Field[0].Where(target => target is not null).Select(target => target!.InstanceId).ToArray();
-                if (front.Length == 0) { FinishStackItem(item); return; }
+                var front = player.Field[0].Where(target => target is not null && IsFieldLegion(target))
+                    .Select(target => target!.InstanceId).ToArray();
+                if (front.Length == 0)
+                {
+                    QueueMarchKillSegment(item, card);
+                    FinishStackItem(item);
+                    return;
+                }
                 CreatePrompt(item.Controller, "target", "选择我方前排 1 张军团，本回合兵力 +2000", front, 1, 1,
                     "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "march-buff" });
+                return;
+            }
+            case "神妙行军-击杀":
+            {
+                var enemyChoices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+                    .Where(target => target is not null && IsFieldLegion(target) && target.Troops <= 6000)
+                    .Select(target => target!.InstanceId).ToList();
+                if (!CanReturnMorale(player, 2) || enemyChoices.Count == 0)
+                {
+                    FinishStackItem(item);
+                    return;
+                }
+                enemyChoices.Add("skip");
+                CreatePrompt(item.Controller, "optional-target", "可返还 2 张士气：击杀对方 1 张兵力不高于 6000 的军团",
+                    enemyChoices, 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "march-kill" });
                 return;
             }
             case "草薙剑":
@@ -197,6 +222,14 @@ public sealed partial class L12GameEngine
                 return;
         }
     }
+
+    private void QueueMarchKillSegment(L12StackItem item, L12CardInstance source)
+        => PushEffect(item.Controller, source, "play", "可返还2士气：击杀对方1张兵力不高于6000的军团",
+            data: new Dictionary<string, string>
+            {
+                ["atomicFlow"] = "神妙行军-击杀",
+                ["atomicContinuation"] = "true",
+            });
 
     private void ResolveAttackEffect(L12StackItem item)
     {

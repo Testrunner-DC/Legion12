@@ -182,36 +182,14 @@ public class TestScene
     static void EnsureCardDbLoaded()
     {
         if (_dbLoaded) return;
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidate = Path.Combine(dir.FullName, "卡牌数据");
-            if (Directory.Exists(candidate))
-            {
-                CardDatabase.LoadFrom(candidate);
-                _dbLoaded = true;
-                return;
-            }
-            dir = dir.Parent;
-        }
-        throw new InvalidOperationException("找不到卡牌数据目录");
+        CardDatabase.LoadFrom(TestDataPaths.CardDataRoot);
+        _dbLoaded = true;
     }
 
     static void EnsureDslLoaded()
     {
         if (_dslLoaded) return;
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidate = Path.Combine(dir.FullName, "服务端WebSocket", "Effects", "Definitions");
-            if (Directory.Exists(candidate))
-            {
-                DslInterpreter.LoadDirectory(candidate);
-                _dslLoaded = true;
-                return;
-            }
-            dir = dir.Parent;
-        }
-        throw new InvalidOperationException("找不到 Effects/Definitions 目录");
+        DslInterpreter.LoadDirectory(TestDataPaths.DslDefinitionsRoot);
+        _dslLoaded = true;
     }
 }

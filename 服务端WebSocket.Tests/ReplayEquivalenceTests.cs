@@ -18,16 +18,8 @@ public class ReplayEquivalenceTests
     private static void EnsureLoaded()
     {
         if (_loaded) return;
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        string? root = null;
-        while (dir is not null)
-        {
-            if (Directory.Exists(Path.Combine(dir.FullName, "卡牌数据"))) { root = dir.FullName; break; }
-            dir = dir.Parent;
-        }
-        Assert.NotNull(root);
-        CardDatabase.LoadFrom(Path.Combine(root!, "卡牌数据"));
-        DslInterpreter.LoadDirectory(Path.Combine(root!, "服务端WebSocket", "Effects", "Definitions"));
+        CardDatabase.LoadFrom(TestDataPaths.CardDataRoot);
+        DslInterpreter.LoadDirectory(TestDataPaths.DslDefinitionsRoot);
         _loaded = true;
     }
 

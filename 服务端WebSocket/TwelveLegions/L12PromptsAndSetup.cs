@@ -422,6 +422,12 @@ public sealed partial class L12GameEngine
                 if (!result.Accepted) return result;
                 break;
             }
+            case "s2-yingzheng-enter-cost":
+            {
+                var result = ResolveYingzhengEnterCost(prompt, chosen[0]);
+                if (!result.Accepted) return result;
+                break;
+            }
             case "s2-promotion-foundation":
             {
                 var result = PlayCard(prompt.PlayerIndex, new L12Command(
@@ -774,13 +780,17 @@ public sealed partial class L12GameEngine
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
             if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
         }
-        if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion"
-            && State.PendingDefense.SureHit != true && top.Controller != playerIndex)
+        var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
+        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion"
+            && State.PendingDefense.SureHit != true && playerIndex == defendingPlayer)
             choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
-        if (!protectedFromCounters && timing.Trigger == "attack" && State.PendingDefense?.Target.Type == "master" && top.Controller != playerIndex
+        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "master"
+            && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
-        if (_autoPassEmptyResponses && choices.Count == 0)
+        var hasAnonymousPoolResponse = _concealHiddenResponseAvailability
+            && CanMasterCardPoolRespondAtTiming(playerIndex, top, protectedFromCounters);
+        if (_autoPassEmptyResponses && choices.Count == 0 && !hasAnonymousPoolResponse)
         {
             PassPriority(playerIndex);
             return;
@@ -793,6 +803,50 @@ public sealed partial class L12GameEngine
         responseData["choiceMode"] = "instant";
         CreatePrompt(playerIndex, "response", $"是否响应堆叠顶部：{top.SourceName}－{top.Text}", choices,
             1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+    }
+
+    /// <summary>
+    /// 只使用主宰构筑可用卡池和公开场面判断“是否存在理论响应”。
+    /// 隐藏手牌/盖牌的真实身份只能影响响应窗口中的实际选项，不能影响窗口是否出现。
+    /// </summary>
+    private bool CanMasterCardPoolRespondAtTiming(int playerIndex, L12StackItem top, bool protectedFromCounters)
+    {
+        if (top.Controller == playerIndex || protectedFromCounters) return false;
+        var player = State.Players[playerIndex];
+        var timing = ResponseTimingContext(top);
+        var pool = _catalog.Cards.Values.Where(card =>
+            card.Faction == "universal" || card.Faction == player.Faction);
+
+        // 盖伏区数量、盖伏回合和禁用状态均为公开场面信息；牌的真实身份不是。
+        var hasEligibleCoveredCard = State.TurnSerial >= State.CounterTacticsDisabledUntilTurnSerial
+            && player.Field[1].Any(card => card is { Hidden: true }
+                && card.SetRound < State.Round && card.CannotRespondUntilRound < State.Round);
+        if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top, timing)))
+            return true;
+
+        var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
+        if (playerIndex != defendingPlayer || player.Hand.Count == 0 || top.Trigger != "attack") return false;
+        if (State.PendingDefense?.Target.Type == "legion" && State.PendingDefense.SureHit != true
+            && pool.Any(card => card.Id == "S01-0002"))
+            return true;
+        return State.PendingDefense?.Target.Type == "master"
+            && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null)
+            && pool.Any(card => card.Id == "S02-0005");
+    }
+
+    private bool IsPoolCounterResponseAtTiming(
+        string cardId,
+        int playerIndex,
+        L12StackItem top,
+        L12StackItem timing)
+    {
+        if (!IsCounterTactic(cardId)) return false;
+        if (cardId == "S01-0016")
+            return top.Trigger != "authority-event" && State.Players[playerIndex].Hand.Count > 0;
+        if (cardId == "S01-0018")
+            return timing.Trigger == "enter" && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard);
+        return CanUseS1ReactionAtStack(cardId, playerIndex, top)
+            || CanUseS2CounterAtStack(cardId, playerIndex, top);
     }
 
     private L12StackItem ResponseTimingContext(L12StackItem top)
@@ -842,12 +896,14 @@ public sealed partial class L12GameEngine
                 .Select(slot => $"0:{slot}")
                 .ToArray();
             if (frontSlots.Length == 0) { PassPriority(playerIndex); return; }
-            CreatePrompt(playerIndex, "slot", $"{response.Name}：预先选择休整登场的前排位置", frontSlots,
+            var choices = frontSlots.Append("cancel").ToArray();
+            CreatePrompt(playerIndex, "slot", $"{response.Name}：预先选择休整登场的前排位置", choices,
                 1, 1, "stack-response-puppet-slot", prompt.StackItemId, isPrivate: true,
                 data: new Dictionary<string, string>
                 {
                     ["responseId"] = response.InstanceId,
                     ["choiceMode"] = "board-slot",
+                    ["cancel"] = "取消发动",
                 });
             return;
         }
@@ -886,6 +942,12 @@ public sealed partial class L12GameEngine
 
     private void ResolvePuppetResponseSlot(int playerIndex, L12Prompt prompt, string slotChoice)
     {
+        if (slotChoice == "cancel")
+        {
+            State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+            OfferResponse();
+            return;
+        }
         var player = State.Players[playerIndex];
         var response = player.Hand.FirstOrDefault(card => card.InstanceId == prompt.Data.GetValueOrDefault("responseId")
             && card.CardId == "S02-0005");
@@ -1017,7 +1079,8 @@ public sealed partial class L12GameEngine
         if (item.Trigger == "response-block")
         {
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
-            if (target is not null) target.Negated = true;
+            // 抵挡只终止交战，不无效已经发动的【进攻时】效果。
+            if (State.PendingDefense is not null) State.PendingDefense.BlockedByResponse = true;
             var player = State.Players[item.Controller];
             var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.SourceInstanceId);
             if (card is not null) { player.Hand.Remove(card); player.Graveyard.Add(card); }
@@ -1111,6 +1174,22 @@ public sealed partial class L12GameEngine
         AfterStackSettled();
     }
 
+    private void TrySettleScheduledDisasterIfIdle()
+    {
+        if (!State.CheckDisasterAfterStack
+            || State.IsResolvingStack
+            || State.EffectStack.Count > 0
+            || State.DeferredEffectStack.Count > 0
+            || State.PendingTriggerBatches.Count > 0
+            || State.PendingTriggerStackCandidates.Count > 0
+            || State.PendingActivations.Count > 0
+            || State.PendingPrompts.Count > 0
+            || State.ResponseWindow is not null)
+            return;
+
+        AfterStackSettled();
+    }
+
     private void AfterStackSettled()
     {
         State.ResponseWindow = null;
@@ -1144,6 +1223,11 @@ public sealed partial class L12GameEngine
         }
         if (State.PendingDefense is not null)
         {
+            if (State.PendingDefense.BlockedByResponse)
+            {
+                ResolveResponseBlockedAttack();
+                return;
+            }
             State.Phase = L12Phase.Defense;
             AutoResolveLegionDefenseWithoutSupport();
         }

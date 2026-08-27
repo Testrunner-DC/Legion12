@@ -40,7 +40,7 @@ public class OP16SmokeTests
     /// <summary>用 MemberData 给每张 OP16 含效果卡生成一个测试用例</summary>
     public static IEnumerable<object[]> AllOp16Cards()
     {
-        var root = ResolveCardDataRoot();
+        var root = TestDataPaths.CardDataRoot;
         var path = Path.Combine(root, "OP16.json");
         var json = File.ReadAllText(path);
         var arr = JsonSerializer.Deserialize<List<JsonElement>>(json);
@@ -53,18 +53,6 @@ public class OP16SmokeTests
             if (string.IsNullOrEmpty(effect) && string.IsNullOrEmpty(trigger)) continue;
             yield return new object[] { num };
         }
-    }
-
-    static string ResolveCardDataRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidate = Path.Combine(dir.FullName, "卡牌数据");
-            if (Directory.Exists(candidate)) return candidate;
-            dir = dir.Parent;
-        }
-        throw new InvalidOperationException("找不到卡牌数据目录");
     }
 
     [Theory]

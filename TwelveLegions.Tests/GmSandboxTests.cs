@@ -230,7 +230,7 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
-    public void TombConstructDeathCreatesOneSharedDeathOrLeaveAbility()
+    public void TombConstructDeathCreatesIndependentDeathAndLeaveTriggers()
     {
         var game = new L12GameEngine(Catalog, "gm-tomb-construct", "GMTOMB", 12061,
             ["甲", "乙"], [0, 1], skipPreparation: true);
@@ -255,10 +255,13 @@ public sealed class GmSandboxTests
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: construct.InstanceId)).Accepted);
 
-        Assert.DoesNotContain(game.State.PendingPrompts,
+        var orderPrompt = Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Continuation == "trigger-batch-order");
-        Assert.Single(game.State.Events,
-            entry => entry.Type == "effect-trigger" && entry.Cards.Any(card => card.CardId == "S01-0204"));
+        Assert.Equal(2, orderPrompt.ValidChoices.Count);
+        Assert.Contains(orderPrompt.ValidChoices,
+            id => orderPrompt.Data.GetValueOrDefault($"trigger:{id}") == "death");
+        Assert.Contains(orderPrompt.ValidChoices,
+            id => orderPrompt.Data.GetValueOrDefault($"trigger:{id}") == "leave");
     }
 
     [Fact]
