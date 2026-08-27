@@ -213,8 +213,8 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   if (!deck.name.trim() || deck.name.trim().length > 24) return '牌库名称须为 1–24 个字符'
   if (!master || master.cardType !== 'master') return '请选择主宰'
   if (master.id === 'S01-02M2') return '复苏的奥西里斯不能被选择为主宰；请选择伊西斯'
-  const countedMainDeckSize = deck.cardIds.filter(id => id !== 'S01-0212').length
-  if (countedMainDeckSize < 40 || countedMainDeckSize > 50) return `主牌库须为 40–50 张（陵墓守卫不计入，当前 ${countedMainDeckSize} 张）`
+  const countedMainDeckSize = deckCountSummary(deck.cardIds, byId).counted
+  if (countedMainDeckSize < 40 || countedMainDeckSize > 50) return `主牌库须为 40–50 张（规则标明不计入构筑的卡牌除外，当前 ${countedMainDeckSize} 张）`
   const counts = new Map<string, number>()
   for (const id of deck.cardIds) {
     const card = byId.get(id)
@@ -241,6 +241,16 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     return !card || card.cardType !== 'trial' || card.faction !== master.faction
   })) return '特殊区卡牌与主宰阵营不符'
   return ''
+}
+
+export function doesNotCountTowardMainDeck(card: DeckCard | undefined) {
+  return !!card?.effect?.includes('构筑时不计入卡组数量')
+}
+
+export function deckCountSummary(cardIds: readonly string[], cards: ReadonlyMap<string, DeckCard>) {
+  const uncounted = cardIds.reduce((sum, id) => sum + (doesNotCountTowardMainDeck(cards.get(id)) ? 1 : 0), 0)
+  const counted = cardIds.length - uncounted
+  return { counted, uncounted, label: `${counted}${uncounted ? `(${uncounted})` : ''}` }
 }
 
 export function trialCapacityForMaster(master: DeckCard | undefined) {

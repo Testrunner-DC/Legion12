@@ -125,6 +125,52 @@ public sealed class PlatformStoreTests
     }
 
     [Fact]
+    public void PublishedDecksPersistAndCanOnlyBeEditedOrDeletedByOwner()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var store = new L12PlatformStore(path);
+            var owner = store.Register("公开牌库作者", "password-123").Account!;
+            var reader = store.Register("公开牌库读者", "password-123").Account!;
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "公开测试牌库", MasterId = "M1", CardIds = ["C1"], MoraleIds = ["R1"], SpecialIds = [],
+            };
+
+            var published = store.PublishDeck(owner.Id, deck, null);
+            Assert.NotNull(published);
+            Assert.Equal(owner.Id, published!.OwnerId);
+            Assert.Null(store.PublishDeck(reader.Id, new L12PresetDeckDefinition
+            {
+                Name = "越权修改", MasterId = deck.MasterId, CardIds = [.. deck.CardIds],
+                MoraleIds = [.. deck.MoraleIds], SpecialIds = [.. deck.SpecialIds],
+            }, published.Id));
+            Assert.False(store.DeletePublishedDeck(reader.Id, published.Id));
+            Assert.True(store.TogglePublishedDeckLike(reader.Id, published.Id)!.Liked);
+            Assert.Equal(1, store.RecordPublishedDeckCopy(published.Id, reader.Id)!.Copies);
+
+            var updated = store.PublishDeck(owner.Id, new L12PresetDeckDefinition
+            {
+                Name = "公开牌库已更新", MasterId = "M2", CardIds = ["C2"], MoraleIds = ["R2"], SpecialIds = [],
+            }, published.Id);
+            Assert.Equal("公开牌库已更新", updated!.Deck.Name);
+
+            var reloaded = new L12PlatformStore(path);
+            var persisted = Assert.Single(reloaded.PublishedDecks(reader.Id));
+            Assert.Equal(1, persisted.Likes);
+            Assert.Equal(1, persisted.Copies);
+            Assert.True(persisted.Liked);
+            Assert.True(reloaded.DeletePublishedDeck(owner.Id, persisted.Id));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void AdminWorkflowPersistsDraftPublishRoleAndEffectReviewAudit()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");

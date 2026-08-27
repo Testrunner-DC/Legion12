@@ -9,6 +9,8 @@ public sealed record L12FriendView(string AccountId, string Username, string Sta
     DateTimeOffset CreatedAt);
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
+public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
+    int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12BugReportView(string Id, string? ReporterId, string ReporterName, string Title, string Description,
     string Page, string? RoomCode, string? MatchId, string Version, string Status, string Priority, string? Assignee,
     string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
@@ -121,6 +123,21 @@ public sealed class L12PlatformStore
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    private sealed class PublishedDeckRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string OwnerId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string MasterId { get; set; } = string.Empty;
+        public List<string> CardIds { get; set; } = [];
+        public List<string> MoraleIds { get; set; } = [];
+        public List<string> SpecialIds { get; set; } = [];
+        public List<string> LikedByAccountIds { get; set; } = [];
+        public int Copies { get; set; }
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     private sealed class FriendRow
     {
         public string RequesterId { get; set; } = string.Empty;
@@ -135,6 +152,7 @@ public sealed class L12PlatformStore
         public List<AccountRow> Accounts { get; set; } = [];
         public List<SessionRow> Sessions { get; set; } = [];
         public List<DeckRow> Decks { get; set; } = [];
+        public List<PublishedDeckRow> PublishedDecks { get; set; } = [];
         public List<FriendRow> Friends { get; set; } = [];
         public List<BugRow> BugReports { get; set; } = [];
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -360,6 +378,72 @@ public sealed class L12PlatformStore
             AddAdminAudit(actor, "account", "role", row.Username, previous, role, null);
             Save();
             return true;
+        }
+    }
+
+    public IReadOnlyList<L12PublishedDeckView> PublishedDecks(string? viewerAccountId)
+    {
+        lock (_gate) return _data.PublishedDecks
+            .OrderByDescending(row => row.UpdatedAt)
+            .Select(row => ToView(row, viewerAccountId)).ToArray();
+    }
+
+    public L12PublishedDeckView? PublishDeck(string accountId, L12PresetDeckDefinition deck, string? publicationId)
+    {
+        lock (_gate)
+        {
+            var row = string.IsNullOrWhiteSpace(publicationId) ? null
+                : _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId && item.OwnerId == accountId);
+            if (!string.IsNullOrWhiteSpace(publicationId) && row is null) return null;
+            row ??= _data.PublishedDecks.FirstOrDefault(item => item.OwnerId == accountId
+                && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
+            if (row is null)
+            {
+                row = new PublishedDeckRow { OwnerId = accountId, CreatedAt = DateTimeOffset.UtcNow };
+                _data.PublishedDecks.Add(row);
+            }
+            row.Name = deck.Name;
+            row.MasterId = deck.MasterId;
+            row.CardIds = deck.CardIds.ToList();
+            row.MoraleIds = deck.MoraleIds.ToList();
+            row.SpecialIds = deck.SpecialIds.ToList();
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            Save();
+            return ToView(row, accountId);
+        }
+    }
+
+    public bool DeletePublishedDeck(string accountId, string publicationId)
+    {
+        lock (_gate)
+        {
+            var removed = _data.PublishedDecks.RemoveAll(row => row.Id == publicationId && row.OwnerId == accountId) > 0;
+            if (removed) Save();
+            return removed;
+        }
+    }
+
+    public L12PublishedDeckView? TogglePublishedDeckLike(string accountId, string publicationId)
+    {
+        lock (_gate)
+        {
+            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            if (row is null) return null;
+            if (!row.LikedByAccountIds.Remove(accountId)) row.LikedByAccountIds.Add(accountId);
+            Save();
+            return ToView(row, accountId);
+        }
+    }
+
+    public L12PublishedDeckView? RecordPublishedDeckCopy(string publicationId, string? viewerAccountId)
+    {
+        lock (_gate)
+        {
+            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            if (row is null) return null;
+            row.Copies++;
+            Save();
+            return ToView(row, viewerAccountId);
         }
     }
 
@@ -679,6 +763,14 @@ public sealed class L12PlatformStore
             || (row.RequesterId == secondAccountId && row.AddresseeId == firstAccountId));
     private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
         row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
+    private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
+    {
+        var author = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId)?.Username ?? "已注销玩家";
+        var deck = new L12AccountDeckView(row.Name, row.MasterId, row.CardIds.ToArray(), row.MoraleIds.ToArray(),
+            row.SpecialIds.ToArray(), row.UpdatedAt);
+        return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.LikedByAccountIds.Count, row.Copies,
+            viewerAccountId is not null && row.LikedByAccountIds.Contains(viewerAccountId), row.CreatedAt, row.UpdatedAt);
+    }
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
         row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
         row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt);
@@ -746,6 +838,8 @@ public sealed class L12PlatformStore
             data.Accounts ??= [];
             data.Sessions ??= [];
             data.Decks ??= [];
+            data.PublishedDecks ??= [];
+            foreach (var deck in data.PublishedDecks) deck.LikedByAccountIds ??= [];
             data.Friends ??= [];
             data.BugReports ??= [];
             foreach (var bug in data.BugReports) bug.History ??= [];

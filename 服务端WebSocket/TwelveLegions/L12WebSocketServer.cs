@@ -154,6 +154,40 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             return _platform.DeleteDeck(account.Id, name) ? Results.Ok() : Results.NotFound();
         });
+        _app.MapGet("/api/public-decks", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return Results.Ok(_platform.PublishedDecks(account?.Id));
+        });
+        _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (body.Deck is null) return Results.BadRequest(new { message = "牌库数据为空" });
+            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error))
+                return Results.BadRequest(new { message = error });
+            var published = _platform.PublishDeck(account.Id, deck, body.PublicationId);
+            return published is null ? Results.NotFound() : Results.Ok(published);
+        });
+        _app.MapDelete("/api/public-decks/{id}", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            return _platform.DeletePublishedDeck(account.Id, id) ? Results.Ok() : Results.NotFound();
+        });
+        _app.MapPost("/api/public-decks/{id}/like", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var published = _platform.TogglePublishedDeckLike(account.Id, id);
+            return published is null ? Results.NotFound() : Results.Ok(published);
+        });
+        _app.MapPost("/api/public-decks/{id}/copy", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            var published = _platform.RecordPublishedDeckCopy(id, account?.Id);
+            return published is null ? Results.NotFound() : Results.Ok(published);
+        });
         _app.MapPost("/api/bugs", (HttpRequest request, BugRequest body) =>
         {
             if (string.IsNullOrWhiteSpace(body.Description)) return Results.BadRequest(new { message = "请填写问题描述" });
@@ -447,3 +481,4 @@ public sealed record ContentRequest(string? Value);
 public sealed record EffectReviewRequest(string? AbilityId, string? Status, string? Note);
 public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode, string? MatchId, string? Version);
 public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes, string? Comment);
+public sealed record PublishedDeckRequest(string? PublicationId, L12CustomDeckSubmission? Deck);

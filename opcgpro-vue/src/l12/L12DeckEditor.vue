@@ -6,9 +6,10 @@ import { masterProfileUrl } from './specialAssets'
 import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
-  MAIN_DECK_TYPES, buildMoraleDeck, deleteDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
+  MAIN_DECK_TYPES, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
+import { platformState, publicDeckApi } from './platform'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,6 +35,7 @@ const pendingDeleteName = ref('')
 const deckImageUrl = ref('')
 const deckImageBlob = ref<Blob | null>(null)
 const generatingDeckImage = ref(false)
+const publicationId = ref(typeof route.query.published === 'string' ? route.query.published : '')
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -48,7 +50,7 @@ onMounted(async () => {
     catalog.value = await loadDeckCatalog()
     savedDecks.value = await ensureOfficialPrebuiltDecks()
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
-    if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested])
+    if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
     else selected.value = mainCards.value[0] ?? null
   } catch (error) {
     notice.value = error instanceof Error ? error.message : '牌库编辑器加载失败'
@@ -64,8 +66,10 @@ const automaticExtraCards = computed(() => selectedMaster.value?.id === 'S01-02M
   ? [byId.value.get('S01-02M2')].filter(Boolean) as DeckCard[]
   : [])
 const mainCards = computed(() => catalog.value.filter(card => MAIN_DECK_TYPES.has(card.cardType)))
-const totalCards = computed(() => Object.entries(counts.value).reduce((sum, [id, value]) => sum + (id === 'S01-0212' ? 0 : value), 0))
-const tombGuardCount = computed(() => counts.value['S01-0212'] || 0)
+const countSummary = computed(() => deckCountSummary(
+  Object.entries(counts.value).flatMap(([id, count]) => Array(count).fill(id)), byId.value))
+const totalCards = computed(() => countSummary.value.counted)
+const uncountedCards = computed(() => countSummary.value.uncounted)
 const moraleIds = computed(() => buildMoraleDeck(selectedMaster.value, catalog.value))
 const trialCapacity = computed(() => trialCapacityForMaster(selectedMaster.value))
 const availableTrials = computed(() => catalog.value.filter(card => card.cardType === 'trial'
@@ -147,7 +151,7 @@ function add(card: DeckCard) {
   const count = counts.value[card.id] || 0
   const limit = card.deckLimit ?? 3
   if (count >= limit) { notice.value = `同编号卡牌最多 ${limit} 张`; return }
-  if (card.id !== 'S01-0212' && totalCards.value >= 50) { notice.value = '主牌库最多 50 张'; return }
+  if (!doesNotCountTowardMainDeck(card) && totalCards.value >= 50) { notice.value = '主牌库最多 50 张'; return }
   counts.value = { ...counts.value, [card.id]: count + 1 }
   selected.value = card
   notice.value = ''
@@ -161,6 +165,7 @@ function remove(id: string) {
 }
 
 function newDeck() {
+  publicationId.value = ''
   activeDeckName.value = null
   deckName.value = '新牌库'
   masterId.value = ''
@@ -199,13 +204,31 @@ function onSaveAs() {
   }
   const deck = { ...currentDeck(), name }
   saveDeck(deck)
+  publicationId.value = ''
   activeDeckName.value = name
   deckName.value = name
   savedDecks.value = loadSavedDecks()
   notice.value = `已另存为〈${name}〉`
 }
 
-function loadDeck(deck: SavedL12Deck) {
+async function publishCurrentDeck() {
+  if (!platformState.account) { notice.value = '请先登录账号，再公开牌库'; return }
+  if (validation.value) { notice.value = validation.value; return }
+  try {
+    const deck = currentDeck()
+    saveDeck(deck)
+    const wasPublished = !!publicationId.value
+    const result = await publicDeckApi.publish(deck, publicationId.value || undefined)
+    publicationId.value = result.id
+    await router.replace({ query: { ...route.query, deck: deck.name, published: result.id } })
+    notice.value = wasPublished ? `已更新公开牌库〈${deck.name}〉` : `已公开〈${deck.name}〉，后续可从此处更新公开版本`
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : '公开牌库失败'
+  }
+}
+
+function loadDeck(deck: SavedL12Deck, preservePublication = false) {
+  if (!preservePublication) publicationId.value = ''
   activeDeckName.value = deck.name
   deckName.value = deck.name
   masterId.value = deck.masterId
@@ -271,12 +294,13 @@ onBeforeUnmount(closeDeckImage)
       <button class="back-button" @click="router.push(returnTo)">← 返回上一级</button>
       <div><small>GRANDUMI FRAMEWORK · LEGION12 STYLE</small><h1>牌库编辑器</h1></div>
       <label>牌库名称<input v-model="deckName" maxlength="24"/></label>
-      <div class="deck-total" :class="{ valid: !validation }"><b>{{ totalCards }}</b><span>/ 40–50<span v-if="tombGuardCount"> ＋ 陵墓守卫 {{ tombGuardCount }}</span></span></div>
+      <div class="deck-total" :class="{ valid: !validation }"><b>{{ countSummary.label }}</b><span>/ 40–50<span v-if="uncountedCards">（括号内不计构筑）</span></span></div>
       <div class="deck-file-actions">
         <button @click="newDeck">新建牌库</button>
         <button class="primary" :disabled="!!validation" @click="onSave">保存牌库</button>
         <button :disabled="!!validation" @click="onSaveAs">另存为牌库</button>
         <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
+        <button :disabled="!!validation" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
         <button class="delete-deck" :disabled="!activeDeckName" @click="requestDelete()">删除牌库</button>
       </div>
     </header>
@@ -298,7 +322,7 @@ onBeforeUnmount(closeDeckImage)
         <button class="filter-reset" @click="resetFilters">重置筛选</button>
 
         <p class="kicker preset-kicker">SAVED DECKS</p>
-        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><img :src="masterProfileUrl(deck.masterId, byId.get(deck.masterId)?.imageUrl)" :alt="byId.get(deck.masterId)?.nameZh || ''"/><span class="saved-deck-copy"><b>{{ deck.name }}</b><small>{{ deck.cardIds.length }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</small></span></button><button class="delete" @click="requestDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
+        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><img :src="masterProfileUrl(deck.masterId, byId.get(deck.masterId)?.imageUrl)" :alt="byId.get(deck.masterId)?.nameZh || ''"/><span class="saved-deck-copy"><b>{{ deck.name }}</b><small>{{ deckCountSummary(deck.cardIds, byId).label }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</small></span></button><button class="delete" @click="requestDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
       </aside>
 
       <section class="deck-catalog grand-panel">
@@ -325,7 +349,7 @@ onBeforeUnmount(closeDeckImage)
             <div class="pool-count-controls">
               <button :disabled="!(counts[card.id] || 0)" aria-label="减少一张" @click.stop="remove(card.id)">−</button>
               <strong>{{ counts[card.id] || 0 }}</strong>
-              <button :disabled="!masterId || (counts[card.id] || 0) >= (card.deckLimit ?? 3) || (card.id !== 'S01-0212' && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
+              <button :disabled="!masterId || (counts[card.id] || 0) >= (card.deckLimit ?? 3) || (!doesNotCountTowardMainDeck(card) && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
             </div>
           </article>
         </div>
@@ -344,12 +368,12 @@ onBeforeUnmount(closeDeckImage)
       </section>
 
       <aside class="deck-list grand-panel">
-        <header><div><p class="kicker">DECK LIST</p><h2>{{ selectedMaster?.nameZh || '未选择主宰' }}</h2></div><b>{{ totalCards }}</b></header>
+        <header><div><p class="kicker">DECK LIST</p><h2>{{ selectedMaster?.nameZh || '未选择主宰' }}</h2></div><b>{{ countSummary.label }}</b></header>
         <div class="cost-curve"><i v-for="(value,index) in curve" :key="index"><span :style="{height:`${Math.max(4, value / maxCurve * 56)}px`}"></span><b>{{ index === 8 ? '8+' : index }}</b><small>{{ value }}</small></i></div>
         <div class="deck-entries"><article v-for="entry in entries" :key="entry.card.id" @click="selected = entry.card">
           <img v-if="entry.card.imageUrl" class="deck-entry-banner" :src="entry.card.imageUrl" :alt="entry.card.nameZh" loading="lazy"/>
           <span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong>
-          <button aria-label="增加一张" :disabled="entry.count >= (entry.card.deckLimit ?? 3) || (entry.card.id !== 'S01-0212' && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
+          <button aria-label="增加一张" :disabled="entry.count >= (entry.card.deckLimit ?? 3) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
           <button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button>
         </article><p v-if="!entries.length">从中间卡池加入卡牌，双击卡面也可快速加入。</p></div>
         <section v-if="trialCapacity" class="selected-trials">
@@ -408,7 +432,7 @@ onBeforeUnmount(closeDeckImage)
 .saved-list article{border-color:#424b4d;background:#111619}.saved-list article>button:first-child{background:#111619;color:#f1eee5}.saved-list article>button:first-child:hover,.saved-list article>button:first-child:focus-visible{border-color:#70d7df;background:#18383b;color:#fff}.saved-list b{color:#f1eee5}.saved-list span{color:#aab4b0}.saved-list article.active{border-color:#86e8ee;background:#123e42;box-shadow:inset 3px 0 #86e8ee}.saved-list article.active>button:first-child{background:#123e42;color:#fff}.saved-list article.active span{color:#d5f4f1}.saved-list .delete{background:#211418;color:#f29ba4}.saved-list .delete:hover{background:#6b222b;color:#fff}.saved-list p{color:#929b97}
 .deck-entries article{position:relative;isolation:isolate;gap:7px;margin-bottom:5px;padding:6px;overflow:hidden;border:1px solid #354041;border-left:2px solid #3da4ad}.deck-entry-banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 28%;opacity:.56;filter:saturate(.9) contrast(1.12)}.deck-entries article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,8,9,.91),rgba(9,13,14,.48) 48%,rgba(5,8,9,.88))}.deck-entries article>span{width:27px;height:27px;flex:none}.deck-entries article small{color:#d0d5d1}.deck-entries strong{color:#f0d98e}.deck-entries button{width:27px;height:27px;flex:none;border:1px solid #5c6461;background:#101516;color:#eee;font-size:15px;font-weight:900}.deck-entries button:hover:not(:disabled){border-color:#70d7df;background:#1b565b}
 @media(max-width:1180px){.deck-file-actions button{padding:7px 8px;font-size:10px}}
-@media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(5,1fr)}}
+@media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(3,1fr)}}
 .trial-builder{margin:12px 0;padding:10px;border:1px solid #42605a;background:#0a1212}.trial-builder>header,.selected-trials>header{display:flex;align-items:center;justify-content:space-between}.trial-builder>header span,.selected-trials>header span{color:#78d2be;font-size:10px;font-weight:900}.trial-builder>p{margin:5px 0 9px;color:#84918c;font-size:9px;line-height:1.5}.trial-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.trial-options button{min-width:0;padding:6px;border:1px solid #384744;background:#101817;color:#e9e5dc;text-align:left}.trial-options button.selected{border-color:#6cd5b4;background:#17332c}.trial-options b,.trial-options small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.trial-options small{margin-top:3px;color:#85908c;font-size:7px}.trial-thumb{position:relative;display:block;width:100%;aspect-ratio:5/7;margin-bottom:5px;overflow:hidden;background:#080b0b}.trial-thumb img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg)}
 .selected-trials{flex:none;display:grid;gap:4px;padding:8px 0;border-top:1px solid #3d4241}.selected-trials button{display:grid;grid-template-columns:42px 1fr 24px;align-items:center;gap:7px;min-height:34px;border:1px solid #3e514d;background:#101817;color:#eee;text-align:left}.selected-trials img{width:42px;height:30px;object-fit:cover}.selected-trials span{font-size:9px;font-weight:900}.selected-trials i{display:grid;height:100%;place-items:center;border-left:1px solid #3e514d;color:#db747c;font-style:normal}
 .trial-thumb.upright img{width:100%;height:100%;object-fit:cover;transform:translate(-50%,-50%)}.automatic-extra-builder{border-color:#8a6a3d}.automatic-extra-list i{width:auto!important;padding:0 5px!important;color:#cdbb89!important;font-size:7px!important}

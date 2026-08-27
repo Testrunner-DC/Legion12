@@ -2767,6 +2767,11 @@ public sealed class S2FactionRegressionTests
         Assert.Equal("s2-limu-reveal", reveal.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: reveal.PromptId, Choice: "yes")).Accepted);
 
+        var revealEvent = Assert.Single(game.State.Events,
+            entry => entry.Type == "reveal" && entry.Text.StartsWith("李牧登场时", StringComparison.Ordinal));
+        Assert.Equal("李牧登场时，展示牌库顶的1张牌。", revealEvent.Text);
+        Assert.Collection(revealEvent.Cards, card => Assert.Equal(runePower.CardId, card.CardId));
+
         var tactic = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-limu-tactic", tactic.Data["action"]);
         Assert.Equal(runePower.InstanceId, tactic.Data["previewCardId"]);

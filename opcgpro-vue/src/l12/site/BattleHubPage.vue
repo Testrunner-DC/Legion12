@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
-import { ensureOfficialPrebuiltDecks, loadSavedDecks } from '@/l12/decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from '@/l12/decks'
 import { masterProfileUrl } from '@/l12/specialAssets'
 import { platformState } from '@/l12/platform'
 
@@ -11,6 +11,8 @@ const tab = ref<'match' | 'friendly' | 'sandbox'>('friendly')
 const roomCode = ref('')
 const roomOptions = ref<RoomOptions>({ spectating: 'public', handVisibility: 'request', disasterMode: 'all' })
 const customDecks = ref(loadSavedDecks())
+const catalog = ref<DeckCard[]>([])
+const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const roomCodeCopied = ref(false)
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 function visibleDeckLabel(index: number) {
@@ -27,7 +29,7 @@ const optionLabels = {
 } as const
 
 onMounted(async () => {
-  customDecks.value = await ensureOfficialPrebuiltDecks()
+  ;[customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
   if (platformState.account && platformState.token && l12State.status === 'offline') {
     try { await connect() } catch { /* 页面保留离线提示，创建/加入时仍可重试。 */ }
   }
@@ -71,12 +73,12 @@ async function copyRoomCode() {
         <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
       </div>
       <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span></div>
-      <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><img :src="masterProfileUrl(deck.masterId)" alt=""/><span><b>{{ deck.name }}</b><small>{{ deck.cardIds.length }} 张 · {{ deck.masterId }}</small></span></button></div>
+      <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><img :src="masterProfileUrl(deck.masterId)" alt=""/><span><b>{{ deck.name }}</b><small>{{ deckCountSummary(deck.cardIds, byId).label }} 张 · {{ deck.masterId }}</small></span></button></div>
       <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/deck-editor?returnTo=%2Fbattle%2Flobby">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
     </section>
 
     <template v-else>
-      <section class="current-deck panel"><div class="deck-thumb">库</div><div><small>当前牌库</small><b>{{ Object.values(customDecks)[0]?.name || '尚未选择' }}</b><span>{{ Object.values(customDecks)[0] ? `${Object.values(customDecks)[0].cardIds.length} 张主牌` : '前往牌库页面建立或选择牌库' }}</span></div><router-link to="/decks?from=%2Fbattle%2Flobby">更换 →</router-link></section>
+      <section class="current-deck panel"><div class="deck-thumb">库</div><div><small>当前牌库</small><b>{{ Object.values(customDecks)[0]?.name || '尚未选择' }}</b><span>{{ Object.values(customDecks)[0] ? `${deckCountSummary(Object.values(customDecks)[0].cardIds, byId).label} 张主牌` : '前往牌库页面建立或选择牌库' }}</span></div><router-link to="/decks?from=%2Fbattle%2Flobby">更换 →</router-link></section>
       <div class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'sandbox' }" @click="tab = 'sandbox'">单人</button></div>
 
       <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位与休闲匹配的数据服务尚未接入。页面结构已预留，不会用测试数据伪造排行榜或匹配结果。</p><div class="match-options"><button disabled>排位匹配</button><button disabled>休闲匹配</button></div><button class="primary" disabled>匹配服务待接入</button></section>

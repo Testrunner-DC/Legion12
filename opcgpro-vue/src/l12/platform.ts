@@ -1,5 +1,6 @@
 import { computed, reactive } from 'vue'
 import { disconnect, l12State } from './net'
+import type { SavedL12Deck } from './decks'
 
 export interface PlatformAccount { id: string; username: string; role: string; createdAt: string; publicHistory: boolean }
 export interface PlatformFriend {
@@ -7,6 +8,10 @@ export interface PlatformFriend {
   direction: 'none' | 'incoming' | 'outgoing'; createdAt: string; online?: boolean
 }
 export interface PlatformPresence { accountId: string; username: string; online: boolean }
+export interface PublishedDeck {
+  id: string; ownerId: string; author: string; deck: SavedL12Deck; likes: number; copies: number; liked: boolean
+  createdAt: string; updatedAt: string; official?: boolean
+}
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
   version: string; status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
@@ -145,4 +150,14 @@ export const friendApi = {
     method: 'POST', body: JSON.stringify({ accept }),
   }),
   remove: (accountId: string) => platformRequest<void>(`/api/friends/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
+}
+
+export const publicDeckApi = {
+  list: () => platformRequest<PublishedDeck[]>('/api/public-decks'),
+  publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
+    method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
+  }),
+  delete: (id: string) => platformRequest<void>(`/api/public-decks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  toggleLike: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/like`, { method: 'POST' }),
+  recordCopy: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/copy`, { method: 'POST' }),
 }

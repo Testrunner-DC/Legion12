@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, selectCustomDeck, selectDeck, setReady } from './net'
-import { ensureOfficialPrebuiltDecks, loadSavedDecks } from './decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from './decks'
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
 import { platformState } from './platform'
@@ -10,10 +10,12 @@ import { platformState } from './platform'
 const roomCode = ref('')
 const router = useRouter()
 const customDecks = ref(loadSavedDecks())
+const catalog = ref<DeckCard[]>([])
+const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const view = ref<'home' | 'room' | 'cards' | 'replay'>('home')
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 
-onMounted(async () => { customDecks.value = await ensureOfficialPrebuiltDecks() })
+onMounted(async () => { [customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()]) })
 
 async function ensureConnected() {
   if (!platformState.account || !platformState.token) { l12State.notice = '请先登录账号'; return false }
@@ -68,7 +70,7 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
               <button v-for="deck in customDecks" :key="`custom-${deck.name}`"
                 :class="{ selected: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready"
                 @click="selectCustomDeck(deck)">
-                <b>{{ deck.name }}</b><span>自定义 · {{ deck.cardIds.length }} 张</span>
+                <b>{{ deck.name }}</b><span>自定义 · {{ deckCountSummary(deck.cardIds, byId).label }} 张</span>
               </button>
             </div>
             <button class="deck-editor-link" :disabled="me?.ready" @click="router.push('/deck-editor')">＋ 编辑我的牌库</button>

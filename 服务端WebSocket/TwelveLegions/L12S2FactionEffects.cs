@@ -2516,7 +2516,7 @@ public sealed partial class L12GameEngine
                     && candidate.CardType == "tactic");
                 if (chosen[0] != "skip" && shown is not null && source is not null)
                 {
-                    AddEvent("reveal", item.Controller, $"{source.Name}展示手牌中的〈{shown.Name}〉", source, shown);
+                    AddEvent("reveal", item.Controller, $"{source.Name}展示手牌中的〈{shown.Name}〉", shown);
                     AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "奥德修斯");
                 }
                 FinishStackItem(item);
@@ -2888,7 +2888,7 @@ public sealed partial class L12GameEngine
         }
         var top = player.Library[0];
         item.Data["s2-limu-top"] = top.InstanceId;
-        AddEvent("reveal", item.Controller, $"李牧展示牌库顶部的〈{top.Name}〉", top);
+        AddEvent("reveal", item.Controller, "李牧登场时，展示牌库顶的1张牌。", top);
         if (top.CardType != "tactic" || IsCounterTactic(top.CardId) || top.CurrentCost > 4)
         {
             MoveS2LiMuRevealedToBottom(item);
@@ -3241,7 +3241,7 @@ public sealed partial class L12GameEngine
         var choices = player.Library.Where(card => card.Faction == "olympus").Select(card => card.InstanceId).ToArray();
         if (choices.Length == 0)
         {
-            AddEvent("reveal", item.Controller, "〈荣耀之路〉查看牌库但未找到【奥林匹斯】卡牌", FindSource(item) is { } source ? [source] : []);
+            AddEvent("reveal", item.Controller, "〈荣耀之路〉查看牌库但未找到【奥林匹斯】卡牌");
             Shuffle(player.Library);
             FinishStackItem(item);
             return;

@@ -1,4 +1,4 @@
-import type { DeckCard, SavedL12Deck } from '@/l12/decks'
+import { deckCountSummary, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { compareDeckCardIds } from '@/l12/deckOrdering'
 
 interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
@@ -59,7 +59,7 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   context.fillStyle = '#55c4cb'; context.font = '900 18px Microsoft YaHei'; context.fillText('LEGION 12 · DECK ARCHIVE', 410, 60)
   context.fillStyle = '#f4f0e6'; context.font = '900 42px Microsoft YaHei'; context.fillText(deck.name, 410, 112)
   const master = byId.get(deck.masterId)
-  context.fillStyle = '#a7b0b4'; context.font = '700 18px Microsoft YaHei'; context.fillText(`主宰 ${master?.nameZh || deck.masterId}  ·  主牌 ${deck.cardIds.length}  ·  士气 ${deck.moraleIds.length}`, 410, 145)
+  context.fillStyle = '#a7b0b4'; context.font = '700 18px Microsoft YaHei'; context.fillText(`主宰 ${master?.nameZh || deck.masterId}  ·  主牌 ${deckCountSummary(deck.cardIds, byId).label}  ·  士气 ${deck.moraleIds.length}`, 410, 145)
   context.fillStyle = '#e1bf6d'; context.fillRect(410, 168, 1464, 3)
 
   const [masterBitmap, ...bitmaps] = await Promise.all([loadImage(master?.imageUrl), ...groups.map(([id]) => loadImage(byId.get(id)?.imageUrl))])

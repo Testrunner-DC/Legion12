@@ -291,15 +291,15 @@ function showNextDiceReveal() {
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.type === 'effect-trigger' || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示')))
+      && (event.type === 'disaster-reveal' || event.playerIndex !== props.game.you)
+      && (event.type === 'effect-trigger' || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示'))
+      && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
-    const names = event.cards?.map(card => `〈${card.name}〉`).join('、') ?? ''
-    const owner = event.playerIndex === props.game.you ? '我方' : '对手'
     publicRevealQueue.push({
       sequence: event.sequence,
       cards: event.cards ?? [],
-      text: event.type === 'effect-trigger' || event.type === 'disaster-reveal' ? event.text : `${owner}展示卡牌${names}`,
+      text: event.text,
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
