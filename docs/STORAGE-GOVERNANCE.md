@@ -15,7 +15,6 @@
 | `temp` | 临时文件 | 24小时 |
 | `artifacts` | 测试、网络计量、部署制品 | 测试2份、部署2份 |
 | `archives` | 旧脏工作树的必要恢复资料 | 保存补丁、清单、哈希，不保存完整依赖/构建物 |
-| `codex-session` | Codex 会话数据的 D 盘落点 | 关闭 Codex 后迁移并建立联接 |
 
 ## 容量门禁
 
@@ -38,7 +37,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\clean-l12-generated.ps1 -Appl
 
 ## Codex 与 VPN
 
-本项目的长会话 JSONL 曾达到十余 GiB；完整历史派发给多个子任务，会重复上传大量上下文。项目规则因此禁止 `fork_turns="all"`，只允许无历史或最小窗口。关闭 Codex 后，将全局 `sessions` 目录迁至 `D:\GPT\Legion12\codex-session\sessions` 并在原位置建立目录联接，可释放 C 盘空间且不改变 Codex 路径。
+本项目的长会话 JSONL 曾达到十余 GiB；完整历史派发给多个子任务，会重复上传大量上下文。项目规则因此禁止 `fork_turns="all"`，只允许无历史或最小窗口。
+
+Codex 会话属于全局应用数据，其中同时包含 Legion12、HeroRush 和其他任务，不能归入任何单一项目目录。关闭 Codex 后，将全局 `sessions` 目录统一迁至中立位置 `D:\GPT\CodexData\sessions`，并在原位置建立目录联接。这样既释放 C 盘空间、保持 Codex 原路径可用，也不会把其他项目数据混入 `D:\GPT\Legion12`。
 
 本次迁移已把完全闲置的日期目录搬到 D 盘；当前正在写入的主任务必须等 Codex 关闭后再收口。关闭应用后从普通 PowerShell 运行：
 
@@ -46,7 +47,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\clean-l12-generated.ps1 -Appl
 powershell -ExecutionPolicy Bypass -File D:\GPT\Legion12\app\ops\windows\finalize-l12-codex-session-move.ps1
 ```
 
-脚本验证冲突文件哈希后才删除 C 盘副本，并最终把整个 `sessions` 路径替换为目录联接。
+Codex 仍在运行时可加 `-PlanOnly` 只读预览。正式执行会先拒绝正在运行的 Codex，保留 HeroRush 等已有外部目录联接，验证冲突文件哈希后才删除重复副本，兼容迁移早期误放在 `D:\GPT\Legion12\codex-session` 的会话，最后把整个全局 `sessions` 路径替换为指向中立目录的联接。目录联接创建完成后不需要持续管理员权限。
 
 网络计量：
 

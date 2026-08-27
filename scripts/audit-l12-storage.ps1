@@ -48,7 +48,7 @@ $rows = foreach ($relative in $budgets.Keys) {
     }
 }
 
-$required = @('app', 'source-library', 'references', 'tools', 'cache', 'temp', 'artifacts', 'archives', 'codex-session')
+$required = @('app', 'source-library', 'references', 'tools', 'cache', 'temp', 'artifacts', 'archives')
 $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $resolvedRoot $_)) })
 $workspace = Join-Path $resolvedRoot 'workspace'
 $workspaceItem = Get-Item -LiteralPath $workspace -Force -ErrorAction SilentlyContinue
