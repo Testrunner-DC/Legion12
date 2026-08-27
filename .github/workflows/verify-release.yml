@@ -1,8 +1,9 @@
-name: 验证并生成发布包
+name: 验证与按需生成发布包
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -47,6 +48,7 @@ jobs:
           npm run build
 
       - name: 生成 Linux 运行包
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -56,12 +58,19 @@ jobs:
           mkdir -p "${root}/opcgpro-vue/dist" "${root}/publish" "${root}/scripts"
           rsync -a --exclude cards/ opcgpro-vue/dist/ "${root}/opcgpro-vue/dist/"
           dotnet publish ./服务端WebSocket/GrandUMIServer.csproj --configuration Release --runtime linux-x64 --self-contained false --output "${root}/publish"
-          find "${root}/publish/runtimes" -type f -name '*.a' -delete
+          if [[ -d "${root}/publish/runtimes" ]]; then
+            find "${root}/publish/runtimes" -type f -name '*.a' -delete
+          fi
           cp scripts/ws-smoke.mjs "${root}/scripts/ws-smoke.mjs"
           printf '%s' "$commit" > "${root}/.deployment-commit"
           archive="l12-release-${commit}.tar.gz"
           tar -czf "$archive" -C "$root" .
-          test "$(stat -c%s "$archive")" -le 157286400
+          archive_bytes="$(stat -c%s "$archive")"
+          echo "release archive bytes: ${archive_bytes}"
+          if (( archive_bytes > 157286400 )); then
+            echo "::error::release archive is larger than 150 MiB (${archive_bytes} bytes)"
+            exit 1
+          fi
           release_sha="$(sha256sum "$archive" | awk '{print $1}')"
           cat > "l12-release-${commit}.json" <<EOF
           {
@@ -77,6 +86,7 @@ jobs:
           EOF
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         with:
           name: legion12-release-${{ github.sha }}
           path: |

@@ -68,6 +68,8 @@ try {
     $platformChanged = Test-AnyPath @('^service-tests-never-match$')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = Test-AnyPath @('^TwelveLegions\.Tests/')
+    $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/verify-l12-github-workflow\.ps1$')
+    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
 
     # Add non-ASCII service paths without embedding them in this Windows PowerShell 5 compatible source file.
     foreach ($path in $script:paths) {
@@ -88,6 +90,20 @@ try {
         Invoke-Checked "Codex TOML and routing validation" "powershell" @(
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             (Join-Path $repoRoot "scripts\verify-l12-codex-routing.ps1")
+        )
+    }
+
+    if ($workflowChanged) {
+        Invoke-Checked "GitHub verification/release workflow contract" "powershell" @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            (Join-Path $repoRoot "scripts\verify-l12-github-workflow.ps1")
+        )
+    }
+
+    if ($storageChanged) {
+        Invoke-Checked "D-drive storage budget and layout" "powershell" @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1"), "-Strict"
         )
     }
 

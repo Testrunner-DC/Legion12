@@ -40,6 +40,8 @@ These rules apply before any implementation plan or task action.
 5. The primary agent owns the implementation plan, final diff review, verification evidence, registry/task-ledger updates, and user handoff. Execution-agent output is never accepted without primary-agent verification.
 6. If the runtime cannot dispatch a configured project-agent name, create one execution agent with the exact model and reasoning effort declared in `.codex/agents/` and pass it the corresponding developer instructions. Do not substitute a lower tier silently.
 7. Multi-agent parallelism is reserved for independent read-only audits or disjoint files explicitly approved by the primary agent. Never let multiple agents edit the same rule, protocol, registry, generated data, or configuration file concurrently.
+8. This repository has unusually long task history. Never fork the complete conversation into a child agent. Use `fork_turns="none"` or the smallest bounded recent-turn window and pass a compact written brief. A child must not receive raw prior tool output, card images, test logs, or repeated user history unless the subtask requires that exact evidence.
+9. Treat `D:\GPT\Legion12\app` as the canonical physical checkout after the storage migration. `D:\GPT\Legion12\workspace` and older paths are compatibility junctions only. Generated output, dependency caches, archives, and session logs must stay under the governed D-drive directories documented in `docs/STORAGE-GOVERNANCE.md`.
 
 ## Change batches and validation tiers
 

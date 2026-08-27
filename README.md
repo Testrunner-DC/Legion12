@@ -153,6 +153,7 @@ Legion12/
 - [Bug 修复记录](docs/BUGFIX-REGISTRY.md)
 - [赛事中心与学习游玩规划](docs/l12/TOURNAMENT-AND-LEARN-TO-PLAY-PLAN.md)
 - [测试记录](docs/TEST-REPORT.md)
+- [本地存储治理](docs/STORAGE-GOVERNANCE.md)
 
 ## 开发约束
 
