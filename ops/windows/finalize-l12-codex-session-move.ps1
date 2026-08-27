@@ -93,21 +93,36 @@ if ($sourceItem -and $sourceItem.LinkType -eq 'Junction') {
     throw "Source root is already linked elsewhere: $($sourceItem.Target)"
 }
 
+$legacyItem = Get-Item -LiteralPath $legacyTarget -Force -ErrorAction SilentlyContinue
+$legacyAlreadyRedirected = $legacyItem -and
+    $legacyItem.LinkType -eq 'Junction' -and
+    [string]$legacyItem.Target -eq $target
+if ($legacyItem -and $legacyItem.LinkType -eq 'Junction' -and -not $legacyAlreadyRedirected) {
+    throw "Legacy target is linked to an unexpected location: $($legacyItem.Target)"
+}
+
 $sourceEntries = if (Test-Path -LiteralPath $source) { @(Get-TreeEntries -Root $source) } else { @() }
-$legacyFiles = if (Test-Path -LiteralPath $legacyTarget) {
-    @(Get-TreeEntries -Root $legacyTarget | Where-Object Kind -eq 'File')
-} else { @() }
+$legacyFiles = @(if ((Test-Path -LiteralPath $legacyTarget) -and -not $legacyAlreadyRedirected) {
+    Get-TreeEntries -Root $legacyTarget | Where-Object Kind -eq 'File'
+})
 $sourceFiles = @($sourceEntries | Where-Object Kind -eq 'File')
 $sourceLinks = @($sourceEntries | Where-Object Kind -eq 'Link')
 
 Write-Host "Source physical files: $($sourceFiles.Count)"
 Write-Host "Source child links: $($sourceLinks.Count)"
 Write-Host "Legacy D-drive files: $($legacyFiles.Count)"
+Write-Host "Legacy compatibility link already redirected: $legacyAlreadyRedirected"
 Write-Host "Final neutral target: $target"
 
 if ($PlanOnly) {
     foreach ($link in $sourceLinks) {
-        Write-Host "Preserve link: $($link.Item.FullName) -> $($link.Item.Target)"
+        $linkTarget = [string]$link.Item.Target
+        $action = if (Test-PathWithin -Candidate $linkTarget -Root $legacyTarget) {
+            'Replace legacy link with migrated data'
+        } else {
+            'Preserve external link'
+        }
+        Write-Host "${action}: $($link.Item.FullName) -> $linkTarget"
     }
     return
 }
@@ -140,10 +155,12 @@ foreach ($entry in $sourceLinks) {
     Remove-Item -LiteralPath $link.FullName -Force
 }
 
-Move-TreeFiles -FromRoot $legacyTarget -ToRoot $target
+if (-not $legacyAlreadyRedirected) {
+    Move-TreeFiles -FromRoot $legacyTarget -ToRoot $target
+}
 Move-TreeFiles -FromRoot $source -ToRoot $target
 
-if (Test-Path -LiteralPath $legacyTarget) {
+if ((Test-Path -LiteralPath $legacyTarget) -and -not $legacyAlreadyRedirected) {
     $remainingLegacy = @(Get-ChildItem -LiteralPath $legacyTarget -Force -ErrorAction SilentlyContinue)
     if ($remainingLegacy.Count -eq 0) { Remove-Item -LiteralPath $legacyTarget -Force }
 }
