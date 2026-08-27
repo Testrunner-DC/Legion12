@@ -226,6 +226,7 @@ public sealed class RuleKernelTests
     {
         var player = Player();
         var foundation = Card("foundation", 4000, "赫拉克勒斯", "olympus"); foundation.Tapped = true; foundation.HasStrongAttack = true;
+        foundation.ImmortalUses = 1; foundation.ImmortalUntilTurn = 42;
         var promoted = Card("promoted", 6000, "赫拉克勒斯·晋升", "olympus", ["奥林匹斯", "晋升者"]);
         player.Field[0][1] = foundation; player.Hand.Add(promoted);
         player.Morale.AddRange([
@@ -234,6 +235,7 @@ public sealed class RuleKernelTests
         ]);
         Assert.True(L12S2ZoneOps.Promote(player, foundation, promoted, 2));
         Assert.Same(promoted, player.Field[0][1]); Assert.True(promoted.Tapped); Assert.True(promoted.HasStrongAttack);
+        Assert.Equal(1, promoted.ImmortalUses); Assert.Equal(42, promoted.ImmortalUntilTurn);
         Assert.Same(foundation, Assert.Single(promoted.AttachedCards)); Assert.Empty(player.Hand);
     }
 

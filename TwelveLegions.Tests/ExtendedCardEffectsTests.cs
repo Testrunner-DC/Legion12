@@ -396,6 +396,8 @@ public sealed class ExtendedCardEffectsTests
         var player = game.State.Players[0];
         ReadyMain(game, 0);
         var alvida = Card("S01-0307", "alvida-discard");
+        alvida.ImmortalUses = 1;
+        alvida.ImmortalUntilTurn = game.State.TurnSerial;
         var summon = Card("S01-0308", "alvida-summon-target");
         player.Field[0][0] = alvida;
         player.Hand.Add(summon);
@@ -403,6 +405,9 @@ public sealed class ExtendedCardEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", alvida.InstanceId, Ability: "alvidaSummon")).Accepted);
         Assert.Contains(alvida, player.Graveyard);
+        Assert.Equal(0, alvida.ImmortalUses);
+        Assert.Equal(-1, alvida.ImmortalUntilTurn);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("免死生效"));
         Assert.DoesNotContain(game.State.EffectStack,
             item => item.SourceInstanceId == alvida.InstanceId && item.Trigger == "death");
         PassResponses(game);

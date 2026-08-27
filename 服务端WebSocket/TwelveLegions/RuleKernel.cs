@@ -203,6 +203,7 @@ public static class L12S2ZoneOps
         promoted.HasStrongAttack |= foundation.HasStrongAttack;
         promoted.HasSureHit |= foundation.HasSureHit;
         promoted.ImmortalUses += foundation.ImmortalUses;
+        promoted.ImmortalUntilTurn = Math.Max(promoted.ImmortalUntilTurn, foundation.ImmortalUntilTurn);
         promoted.SummonRound = foundation.SummonRound;
         promoted.AttacksThisTurn = foundation.AttacksThisTurn;
         promoted.AttachedCards.Add(foundation);

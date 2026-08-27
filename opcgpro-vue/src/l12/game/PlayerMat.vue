@@ -353,9 +353,7 @@ function beginCardAbility(card: Card) {
   <Teleport to="body">
     <div v-if="factionOpen" class="faction-effect-overlay" :class="{ minimized: factionMinimized }" @click.self="factionOpen = false">
       <section v-if="factionMinimized" class="faction-minimized-bar">
-        <strong>{{ player.factionEffect?.name || '阵营效果' }}</strong>
-        <button @click="factionMinimized = false">展开</button>
-        <button aria-label="关闭" @click="factionOpen = false">×</button>
+        <button :aria-label="`展开：${player.factionEffect?.name || '阵营效果'}`" :title="player.factionEffect?.name || '阵营效果'" @click="factionMinimized = false">展开</button>
       </section>
       <section v-else class="faction-effect-dialog" role="dialog" aria-modal="true">
         <button class="faction-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="factionMinimized = true">—</button>
@@ -382,9 +380,7 @@ function beginCardAbility(card: Card) {
   <Teleport to="body">
     <div v-if="abilityCardOpen" class="faction-effect-overlay" :class="{ minimized: abilityCardMinimized }" @click.self="abilityCardOpen = null">
       <section v-if="abilityCardMinimized" class="faction-minimized-bar">
-        <strong>{{ abilityCardOpen.name }}</strong>
-        <button @click="abilityCardMinimized = false">展开</button>
-        <button aria-label="关闭" @click="abilityCardOpen = null">×</button>
+        <button :aria-label="`展开：${abilityCardOpen.name}`" :title="abilityCardOpen.name" @click="abilityCardMinimized = false">展开</button>
       </section>
       <section v-else class="faction-effect-dialog" role="dialog" aria-modal="true">
         <button class="faction-minimize" aria-label="最小化弹框" @click="abilityCardMinimized = true">—</button>
@@ -427,6 +423,6 @@ function beginCardAbility(card: Card) {
 .faction-effect-overlay{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;background:rgba(2,4,5,.78);backdrop-filter:blur(7px)}
 .faction-effect-dialog{position:relative;width:min(650px,calc(100vw - 32px));display:grid;grid-template-columns:220px 1fr;gap:24px;padding:22px;border:1px solid rgba(238,238,228,.7);background:linear-gradient(145deg,#171c1d,#07090a);box-shadow:0 24px 70px #000}
 .faction-effect-dialog>img{width:220px;height:308px;object-fit:contain;background:#050708}
-.faction-effect-dialog small{color:var(--cyan);font-size:9px;letter-spacing:.14em}.faction-effect-dialog h2{margin:8px 0 14px;color:#f0ede4;font-size:25px}.faction-effect-dialog p{color:#d4d5cf;font-size:13px;font-weight:800;line-height:1.85;white-space:pre-wrap}.faction-close,.faction-minimize{position:absolute;top:9px;width:30px;height:30px;border:1px solid #777;background:#111;color:#eee;font-size:20px}.faction-close{right:9px}.faction-minimize{right:47px}.faction-effect-actions{display:grid;gap:8px;margin-top:20px}.faction-effect-actions button{padding:11px;border:1px solid var(--cyan);background:rgba(40,133,140,.2);color:#fff;font-weight:900;text-align:left}.faction-effect-actions button:disabled{cursor:not-allowed;border-color:#4a504e;background:#202423;color:#737a77;filter:saturate(.25)}.faction-action-hint{display:block;margin-top:18px;color:#777f7c;font-size:10px}.faction-effect-overlay.minimized{inset:auto 16px 16px auto;display:block;background:transparent;backdrop-filter:none;pointer-events:none}.faction-minimized-bar{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #ded9cc;background:#0c1112;box-shadow:0 12px 35px #000;pointer-events:auto}.faction-minimized-bar strong{max-width:270px;overflow:hidden;color:#fff;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.faction-minimized-bar button{padding:6px 10px;border:1px solid var(--cyan);background:#174e54;color:#fff}
-@media(max-width:650px){.faction-effect-dialog{grid-template-columns:1fr}.faction-effect-dialog>img{width:140px;height:196px;margin:auto}}
+.faction-effect-dialog small{color:var(--cyan);font-size:9px;letter-spacing:.14em}.faction-effect-dialog h2{margin:8px 0 14px;color:#f0ede4;font-size:25px}.faction-effect-dialog p{color:#d4d5cf;font-size:13px;font-weight:800;line-height:1.85;white-space:pre-wrap}.faction-close,.faction-minimize{position:absolute;top:9px;width:30px;height:30px;border:1px solid #777;background:#111;color:#eee;font-size:20px}.faction-close{right:9px}.faction-minimize{right:47px}.faction-effect-actions{display:grid;gap:8px;margin-top:20px}.faction-effect-actions button{padding:11px;border:1px solid var(--cyan);background:rgba(40,133,140,.2);color:#fff;font-weight:900;text-align:left}.faction-effect-actions button:disabled{cursor:not-allowed;border-color:#4a504e;background:#202423;color:#737a77;filter:saturate(.25)}.faction-action-hint{display:block;margin-top:18px;color:#777f7c;font-size:10px}.faction-effect-overlay.minimized{z-index:2000;inset:auto 16px 66px auto;display:block;background:transparent;backdrop-filter:none;pointer-events:none}.faction-minimized-bar{display:block;pointer-events:auto}.faction-minimized-bar button{padding:6px 10px;border:1px solid var(--cyan);background:#174e54;color:#fff;box-shadow:0 12px 35px #000}
+@media(max-width:650px){.faction-effect-dialog{grid-template-columns:1fr}.faction-effect-dialog>img{width:140px;height:196px;margin:auto}.faction-effect-overlay.minimized{right:10px;bottom:60px}}
 </style>

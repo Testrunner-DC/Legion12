@@ -810,9 +810,9 @@ public sealed partial class L12GameEngine
                 var simultaneousDeaths = new List<(int Controller, L12CardInstance Card)>();
                 if (target.Troops <= 0)
                 {
-                    killedTarget = true;
-                    if (RemoveFromField(defender, target, true, "阵亡", queueDeathTrigger: false,
-                            bypassLethalReplacement: true))
+                    killedTarget = RemoveFromField(defender, target, true, "阵亡", queueDeathTrigger: false,
+                        bypassLethalReplacement: true);
+                    if (killedTarget)
                         simultaneousDeaths.Add((defender.PlayerIndex, target));
                 }
                 if (attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true, "阵亡", queueDeathTrigger: false,

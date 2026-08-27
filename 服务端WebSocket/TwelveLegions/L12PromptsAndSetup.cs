@@ -132,6 +132,39 @@ public sealed partial class L12GameEngine
         return prompt;
     }
 
+    private L12Prompt CreateAnonymousHandChoicePrompt(
+        int playerIndex,
+        IReadOnlyCollection<L12CardInstance> hiddenCards,
+        string kind,
+        string text,
+        int min,
+        int max,
+        string continuation,
+        string? stackItemId = null,
+        Dictionary<string, string>? data = null)
+    {
+        var randomized = hiddenCards.ToList();
+        Shuffle(randomized);
+        var promptSequence = State.PromptSequence + 1;
+        var slots = Enumerable.Range(1, randomized.Count)
+            .Select(index => $"hidden-hand-slot-{promptSequence}-{index}")
+            .ToArray();
+        data ??= [];
+        for (var index = 0; index < slots.Length; index++)
+        {
+            data[slots[index]] = $"对方手牌 {index + 1}";
+            data[$"{slots[index]}:image"] = "/assets/l12/card-back-official.png";
+        }
+        var prompt = CreatePrompt(playerIndex, kind, text, slots, min, max, continuation,
+            stackItemId, isPrivate: true, data: data);
+        for (var index = 0; index < slots.Length; index++)
+            prompt.HiddenChoiceMap[slots[index]] = randomized[index].InstanceId;
+        return prompt;
+    }
+
+    private static string ResolveHiddenPromptChoice(L12Prompt prompt, string choice)
+        => prompt.HiddenChoiceMap.GetValueOrDefault(choice, choice);
+
     /// <summary>
     /// 所有公开场面与同质资源的选择都在棋盘上直接完成。此规则放在 Prompt 公共入口，
     /// 避免卡效分支分别设置 choiceMode 后再次出现编号弹框或同类效果交互不一致。
@@ -377,6 +410,20 @@ public sealed partial class L12GameEngine
             case "effect-lethal-replacement":
                 ResolveEffectLethalReplacement(playerIndex, prompt, chosen[0]);
                 break;
+            case "graveyard-active-confirm":
+            {
+                if (chosen[0] == "no") break;
+                var player = State.Players[playerIndex];
+                var source = player.Graveyard.FirstOrDefault(card => card.InstanceId == prompt.Data.GetValueOrDefault("sourceId")
+                    && card.CardId == prompt.Data.GetValueOrDefault("sourceCardId")
+                    && IsLegalGraveyardActiveAbilitySource(player, card, prompt.Data.GetValueOrDefault("ability") ?? string.Empty));
+                if (source is null) return CommandResult.Reject("墓地主动效果来源已失效");
+                var result = TryBeginS2RemainingAbility(playerIndex, source,
+                    prompt.Data.GetValueOrDefault("ability") ?? string.Empty, graveyardConfirmed: true)
+                    ?? CommandResult.Reject("该墓地主动效果无法继续发动");
+                if (!result.Accepted) return result;
+                break;
+            }
             case "card-effect":
             case "disaster-effect":
             case "active-ability":

@@ -7,6 +7,22 @@ public sealed partial class L12GameEngine
         => BeginPendingActivationSequence(playerIndex, source, ability,
         [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), MinChoose = min, MaxChoose = max }]);
 
+    private CommandResult BeginOptionalGraveyardActiveAbility(int playerIndex, L12CardInstance source,
+        string ability, string text)
+    {
+        CreatePrompt(playerIndex, "optional", text, ["yes", "no"], 1, 1,
+            "graveyard-active-confirm", isPrivate: true,
+            data: new Dictionary<string, string>
+            {
+                ["sourceId"] = source.InstanceId,
+                ["sourceCardId"] = source.CardId,
+                ["ability"] = ability,
+                ["yes"] = "发动",
+                ["no"] = "不发动",
+            });
+        return CommandResult.Ok();
+    }
+
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<L12ActivationSelectionStep> selectionSteps)
         => BeginPendingActivationSequence(playerIndex, source, ability, selectionSteps, null);

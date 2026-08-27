@@ -520,6 +520,77 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public async Task SandboxControllerCanActivateOpponentMasterAndCompleteItsTargetAndCostFlow()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-sandbox-opponent-master", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var host = Guid.NewGuid();
+        manager.Connect(host, "沙盒控制者");
+
+        static JsonElement StateFor(Guid sessionId, IReadOnlyList<OutgoingMessage> messages) => messages
+            .Where(message => message.SessionId == sessionId)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .Single(payload => payload.GetProperty("type").GetString() == "gameState")
+            .GetProperty("state").Clone();
+
+        var created = await manager.CreateSandboxAsync(host, new L12SandboxRequest());
+        var initial = StateFor(host, created);
+        var matchId = initial.GetProperty("matchId").GetString()!;
+        Assert.Equal("S01-04M2", initial.GetProperty("players")[1].GetProperty("master").GetProperty("masterId").GetString());
+
+        await manager.HandleGmActionAsync(host,
+            JsonSerializer.SerializeToElement(new { type = "addMorale", targetPlayer = 1, value = 1 }));
+        await manager.HandleGmActionAsync(host,
+            JsonSerializer.SerializeToElement(new { type = "setPhase", targetPlayer = 1, phase = "Main" }));
+        var placed = await manager.HandleGmActionAsync(host,
+            JsonSerializer.SerializeToElement(new
+            {
+                type = "placeCard", targetPlayer = 1, cardId = "S01-0401", row = 0, slot = 0,
+                triggerEffects = false,
+            }));
+        var prepared = StateFor(host, placed);
+        var targetId = prepared.GetProperty("players")[1].GetProperty("field")[0][0]
+            .GetProperty("instanceId").GetString()!;
+
+        var activated = await manager.HandleSandboxActionAsync(host, 1,
+            JsonSerializer.SerializeToElement(new
+            {
+                type = "activateAbility", cardInstanceId = "S01-04M2", ability = "frontBuff",
+            }));
+        var declared = StateFor(host, activated);
+        var prompt = Assert.Single(declared.GetProperty("prompts").EnumerateArray());
+        Assert.Equal(1, prompt.GetProperty("playerIndex").GetInt32());
+        Assert.Contains(targetId, prompt.GetProperty("validChoices").EnumerateArray()
+            .Select(choice => choice.GetString()));
+
+        var resolved = await manager.HandleSandboxActionAsync(host, 1,
+            JsonSerializer.SerializeToElement(new
+            {
+                type = "resolvePrompt", promptId = prompt.GetProperty("promptId").GetString(), choice = targetId,
+            }));
+        var finished = StateFor(host, resolved);
+        Assert.Empty(finished.GetProperty("prompts").EnumerateArray());
+        Assert.Empty(finished.GetProperty("effectStack").EnumerateArray());
+        Assert.Contains(finished.GetProperty("players")[1].GetProperty("morale").EnumerateArray(),
+            morale => morale.GetProperty("tapped").GetBoolean());
+
+        var detail = await recorder.GetMatchAsync(matchId);
+        Assert.NotNull(detail);
+        var rulesCommands = detail.Commands.Where(command =>
+        {
+            var type = command.Command.TryGetProperty("type", out var camelType)
+                ? camelType.GetString()
+                : command.Command.GetProperty("Type").GetString();
+            return type is "activateAbility" or "resolvePrompt";
+        }).ToArray();
+        Assert.Equal(2, rulesCommands.Length);
+        Assert.All(rulesCommands, command => Assert.Equal(1, command.PlayerIndex));
+        Assert.All(rulesCommands, command => Assert.True(command.Accepted, command.Error));
+    }
+
+    [Fact]
     public void CustomSandboxKeepsFourVisibleSlotsAndFinalDisasterLocked()
     {
         var game = new L12GameEngine(Catalog, "gm-custom-disaster", "GMCUSTOM", 1206,

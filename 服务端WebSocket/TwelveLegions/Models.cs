@@ -289,6 +289,11 @@ public sealed class L12Prompt
     public required string Continuation { get; init; }
     public string? StackItemId { get; init; }
     public Dictionary<string, string> Data { get; init; } = [];
+    /// <summary>
+    /// 服务端专用的匿名选项映射。公开快照只投影 ValidChoices 与 Data，绝不传输此映射；
+    /// 用于从随机槽位恢复隐藏区域中的真实实例，避免客户端获得手牌顺序或实例标识。
+    /// </summary>
+    public Dictionary<string, string> HiddenChoiceMap { get; init; } = [];
 }
 
 public sealed class L12StackItem

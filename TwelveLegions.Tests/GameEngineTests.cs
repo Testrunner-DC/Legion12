@@ -245,16 +245,29 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void FirstPlayerSkipsDrawAndReceivesOneMorale()
+    public void FirstPlayerSkipsOnlyTheirFirstDrawWhileSecondPlayerDrawsNormally()
     {
         var game = Create();
-        game.Handle(0, new L12Command("mulligan", CardInstanceIds: []));
-        game.Handle(1, new L12Command("mulligan", CardInstanceIds: []));
-        var active = game.State.ActivePlayer;
+        var first = game.State.FirstPlayer;
+        var second = 1 - first;
+        var firstHandBefore = game.State.Players[first].Hand.Count;
+        var firstLibraryBefore = game.State.Players[first].Library.Count;
+        Assert.True(game.Handle(0, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+        Assert.True(game.Handle(1, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
+
+        Assert.Equal(first, game.State.ActivePlayer);
         Assert.Equal(L12Phase.Main, game.State.Phase);
-        Assert.Equal(6, game.State.Players[active].Hand.Count);
-        Assert.Single(game.State.Players[active].Morale);
-        Assert.Contains(game.State.Events, item => item.Type == "draw-skipped");
+        Assert.Equal(firstHandBefore, game.State.Players[first].Hand.Count);
+        Assert.Equal(firstLibraryBefore, game.State.Players[first].Library.Count);
+        Assert.Single(game.State.Players[first].Morale);
+        Assert.Single(game.State.Events, item => item.Type == "draw-skipped" && item.PlayerIndex == first);
+
+        var secondHandBefore = game.State.Players[second].Hand.Count;
+        var secondLibraryBefore = game.State.Players[second].Library.Count;
+        Assert.True(game.Handle(first, new L12Command("endTurn")).Accepted);
+        Assert.Equal(second, game.State.ActivePlayer);
+        Assert.Equal(secondHandBefore + 1, game.State.Players[second].Hand.Count);
+        Assert.Equal(secondLibraryBefore - 1, game.State.Players[second].Library.Count);
     }
 
     [Fact]

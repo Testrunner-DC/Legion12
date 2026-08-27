@@ -1125,7 +1125,7 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void ThorHammerGraveyardAbilityPredeclaresOrderedCostAndSlotBeforeReviving()
+    public void ThorHammerGraveyardAbilityConfirmsBeforeCostThenSelectsSlotOnBoard()
     {
         var game = CreateWithFirstMaster("S02-03M1", 63021);
         var player = game.State.Players[0];
@@ -1143,6 +1143,20 @@ public sealed class S2FactionRegressionTests
         var begin = game.Handle(0, new L12Command("activateAbility", hammer.InstanceId,
             Ability: "thorHammerRevive"));
         Assert.True(begin.Accepted, begin.Error);
+        var confirmation = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("graveyard-active-confirm", confirmation.Continuation);
+        Assert.Equal(["yes", "no"], confirmation.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: confirmation.PromptId,
+            Choice: "no")).Accepted);
+        Assert.Equal([hammer, first, second, third], player.Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", hammer.InstanceId,
+            Ability: "thorHammerRevive")).Accepted);
+        confirmation = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: confirmation.PromptId,
+            Choice: "yes")).Accepted);
         var costPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("grave-card", costPrompt.Kind);
         Assert.DoesNotContain(hammer.InstanceId, costPrompt.ValidChoices);
@@ -1150,12 +1164,17 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: costPrompt.PromptId,
             CardInstanceIds: [second.InstanceId, first.InstanceId, third.InstanceId])).Accepted);
+        Assert.Equal(new[] { second.InstanceId, first.InstanceId, third.InstanceId },
+            player.Library.TakeLast(3).Select(card => card.InstanceId).ToArray());
+        Assert.Contains(hammer, player.Graveyard);
+        PassResponses(game);
         var slotPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("slot", slotPrompt.Kind);
+        Assert.Equal("s2-thor-hammer-slot", slotPrompt.Data["action"]);
+        Assert.Equal(hammer.InstanceId, slotPrompt.Data["previewCardId"]);
         var slot = slotPrompt.ValidChoices[0];
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
             Choice: slot)).Accepted);
-        PassResponses(game);
 
         Assert.DoesNotContain(hammer, player.Graveyard);
         Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == hammer.InstanceId && !card.Tapped);

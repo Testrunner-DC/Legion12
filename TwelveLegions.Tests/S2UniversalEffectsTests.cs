@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Text.Json;
 using Xunit;
 
 namespace TwelveLegions.Tests;
@@ -430,6 +431,9 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: counter.InstanceId)).Accepted);
         var select = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-plunder-return", select.Data["action"]);
+        var trueHandIds = game.State.Players[0].Hand.Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
+        Assert.All(select.ValidChoices, choice => Assert.DoesNotContain(choice, trueHandIds));
+        Assert.Equal(select.ValidChoices.Count, select.HiddenChoiceMap.Count);
         Assert.All(select.ValidChoices, choice =>
         {
             Assert.StartsWith("对方手牌 ", select.Data[choice]);
@@ -437,11 +441,17 @@ public sealed class S2UniversalEffectsTests
             Assert.DoesNotContain(game.State.Players[0].Hand.Select(card => card.Name),
                 name => select.Data[choice].Contains(name, StringComparison.Ordinal));
         });
-        var returnedId = select.ValidChoices[0];
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: select.PromptId, Choice: returnedId)).Accepted);
+        var visibleSnapshot = JsonSerializer.Serialize(game.SnapshotFor(1));
+        Assert.DoesNotContain(game.State.Players[0].Hand.Select(card => card.InstanceId), visibleSnapshot.Contains);
+        Assert.DoesNotContain(game.State.Players[0].Hand.Select(card => card.Name), visibleSnapshot.Contains);
+        var anonymousSlot = select.ValidChoices[0];
+        var returnedId = select.HiddenChoiceMap[anonymousSlot];
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: select.PromptId, Choice: anonymousSlot)).Accepted);
 
         Assert.Equal(returnedId, game.State.Players[0].Library[0].InstanceId);
         Assert.Equal(enemyHandBefore + 1, game.State.Players[1].Hand.Count);
+        var resolvedSnapshot = JsonSerializer.Serialize(game.SnapshotFor(1));
+        Assert.DoesNotContain(returnedId, resolvedSnapshot, StringComparison.Ordinal);
     }
 
     [Fact]

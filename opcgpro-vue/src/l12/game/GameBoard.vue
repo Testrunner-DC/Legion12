@@ -220,6 +220,11 @@ const boardSlotPreview = computed<Card | null>(() => {
   }
 })
 watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
+watch(() => boardSlotPrompt.value?.promptId, promptId => {
+  if (!promptId) return
+  graveyardPlayer.value = null
+  masterPlayerIndex.value = null
+})
 watch(() => resourceSelectionPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
 watch(controlledPlayerIndex, () => {
   selectedId.value = null
@@ -833,7 +838,7 @@ function statusTexts(card: Card) {
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
         :own-player-index="game.you" :can-activate-osiris="canActivateOsiris"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
-      <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === game.you"
+      <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
         :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />
       <div v-if="gmPlacement && !readOnly" class="board-target-controls gm-placement-controls">
         <strong>GM：请选择〈{{ gmPlacement.cardName }}〉的登场位置</strong><span>直接点击目标玩家的绿色高亮空位</span>

@@ -6,6 +6,13 @@ import type { Card, PlayerView } from '../types'
 const props = defineProps<{ players: PlayerView[]; initialPlayer: number; ownPlayerIndex: number; canActivateOsiris?: boolean }>()
 const emit = defineEmits<{ close: []; focus: [card: Card]; ability: [card: Card, ability: string] }>()
 const player = computed(() => props.players.find(item => item.playerIndex === props.initialPlayer) ?? props.players[0])
+
+function selectCard(card: Card) {
+  emit('focus', card)
+  if (player.value.playerIndex !== props.ownPlayerIndex) return
+  const enabledAbilities = card.abilities?.filter(ability => ability.enabled !== false) ?? []
+  if (enabledAbilities.length === 1) emit('ability', card, enabledAbilities[0].id)
+}
 </script>
 
 <template>
@@ -21,12 +28,7 @@ const player = computed(() => props.players.find(item => item.playerIndex === pr
             <h3>{{ player.name }} <span>{{ player.graveyard?.length ?? player.graveyardCount ?? 0 }} 张</span></h3>
             <div class="graveyard-cards">
               <div v-for="card in [...(player.graveyard || [])].reverse()" :key="card.instanceId" class="graveyard-card-entry">
-                <CardTile :card="card" @mouseenter="emit('focus', card)" @select="emit('focus', card)" />
-                <div v-if="player.playerIndex === ownPlayerIndex && card.abilities?.length" class="graveyard-abilities">
-                  <button v-for="ability in card.abilities" :key="ability.id" :disabled="ability.enabled === false"
-                    :title="ability.disabledReason || ''" @mouseenter="emit('focus', card)"
-                    @click.stop="emit('ability', card, ability.id)">{{ ability.label }}</button>
-                </div>
+                <CardTile :card="card" @mouseenter="emit('focus', card)" @select="selectCard(card)" />
                 <button v-if="player.playerIndex === ownPlayerIndex && canActivateOsiris && card.cardId === 'S01-02M2'"
                   class="osiris-victory" @mouseenter="emit('focus', card)" @click.stop="emit('ability', card, 'isisVictory')">特殊胜利</button>
               </div>
@@ -40,5 +42,5 @@ const player = computed(() => props.players.find(item => item.playerIndex === pr
 </template>
 
 <style scoped>
-.graveyard-card-entry{position:relative}.graveyard-abilities{position:absolute;z-index:4;left:4px;right:4px;bottom:5px;display:grid;gap:3px}.graveyard-abilities button{padding:4px 6px;border:1px solid #61d4f0;background:#082a36;color:#e7fbff;font-size:9px;font-weight:900}.graveyard-abilities button:disabled{border-color:#56616a;background:#24292e;color:#818a91;cursor:not-allowed}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:5px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:9px;font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
+.graveyard-card-entry{position:relative}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:5px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:9px;font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
 </style>

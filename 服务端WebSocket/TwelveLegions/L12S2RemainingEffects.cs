@@ -2,7 +2,8 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private CommandResult? TryBeginS2RemainingAbility(int playerIndex, L12CardInstance source, string ability)
+    private CommandResult? TryBeginS2RemainingAbility(int playerIndex, L12CardInstance source, string ability,
+        bool graveyardConfirmed = false)
     {
         var player = State.Players[playerIndex];
         switch (ability)
@@ -16,10 +17,12 @@ public sealed partial class L12GameEngine
                 var slots = EmptySlots(player).ToList();
                 if (otherGraveCards.Count < 3 || slots.Count == 0)
                     return CommandResult.Reject("需要墓地中另有3张卡牌且战场存在空位");
+                if (!graveyardConfirmed)
+                    return BeginOptionalGraveyardActiveAbility(playerIndex, source, ability,
+                        "是否发动墓地中〈雷神之锤〉的效果？确认后需选择3张其他墓地卡牌作为费用");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep { Kind = "grave-card", Text = "雷神之锤：依次选择返回牌库底部的3张其他墓地卡牌", ValidChoices = otherGraveCards, MinChoose = 3, MaxChoose = 3 },
-                    new L12ActivationSelectionStep { Kind = "slot", Text = "选择〈雷神之锤〉活跃登场的位置", ValidChoices = slots },
                 ]);
             }
             case "wukongTransform" when source.CardId == "S02-01M1":
@@ -92,20 +95,17 @@ public sealed partial class L12GameEngine
             {
                 var declared = SplitDeclared(target);
                 if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source)
-                    || declared.Length != 4 || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
-                    || declared.Take(3).Any(id => id == source.InstanceId)
-                    || !EmptySlots(player).Contains(declared[3]))
-                    return CommandResult.Reject("墓地卡牌或登场位置已失效");
-                var costs = declared.Take(3)
+                    || declared.Length != 3 || declared.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
+                    || declared.Any(id => id == source.InstanceId) || !EmptySlots(player).Any())
+                    return CommandResult.Reject("墓地卡牌或可用战场位置已失效");
+                var costs = declared
                     .Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card)))
                     .ToArray();
                 if (costs.Any(card => card is null)) return CommandResult.Reject("选择的墓地卡牌已失效");
                 MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>());
                 player.UsedAbilities.Add(onceKey);
-                PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string>
-                {
-                    ["ability"] = ability, ["slot"] = declared[3],
-                });
+                PushEffect(playerIndex, source, "active", "主动效果",
+                    data: new Dictionary<string, string> { ["ability"] = ability });
                 return CommandResult.Ok();
             }
             case "wukongTransform" when source.CardId == "S02-01M1":
@@ -195,9 +195,24 @@ public sealed partial class L12GameEngine
         switch (ability)
         {
             case "thorHammerRevive" when source?.CardId == "S02-0301":
-                if (player.Graveyard.Contains(source) && EmptySlots(player).Contains(item.Data["slot"]))
-                    SummonFromAnyPrivateZone(player, source.InstanceId, item.Data["slot"], tapped: false);
-                FinishStackItem(item); return true;
+            {
+                var slots = EmptySlots(player).ToArray();
+                if (!player.Graveyard.Contains(source) || slots.Length == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                var data = new Dictionary<string, string>
+                {
+                    ["action"] = "s2-thor-hammer-slot",
+                    ["previewCardId"] = source.InstanceId,
+                    ["targetPlayerIndex"] = item.Controller.ToString(),
+                };
+                AddPromptCardData(data, source);
+                CreatePrompt(item.Controller, "slot", "选择〈雷神之锤〉活跃登场的位置", slots, 1, 1,
+                    "card-effect", item.StackItemId, data: data);
+                return true;
+            }
             case "wukongTransform" when source?.CardId == "S02-01M1":
             {
                 var masterLegion = CreateCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}");
@@ -292,6 +307,16 @@ public sealed partial class L12GameEngine
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
+            case "s2-thor-hammer-slot":
+            {
+                var player = State.Players[item.Controller];
+                var source = player.Graveyard.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId
+                    && card.CardId == "S02-0301");
+                if (source is not null && EmptySlots(player).Contains(chosen[0]))
+                    SummonFromAnyPrivateZone(player, source.InstanceId, chosen[0], tapped: false);
+                FinishStackItem(item);
+                return true;
+            }
             case "s2-trojan-confirm":
             {
                 if (chosen[0] != "yes") { FinishStackItem(item); return true; }

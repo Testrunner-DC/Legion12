@@ -160,14 +160,8 @@ public sealed partial class L12GameEngine
         var opponent = State.Players[target.Controller];
         if (opponent.Hand.Count == 0) { FinishStackItem(item); return; }
         var data = new Dictionary<string, string> { ["action"] = action, ["targetStackId"] = target.StackItemId };
-        for (var index = 0; index < opponent.Hand.Count; index++)
-        {
-            var card = opponent.Hand[index];
-            data[card.InstanceId] = $"对方手牌 {index + 1}";
-            data[$"{card.InstanceId}:image"] = "/assets/l12/card-back-official.png";
-        }
-        CreatePrompt(item.Controller, "opponent-hand-card", text, opponent.Hand.Select(card => card.InstanceId),
-            1, 1, "card-effect", item.StackItemId, isPrivate: true, data: data);
+        CreateAnonymousHandChoicePrompt(item.Controller, opponent.Hand, "opponent-hand-card", text,
+            1, 1, "card-effect", item.StackItemId, data);
     }
 
     private void NegateEffectReadyBatch(L12StackItem target)
@@ -225,19 +219,21 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "s2-ruin-discard":
-                if (target is not null) MoveHandToGrave(State.Players[target.Controller], chosen[0], causedByEffect: true);
+                if (target is not null)
+                    MoveHandToGrave(State.Players[target.Controller], ResolveHiddenPromptChoice(prompt, chosen[0]), causedByEffect: true);
                 FinishStackItem(item);
                 return true;
             case "s2-plunder-return":
                 if (target is not null)
                 {
                     var opponent = State.Players[target.Controller];
-                    var selected = opponent.Hand.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                    var selectedId = ResolveHiddenPromptChoice(prompt, chosen[0]);
+                    var selected = opponent.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
                     if (selected is not null)
                     {
                         opponent.Hand.Remove(selected);
                         opponent.Library.Insert(0, selected);
-                        AddEvent("return", item.Controller, $"〈粮草掠夺〉将{selected.Name}返回所有者牌库顶部", selected);
+                        AddEvent("return", item.Controller, "〈粮草掠夺〉将所选的1张对方手牌返回所有者牌库顶部");
                     }
                 }
                 if (!Draw(State.Players[item.Controller], 1)) SetWinner(1 - item.Controller, "〈粮草掠夺〉抽牌时牌库为空");
