@@ -17,7 +17,8 @@ foreach ($fileName in @('cards.s1.json', 'cards.s2.json')) {
     foreach ($card in $decoded) { $cards.Add($card) }
 }
 $runtimeFiles = @(Get-ChildItem -LiteralPath $sourcePath -Filter 'L12*.cs' -File | Where-Object {
-    $_.Name -notin @('AtomicEffects.cs', 'L12StructuredCardRules.cs', 'L12RuntimeEffectRoutes.cs')
+    ($_.Name -notin @('AtomicEffects.cs', 'L12RuntimeEffectRoutes.cs')) -and
+        ($_.Name -notmatch '^L12StructuredCardRules(?:\.|$)')
 })
 $source = ($runtimeFiles | Get-Content -Raw) -join "`n"
 $matches = [regex]::Matches($source, 'case\s+"(?<id>S\d{2}-[A-Za-z0-9]+)"')

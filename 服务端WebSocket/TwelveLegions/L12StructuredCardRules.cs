@@ -14,14 +14,14 @@ public sealed record L12ConditionalCombatProfile(
     int IncomingRangedCombatDamageReduction,
     string ConditionExpression);
 
-public static class L12StructuredCardRules
+public static partial class L12StructuredCardRules
 {
     private static readonly HashSet<string> AlwaysRangedCards = new(StringComparer.Ordinal)
     {
         "S01-0003", "S01-0110", "S01-0111", "S01-0112", "S01-0113", "S01-0114", "S01-0116",
         "S01-0208", "S01-0209", "S01-0210", "S01-0211", "S01-0214", "S01-0309", "S01-0313",
-        "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416", "S02-0003", "S02-0204",
-        "S02-0304", "S02-0614", "S02-0617", "S02-0618",
+        "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416", "S02-0614", "S02-0617",
+        "S02-0618",
     };
 
     private static readonly HashSet<string> FrontOnlyRangedCards = new(StringComparer.Ordinal)
@@ -31,17 +31,17 @@ public static class L12StructuredCardRules
 
     private static readonly HashSet<string> FrontRowTauntOverlayCards = new(StringComparer.Ordinal)
     {
-        "S01-0107", "S01-0204", "S01-0312", "S02-0004", "S02-0007", "S02-0302", "S02-0615",
+        "S01-0107", "S01-0204", "S01-0312", "S02-0615",
     };
 
     private static readonly HashSet<string> AlwaysAttackNoLossCards = new(StringComparer.Ordinal)
     {
-        "S01-0101", "S02-0002",
+        "S01-0101",
     };
 
     private static readonly HashSet<string> CannotBeRangedCards = new(StringComparer.Ordinal)
     {
-        "S01-0101", "S02-0007",
+        "S01-0101",
     };
 
     // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
@@ -114,6 +114,15 @@ public static class L12StructuredCardRules
         var abilities = GetCombatRuleAbilities(card.CardId);
         return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
             .Any(ability => AbilityGrantsKeyword(ability, abilities, "taunt"));
+    }
+
+    public static bool CannotReceiveBackRowSupport(L12CardInstance card, int row)
+    {
+        var abilities = GetCombatRuleAbilities(card.CardId);
+        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .SelectMany(ability => ability.Atoms)
+            .Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                && atom.Parameters.GetValueOrDefault("cannotReceiveBackRowSupport") == "true");
     }
 
     private static bool HandConditionMatches(string? expression, int godPowerCount)
@@ -241,7 +250,6 @@ public static class L12StructuredCardRules
         if (AlwaysRangedCards.Contains(cardId)) result.Add(RangedAbility());
         if (FrontOnlyRangedCards.Contains(cardId)) result.Add(RangedAbility(frontOnly: true));
         if (FrontRowTauntOverlayCards.Contains(cardId)) result.Add(FrontRowTauntAbility());
-        if (cardId == "S02-0101") result.Add(FrontRowMasterProtectionAbility());
         if (AlwaysAttackNoLossCards.Contains(cardId)) result.Add(AttackNoLossAbility());
         if (CannotBeRangedCards.Contains(cardId)) result.Add(CannotBeRangedAbility());
         return result;
@@ -286,6 +294,7 @@ public static class L12StructuredCardRules
 
     public static bool TryGetStructuredAbilities(string cardId, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
     {
+        if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {
             "S01-0215" => AnkhSteleAbilities(),
@@ -1093,7 +1102,8 @@ public sealed record L12StructuredAbilityTemplate(
     string Text,
     IReadOnlyList<L12StructuredAtomTemplate> Atoms,
     string ReviewStatus = "unreviewed",
-    string ReviewSource = "automatic");
+    string ReviewSource = "automatic",
+    bool RuntimeRouteOwner = true);
 
 public sealed record L12StructuredAtomTemplate(
     string Kind,

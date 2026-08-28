@@ -752,7 +752,9 @@ public sealed partial class L12GameEngine
         var support = FindOnField(defender, supportId, out var supportRow, out var supportSlot);
         if (support is null || !IsFieldLegion(support) || supportRow != 1 || targetRow != 0 || supportSlot != targetSlot)
             return CommandResult.Reject("支援军团必须位于被进攻军团同列后排");
-        if (support.CannotSupport || defender.BackRowCannotSupport) return CommandResult.Reject("该后排军团本回合不能支援");
+        if (support.CannotSupport || defender.BackRowCannotSupport
+            || L12StructuredCardRules.CannotReceiveBackRowSupport(target, targetRow))
+            return CommandResult.Reject("该军团不能获得后排支援");
         if (target.Troops + support.Troops < EffectiveAttackValue(pending, attacker)) return CommandResult.Reject("支援后兵力仍不足");
         return CommandResult.Ok();
     }
@@ -763,7 +765,8 @@ public sealed partial class L12GameEngine
         var defender = State.Players[1 - pending.AttackerPlayer];
         var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
         var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
-        if (attacker is null || target is null || targetRow != 0 || defender.BackRowCannotSupport) return false;
+        if (attacker is null || target is null || targetRow != 0 || defender.BackRowCannotSupport
+            || L12StructuredCardRules.CannotReceiveBackRowSupport(target, targetRow)) return false;
         var support = defender.Field[1][targetSlot];
         return support is not null && IsFieldLegion(support) && !support.CannotSupport
             && target.Troops + support.Troops >= EffectiveAttackValue(pending, attacker);

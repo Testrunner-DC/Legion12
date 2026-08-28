@@ -317,7 +317,9 @@ public sealed class L12AtomicEffectCatalog
                 source.Parameters, descriptor.RuntimeExecutable,
                 "shared-structured-rule", source.Stage));
         }
-        var route = L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger);
+        var route = template.RuntimeRouteOwner
+            ? L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger)
+            : null;
         if (route is not null)
         {
             var routeAtom = route.Atoms.Single(atom => atom.Kind == L12AtomKinds.CompositeFlow);
