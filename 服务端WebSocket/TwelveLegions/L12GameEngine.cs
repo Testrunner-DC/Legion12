@@ -414,7 +414,7 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = view.DisabledReason ?? "仅在符合触发时点时发动" };
             if (!CanAct(player.PlayerIndex))
                 return view with { Enabled = false, DisabledReason = "仅在我方主要阶段可以发动" };
-            if (player.UsedAbilities.Contains($"active:{sourceInstanceId}:{view.Id}"))
+            if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
             if (view.Id == "sunDraw" && player.Hand.Count > 3)
                 return view with { Enabled = false, DisabledReason = "我方手牌需不高于3张" };
@@ -946,6 +946,51 @@ public sealed partial class L12GameEngine
         host.Abilities.RemoveAll(view => view.Id == "discardHolyLock");
     }
 
+    private static L12CardInstance[] DetachPromotionFoundations(L12CardInstance host)
+    {
+        if (S2PromotionFoundationCardId(host.CardId) is not { } foundationCardId)
+            return [];
+        var foundationName = host.Name.EndsWith("·晋升", StringComparison.Ordinal)
+            ? host.Name[..^"·晋升".Length]
+            : host.Name;
+        var foundations = host.AttachedCards
+            .Where(attached => !attached.HasTrait("晋升者") && attached.Faction == "olympus"
+                && (attached.CardId == foundationCardId || attached.Name == foundationName))
+            .ToArray();
+        foreach (var foundation in foundations)
+            host.AttachedCards.Remove(foundation);
+        return foundations;
+    }
+
+    private void MovePromotionFoundationsToZone(IEnumerable<L12CardInstance> foundations,
+        L12PlayerState fallbackOwner, string destination, string reason)
+    {
+        foreach (var foundation in foundations)
+        {
+            var owner = CardOwner(foundation, fallbackOwner);
+            ResetCardAfterLeavingField(foundation);
+            switch (destination)
+            {
+                case "hand":
+                    if (State.IsResolvingStack || State.EffectStack.Count > 0)
+                        AddCardToHandByEffect(owner, foundation, "field",
+                            $"{foundation.Name}随晋升叠放组合加入所有者手牌");
+                    else owner.Hand.Add(foundation);
+                    break;
+                case "library-top": owner.Library.Insert(0, foundation); break;
+                case "library-bottom": owner.Library.Add(foundation); break;
+                case "removed": owner.Removed.Add(foundation); break;
+                case "vanished":
+                    AddEvent("derived-vanished", owner.PlayerIndex,
+                        $"{reason}，{foundation.Name}随晋升叠放组合消灭，不进入其他区域", foundation);
+                    break;
+                default: owner.Graveyard.Add(foundation); break;
+            }
+            AddEvent("promotion-stack-leave", owner.PlayerIndex,
+                $"{foundation.Name}随晋升叠放组合进入同一目标区域", foundation);
+        }
+    }
+
     private L12PlayerState CardOwner(L12CardInstance card, L12PlayerState fallback)
         => card.OwnerIndex is >= 0 and <= 1 ? State.Players[card.OwnerIndex.Value] : fallback;
 
@@ -1042,17 +1087,19 @@ public sealed partial class L12GameEngine
             else
             {
                 var owner = CardOwner(card, player);
-                if (card.AttachedCards.Count > 0)
-                    DiscardAttachedCards(card, $"{card.Name}离场");
+                var promotionFoundations = DetachPromotionFoundations(card);
+                if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}离场");
                 ResetCardAfterLeavingField(card);
                 if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
                 {
                     AddEvent("derived-vanished", owner.PlayerIndex,
                         $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
+                    MovePromotionFoundationsToZone(promotionFoundations, owner, "vanished", $"{card.Name}离场");
                 }
                 else
                 {
                     owner.Graveyard.Add(card);
+                    MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}离场");
                     if (owner.PlayerIndex != player.PlayerIndex)
                         AddEvent("grave", owner.PlayerIndex, $"{card.Name}置入所有者墓地", card);
                 }
@@ -1136,15 +1183,19 @@ public sealed partial class L12GameEngine
             bypassLethalReplacement: true);
     }
 
-    private bool MoveFieldCardToZone(L12PlayerState player, L12CardInstance card, string destination, string reason, bool queueLeaveTrigger = true)
+    private bool MoveFieldCardToZone(L12PlayerState player, L12CardInstance card, string destination, string reason,
+        bool queueLeaveTrigger = true)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         CaptureLastKnownFieldState(card, row);
         player.Field[row][slot] = null;
         var owner = CardOwner(card, player);
+        var promotionFoundations = DetachPromotionFoundations(card);
+        var finalDestination = destination;
 
         if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
+            finalDestination = "vanished";
             if (card.AttachedCards.Count > 0)
                 DiscardAttachedCards(card, $"{card.Name}离场");
             ResetCardAfterLeavingField(card);
@@ -1154,6 +1205,7 @@ public sealed partial class L12GameEngine
         // 规则替代：卡面注明“以任何形式离场均视为置入所有者墓地”的卡统一执行该替代。
         else if (L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard(card))
         {
+            finalDestination = "graveyard";
             ResetCardAfterLeavingField(card);
             owner.Graveyard.Add(card);
             AddEvent("replacement", owner.PlayerIndex, $"{card.Name}以任何形式离场，改为置入所有者墓地", card);
@@ -1172,6 +1224,8 @@ public sealed partial class L12GameEngine
             default: ResetCardAfterLeavingField(card); owner.Graveyard.Add(card); break;
         }
 
+        MovePromotionFoundationsToZone(promotionFoundations, owner, finalDestination, $"{card.Name}离场");
+
         if (card.AttachedCards.Count > 0)
             DiscardAttachedCards(card, $"{card.Name}离场");
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
@@ -1179,14 +1233,6 @@ public sealed partial class L12GameEngine
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, card));
         RecalculateContinuousTroops();
         return true;
-    }
-
-    private void DiscardFieldArtifactsForRelicReplacement(L12PlayerState player)
-    {
-        foreach (var fieldArtifact in player.Field.SelectMany(row => row)
-                     .Where(candidate => candidate?.CardType == "artifact").Cast<L12CardInstance>().ToArray())
-            RemoveFromField(player, fieldArtifact, true, "被新圣物顶替",
-                leaveKind: L12FieldLeaveKind.Discard);
     }
 
     private static void ResetCardAfterLeavingField(L12CardInstance card)
@@ -1253,7 +1299,10 @@ public sealed partial class L12GameEngine
             var spentRunes = card.CardId == "S02-0622"
                 ? Math.Min(State.Players[playerIndex].SpecialZones.Runes, (card.Cost + 1) / 2)
                 : 0;
-            snapshot.PlayCost = GetPlayCost(playerIndex, card, selfDamageDiscount, spentRunes);
+            var rolloReturns = card.CardId == "S02-0302"
+                ? Math.Min(8, State.Players[playerIndex].Graveyard.Count(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
+                : 0;
+            snapshot.PlayCost = GetPlayCost(playerIndex, card, selfDamageDiscount, spentRunes, rolloReturns);
             snapshot.PlayBlockedReason = L12StructuredCardRules.HandPlayBlockReason(State.Players[playerIndex], card);
             return snapshot;
         }).ToArray();

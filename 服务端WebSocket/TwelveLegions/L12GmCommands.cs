@@ -175,7 +175,6 @@ public sealed partial class L12GameEngine
         {
             if (removeFromHand) player.Hand.Remove(card);
             card.SummonRound = State.Round;
-            DiscardFieldArtifactsForRelicReplacement(player);
             if (player.Relic is not null) DiscardRelic(player, player.Relic);
             player.Relic = card;
         }

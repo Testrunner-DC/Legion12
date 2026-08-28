@@ -437,7 +437,6 @@ public sealed partial class L12GameEngine
                 player.Resolving.Remove(artifact);
                 if (chosen[0] == "play")
                 {
-                    DiscardFieldArtifactsForRelicReplacement(player);
                     if (player.Relic is not null) DiscardRelic(player, player.Relic);
                     player.Relic = artifact; artifact.Tapped = false;
                 }
@@ -632,11 +631,24 @@ public sealed partial class L12GameEngine
             }
             case "wisdom-discard":
             {
-                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false); Draw(player, 1);
-                var choices = player.Graveyard.Where(card => card.CardId != "S01-0224" && card.CurrentCost <= 3 && card.CardType is "tactic" or "artifact")
-                    .Select(card => card.InstanceId).ToList(); choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "智慧法典：可选择墓地1张费用不高于3的其他战术或圣物回到手牌", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "wisdom-recover" }); return true;
+                var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
+                if (chosen[0] == "abandon")
+                {
+                    if (targetStack is not null) targetStack.Negated = true;
+                    AddEvent("effect-abandoned", prompt.PlayerIndex, "智慧法典使发动者不弃牌并放弃当前效果");
+                }
+                else
+                {
+                    MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false);
+                    if (targetStack is not null)
+                    {
+                        var marker = $"{item.Controller}|{item.SourceInstanceId}";
+                        var rewards = targetStack.Data.GetValueOrDefault("wisdomRewards") ?? string.Empty;
+                        targetStack.Data["wisdomRewards"] = string.IsNullOrEmpty(rewards) ? marker : $"{rewards};{marker}";
+                    }
+                }
+                FinishStackItem(item);
+                return true;
             }
             case "wisdom-recover": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]); FinishStackItem(item); return true;
             default:
@@ -967,7 +979,7 @@ public sealed partial class L12GameEngine
                 ? playerIndex == defendingPlayer
                 : timing.Trigger is "enter" or "play" or "active" or "disaster",
             "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,
-            "S01-0224" => timing.Trigger is "play" or "active" && FindSource(timing)?.CardType is "tactic" or "artifact",
+            "S01-0224" => FindSource(top)?.CardType is "tactic" or "artifact",
             _ => false,
         };
     }
@@ -1061,18 +1073,32 @@ public sealed partial class L12GameEngine
             case "智慧法典 卷一":
             {
                 var opponent = State.Players[1 - item.Controller];
-                if (opponent.Hand.Count == 0)
-                {
-                    var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
-                    if (targetStack is not null) targetStack.Negated = true;
-                    FinishStackItem(item); return;
-                }
-                CreatePrompt(1 - item.Controller, "discard", "智慧法典：弃置1张手牌以继续发动本次效果", opponent.Hand.Select(card => card.InstanceId), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "wisdom-discard" }); return;
+                var choices = opponent.Hand.Select(card => card.InstanceId).Append("abandon").ToArray();
+                CreatePrompt(1 - item.Controller, "optional-card", "智慧法典：弃置1张手牌以继续发动本次效果，或放弃当前效果",
+                    choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "wisdom-discard",
+                        ["choiceMode"] = "instant",
+                        ["abandon"] = "不弃牌，放弃当前效果",
+                    });
+                return;
             }
             default:
                 FinishStackItem(item); return;
         }
+    }
+
+    private void ResolveWisdomCodexReward(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        Draw(player, 1);
+        var choices = player.Graveyard.Where(card => card.CardId != "S01-0224" && card.CurrentCost <= 3
+                && card.CardType is "tactic" or "artifact")
+            .Select(card => card.InstanceId).ToList();
+        choices.Add("skip");
+        CreatePrompt(item.Controller, "optional-card",
+            "智慧法典：可选择墓地1张费用不高于3的其他战术或圣物回到手牌", choices, 1, 1,
+            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "wisdom-recover" });
     }
 
     private void QueueS1PostAttackReactions(int attackerPlayer)

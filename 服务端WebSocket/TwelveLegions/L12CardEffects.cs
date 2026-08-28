@@ -60,6 +60,7 @@ public sealed partial class L12GameEngine
             case "after-damage": ResolveS1FactionAfterDamage(item); break;
             case "active": ResolveActiveEffect(item); break;
             case "reaction": ResolveS1ReactionEffect(item); break;
+            case "wisdom-reward": ResolveWisdomCodexReward(item); break;
             case "s2-reaction": ResolveS2CounterEffect(item); break;
             case "authority-event": ResolveAuthorityEvent(item); break;
             case "disaster": ResolveDisasterEffect(item); break;

@@ -14,7 +14,12 @@ export interface PlatformFriend {
   accountId: string; username: string; status: 'none' | 'pending' | 'accepted'
   direction: 'none' | 'incoming' | 'outgoing'; createdAt: string; online?: boolean
 }
-export interface PlatformPresence { accountId: string; username: string; online: boolean }
+export interface PlatformPresence {
+  accountId: string; username: string; online: boolean
+  activity: 'idle' | 'inRoom' | 'playing' | 'spectating'; roomCode?: string
+  canInvite: boolean; canSpectate: boolean; actionReason?: string
+  friendStatus: 'self' | 'none' | 'pending' | 'accepted'; friendDirection: 'none' | 'incoming' | 'outgoing'
+}
 export interface PublishedDeck {
   id: string; ownerId: string; author: string; deck: SavedL12Deck; likes: number; copies: number; liked: boolean
   createdAt: string; updatedAt: string; official?: boolean

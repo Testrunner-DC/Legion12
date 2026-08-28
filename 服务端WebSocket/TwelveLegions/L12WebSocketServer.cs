@@ -161,11 +161,32 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var online = _rooms.OnlineAccountIds();
+            var presence = _rooms.DescribeOnlinePresence(account.Id);
+            var friends = _platform.Friends(account.Id)
+                .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
+            var pending = _platform.FriendRequests(account.Id)
+                .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
             return Results.Ok(_platform.Accounts()
-                .Where(player => online.Contains(player.Id))
+                .Where(player => presence.ContainsKey(player.Id))
                 .OrderBy(player => player.Username)
-                .Select(player => new { accountId = player.Id, player.Username, online = true }));
+                .Select(player =>
+                {
+                    var state = presence[player.Id];
+                    var relationship = friends.GetValueOrDefault(player.Id) ?? pending.GetValueOrDefault(player.Id);
+                    return new
+                    {
+                        accountId = player.Id,
+                        player.Username,
+                        online = true,
+                        state.Activity,
+                        state.RoomCode,
+                        state.CanInvite,
+                        state.CanSpectate,
+                        state.ActionReason,
+                        friendStatus = player.Id == account.Id ? "self" : relationship?.Status ?? "none",
+                        friendDirection = relationship?.Direction ?? "none",
+                    };
+                }));
         });
         _app.MapGet("/api/friends", (HttpRequest request) =>
         {

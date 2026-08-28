@@ -485,6 +485,41 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void FaithZealotOncePerTurnUsageIsTrackedPerPhysicalInstance()
+    {
+        var game = Create(63111);
+        var player = game.State.Players[0];
+        var beowulf = Card("S01-0301", "faith-double-mill-source");
+        var first = Card("S02-0006", "faith-double-first");
+        var second = Card("S02-0006", "faith-double-second");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Hand.Add(beowulf);
+        player.Library.AddRange([first, second, Card("S01-0001", "faith-double-draw")]);
+        AddMorale(player, beowulf.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", beowulf.InstanceId,
+            Row: 0, Slot: 0)).Accepted);
+
+        var triggeredInstances = new HashSet<string>();
+        while (triggeredInstances.Count < 2)
+        {
+            PassResponses(game);
+            var prompt = Assert.Single(game.State.PendingPrompts,
+                candidate => candidate.Data.GetValueOrDefault("action") == "s2-faith-zealot");
+            triggeredInstances.Add(game.State.EffectStack[^1].SourceInstanceId);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                Choice: "skip")).Accepted);
+        }
+
+        Assert.Equal(new[] { first.InstanceId, second.InstanceId }.Order(), triggeredInstances.Order());
+        Assert.Contains($"trigger:faith-zealot:{first.InstanceId}", player.UsedAbilities);
+        Assert.Contains($"trigger:faith-zealot:{second.InstanceId}", player.UsedAbilities);
+    }
+
+    [Fact]
     public void MistletoeCharmDeclaresRunesBeforePayingAndThenDebuffsTarget()
     {
         var game = Create(6312);
@@ -1127,6 +1162,38 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void RolloOffersTheFullEligibleGraveyardAndDiscountsByTheOrderedReturnCount()
+    {
+        var game = Create(630211);
+        var player = game.State.Players[0];
+        var rollo = Card("S02-0302", "rollo-discount-entry");
+        var graveCards = Enumerable.Range(0, 10)
+            .Select(index => Card("S01-0301", $"rollo-grave-{index}"))
+            .ToArray();
+        player.Hand.Clear();
+        player.Graveyard.Clear();
+        player.Hand.Add(rollo);
+        player.Graveyard.AddRange(graveCards);
+        AddMorale(player, 4);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", rollo.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var gravePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rollo-grave-cost", gravePrompt.Continuation);
+        Assert.Equal(10, gravePrompt.ValidChoices.Count);
+        Assert.Equal(8, gravePrompt.MaxChoose);
+        var ordered = graveCards.Take(8).Reverse().Select(card => card.InstanceId).ToList();
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: gravePrompt.PromptId,
+            CardInstanceIds: ordered)).Accepted);
+
+        Assert.Same(rollo, player.Field[0][0]);
+        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Equal(ordered, player.Library.TakeLast(8).Select(card => card.InstanceId));
+        Assert.Equal(graveCards.Skip(8), player.Graveyard);
+    }
+
+    [Fact]
     public void ThorHammerGraveyardAbilityConfirmsBeforeCostThenSelectsSlotOnBoard()
     {
         var game = CreateWithFirstMaster("S02-03M1", 63021);
@@ -1479,6 +1546,37 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
         Assert.Equal(expectedRunes, player.SpecialZones.Runes);
         Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData("rune", 1, false)]
+    [InlineData("trial", 0, true)]
+    [InlineData("skip", 0, false)]
+    public void ConstanceEntryChoosesExactlyOneRuneOrTrialMode(string choice, int expectedRunes, bool expectedTapped)
+    {
+        var game = Create(63048 + expectedRunes);
+        var player = game.State.Players[0];
+        var constance = Card("S02-0614", $"constance-entry-{choice}");
+        var trial = Card("S02-06S5", $"constance-trial-{choice}");
+        player.Hand.Clear();
+        player.Hand.Add(constance);
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        AddMorale(player, constance.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", constance.InstanceId,
+            Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-constance-entry", prompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: choice)).Accepted);
+
+        Assert.Equal(expectedRunes, player.SpecialZones.Runes);
+        Assert.Equal(expectedTapped, constance.Tapped);
+        Assert.Equal(choice == "trial" ? constance.TrialValue : 0, trial.TrialProgress);
     }
 
     [Fact]
@@ -2239,26 +2337,54 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void PlayingANewArtifactReplacesKusanagiEvenWhileItIsALegion()
+    public void PlayingANewArtifactDoesNotReplaceBattlefieldKusanagiLegion()
     {
         var game = CreateWithFirstMaster("S01-04M2", 63153);
         var player = game.State.Players[0];
         var sword = Card("S01-0417", "kusanagi-replaced");
         L12DerivedStats.SetUntilTurnEnd(sword, 5000, int.MaxValue);
         player.Field[0][0] = sword;
-        var newArtifact = Card("S01-0216", "replacement-artifact");
+        var newArtifact = Card("S01-0215", "replacement-artifact");
         player.Hand.Clear();
         player.Hand.Add(newArtifact);
+        AddMorale(player, newArtifact.Cost);
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", newArtifact.InstanceId)).Accepted);
 
-        Assert.Null(player.Field[0][0]);
-        Assert.Same(newArtifact, player.Relic);
-        Assert.Contains(sword, player.Graveyard);
-        Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == sword.InstanceId
-            && item.Trigger == "play");
+        Assert.Same(sword, player.Field[0][0]);
+        Assert.Contains(newArtifact, player.ExtraRelics.Prepend(player.Relic).Where(card => card is not null));
+        Assert.DoesNotContain(sword, player.Graveyard);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == sword.InstanceId);
+    }
+
+    [Fact]
+    public void SusanooFrontBuffAppliesToKusanagiLegionAttack()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 631531);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-susano-buff");
+        L12DerivedStats.SetUntilTurnEnd(sword, 5000, int.MaxValue);
+        sword.SummonRound = 0;
+        player.Field[0][0] = sword;
+        AddMorale(player, 1);
+        game.State.Round = 2;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "frontBuff")).Accepted);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(sword.InstanceId, target.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: sword.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.True(game.Handle(0, new L12Command("attack", sword.InstanceId,
+            Target: new L12AttackTarget("master", "master-1"))).Accepted);
+        Assert.Equal(7000, sword.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("须佐之男", StringComparison.Ordinal)
+            && entry.Text.Contains("+2000", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -3002,37 +3128,96 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void MagatamaMoveUsesDynamicAdjacentSlotsAndRecordsMovementTurn()
+    public void MagatamaMoveUsesCavalryMovementOnEitherBattlefieldAndAllowsRestedLegions()
     {
         var game = Create(6334);
         var player = game.State.Players[0];
         var magatama = Card("S02-0404", "magatama-move-source");
         var legion = Card("S02-0401", "magatama-moving-legion");
+        legion.Tapped = true;
         player.Relic = magatama;
-        player.Field[0][1] = legion;
+        game.State.Players[1].Field[0][1] = legion;
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
-        Assert.True(game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
-            Ability: "magatamaMove")).Accepted);
+        var activationResult = game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
+            Ability: "magatamaMove"));
+        Assert.True(activationResult.Accepted, activationResult.Error);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", target.Continuation);
-        Assert.Equal([legion.InstanceId, "skip"], target.ValidChoices);
+        Assert.Contains(legion.InstanceId, target.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
             Choice: legion.InstanceId)).Accepted);
 
         var slot = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("slot", slot.Kind);
-        Assert.Equal(["0:0", "0:2", "1:1", "skip"], slot.ValidChoices.OrderBy(value => value));
-        Assert.DoesNotContain("1:0", slot.ValidChoices);
+        Assert.Equal("1", slot.Data["targetPlayerIndex"]);
+        Assert.Contains("1:2", slot.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
-            Choice: "1:1")).Accepted);
+            Choice: "1:2")).Accepted);
         Assert.True(magatama.Tapped);
         PassResponses(game);
 
-        Assert.Null(player.Field[0][1]);
-        Assert.Same(legion, player.Field[1][1]);
+        Assert.Null(game.State.Players[1].Field[0][1]);
+        Assert.Same(legion, game.State.Players[1].Field[1][2]);
+        Assert.True(legion.Tapped);
         Assert.Equal(game.State.TurnSerial, legion.LastMovedTurn);
+        Assert.Equal(game.State.TurnSerial, legion.LastCavalryMoveTurn);
+    }
+
+    [Fact]
+    public void MagatamaBackToFrontMoveEnablesTsukuyomiAttackBonus()
+    {
+        var game = CreateWithFirstMaster("S02-04M1", 63341);
+        var player = game.State.Players[0];
+        var magatama = Card("S02-0404", "magatama-tsukuyomi-source");
+        var legion = Card("S02-0401", "magatama-tsukuyomi-legion");
+        legion.SummonRound = 0;
+        player.Relic = magatama;
+        player.Field[1][0] = legion;
+        game.State.Round = 2;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var activationResult = game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
+            Ability: "magatamaMove"));
+        Assert.True(activationResult.Accepted, activationResult.Error);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: legion.InstanceId)).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "0:2")).Accepted);
+        PassResponses(game);
+
+        var baseTroops = legion.Troops;
+        Assert.True(game.Handle(0, new L12Command("attack", legion.InstanceId,
+            Target: new L12AttackTarget("master", "master-1"))).Accepted);
+        Assert.Equal(baseTroops + 1000, legion.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("月读", StringComparison.Ordinal)
+            && entry.Text.Contains("+1000", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MagatamaCannotGiveTheSameLegionASecondCavalryMoveThisTurn()
+    {
+        var game = Create(63342);
+        var player = game.State.Players[0];
+        var magatama = Card("S02-0404", "magatama-repeat-source");
+        var legion = Card("S02-0401", "magatama-already-moved-legion");
+        legion.Tapped = true;
+        legion.LastCavalryMoveTurn = game.State.TurnSerial;
+        player.Relic = magatama;
+        player.Field[0][0] = legion;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
+            Ability: "magatamaMove"));
+
+        Assert.False(result.Accepted);
+        Assert.Contains("没有可进行骑兵位移", result.Error);
+        Assert.False(magatama.Tapped);
     }
 
     [Fact]

@@ -66,6 +66,7 @@ public sealed partial class L12GameEngine
     {
         var step = activation.SelectionSteps[activation.CurrentStep];
         var promptKind = step.Kind;
+        int? targetPlayerIndex = null;
         if (step.Kind == "adjacent-slot")
         {
             var player = State.Players[activation.Controller];
@@ -80,6 +81,25 @@ public sealed partial class L12GameEngine
             if (step.ValidChoices.Count < step.MinChoose)
             {
                 RejectPendingActivation(activation, "所选军团没有可位移的相邻空位，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
+        else if (step.Kind == "cavalry-slot")
+        {
+            for (var index = 0; index < State.Players.Length; index++)
+            {
+                if (activation.DeclaredTargets.Count == 0
+                    || FindOnField(State.Players[index], activation.DeclaredTargets[0], out _, out _) is null) continue;
+                targetPlayerIndex = index;
+                break;
+            }
+            var choices = targetPlayerIndex is null ? [] : EffectCavalryDestinations(State.Players[targetPlayerIndex.Value]).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "所选军团所在战场没有可进行骑兵位移的空位，效果未支付费用也未入栈");
                 return;
             }
             promptKind = "slot";
@@ -140,6 +160,7 @@ public sealed partial class L12GameEngine
             ["activationId"] = activation.ActivationId,
             ["activationStep"] = activation.CurrentStep.ToString(),
         };
+        if (targetPlayerIndex is not null) promptData["targetPlayerIndex"] = targetPlayerIndex.Value.ToString();
         CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
@@ -206,7 +227,7 @@ public sealed partial class L12GameEngine
                 && IsLegalGraveyardActiveAbilitySource(player, card, activation.Ability))
             ?? (activation.SourceCardId == player.MasterId ? CreateActiveMasterSource(player, activation.SourceInstanceId) : null)
             ?? (activation.SourceInstanceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
-        if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(prompt.PlayerIndex, id)))
+        if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(prompt.PlayerIndex, id, activation)))
         {
             ClearFreeMasterActivation(activation);
             AddEvent("ability-rejected", prompt.PlayerIndex, "来源或目标已不合法，效果未支付费用也未入栈");
@@ -242,7 +263,7 @@ public sealed partial class L12GameEngine
             State.FreeMasterActivation = null;
     }
 
-    private bool IsDeclaredChoiceStillLegal(int controller, string choice)
+    private bool IsDeclaredChoiceStillLegal(int controller, string choice, L12PendingActivation? activation = null)
     {
         if (choice is "yes" or "no" or "skip" or "top" or "bottom") return true;
         if (choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)) return true;
@@ -257,7 +278,16 @@ public sealed partial class L12GameEngine
         if (choice.Split(':') is [var rowText, var slotText]
             && int.TryParse(rowText, out var row) && int.TryParse(slotText, out var slot)
             && row is >= 0 and < 2 && slot is >= 0 and < 3)
+        {
+            if (activation?.Ability == "magatamaMove" && activation.DeclaredTargets.Count > 0)
+            {
+                var battlefield = State.Players.FirstOrDefault(candidate =>
+                    FindOnField(candidate, activation.DeclaredTargets[0], out _, out _) is not null);
+                return battlefield is not null && battlefield.Field[row][slot] is null
+                    && EffectCavalryDestinations(battlefield).Contains(choice);
+            }
             return State.Players[controller].Field[row][slot] is null;
+        }
         return FindPromptCard(controller, choice) is not null;
     }
 

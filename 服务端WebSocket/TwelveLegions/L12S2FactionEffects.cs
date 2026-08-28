@@ -68,7 +68,7 @@ public sealed partial class L12GameEngine
         "S02-0616" => [new("amakineTop", "主动休整 展示牌库顶部1张牌：若其只拥有【彼界】特征，可加入手牌；否则返回牌库顶部或底部。")],
         "S02-0404" =>
         [
-            new("magatamaMove", "主动休整：选择我方1张活跃的军团，进行1次位移。"),
+            new("magatamaMove", "主动休整：选择战场上1张军团，进行1次骑兵位移。"),
             new("magatamaImmortal", "主动休整：选择我方1张本回合位移过的军团，本回合获得免死。"),
         ],
         _ => [],
@@ -192,6 +192,10 @@ public sealed partial class L12GameEngine
     private static bool IsProtectedByRestedAmakine(L12PlayerState owner, L12CardInstance target)
         => !target.Tapped && IsTrialLegion(target)
             && PublicLegions(owner).Any(card => card.CardId == "S02-0616" && card.Tapped);
+
+    private IEnumerable<string> EffectCavalryDestinations(L12PlayerState battlefield)
+        => EmptySlots(battlefield).Where(choice => State.ActiveDisaster?.CardId != "S01-DS03"
+            || !choice.StartsWith("1:", StringComparison.Ordinal));
 
     private void AdvanceTrial(int playerIndex, int count, L12CardInstance? source = null)
     {
@@ -1052,22 +1056,24 @@ public sealed partial class L12GameEngine
         if (ability == "magatamaMove" && source.CardId == "S02-0404")
         {
             if (source.Tapped) return CommandResult.Reject("八尺琼勾玉必须为活跃状态");
-            var candidates = PublicLegions(player)
-                .Where(card => !card.Tapped && FindOnField(player, card.InstanceId, out var row, out var slot) is not null
-                    && AdjacentEmptySlots(player, row, slot).Any())
+            var candidates = State.Players
+                .Where(battlefield => EffectCavalryDestinations(battlefield).Any())
+                .SelectMany(PublicLegions)
+                .Where(card => card.LastCavalryMoveTurn != State.TurnSerial)
                 .Select(card => card.InstanceId).ToList();
-            if (candidates.Count == 0) return CommandResult.Reject("我方没有可位移的活跃军团");
+            if (candidates.Count == 0) return CommandResult.Reject("战场上没有可进行骑兵位移的军团");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
                 new L12ActivationSelectionStep
                 {
-                    Kind = "active-target", Text = "八尺琼勾玉：选择我方1张活跃军团",
+                    Kind = "active-target", Text = "八尺琼勾玉：选择双方战场上1张军团",
                     ValidChoices = candidates,
                 },
                 new L12ActivationSelectionStep
                 {
-                    Kind = "adjacent-slot", Text = "八尺琼勾玉：选择该军团位移后的相邻空位",
-                    ValidChoices = EmptySlots(player).ToList(),
+                    Kind = "cavalry-slot", Text = "八尺琼勾玉：选择该军团进行骑兵位移后的空位",
+                    ValidChoices = State.Players.SelectMany(EffectCavalryDestinations)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 },
             ]);
         }
@@ -1350,10 +1356,19 @@ public sealed partial class L12GameEngine
         {
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             if (source.Tapped || declared.Length != 2) return CommandResult.Reject("八尺琼勾玉必须为活跃状态且位移声明完整");
-            var legion = FindOnField(player, declared[0], out var row, out var slot);
+            var targetPlayerIndex = -1;
+            for (var index = 0; index < State.Players.Length; index++)
+            {
+                if (FindOnField(State.Players[index], declared[0], out _, out _) is null) continue;
+                targetPlayerIndex = index;
+                break;
+            }
+            var targetPlayer = targetPlayerIndex < 0 ? null : State.Players[targetPlayerIndex];
+            var legion = targetPlayer is null ? null : FindOnField(targetPlayer, declared[0], out _, out _);
             var destination = ParseSlot(declared[1]);
-            if (legion is null || !IsFieldLegion(legion) || legion.Tapped
-                || !AdjacentEmptySlots(player, row, slot).Contains(declared[1]))
+            if (legion is null || legion.Hidden || !IsFieldLegion(legion) || targetPlayer is null
+                || legion.LastCavalryMoveTurn == State.TurnSerial
+                || !EffectCavalryDestinations(targetPlayer).Contains(declared[1]))
                 return CommandResult.Reject("所选军团或位移位置已不合法");
             source.Tapped = true;
             PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
@@ -1361,6 +1376,7 @@ public sealed partial class L12GameEngine
                 ["ability"] = ability,
                 ["target"] = legion.InstanceId,
                 ["destination"] = $"{destination.Row}:{destination.Slot}",
+                ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
             });
             return CommandResult.Ok();
         }
@@ -1641,16 +1657,22 @@ public sealed partial class L12GameEngine
         }
         if (ability == "magatamaMove" && source?.CardId == "S02-0404")
         {
-            var legion = FindOnField(player, item.Data.GetValueOrDefault("target"), out var row, out var slot);
+            var targetPlayerIndex = int.TryParse(item.Data.GetValueOrDefault("targetPlayerIndex"), out var parsedTargetPlayer)
+                && parsedTargetPlayer is 0 or 1 ? parsedTargetPlayer : item.Controller;
+            var targetPlayer = State.Players[targetPlayerIndex];
+            var legion = FindOnField(targetPlayer, item.Data.GetValueOrDefault("target"), out var row, out var slot);
             var destinationText = item.Data.GetValueOrDefault("destination") ?? string.Empty;
-            if (legion is not null && !legion.Tapped && AdjacentEmptySlots(player, row, slot).Contains(destinationText))
+            if (legion is not null && !legion.Hidden && IsFieldLegion(legion)
+                && legion.LastCavalryMoveTurn != State.TurnSerial
+                && EffectCavalryDestinations(targetPlayer).Contains(destinationText))
             {
                 var (targetRow, targetSlot) = ParseSlot(destinationText);
-                player.Field[row][slot] = null;
-                player.Field[targetRow][targetSlot] = legion;
+                targetPlayer.Field[row][slot] = null;
+                targetPlayer.Field[targetRow][targetSlot] = legion;
                 legion.LastMovedTurn = State.TurnSerial;
+                legion.LastCavalryMoveTurn = State.TurnSerial;
                 AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
-                NotifyS2LegionMoved(item.Controller, legion, row, targetRow);
+                NotifyS2LegionMoved(targetPlayerIndex, legion, row, targetRow);
             }
             FinishStackItem(item);
             return true;
@@ -1744,6 +1766,15 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
+        if (source?.CardType == "trial" && ability == "fenianSingleDebuff")
+        {
+            var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
+            if (target is not null)
+                AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
+            ResolveStateBasedLegionDeaths();
+            FinishStackItem(item);
+            return true;
+        }
         return TryResolveS2RemainingAbility(item, source, ability);
     }
 
@@ -1780,8 +1811,8 @@ public sealed partial class L12GameEngine
                     .Select(card => card!.InstanceId).ToList();
                 choices.Add("skip");
                 if (player.SpecialZones.Runes == 0 || choices.Count == 1) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "optional-targets", "可消耗X符文；每消耗1符文选择对方1张军团，本回合兵力-3000",
-                    choices, 1, Math.Min(player.SpecialZones.Runes, choices.Count - 1), "card-effect", item.StackItemId,
+                CreatePrompt(item.Controller, "optional-target", "可逐次消耗1符文；选择对方1张军团，本回合兵力-3000（可重复选择）",
+                    choices, 1, 1, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "s2-fenian-trial-debuff" });
                 return;
             }
@@ -1789,6 +1820,35 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return;
         }
+    }
+
+    private void QueueFirstFenianDebuff(L12StackItem item)
+    {
+        var targets = (item.Data.GetValueOrDefault("fenianTargets") ?? string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries);
+        if (targets.Length == 0 || FindSource(item) is not { } trial) return;
+        PushEffect(item.Controller, trial, "active", $"芬尼亚传奇：目标本回合兵力-3000",
+            targets: [targets[0]], data: new Dictionary<string, string>
+            {
+                ["ability"] = "fenianSingleDebuff",
+                ["target"] = targets[0],
+                ["fenianRemaining"] = string.Join('|', targets.Skip(1)),
+            });
+    }
+
+    private void QueueNextFenianDebuff(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault("ability") != "fenianSingleDebuff") return;
+        var remaining = (item.Data.GetValueOrDefault("fenianRemaining") ?? string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries);
+        if (remaining.Length == 0 || FindSource(item) is not { } trial) return;
+        PushEffect(item.Controller, trial, "active", $"芬尼亚传奇：目标本回合兵力-3000",
+            targets: [remaining[0]], data: new Dictionary<string, string>
+            {
+                ["ability"] = "fenianSingleDebuff",
+                ["target"] = remaining[0],
+                ["fenianRemaining"] = string.Join('|', remaining.Skip(1)),
+            });
     }
 
     private bool TryContinueS2Faction(L12StackItem item, L12Prompt prompt, List<string> chosen, L12Command command)
@@ -2342,13 +2402,24 @@ public sealed partial class L12GameEngine
             }
             case "s2-fenian-trial-debuff":
             {
-                var targets = chosen.Where(id => id != "skip").Distinct().Take(player.SpecialZones.Runes).ToArray();
-                if (targets.Length > 0 && L12S2ZoneOps.SpendRunes(player, targets.Length))
-                    foreach (var id in targets)
-                    {
-                        var target = DeclaredEnemyTarget(item.Controller, id);
-                        if (target is not null) AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
-                    }
+                if (chosen[0] != "skip" && DeclaredEnemyTarget(item.Controller, chosen[0]) is not null
+                    && L12S2ZoneOps.SpendRunes(player, 1))
+                {
+                    var selected = item.Data.GetValueOrDefault("fenianTargets") ?? string.Empty;
+                    item.Data["fenianTargets"] = string.IsNullOrEmpty(selected) ? chosen[0] : $"{selected}|{chosen[0]}";
+                }
+                var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+                    .Where(card => card is not null && IsFieldLegion(card) && !card.Hidden)
+                    .Select(card => card!.InstanceId).ToList();
+                choices.Add("skip");
+                if (chosen[0] != "skip" && player.SpecialZones.Runes > 0 && choices.Count > 1)
+                {
+                    CreatePrompt(item.Controller, "optional-target", "芬尼亚传奇：可继续消耗1符文选择军团（可重复选择）",
+                        choices, 1, 1, "card-effect", item.StackItemId,
+                        data: new Dictionary<string, string> { ["action"] = "s2-fenian-trial-debuff" });
+                    return true;
+                }
+                QueueFirstFenianDebuff(item);
                 FinishStackItem(item);
                 return true;
             }
@@ -3388,7 +3459,6 @@ public sealed partial class L12GameEngine
         card.OwnerIndex ??= item.Controller;
         if (card.CardType == "artifact")
         {
-            DiscardFieldArtifactsForRelicReplacement(player);
             if (player.Relic is not null)
             {
                 DiscardRelic(player, player.Relic);

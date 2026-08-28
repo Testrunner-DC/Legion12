@@ -61,7 +61,6 @@ public sealed class DeckValidatorTests
     [InlineData("S01-0218", "taiyangcheng")]
     [InlineData("S01-0219", "taiyangcheng")]
     [InlineData("S01-0220", "taiyangcheng")]
-    [InlineData("S02-0008", "tianting")]
     [InlineData("S02-0301", "asgard")]
     public void LimitOneCardsAreRejectedAtTheSecondCopy(string cardId, string faction)
     {
@@ -97,8 +96,28 @@ public sealed class DeckValidatorTests
 
         Assert.Equal([
             "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
-            "S02-0008", "S02-0301",
+            "S02-0301",
         ], limited);
+    }
+
+    [Fact]
+    public void WorldRingUsesTheNormalThreeCopyDeckLimit()
+    {
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "tianting");
+        var cards = preset.CardIds.ToList();
+        while (cards.Count(id => id == "S02-0008") < 3)
+            cards[cards.FindIndex(id => id != "S02-0008")] = "S02-0008";
+
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = "统御之戒三张",
+            MasterId = preset.MasterId,
+            CardIds = cards,
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        };
+
+        Assert.True(L12DeckValidator.TryValidate(Catalog, submission, out _, out var error), error);
     }
 
     [Fact]

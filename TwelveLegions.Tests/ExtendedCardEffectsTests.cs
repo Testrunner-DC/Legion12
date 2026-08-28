@@ -479,6 +479,10 @@ public sealed class ExtendedCardEffectsTests
         Assert.DoesNotContain(cards[2], player.Graveyard);
         Assert.Equal([cards[2].InstanceId, cards[1].InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
         Assert.Equal(hpBefore + 1, player.Hp);
+
+        var secondLokiEffect = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
+        Assert.False(secondLokiEffect.Accepted);
+        Assert.Contains("本回合", secondLokiEffect.Error);
     }
 
     private static IEnumerable<L12CardInstance> StateHand(L12GameEngine game, int playerIndex)

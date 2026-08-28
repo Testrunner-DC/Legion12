@@ -5,6 +5,14 @@ namespace TwelveLegions.Server;
 
 public sealed record OutgoingMessage(Guid SessionId, object Payload);
 
+public sealed record L12OnlinePresence(
+    string AccountId,
+    string Activity,
+    string? RoomCode,
+    bool CanInvite,
+    bool CanSpectate,
+    string? ActionReason);
+
 public sealed class L12RoomManager
 {
     private sealed class Session
@@ -102,6 +110,46 @@ public sealed class L12RoomManager
             .Where(session => session.Connected && !session.IsVirtual && !string.IsNullOrWhiteSpace(session.AccountId))
             .Select(session => session.AccountId!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyDictionary<string, L12OnlinePresence> DescribeOnlinePresence(string viewerAccountId)
+    {
+        var viewerInRoom = _sessions.Values.Any(session => session.Connected && !session.IsVirtual
+            && string.Equals(session.AccountId, viewerAccountId, StringComparison.OrdinalIgnoreCase)
+            && session.RoomCode is not null);
+        return _sessions.Values
+            .Where(session => session.Connected && !session.IsVirtual && !string.IsNullOrWhiteSpace(session.AccountId))
+            .GroupBy(session => session.AccountId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group =>
+            {
+                var session = group.OrderByDescending(candidate => candidate.RoomCode is not null && !candidate.IsSpectator
+                        && _rooms.TryGetValue(candidate.RoomCode, out var candidateRoom) && candidateRoom.Game is not null)
+                    .ThenByDescending(candidate => candidate.RoomCode is not null)
+                    .First();
+                var isSelf = string.Equals(group.Key, viewerAccountId, StringComparison.OrdinalIgnoreCase);
+                var friends = !isSelf && _platform?.AreFriends(viewerAccountId, group.Key) == true;
+                if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
+                    return new L12OnlinePresence(group.Key, "idle", null,
+                        !isSelf && friends && !viewerInRoom, false,
+                        isSelf ? "当前账号" : !friends ? "成为好友后可邀请对战" : viewerInRoom ? "请先离开当前房间" : null);
+
+                if (session.IsSpectator)
+                    return new L12OnlinePresence(group.Key, "spectating", null, false, false,
+                        isSelf ? "当前账号" : "该玩家正在观战");
+                if (room.Game is null)
+                    return new L12OnlinePresence(group.Key, "inRoom", null, false, false,
+                        isSelf ? "当前账号" : "该玩家正在房间中");
+
+                var canSpectate = !isSelf && !viewerInRoom && room.Options.Spectating != "disabled"
+                    && (room.Options.Spectating != "friends" || friends);
+                var reason = isSelf ? "当前账号"
+                    : viewerInRoom ? "请先离开当前房间"
+                    : room.Options.Spectating == "disabled" ? "该房间禁止观战"
+                    : room.Options.Spectating == "friends" && !friends ? "该房间仅限好友观战"
+                    : null;
+                return new L12OnlinePresence(group.Key, "playing", canSpectate ? room.Code : null,
+                    false, canSpectate, reason);
+            }, StringComparer.OrdinalIgnoreCase);
+    }
 
     public IReadOnlyList<OutgoingMessage> InviteFriend(Guid sessionId, string? targetAccountId)
     {

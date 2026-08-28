@@ -337,6 +337,46 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
+    public async Task OnlinePresenceDistinguishesInviteAndSpectateActions()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-online-presence", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var viewerAccount = platform.Register("查看者", "password-a").Account!;
+        var targetAccount = platform.Register("对局玩家", "password-b").Account!;
+        var opponentAccount = platform.Register("对局对手", "password-c").Account!;
+        Assert.True(platform.SendFriendRequest(viewerAccount.Id, targetAccount.Id).Success);
+        Assert.True(platform.ResolveFriendRequest(targetAccount.Id, viewerAccount.Id, true).Success);
+        var manager = new L12RoomManager(Catalog, recorder, platform);
+        var viewer = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        var opponent = Guid.NewGuid();
+        manager.Connect(viewer, viewerAccount.Id, viewerAccount.Username);
+        manager.Connect(target, targetAccount.Id, targetAccount.Username);
+        manager.Connect(opponent, opponentAccount.Id, opponentAccount.Username);
+
+        var idle = manager.DescribeOnlinePresence(viewerAccount.Id)[targetAccount.Id];
+        Assert.Equal("idle", idle.Activity);
+        Assert.True(idle.CanInvite);
+        Assert.False(idle.CanSpectate);
+
+        var roomState = manager.CreateRoom(target, new L12RoomOptions { Spectating = "public" })
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .Single(payload => payload.GetProperty("type").GetString() == "roomState");
+        var roomCode = roomState.GetProperty("roomCode").GetString();
+        manager.JoinRoom(opponent, roomCode);
+        await manager.SetReadyAsync(target, true);
+        await manager.SetReadyAsync(opponent, true);
+
+        var playing = manager.DescribeOnlinePresence(viewerAccount.Id)[targetAccount.Id];
+        Assert.Equal("playing", playing.Activity);
+        Assert.False(playing.CanInvite);
+        Assert.True(playing.CanSpectate);
+        Assert.Equal(roomCode, playing.RoomCode);
+    }
+
+    [Fact]
     public void GmReturnsControlledFieldCardToItsOwnerAndResetsFieldState()
     {
         var game = new L12GameEngine(Catalog, "gm-return-hand", "GMRETURN", 1208,

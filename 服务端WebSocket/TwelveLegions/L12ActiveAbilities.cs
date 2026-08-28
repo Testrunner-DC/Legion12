@@ -88,12 +88,17 @@ public sealed partial class L12GameEngine
     private static bool IsLegalGraveyardActiveAbilitySource(L12PlayerState player, L12CardInstance card, string ability)
         => card.CardId == "S02-0301" && ability == "thorHammerRevive" && player.MasterId == "S02-03M1";
 
+    private static string ActiveAbilityUsageKey(string sourceInstanceId, string sourceCardId, string ability)
+        => sourceCardId == "S01-03M2" && ability is "lokiCycle" or "lokiHeal"
+            ? $"active:{sourceInstanceId}:loki"
+            : $"active:{sourceInstanceId}:{ability}";
+
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
         bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null,
         IReadOnlyCollection<string>? selectedReturnIds = null)
     {
         var player = State.Players[playerIndex];
-        var onceKey = $"active:{source.InstanceId}:{ability}";
+        var onceKey = ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability);
         if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
             return freeResult;
         if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");

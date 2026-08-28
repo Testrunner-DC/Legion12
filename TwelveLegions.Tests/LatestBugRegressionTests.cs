@@ -906,6 +906,60 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void FenianLegendCreatesThreeIndependentRepeatableDebuffEffects()
+    {
+        var game = Create(64105);
+        var player = game.State.Players[0];
+        var trial = Card("S02-06S5", "fenian-independent-trial");
+        var enemy = Card("S02-0302", "fenian-repeat-target");
+        var counter = Card("S01-0019", "fenian-independent-counter");
+        trial.TrialProgress = 8;
+        player.SpecialZones.Trials.Clear();
+        player.SpecialZones.Trials.Add(trial);
+        player.SpecialZones.Runes = 3;
+        game.State.Players[1].Field[0][0] = enemy;
+        counter.Hidden = true;
+        counter.SetRound = 0;
+        game.State.Players[1].Field[1][0] = counter;
+        game.State.Round = 2;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
+            Ability: "completeTrial")).Accepted);
+        PassResponses(game);
+        for (var index = 0; index < 3; index++)
+        {
+            var target = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("s2-fenian-trial-debuff", target.Data["action"]);
+            Assert.Contains(enemy.InstanceId, target.ValidChoices);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+                Choice: enemy.InstanceId)).Accepted);
+        }
+
+        Assert.True(game.State.EffectStack.Count == 1,
+            $"stack={game.State.EffectStack.Count}; deferred={game.State.DeferredEffectStack.Count}; prompts={string.Join(',', game.State.PendingPrompts.Select(prompt => prompt.Kind + ':' + prompt.Continuation))}; events={string.Join(" / ", game.State.Events.TakeLast(5).Select(entry => entry.Text))}");
+        var first = game.State.EffectStack[0];
+        Assert.Equal("fenianSingleDebuff", first.Data["ability"]);
+        first.Negated = true;
+        for (var index = 0; index < 2; index++)
+        {
+            var response = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("response", response.Kind);
+            Assert.True(game.Handle(response.PlayerIndex, new L12Command("resolvePrompt",
+                PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+
+        var second = Assert.Single(game.State.EffectStack);
+        Assert.NotEqual(first.StackItemId, second.StackItemId);
+        Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        PassResponses(game);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Equal(enemy.BaseTroops - 6000, enemy.Troops);
+    }
+
+    [Fact]
     public void WorldUpheavalRevealsLibraryTopAndBlocksMatchingProfessionLegion()
     {
         var game = Create(6411);
@@ -1467,10 +1521,230 @@ public sealed class LatestBugRegressionTests
     {
         var game = Create(6424);
         var owner = game.State.Players[0];
-        var universal = Card("S01-0004", "ring-universal-card");
-        Assert.False(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction));
-        owner.Relic = Card("S02-0008", "world-ring");
-        Assert.True(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction));
+        var universalCards = new[]
+        {
+            Card("S01-0004", "ring-universal-hand"),
+            Card("S01-0004", "ring-universal-library"),
+            Card("S01-0004", "ring-universal-grave"),
+            Card("S01-0004", "ring-universal-removed"),
+            Card("S01-0004", "ring-universal-field"),
+        };
+        owner.Hand.Add(universalCards[0]);
+        owner.Library.Add(universalCards[1]);
+        owner.Graveyard.Add(universalCards[2]);
+        owner.Removed.Add(universalCards[3]);
+        owner.Field[0][0] = universalCards[4];
+        Assert.All(universalCards,
+            universal => Assert.False(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction)));
+
+        var ring = Card("S02-0008", "world-ring");
+        owner.ExtraRelics.Add(ring);
+        Assert.All(universalCards,
+            universal => Assert.True(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction)));
+        owner.ExtraRelics.Clear();
+        owner.Relic = ring;
+        Assert.All(universalCards,
+            universal => Assert.True(L12StructuredCardRules.HasFaction(owner, universal, owner.Faction)));
+    }
+
+    [Fact]
+    public void StrategicTransferReturnsTheWholePromotionStackToHand()
+    {
+        var game = Create(6433);
+        var player = game.State.Players[0];
+        var tactic = Card("S01-0009", "strategic-transfer");
+        var promoted = Card("S02-0501", "strategic-promoted");
+        var foundation = Card("S02-0502", "strategic-foundation");
+        var buffTarget = Card("S01-0001", "strategic-buff-target");
+        promoted.AttachedCards.Add(foundation);
+        player.Hand.Clear();
+        player.Hand.Add(tactic);
+        player.Field[0][0] = promoted;
+        player.Field[0][1] = buffTarget;
+        AddReadyMorale(player, 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        PassResponses(game);
+        var returnPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("strategic-return", returnPrompt.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
+            Choice: promoted.InstanceId)).Accepted);
+
+        Assert.Contains(promoted, player.Hand);
+        Assert.Contains(foundation, player.Hand);
+        Assert.Empty(promoted.AttachedCards);
+        Assert.DoesNotContain(promoted, player.Graveyard);
+        Assert.DoesNotContain(foundation, player.Graveyard);
+        var buffPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("strategic-buff", buffPrompt.Data["action"]);
+    }
+
+    [Fact]
+    public void DefeatedPromotionStackMovesHostAndFoundationToTheSameGraveyard()
+    {
+        var game = Create(6434);
+        var player = game.State.Players[0];
+        var promoted = Card("S02-0501", "defeated-promoted");
+        var foundation = Card("S02-0502", "defeated-foundation");
+        promoted.AttachedCards.Add(foundation);
+        player.Field[0][0] = promoted;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: promoted.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(promoted, player.Graveyard);
+        Assert.Contains(foundation, player.Graveyard);
+        Assert.Empty(promoted.AttachedCards);
+        Assert.DoesNotContain(promoted, player.Hand);
+        Assert.DoesNotContain(foundation, player.Hand);
+    }
+
+    [Fact]
+    public void WisdomCodexLetsOpponentAbandonTheCurrentTacticEffectWithoutDiscarding()
+    {
+        var game = Create(6435);
+        var codexOwner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var wisdom = Card("S01-0224", "wisdom-abandon");
+        var negotiation = Card("S01-0015", "wisdom-opponent-tactic");
+        wisdom.Hidden = true;
+        wisdom.SetRound = 0;
+        codexOwner.Field[1][0] = wisdom;
+        codexOwner.Hand.Clear();
+        opponent.Hand.Clear();
+        opponent.Hand.Add(negotiation);
+        var opponentLibraryBefore = opponent.Library.Count;
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("playCard", negotiation.InstanceId)).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, response.PlayerIndex);
+        Assert.Contains(wisdom.InstanceId, response.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: wisdom.InstanceId)).Accepted);
+        PassResponses(game);
+
+        var discardOrAbandon = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("wisdom-discard", discardOrAbandon.Data["action"]);
+        Assert.Equal(["abandon"], discardOrAbandon.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: discardOrAbandon.PromptId,
+            Choice: "abandon")).Accepted);
+
+        Assert.Equal(opponentLibraryBefore, opponent.Library.Count);
+        Assert.Empty(codexOwner.Hand);
+        Assert.Contains(wisdom, codexOwner.Graveyard);
+        Assert.Contains(negotiation, opponent.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-abandoned");
+    }
+
+    [Fact]
+    public void WisdomCodexRewardsOnlyAfterTheOpponentDiscardsAndArtifactEntrySucceeds()
+    {
+        var game = Create(6436);
+        var codexOwner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var wisdom = Card("S01-0224", "wisdom-success");
+        var canopic = Card("S01-0219", "wisdom-artifact-entry");
+        var discard = Card("S01-0001", "wisdom-discard-cost");
+        var recovery = Card("S01-0012", "wisdom-recovery");
+        var draw = Card("S01-0001", "wisdom-draw");
+        wisdom.Hidden = true;
+        wisdom.SetRound = 0;
+        codexOwner.Field[1][0] = wisdom;
+        codexOwner.Hand.Clear();
+        codexOwner.Library.Clear();
+        codexOwner.Library.Add(draw);
+        codexOwner.Graveyard.Clear();
+        codexOwner.Graveyard.Add(recovery);
+        opponent.Hand.Clear();
+        opponent.Hand.AddRange([canopic, discard]);
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("playCard", canopic.InstanceId)).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(wisdom.InstanceId, response.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: wisdom.InstanceId)).Accepted);
+        PassResponses(game);
+        var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(discard.InstanceId, discardPrompt.ValidChoices);
+        Assert.Contains("abandon", discardPrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        PassResponses(game);
+
+        var recoveryPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("wisdom-recover", recoveryPrompt.Data["action"]);
+        Assert.Contains(recovery.InstanceId, recoveryPrompt.ValidChoices);
+        Assert.Contains(draw, codexOwner.Hand);
+        Assert.Contains(discard, opponent.Graveyard);
+        Assert.Equal(2, opponent.TemporaryMorale);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoveryPrompt.PromptId,
+            Choice: recovery.InstanceId)).Accepted);
+        Assert.Contains(recovery, codexOwner.Hand);
+    }
+
+    [Fact]
+    public void WisdomCodexCanRespondToArtifactActiveAndTriggeredStackEffects()
+    {
+        var activeGame = Create(6437);
+        var activeCodexOwner = activeGame.State.Players[0];
+        var activeOpponent = activeGame.State.Players[1];
+        var activeWisdom = Card("S01-0224", "wisdom-active");
+        activeWisdom.Hidden = true;
+        activeWisdom.SetRound = 0;
+        activeCodexOwner.Field[1][0] = activeWisdom;
+        var ankh = Card("S01-0215", "wisdom-active-artifact");
+        var guard = Card("S01-0212", "wisdom-active-guard");
+        activeOpponent.Relic = ankh;
+        activeOpponent.Field[0][0] = guard;
+        activeGame.State.ActivePlayer = 1;
+        activeGame.State.Round = 2;
+        activeGame.State.Phase = L12Phase.Main;
+
+        Assert.True(activeGame.Handle(1, new L12Command("activateAbility", ankh.InstanceId,
+            Ability: "ankhDraw")).Accepted);
+        var targetPrompt = Assert.Single(activeGame.State.PendingPrompts);
+        Assert.True(activeGame.Handle(1, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: guard.InstanceId)).Accepted);
+        var activeResponse = Assert.Single(activeGame.State.PendingPrompts);
+        Assert.Contains(activeWisdom.InstanceId, activeResponse.ValidChoices);
+
+        var triggeredGame = Create(6438);
+        var triggeredCodexOwner = triggeredGame.State.Players[0];
+        var triggeredOpponent = triggeredGame.State.Players[1];
+        var triggeredWisdom = Card("S01-0224", "wisdom-triggered");
+        var ring = Card("S02-0305", "wisdom-triggered-artifact");
+        var oddr = Card("S01-0313", "wisdom-trigger-source");
+        triggeredWisdom.Hidden = true;
+        triggeredWisdom.SetRound = 0;
+        triggeredCodexOwner.Field[1][0] = triggeredWisdom;
+        triggeredOpponent.Relic = ring;
+        triggeredOpponent.Hand.Clear();
+        triggeredOpponent.Hand.Add(oddr);
+        triggeredOpponent.Hp = triggeredOpponent.MaxHp - 2;
+        AddReadyMorale(triggeredOpponent, oddr.Cost);
+        triggeredGame.State.ActivePlayer = 1;
+        triggeredGame.State.Round = 2;
+        triggeredGame.State.Phase = L12Phase.Main;
+
+        Assert.True(triggeredGame.Handle(1, new L12Command("playCard", oddr.InstanceId,
+            Row: 0, Slot: 0)).Accepted);
+        PassResponses(triggeredGame);
+        var damagePrompt = Assert.Single(triggeredGame.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "oddr-draw");
+        Assert.True(triggeredGame.Handle(1, new L12Command("resolvePrompt", PromptId: damagePrompt.PromptId,
+            Choice: "yes")).Accepted);
+        var triggeredResponse = Assert.Single(triggeredGame.State.PendingPrompts);
+        Assert.Contains(triggeredWisdom.InstanceId, triggeredResponse.ValidChoices);
+        Assert.Contains("主宰受到伤害时效果", triggeredGame.State.EffectStack[^1].Text);
     }
 
     [Fact]

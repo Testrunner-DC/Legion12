@@ -469,6 +469,18 @@ public sealed partial class L12GameEngine
                 if (!result.Accepted) return result;
                 break;
             }
+            case "s2-rollo-grave-cost":
+            {
+                int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
+                int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
+                var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
+                    CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
+                    Choice: $"rollo:{string.Join(',', chosen)}",
+                    TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
+                        ? targetPlayerIndex : null));
+                if (!result.Accepted) return result;
+                break;
+            }
             case "s2-yingzheng-enter-cost":
             {
                 var result = ResolveYingzhengEnterCost(prompt, chosen[0]);
@@ -1186,6 +1198,19 @@ public sealed partial class L12GameEngine
 
     private void FinishStackItem(L12StackItem item)
     {
+        QueueNextFenianDebuff(item);
+        if (!item.Negated && item.Data.GetValueOrDefault("wisdomRewards") is { Length: > 0 } rewards)
+        {
+            foreach (var marker in rewards.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = marker.Split('|', 2);
+                if (parts.Length != 2 || !int.TryParse(parts[0], out var controller) || controller is < 0 or > 1) continue;
+                var wisdom = State.Players[controller].Graveyard.LastOrDefault(card => card.InstanceId == parts[1])
+                    ?? State.Players[controller].Resolving.LastOrDefault(card => card.InstanceId == parts[1]);
+                if (wisdom is not null)
+                    PushEffect(controller, wisdom, "wisdom-reward", "对方效果成功发动后的效果");
+            }
+        }
         if (item.Trigger == "authority-event" && FindAuthorityEvent(item) is { } authorityEvent)
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);

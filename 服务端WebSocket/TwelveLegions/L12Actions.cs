@@ -41,6 +41,27 @@ public sealed partial class L12GameEngine
             if (!canReplaceOwnCounter) return CommandResult.Reject("阵地已被占用");
         }
 
+        if (card.CardId == "S02-0302" && command.Choice?.StartsWith("rollo:", StringComparison.Ordinal) != true)
+        {
+            var choices = player.Graveyard.Where(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))
+                .Select(candidate => candidate.InstanceId).ToArray();
+            if (choices.Length == 0)
+                command = command with { Choice = "rollo:" };
+            else
+            {
+                CreatePrompt(playerIndex, "order", "〈步行者罗洛〉：依选择顺序将墓地最多8张【阿斯加德】卡牌返回牌库底部",
+                    choices, 0, Math.Min(8, choices.Length), "s2-rollo-grave-cost", isPrivate: true,
+                    data: new Dictionary<string, string>
+                    {
+                        ["cardInstanceId"] = card.InstanceId,
+                        ["row"] = command.Row!.Value.ToString(),
+                        ["slot"] = command.Slot!.Value.ToString(),
+                        ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
+                    });
+                return CommandResult.Ok();
+            }
+        }
+
         if (card.CardId == "S02-0622" && command.Choice?.Contains("runes:", StringComparison.Ordinal) != true)
         {
             var maximum = Math.Min(player.SpecialZones.Runes, (card.Cost + 1) / 2);
@@ -89,7 +110,12 @@ public sealed partial class L12GameEngine
         var mistletoeRunes = card.CardId == "S02-0622"
             ? ParseDeclaredRuneCount(command.Choice, player.SpecialZones.Runes)
             : 0;
-        var cost = GetPlayCost(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes);
+        var rolloReturns = card.CardId == "S02-0302" ? ParseRolloGraveOrder(command.Choice) : [];
+        if (rolloReturns.Length > 8 || rolloReturns.Distinct(StringComparer.OrdinalIgnoreCase).Count() != rolloReturns.Length
+            || rolloReturns.Any(id => !player.Graveyard.Any(candidate => candidate.InstanceId == id
+                && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))))
+            return CommandResult.Reject("〈步行者罗洛〉选择的墓地卡牌已失效或数量不合法");
+        var cost = GetPlayCost(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes, rolloReturns.Length);
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("活跃士气不足");
         if (mistletoeRunes > 0 && player.SpecialZones.Runes < mistletoeRunes)
             return CommandResult.Reject("可用符文数量不足");
@@ -99,6 +125,8 @@ public sealed partial class L12GameEngine
             ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds)
             : TryConsumeMorale(player, cost);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+        if (rolloReturns.Length > 0)
+            MoveGraveToLibraryBottom(player, rolloReturns.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
         if (card.CardType == "legion")
         {
             if (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2)
@@ -126,7 +154,6 @@ public sealed partial class L12GameEngine
         else if (card.CardType == "artifact")
         {
             player.Hand.Remove(card);
-            DiscardFieldArtifactsForRelicReplacement(player);
             if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
             {
                 player.ExtraRelics.Add(card);
@@ -343,7 +370,14 @@ public sealed partial class L12GameEngine
             : 0;
     }
 
-    private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0)
+    private static string[] ParseRolloGraveOrder(string? choice)
+    {
+        if (choice?.StartsWith("rollo:", StringComparison.Ordinal) != true) return [];
+        return choice["rollo:".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0,
+        int rolloReturnCount = 0)
     {
         var player = State.Players[playerIndex];
         var counterTactic = card.CardType == "tactic" && IsCounterTactic(card.CardId);
@@ -378,6 +412,7 @@ public sealed partial class L12GameEngine
         if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S02-DS06")
             modifier++;
         if (card.CardId == "S02-0622") modifier -= Math.Max(0, spentRunes) * 2;
+        if (card.CardId == "S02-0302") modifier -= Math.Clamp(rolloReturnCount, 0, 8) / 2;
         return Math.Max(0, card.Cost + modifier);
     }
 
