@@ -20,6 +20,10 @@ public sealed class PlatformStoreTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             Assert.True(store.Login("Admin", "server-secret-123").Success);
             Assert.False(store.Login("Admin", "L12master").Success);
+            var versionBeforeRestart = store.Version;
+            var reloaded = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Equal(versionBeforeRestart, reloaded.Version);
+            Assert.True(reloaded.Login("Admin", "server-secret-123").Success);
         }
         finally
         {
@@ -50,7 +54,7 @@ public sealed class PlatformStoreTests
 
             var reloaded = new L12PlatformStore(path);
             Assert.True(reloaded.Login("TestPlayer", "new-password-456").Success);
-            Assert.NotNull(reloaded.Authenticate($"Bearer {registered.Token}"));
+            Assert.Null(reloaded.Authenticate($"Bearer {registered.Token}"));
         }
         finally
         {

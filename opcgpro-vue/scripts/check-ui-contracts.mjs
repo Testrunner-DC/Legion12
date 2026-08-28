@@ -24,11 +24,13 @@ const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
+const profilePage = read('../src/l12/site/ProfilePage.vue')
 const platform = read('../src/l12/platform.ts')
 const decks = read('../src/l12/decks.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
 const deckShare = read('../src/l12/site/deckShare.ts')
 const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
+const tournamentCenter = read('../src/l12/site/TournamentCenterPage.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.ps1')
@@ -142,6 +144,25 @@ const contracts = [
   [platform.includes("effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms')") && platform.includes('/api/admin/effects/coverage'), '卡效后台必须从服务端权威原子注册表读取数据'],
   [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
+  [platform.includes('permissions?: string[]') && platform.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
+  [platform.includes("'/api/auth/sessions/current'") && platform.includes("'/api/auth/sessions'") && profilePage.includes('登录设备与会话') && profilePage.includes('退出其他设备') && profilePage.includes('退出全部设备'), '账号安全页必须支持服务端会话列表、当前设备及全端撤销'],
+  [platform.includes('options: { revokeServer?: boolean } = {}') && profilePage.includes('logout({ revokeServer: false })'), '服务端已撤销当前或全部会话后必须只清理本机状态，不得用失效令牌重复调用撤销接口'],
+  [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('revokeAccountSessions') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],
+  [platform.includes("headers.set('X-Correlation-ID'") && platform.includes('PlatformRequestError') && adminPage.includes('关联 ID：'), 'HTTP 请求、错误提示与管理审计必须贯通关联 ID'],
+  [platform.includes('/api/admin/v1/commands') && platform.includes('/api/admin/v1/approvals') && adminPage.includes('命令与审批') && adminPage.includes('失败：'), '后台必须提供持久命令、待审批、命令详情与失败原因入口'],
+  [platform.includes('/api/admin/v1/content/publish') && platform.includes('/api/admin/v1/content/rollback') && adminPage.includes('提交批量发布') && adminPage.includes('提交回滚审批'), '官网内容必须通过服务端批量发布与回滚命令，不得恢复前端逐键发布'],
+  [adminPage.includes('预览 / dry-run') && adminPage.includes('发布预览（未写入）') && adminPage.includes('wouldChange'), '内容后台必须展示不写入的发布预览与变化摘要'],
+  [adminPage.includes('auditCommandId') && adminPage.includes('auditCorrelationId') && adminPage.includes('auditOutcome'), '审计页必须可按结果、命令 ID 与关联 ID 筛选'],
+  [platform.includes("releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts')") && !platform.includes('registerReleaseArtifact') && adminPage.includes('Web 端没有注册入口'), '发布后台只能读取适配器提供的已验证工件，不得提供客户端工件注册或自报 verified 入口'],
+  [platform.includes('/api/admin/v1/releases/deploy') && platform.includes('/api/admin/v1/releases/rollback') && adminPage.includes('发布 dry-run') && adminPage.includes('提交双人审批') && adminPage.includes('提交回滚审批'), '发布与回滚必须支持 dry-run、环境版本和双人审批入口'],
+  [platform.includes("releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments')") && adminPage.includes('运行态只读快照') && adminPage.includes('WebSocket 冒烟') && adminPage.includes('发布、失败与回滚记录'), '运行态必须来自显式只读适配器快照，并展示健康、WS 冒烟、失败和回滚记录'],
+  [platform.includes('disabled?: boolean') && platform.includes('/status`, {') && adminPage.includes('提交禁用审批') && adminPage.includes('禁用会立即撤销旧令牌与 WebSocket'), '账号禁用/启用必须通过带版本的双人审批命令，并明确旧令牌与 WebSocket 立即失效'],
+  [platform.includes("securityStatus: () => platformRequest<SecurityStatus>('/api/admin/v1/security/status')") && platform.includes('/api/admin/v1/security/audit-archives') && adminPage.includes('高风险操作在独立审计不可用时失败关闭') && adminPage.includes('恢复演练'), '后台必须展示安全告警、独立审计归档 dry-run/审批与恢复演练入口'],
+  [platform.includes("mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')") && profilePage.includes('MFA：') && profilePage.includes('尚未启用') && profilePage.includes('不会收集或保存 MFA 密钥'), 'MFA 无安全凭据基础时必须明确保持关闭，前端不得伪造注册能力或收集密钥'],
+  [adminPage.includes('Web/API 不接受 bootstrap 凭据') && !platform.includes('bootstrapSecondApprover'), '第二审批人 bootstrap 只能保留离线命令边界，不得新增 Web 凭据入口'],
+  [platform.includes('export const tournamentApi') && platform.includes('/api/tournaments/import-legacy') && platform.includes('/matches/${encodeURIComponent(matchId)}/rulings'), '赛事中心必须通过服务端 API 完成赛事、旧数据导入与裁判写入'],
+  [tournamentCenter.includes('预览导入（dry-run）') && tournamentCenter.includes('确认导入') && tournamentCenter.includes('legacyPreview.value.previewHash') && !tournamentCenter.includes('localStorage.setItem'), '本机旧赛事只能显式预览并确认导入，不得继续作为 localStorage 权威状态写回'],
+  [tournamentCenter.includes('organizerAccountId === accountId.value') && tournamentCenter.includes('person.accountId===accountId') && tournamentCenter.includes('赛事级版本'), '赛事身份、牌库范围与并发写入必须使用服务端账号 ID 和赛事版本'],
   [playerMat.includes("emit('cardAction', 'freeMove'") && playerMat.includes("unit?.cardId === 'S02-0510' && unit.tapped") && board.includes("mode.value === 'freeMove' ? 'move'"), '希波吕忒休整时必须提供独立的免费前后位移入口，并复用规则内移动命令'],
   [wsSmoke.includes("ws.send(JSON.stringify({ type: 'deploymentProbe' }))") && !wsSmoke.includes("wait(m => m.type === 'session')"), '发布烟雾测试必须先执行无状态 WebSocket 探针，不得恢复为认证前等待 session'],
   [wsServer.includes('"deploymentProbe" =>') && wsServer.includes('protocolVersion = 1') && wsServer.includes('authentication = "token"'), '服务端必须保留无需账号且不写运行数据的发布探针协议'],
