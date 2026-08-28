@@ -274,7 +274,7 @@ public sealed partial class L12GameEngine
     private void ApplyDeclaredTroopsDelta(L12StackItem item, int delta)
     {
         var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
-        if (target is not null) target.Troops += delta;
+        if (target is not null) AddTimedModifier(target, delta, 0, State.TurnSerial, item.SourceName);
     }
 
     private void ResolveDeclaredPalaceExchange(L12StackItem item)
@@ -718,8 +718,8 @@ public sealed partial class L12GameEngine
                 if (card is null || !IsFieldLegion(card)) continue;
                 card.EffectiveProfession = L12StructuredCardRules.EffectiveProfession(card, row);
                 card.ContinuousCostModifier = card.CardId == "S01-0212" && State.ActivePlayer != player.PlayerIndex ? 1 : 0;
-                var modifier = globalModifier + GetTurnAndPositionContinuousTroops(player, card, row, slot);
-                L12DerivedStats.ApplyContinuousModifier(card, modifier, State.TurnSerial);
+                var bonus = GetTurnAndPositionContinuousTroops(player, card, row, slot);
+                L12DerivedStats.ApplyContinuousModifiers(card, bonus, globalModifier, State.TurnSerial);
             }
         }
     }
@@ -728,31 +728,36 @@ public sealed partial class L12GameEngine
     /// 统一计算只依赖当前回合、位置与公开场面状态的持续兵力修正。
     /// 这些效果不是“被进攻时”或“进攻时”触发，任何快照、目标校验和效果结算前都必须保持生效。
     /// </summary>
-    private int GetTurnAndPositionContinuousTroops(L12PlayerState owner, L12CardInstance card, int row, int slot)
+    private IReadOnlyDictionary<string, int> GetTurnAndPositionContinuousTroops(
+        L12PlayerState owner, L12CardInstance card, int row, int slot)
     {
-        var attachedSword = card.AttachedCards.Any(attached => attached.CardId == "S02-06S2") ? 1000 : 0;
+        var bonuses = new Dictionary<string, int>(StringComparer.Ordinal);
+        void Add(string key, int amount) => bonuses[key] = bonuses.GetValueOrDefault(key) + amount;
+        foreach (var sword in card.AttachedCards.Where(attached => attached.CardId == "S02-06S2"))
+            Add($"attached:{sword.InstanceId}:king-sword", 1000);
         var isOpponentTurn = State.ActivePlayer != owner.PlayerIndex;
-        var modifier = attachedSword;
         if (card.CardId == "S01-0204")
-            modifier += card.AttachedCards.Count(attached => attached.CardId == "S01-0212") * 1000;
+            foreach (var guard in card.AttachedCards.Where(attached => attached.CardId == "S01-0212"))
+                Add($"attached:{guard.InstanceId}:tomb-guard", 1000);
 
         if (isOpponentTurn)
         {
             if (row == 0 && card.CardId is "S01-0107" or "S01-0212" or "S01-0312" or "S02-0004" or "S02-0007" or "S02-0615")
-                modifier += 1000;
-            if (card.CardId == "S02-0519") modifier += 2000;
+                Add($"self:{card.InstanceId}:opponent-turn-front", 1000);
+            if (card.CardId == "S02-0519") Add($"self:{card.InstanceId}:opponent-turn", 2000);
             if (card.CardId == "S01-0203"
                 && !owner.Field.SelectMany(fieldRow => fieldRow).Any(fieldCard => fieldCard?.CardId == "S01-0212"))
-                modifier += 1000;
+                Add($"self:{card.InstanceId}:no-tomb-guard", 1000);
         }
 
-        if (card.CardId == "S01-0212" && owner.MasterId == "S01-02D1") modifier += 1000;
+        if (card.CardId == "S01-0212" && owner.MasterId == "S01-02D1")
+            Add($"master:{owner.MasterId}:tomb-guard", 1000);
 
         // 汉尼拔给予同排左右相邻军团的静态兵力修正；多个来源可以叠加。
         foreach (var adjacentSlot in new[] { slot - 1, slot + 1 })
-            if (adjacentSlot is >= 0 and < 3 && owner.Field[row][adjacentSlot]?.CardId == "S02-0516")
-                modifier += 1000;
+            if (adjacentSlot is >= 0 and < 3 && owner.Field[row][adjacentSlot] is { CardId: "S02-0516" } hannibal)
+                Add($"adjacent:{hannibal.InstanceId}:hannibal", 1000);
 
-        return modifier;
+        return bonuses;
     }
 }

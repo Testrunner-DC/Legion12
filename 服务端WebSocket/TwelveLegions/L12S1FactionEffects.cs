@@ -230,7 +230,7 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "奥拉夫二世：可将墓地1张牌置入牌库底部，获得强攻", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "olaf-strong" }); return true;
             }
-            case "齐格鲁德": if (player.Relic?.CardId == "S01-0317" || player.ExtraRelics.Any(relic => relic.CardId == "S01-0317")) card.Troops += 1000; FinishStackItem(item); return true;
+            case "齐格鲁德": if (player.Relic?.CardId == "S01-0317" || player.ExtraRelics.Any(relic => relic.CardId == "S01-0317")) AddTimedModifier(card, 1000, 0, State.TurnSerial, "齐格鲁德"); FinishStackItem(item); return true;
             case "古斯塔夫一世":
                 if (player.Graveyard.Count < 2) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "古斯塔夫一世：是否将墓地2张牌返回牌库底部，使自身本回合兵力+2000？", ["yes", "no"], 1, 1,
@@ -417,7 +417,7 @@ public sealed partial class L12GameEngine
             }
             case "canopic-one":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) { target.Troops += 2000; GrantStrongAttack(target); }
+                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) { AddTimedModifier(target, 2000, 0, State.TurnSerial, "卡诺匹斯罐 一"); GrantStrongAttack(target); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             }
             case "canopic-four":
@@ -430,7 +430,7 @@ public sealed partial class L12GameEngine
             case "egil-pay":
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
                 DamageMaster(item.Controller, 1, "夺命诗人埃吉尔效果"); Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
-            case "egil-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.Troops -= 2000; FinishStackItem(item); return true; }
+            case "egil-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); FinishStackItem(item); return true; }
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
                 FinishStackItem(item); return true;
@@ -451,16 +451,16 @@ public sealed partial class L12GameEngine
                     var target = FindOnField(player, chosen[0], out _, out _);
                     if (target is not null)
                         RemoveFromField(player, target, true, "被美尼斯弃置", leaveKind: L12FieldLeaveKind.Discard);
-                    source.Troops += 2000;
+                    AddTimedModifier(source, 2000, 0, State.TurnSerial, "美尼斯");
                     GrantStrongAttack(source);
                 }
                 FinishStackItem(item); return true;
             case "saladin-move": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["saladin-unit"] = chosen[0]; CreatePrompt(item.Controller, "slot", "选择陵墓守卫位移后的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "saladin-slot" }); } return true;
             case "saladin-slot": MoveOwnCardToSlot(player, item.Data["saladin-unit"], chosen[0]); FinishStackItem(item); return true;
-            case "ay-buff": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000; FinishStackItem(item); return true; }
+            case "ay-buff": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "阿伊"); FinishStackItem(item); return true; }
             case "ay-pay":
                 if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "ay-buff"); else FinishStackItem(item); return true;
-            case "beowulf-buff": if (chosen[0] == "yes" && source is not null) { DamageMaster(item.Controller, 1, "贝奥武夫进攻效果"); source.Troops += 2000; } FinishStackItem(item); return true;
+            case "beowulf-buff": if (chosen[0] == "yes" && source is not null) { DamageMaster(item.Controller, 1, "贝奥武夫进攻效果"); AddTimedModifier(source, 2000, 0, State.TurnSerial, "贝奥武夫"); } FinishStackItem(item); return true;
             case "olaf-strong":
                 if (chosen[0] != "skip" && source is not null)
                 {
@@ -476,7 +476,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "gustav-attack-return":
                 MoveGraveToLibraryBottom(player, chosen.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
-                if (source is not null) source.Troops += 2000;
+                if (source is not null) AddTimedModifier(source, 2000, 0, State.TurnSerial, "古斯塔夫一世");
                 FinishStackItem(item); return true;
             case "gustav-ready-choice":
                 if (chosen[0] == "yes")
@@ -545,7 +545,7 @@ public sealed partial class L12GameEngine
             case "isis-canopic-reward":
                 if (chosen[0] == "draw") Draw(player, 1); else HealMaster(item.Controller, 1, "伊西斯");
                 FinishStackItem(item); return true;
-            case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.Troops -= 1000; FinishStackItem(item); return true; }
+            case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); FinishStackItem(item); return true; }
             case "medjed-extra-choice":
                 if (chosen[0] == "normal") { ApplyDeclaredTroopsDelta(item, -1000); FinishStackItem(item); }
                 else
@@ -588,7 +588,8 @@ public sealed partial class L12GameEngine
             case "amaterasu-kill": if (chosen[0] != "skip") KillTarget(chosen[0], "被天照大神击杀"); FinishStackItem(item); return true;
             case "amaterasu-discard":
                 MoveHandToGrave(player, chosen[0], causedByEffect: false); if (source is not null) foreach (var morale in player.Morale.Where(card => card.Tapped).Take(2).ToArray()) ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
-                foreach (var legion in player.Field[0].Where(card => card?.Faction == "gaotianyuan").Cast<L12CardInstance>()) legion.Troops += 1000;
+                foreach (var legion in player.Field[0].Where(card => card?.Faction == "gaotianyuan").Cast<L12CardInstance>())
+                    AddTimedModifier(legion, 1000, 0, State.TurnSerial, "天照大神");
                 FinishStackItem(item); return true;
             default: return false;
         }
@@ -980,7 +981,8 @@ public sealed partial class L12GameEngine
 
     private void ApplySunKingAttack(L12StackItem item)
     {
-        foreach (var target in PublicLegions(State.Players[1 - item.Controller])) target.Troops -= 1000;
+        foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
+            AddTimedModifier(target, -1000, 0, State.TurnSerial, "图特摩斯三世");
         PromptEnemyByTroops(item, "thutmose-kill", "选择对方1张兵力不高于1000的军团并击杀", 1000, true);
     }
 

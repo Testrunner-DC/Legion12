@@ -56,7 +56,7 @@ public sealed partial class L12GameEngine
             case "march-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) target.Troops += 2000;
+                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, item.SourceName);
                 item.Targets.Clear(); item.Targets.Add(chosen[0]);
                 if (source is not null) QueueMarchKillSegment(item, source);
                 FinishStackItem(item);
@@ -74,7 +74,7 @@ public sealed partial class L12GameEngine
             case "inaihime-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) target.Troops += 1000;
+                if (target is not null) AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
                 FinishStackItem(item); break;
             }
             case "hiromasa-disable":

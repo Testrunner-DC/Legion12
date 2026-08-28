@@ -11,6 +11,7 @@ public sealed record L12ConditionalCombatProfile(
     bool HasAttackNoLoss,
     bool CannotBeRanged,
     int? AttackTroopsSetValue,
+    int IncomingRangedCombatDamageReduction,
     string ConditionExpression);
 
 public static class L12StructuredCardRules
@@ -132,6 +133,7 @@ public static class L12StructuredCardRules
         var attackNoLoss = false;
         var cannotBeRanged = false;
         int? attackTroopsSetValue = null;
+        var incomingRangedCombatDamageReduction = 0;
         var matchedConditions = new List<string>();
         var abilities = GetCombatRuleAbilities(card.CardId);
         foreach (var ability in abilities.Where(ability => ConditionMatchesRow(ability, row)))
@@ -150,6 +152,9 @@ public static class L12StructuredCardRules
                     rangedNoLoss |= atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true";
                     attackNoLoss |= atom.Parameters.GetValueOrDefault("attackNoLoss") == "true";
                     cannotBeRanged |= atom.Parameters.GetValueOrDefault("cannotBeRanged") == "true";
+                    if (int.TryParse(atom.Parameters.GetValueOrDefault("incomingRangedCombatDamageReduction"),
+                            out var reduction))
+                        incomingRangedCombatDamageReduction += reduction;
                 }
             }
             if (ability.Trigger != "attack") continue;
@@ -169,6 +174,7 @@ public static class L12StructuredCardRules
         }
 
         return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, attackTroopsSetValue,
+            incomingRangedCombatDamageReduction,
             matchedConditions.Count == 0 ? "always" : string.Join(';', matchedConditions.Distinct(StringComparer.Ordinal)));
     }
 
@@ -395,7 +401,7 @@ public static class L12StructuredCardRules
         new("static", "continuous", "进攻无损，此军团受到远程进攻兵力额外-1000。",
         [
             new(L12AtomKinds.AttackRule, "进攻无损", "resolution", new() { ["attackNoLoss"] = "true" }),
-            new(L12AtomKinds.ModifyTroops, "受到远程进攻时兵力额外 -1000", "resolution", new() { ["condition"] = "incoming-attack.is-ranged", ["operation"] = "add", ["value"] = "-1000" }),
+            new(L12AtomKinds.AttackRule, "受到远程进攻时最终战斗伤害 -1000", "resolution", new() { ["incomingRangedCombatDamageReduction"] = "1000" }),
             new(L12AtomKinds.Duration, "位于战场期间持续", "duration", new() { ["duration"] = "while-on-field" }),
         ]),
         new("promotion-enter", "triggered", "晋升登场 本回合可进攻对方军团。",

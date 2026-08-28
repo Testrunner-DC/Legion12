@@ -271,7 +271,7 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void EndTurnRunsAllStartPhasesAndRestoresBothFields()
+    public void EndTurnRunsAllStartPhasesWithoutErasingTroopsDamage()
     {
         var game = Create();
         game.Handle(0, new L12Command("mulligan", CardInstanceIds: []));
@@ -291,8 +291,8 @@ public sealed class GameEngineTests
 
         Assert.Equal(L12Phase.Main, game.State.Phase);
         Assert.Equal(other, game.State.ActivePlayer);
-        Assert.Equal(activeCard.BaseTroops, activeCard.Troops);
-        Assert.Equal(otherCard.BaseTroops, otherCard.Troops);
+        Assert.Equal(Math.Max(1, activeCard.BaseTroops - 1000), activeCard.Troops);
+        Assert.Equal(Math.Max(1, otherCard.BaseTroops - 1000), otherCard.Troops);
         Assert.Contains(game.State.Events, item => item.Text == "执行结束阶段");
         Assert.Contains(game.State.Events, item => item.Text == "执行重置阶段");
         Assert.Contains(game.State.Events, item => item.Text == "进入主要阶段");
@@ -429,6 +429,149 @@ public sealed class GameEngineTests
             Target: new L12AttackTarget("master"))).Accepted);
         Assert.Equal(5000, attacker.Troops);
         Assert.Equal(1000, game.State.PendingDefense?.TemporaryAttackerTroopsBonus);
+    }
+
+    [Fact]
+    public void SaladinAttackBonusAbsorbsCombatDamageBeforeItExpires()
+    {
+        var game = Create(1217);
+        var attackerPlayer = game.State.ActivePlayer;
+        var defenderPlayer = 1 - attackerPlayer;
+        var attacker = new L12CardInstance
+        {
+            InstanceId = "saladin-layer-attacker",
+            CardId = "test-sun-layer-legion",
+            Name = "测试太阳城军团",
+            CardType = "legion",
+            Faction = "taiyangcheng",
+            BaseTroops = 4000,
+            Troops = 4000,
+            Cost = 4,
+            SummonRound = -1,
+        };
+        var saladin = Card("S01-0206", "saladin-layer-source");
+        saladin.SummonRound = -1;
+        var target = new L12CardInstance
+        {
+            InstanceId = "saladin-layer-target",
+            CardId = "test-layer-target",
+            Name = "测试防守军团",
+            CardType = "legion",
+            Faction = "universal",
+            BaseTroops = 4500,
+            Troops = 4500,
+            Cost = 4,
+            SummonRound = -1,
+        };
+        game.State.Players[attackerPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[attackerPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[attackerPlayer].Field[0][0] = attacker;
+        game.State.Players[attackerPlayer].Field[0][1] = saladin;
+        game.State.Players[defenderPlayer].Field[0][0] = target;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        for (var step = 0; step < 30 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Same(attacker, game.State.Players[attackerPlayer].Field[0][0]);
+        Assert.Equal(500, attacker.Troops);
+        Assert.Contains(target, game.State.Players[defenderPlayer].Graveyard);
+    }
+
+    [Fact]
+    public void PromotedAchillesReducesIncomingRangedCombatDamageInsteadOfItsTroops()
+    {
+        var game = Create(1218);
+        var attackerPlayer = game.State.ActivePlayer;
+        var defenderPlayer = 1 - attackerPlayer;
+        var attacker = Card("S01-0208", "ranged-achilles-attacker");
+        var achilles = Card("S02-0503", "promoted-achilles-target");
+        attacker.Troops = 4000;
+        attacker.SummonRound = -1;
+        achilles.Troops = 5000;
+        achilles.SummonRound = -1;
+        game.State.Players[attackerPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[attackerPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[attackerPlayer].Field[1][0] = attacker;
+        game.State.Players[defenderPlayer].Field[0][0] = achilles;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", achilles.InstanceId))).Accepted);
+        Assert.True(game.State.PendingDefense?.IsRanged);
+        for (var step = 0; step < 30 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Same(achilles, game.State.Players[defenderPlayer].Field[0][0]);
+        Assert.Equal(2000, achilles.Troops);
+        Assert.Equal(4000, attacker.Troops);
+    }
+
+    [Fact]
+    public void PromotedAchillesDoesNotReduceFrontToFrontCombatDamage()
+    {
+        var game = Create(1219);
+        var attackerPlayer = game.State.ActivePlayer;
+        var defenderPlayer = 1 - attackerPlayer;
+        var attacker = Card("S01-0208", "melee-achilles-attacker");
+        var achilles = Card("S02-0503", "melee-promoted-achilles-target");
+        attacker.Troops = 4000;
+        attacker.SummonRound = -1;
+        achilles.Troops = 5000;
+        achilles.SummonRound = -1;
+        game.State.Players[attackerPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[attackerPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[0] = new L12CardInstance?[3];
+        game.State.Players[defenderPlayer].Field[1] = new L12CardInstance?[3];
+        game.State.Players[attackerPlayer].Field[0][0] = attacker;
+        game.State.Players[defenderPlayer].Field[0][0] = achilles;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", achilles.InstanceId))).Accepted);
+        Assert.False(game.State.PendingDefense?.IsRanged);
+        for (var step = 0; step < 30 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Same(achilles, game.State.Players[defenderPlayer].Field[0][0]);
+        Assert.Equal(1000, achilles.Troops);
+        Assert.Contains(attacker, game.State.Players[attackerPlayer].Graveyard);
     }
 
     [Fact]

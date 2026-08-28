@@ -108,6 +108,14 @@ public sealed class L12CardInstance
     public int BaseTroops { get; init; }
     public int Troops { get; set; }
     public int ContinuousTroopsModifier { get; set; }
+    /// <summary>当前条件声明的持续正兵力层总量；伤害只消耗其未消耗部分。</summary>
+    public int ContinuousTroopsBonusGranted { get; set; }
+    /// <summary>当前持续正兵力层已经吸收的伤害；条件失效时不得再次扣除此部分。</summary>
+    public int ContinuousTroopsBonusConsumed { get; set; }
+    /// <summary>持续负兵力修正单独保存，避免与可消耗的正兵力层混算。</summary>
+    public int ContinuousTroopsPenalty { get; set; }
+    /// <summary>按实际持续效果来源保存正兵力层；不同来源失效时只移除自己的未消耗部分。</summary>
+    public Dictionary<string, L12TroopsBonusLayer> ContinuousTroopsBonusLayers { get; init; } = new(StringComparer.Ordinal);
     public int? SetTroopsValue { get; set; }
     public int SetTroopsUntilTurn { get; set; } = -1;
     public int DisasterLevel { get; init; }
@@ -186,6 +194,8 @@ public sealed record L12AbilityView(
 public sealed class L12TimedModifier
 {
     public int TroopsDelta { get; init; }
+    /// <summary>正兵力加成已经吸收的伤害；到期只移除 TroopsDelta 中尚未消耗的部分。</summary>
+    public int ConsumedTroopsBonus { get; set; }
     public int CostDelta { get; init; }
     public required int ExpiresAfterTurn { get; init; }
     public required string Source { get; init; }
@@ -284,7 +294,6 @@ public sealed class L12PendingDefense
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
     public int TemporaryAttackerTroopsBonus { get; set; }
-    public int TemporaryDefenderTroopsPenalty { get; set; }
     /// <summary>贯穿等规则生成的进攻仍进入通常响应/抵挡流程，但不会建立【进攻时】卡效。</summary>
     public bool SuppressAttackTriggers { get; set; }
     /// <summary>同一次交战内“即将阵亡”替代效果的决定；true=代替，false=不代替。</summary>
@@ -300,6 +309,12 @@ public sealed class L12PendingDefense
     /// <summary>战斗伤害已确认阵亡、等待各自触发完成后才进入墓地的实例。</summary>
     public string? DefeatedAttackerInstanceId { get; set; }
     public string? DefeatedDefenderInstanceId { get; set; }
+}
+
+public sealed class L12TroopsBonusLayer
+{
+    public int Granted { get; set; }
+    public int Consumed { get; set; }
 }
 
 public sealed class L12Prompt

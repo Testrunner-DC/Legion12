@@ -1,5 +1,6 @@
 ﻿using TwelveLegions.Server;
 using Xunit;
+using System.Text.RegularExpressions;
 
 namespace TwelveLegions.Tests;
 
@@ -45,6 +46,32 @@ public sealed class RuleKernelTests
         };
         return new L12GameEngine(Catalog, "rule-kernel", "RULEKERNEL", seed,
             ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true);
+    }
+
+    [Fact]
+    public void TemporaryAndContinuousTroopsCardPoolScanIsPinned()
+    {
+        var scanned = Catalog.Cards.Values
+            .Where(card => Regex.IsMatch(card.Effect ?? string.Empty,
+                @"兵力[^\d\r\n]{0,8}(?:\+|＋|-|－|−)\s*\d+|兵力[^\r\n]{0,8}(?:视为|变为)|兵力额外"))
+            .Select(card => card.Id)
+            .OrderBy(cardId => cardId, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(new[]
+        {
+            "S01-0005", "S01-0008", "S01-0009", "S01-0017", "S01-0019", "S01-0020",
+            "S01-0104", "S01-0106", "S01-0107", "S01-0110", "S01-0118", "S01-0201",
+            "S01-0203", "S01-0204", "S01-0206", "S01-0208", "S01-0212", "S01-0215",
+            "S01-0217", "S01-0220", "S01-02D1", "S01-02M2", "S01-02M3", "S01-0301",
+            "S01-0310", "S01-0311", "S01-0312", "S01-0314", "S01-0316", "S01-0320",
+            "S01-0409", "S01-0411", "S01-0416", "S01-04M1", "S01-04M2", "S02-0004",
+            "S02-0007", "S02-0016", "S02-0103", "S02-0205", "S02-0206", "S02-0307",
+            "S02-0403", "S02-0406", "S02-04M1", "S02-0503", "S02-0507", "S02-0509",
+            "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0522", "S02-0523",
+            "S02-0603", "S02-0606", "S02-0607", "S02-0608", "S02-0612", "S02-0615",
+            "S02-0619", "S02-0621", "S02-0622", "S02-06D1", "S02-06S2", "S02-06S5",
+        }, scanned);
     }
 
     [Fact]
@@ -107,6 +134,110 @@ public sealed class RuleKernelTests
         Assert.Equal(-1000, card.Troops);
         L12DerivedStats.ResetForCompletedTurn(card, 4);
         Assert.Equal(3000, card.Troops);
+    }
+
+    [Fact]
+    public void ConsumedContinuousBonusIsNotSubtractedAgainWhenConditionEnds()
+    {
+        var card = Card("continuous-layer", 5000);
+        L12DerivedStats.ApplyContinuousModifier(card, 1000, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 5000);
+
+        L12DerivedStats.ApplyContinuousModifier(card, 0, 4);
+
+        Assert.Equal(1000, card.Troops);
+    }
+
+    [Fact]
+    public void ContinuousBonusConditionRemovesOnlyItsUnconsumedRemainder()
+    {
+        var card = Card("partial-continuous-layer", 5000);
+        L12DerivedStats.ApplyContinuousModifier(card, 2000, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 1000);
+
+        L12DerivedStats.ApplyContinuousModifier(card, 0, 4);
+
+        Assert.Equal(5000, card.Troops);
+    }
+
+    [Fact]
+    public void CurrentTurnBonusLayerAbsorbsDamageBeforePrintedTroops()
+    {
+        var card = Card("timed-layer", 5000);
+        var modifier = new L12TimedModifier
+        {
+            TroopsDelta = 2000,
+            ExpiresAfterTurn = 4,
+            Source = "本回合兵力层",
+        };
+        card.TimedModifiers.Add(modifier);
+        card.Troops += modifier.TroopsDelta;
+
+        L12DerivedStats.ApplyTroopsDamage(card, 6000);
+
+        Assert.Equal(1000, card.Troops);
+        Assert.Equal(2000, modifier.ConsumedTroopsBonus);
+
+        L12DerivedStats.ResetForCompletedTurn(card, 4);
+
+        Assert.Equal(1000, card.Troops);
+        Assert.Empty(card.TimedModifiers);
+    }
+
+    [Fact]
+    public void RepeatedContinuousRecalculationDoesNotRestoreConsumedBonus()
+    {
+        var card = Card("recalculated-continuous-layer", 5000);
+        L12DerivedStats.ApplyContinuousModifier(card, 1000, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 1500);
+
+        L12DerivedStats.ApplyContinuousModifier(card, 1000, 4);
+        L12DerivedStats.ApplyContinuousModifier(card, 1000, 4);
+
+        Assert.Equal(4500, card.Troops);
+        Assert.Equal(1000, card.ContinuousTroopsBonusConsumed);
+    }
+
+    [Fact]
+    public void ContinuousBonusIsGrantedFreshOnlyAfterConditionEndsAndReturns()
+    {
+        var card = Card("renewed-continuous-layer", 5000);
+        L12DerivedStats.ApplyContinuousModifier(card, 1000, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 1000);
+
+        L12DerivedStats.ApplyContinuousModifier(card, 0, 4);
+        Assert.Equal(5000, card.Troops);
+
+        L12DerivedStats.ApplyContinuousModifier(card, 1000, 4);
+        Assert.Equal(6000, card.Troops);
+        Assert.Equal(0, card.ContinuousTroopsBonusConsumed);
+    }
+
+    [Fact]
+    public void ContinuousBonusAndPenaltyRemainSeparateWhenOneSourceEnds()
+    {
+        var card = Card("mixed-continuous-layer", 5000);
+        L12DerivedStats.ApplyContinuousModifiers(card, 1000, -1000, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 500);
+
+        L12DerivedStats.ApplyContinuousModifiers(card, 0, -1000, 4);
+
+        Assert.Equal(4000, card.Troops);
+    }
+
+    [Fact]
+    public void EachContinuousSourceRemovesOnlyItsOwnUnconsumedLayer()
+    {
+        var card = Card("multi-source-continuous-layer", 5000);
+        L12DerivedStats.ApplyContinuousModifiers(card,
+            new Dictionary<string, int> { ["a"] = 1000, ["b"] = 1000 }, 0, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 1500);
+
+        L12DerivedStats.ApplyContinuousModifiers(card,
+            new Dictionary<string, int> { ["a"] = 1000 }, 0, 4);
+
+        Assert.Equal(5000, card.Troops);
+        Assert.Equal(1000, card.ContinuousTroopsBonusConsumed);
     }
 
     [Fact]

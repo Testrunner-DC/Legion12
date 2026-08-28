@@ -96,24 +96,137 @@ public static class L12DerivedStats
     }
 
     public static void ApplyContinuousModifier(L12CardInstance card, int modifier, int turnSerial)
+        => ApplyContinuousModifiers(card, Math.Max(0, modifier), Math.Min(0, modifier), turnSerial);
+
+    public static void ApplyContinuousModifiers(L12CardInstance card, int bonus, int penalty, int turnSerial)
+        => ApplyContinuousModifiers(card,
+            bonus > 0 ? new Dictionary<string, int>(StringComparer.Ordinal) { ["aggregate"] = bonus } : null,
+            penalty, turnSerial);
+
+    public static void ApplyContinuousModifiers(L12CardInstance card,
+        IReadOnlyDictionary<string, int>? bonuses, int penalty, int turnSerial)
     {
-        var valueBeforeContinuous = card.SetTroopsValue is not null && card.SetTroopsUntilTurn >= turnSerial
-            ? card.SetTroopsValue.Value
-            : card.Troops - card.ContinuousTroopsModifier;
-        card.ContinuousTroopsModifier = modifier;
-        card.Troops = valueBeforeContinuous + modifier;
+        bonuses ??= new Dictionary<string, int>(StringComparer.Ordinal);
+        if (bonuses.Values.Any(value => value <= 0)) throw new ArgumentOutOfRangeException(nameof(bonuses));
+        if (penalty > 0) throw new ArgumentOutOfRangeException(nameof(penalty));
+        // 兼容旧快照：此前只有聚合后的 ContinuousTroopsModifier。
+        if (card.ContinuousTroopsBonusLayers.Count == 0 && card.ContinuousTroopsBonusGranted > 0)
+            card.ContinuousTroopsBonusLayers["legacy"] = new L12TroopsBonusLayer
+            {
+                Granted = card.ContinuousTroopsBonusGranted,
+                Consumed = card.ContinuousTroopsBonusConsumed,
+            };
+        else if (card.ContinuousTroopsBonusLayers.Count == 0 && card.ContinuousTroopsBonusGranted == 0
+            && card.ContinuousTroopsBonusConsumed == 0 && card.ContinuousTroopsPenalty == 0
+            && card.ContinuousTroopsModifier > 0)
+            card.ContinuousTroopsBonusLayers["legacy"] = new L12TroopsBonusLayer
+            {
+                Granted = card.ContinuousTroopsModifier,
+            };
+        if (card.ContinuousTroopsPenalty == 0 && card.ContinuousTroopsModifier < 0)
+        {
+            card.ContinuousTroopsPenalty = card.ContinuousTroopsModifier;
+        }
+
+        var oldRemaining = card.ContinuousTroopsBonusLayers.Values
+            .Sum(layer => Math.Max(0, layer.Granted - layer.Consumed));
+        var oldPenalty = card.ContinuousTroopsPenalty;
+        foreach (var key in card.ContinuousTroopsBonusLayers.Keys
+                     .Concat(bonuses.Keys).Distinct(StringComparer.Ordinal).ToArray())
+        {
+            card.ContinuousTroopsBonusLayers.TryGetValue(key, out var oldLayer);
+            var oldGranted = oldLayer?.Granted ?? 0;
+            var layerRemaining = Math.Max(0, oldGranted - (oldLayer?.Consumed ?? 0));
+            var newGranted = bonuses.GetValueOrDefault(key);
+            var newRemaining = newGranted >= oldGranted
+                ? layerRemaining + newGranted - oldGranted
+                : Math.Min(layerRemaining, newGranted);
+            if (newGranted == 0)
+            {
+                card.ContinuousTroopsBonusLayers.Remove(key);
+                continue;
+            }
+            card.ContinuousTroopsBonusLayers[key] = new L12TroopsBonusLayer
+            {
+                Granted = newGranted,
+                Consumed = newGranted - newRemaining,
+            };
+        }
+
+        var totalGranted = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Granted);
+        var totalConsumed = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Consumed);
+        var totalRemaining = totalGranted - totalConsumed;
+        card.Troops += totalRemaining + penalty - oldRemaining - oldPenalty;
+        card.ContinuousTroopsBonusGranted = totalGranted;
+        card.ContinuousTroopsBonusConsumed = totalConsumed;
+        card.ContinuousTroopsPenalty = penalty;
+        card.ContinuousTroopsModifier = totalRemaining + penalty;
+    }
+
+    /// <summary>
+    /// 兵力伤害的唯一数值入口。伤害依次消耗本次进攻、即将到期的本回合加成和持续加成，
+    /// 再减损军团自身兵力；返回本次进攻加成的剩余量，供进攻结束时只撤销未消耗部分。
+    /// </summary>
+    public static int ApplyTroopsDamage(L12CardInstance card, int amount, int immediateBonus = 0)
+    {
+        if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
+        var damageLeft = amount;
+        var remainingImmediateBonus = immediateBonus;
+        if (remainingImmediateBonus > 0)
+        {
+            var consumed = Math.Min(remainingImmediateBonus, damageLeft);
+            remainingImmediateBonus -= consumed;
+            damageLeft -= consumed;
+        }
+
+        foreach (var modifier in card.TimedModifiers
+                     .Where(modifier => modifier.TroopsDelta > modifier.ConsumedTroopsBonus)
+                     .OrderBy(modifier => modifier.ExpiresAfterTurn))
+        {
+            if (damageLeft == 0) break;
+            var available = modifier.TroopsDelta - modifier.ConsumedTroopsBonus;
+            var consumed = Math.Min(available, damageLeft);
+            modifier.ConsumedTroopsBonus += consumed;
+            damageLeft -= consumed;
+        }
+
+        if (damageLeft > 0)
+        {
+            foreach (var layer in card.ContinuousTroopsBonusLayers.OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                         .Select(entry => entry.Value))
+            {
+                if (damageLeft == 0) break;
+                var available = Math.Max(0, layer.Granted - layer.Consumed);
+                var consumed = Math.Min(available, damageLeft);
+                layer.Consumed += consumed;
+                damageLeft -= consumed;
+                card.ContinuousTroopsBonusConsumed += consumed;
+                card.ContinuousTroopsModifier -= consumed;
+            }
+        }
+
+        card.Troops -= amount;
+        return remainingImmediateBonus;
     }
 
     public static void ResetForCompletedTurn(L12CardInstance card, int completedTurn)
     {
-        card.TimedModifiers.RemoveAll(modifier => modifier.ExpiresAfterTurn <= completedTurn);
+        var expired = card.TimedModifiers
+            .Where(modifier => modifier.ExpiresAfterTurn <= completedTurn).ToArray();
+        foreach (var modifier in expired)
+        {
+            if (modifier.TroopsDelta > 0)
+                card.Troops -= Math.Max(0, modifier.TroopsDelta - modifier.ConsumedTroopsBonus);
+            else
+                card.Troops -= modifier.TroopsDelta;
+            card.TimedModifiers.Remove(modifier);
+        }
         if (card.SetTroopsUntilTurn <= completedTurn)
         {
+            if (card.SetTroopsValue is { } setValue) card.Troops += card.BaseTroops - setValue;
             card.SetTroopsValue = null;
             card.SetTroopsUntilTurn = -1;
         }
-        card.Troops = (card.SetTroopsValue ?? card.BaseTroops + card.TimedModifiers.Sum(modifier => modifier.TroopsDelta))
-            + card.ContinuousTroopsModifier;
         card.CostModifier = card.TimedModifiers.Sum(modifier => modifier.CostDelta);
     }
 }

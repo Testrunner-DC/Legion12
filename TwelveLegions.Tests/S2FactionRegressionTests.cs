@@ -695,7 +695,7 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void AchillesLosesAnExtraThousandOnlyDuringARangedCombat()
+    public void AchillesReducesFinalRangedCombatDamageByOneThousand()
     {
         var game = Create(63132);
         var attacker = Card("S02-0003", "achilles-ranged-attacker");
@@ -712,9 +712,11 @@ public sealed class S2FactionRegressionTests
             Target: new L12AttackTarget("legion", achilles.InstanceId))).Accepted);
         PassResponses(game);
 
-        Assert.Null(game.State.Players[1].Field[0][0]);
-        Assert.Contains(achilles, game.State.Players[1].Graveyard);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("受到远程进攻") && entry.Text.Contains("-1000"));
+        Assert.Same(achilles, game.State.Players[1].Field[0][0]);
+        Assert.Equal(2000, achilles.Troops);
+        Assert.DoesNotContain(achilles, game.State.Players[1].Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("受到远程进攻")
+            && entry.Text.Contains("最终战斗伤害由 7000 降为 6000"));
 
         var supportedGame = Create(63133);
         var supportedAttacker = Card("S02-0003", "achilles-supported-attacker");
@@ -734,7 +736,7 @@ public sealed class S2FactionRegressionTests
             Target: new L12AttackTarget("legion", supportedAchilles.InstanceId))).Accepted);
         PassResponses(supportedGame);
         Assert.Equal(L12Phase.Defense, supportedGame.State.Phase);
-        Assert.Equal(7000, supportedAchilles.Troops);
+        Assert.Equal(8000, supportedAchilles.Troops);
         Assert.True(supportedGame.Handle(1, new L12Command("resolveDefense",
             SupportInstanceId: supporter.InstanceId)).Accepted);
 

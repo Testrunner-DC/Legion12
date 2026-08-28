@@ -1196,6 +1196,10 @@ public sealed partial class L12GameEngine
         card.PlayCost = null;
         card.Troops = card.BaseTroops;
         card.ContinuousTroopsModifier = 0;
+        card.ContinuousTroopsBonusGranted = 0;
+        card.ContinuousTroopsBonusConsumed = 0;
+        card.ContinuousTroopsPenalty = 0;
+        card.ContinuousTroopsBonusLayers.Clear();
         card.SetTroopsValue = null;
         card.SetTroopsUntilTurn = -1;
         card.HasCharge = false;

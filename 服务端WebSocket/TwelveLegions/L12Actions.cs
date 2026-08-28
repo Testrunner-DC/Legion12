@@ -476,7 +476,6 @@ public sealed partial class L12GameEngine
         }
         temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
-        var temporaryDefenderTroopsPenalty = 0;
         if (row == 0 && attacker.Faction == "gaotianyuan"
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
         {
@@ -496,12 +495,6 @@ public sealed partial class L12GameEngine
             attacker.Troops += 1000;
             AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+1000", attacker);
         }
-        if (isRanged && attackTarget?.CardId == "S02-0503")
-        {
-            temporaryDefenderTroopsPenalty = 1000;
-            attackTarget.Troops -= temporaryDefenderTroopsPenalty;
-            AddEvent("effect", defender.PlayerIndex, $"{attackTarget.Name}受到远程进攻，本次交战兵力额外-1000", attackTarget);
-        }
         var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
         var hasAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
@@ -520,7 +513,6 @@ public sealed partial class L12GameEngine
                 || (attackTarget is not null && attacker.SureHitAgainstLegionsUntilTurn >= State.TurnSerial),
             MasterDamage = damage,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
-            TemporaryDefenderTroopsPenalty = temporaryDefenderTroopsPenalty,
         };
         State.Phase = L12Phase.Defense;
         if (attackTarget is null)
@@ -785,7 +777,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Ok();
         }
 
-        var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
+        var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out _);
         if (target is null)
         {
             TryAbortCombatAtSafeBoundary(pending, playerIndex);
@@ -809,16 +801,25 @@ public sealed partial class L12GameEngine
 
         var targetTroops = target.Troops;
         var attackValue = EffectiveAttackValue(pending, attacker);
+        var targetProfile = L12StructuredCardRules.CombatProfile(target, targetRow);
+        var defenderDamage = pending.IsRanged
+            ? Math.Max(0, attackValue - targetProfile.IncomingRangedCombatDamageReduction)
+            : attackValue;
+        if (defenderDamage < attackValue)
+            AddEvent("effect", defender.PlayerIndex,
+                $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 降为 {defenderDamage}", target, attacker);
         var attackerTakesDamage = !pending.AttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
-        if (targetTroops - attackValue <= 0
+        if (targetTroops - defenderDamage <= 0
             && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();
         if (attackerTakesDamage && attacker.Troops - targetTroops <= 0
             && TryOfferCombatLethalReplacement(attackerPlayer, attacker, pending)) return CommandResult.Ok();
 
         var targetReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(target.InstanceId);
         var attackerReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(attacker.InstanceId);
-        if (!targetReplaced) target.Troops -= attackValue;
-        if (attackerTakesDamage && !attackerReplaced) attacker.Troops -= targetTroops;
+        if (!targetReplaced) L12DerivedStats.ApplyTroopsDamage(target, defenderDamage);
+        if (attackerTakesDamage && !attackerReplaced)
+            pending.TemporaryAttackerTroopsBonus = L12DerivedStats.ApplyTroopsDamage(attacker, targetTroops,
+                pending.TemporaryAttackerTroopsBonus);
 
         var defenderDefeated = target.Troops <= 0 && RemoveFromField(defender, target, true, "阵亡（等待触发完成后进入墓地）",
             queueDeathTrigger: false, bypassLethalReplacement: true, deferGraveyard: true);
@@ -835,8 +836,8 @@ public sealed partial class L12GameEngine
                     ? L12CombatStage.DefenderDeathTriggers
                     : L12CombatStage.AttackerAfterAttack;
         AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
-            ? $"进攻无损：防守军团承受冻结进攻值 {attackValue} 的兵力减损，进攻军团不减损"
-            : $"进攻者以冻结进攻值 {attackValue} 造成兵力减损；防守军团以当前兵力 {targetTroops} 反击",
+            ? $"进攻无损：防守军团承受 {defenderDamage} 点战斗伤害，进攻军团不减损"
+            : $"进攻者以冻结进攻值 {attackValue} 造成 {defenderDamage} 点战斗伤害；防守军团以当前兵力 {targetTroops} 反击",
             attacker, target);
         AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();
@@ -983,11 +984,6 @@ public sealed partial class L12GameEngine
         if (attacker is not null && pending.TemporaryAttackerTroopsBonus != 0)
             attacker.Troops -= pending.TemporaryAttackerTroopsBonus;
         pending.TemporaryAttackerTroopsBonus = 0;
-        if (pending.TemporaryDefenderTroopsPenalty <= 0 || pending.Target.Type != "legion") return;
-        var defender = State.Players[1 - pending.AttackerPlayer];
-        var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
-        if (target is not null) target.Troops += pending.TemporaryDefenderTroopsPenalty;
-        pending.TemporaryDefenderTroopsPenalty = 0;
     }
 
     private CommandResult FlipHidden(int playerIndex, string? instanceId)

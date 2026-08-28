@@ -215,7 +215,8 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "兵临城下":
-                foreach (var target in State.Players[1 - item.Controller].Field[0].Where(target => target is not null).Cast<L12CardInstance>()) target.Troops -= 1000;
+                foreach (var target in State.Players[1 - item.Controller].Field[0].Where(target => target is not null).Cast<L12CardInstance>())
+                    AddTimedModifier(target, -1000, 0, State.TurnSerial, "兵临城下");
                 State.Players[1 - item.Controller].BackRowCannotSupport = true;
                 AddEvent("effect", item.Controller, "兵临城下：对方前排军团本回合兵力-1000，后排军团无法支援", card);
                 FinishStackItem(item);
@@ -515,14 +516,15 @@ public sealed partial class L12GameEngine
                 if (chosen[0] is "front" or "back")
                 {
                     var row = chosen[0] == "front" ? 0 : 1;
-                    foreach (var target in enemy.Field[row].Where(target => target is not null).Cast<L12CardInstance>()) target.Troops -= 2000;
+                    foreach (var target in enemy.Field[row].Where(target => target is not null).Cast<L12CardInstance>())
+                        AddTimedModifier(target, -2000, 0, State.TurnSerial, "万箭齐发");
                     FinishStackItem(item);
                 }
                 else PromptEnemyLegion(item, "volley-single", "万箭齐发：选择对方1张军团，本回合兵力-4000", _ => true, false);
                 return true;
             case "volley-single":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.Troops -= 4000;
+                var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, "万箭齐发");
                 FinishStackItem(item); return true;
             }
             case "evil-ritual-discard":
@@ -546,7 +548,7 @@ public sealed partial class L12GameEngine
             }
             case "strategic-buff":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000;
+                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "战略转移");
                 FinishStackItem(item); return true;
             }
             case "orders-pick":
@@ -571,7 +573,7 @@ public sealed partial class L12GameEngine
                 AdjustDisasterValue(int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "ambush-buff":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) target.Troops += 2000;
+                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
                 FinishStackItem(item); return true;
             }
             case "empty-city-block":
@@ -1010,7 +1012,7 @@ public sealed partial class L12GameEngine
                 return;
             }
             case "战斗至黎明":
-                foreach (var target in PublicLegions(player)) target.Troops += 1000;
+                foreach (var target in PublicLegions(player)) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
                 if (player.Library.Count >= 5) Draw(player, 1);
                 FinishStackItem(item); return;
             case "空城计":

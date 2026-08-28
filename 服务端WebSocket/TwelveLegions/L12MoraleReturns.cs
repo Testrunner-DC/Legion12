@@ -156,7 +156,7 @@ public sealed partial class L12GameEngine
             case "hanxin-attack":
                 if (source is not null)
                 {
-                    source.Troops += 1000;
+                    AddTimedModifier(source, 1000, 0, State.TurnSerial, "韩信");
                     GrantStrongAttack(source);
                 }
                 FinishStackItem(item);
@@ -164,7 +164,7 @@ public sealed partial class L12GameEngine
             case "guanyu-attack":
                 if (source is not null)
                 {
-                    source.Troops += 1000;
+                    AddTimedModifier(source, 1000, 0, State.TurnSerial, "关羽");
                     source.HasSureHit = true;
                     if (State.PendingDefense is not null) State.PendingDefense.SureHit = true;
                 }
