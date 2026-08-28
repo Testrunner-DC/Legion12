@@ -1,5 +1,6 @@
 import { deckCountSummary, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { compareDeckCardIds } from '@/l12/deckOrdering'
+import { resolveCardAssetUrls } from '@/l12/cardAssets'
 
 interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
 
@@ -23,13 +24,18 @@ export function decodeDeckCode(code: string): SavedL12Deck {
   return { name: payload.n.slice(0, 24), masterId: payload.m, cardIds: payload.c, moraleIds: payload.r, specialIds: payload.s ?? [], updatedAt: new Date().toISOString() }
 }
 
-async function loadImage(url?: string) {
-  if (!url) return null
-  try {
-    const response = await fetch(url)
-    if (!response.ok) return null
-    return await createImageBitmap(await response.blob())
-  } catch { return null }
+async function loadImage(cardId: string | undefined, legacyUrl?: string) {
+  const candidates = await resolveCardAssetUrls(cardId ?? '', legacyUrl, 'detail')
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { credentials: url.startsWith('/') ? 'same-origin' : 'omit' })
+      if (!response.ok) continue
+      return await createImageBitmap(await response.blob())
+    } catch {
+      // 单向尝试下一候选；任何单图失败都不能中断整张牌库图。
+    }
+  }
+  return null
 }
 
 function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
@@ -62,7 +68,10 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   context.fillStyle = '#a7b0b4'; context.font = '700 18px Microsoft YaHei'; context.fillText(`主宰 ${master?.nameZh || deck.masterId}  ·  主牌 ${deckCountSummary(deck.cardIds, byId).label}  ·  士气 ${deck.moraleIds.length}`, 410, 145)
   context.fillStyle = '#e1bf6d'; context.fillRect(410, 168, 1464, 3)
 
-  const [masterBitmap, ...bitmaps] = await Promise.all([loadImage(master?.imageUrl), ...groups.map(([id]) => loadImage(byId.get(id)?.imageUrl))])
+  const [masterBitmap, ...bitmaps] = await Promise.all([
+    loadImage(master?.id, master?.imageUrl),
+    ...groups.map(([id]) => loadImage(id, byId.get(id)?.imageUrl)),
+  ])
   context.fillStyle = '#10171b'; roundedRect(context, 74, 104, 254, 356, 4)
   if (masterBitmap) context.drawImage(masterBitmap, 74, 104, 254, 356)
   else { context.fillStyle = '#263139'; context.fillRect(74, 104, 254, 356) }
@@ -99,6 +108,8 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   })
   context.fillStyle = '#7f8b90'; context.font = '700 14px Microsoft YaHei'; context.fillText('由十二军团网页平台生成 · 可使用牌库码导入', 74, canvas.height - 70)
   context.fillStyle = '#e1bf6d'; context.font = '900 19px Microsoft YaHei'; context.fillText('LEGION12', 74, canvas.height - 42)
+  masterBitmap?.close()
+  bitmaps.forEach(bitmap => bitmap?.close())
   return await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('牌库图生成失败')), 'image/png'))
 }
 

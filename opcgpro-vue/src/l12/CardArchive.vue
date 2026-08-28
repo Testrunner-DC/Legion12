@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType, normalizeLookupCardType } from './cardPresentation'
+import CardImage from './CardImage.vue'
 
 interface CatalogCard {
   id: string
@@ -185,8 +186,7 @@ function resetFilters() {
         <button v-for="card in filtered" :key="card.id" role="listitem" class="archive-card"
           :class="[{ selected: selected?.id === card.id, 'landscape-thumbnail': isHorizontalCardType(card.cardType) }, `faction-${card.faction}`]" @click="selected = card">
           <div class="archive-card-image">
-            <img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh" loading="lazy"/>
-            <div v-else class="archive-card-fallback">XII</div>
+            <CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/>
             <b v-if="card.cost !== undefined" class="archive-cost">{{ card.cost }}</b>
             <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
             <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
@@ -197,7 +197,7 @@ function resetFilters() {
       </div>
 
       <aside v-if="selected" class="archive-detail">
-        <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }"><img v-if="selected.imageUrl" :src="selected.imageUrl" :alt="selected.nameZh"/><div v-else>XII</div></div>
+        <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }"><CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/></div>
         <p class="archive-number">{{ selected.number }} · {{ selected.product }}</p>
         <h2>{{ selected.nameZh }}</h2>
         <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span></div>

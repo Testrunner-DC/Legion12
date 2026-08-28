@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "check:ui-contracts": "node scripts/check-ui-contracts.mjs",
+    "check:card-assets": "node scripts/check-l12-card-assets.mjs",
+    "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",
     "build:card-cdn": "node scripts/build-l12-card-cdn.mjs",
-    "build": "npm run check:ui-contracts && vue-tsc -b && vite build",
+    "build": "npm run check:ui-contracts && npm run check:card-assets && vue-tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

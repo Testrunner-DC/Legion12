@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { Card } from './types'
 import { isHorizontalCardType } from './cardPresentation'
 import { roundCardUrl } from './specialAssets'
+import CardImage from './CardImage.vue'
 const props = defineProps<{ card: Card; selected?: boolean; compact?: boolean }>()
 defineEmits<{ select: []; focusCard: [card: Card] }>()
 const displayCost = computed(() => props.card.playCost ?? props.card.currentCost ?? props.card.cost)
@@ -22,7 +23,7 @@ const attachedGroups = computed(() => {
 
 <template>
   <button class="card-tile" :class="[{ selected, tapped: card.tapped, compact, 'horizontal-card': isHorizontalCardType(card.cardType) }, `type-${card.cardType}`]" @click="$emit('select')">
-    <img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.name" @error="($event.target as HTMLImageElement).style.display='none'" />
+    <CardImage v-if="!card.hidden" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="board" eager />
     <span v-if="!card.hidden && card.hasPrintedCost !== false" class="card-cost" :class="costState" :title="displayCost === card.cost ? `印刷费用 ${card.cost}` : `当前费用 ${displayCost}；印刷费用 ${card.cost}`">{{ displayCost }}</span>
     <span v-if="!card.hidden && card.activeKeywords?.length" class="card-keyword-stack" aria-label="当前生效关键词">
       <b v-for="keyword in card.activeKeywords" :key="keyword" class="card-keyword">{{ keyword }}</b>

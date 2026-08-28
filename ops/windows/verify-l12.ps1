@@ -2,6 +2,7 @@
 param(
     [string]$OutputDirectory = $(if ($env:L12_DEPLOY_CACHE) { $env:L12_DEPLOY_CACHE } elseif (Test-Path "D:\GPT\Legion12") { "D:\GPT\Legion12\artifacts\deploy" } else { Join-Path ([IO.Path]::GetTempPath()) "l12-deploy-artifacts" }),
     [string]$CacheRoot = "",
+    [string]$CardAssetDirectory = $(if ($env:L12_CARD_ASSET_ROOT) { $env:L12_CARD_ASSET_ROOT } else { "D:\L12-assets\published\current" }),
     [switch]$Force
 )
 
@@ -34,7 +35,8 @@ function Test-CachedArtifact {
         if ($manifest.commit -ne $commit) { return $false }
         foreach ($entry in @(
             @{ Path = $manifest.releaseArchive; Hash = $manifest.releaseSha256 },
-            @{ Path = $manifest.cardsArchive; Hash = $manifest.cardsSha256 }
+            @{ Path = $manifest.cardsArchive; Hash = $manifest.cardsSha256 },
+            @{ Path = $manifest.cardAssetsArchive; Hash = $manifest.cardAssetsSha256 }
         )) {
             if (-not (Test-Path -LiteralPath $entry.Path)) { return $false }
             if ((Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Hash) { return $false }
@@ -60,6 +62,16 @@ try {
     $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
+    $CardAssetDirectory = (Resolve-Path -LiteralPath $CardAssetDirectory).Path
+    $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
+    if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
+    $cardAssetManifest = Get-Content -LiteralPath $cardAssetManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+    if ($cardAssetManifest.schemaVersion -ne 2 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 248 -or
+        [string]$cardAssetManifest.assetVersion -notmatch '^[0-9a-f]{64}$') {
+        throw "优化卡图发布清单必须为完整 schema v2 248 张内容寻址版本"
+    }
+    $catalogRoot = Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data"
+    Invoke-External node ".\opcgpro-vue\scripts\audit-l12-card-cdn.mjs" --root $CardAssetDirectory --catalog-files "$catalogRoot\cards.s1.json;$catalogRoot\cards.s2.json"
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $artifactDirectory = Join-Path $OutputDirectory $commit
@@ -101,6 +113,9 @@ try {
         @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
         @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" },
         @{ Source = "ops\server\deploy-l12-release.sh"; Target = "ops\server\deploy-l12-release.sh" },
+        @{ Source = "ops\server\nginx-l12-card-assets.conf"; Target = "ops\server\nginx-l12-card-assets.conf" },
+        @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
+        @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },
         @{ Source = "ops\windows\Get-L12BugQueue.ps1"; Target = "ops\windows\Get-L12BugQueue.ps1" }
     )
     foreach ($contractFile in $contractFiles) {
@@ -152,6 +167,9 @@ try {
     if (Test-Path -LiteralPath (Join-Path $webRoot "cards")) {
         throw "运行包错误包含卡图目录"
     }
+    if (Test-Path -LiteralPath (Join-Path $webRoot "card-assets")) {
+        throw "运行包错误包含优化卡图目录"
+    }
     Copy-Item ".\scripts\ws-smoke.mjs" (Join-Path $scriptsRoot "ws-smoke.mjs") -Force
     [IO.File]::WriteAllText((Join-Path $releaseRoot ".deployment-commit"), $commit, [Text.UTF8Encoding]::new($false))
 
@@ -172,8 +190,15 @@ try {
 
     $releaseSha256 = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     $cardsSha256 = (Get-FileHash -LiteralPath $cardsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    $cardAssetsHash = [string]$cardAssetManifest.assetVersion
+    $cardAssetsArchive = Join-Path $OutputDirectory "l12-card-assets-$cardAssetsHash.tar.gz"
+    if (-not (Test-Path -LiteralPath $cardAssetsArchive)) {
+        Write-Host "[L12 验证] 首次生成内容寻址优化卡图包：$cardAssetsHash"
+        Invoke-External tar -czf $cardAssetsArchive -C $CardAssetDirectory .
+    }
+    $cardAssetsSha256 = (Get-FileHash -LiteralPath $cardAssetsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     [ordered]@{
-        schema = 1
+        schema = 2
         commit = $commit
         generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
         releaseArchive = $releaseArchive
@@ -181,6 +206,9 @@ try {
         cardsHash = $cardsHash
         cardsArchive = $cardsArchive
         cardsSha256 = $cardsSha256
+        cardAssetsHash = $cardAssetsHash
+        cardAssetsArchive = $cardAssetsArchive
+        cardAssetsSha256 = $cardAssetsSha256
     } | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding utf8
 
     Write-Host "[L12 验证] 完整验证与发布包构建通过：$commit"

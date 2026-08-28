@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 import { factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets'
+import CardImage from '../CardImage.vue'
 
 const props = defineProps<{
   player: PlayerView
@@ -233,7 +234,7 @@ function beginCardAbility(card: Card) {
       <div class="master-column">
         <button class="mini-master" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
           @mouseenter="emit('focus', masterCard)" @focus="emit('focus', masterCard)" @click="emit('master')">
-          <img v-if="player.master.masterImageUrl" :src="player.master.masterImageUrl" />
+          <CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="board" eager />
           <span>{{ player.master.masterName }}</span>
           <b class="value-badge master-health">{{ player.master.hp }}<small>/{{ player.master.maxHp }}</small></b>
         </button>
@@ -254,7 +255,8 @@ function beginCardAbility(card: Card) {
             :class="{ concealed: trial.hidden, 'own-concealed': trial.hidden && side === 'my', inactive: !trial.hidden && !trial.trialCompleted }"
             :title="trial.hidden ? '对方未揭示的试炼' : trial.name"
             @mouseenter="!trial.hidden && emit('focus', trial)" @focus="!trial.hidden && emit('focus', trial)" @click.stop="!trial.hidden && selectZoneCard(trial)">
-            <img :src="trial.hidden ? '/assets/l12/trial-back.png' : (trial.imageUrl || '/assets/l12/trial-back.png')" :alt="trial.hidden ? '试炼牌背' : trial.name" />
+            <img v-if="trial.hidden" src="/assets/l12/trial-back.png" alt="试炼牌背" />
+            <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
             <b v-if="trial.instanceId === currentTrialInstanceId">{{ trial.trialProgress ?? player.specialZones?.trialLevel ?? 0 }}</b>
           </button>
         </div>
@@ -337,12 +339,12 @@ function beginCardAbility(card: Card) {
 
     <div class="mat-piles">
       <div class="pile deck">
-        <div class="pile-card" :class="{ 'card-back': !player.libraryTop }"><img v-if="player.libraryTop?.imageUrl" :src="player.libraryTop.imageUrl" :alt="player.libraryTop.name" @mouseenter="emit('focus', player.libraryTop)"/><i v-else>XII</i></div>
+        <div class="pile-card" :class="{ 'card-back': !player.libraryTop }"><CardImage v-if="player.libraryTop" :card-id="player.libraryTop.cardId" :legacy-url="player.libraryTop.imageUrl" :alt="player.libraryTop.name" intent="thumb" eager @mouseenter="emit('focus', player.libraryTop)"/><i v-else>XII</i></div>
         <b class="value-badge pile-count">{{ player.libraryCount }}</b><span>牌库</span>
       </div>
       <button class="pile graveyard" @click="emit('graveyard', player.playerIndex)">
         <div class="pile-card">
-          <img v-if="topGraveyard?.imageUrl" :src="topGraveyard.imageUrl" :alt="topGraveyard.name" />
+          <CardImage v-if="topGraveyard" :card-id="topGraveyard.cardId" :legacy-url="topGraveyard.imageUrl" :alt="topGraveyard.name" intent="thumb" eager />
           <i v-else>墓</i>
         </div>
         <b class="value-badge pile-count">{{ player.graveyard?.length ?? player.graveyardCount ?? 0 }}</b><span>墓地</span>
@@ -358,7 +360,7 @@ function beginCardAbility(card: Card) {
       <section v-else class="faction-effect-dialog" role="dialog" aria-modal="true">
         <button class="faction-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="factionMinimized = true">—</button>
         <button class="faction-close" aria-label="关闭" @click="factionOpen = false">×</button>
-        <img v-if="player.factionEffect?.imageUrl" :src="player.factionEffect.imageUrl" :alt="player.factionEffect.name" />
+        <CardImage v-if="player.factionEffect" :card-id="player.factionEffect.cardId" :legacy-url="player.factionEffect.imageUrl" :alt="player.factionEffect.name" intent="detail" eager />
         <div>
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
@@ -385,7 +387,7 @@ function beginCardAbility(card: Card) {
       <section v-else class="faction-effect-dialog" role="dialog" aria-modal="true">
         <button class="faction-minimize" aria-label="最小化弹框" @click="abilityCardMinimized = true">—</button>
         <button class="faction-close" aria-label="关闭" @click="abilityCardOpen = null">×</button>
-        <img v-if="abilityCardOpen.imageUrl" :src="abilityCardOpen.imageUrl" :alt="abilityCardOpen.name" @mouseenter="emit('focus', abilityCardOpen)" />
+        <CardImage :card-id="abilityCardOpen.cardId" :legacy-url="abilityCardOpen.imageUrl" :alt="abilityCardOpen.name" intent="detail" eager @mouseenter="emit('focus', abilityCardOpen)" />
         <div>
           <small>卡牌效果</small><h2>{{ abilityCardOpen.name }}</h2>
           <p v-if="!activeAbilities(abilityCardOpen).length">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
@@ -410,19 +412,19 @@ function beginCardAbility(card: Card) {
 .formation-slot.prompt-selected{z-index:10;border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.68)!important}.formation-slot.prompt-selected::after{content:'已选择';position:absolute;z-index:12;right:4px;top:4px;padding:3px 6px;background:#f1c75b;color:#15120a;font-size:8px;font-weight:900}
 .morale-orb{box-sizing:border-box;width:22px;height:22px;min-width:22px;padding:0;border:1px solid #7d8581;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:#151a1a;transition:filter .16s,box-shadow .16s,border-color .16s}.morale-orb img{width:14px;height:14px;object-fit:contain}.morale-orb.active-morale{background:var(--faction-morale-active,#b4b2af);border-color:var(--faction-morale-border,#eee);box-shadow:inset 0 0 0 1px rgba(255,255,255,.36),0 0 6px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 76%,transparent);filter:saturate(1.15) brightness(1.1)}.active-turn .morale-orb.active-morale{box-shadow:inset 0 0 0 1px rgba(255,255,255,.52),0 0 11px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 92%,transparent);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-morale{background:var(--faction-morale-rested,#555);border-color:#4d5350;box-shadow:inset 0 0 0 3px rgba(0,0,0,.38);filter:saturate(.35) brightness(.52)}.morale-orb.active-god-power{background:#0091be;border-color:#baf4ff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 0 9px rgba(0,145,190,.72);filter:saturate(1.18) brightness(1.12)}.active-turn .morale-orb.active-god-power{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55),0 0 13px rgba(0,174,222,.9);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-god-power{background:#264c57;border-color:#465b61;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35);filter:saturate(.35) brightness(.5)}.morale-orb.unused{opacity:.25}.morale-orb.payable{cursor:pointer;border-color:#72e29f;box-shadow:0 0 9px rgba(82,213,138,.75)}.morale-orb.selected{border:3px solid #fff0a0;box-shadow:0 0 12px #f1c75b}.morale-orb:disabled:not(.payable){cursor:default}
 .faction-tianting{--faction-morale-active:#dbbc00;--faction-morale-rested:#665a08;--faction-morale-border:#fff0a0}.faction-otherworld{--faction-morale-active:#31873f;--faction-morale-rested:#173e20;--faction-morale-border:#9be5a7}.faction-gaotianyuan{--faction-morale-active:#db0d17;--faction-morale-rested:#681118;--faction-morale-border:#ffacb0}.faction-asgard{--faction-morale-active:#342f2f;--faction-morale-rested:#1c1919;--faction-morale-border:#b9aeae}.faction-taiyangcheng{--faction-morale-active:#74227e;--faction-morale-rested:#38123d;--faction-morale-border:#dfa3e6}.faction-universal{--faction-morale-active:#b4b2af;--faction-morale-rested:#555451;--faction-morale-border:#f0efeb}.faction-olympus{--faction-morale-active:#075b76;--faction-morale-rested:#173844;--faction-morale-border:#86d7ee}
-.master-column{position:relative;display:grid;align-content:start;justify-items:center;gap:5px;min-width:88px}.master-column .mini-master{position:relative;inset:auto}.master-marker-track{position:absolute;z-index:9;left:8px;top:-39px;display:flex;width:178px;height:32px;align-items:center;justify-content:flex-start;gap:5px;pointer-events:auto}.master-marker-track.canopic{justify-content:space-between;gap:3px}.special-lane{display:none;position:absolute;z-index:6;left:188px;right:4px;top:0;bottom:0;pointer-events:none}.special-lane.visible{display:grid;align-content:center;justify-items:center}.trial-zone{position:relative;z-index:6;display:grid;gap:6px;width:112px;pointer-events:auto}.trial-card{position:relative;width:112px;height:auto;aspect-ratio:8/5;padding:0;border:1px solid #8dc6b2;background:#080b0b;overflow:hidden;box-shadow:0 6px 16px #000}.trial-card img{width:100%;height:100%;object-fit:contain}.trial-card.inactive img{filter:grayscale(.85) brightness(.52)}.trial-card.concealed img{filter:none}.trial-card b{position:absolute;left:50%;top:50%;display:grid;min-width:30px;height:30px;place-items:center;padding:0 6px;border:2px solid #79c889;border-radius:50%;background:#102e17ed;color:#fff;font-size:16px;box-shadow:0 0 11px rgba(49,135,63,.82);transform:translate(-50%,-50%)}.rune-orb{width:32px;height:32px;min-width:32px;padding:0;border:1px solid #596661;border-radius:50%;overflow:hidden;background:#111;filter:grayscale(1) brightness(.38)}.rune-orb.active{border-color:#80d69c;filter:none;box-shadow:0 0 8px rgba(49,135,63,.7)}.rune-orb.payable{cursor:pointer;box-shadow:0 0 0 2px #75e0a1,0 0 13px rgba(49,135,63,.9)}.rune-orb.selected{border-color:#fff3bd;box-shadow:0 0 0 3px #d8b34d,0 0 15px rgba(216,179,77,.95)}.rune-orb:disabled{cursor:default;opacity:1}.rune-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.1)}
+.master-column{position:relative;display:grid;align-content:start;justify-items:center;gap:5px;min-width:88px}.master-column .mini-master{position:relative;inset:auto}.master-marker-track{position:absolute;z-index:9;left:8px;top:-39px;display:flex;width:178px;height:32px;align-items:center;justify-content:flex-start;gap:5px;pointer-events:auto}.master-marker-track.canopic{justify-content:space-between;gap:3px}.special-lane{display:none;position:absolute;z-index:6;left:188px;right:4px;top:0;bottom:0;pointer-events:none}.special-lane.visible{display:grid;align-content:center;justify-items:center}.trial-zone{position:relative;z-index:6;display:grid;gap:6px;width:112px;pointer-events:auto}.trial-card{position:relative;width:112px;height:auto;aspect-ratio:8/5;padding:0;border:1px solid #8dc6b2;background:#080b0b;overflow:hidden;box-shadow:0 6px 16px #000}.trial-card .l12-card-image{width:100%;height:100%}.trial-card.inactive .l12-card-image{filter:grayscale(.85) brightness(.52)}.trial-card.concealed .l12-card-image{filter:none}.trial-card b{position:absolute;left:50%;top:50%;display:grid;min-width:30px;height:30px;place-items:center;padding:0 6px;border:2px solid #79c889;border-radius:50%;background:#102e17ed;color:#fff;font-size:16px;box-shadow:0 0 11px rgba(49,135,63,.82);transform:translate(-50%,-50%)}.rune-orb{width:32px;height:32px;min-width:32px;padding:0;border:1px solid #596661;border-radius:50%;overflow:hidden;background:#111;filter:grayscale(1) brightness(.38)}.rune-orb.active{border-color:#80d69c;filter:none;box-shadow:0 0 8px rgba(49,135,63,.7)}.rune-orb.payable{cursor:pointer;box-shadow:0 0 0 2px #75e0a1,0 0 13px rgba(49,135,63,.9)}.rune-orb.selected{border-color:#fff3bd;box-shadow:0 0 0 3px #d8b34d,0 0 15px rgba(216,179,77,.95)}.rune-orb:disabled{cursor:default;opacity:1}.rune-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.1)}
 .canopic-orb{width:32px;height:32px;min-width:32px;padding:0;overflow:hidden;border:1px solid #63555a;border-radius:50%;background:#090a0b;filter:grayscale(1) brightness(.3);cursor:pointer}.canopic-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.12)}.canopic-orb.completed{border-color:#d0aa52;filter:none;box-shadow:0 0 7px rgba(208,170,82,.65)}.canopic-orb.activatable{border-color:#6ee2a0;box-shadow:0 0 9px rgba(82,213,138,.8);animation:canopic-ready 1.25s ease-in-out infinite alternate}@keyframes canopic-ready{to{transform:translateY(-2px);filter:brightness(1.18)}}
 .value-badge{display:grid!important;min-width:25px!important;height:22px!important;place-items:center!important;padding:0 6px!important;border:1px solid #f2f0e6!important;border-radius:2px!important;background:#090b0d!important;color:#fff!important;box-shadow:0 2px 0 #000,0 0 0 1px rgba(0,0,0,.65)!important;font-weight:900!important;line-height:1!important}.value-badge small{margin-left:1px;color:#bfc3c0;font-size:.62em}.pile .pile-count{position:absolute;z-index:8;right:3px;top:3px}.mini-master .master-health{position:absolute;z-index:8;right:3px;bottom:3px;display:inline-flex!important;width:max-content;min-width:44px!important;align-items:center;justify-content:center;white-space:nowrap}.morale-count{display:grid;min-width:42px;height:24px;place-items:center;padding:0 7px;border:1px solid #cbc6b8;background:#080a0b;color:#fff;box-shadow:0 2px 0 #000;font-size:11px;line-height:1;white-space:nowrap}.morale-orb[aria-disabled="true"]{cursor:default}.morale-orb.active-morale[aria-disabled="true"],.morale-orb.active-god-power[aria-disabled="true"]{opacity:1}
 </style>
 
 <style scoped>
 .extra-relic{position:absolute;z-index:2;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent}.extra-relic :deep(.card-tile){width:100%;height:100%}
-.trial-card.own-concealed img{filter:grayscale(.85) brightness(.52)}
+.trial-card.own-concealed .l12-card-image{filter:grayscale(.85) brightness(.52)}
 .formation-slot.counter-dormant :deep(.card-tile),.formation-slot.hidden-dormant :deep(.card-tile){filter:brightness(.4) saturate(.55)}.formation-slot.counter-ready :deep(.card-tile){filter:brightness(1.08);box-shadow:0 0 0 2px #71e197,0 0 17px rgba(70,220,126,.7)}
 .faction-effect-trigger{padding:3px 7px;border:1px solid rgba(238,238,228,.42);border-radius:1px;background:#111718;color:#e8e5dc;font-size:8px;font-weight:900;white-space:nowrap}.faction-effect-trigger:hover{border-color:var(--cyan);color:#fff}
 .faction-effect-overlay{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;background:rgba(2,4,5,.78);backdrop-filter:blur(7px)}
 .faction-effect-dialog{position:relative;width:min(650px,calc(100vw - 32px));display:grid;grid-template-columns:220px 1fr;gap:24px;padding:22px;border:1px solid rgba(238,238,228,.7);background:linear-gradient(145deg,#171c1d,#07090a);box-shadow:0 24px 70px #000}
-.faction-effect-dialog>img{width:220px;height:308px;object-fit:contain;background:#050708}
+.faction-effect-dialog>.l12-card-image{width:220px;height:308px;background:#050708}
 .faction-effect-dialog small{color:var(--cyan);font-size:9px;letter-spacing:.14em}.faction-effect-dialog h2{margin:8px 0 14px;color:#f0ede4;font-size:25px}.faction-effect-dialog p{color:#d4d5cf;font-size:13px;font-weight:800;line-height:1.85;white-space:pre-wrap}.faction-close,.faction-minimize{position:absolute;top:9px;width:30px;height:30px;border:1px solid #777;background:#111;color:#eee;font-size:20px}.faction-close{right:9px}.faction-minimize{right:47px}.faction-effect-actions{display:grid;gap:8px;margin-top:20px}.faction-effect-actions button{padding:11px;border:1px solid var(--cyan);background:rgba(40,133,140,.2);color:#fff;font-weight:900;text-align:left}.faction-effect-actions button:disabled{cursor:not-allowed;border-color:#4a504e;background:#202423;color:#737a77;filter:saturate(.25)}.faction-action-hint{display:block;margin-top:18px;color:#777f7c;font-size:10px}.faction-effect-overlay.minimized{z-index:2000;inset:auto 16px 66px auto;display:block;background:transparent;backdrop-filter:none;pointer-events:none}.faction-minimized-bar{display:block;pointer-events:auto}.faction-minimized-bar button{padding:6px 10px;border:1px solid var(--cyan);background:#174e54;color:#fff;box-shadow:0 12px 35px #000}
-@media(max-width:650px){.faction-effect-dialog{grid-template-columns:1fr}.faction-effect-dialog>img{width:140px;height:196px;margin:auto}.faction-effect-overlay.minimized{right:10px;bottom:60px}}
+@media(max-width:650px){.faction-effect-dialog{grid-template-columns:1fr}.faction-effect-dialog>.l12-card-image{width:140px;height:196px;margin:auto}.faction-effect-overlay.minimized{right:10px;bottom:60px}}
 </style>

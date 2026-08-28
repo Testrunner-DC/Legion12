@@ -1898,3 +1898,15 @@
 - 验证：新域 `/`、`/cards`、`/health` 均为200且健康响应为 `twelve-legions`/248张；www 对带路径和查询参数请求精确308到主域；旧域主页与健康接口仍为200；新旧 `wss://*/ws` 无状态探针均返回 `ok=true`、协议版本1。新 Nginx 文件为无 BOM/CR 的 ASCII，证书 SAN/有效期、续期 dry-run、`nginx -t` 与 active 状态复核通过；PowerShell AST、远端 `bash -n`、四档路由注册/TOML/strict-config 通过；最终 Focused 与 Batch 门禁通过，UI 契约123/123，Vue/TypeScript/Vite生产构建通过。
 - 失败、重试与回滚：Nginx 热重载保留旧 worker/既有 WS，旧域为旧客户端和重试提供稳定入口；Certbot 使用固定证书名与 webroot 续期配置。回滚只禁用两个新域 enabled 链接，并在迁移窗口内从备份恢复 HTTP vhost，先 `nginx -t` 再 reload，随后复测旧域 HTTP/WS；不得删除新证书、旧 release 或任何运行数据。域名契约禁止后续发布探针悄然回退旧主站。
 - 边界：Cloudflare 记录由用户在外部控制台管理，仓库不保存 DNS/API 凭据；本批未迁移卡图 CDN，未提交、推送或发布新的应用 release。旧主域何时重定向或下线须在宽限期结束后另行授权并再次验证在途对局与本机数据影响。
+
+### OPS-20260828-151 248 张卡图统一内容寻址、渐进加载与独立发布
+
+- 现象：S01 的133张卡仍从 Steam 原图加载，S02 的115张本地 PNG 共约405.9 MiB；线上卡图响应没有长期缓存头。项目虽有多尺寸派生脚本，但前端全部普通卡面仍直接消费 `imageUrl`，旧 Service Worker 又会拦截任意图片，首次加载和版本更新都不可控。
+- 历史记录匹配：命中 `BUG-20260818-04` 的全卡池资源审计、`BUG-20260818-26` 的图片缓存边界、`FEAT-20260823-61` 的多尺寸内容寻址流水线、`FEATURE-20260825-89` 的248张完整源图归档，以及 `OPS-20260822-32/36` 的静态卡图独立发布与运行包排除约束。本批在既有工具链上完成运行时与生产发布闭环，不启用尚无凭据和域名的 R2。
+- 根因与同类扫描：以服务端 S01/S02 权威目录扫描248个唯一卡号，核对133个远程来源、115个本地来源、全部 Vue 普通卡面入口、Canvas 牌库图入口、Service Worker、Windows验证/部署脚本、Linux原子发布脚本及主域 Nginx 静态路径。确认官方方形主宰头像和圆形裁切资源属于专用展示，不迁入普通卡面组件；其余普通卡面入口全部统一。
+- 修改：新增 schema v2 资源清单解析器与公共 `CardImage`，按可选 CDN、同源内容寻址资源、旧 `imageUrl`、内置占位图单向降级；缩略图/战场图分别选用240/480 WebP，详情先显示低清再请求960 WebP/AVIF，统一启用 lazy loading、异步解码与显式首屏优先级。卡牌档案、牌库编辑/广场、对局棋盘、玩家区、Prompt、GM、后台、沙盒与 Canvas 牌库图全部迁移；Canvas 逐候选尝试并主动释放 `ImageBitmap`。旧广域图片 Service Worker 改为一次性退役脚本，并由应用清理其专属缓存和注册。
+- 生产资源与发布：D盘原图归档248/248、876054538字节；离线生成5种变体，清单资源版本为 `49b73eac5ccd4f285e4d49a0d9271bc5f7a8b9a3297be760f52bff36d3f6b8e8`，派生总量198826785字节。生成器在248张、唯一卡号、缺图、单变体体积和400 MiB总量门禁全部通过后才原子公布 manifest。Windows制品新增独立优化卡图包；Linux先校验包路径、SHA-256、普通文件/无符号链接、5种变体大小与聚合版本，再移动到共享内容寻址目录并由 release 只读链接。Nginx源片段区分 manifest五分钟重验证与哈希二进制一年 immutable，畸形或非哈希路径不长期缓存。
+- 修改文件：运行时为 `cardAssets.ts`、`CardImage.vue`、全部 L12 普通卡图消费者、`deckShare.ts`、`main.ts` 与 `public/sw.js`；生成和守卫为 `build-l12-card-cdn.mjs`、`audit-l12-card-cdn.mjs`、`check-l12-card-assets.mjs` 及前端构建入口；发布为 `Prepare-L12CardArchive.ps1`、`Publish-L12CardCdn.ps1`、`verify-l12.ps1`、Windows/Linux部署脚本和 Nginx 缓存片段。
+- 验证：首次 Batch 构建准确拦截牌库编辑器迁移后残留的孤立 `v-else`；最终差异复核又发现 scoped 旧 `img` 选择器不会命中子组件，统一迁移尺寸、横卡旋转、状态滤镜并加入契约。最终源图248/248、派生资源审计248/248；卡图架构契约17/17、UI契约123/123、PowerShell 5 AST、Git Bash `bash -n`、Focused门禁和Batch Vue/TypeScript/Vite生产构建通过。本地浏览器确认档案缩略图请求同源240 WebP、详情升级960 AVIF、横卡缩略图保持旋转、牌库编辑器与牌库页裁切尺寸正常且控制台无错误；抽样960 WebP方向和可读性正常。
+- 防回滚：普通卡面不得绕过公共解析器；正式清单必须完整覆盖248张并且二进制先于 manifest；旧图地址必须始终保留为清单不可用时的降级候选；不得恢复拦截所有图片的 Service Worker；运行包不得夹带优化卡图；服务器不得在 Nginx 缓存片段、包哈希、目录结构、实际 Web 账号可读性或公网缓存头任一门禁失败时切换 release。
+- 边界：本批采用当前服务器同源 `/card-assets`，没有创建或写入 Cloudflare R2、DNS或访问密钥；未来接入 CDN 只需配置清单或构建环境中的 HTTPS 基址，不应再次改动业务组件。用户已授权同步与部署，截至本地 Batch 完成时尚未提交、推送、安装生产 Nginx 片段或切换应用 release。

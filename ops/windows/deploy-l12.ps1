@@ -93,11 +93,29 @@ try {
             }
         }
     }
+    $cardAssetsHashValue = if ($manifest.PSObject.Properties['cardAssetsHash']) { [string]$manifest.cardAssetsHash } else { "" }
+    $cardAssetsArchiveValue = if ($manifest.PSObject.Properties['cardAssetsArchive']) { [string]$manifest.cardAssetsArchive } else { "" }
+    $cardAssetsSha256Value = if ($manifest.PSObject.Properties['cardAssetsSha256']) { [string]$manifest.cardAssetsSha256 } else { "" }
+    $cardAssetsArchive = ""
+    $hasCardAssets = -not [string]::IsNullOrWhiteSpace($cardAssetsHashValue) -and
+        -not [string]::IsNullOrWhiteSpace($cardAssetsArchiveValue) -and
+        -not [string]::IsNullOrWhiteSpace($cardAssetsSha256Value)
+    if ($hasCardAssets) {
+        if ($cardAssetsHashValue -notmatch '^[0-9a-f]{64}$') { throw "优化卡图版本格式错误" }
+        $cardAssetsArchive = if ([IO.Path]::IsPathRooted($cardAssetsArchiveValue)) {
+            $cardAssetsArchiveValue
+        } else { Join-Path $manifestDirectory $cardAssetsArchiveValue }
+        if (-not (Test-Path -LiteralPath $cardAssetsArchive -PathType Leaf)) { throw "优化卡图包不存在：$cardAssetsArchive" }
+        if ((Get-FileHash -LiteralPath $cardAssetsArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $cardAssetsSha256Value) {
+            throw "优化卡图包校验失败"
+        }
+    }
 
     $incoming = "/opt/legion12-deployment/incoming"
     $remoteBootstrap = "/tmp/deploy-l12-release-$commit.sh"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
     $remoteCards = "$incoming/l12-cards-$($manifest.cardsHash).tar.gz"
+    $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传发布工具与预构建运行包..."
     Invoke-External ssh $Server "mkdir -p '$incoming'"
     Invoke-External scp $serverScript "${Server}:$remoteBootstrap"
@@ -124,10 +142,31 @@ try {
         $cardsPath = $remoteCards
     }
 
+    $cardAssetsSha = "-"
+    $cardAssetsPath = "-"
+    $cardAssetsHash = "-"
+    if ($hasCardAssets) {
+        $cardAssetsHash = $cardAssetsHashValue
+        & ssh $Server "test -d '/opt/legion12-static/card-assets/$cardAssetsHash'"
+        $cardAssetsCached = $LASTEXITCODE -eq 0
+        if ($cardAssetsCached) {
+            Write-Host "[L12 部署] 服务器复用优化卡图缓存：$cardAssetsHash"
+        }
+        else {
+            Write-Host "[L12 部署] 上传内容寻址优化卡图包（二进制完整后才切换 release manifest）..."
+            $cardAssetsSha = $cardAssetsSha256Value
+            Invoke-External scp $cardAssetsArchive "${Server}:$remoteCardAssets"
+            $cardAssetsPath = $remoteCardAssets
+        }
+    }
+    else {
+        Write-Warning "发布清单没有优化卡图包；保留旧 imageUrl 降级链，仅用于旧发布产物兼容。"
+    }
+
     Invoke-External ssh $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && rm -f '$remoteBootstrap'"
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
-    Invoke-External ssh $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease $($manifest.cardsHash) $cardsSha $cardsPath"
+    Invoke-External ssh $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease $($manifest.cardsHash) $cardsSha $cardsPath $cardAssetsHash $cardAssetsSha $cardAssetsPath"
 
     if ($DryRun) { Write-Host "[L12 部署] 干运行成功，线上版本未改变。" }
     else { Write-Host "[L12 部署] 发布成功：https://legion-12.com/" }

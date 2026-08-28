@@ -1,6 +1,6 @@
 import sharp from 'sharp'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 
 const args = new Map()
@@ -13,12 +13,21 @@ const required = key => {
 const sourceRoot = required('--source')
 const outputRoot = required('--output')
 const catalogVersion = args.get('--catalog-version') || new Date().toISOString().slice(0, 10).replaceAll('-', '')
-const baseUrl = (args.get('--base-url') || 'https://cards.legion12.grand-umi.com').replace(/\/$/, '')
+const baseUrl = (args.get('--base-url') || '/card-assets').replace(/\/$/, '')
 const catalogFiles = (args.get('--catalog-files') || '').split(';').filter(Boolean).map(file => resolve(file))
 const requestedCardIds = new Set((args.get('--card-ids') || '').split(';').filter(Boolean).map(id => id.toUpperCase()))
 const concurrency = Math.max(1, Math.min(12, Number(args.get('--concurrency') || 4)))
 const horizontalTypes = new Set(['disaster', 'destruction', 'trial'])
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif'])
+const expectedCardCount = 248
+const maxVariantBytes = {
+  originalWebp: 2_500_000,
+  thumbWebp: 90_000,
+  boardWebp: 240_000,
+  detailWebp: 650_000,
+  detailAvif: 450_000,
+}
+const maxTotalBytes = Number(args.get('--max-total-bytes') || 400 * 1024 * 1024)
 
 async function walk(directory) {
   const result = []
@@ -81,7 +90,7 @@ async function buildCard(card, source) {
     height: metadata.height,
     orientation: horizontalTypes.has(card.cardType) || metadata.width > metadata.height ? 'landscape' : 'portrait',
     sourceArchiveName: basename(source),
-    variants: Object.fromEntries(Object.entries(files).map(([name, file]) => [name, `${baseUrl}/${keyRoot}/${file}`])),
+    variants: Object.fromEntries(Object.entries(files).map(([name, file]) => [name, `${keyRoot}/${file}`])),
     bytes: sizes,
   }
 }
@@ -98,9 +107,13 @@ async function mapLimit(items, limit, mapper) {
   return results
 }
 
-await mkdir(outputRoot, { recursive: true })
 const sourceFiles = await walk(sourceRoot)
-const catalog = (await readCatalog()).filter(card => requestedCardIds.size === 0 || requestedCardIds.has(card.id.toUpperCase()))
+const completeCatalog = await readCatalog()
+const catalogIds = new Set(completeCatalog.map(card => card.id.toUpperCase()))
+if (completeCatalog.length !== catalogIds.size) throw new Error('卡牌目录存在重复卡号，拒绝生成资源清单')
+if (completeCatalog.length !== 248) throw new Error(`完整卡牌目录必须为 ${expectedCardCount} 张，当前 ${completeCatalog.length} 张`)
+if (completeCatalog.some(card => !/^S\d{2}-[A-Z0-9]+$/i.test(card.id))) throw new Error('卡牌目录包含不安全卡号，拒绝生成文件路径')
+const catalog = completeCatalog.filter(card => requestedCardIds.size === 0 || requestedCardIds.has(card.id.toUpperCase()))
 if (requestedCardIds.size > 0) {
   const found = new Set(catalog.map(card => card.id.toUpperCase()))
   const unknown = [...requestedCardIds].filter(id => !found.has(id))
@@ -108,31 +121,56 @@ if (requestedCardIds.size > 0) {
 }
 const jobs = catalog.map(card => ({ card, source: matchSource(card, sourceFiles) }))
 const missing = jobs.filter(job => !job.source).map(job => ({ cardId: job.card.id, name: job.card.nameZh, sourceUrl: job.card.imageUrl }))
-const ready = jobs.filter(job => job.source)
-const cards = await mapLimit(ready, concurrency, async ({ card, source }, index) => {
+if (missing.length) throw new Error(`卡图归档不完整（${missing.length}/${catalog.length}）：${missing.map(card => card.cardId).join('、')}`)
+await mkdir(outputRoot, { recursive: true })
+const cards = await mapLimit(jobs, concurrency, async ({ card, source }, index) => {
   const result = await buildCard(card, source)
-  process.stdout.write(`\r已处理 ${index + 1}/${ready.length}`)
+  process.stdout.write(`\r已处理 ${index + 1}/${jobs.length}`)
   return result
 })
 process.stdout.write('\n')
 
+if (requestedCardIds.size === 0 && cards.length !== expectedCardCount) throw new Error(`发布资源必须完整生成 ${expectedCardCount} 张，当前 ${cards.length} 张`)
+const oversized = cards.flatMap(card => Object.entries(card.bytes)
+  .filter(([variant, bytes]) => bytes > maxVariantBytes[variant])
+  .map(([variant, bytes]) => `${card.cardId}:${variant}=${bytes}`))
+if (oversized.length) throw new Error(`卡图变体超过体积门禁：${oversized.join('、')}`)
+const totalBytes = cards.reduce((sum, card) => sum + Object.values(card.bytes).reduce((cardSum, bytes) => cardSum + bytes, 0), 0)
+if (totalBytes > maxTotalBytes) throw new Error(`优化卡图总量 ${totalBytes} 超过门禁 ${maxTotalBytes}`)
+const assetVersion = createHash('sha256')
+  .update(cards.map(card => `${card.cardId}:${card.contentHash}`).sort().join('\n'))
+  .digest('hex')
+
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   catalogVersion,
+  assetVersion,
   generatedAt: new Date().toISOString(),
-  baseUrl,
+  basePath: '/card-assets',
+  cdnBaseUrl: /^https:\/\//i.test(baseUrl) ? baseUrl : '',
+  complete: requestedCardIds.size === 0,
+  cardCount: cards.length,
   immutableCacheControl: 'public, max-age=31536000, immutable',
+  manifestCacheControl: 'public, max-age=300, must-revalidate',
+  totalBytes,
   cards: Object.fromEntries(cards.map(card => [card.cardId, card])),
-  missing,
+  missing: [],
 }
 const preload = {
   catalogVersion,
   generatedAt: manifest.generatedAt,
   entries: cards
     .filter(card => ['master', 'disaster', 'destruction', 'trial'].includes(card.cardType))
-    .map(card => ({ cardId: card.cardId, url: card.variants.thumbWebp, as: 'image', type: 'image/webp' })),
+    .map(card => ({ cardId: card.cardId, url: `/card-assets/${card.variants.thumbWebp}`, as: 'image', type: 'image/webp' })),
 }
-await writeFile(join(outputRoot, 'card-assets.manifest.json'), JSON.stringify(manifest, null, 2))
-await writeFile(join(outputRoot, 'card-assets.preload.json'), JSON.stringify(preload, null, 2))
-console.log(`完成 ${cards.length} 张，缺少源文件 ${missing.length} 张。输出：${outputRoot}`)
-if (missing.length) process.exitCode = 2
+async function writeJsonAtomic(name, value) {
+  const target = join(outputRoot, name)
+  const partial = `${target}.${process.pid}.partial`
+  await writeFile(partial, JSON.stringify(value, null, 2))
+  await rename(partial, target)
+}
+
+// 所有二进制均成功且通过体积门禁后，才原子公布 manifest。
+await writeJsonAtomic('card-assets.preload.json', preload)
+await writeJsonAtomic('card-assets.manifest.json', manifest)
+console.log(`完成 ${cards.length} 张，资源版本 ${assetVersion}，总量 ${totalBytes} 字节。输出：${outputRoot}`)
