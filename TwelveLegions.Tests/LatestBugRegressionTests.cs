@@ -999,7 +999,7 @@ public sealed class LatestBugRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
-        for (var step = 0; step < 12 && (!defender.Graveyard.Contains(target)
+        for (var step = 0; step < 12 && (!defender.Resolving.Contains(target)
                  || game.State.PendingDefense?.Target.Type != "master"); step++)
         {
             var prompt = game.State.PendingPrompts.FirstOrDefault();
@@ -1012,10 +1012,12 @@ public sealed class LatestBugRegressionTests
                 new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
         }
 
-        Assert.Contains(target, defender.Graveyard);
+        Assert.Contains(target, defender.Resolving);
+        Assert.DoesNotContain(target, defender.Graveyard);
         Assert.NotNull(game.State.PendingDefense);
         Assert.Equal("master", game.State.PendingDefense!.Target.Type);
         Assert.True(game.State.PendingDefense.SuppressAttackTriggers);
+        Assert.Equal(4000, game.State.PendingDefense.AttackValue);
         Assert.Equal(4000, attacker.Troops);
         Assert.Contains(game.State.Events, entry => entry.Type == "piercing"
             && entry.Text.Contains("剩余兵力4000") && entry.Text.Contains("不触发【进攻时】效果"));
@@ -1115,7 +1117,8 @@ public sealed class LatestBugRegressionTests
         }
 
         Assert.NotNull(puppetWindow);
-        Assert.Contains(firstTarget, defender.Graveyard);
+        Assert.Contains(firstTarget, defender.Resolving);
+        Assert.DoesNotContain(firstTarget, defender.Graveyard);
         Assert.Equal(1000, attacker.Troops);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: puppetWindow!.PromptId,
             Choice: puppet.InstanceId)).Accepted);
@@ -1146,6 +1149,7 @@ public sealed class LatestBugRegressionTests
         }
 
         Assert.Contains(attacker, attackerPlayer.Graveyard);
+        Assert.Contains(firstTarget, defender.Graveyard);
         Assert.Contains(puppet, defender.Graveyard);
         Assert.Contains(game.State.Events, entry => entry.Type == "piercing"
             && entry.Text.Contains("剩余兵力1000"));

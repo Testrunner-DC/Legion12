@@ -63,7 +63,7 @@ const controlledPlayerIndex = computed(() => {
   if (pendingPrompt) return pendingPrompt.playerIndex
   if (props.game.phase === 'Mulligan')
     return props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? props.game.activePlayer
-  if (props.game.phase === 'Defense' && props.game.pendingDefense)
+  if (props.game.phase === 'Defense' && props.game.pendingDefense?.stage === 'DefenseChoice')
     return 1 - props.game.pendingDefense.attackerPlayer
   return props.game.activePlayer
 })
@@ -73,7 +73,8 @@ const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value]
 const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
 function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
-const defenseTargetType = computed(() => props.game.pendingDefense?.target.type ?? null)
+const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
+  ? props.game.pendingDefense.target.type : null)
 const isMyMain = computed(() => props.game.phase === 'Main' && props.game.activePlayer === controlledPlayerIndex.value)
 const activeMorale = computed(() =>
   me.value.morale.filter(card => !card.tapped).length
@@ -329,23 +330,36 @@ const eventLabels: Record<string, string> = {
   'effect-negated': '无效', 'initiative-choice': '先后攻', mulligan: '调度', cost: '费用',
   disaster: '天灾', 'disaster-active': '天灾', 'disaster-value': '天灾', damage: '伤害',
   'disaster-reveal': '天灾',
+  'combat-stage': '进攻时序', 'combat-resume': '进攻时序', 'attack-aborted': '进攻结束',
+  'defense-invalid': '防御失效', grave: '墓地',
   dice: '掷骰',
   heal: '恢复', leave: '离场', put: '登场', search: '检索', reveal: '展示', return: '返回',
   discard: '弃置', reorder: '排序', 'game-over': '胜负', 'extra-turn': '追加回合',
 }
 function eventLabel(event: ActionEvent) { return eventLabels[event.type] ?? '记录' }
+const combatStageLabels: Record<string, string> = {
+  AttackerAttackTiming: '进攻方【进攻时】', DefenderAttackTiming: '防守方【对方进攻时】',
+  DefenseChoice: '抵挡 / 支援', CombatDamage: '战斗伤害', KillTriggers: '进攻者【击杀时】',
+  AttackerDeathTriggers: '进攻者【阵亡时】', DefenderDeathTriggers: '被攻击者【阵亡时】',
+  FinalizeDeaths: '阵亡军团进入墓地', AttackerAfterAttack: '进攻者【进攻后】',
+  DefenderAfterAttack: '防守方【对方进攻后 / 被进攻后】', Complete: '进攻结束',
+}
 const combat = computed(() => {
   const pending = props.game.pendingDefense
   if (!pending) return null
   const attackerOwner = props.game.players[pending.attackerPlayer]
   const targetOwner = props.game.players[1 - pending.attackerPlayer]
-  const attacker = attackerOwner.field.flat().find(card => card?.instanceId === pending.attackerInstanceId)
+  const attacker = [...attackerOwner.field.flat(), ...(attackerOwner.resolving ?? [])]
+    .find(card => card?.instanceId === pending.attackerInstanceId)
   if (!attacker) return null
   const target = pending.target.type === 'master'
-    ? null : targetOwner.field.flat().find(card => card?.instanceId === pending.target.instanceId)
+    ? null : [...targetOwner.field.flat(), ...(targetOwner.resolving ?? [])]
+      .find(card => card?.instanceId === pending.target.instanceId)
   const support = supportId.value ? me.value.field.flat().find(card => card?.instanceId === supportId.value) : null
   return {
-    attacker, target, attackerOwner, targetOwner, support,
+    attacker, target, attackerOwner, targetOwner, support, stage: pending.stage,
+    attackValue: pending.attackValue > 0 ? pending.attackValue : attacker.troops,
+    attackUnit: pending.attackValue > 0 ? '冻结进攻值' : '兵力',
     targetName: target?.name ?? targetOwner.master.masterName,
     targetValue: target ? target.troops + (support?.troops ?? 0) : targetOwner.master.hp,
     targetUnit: target ? '兵力' : '血量',
@@ -359,7 +373,8 @@ const eligibleSupportId = computed(() => {
     const support = me.value.field[1][slot]
     const attacker = enemy.value.field.flat().find(card => card?.instanceId === props.game.pendingDefense?.attackerInstanceId)
     if (!target || !support || !attacker || target.instanceId !== targetId) continue
-    if (target.troops + support.troops >= attacker.troops) return support.instanceId
+    const attackValue = props.game.pendingDefense?.attackValue || attacker.troops
+    if (target.troops + support.troops >= attackValue) return support.instanceId
   }
   return null
 })
@@ -407,7 +422,7 @@ function toggle(list: string[], id: string) {
 function selectedHandIdsFor(playerIndex: number) {
   if (!isControlledPlayer(playerIndex)) return []
   if (props.game.phase === 'Mulligan') return mulliganIds.value
-  if (props.game.phase === 'Defense') return defenseIds.value
+  if (props.game.phase === 'Defense' && props.game.pendingDefense?.stage === 'DefenseChoice') return defenseIds.value
   return selectedId.value ? [selectedId.value] : []
 }
 function playableHandIdsFor(playerIndex: number) {
@@ -767,12 +782,13 @@ function statusTexts(card: Card) {
               <i class="combat-trace"/>
               <div class="combat-versus">
                 <span :class="combat.attackerOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.attackerOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.attacker.name }}</span>
-                <b>{{ combat.attacker.troops }}<small>兵力</small></b>
+                <b>{{ combat.attackValue }}<small>{{ combat.attackUnit }}</small></b>
                 <em>⚔</em>
                 <span :class="combat.targetOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.targetOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.targetName }}</span>
                 <b>{{ combat.targetValue }}<small>{{ combat.targetUnit }}</small></b>
               </div>
-              <div v-if="game.phase === 'Defense' && !readOnly" class="combat-resolution-panel">
+              <small class="combat-stage-label" data-ui-contract="combat-substage">当前子阶段：{{ combatStageLabels[combat.stage] ?? combat.stage }}</small>
+              <div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly" class="combat-resolution-panel">
                 <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
                   :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
                   :support-id="supportId" :can-support="Boolean(eligibleSupportId)" :busy="l12State.pendingAction" @command="command" />

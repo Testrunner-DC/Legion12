@@ -363,6 +363,18 @@ public sealed class GameEngineTests
         Assert.True(game.Handle(attackerPlayer, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
 
+        for (var step = 0; step < 20 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) break;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
         Assert.Same(attacker, game.State.Players[attackerPlayer].Field[0][0]);
         Assert.Equal(1000, attacker.Troops);
         Assert.Contains(target, game.State.Players[defenderPlayer].Graveyard);

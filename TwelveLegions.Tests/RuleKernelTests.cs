@@ -122,7 +122,7 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void SimultaneousDeathTriggersBuildActivePlayersStackBatchBeforeOpponentsBatch()
+    public void MutualCombatDefeatResolvesAttackerDeathBeforeDefenderDeathWithoutKill()
     {
         var game = new L12GameEngine(Catalog, "trigger-integration", "TRIGGER", 8131,
             ["甲", "乙"], [0, 0], skipPreparation: true);
@@ -137,27 +137,31 @@ public sealed class RuleKernelTests
         attacker.SummonRound = defender.SummonRound = 0;
         game.State.Players[0].Field[0][0] = attacker;
         game.State.Players[1].Field[0][0] = defender;
-        var response = Take(game.State.Players[0], "S01-0016");
-        response.Hidden = true; response.SetRound = 0;
-        game.State.Players[0].Field[1][1] = response;
-        game.State.Players[0].Hand.Add(Take(game.State.Players[0], "S01-0103"));
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
-        while (game.State.EffectStack.LastOrDefault()?.Trigger == "attack"
-            && game.State.PendingPrompts.FirstOrDefault() is { } prompt
-            && prompt.ValidChoices.Contains("pass"))
-            Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
+        for (var step = 0; step < 30 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) break;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
 
-        Assert.Equal(2, game.State.EffectStack.Count);
-        Assert.Equal(0, game.State.EffectStack[0].Controller);
-        Assert.Equal(1, game.State.EffectStack[1].Controller);
-        var responsePrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal(0, responsePrompt.PlayerIndex);
-        Assert.Contains(response.InstanceId, responsePrompt.ValidChoices);
+        var triggerEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
+        var attackerDeath = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
+        var defenderDeath = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId));
+        Assert.True(attackerDeath >= 0 && defenderDeath > attackerDeath);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("【击杀时】", StringComparison.Ordinal));
+        Assert.Contains(attacker, game.State.Players[0].Graveyard);
+        Assert.Contains(defender, game.State.Players[1].Graveyard);
     }
 
     [Fact]

@@ -80,14 +80,40 @@ public sealed partial class L12GameEngine
         switch (authorityEvent.Type)
         {
             case "defense":
+            {
+                var blockIds = item.Data.GetValueOrDefault("blockIds", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
+                var supportId = item.Data.GetValueOrDefault("supportId");
+                var pending = State.PendingDefense;
+                var attacker = pending is null ? null : FindOnField(State.Players[pending.AttackerPlayer],
+                    pending.AttackerInstanceId, out _, out _);
+                if (item.Data.GetValueOrDefault("invalid") != "true")
+                {
+                    if (pending is null || attacker is null)
+                    {
+                        item.Data["invalid"] = "true";
+                        AddEvent("defense-invalid", authorityEvent.ActorPlayer,
+                            "防御权威事件结算前进攻上下文或进攻军团已离场；不再支付额外费用");
+                    }
+                    else
+                    {
+                        var validation = ValidateDefenseChoice(authorityEvent.ActorPlayer, pending, attacker, blockIds, supportId);
+                        if (!validation.Accepted)
+                        {
+                            item.Data["invalid"] = "true";
+                            AddEvent("defense-invalid", authorityEvent.ActorPlayer,
+                                $"防御权威事件结算前重新校验失败：{validation.Error}；不再支付额外费用");
+                        }
+                    }
+                }
                 if (BeginRequiredDefenseExtraDiscard(item)) return;
                 ResolveDefenseCore(
                     authorityEvent.ActorPlayer,
-                    item.Data.GetValueOrDefault("blockIds", string.Empty)
-                        .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(),
-                    item.Data.GetValueOrDefault("supportId"),
+                    blockIds,
+                    supportId,
                     item.Data.GetValueOrDefault("invalid") == "true");
                 break;
+            }
             case "non-hand-entry":
             {
                 var card = FindOnField(State.Players[authorityEvent.ActorPlayer], authorityEvent.SourceInstanceId, out _, out _);

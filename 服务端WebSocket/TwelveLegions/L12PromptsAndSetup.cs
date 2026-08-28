@@ -503,6 +503,7 @@ public sealed partial class L12GameEngine
             default:
                 return CommandResult.Reject("未知选择续接点");
         }
+        AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();
     }
 
@@ -811,27 +812,28 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var choices = new List<string>();
         var protectedFromCounters = top.Controller != playerIndex && IsProtectedFromCounterTactics(top);
+        var defenderAttackTimingRoot = top.Trigger == "opponent-attack";
+        var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         var responseCards = player.Field[1].Where(card => card is { CardType: "tactic" }
             && card.SetRound < State.Round && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
         if (State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial || protectedFromCounters) responseCards = [];
         foreach (var card in responseCards)
         {
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
-                && player.Hand.Count > 0)
+                && player.Hand.Count > 0 && (!defenderAttackTimingRoot || playerIndex == defendingPlayer))
                 choices.Add(card.InstanceId);
             // 〈落穴陷阱〉只响应“军团登场时”。军团与圣物共用 enter 堆叠时点，
             // 因此不能只判断触发名；否则圣物的【登场时】效果也会错误开放响应。
-            if (card.CardId == "S01-0018" && top.Controller != playerIndex && timing.Trigger == "enter"
+            if (!defenderAttackTimingRoot && card.CardId == "S01-0018" && top.Controller != playerIndex && timing.Trigger == "enter"
                 && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard))
                 choices.Add(card.InstanceId);
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
-            if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
+            if (!defenderAttackTimingRoot && CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
         }
-        var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
-        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "legion"
+        if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
             && State.PendingDefense.SureHit != true && playerIndex == defendingPlayer)
             choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
-        if (!protectedFromCounters && top.Trigger == "attack" && State.PendingDefense?.Target.Type == "master"
+        if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "master"
             && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
@@ -872,7 +874,7 @@ public sealed partial class L12GameEngine
             return true;
 
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
-        if (playerIndex != defendingPlayer || player.Hand.Count == 0 || top.Trigger != "attack") return false;
+        if (playerIndex != defendingPlayer || player.Hand.Count == 0 || top.Trigger != "opponent-attack") return false;
         if (State.PendingDefense?.Target.Type == "legion" && State.PendingDefense.SureHit != true
             && pool.Any(card => card.Id == "S01-0002"))
             return true;
@@ -888,6 +890,13 @@ public sealed partial class L12GameEngine
         L12StackItem timing)
     {
         if (!IsCounterTactic(cardId)) return false;
+        if (top.Trigger == "opponent-attack")
+        {
+            var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
+            if (cardId == "S01-0016")
+                return playerIndex == defendingPlayer && State.Players[playerIndex].Hand.Count > 0;
+            return CanUseS1ReactionAtStack(cardId, playerIndex, top);
+        }
         if (cardId == "S01-0016")
             return top.Trigger != "authority-event" && State.Players[playerIndex].Hand.Count > 0;
         if (cardId == "S01-0018")
@@ -1101,15 +1110,14 @@ public sealed partial class L12GameEngine
             AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
             if (item.Trigger == "attack")
             {
-                var pending = State.PendingDefense;
-                if (pending is not null)
-                {
-                    var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
-                    RevertPendingCombatTroopsModifiers(pending, attacker);
-                }
-                State.PendingDefense = null;
-                State.Phase = L12Phase.Main;
-                AddEvent("attack-ended", item.Controller, "本次进攻被抵挡");
+                AddEvent("combat-stage", item.Controller,
+                    "进攻方【进攻时】效果被无效；进攻宣言仍然成立，继续后续时序");
+            }
+            else if (item.Trigger == "opponent-attack" && State.PendingDefense is not null)
+            {
+                State.PendingDefense.BlockedByResponse = true;
+                AddEvent("combat-stage", 1 - State.PendingDefense.AttackerPlayer,
+                    "〈绝对防御〉抵挡本次进攻；已结算的进攻时效果不回退");
             }
             FinishStackItem(item);
             return;
@@ -1149,7 +1157,7 @@ public sealed partial class L12GameEngine
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.SourceInstanceId
             && candidate.CardId == "S02-0005");
         var attackItem = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault()
-            && candidate.Trigger == "attack" && !candidate.Negated);
+            && candidate.Trigger == "opponent-attack" && !candidate.Negated);
         var slotParts = item.Data.GetValueOrDefault("slot")?.Split(':');
         var slot = -1;
         var validSlot = slotParts is { Length: 2 }
@@ -1189,7 +1197,8 @@ public sealed partial class L12GameEngine
         State.EffectStack.Remove(item);
         var owner = State.Players[item.Controller];
         var resolving = owner.Resolving.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId);
-        if (resolving is not null && State.EffectStack.All(other => other.SourceInstanceId != resolving.InstanceId))
+        if (resolving is not null && !IsPendingCombatDeath(resolving.InstanceId)
+            && State.EffectStack.All(other => other.SourceInstanceId != resolving.InstanceId))
         {
             owner.Resolving.Remove(resolving);
             ResetCardAfterLeavingField(resolving);
@@ -1248,6 +1257,11 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["choiceMode"] = "instant" });
             return;
         }
+        if (State.PendingDefense is not null)
+        {
+            AdvanceCombatTimelineIfIdle();
+            if (State.PendingDefense is not null || !CombatTimelineIsIdle()) return;
+        }
         if (State.CheckDisasterAfterStack)
         {
             State.CheckDisasterAfterStack = false;
@@ -1267,16 +1281,6 @@ public sealed partial class L12GameEngine
         {
             CompleteEndTurn(State.ActivePlayer);
             return;
-        }
-        if (State.PendingDefense is not null)
-        {
-            if (State.PendingDefense.BlockedByResponse)
-            {
-                ResolveResponseBlockedAttack();
-                return;
-            }
-            State.Phase = L12Phase.Defense;
-            AutoResolveLegionDefenseWithoutSupport();
         }
     }
 }

@@ -504,11 +504,15 @@ public sealed partial class L12GameEngine
         }
         var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
+        var hasAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
         State.PendingDefense = new L12PendingDefense
         {
             AttackerPlayer = playerIndex,
             AttackerInstanceId = attacker.InstanceId,
             Target = command.Target,
+            Stage = hasAttackerAttackTiming
+                ? L12CombatStage.AttackerAttackTiming
+                : L12CombatStage.DefenderAttackTiming,
             IsRanged = isRanged,
             RangedNoLoss = combatProfile.HasRangedNoLoss,
             AttackNoLoss = attackNoLoss,
@@ -525,7 +529,10 @@ public sealed partial class L12GameEngine
         else
             AddEvent("attack", playerIndex,
                 $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.Troops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.Troops}", attacker, attackTarget);
-        PushEffect(playerIndex, attacker, "attack", "进攻宣言与【进攻时】效果");
+        if (hasAttackerAttackTiming)
+            PushEffect(playerIndex, attacker, "attack", "进攻方【进攻时】效果");
+        else
+            AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();
     }
 
@@ -645,20 +652,15 @@ public sealed partial class L12GameEngine
     private CommandResult ResolveDefense(int playerIndex, L12Command command)
     {
         var pending = State.PendingDefense;
-        if (State.Phase != L12Phase.Defense || pending is null) return CommandResult.Reject("当前没有待结算进攻");
+        if (State.Phase != L12Phase.Defense || pending is null || pending.Stage != L12CombatStage.DefenseChoice)
+            return CommandResult.Reject("当前没有待选择的抵挡或支援");
         if (State.EffectStack.Count > 0 || State.PendingPrompts.Count > 0) return CommandResult.Reject("进攻响应仍在结算");
         if (playerIndex == pending.AttackerPlayer) return CommandResult.Reject("进攻方不能代替防守方结算");
+        if (TryAbortCombatAtSafeBoundary(pending, playerIndex)) return CommandResult.Ok();
         var attackerPlayer = State.Players[pending.AttackerPlayer];
         var defender = State.Players[playerIndex];
         var attacker = FindOnField(attackerPlayer, pending.AttackerInstanceId, out _, out _);
-        if (attacker is null)
-        {
-            RevertPendingCombatTroopsModifiers(pending, null);
-            State.PendingDefense = null;
-            State.Phase = L12Phase.Main;
-            AddEvent("attack-ended", playerIndex, "进攻军团已离场，进攻结束");
-            return CommandResult.Ok();
-        }
+        if (attacker is null) return CommandResult.Ok();
 
         var blockIds = command.CardInstanceIds ?? [];
         var supportId = command.SupportInstanceId;
@@ -693,7 +695,7 @@ public sealed partial class L12GameEngine
             if (blockIds.Count != blockIds.Distinct().Count()) return CommandResult.Reject("抵挡卡牌重复");
             var cards = defender.Hand.Where(card => blockIds.Contains(card.InstanceId) && card.CardType == "legion").ToList();
             if (cards.Count != blockIds.Count) return CommandResult.Reject("只能弃置手牌中的军团");
-            if (cards.Count > 0 && cards.Sum(card => card.Troops) < attacker.Troops)
+            if (cards.Count > 0 && cards.Sum(card => card.Troops) < EffectiveAttackValue(pending, attacker))
                 return CommandResult.Reject("弃置军团总兵力不足");
             return CommandResult.Ok();
         }
@@ -706,7 +708,7 @@ public sealed partial class L12GameEngine
         if (support is null || !IsFieldLegion(support) || supportRow != 1 || targetRow != 0 || supportSlot != targetSlot)
             return CommandResult.Reject("支援军团必须位于被进攻军团同列后排");
         if (support.CannotSupport || defender.BackRowCannotSupport) return CommandResult.Reject("该后排军团本回合不能支援");
-        if (target.Troops + support.Troops < attacker.Troops) return CommandResult.Reject("支援后兵力仍不足");
+        if (target.Troops + support.Troops < EffectiveAttackValue(pending, attacker)) return CommandResult.Reject("支援后兵力仍不足");
         return CommandResult.Ok();
     }
 
@@ -719,13 +721,14 @@ public sealed partial class L12GameEngine
         if (attacker is null || target is null || targetRow != 0 || defender.BackRowCannotSupport) return false;
         var support = defender.Field[1][targetSlot];
         return support is not null && IsFieldLegion(support) && !support.CannotSupport
-            && target.Troops + support.Troops >= attacker.Troops;
+            && target.Troops + support.Troops >= EffectiveAttackValue(pending, attacker);
     }
 
     private bool AutoResolveLegionDefenseWithoutSupport()
     {
         var pending = State.PendingDefense;
-        if (pending is null || pending.Target.Type != "legion" || HasLegalLegionSupport(pending)) return false;
+        if (pending is null || pending.Stage != L12CombatStage.DefenseChoice
+            || pending.Target.Type != "legion" || HasLegalLegionSupport(pending)) return false;
         AddEvent("support-skipped", 1 - pending.AttackerPlayer, "没有可进行支援的军团，跳过支援选择");
         ResolveDefenseCore(1 - pending.AttackerPlayer, [], null, forceInvalid: false);
         return true;
@@ -735,28 +738,34 @@ public sealed partial class L12GameEngine
         string? declaredSupportId, bool forceInvalid)
     {
         var pending = State.PendingDefense;
-        if (State.Phase != L12Phase.Defense || pending is null) return CommandResult.Reject("当前没有待结算进攻");
+        if (State.Phase != L12Phase.Defense || pending is null
+            || pending.Stage is not (L12CombatStage.DefenseChoice or L12CombatStage.CombatDamage))
+            return CommandResult.Reject("当前没有待结算进攻");
+        if (TryAbortCombatAtSafeBoundary(pending, playerIndex)) return CommandResult.Ok();
         var attackerPlayer = State.Players[pending.AttackerPlayer];
         var defender = State.Players[playerIndex];
         var attacker = FindOnField(attackerPlayer, pending.AttackerInstanceId, out _, out _);
-        if (attacker is null)
-        {
-            RevertPendingCombatTroopsModifiers(pending, null);
-            State.PendingDefense = null;
-            State.Phase = L12Phase.Main;
-            AddEvent("attack-ended", playerIndex, "进攻军团已离场，进攻结束");
-            return CommandResult.Ok();
-        }
+        if (attacker is null) return CommandResult.Ok();
 
-        var killedTarget = false;
         pending.DeclaredBlockIds.Clear();
         pending.DeclaredBlockIds.AddRange(declaredBlockIds);
         pending.DeclaredSupportId = declaredSupportId;
+        if (!forceInvalid)
+        {
+            var revalidation = ValidateDefenseChoice(playerIndex, pending, attacker, declaredBlockIds, declaredSupportId);
+            if (!revalidation.Accepted)
+            {
+                forceInvalid = true;
+                AddEvent("defense-invalid", playerIndex, $"防御结算前重新校验失败：{revalidation.Error}；本次抵挡/支援无效");
+            }
+        }
         pending.ForceInvalidDefense = forceInvalid;
+        pending.Stage = L12CombatStage.CombatDamage;
         if (pending.Target.Type == "master")
         {
             var ids = forceInvalid ? [] : declaredBlockIds;
             var cards = defender.Hand.Where(card => ids.Contains(card.InstanceId) && card.CardType == "legion").ToList();
+            pending.Stage = L12CombatStage.AttackerAfterAttack;
             if (cards.Count == 0)
             {
                 DamageMaster(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻", pending.AttackerPlayer,
@@ -772,84 +781,67 @@ public sealed partial class L12GameEngine
             AddEvent("defense", playerIndex, cards.Count == 0
                 ? $"{defender.Name} 的主宰受到 {pending.MasterDamage} 点伤害"
                 : $"{defender.Name} 弃置 {cards.Count} 张军团抵挡", cards.ToArray());
+            AdvanceCombatTimelineIfIdle();
+            return CommandResult.Ok();
         }
-        else
+
+        var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
+        if (target is null)
         {
-            var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
-            if (target is null)
+            TryAbortCombatAtSafeBoundary(pending, playerIndex);
+            return CommandResult.Ok();
+        }
+
+        var supportId = forceInvalid ? null : declaredSupportId;
+        if (!string.IsNullOrWhiteSpace(supportId))
+        {
+            var support = FindOnField(defender, supportId, out _, out _);
+            if (support is not null)
             {
-                RevertPendingCombatTroopsModifiers(pending, attacker);
-                State.PendingDefense = null;
-                State.Phase = L12Phase.Main;
-                AddEvent("attack-ended", playerIndex, "进攻目标丢失，进攻结束");
+                pending.Stage = L12CombatStage.AttackerAfterAttack;
+                RemoveFromField(defender, support, true, "作为支援军团阵亡");
+                AddEvent("support", playerIndex, $"{support.Name} 支援 {target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
+                    support, target, attacker);
+                AdvanceCombatTimelineIfIdle();
                 return CommandResult.Ok();
             }
-            var supported = false;
-            var supportId = forceInvalid ? null : declaredSupportId;
-            if (!string.IsNullOrWhiteSpace(supportId))
-            {
-                var support = FindOnField(defender, supportId, out _, out _)!;
-                RemoveFromField(defender, support, true, "作为支援军团阵亡");
-                supported = true;
-                AddEvent("support", playerIndex, $"{support.Name} 支援 {target.Name}，进攻双方不损耗兵力", support, target, attacker);
-            }
-            if (!supported)
-            {
-                var targetTroops = target.Troops;
-                var attackerTroops = attacker.Troops;
-                var attackerTakesDamage = !pending.AttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
-                if (targetTroops - attackerTroops <= 0
-                    && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();
-                if (attackerTakesDamage && attackerTroops - targetTroops <= 0
-                    && TryOfferCombatLethalReplacement(attackerPlayer, attacker, pending)) return CommandResult.Ok();
-
-                var targetReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(target.InstanceId);
-                var attackerReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(attacker.InstanceId);
-                if (!targetReplaced) target.Troops -= attackerTroops;
-                if (attackerTakesDamage && !attackerReplaced) attacker.Troops -= targetTroops;
-                var simultaneousDeaths = new List<(int Controller, L12CardInstance Card)>();
-                if (target.Troops <= 0)
-                {
-                    killedTarget = RemoveFromField(defender, target, true, "阵亡", queueDeathTrigger: false,
-                        bypassLethalReplacement: true);
-                    if (killedTarget)
-                        simultaneousDeaths.Add((defender.PlayerIndex, target));
-                }
-                if (attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true, "阵亡", queueDeathTrigger: false,
-                        bypassLethalReplacement: true))
-                    simultaneousDeaths.Add((attackerPlayer.PlayerIndex, attacker));
-                QueueSimultaneousDeathTriggers(simultaneousDeaths);
-                AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
-                    ? "进攻无损：被进攻军团承受兵力减损，进攻军团不减损"
-                    : "双方军团同时造成等同于当前兵力的兵力减损", attacker, target);
-            }
         }
 
-        RevertPendingCombatTroopsModifiers(pending, attacker);
-        ReturnWukongMasterLegionAfterAttack(pending.AttackerPlayer, attacker);
-        State.PendingDefense = null;
-        if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
-        QueueAfterAttackEffects(pending.AttackerPlayer, attacker, killedTarget);
-        QueueS1PostAttackReactions(pending.AttackerPlayer);
+        var targetTroops = target.Troops;
+        var attackValue = EffectiveAttackValue(pending, attacker);
+        var attackerTakesDamage = !pending.AttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
+        if (targetTroops - attackValue <= 0
+            && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();
+        if (attackerTakesDamage && attacker.Troops - targetTroops <= 0
+            && TryOfferCombatLethalReplacement(attackerPlayer, attacker, pending)) return CommandResult.Ok();
+
+        var targetReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(target.InstanceId);
+        var attackerReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(attacker.InstanceId);
+        if (!targetReplaced) target.Troops -= attackValue;
+        if (attackerTakesDamage && !attackerReplaced) attacker.Troops -= targetTroops;
+
+        var defenderDefeated = target.Troops <= 0 && RemoveFromField(defender, target, true, "阵亡（等待触发完成后进入墓地）",
+            queueDeathTrigger: false, bypassLethalReplacement: true, deferGraveyard: true);
+        var attackerDefeated = attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true,
+            "阵亡（等待触发完成后进入墓地）", queueDeathTrigger: false,
+            bypassLethalReplacement: true, deferGraveyard: true);
+        if (defenderDefeated) pending.DefeatedDefenderInstanceId = target.InstanceId;
+        if (attackerDefeated) pending.DefeatedAttackerInstanceId = attacker.InstanceId;
+        pending.Stage = defenderDefeated && !attackerDefeated
+            ? L12CombatStage.KillTriggers
+            : attackerDefeated
+                ? L12CombatStage.AttackerDeathTriggers
+                : defenderDefeated
+                    ? L12CombatStage.DefenderDeathTriggers
+                    : L12CombatStage.AttackerAfterAttack;
+        AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
+            ? $"进攻无损：防守军团承受冻结进攻值 {attackValue} 的兵力减损，进攻军团不减损"
+            : $"进攻者以冻结进攻值 {attackValue} 造成兵力减损；防守军团以当前兵力 {targetTroops} 反击",
+            attacker, target);
+        AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();
     }
 
-    private void ResolveResponseBlockedAttack()
-    {
-        var pending = State.PendingDefense;
-        if (pending is null) return;
-        var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
-        RevertPendingCombatTroopsModifiers(pending, attacker);
-        if (attacker is not null) ReturnWukongMasterLegionAfterAttack(pending.AttackerPlayer, attacker);
-        State.PendingDefense = null;
-        if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
-        AddEvent("attack-ended", 1 - pending.AttackerPlayer, "佣兵部队抵挡本次进攻；已发动的进攻时效果照常结算");
-        if (attacker is not null)
-        {
-            QueueAfterAttackEffects(pending.AttackerPlayer, attacker, killedTarget: false);
-            QueueS1PostAttackReactions(pending.AttackerPlayer);
-        }
-    }
     private bool TryOfferCombatLethalReplacement(L12PlayerState controller, L12CardInstance card, L12PendingDefense pending)
     {
         if (!CanUseAchillesLethalReplacement(controller, card)) return false;
@@ -902,11 +894,14 @@ public sealed partial class L12GameEngine
             AddEvent("effect-failed", playerIndex, $"{attacker.Name}的贯穿进攻失败：{error}", attacker);
             return;
         }
+        if (State.PendingDefense is { } parentCombat)
+            State.SuspendedCombatContexts.Add(parentCombat);
         State.PendingDefense = new L12PendingDefense
         {
             AttackerPlayer = playerIndex,
             AttackerInstanceId = attacker.InstanceId,
             Target = new L12AttackTarget("master"),
+            Stage = L12CombatStage.DefenderAttackTiming,
             SureHit = attacker.HasSureHit,
             MasterDamage = 1,
             SuppressAttackTriggers = true,
@@ -915,7 +910,7 @@ public sealed partial class L12GameEngine
         AddEvent("piercing", playerIndex,
             $"贯穿：{attacker.Name}以剩余兵力{attacker.Troops}对{opponent.Name}的主宰发动1次进攻；此次进攻不触发【进攻时】效果",
             attacker);
-        PushEffect(playerIndex, attacker, "attack", "贯穿进攻（不触发【进攻时】效果）");
+        AdvanceCombatTimelineIfIdle();
     }
 
     private CommandResult Move(int playerIndex, L12Command command)

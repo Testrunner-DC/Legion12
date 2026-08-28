@@ -119,7 +119,15 @@ export interface GameState {
   waitingPrompt?: { playerIndex: number; playerName: string; kind: string } | null
   prompts?: Prompt[]
   effectStack?: StackItem[]
-  pendingDefense?: { attackerPlayer: number; attackerInstanceId: string; target: { type: string; instanceId?: string } } | null
+  pendingDefense?: {
+    attackerPlayer: number
+    attackerInstanceId: string
+    target: { type: string; instanceId?: string }
+    stage: 'AttackerAttackTiming' | 'DefenderAttackTiming' | 'DefenseChoice' | 'CombatDamage'
+      | 'KillTriggers' | 'AttackerDeathTriggers' | 'DefenderDeathTriggers' | 'FinalizeDeaths'
+      | 'AttackerAfterAttack' | 'DefenderAfterAttack' | 'Complete'
+    attackValue: number
+  } | null
   winner?: number | null
   winnerReason?: string | null
   players: PlayerView[]

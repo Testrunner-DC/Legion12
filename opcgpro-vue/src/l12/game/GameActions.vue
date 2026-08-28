@@ -19,12 +19,12 @@ const emit = defineEmits<{
         {{ busy ? '处理中…' : me.mulliganDone ? '等待对手' : `确认调度 (${mulliganCount})` }}
       </button>
     </template>
-    <template v-else-if="game.phase === 'Defense' && game.activePlayer !== me.playerIndex && defenseTargetType === 'master'">
+    <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && game.activePlayer !== me.playerIndex && defenseTargetType === 'master'">
       <p>从手牌选择军团弃置抵挡；合计兵力须不低于进攻军团。</p>
       <button class="primary" :disabled="defenseCount === 0 || busy" @click="emit('command', 'resolveDefense')">弃置抵挡 ({{ defenseCount }})</button>
       <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense')">不抵挡 · 主宰承受伤害</button>
     </template>
-    <template v-else-if="game.phase === 'Defense' && game.activePlayer !== me.playerIndex && defenseTargetType === 'legion'">
+    <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && game.activePlayer !== me.playerIndex && defenseTargetType === 'legion'">
       <p v-if="canSupport">可点击被进攻军团同列的后排军团，将其选为支援军团。</p>
       <p v-else>当前没有符合兵力条件的同列后排支援军团。</p>
       <button class="primary" :disabled="!supportId || busy" @click="emit('command', 'resolveDefense')">确认支援</button>

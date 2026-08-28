@@ -1014,7 +1014,7 @@ public sealed partial class L12GameEngine
 
     private bool RemoveFromField(L12PlayerState player, L12CardInstance card, bool toGraveyard, string reason = "离场",
         bool queueDeathTrigger = true, L12FieldLeaveKind leaveKind = L12FieldLeaveKind.Defeat,
-        bool bypassLethalReplacement = false)
+        bool bypassLethalReplacement = false, bool deferGraveyard = false)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
@@ -1034,20 +1034,28 @@ public sealed partial class L12GameEngine
         player.Field[row][slot] = null;
         if (toGraveyard)
         {
-            var owner = CardOwner(card, player);
-            if (card.AttachedCards.Count > 0)
-                DiscardAttachedCards(card, $"{card.Name}离场");
-            ResetCardAfterLeavingField(card);
-            if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+            if (deferGraveyard)
             {
-                AddEvent("derived-vanished", owner.PlayerIndex,
-                    $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
+                if (player.Resolving.All(candidate => candidate.InstanceId != card.InstanceId))
+                    player.Resolving.Add(card);
             }
             else
             {
-                owner.Graveyard.Add(card);
-                if (owner.PlayerIndex != player.PlayerIndex)
-                    AddEvent("grave", owner.PlayerIndex, $"{card.Name}置入所有者墓地", card);
+                var owner = CardOwner(card, player);
+                if (card.AttachedCards.Count > 0)
+                    DiscardAttachedCards(card, $"{card.Name}离场");
+                ResetCardAfterLeavingField(card);
+                if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+                {
+                    AddEvent("derived-vanished", owner.PlayerIndex,
+                        $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
+                }
+                else
+                {
+                    owner.Graveyard.Add(card);
+                    if (owner.PlayerIndex != player.PlayerIndex)
+                        AddEvent("grave", owner.PlayerIndex, $"{card.Name}置入所有者墓地", card);
+                }
             }
         }
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
@@ -1257,6 +1265,7 @@ public sealed partial class L12GameEngine
             var defeated = State.Players.SelectMany(player => player.Field.SelectMany(row => row)
                     .Where(card => card is not null && IsFieldLegion(card) && card.Troops <= 0)
                     .Cast<L12CardInstance>()
+                    .Where(card => !IsPendingCombatDeath(card.InstanceId))
                     .Select(card => (Controller: player.PlayerIndex, Card: card)))
                 .ToArray();
             if (defeated.Length == 0) return;
@@ -1286,6 +1295,7 @@ public sealed partial class L12GameEngine
         State.WinnerReason = reason;
         State.Phase = L12Phase.GameOver;
         State.PendingDefense = null;
+        State.SuspendedCombatContexts.Clear();
         State.PendingPrompts.Clear();
         State.EffectStack.Clear();
         State.DeferredEffectStack.Clear();

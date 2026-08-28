@@ -477,6 +477,7 @@ public sealed partial class L12GameEngine
         State.PendingTriggerBatches.Clear();
         State.PendingTriggerStackCandidates.Clear();
         State.PendingDefense = null;
+        State.SuspendedCombatContexts.Clear();
         State.EffectStack.Clear();
         State.DeferredEffectStack.Clear();
         State.ResponseWindow = null;

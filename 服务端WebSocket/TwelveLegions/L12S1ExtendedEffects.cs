@@ -958,10 +958,13 @@ public sealed partial class L12GameEngine
     {
         if (top.Controller == playerIndex) return false;
         var timing = ResponseTimingContext(top);
+        var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         return cardId switch
         {
-            "S01-0019" => timing.Trigger is "attack" or "enter" or "play" or "active" or "disaster",
-            "S01-0020" or "S01-0120" => timing.Trigger == "attack",
+            "S01-0019" => timing.Trigger == "opponent-attack"
+                ? playerIndex == defendingPlayer
+                : timing.Trigger is "enter" or "play" or "active" or "disaster",
+            "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,
             "S01-0224" => timing.Trigger is "play" or "active" && FindSource(timing)?.CardType is "tactic" or "artifact",
             _ => false,
         };

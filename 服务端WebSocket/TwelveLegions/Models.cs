@@ -25,6 +25,22 @@ public enum L12FieldLeaveKind
     PutIntoGraveyard,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<L12CombatStage>))]
+public enum L12CombatStage
+{
+    AttackerAttackTiming,
+    DefenderAttackTiming,
+    DefenseChoice,
+    CombatDamage,
+    KillTriggers,
+    AttackerDeathTriggers,
+    DefenderDeathTriggers,
+    FinalizeDeaths,
+    AttackerAfterAttack,
+    DefenderAfterAttack,
+    Complete,
+}
+
 public sealed class L12CardDefinition
 {
     public required string Id { get; init; }
@@ -258,6 +274,10 @@ public sealed class L12PendingDefense
     public required int AttackerPlayer { get; init; }
     public required string AttackerInstanceId { get; init; }
     public required L12AttackTarget Target { get; set; }
+    /// <summary>可持久化的进攻子阶段；快照和重连均以此为唯一流程依据。</summary>
+    public L12CombatStage Stage { get; set; } = L12CombatStage.AttackerAttackTiming;
+    /// <summary>双方【进攻时】时点全部结束、进入防御时冻结的本次进攻数值。</summary>
+    public int AttackValue { get; set; }
     public bool IsRanged { get; init; }
     public bool RangedNoLoss { get; init; }
     public bool AttackNoLoss { get; init; }
@@ -274,6 +294,12 @@ public sealed class L12PendingDefense
     public bool ForceInvalidDefense { get; set; }
     /// <summary>佣兵部队等响应已抵挡进攻；仍须结算已发动的【进攻时】效果。</summary>
     public bool BlockedByResponse { get; set; }
+    public bool DefenderAttackTimingOpened { get; set; }
+    public bool AttackerAfterAttackStarted { get; set; }
+    public bool StageEffectsQueued { get; set; }
+    /// <summary>战斗伤害已确认阵亡、等待各自触发完成后才进入墓地的实例。</summary>
+    public string? DefeatedAttackerInstanceId { get; set; }
+    public string? DefeatedDefenderInstanceId { get; set; }
 }
 
 public sealed class L12Prompt
@@ -434,6 +460,8 @@ public sealed class L12GameState
     public L12CardInstance? ActiveDisaster { get; set; }
     public int DisasterPreparationStep { get; set; }
     public L12PendingDefense? PendingDefense { get; set; }
+    /// <summary>贯穿等击杀时生成进攻使用的可恢复父交战栈。</summary>
+    public List<L12PendingDefense> SuspendedCombatContexts { get; } = [];
     public List<L12Prompt> PendingPrompts { get; } = [];
     public List<L12PendingActivation> PendingActivations { get; } = [];
     public L12FreeMasterActivation? FreeMasterActivation { get; set; }

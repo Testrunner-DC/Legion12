@@ -128,6 +128,8 @@ const replayGame = computed<GameState | null>(() => {
     pendingDefense: defense ? {
       attackerPlayer: value(defense, 'AttackerPlayer', 'attackerPlayer', 0),
       attackerInstanceId: value(defense, 'AttackerInstanceId', 'attackerInstanceId', ''),
+      stage: value(defense, 'Stage', 'stage', 'DefenseChoice'),
+      attackValue: value(defense, 'AttackValue', 'attackValue', 0),
       target: {
         type: value(value(defense, 'Target', 'target', {}), 'Type', 'type', 'master'),
         instanceId: value(value(defense, 'Target', 'target', {}), 'InstanceId', 'instanceId', undefined),

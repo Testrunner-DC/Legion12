@@ -347,27 +347,6 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void QueueAfterAttackEffects(int playerIndex, L12CardInstance attacker, bool killedTarget)
-    {
-        if (State.Phase == L12Phase.GameOver) return;
-        if (FindOnField(State.Players[playerIndex], attacker.InstanceId, out _, out _) is null) return;
-        var candidates = new List<L12TriggerCandidate>();
-        if (attacker.CardId is "S01-0101" or "S01-0414" or "S01-0409" || S1ExtendedAfterAttackCards.Contains(attacker.CardId)
-            || IsS1FactionAfterAttackCard(attacker.CardId) || S2UniversalAfterAttackCards.Contains(attacker.CardId)
-            || IsS2FactionAfterAttackCard(attacker.CardId))
-            candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "after-attack", "【进攻后】效果",
-                new Dictionary<string, string> { ["killed"] = killedTarget ? "true" : "false" }));
-        if (killedTarget && attacker.ReadyAfterNextKillUntilTurn == State.TurnSerial)
-        {
-            var sourceName = attacker.ReadyAfterNextKillSourceName ?? "效果";
-            attacker.ReadyAfterNextKillUntilTurn = -1;
-            attacker.ReadyAfterNextKillSourceName = null;
-            candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "forge-ready-after-kill", $"{sourceName}赋予的击杀后转为活跃效果",
-                new Dictionary<string, string> { ["source-name"] = sourceName }));
-        }
-        QueueTriggerCandidates(candidates);
-    }
-
     private void ResolveForgeReadyAfterKill(L12StackItem item)
     {
         var card = FindSource(item);

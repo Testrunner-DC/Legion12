@@ -293,13 +293,15 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
-    public void BothPlayersCanRespondAtTheOriginalAttackTimingAfterAReactionIsStacked()
+    public void AttackerMayCounterDefenderAttackReactionButCannotUseOwnOpponentAttackReaction()
     {
         var game = Create(seed: 6225);
         var attacker = Instance("S02-0004", "response-chain-attacker");
         attacker.SummonRound = 0;
         game.State.Players[0].Field[0][0] = attacker;
-        var firstAmbush = SetCounter(game, 0, "S01-0019");
+        var attackerAmbush = SetCounter(game, 0, "S01-0019", slot: 0);
+        var absoluteDefense = SetCounter(game, 0, "S01-0016", slot: 1);
+        TakeCard(game, 0, "S01-0103");
         var secondAmbush = SetCounter(game, 1, "S01-0019");
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
@@ -315,7 +317,8 @@ public sealed class S2UniversalEffectsTests
 
         var attackerResponse = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(0, attackerResponse.PlayerIndex);
-        Assert.Contains(firstAmbush.InstanceId, attackerResponse.ValidChoices);
+        Assert.Contains(absoluteDefense.InstanceId, attackerResponse.ValidChoices);
+        Assert.DoesNotContain(attackerAmbush.InstanceId, attackerResponse.ValidChoices);
     }
 
     [Fact]

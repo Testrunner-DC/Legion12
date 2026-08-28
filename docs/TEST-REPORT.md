@@ -154,3 +154,12 @@
 - `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1 -RequireZero`：248/248张卡进入清单，旧卡号 `case` 为0处/0卡，零分支门禁通过。
 - 178条结构化复合路由逐条通过唯一触发、唯一可执行 `CompositeFlow`、无 legacy 回退和运行时同对象验证；3条已完成试炼映射按试炼名称处理。
 - 曾误跑不属于发布门禁的 GrandUMI 历史测试全集；其45项失败均为仓库不包含外部 `卡牌数据` 目录，正式 `PlatformStoreTests` 8/8通过，未将环境失败计为本批回归结果。
+
+## 2026-08-28 公共进攻子阶段与战斗阵亡顺序
+
+- `dotnet build .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore`：0 warning / 0 error。
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-build --filter FullyQualifiedName~CombatTimelineRegressionTests`：11/11 通过。
+- 新时序与既有〈绝对防御〉聚焦复验：12/12 通过；完整后端门禁：445/445 通过。完整门禁首次发现〈绝对防御〉未接入新的防守方响应时点，修复公共响应分流并增加“不回退已结算进攻时效果”回归后通过。
+- `npm run check:ui-contracts`：121/121 通过；`npm run build`：Vue/TypeScript 类型检查与 Vite 生产构建通过。
+- `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1 -RequireZero`：248/248 通过，旧卡号 `case` 0处/0卡。
+- 精确覆盖：进攻方/防守方时点隔离、攻击者离场自动中止、重连快照子阶段、冻结进攻值、同列后排支援、权威防御重校验、仅防守者阵亡时击杀、双方同归无击杀且进攻者阵亡先行、触发结束后入墓、贯穿父子进攻恢复。
