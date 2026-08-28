@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ApiBase = "https://legion12.grand-umi.com",
+    [string]$ApiBase = "https://legion-12.com",
     [string]$Username = "Admin",
     [string]$Password = $env:L12_ADMIN_PASSWORD,
     [ValidateSet("", "new", "confirmed", "in-progress", "resolved", "closed")]

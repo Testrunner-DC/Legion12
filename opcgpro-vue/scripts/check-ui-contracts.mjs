@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 
-const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+// Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const shell = read('../src/l12/site/SiteShell.vue')
 const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
@@ -36,6 +37,8 @@ const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer
 const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.ps1')
 const windowsVerify = read('../../ops/windows/verify-l12.ps1')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
+const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
+const bugQueue = read('../../ops/windows/Get-L12BugQueue.ps1')
 const s1Cards = JSON.parse(read('../public/data/l12/cards.s1.json'))
 
 const confirmedS1DisasterLevels = {
@@ -170,6 +173,7 @@ const contracts = [
   [wsServer.includes('"deploymentProbe" =>') && wsServer.includes('protocolVersion = 1') && wsServer.includes('authentication = "token"'), '服务端必须保留无需账号且不写运行数据的发布探针协议'],
   [cacheEnvironment.includes('D:\\GPT\\Legion12\\cache\\primary') && cacheEnvironment.includes('NUGET_PACKAGES') && cacheEnvironment.includes('npm_config_cache') && cacheEnvironment.includes('DOTNET_CLI_HOME') && cacheEnvironment.includes('COREPACK_HOME'), 'Windows 构建必须统一使用可覆盖的 D 盘缓存根目录'],
   [windowsVerify.includes('Initialize-L12BuildEnvironment.ps1') && windowsDeploy.includes('Initialize-L12BuildEnvironment.ps1') && windowsDeploy.includes('"-CacheRoot", $resolvedCacheRoot'), '完整验证和部署子进程必须共用同一缓存根目录'],
+  [serverDeploy.includes('readonly public_host="legion-12.com"') && serverDeploy.includes('readonly public_base="https://${public_host}"') && serverDeploy.includes('"wss://${public_host}/ws"') && serverDeploy.includes('域名：${public_host}') && !serverDeploy.includes('wss://legion12.grand-umi.com/ws') && windowsDeploy.includes('[string]$Server = "root@legion-12.com"') && windowsDeploy.includes('发布成功：https://legion-12.com/') && bugQueue.includes('[string]$ApiBase = "https://legion-12.com"'), '主站、SSH、API 与发布后 HTTP/WS 探针必须统一使用 legion-12.com，不得回退旧主站域名'],
 ]
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)

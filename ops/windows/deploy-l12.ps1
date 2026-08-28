@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$Server = "root@legion12.grand-umi.com",
+    [string]$Server = "root@legion-12.com",
     [string]$ArtifactManifest = "",
     [string]$CacheRoot = "",
     [switch]$DryRun,
@@ -130,6 +130,6 @@ try {
     Invoke-External ssh $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease $($manifest.cardsHash) $cardsSha $cardsPath"
 
     if ($DryRun) { Write-Host "[L12 部署] 干运行成功，线上版本未改变。" }
-    else { Write-Host "[L12 部署] 发布成功：https://legion12.grand-umi.com/" }
+    else { Write-Host "[L12 部署] 发布成功：https://legion-12.com/" }
 }
 finally { Set-Location $originalLocation }

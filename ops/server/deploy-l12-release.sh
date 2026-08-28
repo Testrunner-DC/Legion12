@@ -9,7 +9,8 @@ readonly static_cards_dir="/opt/legion12-static/cards"
 readonly deployment_dir="/opt/legion12-deployment"
 readonly incoming_dir="${deployment_dir}/incoming"
 readonly service_name="legion12-test.service"
-readonly public_base="https://legion12.grand-umi.com"
+readonly public_host="legion-12.com"
+readonly public_base="https://${public_host}"
 readonly lock_file="/run/lock/legion12-deploy.lock"
 readonly service_user="legion12"
 readonly web_user="www-data"
@@ -211,7 +212,7 @@ done
 curl -fsS "${public_base}/" >/dev/null
 curl -fsS "${public_base}/cards" >/dev/null
 log "验证公网 WebSocket 建连与无状态部署协议"
-timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://legion12.grand-umi.com/ws"
+timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}/ws"
 
 cat > "${deployment_dir}/deployment-info.txt" <<EOF
 Legion12 香港测试服
@@ -221,7 +222,7 @@ Legion12 香港测试服
 上一版本：${previous_target}
 共享运行数据：${runtime_dir}
 共享卡图版本：${cards_hash}
-域名：legion12.grand-umi.com
+域名：${public_host}
 部署日期：$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 

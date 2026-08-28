@@ -1886,3 +1886,15 @@
 - 验证：服务端聚焦回归覆盖空闲好友邀请、进入公开对局后观战及房间码最小披露；前端契约新增在线玩家添加好友/邀请/观战与禁用条件，UI契约122/122及Vue/TypeScript/Vite生产构建通过；本批完整后端471/471通过。
 - 防回滚：在线动作必须消费服务端返回的 `activity/canInvite/canSpectate/actionReason`，不得由浏览器根据文案或本地房间状态猜测；不可观战时不得返回房间码；邀请和观战必须复用既有权威WebSocket命令。
 - 边界：本批不改聊天、账号资料模型或卡牌悬停交互；未提交、未推送、未部署。
+
+### OPS-20260828-150 Legion12 主域低停机迁移
+
+- 现象：线上主站、WebSocket、SSH、Bug 导出和发布后探针均绑定 `legion12.grand-umi.com`；新根域 `legion-12.com` 已就绪，但仓库没有新域默认值、双域宽限、浏览器 origin 隔离或证书/Nginx 回滚记录，直接替换会令旧页面重连和本机登录状态中断。
+- 历史记录匹配：命中 `OPS-20260822-37` 的无状态发布探针、`BUG-20260822-41` 的同源 WebSocket/断线重连，以及 `FEAT-20260828-144` 的受控发布与失败回滚边界；域名切换不改变应用 release、账号数据库、牌库、对局或回放语义。
+- 故障模型与同类型扫描：以 `git grep -n -I -F 'legion12.grand-umi.com'` 扫描全部跟踪文本，操作默认值命中 Linux/Windows 部署脚本、Bug 队列工具和部署文档；历史验证记录保持原事实，尚未上线的 `cards.legion12.grand-umi.com` R2 计划不随主站擅自迁移。切换覆盖 DNS 未传播、ACME 失败、证书 SAN 错误、Nginx 语法/reload 失败、www 丢路径、WS Upgrade 失败、旧连接重试、重复签发与浏览器 localStorage 不跨域。
+- 生产变更：确认 `legion-12.com` 与 `www` 解析到 `103.146.230.37`；将原 Nginx 配置备份到 `/root/legion12-nginx-backups/20260828T113923Z`，先以 `/var/www/certbot` 验证两个公网 ACME challenge，再签发独立 ECDSA 证书（SAN 为主域与 www，有效至 2026-11-26）。新增主域静态/API/WS 虚拟主机和 www 308 虚拟主机，`nginx -t` 后热重载；旧域虚拟主机不跳转并继续并行，未重启后端或触碰 `/opt/legion12-runtime`。
+- 仓库修改：服务器发布脚本以单一 `public_host=legion-12.com` 派生 HTTP、WS 和部署元数据；Windows 部署 SSH/成功地址与 Bug 队列 API 默认值切换新域；部署文档记录双域、重新登录与回滚。UI 契约新增跨脚本域名一致性守卫，隔离发布构建复制其全部输入；UI 契约与 Codex 路由门禁读取层只归一化 CRLF/LF，路由门禁另以 CRLF 和孤立 CR 探针自检，未改写配置或放宽既有断言。
+- 兼容与隐私：生产前端未配置 `VITE_WS_URL` 时按当前 HTTPS 主机同源选择 WSS，新旧页面可分别重连同一权威服务。bearer token、离线牌库和偏好位于 origin 隔离的 localStorage，新域首次访问必须重新登录；禁止用 URL 或重定向传递令牌。服务端账号、牌库、比赛和回放继续使用原共享运行数据，旧域保留宽限期供用户检查未同步本机数据。
+- 验证：新域 `/`、`/cards`、`/health` 均为200且健康响应为 `twelve-legions`/248张；www 对带路径和查询参数请求精确308到主域；旧域主页与健康接口仍为200；新旧 `wss://*/ws` 无状态探针均返回 `ok=true`、协议版本1。新 Nginx 文件为无 BOM/CR 的 ASCII，证书 SAN/有效期、续期 dry-run、`nginx -t` 与 active 状态复核通过；PowerShell AST、远端 `bash -n`、四档路由注册/TOML/strict-config 通过；最终 Focused 与 Batch 门禁通过，UI 契约123/123，Vue/TypeScript/Vite生产构建通过。
+- 失败、重试与回滚：Nginx 热重载保留旧 worker/既有 WS，旧域为旧客户端和重试提供稳定入口；Certbot 使用固定证书名与 webroot 续期配置。回滚只禁用两个新域 enabled 链接，并在迁移窗口内从备份恢复 HTTP vhost，先 `nginx -t` 再 reload，随后复测旧域 HTTP/WS；不得删除新证书、旧 release 或任何运行数据。域名契约禁止后续发布探针悄然回退旧主站。
+- 边界：Cloudflare 记录由用户在外部控制台管理，仓库不保存 DNS/API 凭据；本批未迁移卡图 CDN，未提交、推送或发布新的应用 release。旧主域何时重定向或下线须在宽限期结束后另行授权并再次验证在途对局与本机数据影响。

@@ -4,6 +4,20 @@ param()
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function ConvertTo-NormalizedText {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    return $Text.Replace("`r`n", "`n").Replace("`r", "`n")
+}
+
+function Read-NormalizedText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return ConvertTo-NormalizedText ([IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8))
+}
+
+if ((ConvertTo-NormalizedText "first`r`nsecond`rthird") -ne "first`nsecond`nthird") {
+    throw "Line-ending normalization self-check failed"
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $projectConfig = Join-Path $repoRoot ".codex\config.toml"
 $agentRoot = Join-Path $repoRoot ".codex\agents"
@@ -15,7 +29,7 @@ $expected = [ordered]@{
 }
 
 if (-not (Test-Path -LiteralPath $projectConfig)) { throw "Missing project config: $projectConfig" }
-$projectConfigRaw = Get-Content -LiteralPath $projectConfig -Raw
+$projectConfigRaw = Read-NormalizedText $projectConfig
 foreach ($file in $expected.Keys) {
     $path = Join-Path $agentRoot $file
     if (-not (Test-Path -LiteralPath $path)) { throw "Missing agent config: $path" }
@@ -26,7 +40,7 @@ foreach ($file in $expected.Keys) {
     if ($projectConfigRaw -notmatch ('(?m)^config_file\s*=\s*"agents/' + [regex]::Escape($file) + '"$')) {
         throw "Project config does not reference agent file: $file"
     }
-    $raw = Get-Content -LiteralPath $path -Raw
+    $raw = Read-NormalizedText $path
     foreach ($requiredKey in @("name", "description", "model", "model_reasoning_effort", "developer_instructions")) {
         if ($raw -notmatch "(?m)^$requiredKey\s*=") { throw "$file is missing key: $requiredKey" }
     }
@@ -34,7 +48,7 @@ foreach ($file in $expected.Keys) {
     if ($raw -notmatch ('(?m)^model_reasoning_effort\s*=\s*"' + [regex]::Escape($expected[$file].Effort) + '"')) { throw "$file has an unexpected reasoning effort" }
 }
 
-$agentsRules = Get-Content -LiteralPath (Join-Path $repoRoot "AGENTS.md") -Raw
+$agentsRules = Read-NormalizedText (Join-Path $repoRoot "AGENTS.md")
 foreach ($marker in @("Automatic task-complexity routing", "l12_fast", "l12_standard", "l12_deep", "l12_critical", "select the highest matching tier", "route one tier higher")) {
     if (-not $agentsRules.Contains($marker)) { throw "AGENTS.md is missing routing marker: $marker" }
 }
