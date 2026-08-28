@@ -1259,7 +1259,7 @@ public sealed partial class L12GameEngine
             ?? player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId)
             ?? player.Library.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
-        player.Hand.Remove(card); player.Graveyard.Remove(card); player.Library.Remove(card);
+        player.Hand.Remove(card); player.Graveyard.Remove(card); player.Library.Remove(card); card.OwnerIndex ??= player.PlayerIndex;
         var (row, slot) = ParseSlot(slotChoice); card.Tapped = tapped; card.SummonRound = State.Round; player.Field[row][slot] = card;
         AddEvent("put", player.PlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         ApplyDisasterLevelOnEntry(player.PlayerIndex, card, deferTriggerUntilStackSettles: true);

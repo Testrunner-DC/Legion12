@@ -1299,6 +1299,14 @@ public sealed partial class L12GameEngine
         if (State.ResumeTurnStartAfterStack)
         {
             State.ResumeTurnStartAfterStack = false;
+            // A turn-start disaster such as Ragnarok can end the just-started
+            // turn.  Do not resume Reset/Draw/Morale from that interrupted turn;
+            // close it first so the granted extra turn starts as a fresh turn.
+            if (State.Phase == L12Phase.End)
+            {
+                CompleteEndTurn(State.ActivePlayer);
+                return;
+            }
             ContinueAutomaticTurnStart();
             return;
         }

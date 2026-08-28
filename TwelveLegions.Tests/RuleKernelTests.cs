@@ -161,7 +161,7 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void CurrentTurnBonusLayerAbsorbsDamageBeforePrintedTroops()
+    public void CompletedTurnRemovesExpiredBonusAndClearsDamageItAbsorbed()
     {
         var card = Card("timed-layer", 5000);
         var modifier = new L12TimedModifier
@@ -180,8 +180,35 @@ public sealed class RuleKernelTests
 
         L12DerivedStats.ResetForCompletedTurn(card, 4);
 
-        Assert.Equal(1000, card.Troops);
+        Assert.Equal(5000, card.Troops);
         Assert.Empty(card.TimedModifiers);
+    }
+
+    [Fact]
+    public void CompletedTurnClearsDamageWhileKeepingUnexpiredAndContinuousModifiers()
+    {
+        var card = Card("surviving-derived-layers", 5000);
+        var modifier = new L12TimedModifier
+        {
+            TroopsDelta = 2000,
+            ExpiresAfterTurn = 5,
+            Source = "跨回合兵力层",
+        };
+        card.TimedModifiers.Add(modifier);
+        card.Troops += modifier.TroopsDelta;
+        L12DerivedStats.ApplyContinuousModifiers(card,
+            new Dictionary<string, int> { ["persistent-source"] = 1000 }, -1000, 4);
+        L12DerivedStats.ApplyTroopsDamage(card, 2500);
+
+        L12DerivedStats.ResetForCompletedTurn(card, 4);
+
+        Assert.Equal(7000, card.Troops);
+        Assert.Single(card.TimedModifiers);
+        Assert.Equal(0, modifier.ConsumedTroopsBonus);
+        Assert.Equal(1000, card.ContinuousTroopsBonusGranted);
+        Assert.Equal(0, card.ContinuousTroopsBonusConsumed);
+        Assert.Equal(-1000, card.ContinuousTroopsPenalty);
+        Assert.Equal(0, card.ContinuousTroopsModifier);
     }
 
     [Fact]

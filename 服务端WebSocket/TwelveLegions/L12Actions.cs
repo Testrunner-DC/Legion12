@@ -880,6 +880,12 @@ public sealed partial class L12GameEngine
 
     private bool TryOfferCombatLethalReplacement(L12PlayerState controller, L12CardInstance card, L12PendingDefense pending)
     {
+        if (!pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)
+            && TryApplyLakeLadySwordReplacement(controller, card, "致命进攻"))
+        {
+            pending.LethalReplacementDecisions[card.InstanceId] = true;
+            return false;
+        }
         if (!CanUseAchillesLethalReplacement(controller, card)) return false;
         if (pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)) return false;
         CreatePrompt(controller.PlayerIndex, "optional",

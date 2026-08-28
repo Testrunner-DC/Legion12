@@ -263,6 +263,48 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void XishiEffectCanPutInfiltratorOnOpponentBattlefieldWithBattlefieldPlayerAsController()
+    {
+        var game = Create(6421);
+        var owner = game.State.Players[0];
+        var battlefieldPlayer = game.State.Players[1];
+        var xishi = Card("S01-0116", "xishi-infiltrator-source");
+        var infiltrator = Card("S01-0004", "xishi-effect-infiltrator");
+        owner.Field[0][0] = xishi;
+        owner.Hand.Clear();
+        owner.Hand.Add(infiltrator);
+        AddReadyMorale(owner, 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", xishi.InstanceId,
+            Ability: "xishiExchange")).Accepted);
+        var cardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(infiltrator.InstanceId, cardPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: cardPrompt.PromptId,
+            Choice: infiltrator.InstanceId)).Accepted);
+
+        var battlefieldPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("option", battlefieldPrompt.Kind);
+        Assert.Contains("battlefield:0", battlefieldPrompt.ValidChoices);
+        Assert.Contains("battlefield:1", battlefieldPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: battlefieldPrompt.PromptId,
+            Choice: "battlefield:1")).Accepted);
+
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", slotPrompt.Kind);
+        Assert.Equal("1", slotPrompt.Data["targetPlayerIndex"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:2")).Accepted);
+        PassResponses(game);
+
+        Assert.Same(infiltrator, battlefieldPlayer.Field[0][2]);
+        Assert.DoesNotContain(infiltrator, owner.Hand);
+        Assert.Equal(0, infiltrator.OwnerIndex);
+        Assert.Contains(xishi, owner.Graveyard);
+    }
+
+    [Fact]
     public void ImhotepEnterEffectOffersEveryLegalSixCostSunCityLegionInGraveyard()
     {
         var game = Create(6414);

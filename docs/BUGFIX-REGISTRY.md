@@ -1861,8 +1861,8 @@
 - 根因：`Troops` 同时承载原本兵力、伤害和临时修正，旧实现只保存修正原始数值，不保存其已吸收伤害；到期通过整额反向写入或按 `BaseTroops + modifiers` 重建。阿喀琉斯的结构化能力也被错误登记为 `ModifyTroops`，进攻声明阶段直接改防守者兵力。
 - 同类型扫描：以“兵力±N / 兵力视为 / 兵力变为 / 兵力额外”扫描 S01/S02 全卡池，锁定66张涉及临时、持续、设定值或条件兵力的卡牌；逐一扫描服务端 `Troops +=/-=` 与战斗兵力减损入口。所有本回合正负修正统一登记 `TimedModifiers`，本次进攻修正由交战上下文持有，持续正修正记录已授予/已消耗/负修正三层；非公共直接写入只保留设定值、离场重置和本次进攻层自身的增减。
 - 修改：公共 `ApplyTroopsDamage` 按“本次进攻层 → 最先到期的本回合层 → 持续层”消耗正兵力加成，再减损原本兵力；到期只撤销正层剩余量，负修正到期正常加回，持续层重复重算不回血，条件失效后清除剩余且再次生效才完整授予。阿喀琉斯改由结构化 `AttackRule` 声明远程战斗减伤，伤害结算读取冻结的 `PendingDefense.IsRanged`；后排攻击前排等真实远程进攻减伤，前排攻击前排不减伤。
-- 验证：先以萨拉丁本次进攻加成、持续加成条件失效和阿喀琉斯远程受击建立3项失败回归；补齐正层全消耗/部分消耗、到期后保持剩余兵力、持续层重复重算、条件失效后重新生效及阿喀琉斯远程/非远程正反例，专项30/30通过。全卡池66张扫描集合进入防回滚测试；完整后端456/456、原子审计248/248且旧卡号分支0、UI契约121/121、Codex严格路由门禁及Vue/TypeScript/Vite生产构建通过，`git diff --check`通过。Focused首轮发现并暴露旧“回合结束恢复双方兵力”测试断言，已按本次新裁定改为伤害保持。
-- 防回滚：任何兵力伤害必须调用公共伤害入口；不得在回合结束以原本兵力重建当前兵力，不得清除仍生效层的已消耗量；新增临时或持续兵力文本必须更新66张卡池扫描门禁。远程减伤必须读取本次进攻上下文，禁止按弓手身份或卡号直接修改防守者兵力。
+- 验证：先以萨拉丁本次进攻加成、持续加成条件失效和阿喀琉斯远程受击建立3项失败回归；补齐正层全消耗/部分消耗、到期后保持剩余兵力、持续层重复重算、条件失效后重新生效及阿喀琉斯远程/非远程正反例，专项30/30通过。全卡池66张扫描集合进入防回滚测试；完整后端456/456、原子审计248/248且旧卡号分支0、UI契约121/121、Codex严格路由门禁及Vue/TypeScript/Vite生产构建通过，`git diff --check`通过。此处当时采用的“回合结束伤害保持”裁定已被 BQ-20260828-01 #32 / BUG-20260828-150 明确取代；回合内的加成消耗与条件失效语义仍继续有效。
+- 防回滚：任何兵力伤害必须调用公共伤害入口；同一回合内不得由普通持续重算恢复已消耗层，新增临时或持续兵力文本必须更新66张卡池扫描门禁。回合结束则必须按 BUG-20260828-150 清除累计伤害与各仍有效正层的已消耗量，并以仍有效派生来源重建，而非恢复为简单印刷兵力。远程减伤必须读取本次进攻上下文，禁止按弓手身份或卡号直接修改防守者兵力。
 - 边界：本批未提交、推送或部署；最终同步由主代理统一执行。
 
 ### BUG-20260828-148 后台27条卡效归并与晋升组合公共离场
@@ -1873,7 +1873,7 @@
 - 同类型扫描：扫描 S01/S02 构筑限制、双方战场位移、全部 `MoveFieldCardToZone` 目标（手牌、墓地、牌库顶/底、移出游戏）及墓地替代、战斗延迟入墓、所有直接清空战场格入口、圣物手牌/GM/效果打出入口、主宰与卡牌实例次数键、墓地选择上限、战术与圣物登场/主动/触发入栈、彼界入口符文与试炼计次。直接 `Field = null` 的其余命中均为场内位移、反击战术入栈或非晋升特殊牌流程；非晋升状态附件继续按既有规则置入墓地。
 - 修改：移除 S02-0008 的限1数据并同步卡牌查询镜像，保留主圣物区及额外圣物区对所有区域中立卡的有效阵营映射；芬尼亚逐次支付符文并保存可重复目标，拆成逐条独立堆叠；勾玉可选择双方活跃或休整军团执行一次完整骑兵位移，沿用同回合一次和灾害位置限制，并通知月读移动触发；圣物替换只处理圣物区实例，不再清除战场军团形态的草薙剑；晋升原本军团从普通附件中分离，跟随晋升者的实际最终目标区，强制入墓替代同样作用于整组；洛基两效果共享实例次数键，罗洛在支付前从完整墓地声明最多8张并按顺序沉底、每2张减费1；智慧法典让发动者选择弃1手牌或放弃当前效果，只在目标效果未被无效且完成结算后另建奖励堆叠；信仰狂热者继续按物理实例计次。
 - 修改文件：权威数据与镜像 `cards.s2.json`、`cards.lookup.json`；出牌/主动/堆叠/移动公共逻辑 `L12Actions.cs`、`L12ActiveAbilities.cs`、`L12CardEffects.cs`、`L12GameEngine.cs`、`L12CombatTimeline.cs`、`L12PromptsAndSetup.cs`、`L12RuleKernelIntegration.cs`、`L12S1ExtendedEffects.cs`、`L12S2FactionEffects.cs` 及三个圣物替换调用入口；回归集中在 `DeckValidatorTests.cs`、`ExtendedCardEffectsTests.cs`、`LatestBugRegressionTests.cs`、`S2FactionRegressionTests.cs`。
-- 验证：晋升/芬尼亚/草薙剑/勾玉首批8/8，智慧法典3/3，洛基/罗洛/双实例狂热者3/3，勾玉骑兵语义3/3，彼界/符文/试炼聚合37/37；四个直接受影响测试类批次246/246、完整 L12 后端470/470通过，`git diff --check`通过。回归覆盖万物统御之戒三张构筑和主/额外圣物区全区域阵营、芬尼亚单条无效不影响后续、勾玉双方休整军团及月读前排加值、草薙剑与新圣物实例共存及须佐之男加值、晋升整组回手/入墓、罗洛完整墓地与顺序、智慧法典放弃/成功奖励及圣物多类入栈、狂热者双实例。
+- 验证：晋升/芬尼亚/草薙剑/勾玉首批8/8，智慧法典3/3，洛基/罗洛/双实例狂热者3/3，勾玉骑兵语义3/3，彼界/符文/试炼聚合37/37；四个直接受影响测试类批次246/246、完整 L12 后端470/470通过，`git diff --check`通过。回归覆盖万物统御之戒三张构筑和主/额外圣物区全区域阵营、芬尼亚单条无效不影响后续、勾玉双方休整军团及月读前排加值、草薙剑与新圣物实例共存及须佐之男加值、晋升整组回手/入墓、罗洛完整墓地与顺序、智慧法典放弃/成功奖励及圣物多类入栈、狂热者双实例。后续逐项审计发现 #15 只有正常手牌登场和离场归属回归，效果登场入口未覆盖且未实现，已由 BUG-20260828-151 补齐；其余01–29条代码与精确回归证据保持成立。
 - 防回滚：晋升离场不得恢复卡牌特例或把原本军团送往不同区域；普通状态附件不得误随宿主回手/回库/移出。芬尼亚每次减兵力必须是可单独响应和无效的堆叠实例；勾玉必须写入 `LastCavalryMoveTurn`；智慧法典奖励只能由成功完成的目标效果排队；主动次数键必须按卡面要求选择共享能力组或物理实例。
 - 边界：在线玩家快捷操作由前端批次另行处理；用户已拒绝的悬停详情与账号/昵称分离未实施。未发现并发、权限或生产关键档风险；本批未提交、未推送、未部署。
 
@@ -1911,3 +1911,80 @@
 - 防回滚：普通卡面不得绕过公共解析器；正式清单必须完整覆盖248张并且二进制先于 manifest；旧图地址必须始终保留为清单不可用时的降级候选；不得恢复拦截所有图片的 Service Worker；运行包不得夹带优化卡图；服务器不得在 Nginx 缓存片段、包哈希、目录结构、实际 Web 账号可读性或公网缓存头任一门禁失败时切换 release。
 - 发布：首个实现提交 `432930a` 与Nginx兼容修复提交 `ba7a49c` 均已推送；最终release切换到 `/opt/legion12-releases/ba7a49c1bed82d845537554d6d33d04a05cb2385-20260828T140715Z`，优化卡图目录为 `/opt/legion12-static/card-assets/49b73eac5ccd4f285e4d49a0d9271bc5f7a8b9a3297be760f52bff36d3f6b8e8`。生产Nginx新旧域名均接入缓存片段，切换前配置备份位于 `/root/legion12-nginx-backups/card-assets-KdyasnhI`。
 - 边界：本批采用当前服务器同源 `/card-assets`，没有创建或写入 Cloudflare R2、DNS或访问密钥；未来接入 CDN 只需配置清单或构建环境中的 HTTPS 基址，不应再次改动业务组件。
+### BUG-20260828-150 回合结束清除军团累计伤害并恢复无伤派生兵力
+
+- 现象：公共回合结束只移除到期限时修正，刻意保留军团已经承受的伤害与持续正层的已消耗量；双方存活军团因此跨回合带伤。旧回归和 BUG-20260828-147 防回滚文字还把该旧裁定固化为正确行为。
+- 根因：`Troops` 同时承载设定/印刷基准、限时修正、持续修正和累计伤害；`ResetForCompletedTurn` 只对到期层做差量反写，没有在回合边界从仍有效来源重建无伤派生值。持续正层的 `Consumed` 与限时正层的 `ConsumedTroopsBonus` 只适合表达本回合内伤害吸收，旧逻辑却将其跨回合保留。
+- 同类型扫描：复核全卡池66张兵力修正扫描集合、`AddTimedModifier`/`ExpiresAfterTurn` 的统一限时入口、`SetTroopsValue`、持续正层/负层与服务端全部 `Troops` 直接写入。卡池本回合兵力正负修正均进入公共 `TimedModifiers`；其余直接写入仅为本次进攻层、设定值、免死替代或离场重置，不存在第二套回合结束兵力清理。`CompleteEndTurn` 对双方战场统一调用公共重置。
+- 修改：`ResetForCompletedTurn` 先删除到期限时层与到期设定值，再把未到期限时正层和全部仍存在的持续正层已消耗量归零，最后从当前有效设定值（否则印刷兵力）、全部未到期限时正/负修正及持续正/负修正重建 `Troops`。行动玩家切换并递增回合序号后再统一刷新位置/回合相关持续效果，保证恢复的是当前无伤派生兵力而非简单印刷值。
+- 验证：反向旧测试改为双方军团在同一回合结束均恢复；新增到期正加成已经吸收伤害仍恢复印刷基准，以及未到期限时正层、持续正层与持续负层共同存在时清伤后保持派生值。核心3/3、`RuleKernelTests` + `GameEngineTests` 聚焦54/54通过；全卡池66张兵力修正集合继续由扫描门禁固定；`BQ-20260828-01` 收口后完整后端479/479通过。
+- 防回滚：回合内重复持续重算仍不得回血；回合结束必须清除双方所有存活场上军团累计伤害和仍有效正加成层的本回合消耗记录，删除到期临时层，并按仍有效设定、限时与持续来源重建。禁止直接赋为 `BaseTroops`，否则会丢失跨回合修正、附件及位置/回合持续效果。
+- 边界：未发现并发、权限或生产关键档风险；仅本地修改，未提交、未推送、未部署，也未更新任何后台状态。
+
+### BUG-20260828-151 无名的渗透者经效果登场不能选择对方战场
+
+- 现象：〈无名的渗透者〉从手牌正常登场时可以指定任一战场，离场也会回到所有者区域；但经〈西施〉或〈摄政皇权〉效果登场时，旧提示只提供发动者自己的空位，无法选择对方战场。BUG-20260828-148 的批次验证曾误把正常登场与手工放置后的离场回归视为已覆盖 #15。
+- 根因：正常出牌的 `targetPlayerIndex` 语义只存在于 `PlayCard`；效果登场的 `SummonFromHand`、主动效果预声明和堆叠续接均把 `item.Controller` 同时当作所有者、控制者和目标战场。西施的旧预支付校验还把声明固定为“卡牌|位置”两段，无法携带目标战场。
+- 同类型扫描：扫描 S01/S02 全卡池所有从手牌、墓地或牌库登场军团的入口。只有〈西施〉的“兵力不高于2000的其他军团”和〈摄政皇权〉的“费用不高于3的军团”能泛选到 S01-0004；其余入口均受卡名、阵营或来源卡自身约束。所有区域离场继续统一读取 `OwnerIndex`，未增加卡牌特例。
+- 修改：新增公共效果登场战场候选、战场编码/解析、动态战场与空位提示及合法性复核。普通军团只自动声明所有者战场；S01-0004 在双方有空位时显示双方战场，只有一个合法战场时自动声明。西施改为“卡牌|战场|位置”原子预声明，摄政皇权复用同一战场选择流程；最终落位保留 `OwnerIndex`，所在战场玩家成为控制者，登场事件、天灾层、登场时堆叠和圆桌触发均以该控制者结算。所有私有区域效果登场入口同时补齐缺失的 `OwnerIndex` 初始化。
+- 验证：新增 `XishiEffectCanPutInfiltratorOnOpponentBattlefieldWithBattlefieldPlayerAsController`，覆盖双方战场选项、对方空位、控制者与所有者；保留 `MultiStepActivationDeclaresCardAndPositionBeforeReturningMorale` 和 `XiShiMayChooseNoLegionAndStillPaysCostAndDraws` 既有交互，三项3/3通过。首轮 `LatestBugRegressionTests` 51/52 精确暴露旧西施两段预支付校验，修正后 `LatestBugRegressionTests` + `RuleKernelTests` 77/77通过。另把洛基墓地回归扩至20张并验证全部20个合法选项不截断，1/1通过；`git diff --check`通过。
+- 防回滚：不得在效果登场辅助方法中重新把所有者等同于控制者；S01-0004 的合法战场必须在声明和结算时都复核空位。进入对方战场后，控制权由所在战场决定、`OwnerIndex` 不变；死亡、回手、回库与移出仍进入所有者目标区域。新增泛选军团的效果登场入口必须复用公共战场选择语义并加跨战场回归。
+- 边界：未发现并发、权限或生产关键档风险；仅本地修改，未提交、未推送、未部署，也未更新任何后台状态。用户拒绝的悬停详情与账号/昵称分离仍未实施。
+
+### BUG-20260828-152 特洛伊木马效果登场未盖伏
+
+- 现象：〈特洛伊木马〉能经【对方进攻后】效果进入对方战场，并按所有者的下个回合结束离场抽牌，但落位时没有设置 `Hidden`，公开快照会直接展示卡面，不符合“盖伏”裁定。
+- 根因：`s2-trojan-slot` 是独立跨战场落位流程，没有复用反击战术覆盖入口；旧实现只写入 `OwnerIndex`、`SetRound` 和离场时点，遗漏盖伏状态。原回归只断言战场、所有者墓地和抽牌，没有断言隐藏状态。
+- 同类型扫描：复核全部 `Hidden = true`、反击战术覆盖、伏兵登场和跨战场直接赋值入口。普通反击战术与服部半藏已有独立展示/翻面规则；本批只有特洛伊木马的独立落位路径缺少盖伏。离场公共重置继续清除隐藏状态，未改变其他卡牌。
+- 修改：在 `s2-trojan-slot` 成功从所有者手牌移入对方战场后设置 `horse.Hidden = true`；保留所有者、战场控制者、到期离场和抽牌语义。
+- 验证：在 `TrojanHorseMayEnterEnemyFieldThenLeavesAndDrawsAtOwnersNextEnd` 增加盖伏断言，聚焦1/1通过；`BQ-20260828-01` 收口后完整后端479/479通过。
+- 防回滚：特洛伊木马经效果进入对方战场时必须同时写入所有者、盖伏和所有者下个回合结束离场时点；不得把所在战场玩家误写为所有者，也不得让公开快照提前展示卡面。
+- 边界：仅本地修改，未提交、未推送、未部署或更新后台状态；未发现关键档风险。
+
+### BQ-20260828-01 逐项代码与精确回归矩阵
+
+| # | 公共实现证据 | 精确回归证据 | 结论 |
+| --- | --- | --- | --- |
+| 01 湖中试炼替代 | 致命伤害/战斗共同走湖中试炼替代并移除王者之剑 | `CompletedLakeLadyTrialRemovesKingSwordInsteadOfArthurForLethalEffect`、`...ForLethalCombat` | 已完成 |
+| 02 狮心理查抵挡后 | 防御权威事件完成后继续理查额外弃牌与防御结算 | `RichardAttackDiscardsChosenAttachedSquiresAndDefensePaysAnExtraChosenHandCard`、`AttackerLeavingDuringDefenseAuthorityEventSkipsRichardExtraDiscardAndAborts` | 已完成 |
+| 03 须佐前排+2000 | `frontBuff` 进入当前进攻派生层，战场军团形态同样合法 | `SusanooFrontBuffAppliesToKusanagiLegionAttack` | 已完成 |
+| 04 梅杰德陵墓守卫支付复用 | 资源声明锁定已支付实例，额外替代不能复用 | `MedjedCannotReuseTheSameTombGuardForItsCostAndExtraReplacement` | 已完成 |
+| 05 芬尼亚第二效果 | 完成试炼与完成后 `fenianReady` 主动能力为两个入口 | `TrialCardCompletionAndCompletedTrialAbilityAreSeparateActions` | 已完成 |
+| 06 芬尼亚三次减兵 | 每次符文支付生成独立堆叠，允许重复同一目标 | `FenianLegendCreatesThreeIndependentRepeatableDebuffEffects` | 已完成 |
+| 07 万物戒全区域改阵营+阿麦金 | 共享 `HasFaction` 读取所有者的主/额外圣物区 | `WorldRingMakesUniversalCardsUseOwnersFactionForSharedFilters`、`AmakineOptionalEntryRuneUsesTheVerifiedOptionalContinuation` | 已完成 |
+| 08 勾玉骑兵位移 | `EffectCavalryDestinations` 执行一次完整骑兵位移并记次 | `MagatamaMoveUsesCavalryMovementOnEitherBattlefieldAndAllowsRestedLegions`、`MagatamaCannotGiveTheSameLegionASecondCavalryMoveThisTurn` | 已完成 |
+| 09 新草薙剑不替战场形态 | 圣物替换只扫描主/额外圣物区实例 | `PlayingANewArtifactDoesNotReplaceBattlefieldKusanagiLegion` | 已完成 |
+| 10 加拉哈德试炼后 | 能力可见性和提交均检查圣杯试炼完成 | `GalahadCanPayItselfAfterTheGrailTrialToDrawAndHeal`、`GalahadGrailRewardAbilityAppearsOnlyAfterGrailTrialCompleted` | 已完成 |
+| 11 荆轲当前兵力 | 目标声明按当前 `Troops` 而非印刷兵力筛选 | `TargetedDeathTriggerDeclaresTargetAndPaysCostBeforeEnteringStack` | 已完成 |
+| 12 洛基墓地20张 | 墓地合法选项不截断，仍精确选择2张 | `LokiHealReturnsTheTwoGraveCardsChosenByThePlayer`（20/20选项） | 已完成；本轮强化断言 |
+| 13 罗洛墓地减费 | 支付前展示完整合法墓地，按有序沉底数量每2张减1 | `RolloOffersTheFullEligibleGraveyardAndDiscountsByTheOrderedReturnCount` | 已完成 |
+| 14 洛基两效果共享一次 | `ActiveAbilityUsageKey` 将两能力映射到同一实例键 | `LokiHealReturnsTheTwoGraveCardsChosenByThePlayer` | 已完成 |
+| 15 渗透者效果登场 | 公共效果登场战场/空位声明；目标战场玩家控制、`OwnerIndex`不变 | `XishiEffectCanPutInfiltratorOnOpponentBattlefieldWithBattlefieldPlayerAsController`、三项既有所有权/离场回归 | 本轮修复，见 BUG-151 |
+| 16 狂热者每实例 | 次数键包含物理 `InstanceId` | `FaithZealotOncePerTurnUsageIsTrackedPerPhysicalInstance` | 已完成 |
+| 17 阿喀琉斯击杀后挑衅 | 挑衅仅在晋升阿喀琉斯真实击杀钩子授予 | `AchillesGainsTemporaryFrontRowTauntAfterKillingALegion` | 已完成 |
+| 18 万物戒非Limit1 | 权威牌表与查询镜像移除限1 | `WorldRingUsesTheNormalThreeCopyDeckLimit` | 已完成 |
+| 19 草薙剑临时兵力实战 | 战场形态用持久设定兵力参与当前战斗 | `KusanagiPlacedAsALegionKeepsFiveThousandTroopsAfterAttackingAMaster` | 已完成 |
+| 20 阿喀琉斯远程-1000 | 战斗上下文按真实远程关系减少最终伤害 | `AchillesReducesFinalRangedCombatDamageByOneThousand`、`PromotedAchillesReducesIncomingRangedCombatDamageInsteadOfItsTroops`、非远程反例 | 已完成 |
+| 21 晋升基底同区离场 | 公共晋升组合区域移动让基底跟随主体最终目标区 | `StrategicTransferReturnsTheWholePromotionStackToHand`、`DefeatedPromotionStackMovesHostAndFoundationToTheSameGraveyard` | 已完成 |
+| 22 特洛伊木马盖伏 | 独立跨场落位写入所有者、盖伏与到期离场 | `TrojanHorseMayEnterEnemyFieldThenLeavesAndDrawsAtOwnersNextEnd` | 本轮修复，见 BUG-152 |
+| 23 诸神黄昏条件追加回合 | 天灾结算完成后按条件立即衔接追加回合，不重复被中断回合阶段 | `RagnarokGmTriggerImmediatelyBeginsTheGrantedExtraTurn`、`RagnarokTriggeredAtTurnStartSkipsTheInterruptedTurnsResetAndDraw` | 已完成 |
+| 24 锻造炉晋升神力减费 | 下一次晋升神力减费独立保存并在支付时一次消费 | `ForgeDiscountIsAppliedToAndConsumedByTheNextPromotion` | 已完成 |
+| 25 绝对防御响应落穴 | `Negated` 在响应类型分派前结算，落穴不能继续无效原效果 | `AbsoluteDefenseNegatesTrapWithoutSwallowingTakedaEnterEffect` | 已完成 |
+| 26 勾玉可移动对方 | 候选与目标战场从双方公开军团派生 | `MagatamaMoveUsesCavalryMovementOnEitherBattlefieldAndAllowsRestedLegions` | 已完成 |
+| 27 勾玉可移动休整 | 候选不再过滤 `Tapped` | `MagatamaMoveUsesCavalryMovementOnEitherBattlefieldAndAllowsRestedLegions` | 已完成 |
+| 28 沙盒对方主宰 | 沙盒动作显式携带受控玩家索引并沿其权威能力/费用流结算 | `SandboxControllerCanActivateOpponentMasterAndCompleteItsTargetAndCostFlow` | 已完成 |
+| 29 勾玉前排攻击加值 | 位移通知进入月读位置触发，前移后当前进攻加值生效 | `MagatamaBackToFrontMoveEnablesTsukuyomiAttackBonus` | 已完成 |
+| 30/31 | 用户明确拒绝悬停详情及账号/昵称分离 | 无（不应新增） | 按裁定略过 |
+| 32 回合结束清伤 | `ResetForCompletedTurn` 清伤/到期层并从有效派生来源重建双方场上军团 | 核心3/3；`RuleKernelTests`+`GameEngineTests` 54/54 | 已完成，见 BUG-150 |
+
+- 矩阵结论：逐项复核确认原批次的真实遗漏为 #15 与 #22，均已在本轮补齐；#12 的实现本就不截断，本轮把回归扩大到精确20张。其余01–29均有现有公共实现与精确回归，30/31按用户裁定不实施，32已完成。最终完整后端门禁479/479通过，`BQ-20260828-01` 本地闭环。
+
+### FEAT-20260828-153 在线玩家直接接受或拒绝好友申请
+
+- 现象：在线玩家弹框已经支持添加好友、邀请对战和观战，但收到好友申请时只显示不可操作的“待处理申请”；玩家仍需离开弹框进入好友页面处理。
+- 根因：在线快照已包含 `friendStatus=pending` 与 `friendDirection=incoming`，好友平台接口也已有统一 `resolve` 操作，但在线玩家组件没有消费该方向信息，且“正在对局”分支优先于待处理申请。
+- 同类型扫描：核对在线玩家弹框、好友页面收到/发出申请、添加好友、邀请对战、观战和15秒在线快照刷新。接受/拒绝继续复用 `friendApi.resolve`；发出申请仍保持只读“已申请”，没有新增第二套好友状态或后端写入口。
+- 修改：收到的申请在在线玩家条目中优先显示“拒绝 / 接受”，操作期间锁定对应玩家；成功后立即刷新在线快照，接受后直接进入好友状态并出现邀请入口。即使申请人正在对局，也优先允许处理申请；非申请关系仍按既有观战/邀请逻辑呈现。
+- 验证：新增在线玩家直接接受/拒绝防回滚契约，UI契约123/123通过；Vue TypeScript检查与Vite生产构建通过；`git diff --check`通过。
+- 防回滚：不得把收到的申请重新降级为不可操作状态；`incoming` 必须显示接受/拒绝，`outgoing` 必须只显示已申请。申请处理必须复用平台统一接口并在成功后刷新权威在线快照。
+- 边界：纯前端入口复用现有鉴权API，未修改好友权限、持久化或WebSocket协议；本地修改未提交、未推送、未部署。

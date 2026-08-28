@@ -194,7 +194,7 @@ public sealed record L12AbilityView(
 public sealed class L12TimedModifier
 {
     public int TroopsDelta { get; init; }
-    /// <summary>正兵力加成已经吸收的伤害；到期只移除 TroopsDelta 中尚未消耗的部分。</summary>
+    /// <summary>正兵力加成在当前回合已经吸收的伤害；回合结束清伤时与仍有效层一并归零。</summary>
     public int ConsumedTroopsBonus { get; set; }
     public int CostDelta { get; init; }
     public required int ExpiresAfterTurn { get; init; }

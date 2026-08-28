@@ -459,10 +459,9 @@ public sealed class ExtendedCardEffectsTests
         var player = game.State.Players[0];
         ReadyMain(game, 0);
         player.Graveyard.Clear();
-        var cards = new[]
-        {
-            Card("S01-0301", "loki-grave-a"), Card("S01-0302", "loki-grave-b"), Card("S01-0303", "loki-grave-c"),
-        };
+        var cards = Enumerable.Range(0, 20)
+            .Select(index => Card("S01-0301", $"loki-grave-{index}"))
+            .ToArray();
         player.Graveyard.AddRange(cards);
         player.Hp--;
         var hpBefore = player.Hp;
@@ -471,13 +470,14 @@ public sealed class ExtendedCardEffectsTests
         PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("loki-heal-return", prompt.Data["action"]);
+        Assert.Equal(20, prompt.ValidChoices.Count);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
-            CardInstanceIds: [cards[2].InstanceId, cards[1].InstanceId])).Accepted);
+            CardInstanceIds: [cards[^1].InstanceId, cards[^2].InstanceId])).Accepted);
 
-        Assert.Contains(cards[0], player.Graveyard);
-        Assert.DoesNotContain(cards[1], player.Graveyard);
-        Assert.DoesNotContain(cards[2], player.Graveyard);
-        Assert.Equal([cards[2].InstanceId, cards[1].InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
+        Assert.Equal(cards.Take(18), player.Graveyard);
+        Assert.DoesNotContain(cards[^2], player.Graveyard);
+        Assert.DoesNotContain(cards[^1], player.Graveyard);
+        Assert.Equal([cards[^1].InstanceId, cards[^2].InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
         Assert.Equal(hpBefore + 1, player.Hp);
 
         var secondLokiEffect = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));

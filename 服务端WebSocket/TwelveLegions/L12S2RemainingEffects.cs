@@ -334,6 +334,7 @@ public sealed partial class L12GameEngine
                 var (row, slot) = ParseSlot(chosen[0]);
                 owner.Hand.Remove(horse);
                 horse.OwnerIndex = item.Controller;
+                horse.Hidden = true;
                 horse.SetRound = State.Round;
                 horse.DiscardAtEndOfTurnUntilTurn = ExpiryAtNextOwnEnd(item.Controller);
                 host.Field[row][slot] = horse;

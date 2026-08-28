@@ -119,6 +119,54 @@ public sealed partial class L12GameEngine
             }
             promptKind = "slot";
         }
+        else if (step.Kind == "effect-entry-battlefield")
+        {
+            var card = activation.DeclaredTargets.Count == 0
+                ? null
+                : FindPromptCard(activation.Controller, activation.DeclaredTargets[0]);
+            var choices = card is null
+                ? []
+                : EffectEntryBattlefieldChoices(activation.Controller, card)
+                    .Select(EffectEntryBattlefieldChoice).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            foreach (var choice in choices)
+            {
+                var battlefield = ParseEffectEntryBattlefieldChoice(choice);
+                if (battlefield is not null)
+                    step.ChoiceLabels[choice] = $"{State.Players[battlefield.Value].Name}的战场";
+            }
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "所选军团当前没有可合法登场的战场，效果未支付费用也未入栈");
+                return;
+            }
+            if (choices.Count == 1)
+            {
+                activation.DeclaredTargets.Add(choices[0]);
+                activation.CurrentStep++;
+                CreateActivationStepPrompt(activation);
+                return;
+            }
+            promptKind = "option";
+        }
+        else if (step.Kind == "effect-entry-slot")
+        {
+            var battlefieldChoice = activation.DeclaredTargets.LastOrDefault(choice =>
+                choice.StartsWith("battlefield:", StringComparison.OrdinalIgnoreCase));
+            targetPlayerIndex = ParseEffectEntryBattlefieldChoice(battlefieldChoice);
+            var choices = targetPlayerIndex is null
+                ? []
+                : EmptySlots(State.Players[targetPlayerIndex.Value]).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "所选战场当前没有可合法登场的位置，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
         else if (step.Kind == "declared-card")
         {
             var choices = activation.DeclaredTargets
@@ -270,6 +318,15 @@ public sealed partial class L12GameEngine
         if (choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(choice.AsSpan("rune:".Length), out var runeIndex))
             return runeIndex >= 1 && runeIndex <= State.Players[controller].SpecialZones.Runes;
+        if (choice.StartsWith("battlefield:", StringComparison.OrdinalIgnoreCase))
+        {
+            var card = activation?.DeclaredTargets.Count > 0
+                ? FindPromptCard(controller, activation.DeclaredTargets[0])
+                : null;
+            var battlefield = ParseEffectEntryBattlefieldChoice(choice);
+            return card is not null && battlefield is not null
+                && EffectEntryBattlefieldChoices(controller, card).Contains(battlefield.Value);
+        }
         // PendingActivation 也用于士气/神力等真实资源的预声明。士气不是
         // L12CardInstance，不能仅依赖 FindPromptCard 校验，否则合法选择会在支付前被误判失效。
         if (State.Players[controller].Morale.Any(card => card.InstanceId == choice)) return true;
@@ -279,6 +336,11 @@ public sealed partial class L12GameEngine
             && int.TryParse(rowText, out var row) && int.TryParse(slotText, out var slot)
             && row is >= 0 and < 2 && slot is >= 0 and < 3)
         {
+            var effectEntryBattlefield = activation?.DeclaredTargets
+                .Select(ParseEffectEntryBattlefieldChoice)
+                .FirstOrDefault(index => index is not null);
+            if (effectEntryBattlefield is not null)
+                return State.Players[effectEntryBattlefield.Value].Field[row][slot] is null;
             if (activation?.Ability == "magatamaMove" && activation.DeclaredTargets.Count > 0)
             {
                 var battlefield = State.Players.FirstOrDefault(candidate =>

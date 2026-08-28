@@ -28,6 +28,7 @@ public sealed partial class L12GameEngine
         }
         switch (action)
         {
+            case "effect-entry-battlefield": ContinueEffectEntryBattlefield(item, prompt, chosen[0]); break;
             case "effect-morale-payment": ContinueEffectMoralePayment(item, prompt, chosen); break;
             case "effect-morale-return": ContinueEffectMoraleReturn(item, prompt, chosen); break;
             case "lubu-kill":

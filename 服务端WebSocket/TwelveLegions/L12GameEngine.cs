@@ -442,6 +442,9 @@ public sealed partial class L12GameEngine
                 if (!EmptySlots(player).Any())
                     return view with { Enabled = false, DisabledReason = "战场没有空位" };
             }
+            if (view.Id == "galahadGrailReward"
+                && !player.SpecialZones.Trials.Any(card => card.CardId == "S02-06S4" && card.TrialCompleted))
+                return view with { Enabled = false, DisabledReason = "试炼《寻找圣杯之旅》尚未完成" };
             var match = System.Text.RegularExpressions.Regex.Match(view.Label, @"消耗\s*(\d+)\s*士气");
             if (match.Success && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)
                 return view with { Enabled = false, DisabledReason = $"需要{cost}张活跃士气" };
@@ -482,6 +485,11 @@ public sealed partial class L12GameEngine
             if (revealCounters || !card.Hidden)
             {
                 var snapshot = card.Clone();
+                // Battlefield abilities must be rebuilt for every viewer snapshot.  The
+                // enabled state can depend on live trial/resource state and therefore
+                // cannot safely reuse the ability list captured when the card instance
+                // was created.
+                snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
                 return (object)snapshot;
             }
@@ -667,6 +675,10 @@ public sealed partial class L12GameEngine
         {
             State.ResumeTurnStartAfterStack = true;
             BeginDisasterTrigger(opening: State.Round == 1);
+            // Effects may settle synchronously.  In that case AfterStackSettled
+            // has already resumed (or ended) the turn-start sequence; continuing
+            // here would execute Reset/Draw/Morale a second time.
+            if (!State.ResumeTurnStartAfterStack) return;
             if (State.EffectStack.Count > 0 || State.PendingPrompts.Count > 0) return;
             State.ResumeTurnStartAfterStack = false;
         }
@@ -776,6 +788,7 @@ public sealed partial class L12GameEngine
             State.ActivePlayer = 1 - playerIndex;
         State.Round++;
         State.TurnSerial++;
+        RecalculateContinuousTroops();
         RunAutomaticTurnStart();
     }
 
@@ -1063,6 +1076,7 @@ public sealed partial class L12GameEngine
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
+        if (isDefeat && !bypassLethalReplacement && TryApplyLakeLadySwordReplacement(player, card, reason)) return false;
         if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason)) return false;
         if (isDefeat && TryPreventS1FactionDeath(player, card)) return false;
         if (isDefeat && card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
@@ -1124,6 +1138,29 @@ public sealed partial class L12GameEngine
             QueueTriggerCandidates(candidates);
         }
         RecalculateContinuousTroops();
+        return true;
+    }
+
+    /// <summary>
+    /// 《湖中仙女的馈赠》的持续效果不是触发式效果，不进入堆叠，也不能被响应或无效。
+    /// 已叠放《王者之剑》的《亚瑟王》即将因致命进攻或效果阵亡时，移除一张剑代替承受。
+    /// </summary>
+    private bool TryApplyLakeLadySwordReplacement(L12PlayerState controller, L12CardInstance card, string reason)
+    {
+        if (card.CardId != "S02-0601"
+            || !controller.SpecialZones.Trials.Any(trial => trial.CardId == "S02-06S3" && trial.TrialCompleted))
+            return false;
+        var sword = card.AttachedCards.FirstOrDefault(attached => attached.CardId == "S02-06S2");
+        if (sword is null) return false;
+
+        card.AttachedCards.Remove(sword);
+        var owner = CardOwner(sword, controller);
+        ResetCardAfterLeavingField(sword);
+        owner.Graveyard.Add(sword);
+        RecalculateContinuousTroops();
+        AddEvent("replacement", controller.PlayerIndex,
+            $"《湖中仙女的馈赠》的持续效果移除《王者之剑》，代替〈{card.Name}〉承受本次致命{(reason.Contains("进攻", StringComparison.Ordinal) ? "进攻" : "效果")}",
+            card, sword);
         return true;
     }
 

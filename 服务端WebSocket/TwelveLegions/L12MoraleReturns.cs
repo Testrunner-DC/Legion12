@@ -51,7 +51,7 @@ public sealed partial class L12GameEngine
                 && (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1)
                 => "该效果只能在后排发动",
             "xishiExchange" when source.CardId == "S01-0116" && !IsValidXishiDeclaration(player, target)
-                => "声明的手牌目标或位置不再合法",
+                => "声明的手牌目标、战场或位置不再合法",
             "palaceExchange" when source.CardId == "S01-01D1" && source.Tapped
                 => "凌霄宝殿必须为活跃状态",
             "palaceExchange" when source.CardId == "S01-01D1" && DeclaredEnemyTarget(playerIndex, target) is null
@@ -69,16 +69,19 @@ public sealed partial class L12GameEngine
         };
     }
 
-    private static bool IsValidXishiDeclaration(L12PlayerState player, string? target)
+    private bool IsValidXishiDeclaration(L12PlayerState player, string? target)
     {
         var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
         if (declared.Length == 0) return true;
-        if (declared.Length != 2) return false;
+        if (declared.Length != 3) return false;
         var handCard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]
             && card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000);
-        var (row, slot) = ParseSlot(declared[1]);
-        return handCard is not null && row is >= 0 and <= 1 && slot is >= 0 and <= 2
-            && player.Field[row][slot] is null;
+        var battlefield = ParseEffectEntryBattlefieldChoice(declared[1]);
+        var (row, slot) = ParseSlot(declared[2]);
+        return handCard is not null && battlefield is not null
+            && EffectEntryBattlefieldChoices(player.PlayerIndex, handCard).Contains(battlefield.Value)
+            && row is >= 0 and <= 1 && slot is >= 0 and <= 2
+            && State.Players[battlefield.Value].Field[row][slot] is null;
     }
 
     private bool BeginEffectMoraleReturn(L12StackItem item, int count, string afterReturn,

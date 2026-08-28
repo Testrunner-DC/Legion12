@@ -81,6 +81,16 @@ async function addOnlineFriend(player: PlatformPresence) {
   } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请发送失败' }
   finally { onlineActionBusy.value = '' }
 }
+async function resolveOnlineFriend(player: PlatformPresence, accept: boolean) {
+  onlineActionBusy.value = player.accountId
+  onlineNotice.value = ''
+  try {
+    const result = await friendApi.resolve(player.accountId, accept)
+    onlineNotice.value = result.message
+    await refreshPresence()
+  } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请处理失败' }
+  finally { onlineActionBusy.value = '' }
+}
 function inviteOnlinePlayer(player: PlatformPresence) {
   onlineNotice.value = ''
   inviteFriend(player.accountId)
@@ -159,9 +169,13 @@ onBeforeUnmount(() => {
         <div v-for="player in onlinePlayers" :key="player.accountId" class="online-entry">
           <i/><div class="online-identity"><b>{{ player.username }}</b><span>{{ player.accountId === platformState.account?.id ? '在线 · 当前账号' : activityLabel(player) }}</span></div>
           <div v-if="player.friendStatus !== 'self'" class="online-actions">
-            <button v-if="player.activity === 'playing'" :disabled="!player.canSpectate" :title="player.actionReason || '进入该玩家的对局观战'" @click="watchOnlinePlayer(player)">观战</button>
+            <template v-if="player.friendStatus === 'pending' && player.friendDirection === 'incoming'">
+              <button class="quiet" :disabled="onlineActionBusy === player.accountId" @click="resolveOnlineFriend(player, false)">拒绝</button>
+              <button :disabled="onlineActionBusy === player.accountId" @click="resolveOnlineFriend(player, true)">{{ onlineActionBusy === player.accountId ? '处理中' : '接受' }}</button>
+            </template>
+            <button v-else-if="player.activity === 'playing'" :disabled="!player.canSpectate" :title="player.actionReason || '进入该玩家的对局观战'" @click="watchOnlinePlayer(player)">观战</button>
             <button v-else-if="player.friendStatus === 'accepted'" :disabled="!player.canInvite" :title="player.actionReason || '邀请好友直接建立房间'" @click="inviteOnlinePlayer(player)">邀请对战</button>
-            <button v-else-if="player.friendStatus === 'pending'" disabled>{{ player.friendDirection === 'incoming' ? '待处理申请' : '已申请' }}</button>
+            <button v-else-if="player.friendStatus === 'pending'" disabled>已申请</button>
             <button v-else :disabled="onlineActionBusy === player.accountId" @click="addOnlineFriend(player)">{{ onlineActionBusy === player.accountId ? '发送中' : '添加好友' }}</button>
           </div>
         </div>
@@ -202,4 +216,5 @@ onBeforeUnmount(() => {
 @media(max-width:760px){.mobile-brand img{width:30px;height:30px;border:1px solid rgba(255,255,255,.42);border-radius:3px;object-fit:cover}.mobile-brand b{display:none}}
 .auth-modal>p{color:#87939a;font-size:11px;line-height:1.7}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.auth-tabs button,.auth-home{padding:11px;border:1px solid #46535b;background:#080e13;color:#9aa3a7;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-modal label{display:block;margin:13px 0;color:#abb3b6;font-size:10px;font-weight:900}.auth-modal input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #4b5860;background:#080e13;color:#fff}.auth-submit{width:100%;margin-top:16px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.auth-submit:disabled{opacity:.45}.auth-home{width:100%;margin-top:8px}.auth-notice{padding:9px!important;border-left:3px solid #a72e39;background:#291016;color:#e5aab0!important}.account-gate{z-index:140}
 .invitation-gate{z-index:160}.invitation-modal>p{color:#aeb6ba;line-height:1.7}.invite-code{display:flex;align-items:center;justify-content:space-between;margin:18px 0;padding:14px;border:1px solid #4e5b63;background:#080e13}.invite-code span{color:#79868d;font-size:10px}.invite-code strong{color:#f0d478;font:900 22px monospace;letter-spacing:.18em}.invite-note{font-size:11px}.invite-actions{display:grid;grid-template-columns:1fr 1.7fr;gap:10px;margin-top:20px}.invite-actions button{padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.invite-actions button.quiet{border-color:#4a565e;background:#0a1117;color:#929da2}
+.online-actions button.quiet{border-color:#4b565c;background:#0b1217;color:#9ba5aa}
 </style>

@@ -271,28 +271,58 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void EndTurnRunsAllStartPhasesWithoutErasingTroopsDamage()
+    public void EndTurnClearsTroopsDamageForBothPlayersAndRunsAllStartPhases()
     {
         var game = Create();
         game.Handle(0, new L12Command("mulligan", CardInstanceIds: []));
         game.Handle(1, new L12Command("mulligan", CardInstanceIds: []));
         var active = game.State.ActivePlayer;
         var other = 1 - active;
-        var activeCard = game.State.Players[active].Hand.First(card => card.CardType == "legion");
-        var otherCard = game.State.Players[other].Hand.First(card => card.CardType == "legion");
-        game.State.Players[active].Hand.Remove(activeCard);
-        game.State.Players[other].Hand.Remove(otherCard);
-        activeCard.Troops = Math.Max(1, activeCard.BaseTroops - 1000);
-        otherCard.Troops = Math.Max(1, otherCard.BaseTroops - 1000);
+        var activeCard = new L12CardInstance
+        {
+            InstanceId = "turn-end-active-legion",
+            CardId = "S01-0107",
+            Name = "对方回合前排加值军团",
+            CardType = "legion",
+            Faction = "tianting",
+            Cost = 4,
+            BaseTroops = 4000,
+            Troops = 4000,
+        };
+        var otherCard = new L12CardInstance
+        {
+            InstanceId = "turn-end-other-legion",
+            CardId = "test-persistent-derived-legion",
+            Name = "持续派生军团",
+            CardType = "legion",
+            Faction = "avalon",
+            Cost = 3,
+            BaseTroops = 3000,
+            Troops = 3000,
+        };
+        otherCard.AttachedCards.Add(new L12CardInstance
+        {
+            InstanceId = "persistent-king-sword",
+            CardId = "S02-06S2",
+            Name = "王者之剑",
+            CardType = "special",
+            Faction = "avalon",
+            Cost = 0,
+            BaseTroops = 0,
+            Troops = 0,
+        });
         game.State.Players[active].Field[0][0] = activeCard;
         game.State.Players[other].Field[0][0] = otherCard;
+        game.SnapshotFor(active);
+        L12DerivedStats.ApplyTroopsDamage(activeCard, 1000);
+        L12DerivedStats.ApplyTroopsDamage(otherCard, 1000);
 
         Assert.True(game.Handle(active, new L12Command("endTurn")).Accepted);
 
         Assert.Equal(L12Phase.Main, game.State.Phase);
         Assert.Equal(other, game.State.ActivePlayer);
-        Assert.Equal(Math.Max(1, activeCard.BaseTroops - 1000), activeCard.Troops);
-        Assert.Equal(Math.Max(1, otherCard.BaseTroops - 1000), otherCard.Troops);
+        Assert.Equal(activeCard.BaseTroops + 1000, activeCard.Troops);
+        Assert.Equal(otherCard.BaseTroops + 1000, otherCard.Troops);
         Assert.Contains(game.State.Events, item => item.Text == "执行结束阶段");
         Assert.Contains(game.State.Events, item => item.Text == "执行重置阶段");
         Assert.Contains(game.State.Events, item => item.Text == "进入主要阶段");

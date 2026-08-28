@@ -245,6 +245,33 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void MedjedCannotReuseTheSameTombGuardForItsCostAndExtraReplacement()
+    {
+        var game = CreateWithFirstMaster("S01-02M3", 630114);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Morale.Clear();
+        var guard = Card("S01-0212", "medjed-payment-guard");
+        var target = Card("S02-0601", "medjed-debuff-target");
+        player.Field[0][0] = guard;
+        opponent.Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "medjedDebuff")).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.True(guard.Tapped);
+        Assert.Equal(4000, target.Troops);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") is "medjed-extra-choice" or "medjed-extra-guard");
+    }
+
+    [Fact]
     public void AndvaranautBlocksEveryArtifactFromHandAndReachesTheSnapshot()
     {
         var game = Create(630112);
@@ -1994,6 +2021,34 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void GalahadGrailRewardAbilityAppearsOnlyAfterGrailTrialCompleted()
+    {
+        var game = Create(63111);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        var galahad = Card("S02-0604", "galahad-grail-ability-view");
+        player.Field[0][0] = galahad;
+        game.State.Phase = L12Phase.Main;
+
+        static JsonElement Ability(JsonElement snapshot, int playerIndex)
+            => snapshot.GetProperty("players")[playerIndex].GetProperty("field")[0][0]
+                .GetProperty("abilities").EnumerateArray()
+                .Single(item => item.GetProperty("id").GetString() == "galahadGrailReward");
+
+        var before = Ability(JsonSerializer.SerializeToElement(game.SnapshotFor(playerIndex),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)), playerIndex);
+        Assert.False(before.GetProperty("enabled").GetBoolean());
+        Assert.Contains("尚未完成", before.GetProperty("disabledReason").GetString());
+
+        var grail = Card("S02-06S4", "completed-grail-for-ability-view");
+        grail.TrialCompleted = true;
+        player.SpecialZones.Trials.Add(grail);
+        var after = Ability(JsonSerializer.SerializeToElement(game.SnapshotFor(playerIndex),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)), playerIndex);
+        Assert.True(after.GetProperty("enabled").GetBoolean());
+    }
+
+    [Fact]
     public void FortuneSearchesArtifactAndUesugiOrdersTheRestAndEmpowersTheNextUesugi()
     {
         var game = Create(6312);
@@ -3315,6 +3370,7 @@ public sealed class S2FactionRegressionTests
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-slot");
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:1")).Accepted);
         Assert.Same(horse, attackerPlayer.Field[1][1]);
+        Assert.True(horse.Hidden);
 
         game.State.ActivePlayer = 1;
         game.State.Phase = L12Phase.Main;

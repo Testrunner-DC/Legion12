@@ -272,11 +272,15 @@ public sealed class GmSandboxTests
         Assert.True(game.HandleGm(new L12GmCommand("addMorale", 0, Value: 1)).Accepted);
         Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S01-0115", Row: 0, Slot: 0,
             TriggerEffects: false)).Accepted);
-        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 1, "S01-0002", Row: 0, Slot: 0,
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 1, "S02-0601", Row: 0, Slot: 0,
+            TriggerEffects: false)).Accepted);
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 1, "S01-0002", Row: 0, Slot: 1,
             TriggerEffects: false)).Accepted);
         var jingKe = game.State.Players[0].Field[0][0]!;
         var target = game.State.Players[1].Field[0][0]!;
+        var buffedPrintedLowTarget = game.State.Players[1].Field[0][1]!;
         target.Troops = 2000;
+        buffedPrintedLowTarget.Troops = 3000;
 
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: jingKe.InstanceId)).Accepted);
@@ -287,6 +291,7 @@ public sealed class GmSandboxTests
         var prompt = Assert.Single(game.State.PendingPrompts,
             candidate => candidate.Continuation == "pending-activation");
         Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        Assert.DoesNotContain(buffedPrintedLowTarget.InstanceId, prompt.ValidChoices);
         var moraleBefore = game.State.Players[0].Morale.Count;
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,

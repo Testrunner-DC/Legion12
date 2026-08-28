@@ -791,6 +791,61 @@ public sealed class NewSystemsTests
         Assert.Empty(game.State.PendingTriggerBatches);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "stack-response");
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == deathLegion.InstanceId);
+        Assert.Equal(-1, game.State.ExtraTurnsForPlayer);
+    }
+
+    [Fact]
+    public void RagnarokGmTriggerImmediatelyBeginsTheGrantedExtraTurn()
+    {
+        var game = Create(seed: 88601);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS09", "later-ragnarok"));
+        var turnSerialBefore = game.State.TurnSerial;
+        var inactiveHandBefore = game.State.Players[1].Hand.Count;
+
+        Assert.True(game.HandleGm(new L12GmCommand("triggerDisaster")).Accepted);
+        foreach (var confirmation in game.State.PendingPrompts
+                     .Where(prompt => prompt.Continuation == "disaster-trigger-confirm").ToArray())
+            Assert.True(game.Handle(confirmation.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: confirmation.PromptId)).Accepted);
+
+        Assert.Equal(-1, game.State.ExtraTurnsForPlayer);
+        Assert.Equal(0, game.State.ActivePlayer);
+        Assert.Equal(turnSerialBefore + 1, game.State.TurnSerial);
+        Assert.Equal(L12Phase.Main, game.State.Phase);
+        Assert.Equal(inactiveHandBefore + 2, game.State.Players[1].Hand.Count);
+    }
+
+    [Fact]
+    public void RagnarokTriggeredAtTurnStartSkipsTheInterruptedTurnsResetAndDraw()
+    {
+        var game = Create(seed: 88602);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 7;
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS09", "turn-start-ragnarok"));
+        game.State.DisasterValue = 9;
+        var nextPlayerHandBefore = game.State.Players[1].Hand.Count;
+        var opponentHandBefore = game.State.Players[0].Hand.Count;
+
+        Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
+
+        Assert.Equal(1, game.State.ActivePlayer);
+        Assert.Equal(4, game.State.Round);
+        Assert.Equal(9, game.State.TurnSerial);
+        Assert.Equal(L12Phase.Main, game.State.Phase);
+        Assert.Equal(-1, game.State.ExtraTurnsForPlayer);
+        Assert.Equal(nextPlayerHandBefore + 1, game.State.Players[1].Hand.Count);
+        Assert.Equal(opponentHandBefore + 2, game.State.Players[0].Hand.Count);
+        Assert.Single(game.State.Events, entry => entry.Type == "phase"
+            && entry.PlayerIndex == 1 && entry.Text == "执行重置阶段");
+        Assert.Single(game.State.Events, entry => entry.Type == "phase"
+            && entry.PlayerIndex == 1 && entry.Text == "执行抽牌阶段");
     }
 
     [Fact]

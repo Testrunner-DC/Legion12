@@ -196,4 +196,77 @@ public sealed class ImmortalityRegressionTests
         Assert.Equal(0, target.ImmortalUses);
         Assert.Equal(-1, target.ImmortalUntilTurn);
     }
+
+    [Fact]
+    public void CompletedLakeLadyTrialRemovesKingSwordInsteadOfArthurForLethalEffect()
+    {
+        var game = Create(6516);
+        var player = game.State.Players[0];
+        var arthur = Card("S02-0601", "lake-lady-effect-arthur");
+        var sword = Card("S02-06S2", "lake-lady-effect-sword");
+        var trial = Card("S02-06S3", "lake-lady-effect-trial");
+        trial.TrialCompleted = true;
+        arthur.AttachedCards.Add(sword);
+        L12DerivedStats.ApplyContinuousModifiers(arthur,
+            new Dictionary<string, int> { [$"attached:{sword.InstanceId}:king-sword"] = 1000 },
+            0, game.State.TurnSerial);
+        player.Field[0][0] = arthur;
+        player.SpecialZones.Trials.Add(trial);
+
+        var result = game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: arthur.InstanceId));
+
+        Assert.False(result.Accepted);
+        Assert.Same(arthur, player.Field[0][0]);
+        Assert.Empty(arthur.AttachedCards);
+        Assert.Contains(sword, player.Graveyard);
+        Assert.DoesNotContain(arthur, player.Graveyard);
+        Assert.Equal(5000, arthur.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "replacement"
+            && entry.Text.Contains("湖中仙女的馈赠") && entry.Text.Contains("王者之剑"));
+    }
+
+    [Fact]
+    public void CompletedLakeLadyTrialRemovesKingSwordInsteadOfArthurForLethalCombat()
+    {
+        var game = Create(6517);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        attackerPlayer.Hand.Clear();
+        defender.Hand.Clear();
+        var attacker = Card("S02-0501", "lake-lady-combat-attacker");
+        var arthur = Card("S02-0601", "lake-lady-combat-arthur");
+        var sword = Card("S02-06S2", "lake-lady-combat-sword");
+        var trial = Card("S02-06S3", "lake-lady-combat-trial");
+        trial.TrialCompleted = true;
+        attacker.SummonRound = 0;
+        arthur.AttachedCards.Add(sword);
+        L12DerivedStats.ApplyContinuousModifiers(arthur,
+            new Dictionary<string, int> { [$"attached:{sword.InstanceId}:king-sword"] = 1000 },
+            0, game.State.TurnSerial);
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[0][0] = arthur;
+        defender.SpecialZones.Trials.Add(trial);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", arthur.InstanceId))).Accepted);
+        PassResponses(game);
+        if (game.State.PendingDefense is not null)
+        {
+            var defense = game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: []));
+            Assert.True(defense.Accepted, defense.Error);
+            PassResponses(game);
+        }
+
+        Assert.Same(arthur, defender.Field[0][0]);
+        Assert.Empty(arthur.AttachedCards);
+        Assert.Contains(sword, defender.Graveyard);
+        Assert.DoesNotContain(arthur, defender.Graveyard);
+        Assert.Equal(5000, arthur.Troops);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Continuation is "combat-lethal-replacement" or "effect-lethal-replacement");
+    }
 }

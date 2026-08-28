@@ -109,24 +109,7 @@ public static class L12DerivedStats
         bonuses ??= new Dictionary<string, int>(StringComparer.Ordinal);
         if (bonuses.Values.Any(value => value <= 0)) throw new ArgumentOutOfRangeException(nameof(bonuses));
         if (penalty > 0) throw new ArgumentOutOfRangeException(nameof(penalty));
-        // 兼容旧快照：此前只有聚合后的 ContinuousTroopsModifier。
-        if (card.ContinuousTroopsBonusLayers.Count == 0 && card.ContinuousTroopsBonusGranted > 0)
-            card.ContinuousTroopsBonusLayers["legacy"] = new L12TroopsBonusLayer
-            {
-                Granted = card.ContinuousTroopsBonusGranted,
-                Consumed = card.ContinuousTroopsBonusConsumed,
-            };
-        else if (card.ContinuousTroopsBonusLayers.Count == 0 && card.ContinuousTroopsBonusGranted == 0
-            && card.ContinuousTroopsBonusConsumed == 0 && card.ContinuousTroopsPenalty == 0
-            && card.ContinuousTroopsModifier > 0)
-            card.ContinuousTroopsBonusLayers["legacy"] = new L12TroopsBonusLayer
-            {
-                Granted = card.ContinuousTroopsModifier,
-            };
-        if (card.ContinuousTroopsPenalty == 0 && card.ContinuousTroopsModifier < 0)
-        {
-            card.ContinuousTroopsPenalty = card.ContinuousTroopsModifier;
-        }
+        RestoreLegacyContinuousLayers(card);
 
         var oldRemaining = card.ContinuousTroopsBonusLayers.Values
             .Sum(layer => Math.Max(0, layer.Granted - layer.Consumed));
@@ -161,6 +144,28 @@ public static class L12DerivedStats
         card.ContinuousTroopsBonusConsumed = totalConsumed;
         card.ContinuousTroopsPenalty = penalty;
         card.ContinuousTroopsModifier = totalRemaining + penalty;
+    }
+
+    private static void RestoreLegacyContinuousLayers(L12CardInstance card)
+    {
+        // 兼容旧快照：此前只有聚合后的 ContinuousTroopsModifier。
+        if (card.ContinuousTroopsBonusLayers.Count == 0 && card.ContinuousTroopsBonusGranted > 0)
+            card.ContinuousTroopsBonusLayers["legacy"] = new L12TroopsBonusLayer
+            {
+                Granted = card.ContinuousTroopsBonusGranted,
+                Consumed = card.ContinuousTroopsBonusConsumed,
+            };
+        else if (card.ContinuousTroopsBonusLayers.Count == 0 && card.ContinuousTroopsBonusGranted == 0
+            && card.ContinuousTroopsBonusConsumed == 0 && card.ContinuousTroopsPenalty == 0
+            && card.ContinuousTroopsModifier > 0)
+            card.ContinuousTroopsBonusLayers["legacy"] = new L12TroopsBonusLayer
+            {
+                Granted = card.ContinuousTroopsModifier,
+            };
+        if (card.ContinuousTroopsPenalty == 0 && card.ContinuousTroopsModifier < 0)
+        {
+            card.ContinuousTroopsPenalty = card.ContinuousTroopsModifier;
+        }
     }
 
     /// <summary>
@@ -209,24 +214,29 @@ public static class L12DerivedStats
         return remainingImmediateBonus;
     }
 
+    /// <summary>
+    /// 回合边界移除到期状态并清除累计伤害，从仍有效的设定值、限时层和持续层重建无伤派生兵力。
+    /// </summary>
     public static void ResetForCompletedTurn(L12CardInstance card, int completedTurn)
     {
-        var expired = card.TimedModifiers
-            .Where(modifier => modifier.ExpiresAfterTurn <= completedTurn).ToArray();
-        foreach (var modifier in expired)
-        {
-            if (modifier.TroopsDelta > 0)
-                card.Troops -= Math.Max(0, modifier.TroopsDelta - modifier.ConsumedTroopsBonus);
-            else
-                card.Troops -= modifier.TroopsDelta;
-            card.TimedModifiers.Remove(modifier);
-        }
+        card.TimedModifiers.RemoveAll(modifier => modifier.ExpiresAfterTurn <= completedTurn);
         if (card.SetTroopsUntilTurn <= completedTurn)
         {
-            if (card.SetTroopsValue is { } setValue) card.Troops += card.BaseTroops - setValue;
             card.SetTroopsValue = null;
             card.SetTroopsUntilTurn = -1;
         }
+
+        foreach (var modifier in card.TimedModifiers)
+            modifier.ConsumedTroopsBonus = 0;
+        RestoreLegacyContinuousLayers(card);
+        foreach (var layer in card.ContinuousTroopsBonusLayers.Values)
+            layer.Consumed = 0;
+        card.ContinuousTroopsBonusGranted = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Granted);
+        card.ContinuousTroopsBonusConsumed = 0;
+        card.ContinuousTroopsModifier = card.ContinuousTroopsBonusGranted + card.ContinuousTroopsPenalty;
+        card.Troops = card.DisplayBaseTroops
+            + card.TimedModifiers.Sum(modifier => modifier.TroopsDelta)
+            + card.ContinuousTroopsModifier;
         card.CostModifier = card.TimedModifiers.Sum(modifier => modifier.CostDelta);
     }
 }

@@ -607,11 +607,14 @@ public sealed partial class L12GameEngine
             case "regency-card":
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
                 item.Data["regency-card"] = chosen[0];
-                CreatePrompt(item.Controller, "slot", "摄政皇权：选择活跃登场的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "regency-slot" });
+                var regencyCard = player.Hand.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                if (regencyCard is null) { FinishStackItem(item); return true; }
+                PromptEffectEntryDestination(item, regencyCard, "regency-slot", "摄政皇权：选择活跃登场的位置");
                 return true;
             case "regency-slot":
-                SummonFromHand(player, item.Data["regency-card"], chosen[0], tapped: false); FinishStackItem(item); return true;
+                SummonFromHand(player, item.Data["regency-card"], chosen[0], tapped: false,
+                    EffectEntryTargetPlayer(item, player.PlayerIndex));
+                FinishStackItem(item); return true;
             case "blood-eagle-pick":
             {
                 var handCard = player.Graveyard.First(card => card.InstanceId == chosen[0]); var bottomCard = player.Graveyard.First(card => card.InstanceId == chosen[1]);
@@ -666,13 +669,19 @@ public sealed partial class L12GameEngine
                 new L12ActivationSelectionStep
                 {
                     Kind = "card", Text = "西施：选择手牌中最多 1 张兵力不高于 2000 的其他军团",
-                    ValidChoices = player.Hand.Where(card => card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000).Select(card => card.InstanceId).ToList(),
+                    ValidChoices = player.Hand.Where(card => card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000
+                        && EffectEntryBattlefieldChoices(playerIndex, card).Any()).Select(card => card.InstanceId).ToList(),
                     MinChoose = 0,
                     MaxChoose = 1,
                 },
                 new L12ActivationSelectionStep
                 {
-                    Kind = "slot", Text = "西施：预先选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                    Kind = "effect-entry-battlefield", Text = "西施：选择该军团活跃登场的战场", ValidChoices = ["dynamic"],
+                    SkipWhenPreviousStepEmpty = true,
+                },
+                new L12ActivationSelectionStep
+                {
+                    Kind = "effect-entry-slot", Text = "西施：预先选择该军团活跃登场的位置", ValidChoices = ["dynamic"],
                     SkipWhenPreviousStepEmpty = true,
                 },
             ]);
@@ -704,13 +713,16 @@ public sealed partial class L12GameEngine
             case "xishiExchange" when source.CardId == "S01-0116":
             {
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length is not (0 or 2)) return CommandResult.Reject("手牌目标与登场位置声明不完整");
-                if (declared.Length == 2)
+                if (declared.Length is not (0 or 3)) return CommandResult.Reject("手牌目标、战场与登场位置声明不完整");
+                if (declared.Length == 3)
                 {
                     var handCard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000);
-                    var (row, slot) = ParseSlot(declared[1]);
-                    if (handCard is null || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
-                        return CommandResult.Reject("声明的手牌目标或位置不再合法");
+                    var battlefield = ParseEffectEntryBattlefieldChoice(declared[1]);
+                    var (row, slot) = ParseSlot(declared[2]);
+                    if (handCard is null || battlefield is null
+                        || !EffectEntryBattlefieldChoices(playerIndex, handCard).Contains(battlefield.Value)
+                        || row is < 0 or > 1 || slot is < 0 or > 2 || State.Players[battlefield.Value].Field[row][slot] is not null)
+                        return CommandResult.Reject("声明的手牌目标、战场或位置不再合法");
                 }
                 if (!returnMoralePrepaid && !CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
                 if (!returnMoralePrepaid) ReturnMorale(player, 1);
@@ -743,7 +755,8 @@ public sealed partial class L12GameEngine
             case "xishiExchange":
             {
                 var declared = item.Data.GetValueOrDefault("target", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length == 2) SummonFromHand(player, declared[0], declared[1], tapped: false);
+                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) is { } battlefield)
+                    SummonFromHand(player, declared[0], declared[2], tapped: false, battlefield);
                 Draw(player, 1); FinishStackItem(item); return true;
             }
             case "destroyInfiltrator" when source is not null:
@@ -953,14 +966,91 @@ public sealed partial class L12GameEngine
         else FinishStackItem(item);
     }
 
-    private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped)
+    private IEnumerable<int> EffectEntryBattlefieldChoices(int ownerIndex, L12CardInstance card)
+    {
+        var candidates = card.CardId == "S01-0004" ? Enumerable.Range(0, State.Players.Length) : [ownerIndex];
+        return candidates.Where(index => EmptySlots(State.Players[index]).Any());
+    }
+
+    private static string EffectEntryBattlefieldChoice(int playerIndex) => $"battlefield:{playerIndex}";
+
+    private static int? ParseEffectEntryBattlefieldChoice(string? choice)
+        => choice is not null && choice.StartsWith("battlefield:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(choice.AsSpan("battlefield:".Length), out var playerIndex)
+            && playerIndex is >= 0 and <= 1
+                ? playerIndex
+                : null;
+
+    private void PromptEffectEntryDestination(L12StackItem item, L12CardInstance card, string nextAction, string text)
+    {
+        var battlefields = EffectEntryBattlefieldChoices(item.Controller, card).ToArray();
+        if (battlefields.Length == 0) { FinishStackItem(item); return; }
+        if (battlefields.Length == 1)
+        {
+            item.Data["effect-entry-target-player"] = battlefields[0].ToString();
+            CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[battlefields[0]]), 1, 1,
+                "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                {
+                    ["action"] = nextAction,
+                    ["targetPlayerIndex"] = battlefields[0].ToString(),
+                });
+            return;
+        }
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "effect-entry-battlefield",
+            ["nextAction"] = nextAction,
+            ["entryText"] = text,
+        };
+        foreach (var battlefield in battlefields)
+            data[EffectEntryBattlefieldChoice(battlefield)] = $"{State.Players[battlefield].Name}的战场";
+        CreatePrompt(item.Controller, "option", $"{card.Name}：选择登场的战场",
+            battlefields.Select(EffectEntryBattlefieldChoice), 1, 1, "card-effect", item.StackItemId, data: data);
+    }
+
+    private void ContinueEffectEntryBattlefield(L12StackItem item, L12Prompt prompt, string choice)
+    {
+        var targetPlayer = ParseEffectEntryBattlefieldChoice(choice);
+        var card = item.Data.TryGetValue("regency-card", out var regencyCard)
+            ? State.Players[item.Controller].Hand.FirstOrDefault(candidate => candidate.InstanceId == regencyCard)
+            : null;
+        if (targetPlayer is null || card is null
+            || !EffectEntryBattlefieldChoices(item.Controller, card).Contains(targetPlayer.Value))
+        {
+            FinishStackItem(item);
+            return;
+        }
+        item.Data["effect-entry-target-player"] = targetPlayer.Value.ToString();
+        var nextAction = prompt.Data.GetValueOrDefault("nextAction") ?? string.Empty;
+        if (string.IsNullOrEmpty(nextAction)) { FinishStackItem(item); return; }
+        CreatePrompt(item.Controller, "slot", prompt.Data.GetValueOrDefault("entryText") ?? "选择登场的位置",
+            EmptySlots(State.Players[targetPlayer.Value]), 1, 1, "card-effect", item.StackItemId,
+            data: new Dictionary<string, string>
+            {
+                ["action"] = nextAction,
+                ["targetPlayerIndex"] = targetPlayer.Value.ToString(),
+            });
+    }
+
+    private static int EffectEntryTargetPlayer(L12StackItem item, int fallback)
+        => item.Data.TryGetValue("effect-entry-target-player", out var text)
+            && int.TryParse(text, out var playerIndex) && playerIndex is >= 0 and <= 1
+                ? playerIndex
+                : fallback;
+
+    private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped, int? targetPlayerIndex = null)
     {
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId); if (card is null) return;
-        var (row, slot) = ParseSlot(slotChoice); player.Hand.Remove(card); card.Tapped = tapped; card.SummonRound = State.Round; player.Field[row][slot] = card;
-        AddEvent("put", player.PlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
-        ApplyDisasterLevelOnEntry(player.PlayerIndex, card, deferTriggerUntilStackSettles: true);
-        if (HasImmediateEffect(card, "enter")) PushEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
-        QueueS2GrailRoundTableEntry(player.PlayerIndex, card);
+        var battlefield = targetPlayerIndex ?? player.PlayerIndex;
+        if (battlefield != player.PlayerIndex && card.CardId != "S01-0004") return;
+        var (row, slot) = ParseSlot(slotChoice);
+        if (row is < 0 or > 1 || slot is < 0 or > 2 || State.Players[battlefield].Field[row][slot] is not null) return;
+        player.Hand.Remove(card); card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
+        State.Players[battlefield].Field[row][slot] = card;
+        AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        ApplyDisasterLevelOnEntry(battlefield, card, deferTriggerUntilStackSettles: true);
+        if (HasImmediateEffect(card, "enter")) PushEffect(battlefield, card, "enter", "【登场时】效果");
+        QueueS2GrailRoundTableEntry(battlefield, card);
     }
 
     private static bool IsCounterTactic(string cardId) => cardId is
@@ -1042,8 +1132,9 @@ public sealed partial class L12GameEngine
                 return;
             case "摄政皇权":
             {
-                var choices = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 3).Select(card => card.InstanceId).ToList();
-                if (choices.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return; }
+                var choices = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 3
+                    && EffectEntryBattlefieldChoices(item.Controller, card).Any()).Select(card => card.InstanceId).ToList();
+                if (choices.Count == 0) { FinishStackItem(item); return; }
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "摄政皇权：可将手牌1张费用不高于3的军团活跃登场", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "regency-card" });
