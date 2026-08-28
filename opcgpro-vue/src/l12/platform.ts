@@ -4,8 +4,10 @@ import type { SavedL12Deck } from './decks'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
-  disabled?: boolean; disabledAt?: string; disabledReason?: string
+  permissionVersion?: number; disabled?: boolean; disabledAt?: string; disabledReason?: string
 }
+export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
+export interface AccountStatusOperation { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }
 export interface PlatformSession {
   id: string; createdAt: string; expiresAt: string; current: boolean; authStrength: string; permissionVersion: number
 }
@@ -77,6 +79,42 @@ export interface SecurityStatus {
   disabledAccounts: number; activeLoginLocks: number; pendingApprovals: number; oldestPendingApprovalAt?: string
   highRiskAuditAvailable: boolean; auditRetentionDays: number; auditArchiveSegments: number
   lastAuditArchiveAt?: string; mfa: MfaCapability; alerts: SecurityAlert[]
+}
+export interface OperationsSeasonConfig { id: string; name: string; status: string; startsAt?: string; endsAt?: string }
+export interface OperationsDisasterPoolConfig { cardIds: string[]; annihilationLocked: boolean }
+export interface OperationsCardRestriction { cardId: string; maxCopies: number; reason?: string }
+export interface OperationsMatchMode { id: string; name: string; enabled: boolean }
+export interface OperationsMaintenanceConfig { enabled: boolean; message: string; startsAt?: string; endsAt?: string }
+export interface OperationsConfigPayload {
+  season: OperationsSeasonConfig
+  disasterPool: OperationsDisasterPoolConfig
+  cardRestrictions: OperationsCardRestriction[]
+  defaultPresetDeckIds: string[]
+  matchModes: OperationsMatchMode[]
+  featureFlags: Record<string, boolean>
+  maintenance: OperationsMaintenanceConfig
+}
+export interface OperationsConfigView {
+  version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
+}
+export interface OperationsConfigVersion {
+  id: string; version: number; action: string; config: OperationsConfigPayload
+  actorId: string; actorName: string; reason: string; createdAt: string
+}
+export interface OperationsConfigPreview {
+  valid: boolean; currentVersion: number; nextVersion: number; normalized: OperationsConfigPayload
+  changes: string[]; warnings: string[]
+}
+export interface OperationsConfigOperation {
+  applied: boolean; current: OperationsConfigView; historyEntry: OperationsConfigVersion; changes: string[]
+}
+export interface RuntimeDependencyStatus {
+  name: string; configured: boolean; state: string; detail?: string; observedAt: string
+}
+export interface RuntimeStatus {
+  observedAt: string; serviceVersion: string; cardCount: number; onlineAccountCount: number
+  webSocketConnectionCount: number; roomCount: number; activeGameCount: number
+  releaseEnvironments: ReleaseEnvironment[]; cdn: RuntimeDependencyStatus
 }
 export interface AuditArchiveSegment {
   id: string; from: string; until: string; eventCount: number; sha256: string; createdAt: string
@@ -173,8 +211,6 @@ export interface LegacyTournamentInput {
   createdAt?: string; updatedAt?: string; completedAt?: string
 }
 export interface TournamentLegacyImport { previewHash: string; applied: boolean; tournaments: Tournament[] }
-export type TournamentWriteResult = Tournament | AdminCommandAccepted
-
 export class PlatformRequestError extends Error {
   constructor(message: string, public readonly status: number, public readonly code: string, public readonly correlationId: string) { super(message) }
 }
@@ -192,14 +228,11 @@ export function hasPermission(permission: string) {
   const account = platformState.account
   if (!account) return false
   if (account.permissions?.length) return account.permissions.includes(permission)
-  if (account.role === 'admin') return true
-  if (account.role === 'editor') return ['admin.content.read', 'admin.content.draft', 'admin.content.publish', 'admin.content.rollback', 'admin.effects.read', 'admin.effects.review', 'admin.commands.read'].includes(permission)
-  if (account.role === 'support') return ['admin.bugs.read', 'admin.bugs.write', 'admin.commands.read'].includes(permission)
-  return account.role === 'release-manager' && ['admin.content.read', 'admin.commands.read', 'admin.approvals.read', 'admin.approvals.review', 'admin.security.read', 'releases.read', 'releases.execute', 'releases.approvals.review', 'releases.runtime.read'].includes(permission)
+  return account.role === 'admin'
 }
 
 export const isAdmin = computed(() => platformState.account?.role === 'admin')
-export const canAccessAdmin = computed(() => hasPermission('admin.bugs.read') || hasPermission('admin.content.read') || hasPermission('admin.effects.read') || hasPermission('admin.audit.read') || hasPermission('admin.commands.read') || hasPermission('admin.approvals.read') || hasPermission('admin.security.read') || hasPermission('releases.read') || hasPermission('releases.runtime.read'))
+export const canAccessAdmin = computed(() => platformState.account?.role === 'admin')
 
 export function apiBase() {
   try {
@@ -294,9 +327,9 @@ function commandBody<T extends Record<string, unknown>>(prefix: string, body: T)
 
 export const adminApi = {
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
-  setRole: (id: string, role: string) => platformRequest<AdminCommandAccepted>(`/api/admin/v1/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role })) }),
-  setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion: number, dryRun = false) => platformRequest<AdminCommandAccepted | { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }>(`/api/admin/v1/accounts/${encodeURIComponent(id)}/status`, {
-    method: 'PUT', body: JSON.stringify(commandBody('account-status', { disabled, reason, expectedVersion, dryRun })),
+  setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
+  setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
+    method: 'PUT', body: JSON.stringify(commandBody('account-status', { disabled, reason, expectedVersion })),
   }),
   sessions: (id: string) => platformRequest<PlatformSession[]>(`/api/admin/accounts/${encodeURIComponent(id)}/sessions`),
   revokeSession: (id: string, sessionId: string) => platformRequest<SessionRevocation>(`/api/admin/accounts/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
@@ -356,6 +389,18 @@ export const adminApi = {
     Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value) })
     return platformRequest<AdminAudit[]>(`/api/admin/v1/audit${params.size ? `?${params}` : ''}`)
   },
+  operationsConfig: () => platformRequest<OperationsConfigView>('/api/admin/operations/config'),
+  operationsHistory: (limit = 50) => platformRequest<OperationsConfigVersion[]>(`/api/admin/operations/config/history?limit=${Math.max(1, Math.min(200, limit))}`),
+  previewOperationsConfig: (config: OperationsConfigPayload, expectedVersion?: number) => platformRequest<OperationsConfigPreview>('/api/admin/operations/config/preview', {
+    method: 'POST', body: JSON.stringify({ config, expectedVersion }),
+  }),
+  applyOperationsConfig: (config: OperationsConfigPayload, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config', {
+    method: 'PUT', body: JSON.stringify(commandBody('operations-config', { config, reason, expectedVersion })),
+  }),
+  rollbackOperationsConfig: (versionId: string, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config/rollback', {
+    method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion })),
+  }),
+  runtimeStatus: () => platformRequest<RuntimeStatus>('/api/admin/runtime/status'),
 }
 
 export const tournamentApi = {
@@ -381,19 +426,19 @@ export const tournamentApi = {
   drop: (id: string, expectedVersion: number) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration`, {
     method: 'DELETE', body: JSON.stringify(commandBody('tournament-drop', { expectedVersion })),
   }),
-  setStaff: (id: string, expectedVersion: number, refereeAccountIds: string[], reason: string) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/staff`, {
+  setStaff: (id: string, expectedVersion: number, refereeAccountIds: string[], reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/staff`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-staff', { expectedVersion, refereeAccountIds, reason })),
   }),
-  start: (id: string, expectedVersion: number, reason: string) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/start`, {
+  start: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/start`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-start', { expectedVersion, reason })),
   }),
-  nextRound: (id: string, expectedVersion: number, reason: string) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/rounds`, {
+  nextRound: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/rounds`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-round', { expectedVersion, reason })),
   }),
   checkIn: (id: string, roundNumber: number, expectedVersion: number, accountId: string | undefined, ready: boolean) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/rounds/${roundNumber}/check-in`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-check-in', { expectedVersion, accountId, ready })),
   }),
-  startRound: (id: string, roundNumber: number, expectedVersion: number, reason: string) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/rounds/${roundNumber}/start`, {
+  startRound: (id: string, roundNumber: number, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/rounds/${roundNumber}/start`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-round-start', { expectedVersion, reason })),
   }),
   pauseRound: (id: string, roundNumber: number, expectedVersion: number, paused: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/rounds/${roundNumber}/pause`, {
@@ -402,18 +447,14 @@ export const tournamentApi = {
   extendMatch: (id: string, matchId: string, expectedVersion: number, minutes: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/time-extension`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-extension', { expectedVersion, minutes, reason })),
   }),
-  ruleMatch: (id: string, matchId: string, expectedVersion: number, body: { kind: 'result' | 'penalty' | 'no-show'; targetAccountId?: string; decision: string; reason: string }) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/rulings`, {
+  ruleMatch: (id: string, matchId: string, expectedVersion: number, body: { kind: 'result' | 'penalty' | 'no-show'; targetAccountId?: string; decision: string; reason: string }) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/rulings`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-ruling', { expectedVersion, ...body })),
   }),
-  linkMatch: (id: string, matchId: string, expectedVersion: number, recordedMatchId: string, reason: string) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/reference`, {
+  linkMatch: (id: string, matchId: string, expectedVersion: number, recordedMatchId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/reference`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-reference', { expectedVersion, recordedMatchId, reason })),
   }),
-  complete: (id: string, expectedVersion: number, reason: string) => platformRequest<TournamentWriteResult>(`/api/tournaments/${encodeURIComponent(id)}/complete`, {
+  complete: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/complete`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-complete', { expectedVersion, reason })),
-  }),
-  approvals: (id: string, status = 'requested') => platformRequest<AdminApproval[]>(`/api/tournaments/${encodeURIComponent(id)}/approvals?status=${encodeURIComponent(status)}`),
-  reviewApproval: (commandId: string, decision: 'approve' | 'reject', reason: string) => platformRequest<AdminCommand>(`/api/admin/v1/approvals/${encodeURIComponent(commandId)}`, {
-    method: 'POST', body: JSON.stringify({ decision, reason }),
   }),
 }
 

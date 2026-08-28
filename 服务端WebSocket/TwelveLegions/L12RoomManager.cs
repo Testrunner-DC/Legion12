@@ -13,6 +13,12 @@ public sealed record L12OnlinePresence(
     bool CanSpectate,
     string? ActionReason);
 
+public sealed record L12RoomRuntimeStats(
+    int OnlineAccountCount,
+    int ConnectedSessionCount,
+    int RoomCount,
+    int ActiveGameCount);
+
 public sealed class L12RoomManager
 {
     private sealed class Session
@@ -110,6 +116,17 @@ public sealed class L12RoomManager
             .Where(session => session.Connected && !session.IsVirtual && !string.IsNullOrWhiteSpace(session.AccountId))
             .Select(session => session.AccountId!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    public L12RoomRuntimeStats RuntimeStats()
+    {
+        var connected = _sessions.Values.Where(session => session.Connected && !session.IsVirtual).ToArray();
+        return new L12RoomRuntimeStats(
+            connected.Where(session => !string.IsNullOrWhiteSpace(session.AccountId))
+                .Select(session => session.AccountId!).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            connected.Length,
+            _rooms.Count,
+            _rooms.Values.Count(room => room.Game is not null && room.Game.State.Phase != L12Phase.GameOver));
+    }
 
     public IReadOnlyDictionary<string, L12OnlinePresence> DescribeOnlinePresence(string viewerAccountId)
     {

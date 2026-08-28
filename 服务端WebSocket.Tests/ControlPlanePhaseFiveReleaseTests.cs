@@ -22,7 +22,7 @@ public sealed class ControlPlanePhaseFiveReleaseTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var manager = Promote(store, admin, "RlsMgr01", "release-manager");
+            var manager = Promote(store, admin, "RlsMgr01", "admin");
             var adapter = new FakeReleaseAdapter
             {
                 Artifacts =
@@ -76,7 +76,7 @@ public sealed class ControlPlanePhaseFiveReleaseTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var manager = Promote(store, admin, "RelDryRunMgr", "release-manager");
+            var manager = Promote(store, admin, "RelDryRunMgr", "admin");
             var adapter = new FakeReleaseAdapter { Artifacts = [Artifact("release-dry", 'a', '1', "production")] };
             var payload = store.CaptureReleaseDeploy(manager, "release-dry", "production", adapter);
 
@@ -105,8 +105,8 @@ public sealed class ControlPlanePhaseFiveReleaseTests
         {
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
-            var requester = Promote(store, admin, "ReleaseRequester", "release-manager");
-            var reviewer = Promote(store, admin, "ReleaseReviewer", "release-manager");
+            var requester = Promote(store, admin, "ReleaseRequester", "admin");
+            var reviewer = Promote(store, admin, "ReleaseReviewer", "admin");
             var adapter = new FakeReleaseAdapter { Artifacts = [Artifact("release-restart", 'a', '1', "production")] };
             var payload = store.CaptureReleaseDeploy(requester, "release-restart", "production", adapter);
             var requested = Submit(store, adapter, requester, payload, 0, "release-restart-key");
@@ -153,8 +153,8 @@ public sealed class ControlPlanePhaseFiveReleaseTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var requester = Promote(store, admin, "RelConcReq", "release-manager");
-            var reviewer = Promote(store, admin, "RelConcRev", "release-manager");
+            var requester = Promote(store, admin, "RelConcReq", "admin");
+            var reviewer = Promote(store, admin, "RelConcRev", "admin");
             var adapter = new FakeReleaseAdapter
             {
                 Artifacts =
@@ -199,8 +199,8 @@ public sealed class ControlPlanePhaseFiveReleaseTests
         {
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
-            var requester = Promote(store, admin, "RelFailReq", "release-manager");
-            var reviewer = Promote(store, admin, "RelFailRev", "release-manager");
+            var requester = Promote(store, admin, "RelFailReq", "admin");
+            var reviewer = Promote(store, admin, "RelFailRev", "admin");
             var adapter = new FakeReleaseAdapter { Artifacts = [Artifact("release-failure", 'a', '1', "production")] };
             adapter.ExecutionResults.Enqueue(new(true, new(false, "health.failed", 25),
                 new(false, "ws.failed", 30), true, true, "smoke-failed"));
@@ -238,8 +238,8 @@ public sealed class ControlPlanePhaseFiveReleaseTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var requester = Promote(store, admin, "RelRollbackReq", "release-manager");
-            var reviewer = Promote(store, admin, "RelRollbackRev", "release-manager");
+            var requester = Promote(store, admin, "RelRollbackReq", "admin");
+            var reviewer = Promote(store, admin, "RelRollbackRev", "admin");
             var adapter = new FakeReleaseAdapter
             {
                 Artifacts =
@@ -293,8 +293,8 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             var requesterRegistration = store.Register("HttpReleaseRequester", "password-123");
             var reviewerRegistration = store.Register("HttpReleaseReviewer", "password-456");
             var playerRegistration = store.Register("HttpReleasePlayer", "password-789");
-            Assert.True(store.SetRole(admin.Account!, requesterRegistration.Account!.Id, "release-manager"));
-            Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "release-manager"));
+            Assert.True(store.SetRole(admin.Account!, requesterRegistration.Account!.Id, "admin"));
+            Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "admin"));
             var adapter = new FakeReleaseAdapter
             {
                 Artifacts =

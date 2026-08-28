@@ -12,23 +12,23 @@ GM 是诊断例外而不是生产管理员工具：仅沙盒创建者会话可�
 
 保留现有 bearer 会话作为过渡，迁移到可撤销、带 `sessionId`、过期时间、认证强度和权限版本的会话。密码、MFA、账户禁用、会话撤销、速率限制和登录/拒绝事件必须由服务端实施。
 
-建议角色为 player、support、editor、referee、organizer、release-manager、admin；角色只授予权限集合，不能由前端昵称或 localStorage 推导。高风险权限（角色变更、发布、赛事裁决、导出、运维）要最小权限、明确作用域和双人复核。`admin` 不是绕过正式对局规则的权限。
+平台长期身份固定为 `player` 与 `admin`，不能由前端昵称或 localStorage 推导。玩家创建赛事后在该赛事内临时成为主办者；裁判由主办者从已接受好友中指定，也只在该赛事内生效。账号身份/状态和赛事操作不要求另一人审批，但必须经过服务端权限/作用域校验、版本前置、幂等和审计。内容正式发布、生产发布、审计归档等可影响全站或外部系统的高风险动作继续保留复核。`admin` 不是绕过正式对局规则的权限。
 
 | 能力 | 最低权限 | 额外约束 |
 | --- | --- | --- |
-| 查/分派 Bug | support | 对局附件按最小披露裁剪 |
-| 内容草稿 | editor | key 白名单、预览环境 |
-| 内容发布 | editor + approver | 双人复核、批次与回滚点 |
-| 赛事裁决 | referee/organizer | 赛事作用域、理由与不可变审计 |
-| 账号角色 | admin | 不能移除最后一名 admin；双人复核 |
-| 发布/回滚 | release-manager | 仅已验证工件、变更单、干运行 |
+| 查/分派 Bug | admin | 对局附件按最小披露裁剪 |
+| 内容草稿 | admin | key 白名单、预览环境 |
+| 内容发布 | admin + 另一名 admin | 双人复核、批次与回滚点 |
+| 赛事裁决 | 本场 organizer/referee | 赛事作用域、理由与不可变审计；无需另一人审批 |
+| 账号身份/状态 | admin | 不能移除最后一名 admin；直接执行并审计 |
+| 发布/回滚 | admin + 另一名 admin | 仅已验证工件、变更单、干运行 |
 | 沙盒 GM | sandbox controller | 保持现有单房间/单会话服务端校验 |
 
 ## 3. AdminCommandBus
 
 新增内部服务层 `AdminCommandBus`；HTTP/后台 UI 仅负责把请求转为已验证命令。命令信封应至少包含：`commandId`、`idempotencyKey`、`type`、`actor`、`requestedAt`、`scope`、`reason`、`dryRun`、`expectedVersion` 与 typed payload。处理顺序：认证 → 权限/作用域 → 参数与状态前置条件 → 幂等去重 → 策略/审批 → 事务执行 → 领域事件与审计 outbox → 响应。
 
-命令需声明风险等级。低风险（保存草稿、Bug 评论）可单人执行；高风险（权限、发布、赛事判罚、导出、回滚）需审批状态机 `requested → approved/rejected → executed/failed/cancelled`。命令失败也写审计，dry-run 永不修改数据。
+命令需声明风险等级和执行策略。低风险（保存草稿、Bug 评论）直接执行；账号身份/状态与赛事动作按产品裁定也直接执行，但仍需幂等、版本前置、保护条件和审计。内容正式发布、生产发布、审计归档等跨全站或外部系统的高风险动作使用 `requested → approved/rejected → executed/failed/cancelled`。命令失败也写审计，dry-run 永不修改数据。
 
 ## 4. 审计与可观测性
 

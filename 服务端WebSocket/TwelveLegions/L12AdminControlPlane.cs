@@ -48,12 +48,14 @@ public enum L12Permission
     AdminCommandsRead,
     AdminApprovalsRead,
     AdminApprovalsReview,
+    AdminOperationsRead,
+    AdminOperationsWrite,
+    AdminRuntimeRead,
     TournamentsRead,
     TournamentsCreate,
     TournamentsRegister,
     TournamentsManage,
     TournamentRulingsWrite,
-    TournamentApprovalsReview,
     TournamentImportLegacy,
     ReleasesRead,
     ReleasesExecute,
@@ -87,12 +89,14 @@ public static class L12Authorization
             [L12Permission.AdminCommandsRead] = "admin.commands.read",
             [L12Permission.AdminApprovalsRead] = "admin.approvals.read",
             [L12Permission.AdminApprovalsReview] = "admin.approvals.review",
+            [L12Permission.AdminOperationsRead] = "admin.operations.read",
+            [L12Permission.AdminOperationsWrite] = "admin.operations.write",
+            [L12Permission.AdminRuntimeRead] = "admin.runtime.read",
             [L12Permission.TournamentsRead] = "tournaments.read",
             [L12Permission.TournamentsCreate] = "tournaments.create",
             [L12Permission.TournamentsRegister] = "tournaments.register",
             [L12Permission.TournamentsManage] = "tournaments.manage",
             [L12Permission.TournamentRulingsWrite] = "tournaments.rulings.write",
-            [L12Permission.TournamentApprovalsReview] = "tournaments.approvals.review",
             [L12Permission.TournamentImportLegacy] = "tournaments.import-legacy",
             [L12Permission.ReleasesRead] = "releases.read",
             [L12Permission.ReleasesExecute] = "releases.execute",
@@ -113,55 +117,15 @@ public static class L12Authorization
     [
         .. OwnSessionPermissions,
         L12Permission.TournamentsRead,
+        L12Permission.TournamentsCreate,
         L12Permission.TournamentsRegister,
+        L12Permission.TournamentImportLegacy,
     ];
 
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<L12Permission>> RolePermissions =
         new Dictionary<string, IReadOnlySet<L12Permission>>(StringComparer.OrdinalIgnoreCase)
         {
             ["player"] = Set(PlayerPermissions),
-            ["support"] = Set(PlayerPermissions.Concat(
-            [
-                L12Permission.AdminBugsRead,
-                L12Permission.AdminBugsWrite,
-                L12Permission.AdminCommandsRead,
-            ])),
-            ["editor"] = Set(PlayerPermissions.Concat(
-            [
-                L12Permission.AdminContentRead,
-                L12Permission.AdminContentDraft,
-                L12Permission.AdminContentPublish,
-                L12Permission.AdminContentRollback,
-                L12Permission.AdminEffectsRead,
-                L12Permission.AdminEffectsReview,
-                L12Permission.AdminCommandsRead,
-            ])),
-            ["referee"] = Set(PlayerPermissions.Concat(
-            [
-                L12Permission.TournamentsManage,
-                L12Permission.TournamentRulingsWrite,
-                L12Permission.TournamentApprovalsReview,
-            ])),
-            ["organizer"] = Set(PlayerPermissions.Concat(
-            [
-                L12Permission.TournamentsCreate,
-                L12Permission.TournamentsManage,
-                L12Permission.TournamentRulingsWrite,
-                L12Permission.TournamentApprovalsReview,
-                L12Permission.TournamentImportLegacy,
-            ])),
-            ["release-manager"] = Set(PlayerPermissions.Concat(
-            [
-                L12Permission.AdminContentRead,
-                L12Permission.AdminCommandsRead,
-                L12Permission.AdminApprovalsRead,
-                L12Permission.AdminApprovalsReview,
-                L12Permission.AdminSecurityRead,
-                L12Permission.ReleasesRead,
-                L12Permission.ReleasesExecute,
-                L12Permission.ReleaseApprovalsReview,
-                L12Permission.ReleaseRuntimeRead,
-            ])),
             ["admin"] = Set(Enum.GetValues<L12Permission>()),
         };
 
@@ -297,9 +261,11 @@ public sealed class L12AdminCommandBus
         L12Permission permission,
         Func<L12AdminCommandEnvelope<TPayload>, L12AdminCommandResult<T>> execute,
         Func<L12AdminCommandEnvelope<TPayload>, L12AdminCommandResult<T>>? dryRun = null,
-        L12AdminCommandRisk risk = L12AdminCommandRisk.Low)
+        L12AdminCommandRisk risk = L12AdminCommandRisk.Low,
+        Func<L12AccountView, bool>? scopedAuthorization = null)
     {
-        if (!L12Authorization.HasPermission(command.Actor, permission))
+        if (!(scopedAuthorization?.Invoke(command.Actor)
+              ?? L12Authorization.HasPermission(command.Actor, permission)))
         {
             _platform.RecordAuthorizationDenied(command.Actor, command.AuditContext,
                 L12Authorization.Key(permission), "permission-denied");

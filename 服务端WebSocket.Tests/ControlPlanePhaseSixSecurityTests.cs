@@ -19,7 +19,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
-    public async Task DisabledAccountRevokesOldTokensAndWebSocketAndRequiresTwoPeople()
+    public async Task DisabledAccountRevokesOldTokensAndWebSocketWithoutSecondApproval()
     {
         var root = TempRoot();
         var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
@@ -38,7 +38,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
             var target = store.Register("DisabledTarget", "password-789");
             var targetOther = store.Login("DisabledTarget", "password-789");
             var outsider = store.Register("SecurityOutsider", "password-000");
-            Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "release-manager"));
+            Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "admin"));
 
             var rooms = new L12RoomManager(catalog, recorder, store);
             server = new L12WebSocketServer(rooms, recorder, store, catalog);
@@ -97,7 +97,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 disabled = true,
                 reason = "unauthorized status change",
                 idempotencyKey = "security-status-outsider",
-                expectedVersion = store.Version,
+                expectedVersion = target.Account!.PermissionVersion,
                 dryRun = true,
             };
             using (var denied = Authorized(HttpMethod.Put,
@@ -113,7 +113,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 disabled = true,
                 reason = "root must stay recoverable",
                 idempotencyKey = "security-status-root",
-                expectedVersion = store.Version,
+                expectedVersion = admin.Account!.PermissionVersion,
                 dryRun = true,
             };
             using (var rootRequest = Authorized(HttpMethod.Put,
@@ -131,30 +131,18 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 disabled = true,
                 reason = "confirmed account compromise",
                 idempotencyKey = "security-status-disable",
-                expectedVersion = store.Version,
+                expectedVersion = store.Account(target.Account!.Id)!.PermissionVersion,
             };
-            string commandId;
             using (var disable = Authorized(HttpMethod.Put,
                        $"/api/admin/v1/accounts/{target.Account.Id}/status", admin.Token!,
                        "security-status-request", disableBody))
             using (var response = await client.SendAsync(disable))
             {
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-                commandId = (await response.Content.ReadFromJsonAsync<JsonElement>())
-                    .GetProperty("commandId").GetString()!;
-            }
-            Assert.NotNull(store.AuthenticateToken(target.Token));
-            Assert.NotNull(store.AuthenticateToken(targetOther.Token));
-
-            using (var selfReview = Authorized(HttpMethod.Post, $"/api/admin/approvals/{commandId}",
-                       admin.Token!, "security-status-self-review", new { decision = "approve" }))
-            using (var response = await client.SendAsync(selfReview))
-                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-            using (var review = Authorized(HttpMethod.Post, $"/api/admin/v1/approvals/{commandId}",
-                       reviewerRegistration.Token!, "security-status-review", new { decision = "approve" }))
-            using (var response = await client.SendAsync(review))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var operation = await response.Content.ReadFromJsonAsync<L12AccountStatusOperationView>();
+                Assert.True(operation!.Applied);
+                Assert.True(operation.Account.Disabled);
+            }
 
             Assert.True(store.Account(target.Account.Id)!.Disabled);
             Assert.Null(store.AuthenticateToken(target.Token));
@@ -168,23 +156,18 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 disabled = false,
                 reason = "security review completed",
                 idempotencyKey = "security-status-enable",
-                expectedVersion = store.Version,
+                expectedVersion = store.Account(target.Account.Id)!.PermissionVersion,
             };
-            string enableCommandId;
             using (var enable = Authorized(HttpMethod.Put,
                        $"/api/admin/accounts/{target.Account.Id}/status", admin.Token!,
                        "security-status-enable", enableBody))
             using (var response = await client.SendAsync(enable))
             {
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-                enableCommandId = (await response.Content.ReadFromJsonAsync<JsonElement>())
-                    .GetProperty("commandId").GetString()!;
-            }
-            using (var review = Authorized(HttpMethod.Post, $"/api/admin/approvals/{enableCommandId}",
-                       reviewerRegistration.Token!, "security-status-enable-review",
-                       new { decision = "approve" }))
-            using (var response = await client.SendAsync(review))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var operation = await response.Content.ReadFromJsonAsync<L12AccountStatusOperationView>();
+                Assert.True(operation!.Applied);
+                Assert.False(operation.Account.Disabled);
+            }
 
             Assert.False(store.Account(target.Account.Id)!.Disabled);
             Assert.Null(store.AuthenticateToken(target.Token));
@@ -333,7 +316,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
 
             var success = store.BootstrapSecondApprover(target.Account.Id, credential);
             Assert.True(success.Success, $"{success.Code}: {success.Message}");
-            Assert.Equal("release-manager", store.Account(target.Account.Id)!.Role);
+            Assert.Equal("admin", store.Account(target.Account.Id)!.Role);
             Assert.Null(store.AuthenticateToken(target.Token));
             Assert.DoesNotContain(credential, JsonSerializer.Serialize(store.AdminCommands(), JsonOptions));
 
@@ -352,7 +335,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 var admin = readyStore.Login("Admin", "L12master").Account!;
                 var existing = readyStore.Register("ExistingApprover", "password-789").Account!;
                 var candidate = readyStore.Register("BootstrapCandidate", "password-000").Account!;
-                Assert.True(readyStore.SetRole(admin, existing.Id, "release-manager"));
+                Assert.True(readyStore.SetRole(admin, existing.Id, "admin"));
                 Assert.Equal("second_approver_already_ready",
                     readyStore.BootstrapSecondApprover(candidate.Id, credential).Code);
             }
@@ -374,14 +357,17 @@ public sealed class ControlPlanePhaseSixSecurityTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var reviewer = Promote(store, admin, "AuditReviewer", "release-manager");
-            var target = store.Register("AuditFailTarget", "password-123").Account!;
+            var reviewer = Promote(store, admin, "AuditReviewer", "admin");
+            store.RecordAuthorizationDenied(null, new L12AdminAuditContext("audit-failure-source",
+                    "admin.audit.read", RequestMethod: "GET", RequestPath: "/api/admin/audit",
+                    Outcome: "denied", Reason: "authentication-required"),
+                "admin.audit.read", "authentication-required");
+            AgeIndependentAuditEvents(store.TransactionalStoragePath, DateTimeOffset.UtcNow.AddDays(-60));
+            var payload = store.CaptureAuditArchive(30);
 
             store.AuditAvailabilityProbeOverride = () => false;
-            var rejected = SubmitStatus(store, admin, target.Id, true, "audit unavailable",
-                "audit-fail-submit", store.Version);
+            var rejected = SubmitArchive(store, admin, payload, "audit-fail-submit", store.Version);
             Assert.Equal("audit_unavailable", rejected.Code);
-            Assert.False(store.Account(target.Id)!.Disabled);
             Assert.DoesNotContain(store.AdminCommands(), item => item.IdempotencyKey == "audit-fail-submit");
             var status = store.SecurityStatus(admin);
             Assert.False(status.HighRiskAuditAvailable);
@@ -390,18 +376,15 @@ public sealed class ControlPlanePhaseSixSecurityTests
             Assert.False(status.Mfa.SecretsPersisted);
 
             store.AuditAvailabilityProbeOverride = () => true;
-            var pending = SubmitStatus(store, admin, target.Id, true, "pending before outage",
-                "audit-fail-review", store.Version);
+            var pending = SubmitArchive(store, admin, payload, "audit-fail-review", store.Version);
             Assert.True(pending.Pending);
             store.AuditAvailabilityProbeOverride = () => false;
-            var reviewed = ReviewStatus(store, pending.Command!.Id, reviewer);
+            var reviewed = ReviewArchive(store, pending.Command!.Id, reviewer);
             Assert.Equal("audit_unavailable", reviewed.Code);
-            Assert.False(store.Account(target.Id)!.Disabled);
             Assert.Equal("requested", store.AdminApprovals().Single(item => item.CommandId == pending.Command.Id).Status);
 
             Assert.True(L12Authorization.HasPermission(reviewer, L12Permission.AdminSecurityRead));
-            Assert.False(L12Authorization.HasPermission(reviewer, L12Permission.AdminAuditArchive));
-            Assert.False(L12Authorization.HasPermission(target, L12Permission.AdminSecurityRead));
+            Assert.True(L12Authorization.HasPermission(reviewer, L12Permission.AdminAuditArchive));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -415,7 +398,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
         {
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
-            var reviewer = Promote(store, admin, "ArchiveReviewer", "release-manager");
+            var reviewer = Promote(store, admin, "ArchiveReviewer", "admin");
             store.RecordAuthorizationDenied(null, new L12AdminAuditContext("archive-old-event",
                     "admin.audit.read", RequestMethod: "GET", RequestPath: "/api/admin/audit",
                     Outcome: "denied", Reason: "authentication-required"),
@@ -499,39 +482,6 @@ public sealed class ControlPlanePhaseSixSecurityTests
         Assert.True(store.SetRole(admin, registered.Id, role));
         return store.Account(registered.Id)!;
     }
-
-    private static L12AdminCommandResult<L12AccountStatusOperationView> SubmitStatus(L12PlatformStore store,
-        L12AccountView actor, string accountId, bool disabled, string reason, string key, long expectedVersion,
-        bool dryRun = false)
-    {
-        var commandId = Guid.NewGuid().ToString("N");
-        var audit = new L12AdminAuditContext("status-" + key,
-            L12Authorization.Key(L12Permission.AdminAccountStatusWrite), commandId, key, expectedVersion,
-            dryRun, reason, "PUT", $"/api/admin/accounts/{accountId}/status");
-        var command = new L12AdminCommandEnvelope<L12AccountStatusCommandPayload>(commandId, key,
-            "account.status.set", actor, DateTimeOffset.UtcNow, $"account:{accountId}", reason,
-            dryRun, expectedVersion, new(accountId, disabled, reason), audit);
-        return new L12AdminCommandBus(store).Execute(command, L12Permission.AdminAccountStatusWrite,
-            current => L12AdminCommandResult<L12AccountStatusOperationView>.Ok(store.SetAccountDisabled(
-                current.Actor, current.Payload.AccountId, current.Payload.Disabled, current.Payload.Reason,
-                current.AuditContext, true)),
-            current => L12AdminCommandResult<L12AccountStatusOperationView>.Ok(store.SetAccountDisabled(
-                current.Actor, current.Payload.AccountId, current.Payload.Disabled, current.Payload.Reason,
-                current.AuditContext, false)), L12AdminCommandRisk.High);
-    }
-
-    private static L12AdminCommandResult<L12AdminCommandView> ReviewStatus(L12PlatformStore store,
-        string commandId, L12AccountView reviewer)
-        => new L12AdminCommandBus(store).Review(commandId, reviewer, new("approve", "security-reviewed"),
-            new L12AdminAuditContext("review-" + commandId,
-                L12Authorization.Key(L12Permission.AdminApprovalsReview), CommandId: commandId),
-            (view, requester, audit) =>
-            {
-                var payload = view.Payload.Deserialize<L12AccountStatusCommandPayload>(JsonOptions)!;
-                var operation = store.SetAccountDisabled(requester, payload.AccountId, payload.Disabled,
-                    payload.Reason, audit, true);
-                return JsonOk(operation);
-            });
 
     private static L12AdminCommandResult<L12AuditArchiveOperationView> SubmitArchive(L12PlatformStore store,
         L12AccountView actor, L12AuditArchiveCommandPayload payload, string key, long expectedVersion,

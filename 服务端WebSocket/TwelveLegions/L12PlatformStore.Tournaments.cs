@@ -446,7 +446,7 @@ public sealed partial class L12PlatformStore
         {
             var row = RequireTournament(tournamentId, expectedVersion);
             RequireOrganizer(actor, row);
-            var referees = NormalizeReferees(payload.RefereeAccountIds);
+            var referees = NormalizeReferees(row.OrganizerAccountId, payload.RefereeAccountIds);
             return Mutate(actor, row, "staff-set", tournamentId, context, apply,
                 working => working.RefereeAccountIds = [.. referees]);
         }
@@ -670,6 +670,15 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            if (type.StartsWith("account.", StringComparison.Ordinal))
+            {
+                const string prefix = "account:";
+                if (!scope.StartsWith(prefix, StringComparison.Ordinal)) return null;
+                var accountId = scope[prefix.Length..].Split('/', 2)[0];
+                return _data.Accounts.FirstOrDefault(row => row.Id == accountId)?.PermissionVersion;
+            }
+            if (type.StartsWith("operations.config.", StringComparison.Ordinal))
+                return _data.OperationsConfig?.Version ?? 1;
             if (type.StartsWith("release.", StringComparison.Ordinal))
             {
                 var environment = ReleaseEnvironmentFromScope(scope);
@@ -679,37 +688,6 @@ public sealed partial class L12PlatformStore
             var tournamentId = TournamentIdFromScope(scope);
             if (tournamentId is null) return Version;
             return _data.Tournaments.FirstOrDefault(row => row.Id == tournamentId)?.Version;
-        }
-    }
-
-    internal bool CanReviewTournamentCommand(L12AdminCommandView command, L12AccountView reviewer)
-    {
-        lock (_gate)
-        {
-            if (!command.Type.StartsWith("tournament.", StringComparison.Ordinal)) return true;
-            var tournamentId = TournamentIdFromScope(command.Scope);
-            if (tournamentId is null) return false;
-            var row = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId);
-            return row is not null && L12Authorization.HasPermission(reviewer, L12Permission.TournamentApprovalsReview)
-                && IsStaff(row, reviewer.Id);
-        }
-    }
-
-    public IReadOnlyList<L12AdminApprovalView> TournamentApprovals(L12AccountView reviewer, string tournamentId,
-        string? status = "requested")
-    {
-        lock (_gate)
-        {
-            var row = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId)
-                ?? throw new KeyNotFoundException("赛事不存在");
-            RequireStaff(reviewer, row, L12Permission.TournamentApprovalsReview);
-            var prefix = $"tournament:{tournamentId}";
-            var commandIds = _data.AdminCommands.Where(command => command.Scope == prefix
-                    || command.Scope.StartsWith(prefix + "/", StringComparison.Ordinal))
-                .Select(command => command.Id).ToHashSet(StringComparer.Ordinal);
-            return _data.AdminApprovals.Where(approval => commandIds.Contains(approval.CommandId)
-                    && (string.IsNullOrWhiteSpace(status) || approval.Status == status))
-                .OrderByDescending(approval => approval.RequestedAt).Select(ToView).ToArray();
         }
     }
 
@@ -743,7 +721,7 @@ public sealed partial class L12PlatformStore
             Code = UniqueTournamentCode(),
             Name = name,
             OrganizerAccountId = actor.Id,
-            RefereeAccountIds = [.. NormalizeReferees(payload.RefereeAccountIds ?? [])],
+            RefereeAccountIds = [.. NormalizeReferees(actor.Id, payload.RefereeAccountIds ?? [])],
             Format = format,
             Visibility = visibility,
             MaxPlayers = payload.MaxPlayers,
@@ -941,20 +919,37 @@ public sealed partial class L12PlatformStore
 
     private void RequireOrganizer(L12AccountView actor, TournamentRow tournament)
     {
-        EnsurePermission(actor, L12Permission.TournamentsManage);
+        RequireActiveTournament(tournament);
+        RequireActiveTournamentAccount(actor);
         if (tournament.OrganizerAccountId != actor.Id)
             throw new L12TournamentScopeException("仅赛事主办者可执行该操作");
     }
 
     private void RequireStaff(L12AccountView actor, TournamentRow tournament, L12Permission permission)
     {
-        EnsurePermission(actor, permission);
+        RequireActiveTournament(tournament);
+        RequireActiveTournamentAccount(actor);
         if (!IsStaff(tournament, actor.Id))
             throw new L12TournamentScopeException("账号不在该赛事工作人员作用域内");
     }
 
+    private void RequireActiveTournamentAccount(L12AccountView actor)
+    {
+        var account = AccountById(actor.Id);
+        if (account is null || account.Disabled)
+            throw new L12TournamentScopeException("赛事工作人员账号不存在或已禁用");
+    }
+
+    private static void RequireActiveTournament(TournamentRow tournament)
+    {
+        if (tournament.Status == "completed")
+            throw new L12TournamentScopeException("赛事已结束，主办者与裁判临时权限已经失效");
+    }
+
     private static bool IsStaff(TournamentRow row, string accountId)
-        => row.OrganizerAccountId == accountId || row.RefereeAccountIds.Contains(accountId, StringComparer.Ordinal);
+        => row.Status != "completed"
+           && (row.OrganizerAccountId == accountId
+               || row.RefereeAccountIds.Contains(accountId, StringComparer.Ordinal));
 
     private static void EnsurePermission(L12AccountView actor, L12Permission permission)
     {
@@ -962,7 +957,7 @@ public sealed partial class L12PlatformStore
             throw new L12TournamentScopeException("账号缺少赛事权限");
     }
 
-    private IReadOnlyList<string> NormalizeReferees(IEnumerable<string> ids)
+    private IReadOnlyList<string> NormalizeReferees(string organizerAccountId, IEnumerable<string> ids)
     {
         var result = ids.Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim())
             .Distinct(StringComparer.Ordinal).ToArray();
@@ -970,16 +965,18 @@ public sealed partial class L12PlatformStore
         foreach (var id in result)
         {
             var account = AccountById(id) ?? throw new ArgumentException($"裁判账号不存在：{id}");
-            if (!L12Authorization.HasPermission(account.Role, L12Permission.TournamentRulingsWrite))
-                throw new ArgumentException($"账号 {account.Username} 没有裁判权限");
+            if (account.Disabled) throw new ArgumentException($"裁判账号已禁用：{account.Username}");
+            if (id == organizerAccountId)
+                throw new ArgumentException("赛事主办者无需重复设置为裁判");
+            if (FindFriendRow(organizerAccountId, id)?.Status != "accepted")
+                throw new ArgumentException($"裁判必须是赛事主办者的好友：{account.Username}");
         }
         return result;
     }
 
     private IReadOnlyList<string> ResolveLegacyReferees(IReadOnlyList<string>? usernames)
         => (usernames ?? []).Select(AccountIdByUsername).Where(id => id is not null)
-            .Select(id => id!).Where(id => L12Authorization.HasPermission(AccountById(id)?.Role,
-                L12Permission.TournamentRulingsWrite)).Distinct(StringComparer.Ordinal).ToArray();
+            .Select(id => id!).Distinct(StringComparer.Ordinal).ToArray();
 
     private AccountRow? AccountById(string id) => _data.Accounts.FirstOrDefault(item => item.Id == id);
     private string? AccountIdByUsername(string? username) => string.IsNullOrWhiteSpace(username) ? null

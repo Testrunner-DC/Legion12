@@ -86,7 +86,7 @@ try {
     Write-Host "[L12 验证] 运行 L12 规则测试..."
     Invoke-External dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj" --configuration Release
     Write-Host "[L12 验证] 运行平台持久化测试..."
-    Invoke-External dotnet test ".\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj" --configuration Release --filter "FullyQualifiedName~PlatformStoreTests"
+    Invoke-External dotnet test ".\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj" --configuration Release --filter "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane"
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"

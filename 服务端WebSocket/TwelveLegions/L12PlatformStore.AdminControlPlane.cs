@@ -205,11 +205,23 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12AdminApprovalView> AdminApprovals(string? status = "requested", int limit = 200)
     {
-        lock (_gate) return _data.AdminApprovals
-            .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status)
-            .OrderByDescending(row => row.RequestedAt).Take(Math.Clamp(limit, 1, 1000))
-            .Select(ToView).ToArray();
+        lock (_gate)
+        {
+            var directCommandIds = _data.AdminCommands
+                .Where(command => IsDirectExecutionCommandType(command.Type))
+                .Select(command => command.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            return _data.AdminApprovals
+                .Where(row => !directCommandIds.Contains(row.CommandId))
+                .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status)
+                .OrderByDescending(row => row.RequestedAt).Take(Math.Clamp(limit, 1, 1000))
+                .Select(ToView).ToArray();
+        }
     }
+
+    private static bool IsDirectExecutionCommandType(string type)
+        => type.StartsWith("tournament.", StringComparison.Ordinal)
+           || type is "account.role.set" or "account.status.set";
 
     internal L12StoredAdminApproval? AdminApproval(string commandId)
     {

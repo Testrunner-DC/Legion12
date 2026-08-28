@@ -391,7 +391,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.SetTournamentStaff(current.Actor, current.Payload.TournamentId,
                     current.Payload.Staff, expected,
-                    current.AuditContext, apply), L12AdminCommandRisk.High);
+                    current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/start", (HttpRequest request, string id, TournamentActionRequest body) =>
@@ -404,7 +404,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 $"tournament:{id}", new TournamentTargetCommandPayload(id), key, expected, body.DryRun, body.Reason);
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.StartTournament(current.Actor, current.Payload.TournamentId, expected,
-                    current.AuditContext, apply), L12AdminCommandRisk.High);
+                    current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/rounds", (HttpRequest request, string id, TournamentActionRequest body) =>
@@ -418,7 +418,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 body.DryRun, body.Reason);
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.CreateNextRound(current.Actor, current.Payload.TournamentId, expected,
-                    current.AuditContext, apply), L12AdminCommandRisk.High);
+                    current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/rounds/{roundNumber:int}/check-in",
@@ -449,7 +449,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.StartTournamentRound(current.Actor, current.Payload.TournamentId,
                     current.Payload.RoundNumber, expected,
-                    current.AuditContext, apply), L12AdminCommandRisk.High);
+                    current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/rounds/{roundNumber:int}/pause",
@@ -497,7 +497,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.ApplyTournamentRuling(current.Actor, current.Payload.TournamentId,
                     current.Payload.MatchId, current.Payload.Ruling,
-                    expected, current.AuditContext, apply), L12AdminCommandRisk.High);
+                    expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPut("/api/tournaments/{id}/matches/{matchId}/reference",
@@ -523,7 +523,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.LinkTournamentMatch(current.Actor, current.Payload.TournamentId,
                     current.Payload.MatchId, current.Payload.Reference,
-                    expected, current.AuditContext, apply), L12AdminCommandRisk.High);
+                    expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/complete", (HttpRequest request, string id,
@@ -537,25 +537,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 $"tournament:{id}", new TournamentTargetCommandPayload(id), key, expected, body.DryRun, body.Reason);
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.CompleteTournament(current.Actor, current.Payload.TournamentId, expected,
-                    current.AuditContext, apply), L12AdminCommandRisk.High);
+                    current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
-        });
-        _app.MapGet("/api/tournaments/{id}/approvals", (HttpRequest request, string id, string? status) =>
-        {
-            const L12Permission permission = L12Permission.TournamentApprovalsReview;
-            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
-            try { return Results.Ok(_platform.TournamentApprovals(authenticated.Account, id, status ?? "requested")); }
-            catch (KeyNotFoundException error)
-            {
-                return ApiError(request, "tournament_not_found", error.Message, StatusCodes.Status404NotFound);
-            }
-            catch (L12TournamentScopeException error)
-            {
-                _platform.RecordAuthorizationDenied(authenticated.Account,
-                    AuditContext(request, permission) with { Outcome = "denied", Reason = "scope-denied" },
-                    L12Authorization.Key(permission), "scope-denied");
-                return ApiError(request, "scope_denied", error.Message, StatusCodes.Status403Forbidden);
-            }
         });
         _app.MapGet("/api/admin/releases/artifacts", (HttpRequest request) =>
         {
@@ -667,26 +650,36 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapPut("/api/admin/accounts/{id}/role", (HttpRequest request, string id, RoleRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminAccountRolesWrite;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
-            var payload = new RoleCommandPayload(id, body.Role?.Trim() ?? string.Empty);
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TrySecurityCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var idempotencyKey, out var expectedVersion, out failure))
+                return failure;
+            var payload = new RoleCommandPayload(id, body.Role?.Trim().ToLowerInvariant() ?? string.Empty);
             var command = CommandEnvelope(request, authenticated.Account, permission, "account.role.set", $"account:{id}", payload,
-                body.IdempotencyKey, body.ExpectedVersion, body.DryRun, body.Reason);
+                idempotencyKey, expectedVersion, body.DryRun, body.Reason);
             var outcome = _adminCommands.Execute(command, permission,
-                current => _platform.SetRole(current.Actor, current.Payload.AccountId, current.Payload.Role,
-                        current.AuditContext)
-                    ? L12AdminCommandResult<RoleCommandResult>.Ok(
-                        new RoleCommandResult(current.Payload.AccountId, current.Payload.Role, true), "账号角色已更新")
-                    : L12AdminCommandResult<RoleCommandResult>.Fail("invalid_role_change", "账号或角色无效",
-                        StatusCodes.Status400BadRequest),
                 current =>
                 {
-                    if (!_platform.AccountExists(current.Payload.AccountId)
-                        || !L12Authorization.IsKnownRole(current.Payload.Role))
+                    var before = _platform.Account(current.Payload.AccountId);
+                    if (!_platform.SetRole(current.Actor, current.Payload.AccountId, current.Payload.Role,
+                            current.AuditContext))
+                        return L12AdminCommandResult<RoleCommandResult>.Fail("invalid_role_change", "账号或角色无效",
+                            StatusCodes.Status400BadRequest);
+                    var updated = _platform.Account(current.Payload.AccountId)!;
+                    var changed = before is not null
+                        && !string.Equals(before.Role, updated.Role, StringComparison.OrdinalIgnoreCase);
+                    return L12AdminCommandResult<RoleCommandResult>.Ok(
+                        new RoleCommandResult(current.Payload.AccountId, updated.Role, changed),
+                        changed ? "账号角色已更新" : "账号角色没有变化");
+                },
+                current =>
+                {
+                    if (!_platform.CanSetRole(current.Payload.AccountId, current.Payload.Role))
                         return L12AdminCommandResult<RoleCommandResult>.Fail("invalid_role_change", "账号或角色无效",
                             StatusCodes.Status400BadRequest);
                     return L12AdminCommandResult<RoleCommandResult>.Ok(
                         new RoleCommandResult(current.Payload.AccountId, current.Payload.Role, false), "干运行验证通过");
-                }, L12AdminCommandRisk.High);
+                });
             return AdminCommandResponse(request, command, outcome);
         });
         _app.MapPut("/api/admin/accounts/{id}/status",
@@ -702,9 +695,87 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 $"account:{id}", payload, idempotencyKey, expectedVersion, body.DryRun, body.Reason);
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteAccountStatus(current.Actor, current.Payload, current.AuditContext, true),
-                current => ExecuteAccountStatus(current.Actor, current.Payload, current.AuditContext, false),
-                L12AdminCommandRisk.High);
+                current => ExecuteAccountStatus(current.Actor, current.Payload, current.AuditContext, false));
             return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapGet("/api/admin/operations/config", (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var result = _platform.OperationsConfig(authenticated.Account);
+            request.HttpContext.Response.Headers.ETag = $"\"{result.Version}\"";
+            return Results.Ok(result);
+        });
+        _app.MapGet("/api/admin/operations/config/history", (HttpRequest request, int? limit) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            return Results.Ok(_platform.OperationsConfigHistory(authenticated.Account, limit ?? 50));
+        });
+        _app.MapPost("/api/admin/operations/config/preview",
+            (HttpRequest request, OperationsConfigPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var result = _platform.PreviewOperationsConfig(authenticated.Account, body.Config,
+                    body.ExpectedVersion ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault()),
+                    AuditContext(request, permission) with { DryRun = true, Outcome = "dry-run" });
+                request.HttpContext.Response.Headers.ETag = $"\"{result.CurrentVersion}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapPut("/api/admin/operations/config", (HttpRequest request, OperationsConfigApplyRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "operations.config.apply",
+                "operations:config", body.Config, key, expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.ApplyOperationsConfig(current.Actor,
+                    current.Payload, expected, current.Reason, current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/operations/config/rollback",
+            (HttpRequest request, OperationsConfigRollbackRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12OperationsRollbackCommandPayload(body.VersionId?.Trim() ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "operations.config.rollback",
+                "operations:config", payload, key, expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.RollbackOperationsConfig(current.Actor,
+                    current.Payload.VersionId, expected, current.Reason, current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapGet("/api/admin/runtime/status", (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminRuntimeRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var observedAt = DateTimeOffset.UtcNow;
+            var rooms = _rooms.RuntimeStats();
+            var releases = _platform.ReleaseEnvironments(authenticated.Account, _releaseControl);
+            var status = new L12RuntimeStatusView(observedAt,
+                typeof(L12WebSocketServer).Assembly.GetName().Version?.ToString() ?? "unknown",
+                _cardCount, rooms.OnlineAccountCount, _sockets.Count, rooms.RoomCount,
+                rooms.ActiveGameCount, releases,
+                new L12RuntimeDependencyView("cdn", false, "unavailable",
+                    "no-authoritative-source", observedAt));
+            return Results.Ok(status);
         });
         _app.MapGet("/api/admin/accounts/{accountId}/sessions", (HttpRequest request, string accountId) =>
         {
@@ -954,15 +1025,18 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             (HttpRequest request, string commandId, L12AdminApprovalDecision body) =>
         {
             var stored = _platform.AdminCommand(commandId);
-            var permission = stored?.Type.StartsWith("tournament.", StringComparison.Ordinal) == true
-                ? L12Permission.TournamentApprovalsReview
-                : stored?.Type.StartsWith("release.", StringComparison.Ordinal) == true
+            if (stored?.Type.StartsWith("tournament.", StringComparison.Ordinal) == true)
+                return ApiError(request, "tournament_approval_disabled", "赛事操作不使用审批流程",
+                    StatusCodes.Status409Conflict);
+            if (stored?.Type is "account.role.set" or "account.status.set")
+                return ApiError(request, "account_approval_disabled", "账号权限和状态变更直接执行，不使用审批流程",
+                    StatusCodes.Status409Conflict);
+            var permission = stored?.Type.StartsWith("release.", StringComparison.Ordinal) == true
                     ? L12Permission.ReleaseApprovalsReview
                     : L12Permission.AdminApprovalsReview;
             if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
             Func<L12AdminCommandView, L12AccountView, bool>? scopeValidator = permission switch
             {
-                L12Permission.TournamentApprovalsReview => _platform.CanReviewTournamentCommand,
                 L12Permission.ReleaseApprovalsReview => L12PlatformStore.CanReviewReleaseCommand,
                 _ => null,
             };
@@ -1349,6 +1423,72 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         return true;
     }
 
+    private bool TryOperationsCommandOptions(HttpRequest request, L12AccountView actor,
+        L12Permission permission, string? bodyIdempotencyKey, long? bodyExpectedVersion,
+        out string idempotencyKey, out long expectedVersion, out IResult failure)
+    {
+        idempotencyKey = string.IsNullOrWhiteSpace(bodyIdempotencyKey)
+            ? request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim() ?? string.Empty
+            : bodyIdempotencyKey.Trim();
+        var expected = bodyExpectedVersion ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            _platform.RecordCommandOutcome(actor,
+                AuditContext(request, permission) with { Outcome = "rejected", Reason = "idempotency-key-required" },
+                "operations.precondition", request.Path, "idempotency-key-required");
+            expectedVersion = 0;
+            failure = ApiError(request, "idempotency_key_required", "运营配置写操作必须提供幂等键",
+                StatusCodes.Status400BadRequest);
+            return false;
+        }
+        if (expected is null)
+        {
+            _platform.RecordCommandOutcome(actor,
+                AuditContext(request, permission) with { Outcome = "rejected", Reason = "expected-version-required" },
+                "operations.precondition", request.Path, "expected-version-required");
+            expectedVersion = 0;
+            failure = ApiError(request, "expected_version_required",
+                "运营配置写操作必须提供 expectedVersion/If-Match", StatusCodes.Status428PreconditionRequired);
+            return false;
+        }
+        expectedVersion = expected.Value;
+        failure = Results.Empty;
+        return true;
+    }
+
+    private static L12AdminCommandResult<L12OperationsConfigOperationView> ExecuteOperationsConfig(
+        Func<L12OperationsConfigOperationView> operation)
+    {
+        try
+        {
+            return L12AdminCommandResult<L12OperationsConfigOperationView>.Ok(operation());
+        }
+        catch (L12OperationsConfigException error)
+        {
+            var status = error.Code switch
+            {
+                "operations_version_conflict" => StatusCodes.Status409Conflict,
+                "operations_version_not_found" => StatusCodes.Status404NotFound,
+                "permission_denied" => StatusCodes.Status403Forbidden,
+                _ => StatusCodes.Status400BadRequest,
+            };
+            return L12AdminCommandResult<L12OperationsConfigOperationView>.Fail(error.Code,
+                error.Message, status);
+        }
+    }
+
+    private static IResult OperationsConfigError(HttpRequest request, L12OperationsConfigException error)
+    {
+        var status = error.Code switch
+        {
+            "operations_version_conflict" => StatusCodes.Status409Conflict,
+            "operations_version_not_found" => StatusCodes.Status404NotFound,
+            "permission_denied" => StatusCodes.Status403Forbidden,
+            _ => StatusCodes.Status400BadRequest,
+        };
+        return ApiError(request, error.Code, error.Message, status);
+    }
+
     private L12AuditArchiveCommandPayload CaptureAuditArchiveForCommand(L12AccountView actor,
         string idempotencyKey, int? retentionDays)
     {
@@ -1400,6 +1540,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         Func<L12AdminCommandEnvelope<TPayload>, bool, T> operation,
         L12AdminCommandRisk risk = L12AdminCommandRisk.Low)
     {
+        Func<L12AccountView, bool>? scopedAuthorization = permission is L12Permission.TournamentsManage
+            or L12Permission.TournamentRulingsWrite
+            ? static (L12AccountView _) => true
+            : null;
         if (risk == L12AdminCommandRisk.High && !command.DryRun)
         {
             var validation = TournamentOperation(command.Actor, command.AuditContext, permission,
@@ -1410,7 +1554,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             current => TournamentOperation(current.Actor, current.AuditContext, permission,
                 () => operation(current, true)),
             current => TournamentOperation(current.Actor, current.AuditContext, permission,
-                () => operation(current, false)), risk);
+                () => operation(current, false)), risk, scopedAuthorization);
     }
 
     private L12AdminCommandResult<T> TournamentOperation<T>(L12AccountView actor, L12AdminAuditContext audit,
@@ -1995,6 +2139,13 @@ public sealed record RoleCommandPayload(string AccountId, string Role);
 public sealed record RoleCommandResult(string AccountId, string Role, bool Changed);
 public sealed record AccountStatusRequest(bool Disabled, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record OperationsConfigPreviewRequest(L12OperationsConfigPayload Config,
+    long? ExpectedVersion = null);
+public sealed record OperationsConfigApplyRequest(L12OperationsConfigPayload Config, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record OperationsConfigRollbackRequest(string? VersionId, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12OperationsRollbackCommandPayload(string VersionId);
 public sealed record AuditArchiveRequest(int? RetentionDays = null, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record SessionCommandPayload(string AccountId, string? SessionId);

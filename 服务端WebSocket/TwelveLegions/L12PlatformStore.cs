@@ -207,6 +207,8 @@ public sealed partial class L12PlatformStore
         public List<ReleaseRunRow> ReleaseRuns { get; set; } = [];
         public List<LoginThrottleRow> LoginThrottles { get; set; } = [];
         public SecurityStateRow Security { get; set; } = new();
+        public OperationsConfigRow? OperationsConfig { get; set; }
+        public List<OperationsConfigVersionRow> OperationsConfigHistory { get; set; } = [];
     }
 
     private static readonly string[] ForbiddenNames =
@@ -235,6 +237,7 @@ public sealed partial class L12PlatformStore
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();
         EnsureRootAdmin();
+        EnsureOperationsState();
     }
 
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)
@@ -532,11 +535,19 @@ public sealed partial class L12PlatformStore
 
     public bool SetRole(L12AccountView actor, string accountId, string role, L12AdminAuditContext? context = null)
     {
+        role = role.Trim().ToLowerInvariant();
         if (!L12Authorization.IsKnownRole(role)) return false;
         lock (_gate)
         {
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
-            if (row is null || string.Equals(row.Username, "Admin", StringComparison.Ordinal)) return false;
+            if (IsLastAdminDemotion(row, role))
+            {
+                AddAdminAudit(actor, "account", "role-denied", row!.Username, row.Role, role,
+                    "必须至少保留一个启用的管理员账号", context);
+                Save(false);
+                return false;
+            }
+            if (row is null || !CanSetRoleLocked(row, role)) return false;
             var previous = row.Role;
             row.Role = role;
             if (!string.Equals(previous, role, StringComparison.OrdinalIgnoreCase)) row.PermissionVersion++;
@@ -545,6 +556,29 @@ public sealed partial class L12PlatformStore
             return true;
         }
     }
+
+    public bool CanSetRole(string accountId, string role)
+    {
+        role = role.Trim().ToLowerInvariant();
+        if (!L12Authorization.IsKnownRole(role)) return false;
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
+            return CanSetRoleLocked(row, role);
+        }
+    }
+
+    private bool CanSetRoleLocked(AccountRow? row, string role)
+        => row is not null
+           && !string.Equals(row.Username, "Admin", StringComparison.Ordinal)
+           && !IsLastAdminDemotion(row, role);
+
+    private bool IsLastAdminDemotion(AccountRow? row, string role)
+        => row is not null
+           && string.Equals(row.Role, "admin", StringComparison.OrdinalIgnoreCase)
+           && !string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase)
+           && _data.Accounts.Count(item => !item.Disabled
+               && string.Equals(item.Role, "admin", StringComparison.OrdinalIgnoreCase)) <= 1;
 
     public IReadOnlyList<L12PublishedDeckView> PublishedDecks(string? viewerAccountId)
     {
@@ -859,6 +893,17 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            var changed = false;
+            foreach (var account in _data.Accounts)
+            {
+                var migratedRole = string.Equals(account.Role, "admin", StringComparison.OrdinalIgnoreCase)
+                    ? "admin"
+                    : "player";
+                if (string.Equals(account.Role, migratedRole, StringComparison.Ordinal)) continue;
+                account.Role = migratedRole;
+                account.PermissionVersion++;
+                changed = true;
+            }
             var configuredPassword = Environment.GetEnvironmentVariable("L12_ADMIN_PASSWORD");
             var row = _data.Accounts.FirstOrDefault(item => string.Equals(item.Username, "Admin", StringComparison.Ordinal));
             if (row is null)
@@ -869,8 +914,12 @@ public sealed partial class L12PlatformStore
             }
             else
             {
-                var changed = !string.Equals(row.Role, "admin", StringComparison.OrdinalIgnoreCase);
-                if (changed) row.Role = "admin";
+                if (!string.Equals(row.Role, "admin", StringComparison.OrdinalIgnoreCase))
+                {
+                    row.Role = "admin";
+                    row.PermissionVersion++;
+                    changed = true;
+                }
                 if (!string.IsNullOrWhiteSpace(configuredPassword) && !Verify(configuredPassword, row))
                 {
                     SetPassword(row, configuredPassword);

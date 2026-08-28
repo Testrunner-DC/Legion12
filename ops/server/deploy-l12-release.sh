@@ -9,6 +9,7 @@ readonly static_cards_dir="/opt/legion12-static/cards"
 readonly static_card_assets_dir="/opt/legion12-static/card-assets"
 readonly deployment_dir="/opt/legion12-deployment"
 readonly incoming_dir="${deployment_dir}/incoming"
+readonly runtime_backup_dir="${deployment_dir}/runtime-backups"
 readonly service_name="legion12-test.service"
 readonly public_host="legion-12.com"
 readonly public_base="https://${public_host}"
@@ -22,7 +23,7 @@ require_command() { command -v "$1" >/dev/null 2>&1 || fail "服务器缺少命�
 
 self_test() {
   test "$(id -u)" -eq 0 || fail "必须以 root 身份执行"
-  for command_name in flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown; do
+  for command_name in flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown sort; do
     require_command "$command_name"
   done
   test -e "$active_dir" || fail "当前部署入口不存在：${active_dir}"
@@ -174,30 +175,71 @@ previous_target=""
 legacy_dir=""
 service_stopped=0
 switched=0
+runtime_backup=""
+runtime_restore_dir=""
+failed_runtime_dir=""
 
 cleanup() {
   if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then rm -rf -- "$stage_dir"; fi
   if [[ -n "$stage_cards_dir" && -d "$stage_cards_dir" ]]; then rm -rf -- "$stage_cards_dir"; fi
   if [[ -n "$stage_card_assets_dir" && -d "$stage_card_assets_dir" ]]; then rm -rf -- "$stage_card_assets_dir"; fi
+  if [[ -n "$runtime_restore_dir" && -d "$runtime_restore_dir" ]]; then rm -rf -- "$runtime_restore_dir"; fi
   rm -f -- "$release_archive"
   if [[ "$cards_archive" != "-" ]]; then rm -f -- "$cards_archive"; fi
   if [[ "$card_assets_archive" != "-" ]]; then rm -f -- "$card_assets_archive"; fi
 }
 
+backup_runtime() {
+  mkdir -p "$runtime_backup_dir"
+  chmod 0700 "$runtime_backup_dir"
+  runtime_backup="${runtime_backup_dir}/runtime-before-${short_commit}-${timestamp}.tar.gz"
+  tar -czf "$runtime_backup" -C "$runtime_dir" .
+  chmod 0600 "$runtime_backup"
+  log "已创建持久化运行数据快照：${runtime_backup}"
+}
+
+restore_runtime_backup() {
+  [[ -n "$runtime_backup" && -f "$runtime_backup" ]] || fail "缺少可用于回滚的运行数据快照"
+  runtime_restore_dir="/opt/legion12-runtime-restore-${timestamp}"
+  failed_runtime_dir="/opt/legion12-runtime-failed-${timestamp}"
+  tar -tzf "$runtime_backup" >/dev/null || return 1
+  mkdir -p "$runtime_restore_dir" || return 1
+  tar --no-same-owner --no-same-permissions -xzf "$runtime_backup" -C "$runtime_restore_dir" || return 1
+  chown -R "${service_user}:${service_user}" "$runtime_restore_dir" || return 1
+  chmod 0750 "$runtime_restore_dir" || return 1
+  mv "$runtime_dir" "$failed_runtime_dir" || return 1
+  mv "$runtime_restore_dir" "$runtime_dir" || return 1
+  runtime_restore_dir=""
+}
+
+prune_runtime_backups() {
+  local rows=()
+  local index
+  mapfile -t rows < <(find "$runtime_backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%T@:%p\n' | sort -rn)
+  for ((index=5; index<${#rows[@]}; index+=1)); do
+    rm -f -- "${rows[$index]#*:}"
+  done
+}
+
 restore_previous() {
   local restore_link="/opt/.legion12-restore-${timestamp}"
-  ln -s "$previous_target" "$restore_link"
-  mv -Tf "$restore_link" "$active_dir"
+  ln -s "$previous_target" "$restore_link" || return 1
+  mv -Tf "$restore_link" "$active_dir" || return 1
 }
 
 rollback_on_error() {
   status=$?
   trap - ERR INT TERM
   if [[ "$switched" -eq 1 && -n "$previous_target" && -e "$previous_target" ]]; then
-    log "新版本验证失败，正在原子恢复上一版本"
+    log "新版本验证失败，正在恢复上一版本及对应运行数据"
     systemctl stop "$service_name" || true
-    restore_previous || true
-    systemctl start "$service_name" || true
+    if restore_runtime_backup && restore_previous && systemctl start "$service_name"; then
+      rm -rf -- "$failed_runtime_dir"
+      failed_runtime_dir=""
+      log "上一版本及运行数据已恢复"
+    else
+      log "自动回滚未完整成功；为保护数据，服务保持停止并保留现场目录"
+    fi
   elif [[ "$service_stopped" -eq 1 ]]; then
     systemctl start "$service_name" || true
   fi
@@ -304,6 +346,7 @@ if [[ ! -d "$runtime_dir" ]]; then
 fi
 chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
+backup_runtime
 ln -s "$runtime_dir" "${stage_dir}/publish/runtime"
 
 mkdir -p "/etc/systemd/system/${service_name}.d"
@@ -365,11 +408,14 @@ Legion12 香港测试服
 活动版本：${release_dir}
 上一版本：${previous_target}
 共享运行数据：${runtime_dir}
+部署前运行数据快照：${runtime_backup}
 共享卡图版本：${cards_hash}
 内容寻址优化卡图版本：${card_assets_hash}
 域名：${public_host}
 部署日期：$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
+
+prune_runtime_backups
 
 rm -f -- "$release_archive"
 if [[ "$cards_archive" != "-" ]]; then rm -f -- "$cards_archive"; fi

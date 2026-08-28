@@ -36,7 +36,7 @@ public sealed class L12PlatformStorageUnavailableException : IOException
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 2;
+    private const int PlatformStorageSchemaVersion = 3;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -446,9 +446,18 @@ public sealed partial class L12PlatformStore
                 created_utc TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_audit_archive_until ON audit_archive_segments(until_utc DESC);
-            INSERT INTO storage_meta(key,value) VALUES('schema_version','2')
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+            INSERT INTO storage_meta(key,value) VALUES('schema_version',$schema)
+            ON CONFLICT(key) DO UPDATE SET value=
+                CASE
+                    WHEN CAST(storage_meta.value AS INTEGER) < CAST(excluded.value AS INTEGER)
+                    THEN excluded.value
+                    ELSE storage_meta.value
+                END;
+            UPDATE platform_state
+            SET schema_version=$schema
+            WHERE singleton_id=1 AND schema_version < $schema;
             """;
+        command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
         command.ExecuteNonQuery();
     }
 

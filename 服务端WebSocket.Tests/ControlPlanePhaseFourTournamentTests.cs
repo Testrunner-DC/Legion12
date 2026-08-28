@@ -23,13 +23,14 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var referee = Promote(store, admin, "ScopeReferee", "referee");
             var outsider = Promote(store, admin, "ScopeOutsider", "referee");
             var player = store.Register("ScopePlayer", "password-123").Account!;
+            MakeFriends(store, organizer, referee);
 
             Assert.True(L12Authorization.HasPermission(player, L12Permission.TournamentsRegister));
-            Assert.False(L12Authorization.HasPermission(player, L12Permission.TournamentsCreate));
+            Assert.True(L12Authorization.HasPermission(player, L12Permission.TournamentsCreate));
             Assert.True(L12Authorization.HasPermission(organizer, L12Permission.TournamentsCreate));
-            Assert.True(L12Authorization.HasPermission(referee, L12Permission.TournamentRulingsWrite));
-            Assert.Throws<L12TournamentScopeException>(() => store.CreateTournament(player,
-                CreatePayload(), Context("player-create"), true));
+            Assert.False(L12Authorization.HasPermission(referee, L12Permission.TournamentRulingsWrite));
+            Assert.Equal("player", organizer.Role);
+            Assert.Equal("player", referee.Role);
 
             var tournament = store.CreateTournament(organizer, CreatePayload([referee.Id]),
                 Context("scope-create"), true);
@@ -88,7 +89,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
     }
 
     [Fact]
-    public void HighRiskTournamentCommandCannotSelfReviewOrEscapeTournamentScope()
+    public void TournamentStaffCommandExecutesDirectlyWithoutApproval()
     {
         var root = TempRoot();
         try
@@ -99,6 +100,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var reviewer = Promote(store, admin, "ApprovalReferee", "referee");
             var outsider = Promote(store, admin, "ApprovalOutsider", "referee");
             var player = store.Register("ApprovalPlayer", "password-123").Account!;
+            MakeFriends(store, organizer, reviewer);
             var tournament = store.CreateTournament(organizer, CreatePayload([reviewer.Id]),
                 Context("approval-create"), true);
             tournament = store.UpdateTournamentRegistration(organizer, tournament.Id,
@@ -117,43 +119,19 @@ public sealed class ControlPlanePhaseFourTournamentTests
                     current.Payload.TournamentId, tournament.Version, current.AuditContext, true)),
                 current => L12AdminCommandResult<L12TournamentView>.Ok(store.StartTournament(current.Actor,
                     current.Payload.TournamentId, tournament.Version, current.AuditContext, false)),
-                L12AdminCommandRisk.High);
+                L12AdminCommandRisk.Low, _ => true);
 
-            Assert.True(requested.Pending);
-            Assert.Equal("registration", store.Tournament(organizer, tournament.Id)!.Status);
-
-            var outsiderReview = bus.Review(command.CommandId, outsider, new("approve", "not scoped"),
-                Context("outsider-review") with { CommandId = command.CommandId }, ApprovedStart,
-                L12Permission.TournamentApprovalsReview, store.CanReviewTournamentCommand);
-            Assert.Equal("scope_denied", outsiderReview.Code);
-
-            var selfReview = bus.Review(command.CommandId, organizer, new("approve", "self"),
-                Context("self-review") with { CommandId = command.CommandId }, ApprovedStart,
-                L12Permission.TournamentApprovalsReview, store.CanReviewTournamentCommand);
-            Assert.Equal("self_review_forbidden", selfReview.Code);
-
-            var approved = bus.Review(command.CommandId, reviewer, new("approve", "pairing verified"),
-                Context("scoped-review") with { CommandId = command.CommandId }, ApprovedStart,
-                L12Permission.TournamentApprovalsReview, store.CanReviewTournamentCommand);
-
-            Assert.True(approved.Success, $"{approved.Code}: {approved.Message}; {approved.Command?.FailureReason}");
+            Assert.True(requested.Success, $"{requested.Code}: {requested.Message}");
+            Assert.False(requested.Pending);
+            Assert.Empty(store.AdminApprovals());
             var started = store.Tournament(organizer, tournament.Id)!;
             Assert.Equal("running", started.Status);
             Assert.Single(started.Rounds);
             Assert.Equal(2, started.Rounds[0].Matches.SelectMany(match =>
                 new[] { match.PlayerAAccountId, match.PlayerBAccountId }.Where(id => id is not null)).Distinct().Count());
-            Assert.Contains(store.AdminAudit("security"), item => item.Reason == "scope-denied");
-            Assert.Contains(store.AdminAudit("security"), item => item.Reason == "self-review-forbidden");
-
-            L12AdminCommandResult<JsonElement> ApprovedStart(L12AdminCommandView stored,
-                L12AccountView requester, L12AdminAuditContext audit)
-            {
-                var original = stored.Payload.Deserialize<TournamentTargetCommandPayload>(
-                    new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
-                var value = store.StartTournament(requester, original.TournamentId, stored.ExpectedVersion!.Value,
-                    audit, true);
-                return L12AdminCommandResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(value));
-            }
+            Assert.Throws<L12TournamentScopeException>(() => store.SetTournamentStaff(outsider,
+                tournament.Id, new L12TournamentStaffPayload([]), started.Version,
+                Context("outsider-scope"), true));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -217,6 +195,14 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var playerAfter = store.Tournament(player, tournament.Id)!;
             Assert.Equal("CODE-A", playerAfter.Participants.Single(item => item.AccountId == organizer.Id).Deck!.Code);
             Assert.All(playerAfter.Participants, item => Assert.NotNull(item.Deck!.LockedAt));
+            Assert.Throws<L12TournamentScopeException>(() => store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([]), tournament.Version, Context("archived-staff"), true));
+            Assert.Throws<L12TournamentScopeException>(() => store.ApplyTournamentRuling(organizer, tournament.Id,
+                finalMatch.Id, new L12TournamentRulingPayload("penalty", player.Id, "warning", "too late"),
+                tournament.Version, Context("archived-ruling"), true));
+            Assert.Throws<L12TournamentScopeException>(() => store.LinkTournamentMatch(organizer, tournament.Id,
+                finalMatch.Id, new L12TournamentMatchReferencePayload("late-match"), tournament.Version,
+                Context("archived-link"), true));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -287,7 +273,6 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
             var adminLogin = store.Login("Admin", "L12master");
             var organizerRegistration = store.Register("HttpTourOrganizer", "password-123");
-            Assert.True(store.SetRole(adminLogin.Account!, organizerRegistration.Account!.Id, "organizer"));
             var organizerLogin = store.Login("HttpTourOrganizer", "password-123");
             var player = store.Register("HttpTourPlayer", "password-123");
             var rooms = new L12RoomManager(catalog, recorder, store);
@@ -307,10 +292,12 @@ public sealed class ControlPlanePhaseFourTournamentTests
 
             var createBody = new TournamentCreateRequest(CreatePayload(), "http-tournament-create",
                 platformVersion, false, "contract test");
-            using (var denied = Authorized(HttpMethod.Post, "/api/tournaments", player.Token!, "tour-denied",
-                       createBody))
+            using (var denied = new HttpRequestMessage(HttpMethod.Post, "/api/tournaments")
+                   {
+                       Content = JsonContent.Create(createBody),
+                   })
             using (var response = await client.SendAsync(denied))
-                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+                Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
 
             L12TournamentView created;
             using (var create = Authorized(HttpMethod.Post, "/api/tournaments", organizerLogin.Token!,
@@ -365,8 +352,13 @@ public sealed class ControlPlanePhaseFourTournamentTests
     private static L12AccountView Promote(L12PlatformStore store, L12AccountView admin, string username, string role)
     {
         var account = store.Register(username, "password-123").Account!;
-        Assert.True(store.SetRole(admin, account.Id, role));
         return store.Account(account.Id)!;
+    }
+
+    private static void MakeFriends(L12PlatformStore store, L12AccountView first, L12AccountView second)
+    {
+        Assert.True(store.SendFriendRequest(first.Id, second.Id).Success);
+        Assert.True(store.ResolveFriendRequest(second.Id, first.Id, true).Success);
     }
 
     private static L12AdminAuditContext Context(string correlationId)

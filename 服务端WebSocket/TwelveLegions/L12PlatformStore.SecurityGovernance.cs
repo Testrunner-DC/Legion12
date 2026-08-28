@@ -113,6 +113,10 @@ public sealed partial class L12PlatformStore
                 throw new L12SecurityPolicyException("root_admin_protected", "根 Admin 账号不能被禁用或通过该入口改状态");
             if (row.Id == actor.Id)
                 throw new L12SecurityPolicyException("self_status_change_forbidden", "不能通过后台命令禁用或启用自己的账号");
+            if (disabled && string.Equals(row.Role, "admin", StringComparison.OrdinalIgnoreCase)
+                && _data.Accounts.Count(item => !item.Disabled
+                    && string.Equals(item.Role, "admin", StringComparison.OrdinalIgnoreCase)) <= 1)
+                throw new L12SecurityPolicyException("last_admin_protected", "不能禁用最后一个可用管理员账号");
 
             var alreadyApplied = row.Disabled == disabled;
             if (!apply || alreadyApplied)
@@ -190,7 +194,13 @@ public sealed partial class L12PlatformStore
             var activeApprovers = _data.Accounts.Count(item => !item.Disabled
                 && L12Authorization.HasPermission(item.Role, L12Permission.AdminApprovalsReview));
             var activeLocks = _data.LoginThrottles.Count(item => item.LockedUntil > now);
-            var pending = _data.AdminApprovals.Where(item => item.Status == "requested").ToArray();
+            var directCommandIds = _data.AdminCommands
+                .Where(command => IsDirectExecutionCommandType(command.Type))
+                .Select(command => command.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var pending = _data.AdminApprovals
+                .Where(item => item.Status == "requested" && !directCommandIds.Contains(item.CommandId))
+                .ToArray();
             var archiveSegments = AuditArchiveSegmentsInternalSafe();
             var auditAvailable = HighRiskAuditAvailable();
             var retentionDays = AuditRetentionDays();
@@ -270,7 +280,7 @@ public sealed partial class L12PlatformStore
                     "目标账号已经具有审批权限", StatusCodes.Status409Conflict);
 
             var previousRole = row.Role;
-            row.Role = "release-manager";
+            row.Role = "admin";
             row.PermissionVersion++;
             var now = DateTimeOffset.UtcNow;
             var sessions = _data.Sessions.Where(item => item.AccountId == row.Id

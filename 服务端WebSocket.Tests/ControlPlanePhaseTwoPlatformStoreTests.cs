@@ -24,7 +24,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var store = new L12PlatformStore(path);
             var supportRegistration = store.Register("PersistentSupport", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
-            Assert.True(store.SetRole(admin, supportRegistration.Account!.Id, "support"));
+            Assert.True(store.SetRole(admin, supportRegistration.Account!.Id, "admin"));
             var support = store.AuthenticateToken(supportRegistration.Token)!;
             var bug = store.AddBug(support, "持久幂等", "首次更新只能执行一次", "/test", null, null, "test");
             var expectedVersion = store.Version;
@@ -65,72 +65,41 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
     }
 
     [Fact]
-    public void HighRiskRoleChangeCannotSelfApproveAndExecutesOriginalPayloadAfterRestart()
+    public void RoleChangeExecutesDirectlyAndReplaysAfterRestart()
     {
         var root = TempRoot();
         var path = Path.Combine(root, "platform.json");
         try
         {
             var store = new L12PlatformStore(path);
-            var target = store.Register("ApprovalTarget", "password-123");
-            var reviewerRegistration = store.Register("ApprovalReviewer", "password-456");
+            var target = store.Register("ApprovalTarget", "password-123").Account!;
             var adminLogin = store.Login("Admin", "L12master");
-            Assert.True(store.SetRole(adminLogin.Account!, reviewerRegistration.Account!.Id, "release-manager"));
-            var expectedVersion = store.Version;
+            var expectedVersion = target.PermissionVersion;
             var commandId = Guid.NewGuid().ToString("N");
-            var command = RoleCommand(adminLogin.Account!, target.Account!.Id, "support", "role-approval-1",
+            var command = RoleCommand(adminLogin.Account!, target.Id, "admin", "role-direct-1",
                 expectedVersion, commandId);
             var bus = new L12AdminCommandBus(store);
-            var pending = bus.Execute<RoleCommandPayload, RoleCommandResult>(command,
+            var applied = bus.Execute<RoleCommandPayload, RoleCommandResult>(command,
                 L12Permission.AdminAccountRolesWrite,
-                _ => throw new InvalidOperationException("high-risk request executed before approval"),
-                risk: L12AdminCommandRisk.High);
+                current => store.SetRole(current.Actor, current.Payload.AccountId, current.Payload.Role,
+                        current.AuditContext)
+                    ? L12AdminCommandResult<RoleCommandResult>.Ok(
+                        new RoleCommandResult(current.Payload.AccountId, current.Payload.Role, true))
+                    : L12AdminCommandResult<RoleCommandResult>.Fail("invalid_role_change", "invalid", 400));
 
-            Assert.True(pending.Pending);
-            Assert.Equal(HttpStatusCode.Accepted, (HttpStatusCode)pending.StatusCode);
-            Assert.Equal("player", store.Account(target.Account.Id)!.Role);
-            Assert.Equal(expectedVersion, store.Version);
-
-            var selfReview = bus.Review(commandId, adminLogin.Account!,
-                new L12AdminApprovalDecision("approve", "self"),
-                new L12AdminAuditContext("self-review-1", RequestPath: "/api/admin/v1/approvals"),
-                (_, _, _) => throw new InvalidOperationException("self approval executed"));
-            Assert.False(selfReview.Success);
-            Assert.Equal("self_review_forbidden", selfReview.Code);
-            Assert.Contains(store.AdminAudit("security"), audit => audit.CommandId == commandId
-                && audit.Reason == "self-review-forbidden");
+            Assert.True(applied.Success);
+            Assert.False(applied.Pending);
+            Assert.Equal("admin", store.Account(target.Id)!.Role);
+            Assert.Empty(store.AdminApprovals());
 
             var reloaded = new L12PlatformStore(path);
-            Assert.Equal(expectedVersion, reloaded.Version);
-            var reviewer = reloaded.AuthenticateToken(reviewerRegistration.Token)!;
-            var approved = new L12AdminCommandBus(reloaded).Review(commandId, reviewer,
-                new L12AdminApprovalDecision("approve", "four-eyes"),
-                new L12AdminAuditContext("approve-after-restart-1", RequestPath: "/api/admin/v1/approvals"),
-                (stored, requester, audit) =>
-                {
-                    var payload = stored.Payload.Deserialize<RoleCommandPayload>(WebJson)!;
-                    var changed = reloaded.SetRole(requester, payload.AccountId, payload.Role, audit);
-                    return changed
-                        ? L12AdminCommandResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(
-                            new RoleCommandResult(payload.AccountId, payload.Role, true), WebJson))
-                        : L12AdminCommandResult<JsonElement>.Fail("invalid_role_change", "invalid", 400);
-                });
-
-            Assert.True(approved.Success);
-            Assert.Equal("executed", approved.Value!.Status);
-            Assert.Equal("support", reloaded.Account(target.Account.Id)!.Role);
-            var approval = Assert.Single(reloaded.AdminApprovals(null), item => item.CommandId == commandId);
-            Assert.Equal("approved", approval.Status);
-            Assert.Equal(reviewer.Id, approval.ReviewerId);
-
             var replayed = new L12AdminCommandBus(reloaded).Execute<RoleCommandPayload, RoleCommandResult>(
-                RoleCommand(reloaded.Account(adminLogin.Account!.Id)!, target.Account.Id, "support", "role-approval-1",
+                RoleCommand(reloaded.Account(adminLogin.Account!.Id)!, target.Id, "admin", "role-direct-1",
                     expectedVersion, Guid.NewGuid().ToString("N")), L12Permission.AdminAccountRolesWrite,
-                _ => throw new InvalidOperationException("approved replay executed again"),
-                risk: L12AdminCommandRisk.High);
+                _ => throw new InvalidOperationException("direct replay executed again"));
             Assert.True(replayed.Success);
             Assert.True(replayed.Replayed);
-            Assert.Equal("support", replayed.Value!.Role);
+            Assert.Equal("admin", replayed.Value!.Role);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -157,7 +126,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                 && audit.Permission == "admin.bugs.write" && audit.Outcome == "denied");
 
             var admin = store.Login("Admin", "L12master").Account!;
-            Assert.True(store.SetRole(admin, player.Id, "support"));
+            Assert.True(store.SetRole(admin, player.Id, "admin"));
             var support = store.Account(player.Id)!;
             var staleVersion = store.Version;
             store.AddBug(support, "并发变化", "使版本过期", "/test", null, null, "test");
@@ -182,7 +151,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var editorRegistration = store.Register("ContentEditor", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
-            Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "editor"));
+            Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "admin"));
             var editor = store.Account(editorRegistration.Account.Id)!;
             store.SetContent("home.headline", "old-headline");
             store.SetContent("rules.notice", "old-rules");
@@ -250,7 +219,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var store = new L12PlatformStore(path);
             var editorRegistration = store.Register("LegacyEditor", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
-            Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "editor"));
+            Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "admin"));
             var legacy = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
             foreach (var name in new[] { "BusinessVersion", "AdminCommands", "AdminApprovals", "ContentVersions", "ContentBatches" })
                 legacy.Remove(name);
@@ -307,9 +276,8 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var admin = store.Login("Admin", "L12master");
             var editorRegistration = store.Register("HttpPhaseTwoEditor", "password-123");
             var reviewerRegistration = store.Register("HttpPhaseTwoReviewer", "password-456");
-            Assert.True(store.SetRole(admin.Account!, editorRegistration.Account!.Id, "editor"));
-            Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "release-manager"));
-            var editor = store.AuthenticateToken(editorRegistration.Token)!;
+            Assert.True(store.SetRole(admin.Account!, editorRegistration.Account!.Id, "admin"));
+            Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "admin"));
 
             using (var draft = Authorized(HttpMethod.Put, "/api/admin/v1/content/home.headline/draft",
                        editorRegistration.Token!, "v1-draft-1", new { value = "approved-headline" },
@@ -330,26 +298,6 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             }
             Assert.NotEqual("approved-headline", store.GetContent("home.headline"));
             Assert.Equal(versionForPublish, store.Version);
-
-            string roleCommandId;
-            using (var role = Authorized(HttpMethod.Put,
-                       $"/api/admin/v1/accounts/{editor.Id}/role", admin.Token!, "v1-role-request-1",
-                       new { role = "support", idempotencyKey = "v1-role-idem-1", expectedVersion = store.Version }))
-            using (var response = await client.SendAsync(role))
-            {
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-                var document = await response.Content.ReadFromJsonAsync<JsonElement>();
-                roleCommandId = document.GetProperty("commandId").GetString()!;
-            }
-            using (var selfApproval = Authorized(HttpMethod.Post,
-                       $"/api/admin/v1/approvals/{roleCommandId}", admin.Token!, "v1-self-review-1",
-                       new { decision = "approve", reason = "must fail" }))
-            using (var response = await client.SendAsync(selfApproval))
-            {
-                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-                var error = await response.Content.ReadFromJsonAsync<L12ApiError>();
-                Assert.Equal("self_review_forbidden", error!.Code);
-            }
 
             using (var invalidApproval = Authorized(HttpMethod.Post,
                        $"/api/admin/v1/approvals/{publishCommandId}", reviewerRegistration.Token!,
@@ -451,8 +399,6 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                 Assert.Contains(audit!, item => item.CommandId == publishCommandId && item.Category == "content");
                 Assert.Contains(audit!, item => item.CommandId == publishCommandId && item.Category == "approval");
             }
-            Assert.Contains(store.AdminAudit("security"), item => item.CommandId == roleCommandId
-                && item.Reason == "self-review-forbidden" && item.CorrelationId == "v1-self-review-1");
         }
         finally
         {

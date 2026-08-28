@@ -184,7 +184,7 @@ public sealed class PlatformStoreTests
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
             var editor = store.Register("ContentEditor", "password-123").Account!;
-            Assert.True(store.SetRole(admin, editor.Id, "editor"));
+            Assert.True(store.SetRole(admin, editor.Id, "admin"));
 
             var draft = store.SaveContentDraft(admin, "home.hero.title", "新的首页标题");
             Assert.Equal("draft", draft.Status);

@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$script:paths = @()
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $originalLocation = Get-Location
@@ -41,6 +42,11 @@ function Test-AnyPath {
     return $false
 }
 
+function Get-GitChangedPathStatus {
+    & git '-c' 'core.quotepath=false' 'status' '--porcelain=v1' '--untracked-files=all'
+    if ($LASTEXITCODE -ne 0) { throw "Unable to read changed paths from Git" }
+}
+
 try {
     Set-Location $repoRoot
     $cacheInitializer = Join-Path $repoRoot "ops\windows\Initialize-L12BuildEnvironment.ps1"
@@ -53,10 +59,17 @@ try {
         $script:paths = @($ChangedPaths | ForEach-Object { $_.Replace("\", "/") } | Sort-Object -Unique)
     }
     else {
-        $unstaged = @(& git diff --name-only)
-        $staged = @(& git diff --cached --name-only)
-        $untracked = @(& git ls-files --others --exclude-standard)
-        $script:paths = @(($unstaged + $staged + $untracked) | Where-Object { $_ } | ForEach-Object { $_.Replace("\", "/") } | Sort-Object -Unique)
+        # 中文路径若沿用 Git 默认 quotepath，会被转义成八进制字符串，导致后端与
+        # 平台变更无法命中门禁规则。统一从 porcelain 状态读取已暂存、未暂存及
+        # 未跟踪文件，避免多次 Git 调用在 Windows PowerShell 5 下丢失前两次输出。
+        $script:paths = @()
+        foreach ($statusLine in @(Get-GitChangedPathStatus)) {
+            if (-not $statusLine -or $statusLine.Length -le 3) { continue }
+            $path = $statusLine.Substring(3)
+            if ($path.Contains(" -> ")) { $path = $path.Substring($path.LastIndexOf(" -> ") + 4) }
+            $script:paths += $path.Replace("\", "/")
+        }
+        $script:paths = @($script:paths | Sort-Object -Unique)
     }
     if ($LASTEXITCODE -ne 0) { throw "Unable to read changed paths from Git" }
 
@@ -76,7 +89,7 @@ try {
         if ($path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase) -and -not $path.StartsWith("TwelveLegions.Tests/", [StringComparison]::OrdinalIgnoreCase)) {
             $backendChanged = $true
         }
-        if ($path.EndsWith("GrandUMIServer.Tests.csproj", [StringComparison]::OrdinalIgnoreCase) -or $path.Contains("WebSocketBridge")) {
+        if ($path.EndsWith("GrandUMIServer.Tests.csproj", [StringComparison]::OrdinalIgnoreCase) -or $path.Contains("WebSocket.Tests/") -or $path.Contains("WebSocketBridge")) {
             $platformChanged = $true
         }
         if ($path.Contains("/TwelveLegions/") -and $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) {
@@ -113,7 +126,7 @@ try {
         }
         if ($platformChanged) {
             $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--filter", "FullyQualifiedName~PlatformStoreTests")
+            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
         }
         if ($frontendChanged) {
             Invoke-Checked "Frontend UI contracts" "npm.cmd" @("run", "check:ui-contracts") (Join-Path $repoRoot "opcgpro-vue")
@@ -126,7 +139,7 @@ try {
     }
     if ($platformChanged -or $Level -eq "Release") {
         $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests")
+        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
     }
     if ($cardEffectChanged) {
         Invoke-Checked "Atomic runtime zero-legacy audit" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\scripts\audit-l12-atomic-effects.ps1", "-RequireZero")

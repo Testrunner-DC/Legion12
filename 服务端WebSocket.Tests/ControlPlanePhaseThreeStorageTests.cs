@@ -41,13 +41,50 @@ public sealed class ControlPlanePhaseThreeStorageTests
             {
                 Assert.Equal("ok", Scalar(connection, "PRAGMA quick_check;"));
                 Assert.Equal("1", Scalar(connection, "SELECT COUNT(*) FROM platform_state;"));
-                Assert.Equal("2", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("3", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
             }
 
             var rehearsal = store.RehearseStorageRecovery();
             Assert.True(rehearsal.Success, rehearsal.Error);
             Assert.Equal(store.Version, rehearsal.BusinessVersion);
             Assert.DoesNotContain(Directory.EnumerateFiles(root), file => file.Contains(".rehearsal-"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void SchemaMarkersUpgradeWithoutLosingOperationsConfiguration()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var store = new L12PlatformStore(path);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var changed = initial.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "schema-upgrade-preserved", null, null),
+            };
+            var preview = store.PreviewOperationsConfig(admin, changed, initial.Version,
+                new L12AdminAuditContext("schema-upgrade-preview"));
+            var applied = store.ApplyOperationsConfig(admin, preview.Normalized, initial.Version,
+                "schema upgrade regression", new L12AdminAuditContext("schema-upgrade-apply"));
+            Assert.Equal("schema-upgrade-preserved", applied.Current.Config.Maintenance.Message);
+
+            using (var connection = OpenWritable(store.TransactionalStoragePath))
+            {
+                Execute(connection, "UPDATE storage_meta SET value='2' WHERE key='schema_version';");
+                Execute(connection, "UPDATE platform_state SET schema_version=2 WHERE singleton_id=1;");
+            }
+
+            var reloaded = new L12PlatformStore(path);
+            var reloadedAdmin = reloaded.Login("Admin", "L12master").Account!;
+            Assert.Equal("schema-upgrade-preserved",
+                reloaded.OperationsConfig(reloadedAdmin).Config.Maintenance.Message);
+            using var upgraded = Open(reloaded.TransactionalStoragePath);
+            Assert.Equal("3", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal("3", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -175,6 +212,25 @@ public sealed class ControlPlanePhaseThreeStorageTests
         }.ToString());
         connection.Open();
         return connection;
+    }
+
+    private static SqliteConnection OpenWritable(string path)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString());
+        connection.Open();
+        return connection;
+    }
+
+    private static void Execute(SqliteConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 
     private static string Scalar(SqliteConnection connection, string sql)

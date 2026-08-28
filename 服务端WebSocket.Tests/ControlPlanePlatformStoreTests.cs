@@ -16,23 +16,21 @@ public sealed class ControlPlanePlatformStoreTests
     public void PermissionMatrixUsesRolesWithoutScatteredRoleChecks()
     {
         var player = Account("player");
-        var support = Account("support");
-        var editor = Account("editor");
         var admin = Account("admin");
 
         Assert.True(L12Authorization.HasPermission(player, L12Permission.SessionsReadOwn));
         Assert.False(L12Authorization.HasPermission(player, L12Permission.AdminBugsRead));
-        Assert.True(L12Authorization.HasPermission(support, L12Permission.AdminBugsRead));
-        Assert.True(L12Authorization.HasPermission(support, L12Permission.AdminBugsWrite));
-        Assert.False(L12Authorization.HasPermission(support, L12Permission.AdminAccountsRead));
-        Assert.True(L12Authorization.HasPermission(editor, L12Permission.AdminContentPublish));
-        Assert.True(L12Authorization.HasPermission(editor, L12Permission.AdminEffectsReview));
-        Assert.False(L12Authorization.HasPermission(editor, L12Permission.AdminBugsWrite));
+        Assert.True(L12Authorization.HasPermission(player, L12Permission.TournamentsCreate));
+        Assert.False(L12Authorization.HasPermission(player, L12Permission.TournamentsManage));
+        Assert.False(L12Authorization.IsKnownRole("support"));
+        Assert.False(L12Authorization.IsKnownRole("editor"));
+        Assert.False(L12Authorization.IsKnownRole("referee"));
+        Assert.False(L12Authorization.IsKnownRole("organizer"));
+        Assert.False(L12Authorization.IsKnownRole("release-manager"));
         Assert.All(Enum.GetValues<L12Permission>(), permission =>
             Assert.True(L12Authorization.HasPermission(admin, permission)));
-        Assert.Contains("support", L12Authorization.Roles);
-        Assert.Contains("release-manager", L12Authorization.Roles);
-        Assert.Equal(L12Authorization.PermissionsForRole("editor"), editor.Permissions);
+        Assert.Equal(new[] { "admin", "player" }, L12Authorization.Roles);
+        Assert.Equal(L12Authorization.PermissionsForRole("player"), player.Permissions);
     }
 
     [Fact]
@@ -164,12 +162,12 @@ public sealed class ControlPlanePlatformStoreTests
             var writeContext = new L12AdminAuditContext("write-correlation-1",
                 L12Authorization.Key(L12Permission.AdminAccountRolesWrite), RequestMethod: "PUT",
                 RequestPath: $"/api/admin/accounts/{user.Id}/role");
-            Assert.True(store.SetRole(admin, user.Id, "support", writeContext));
+            Assert.True(store.SetRole(admin, user.Id, "admin", writeContext));
             var refreshed = store.AuthenticateToken(registered.Token);
             Assert.NotNull(refreshed);
-            Assert.Equal("support", refreshed!.Role);
+            Assert.Equal("admin", refreshed!.Role);
             Assert.True(L12Authorization.HasPermission(refreshed, L12Permission.AdminBugsRead));
-            Assert.False(L12Authorization.HasPermission(refreshed, L12Permission.AdminAccountsRead));
+            Assert.True(L12Authorization.HasPermission(refreshed, L12Permission.AdminAccountsRead));
             store.RecordAuthorizationDenied(user,
                 new L12AdminAuditContext("deny-correlation-1",
                     L12Authorization.Key(L12Permission.AdminAccountsRead), RequestMethod: "GET",
@@ -196,7 +194,7 @@ public sealed class ControlPlanePlatformStoreTests
             var target = store.Register("CommandTarget", "password-123").Account!;
             var admin = store.Login("Admin", "L12master").Account!;
             var bus = new L12AdminCommandBus(store);
-            var expectedVersion = store.Version;
+            var expectedVersion = target.PermissionVersion;
 
             L12AdminCommandEnvelope<RoleCommandPayload> Command(string role, string key, long version)
             {
@@ -217,10 +215,10 @@ public sealed class ControlPlanePlatformStoreTests
                             new RoleCommandResult(current.Payload.AccountId, current.Payload.Role, true))
                         : L12AdminCommandResult<RoleCommandResult>.Fail("invalid_role_change", "账号或角色无效", 400));
 
-            var first = Execute(Command("support", "role-command-1", expectedVersion));
-            var replay = Execute(Command("support", "role-command-1", expectedVersion));
-            var reused = Execute(Command("editor", "role-command-1", expectedVersion));
-            var stale = Execute(Command("editor", "role-command-2", expectedVersion));
+            var first = Execute(Command("admin", "role-command-1", expectedVersion));
+            var replay = Execute(Command("admin", "role-command-1", expectedVersion));
+            var reused = Execute(Command("player", "role-command-1", expectedVersion));
+            var stale = Execute(Command("player", "role-command-2", expectedVersion));
 
             Assert.True(first.Success);
             Assert.True(replay.Success);
@@ -229,7 +227,7 @@ public sealed class ControlPlanePlatformStoreTests
             Assert.Equal("idempotency_conflict", reused.Code);
             Assert.False(stale.Success);
             Assert.Equal("version_conflict", stale.Code);
-            Assert.Equal("support", store.Accounts().Single(account => account.Id == target.Id).Role);
+            Assert.Equal("admin", store.Accounts().Single(account => account.Id == target.Id).Role);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -336,10 +334,9 @@ public sealed class ControlPlanePlatformStoreTests
             }
 
             var admin = store.Login("Admin", "L12master");
-            Assert.True(store.SetRole(admin.Account!, owner.Account!.Id, "support"));
             using (var supportBugs = Authorized(HttpMethod.Get, "/api/admin/bugs", owner.Token!, "support-bugs-1"))
             using (var response = await client.SendAsync(supportBugs))
-                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
             using (var supportAccounts = Authorized(HttpMethod.Get, "/api/admin/accounts", owner.Token!,
                        "support-accounts-1"))
             using (var response = await client.SendAsync(supportAccounts))
@@ -352,9 +349,7 @@ public sealed class ControlPlanePlatformStoreTests
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.Null(store.AuthenticateToken(outsider.Token));
 
-            var editor = store.Register("HttpEditor", "password-789");
-            Assert.True(store.SetRole(admin.Account!, editor.Account!.Id, "editor"));
-            using (var write = Authorized(HttpMethod.Put, "/api/admin/content/home.headline/draft", editor.Token!,
+            using (var write = Authorized(HttpMethod.Put, "/api/admin/content/home.headline/draft", admin.Token!,
                        "write-http-1", new { value = "draft" }))
             using (var response = await client.SendAsync(write))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);

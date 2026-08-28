@@ -38,8 +38,8 @@ jobs:
       - name: L12 规则测试
         run: dotnet test ./TwelveLegions.Tests/TwelveLegions.Tests.csproj --configuration Release
 
-      - name: 平台持久化测试
-        run: dotnet test ./服务端WebSocket.Tests/GrandUMIServer.Tests.csproj --configuration Release --filter "FullyQualifiedName~PlatformStoreTests"
+      - name: 平台与控制面测试
+        run: dotnet test ./服务端WebSocket.Tests/GrandUMIServer.Tests.csproj --configuration Release --filter "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane"
 
       - name: 前端生产构建
         working-directory: opcgpro-vue
