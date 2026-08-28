@@ -28,6 +28,15 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0306" && player.UsedAbilities.Contains("s2-mimir-used"))
             return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
+        if (L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
+            && command.Target?.Type != "legion")
+        {
+            var targets = PublicLegions(State.Players[1 - playerIndex]).Select(target => target.InstanceId).ToArray();
+            return BeginPendingHandPlay(playerIndex, card, targets, "槲寄生符咒：选择对方1张军团");
+        }
+        if (L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
+            && DeclaredEnemyTarget(playerIndex, command.Target!.InstanceId) is null)
+            return CommandResult.Reject("槲寄生符咒的目标已不合法");
         if (IsS2PromotionCard(card)
             && command.Choice?.StartsWith("normal-entry", StringComparison.Ordinal) != true)
             return BeginS2PromotionEntry(playerIndex, card, command);
@@ -76,6 +85,7 @@ public sealed partial class L12GameEngine
                     "s2-mistletoe-rune-cost", data: new Dictionary<string, string>
                     {
                         ["cardInstanceId"] = card.InstanceId,
+                        ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
                         ["choiceMode"] = "resource-payment",
                         ["resourceKind"] = "rune",
                     });
@@ -206,7 +216,13 @@ public sealed partial class L12GameEngine
             if (trigger == "enter" && L12StructuredCardRules.RequiresPreStackEnterCost(card))
                 BeginYingzhengEnterActivation(playerIndex, card);
             else
-                PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果");
+            {
+                Dictionary<string, string>? declaredData = L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
+                    && command.Target is { Type: "legion" }
+                    ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
+                    : null;
+                PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果", data: declaredData);
+            }
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
         }
         else
@@ -442,6 +458,7 @@ public sealed partial class L12GameEngine
             AddEvent("counter-replaced", playerIndex, $"{old.Name} 被新的反击战术顶替并置入墓地", old);
         }
         card.Hidden = true;
+        card.OwnerIndex ??= playerIndex;
         card.SetRound = State.Round;
         card.SummonRound = State.Round;
         player.Field[1][slot] = card;
@@ -462,6 +479,7 @@ public sealed partial class L12GameEngine
             ["slot"] = command.Slot?.ToString() ?? string.Empty,
             ["baseChoice"] = command.Choice ?? "normal-cost",
             ["targetPlayerIndex"] = (command.TargetPlayerIndex ?? playerIndex).ToString(),
+            ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
         });
         return CommandResult.Ok();
     }

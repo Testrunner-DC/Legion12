@@ -411,8 +411,14 @@ public sealed class CombatTimelineRegressionTests
 
         var defenderAfterPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, defenderAfterPrompt.PlayerIndex);
+        Assert.Equal("pending-activation", defenderAfterPrompt.Continuation);
+        Assert.Contains("mode:all", defenderAfterPrompt.ValidChoices);
+        Assert.Contains(attacker.InstanceId, defenderAfterPrompt.ValidChoices);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == defenderAfter.InstanceId);
         Assert.Equal(L12CombatStage.DefenderAfterAttack, game.State.PendingDefense?.Stage);
         Assert.Equal(L12Phase.Defense, game.State.Phase);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: defenderAfterPrompt.PromptId,
+            Choice: attacker.InstanceId)).Accepted);
 
         for (var step = 0; step < 30 && game.State.PendingDefense is not null; step++)
         {
@@ -432,6 +438,46 @@ public sealed class CombatTimelineRegressionTests
         var attackerAfterIndex = stages.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
         var defenderAfterIndex = stages.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defenderAfter.InstanceId));
         Assert.True(attackerAfterIndex >= 0 && defenderAfterIndex > attackerAfterIndex);
+    }
+
+    [Fact]
+    public void SeppukuDeclaresItsEnemyLegionBeforeRevealDrawAndStackEntry()
+    {
+        var game = Create(82809);
+        ReadyForCombat(game);
+        var attacker = Card("S01-0101", "seppuku-attacker");
+        var victim = PlainLegion("seppuku-victim", 1000);
+        var seppuku = Card("S01-0420", "seppuku-counter");
+        seppuku.Hidden = true;
+        seppuku.SetRound = 0;
+        attacker.Troops = 5000;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = victim;
+        game.State.Players[1].Field[1][0] = seppuku;
+        for (var index = 0; index < 4; index++)
+            game.State.Players[0].Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"seppuku-morale-{index}", CardId = "S01-01C1", Tapped = false,
+            });
+        var handBefore = game.State.Players[1].Hand.Count;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", victim.InstanceId))).Accepted);
+        var attackerAfter = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerAfter.PromptId,
+            Choice: "no")).Accepted);
+
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Contains(attacker.InstanceId, declaration.ValidChoices);
+        Assert.True(seppuku.Hidden);
+        Assert.Equal(handBefore, game.State.Players[1].Hand.Count);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == seppuku.InstanceId);
+
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: attacker.InstanceId)).Accepted);
+        Assert.Equal(handBefore + 1, game.State.Players[1].Hand.Count);
+        Assert.Equal(-2, attacker.CostModifier);
     }
 
     [Fact]

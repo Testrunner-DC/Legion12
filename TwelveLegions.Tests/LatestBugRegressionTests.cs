@@ -83,6 +83,28 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void CoveredCardsExposeIdentityOnlyToTheirOwnerAcrossBattlefieldsAndSpectators()
+    {
+        var game = Create(64010);
+        var trojan = Card("S02-0523", "knowledge-trojan");
+        trojan.OwnerIndex = 1;
+        trojan.Hidden = true;
+        game.State.Players[0].Field[1][1] = trojan;
+
+        var owner = JsonSerializer.Serialize(game.SnapshotFor(1));
+        var controller = JsonSerializer.Serialize(game.SnapshotFor(0));
+        var spectator = JsonSerializer.Serialize(game.SnapshotForSpectator());
+
+        Assert.Contains(trojan.CardId, owner);
+        Assert.Contains("IdentityKnown", owner);
+        Assert.DoesNotContain(trojan.CardId, controller);
+        Assert.DoesNotContain(trojan.Name, controller);
+        Assert.Contains("\"cardType\":\"covered\"", controller);
+        Assert.DoesNotContain(trojan.CardId, spectator);
+        Assert.DoesNotContain(trojan.Name, spectator);
+    }
+
+    [Fact]
     public void SiegeCatapultExtendedRangeKeepsEnemyBackLineAndMasterTogether()
     {
         var game = Create(6415);
@@ -1530,6 +1552,7 @@ public sealed class LatestBugRegressionTests
         var entering = Card("S01-0114", "enter-response-source");
         var absoluteDefense = Card("S01-0016", "enter-response-defense");
         var ambush = Card("S01-0019", "enter-response-ambush");
+        var ambushTarget = Card("S01-0103", "enter-response-ambush-target");
         var discardCost = Card("S01-0003", "enter-response-discard");
         owner.Hand.Clear();
         owner.Morale.Clear();
@@ -1541,6 +1564,7 @@ public sealed class LatestBugRegressionTests
         ambush.Hidden = true;
         ambush.SetRound = 0;
         opponent.Field[1][0] = ambush;
+        opponent.Field[0][0] = ambushTarget;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
@@ -1552,6 +1576,14 @@ public sealed class LatestBugRegressionTests
         Assert.Contains(ambush.InstanceId, opponentResponse.ValidChoices);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: opponentResponse.PromptId,
             Choice: ambush.InstanceId)).Accepted);
+
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", targetPrompt.Continuation);
+        Assert.Contains(ambushTarget.InstanceId, targetPrompt.ValidChoices);
+        Assert.True(ambush.Hidden);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == ambush.InstanceId);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: ambushTarget.InstanceId)).Accepted);
 
         var ownerResponse = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(0, ownerResponse.PlayerIndex);

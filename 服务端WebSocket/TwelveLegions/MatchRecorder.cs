@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace TwelveLegions.Server;
 
@@ -212,8 +213,131 @@ public sealed class MatchRecorder : IAsyncDisposable
     public async Task<L12MatchDetail?> GetMatchForPlayerAsync(string matchId, string playerName)
     {
         var detail = await GetMatchAsync(matchId);
-        return detail is not null && (string.Equals(detail.Match.Player0, playerName, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(detail.Match.Player1, playerName, StringComparison.OrdinalIgnoreCase)) ? detail : null;
+        if (detail is null) return null;
+        var viewer = string.Equals(detail.Match.Player0, playerName, StringComparison.OrdinalIgnoreCase) ? 0
+            : string.Equals(detail.Match.Player1, playerName, StringComparison.OrdinalIgnoreCase) ? 1
+            : -1;
+        if (viewer < 0) return null;
+        var commands = detail.Commands.Select(command => command with
+        {
+            Command = SanitizeRecordedCommand(command.Command, command.PlayerIndex == viewer),
+            State = SanitizeRecordedState(command.State, viewer),
+        }).ToArray();
+        return new L12MatchDetail(detail.Match, commands, viewer);
+    }
+
+    private static JsonElement SanitizeRecordedCommand(JsonElement command, bool ownCommand)
+    {
+        if (ownCommand) return command;
+        var type = command.TryGetProperty("type", out var camel) ? camel.GetString()
+            : command.TryGetProperty("Type", out var pascal) ? pascal.GetString() : string.Empty;
+        return JsonSerializer.SerializeToElement(new { type });
+    }
+
+    private static JsonElement SanitizeRecordedState(JsonElement state, int viewer)
+    {
+        var root = JsonNode.Parse(state.GetRawText())?.AsObject();
+        if (root is null) return state;
+        var players = root["Players"] as JsonArray;
+        if (players is not null)
+        {
+            for (var playerIndex = 0; playerIndex < players.Count; playerIndex++)
+            {
+                if (players[playerIndex] is not JsonObject player) continue;
+                RedactCardArray(player["Library"] as JsonArray, "牌库");
+                if (playerIndex != viewer) RedactCardArray(player["Hand"] as JsonArray, "对方手牌");
+                RedactCoveredField(player["Field"] as JsonArray, playerIndex, viewer);
+                if (playerIndex != viewer && player["SpecialZones"] is JsonObject zones
+                    && zones["Trials"] is JsonArray trials)
+                {
+                    for (var index = 0; index < trials.Count; index++)
+                    {
+                        if (trials[index] is JsonObject trial && trial["TrialCompleted"]?.GetValue<bool>() != true)
+                            trials[index] = HiddenCard($"hidden-trial-{index}", "未揭示试炼");
+                    }
+                }
+            }
+        }
+        RedactCardArray(root["DisasterDeck"] as JsonArray, "天灾牌库");
+        RedactEffectHandAddStack(root["EffectStack"] as JsonArray, players, viewer);
+        RedactEffectHandAddStack(root["DeferredEffectStack"] as JsonArray, players, viewer);
+        if (root["AuthorityEvents"] is JsonArray authorityEvents)
+        {
+            foreach (var node in authorityEvents)
+            {
+                if (node is not JsonObject authority || authority["Type"]?.GetValue<string>() != "effect-hand-add") continue;
+                authority["SourceInstanceId"] = string.Empty;
+                authority["TargetInstanceId"] = string.Empty;
+            }
+        }
+        root["PendingPrompts"] = new JsonArray();
+        root["PendingActivations"] = new JsonArray();
+        return JsonSerializer.SerializeToElement(root);
+    }
+
+    private static void RedactCardArray(JsonArray? cards, string label)
+    {
+        if (cards is null) return;
+        for (var index = 0; index < cards.Count; index++)
+            cards[index] = HiddenCard($"hidden-{label}-{index}", label);
+    }
+
+    private static void RedactCoveredField(JsonArray? field, int controller, int viewer)
+    {
+        if (field is null) return;
+        foreach (var rowNode in field)
+        {
+            if (rowNode is not JsonArray row) continue;
+            for (var slot = 0; slot < row.Count; slot++)
+            {
+                if (row[slot] is not JsonObject card || card["Hidden"]?.GetValue<bool>() != true) continue;
+                var owner = card["OwnerIndex"] is JsonValue ownerValue && ownerValue.TryGetValue<int>(out var parsed)
+                    ? parsed : controller;
+                if (owner == viewer)
+                {
+                    card["IdentityKnown"] = true;
+                    continue;
+                }
+                var instanceId = card["InstanceId"]?.GetValue<string>() ?? $"hidden-field-{controller}-{slot}";
+                row[slot] = HiddenCard(instanceId, "覆盖的卡牌");
+            }
+        }
+    }
+
+    private static JsonObject HiddenCard(string instanceId, string label) => new()
+    {
+        ["InstanceId"] = instanceId,
+        ["CardId"] = "hidden-card",
+        ["Name"] = label,
+        ["CardType"] = "covered",
+        ["Faction"] = "hidden",
+        ["ImageUrl"] = "/assets/l12/card-back-official.png",
+        ["Cost"] = 0,
+        ["BaseTroops"] = 0,
+        ["Troops"] = 0,
+        ["DisasterLevel"] = 0,
+        ["Hidden"] = true,
+        ["IdentityKnown"] = false,
+        ["Tapped"] = false,
+        ["SummonRound"] = 0,
+    };
+
+    private static void RedactEffectHandAddStack(JsonArray? stack, JsonArray? players, int viewer)
+    {
+        if (stack is null) return;
+        foreach (var node in stack)
+        {
+            if (node is not JsonObject item || item["Data"] is not JsonObject data
+                || data["eventType"]?.GetValue<string>() != "effect-hand-add") continue;
+            item["SourceInstanceId"] = string.Empty;
+            item["SourceCardId"] = string.Empty;
+            item["SourceName"] = "加入手牌事件";
+            var controller = item["Controller"]?.GetValue<int>() ?? viewer;
+            var playerName = players?[controller]?["Name"]?.GetValue<string>() ?? "玩家";
+            item["Text"] = $"{playerName}因效果将1张牌加入手牌";
+            item["Targets"] = new JsonArray();
+            data["targetInstanceId"] = string.Empty;
+        }
     }
 
     private static bool TryProperty(JsonElement element, string pascal, string camel, out JsonElement value)
@@ -244,7 +368,8 @@ public sealed record L12RecordedCommand(
     long Sequence, string ReceivedUtc, int PlayerIndex, JsonElement Command, bool Accepted,
     string? Error, long Revision, string StateHash, JsonElement State);
 
-public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12RecordedCommand> Commands);
+public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12RecordedCommand> Commands,
+    int? ViewerPlayerIndex = null);
 
 public sealed record L12RankingMatch(
     string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,

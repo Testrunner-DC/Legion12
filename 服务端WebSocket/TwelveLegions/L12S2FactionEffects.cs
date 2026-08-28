@@ -596,7 +596,9 @@ public sealed partial class L12GameEngine
         }
         if (card.CardId == "S02-0622")
         {
-            PromptEnemyLegion(item, "s2-mistletoe-debuff", "选择对方1张军团，本回合兵力-6000", _ => true, false);
+            var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
+            if (target is not null) AddTimedModifier(target, -6000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+            FinishStackItem(item);
             return true;
         }
         if (card.CardId == "S02-0307")

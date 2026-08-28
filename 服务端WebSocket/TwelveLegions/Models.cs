@@ -143,6 +143,8 @@ public sealed class L12CardInstance
     public int CannotReadyByEffectUntilTurn { get; set; } = -1;
     public int DiscardAtEndOfTurnUntilTurn { get; set; } = -1;
     public bool Hidden { get; set; }
+    /// <summary>仅用于按观察者投影的快照；权威状态中的盖伏卡保持 false。</summary>
+    public bool IdentityKnown { get; set; }
     public bool Tapped { get; set; }
     public int SummonRound { get; set; }
     public int LastMovedTurn { get; set; } = -1;
@@ -371,6 +373,10 @@ public sealed class L12PendingActivation
     /// 目标与费用全部声明完成后，才会把对应候选压入堆叠。
     /// </summary>
     public string? TriggerCandidateId { get; init; }
+    /// <summary>非空时表示这是尚未支付费用、尚未入栈的手牌打出声明。</summary>
+    public string? PlayCardInstanceId { get; init; }
+    /// <summary>非空时表示这是尚未揭示、尚未入栈的响应卡目标声明。</summary>
+    public string? ResponseTargetStackItemId { get; init; }
 }
 
 public sealed class L12FreeMasterActivation

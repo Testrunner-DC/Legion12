@@ -198,6 +198,35 @@ public static class L12StructuredCardRules
     public static bool RequiresPreStackEnterCost(L12CardInstance card)
         => PreStackEnterCostCards.Contains(card.CardId);
 
+    public static bool RequiresPreStackHandPlayTarget(string cardId)
+        => cardId == "S02-0622";
+
+    public static bool RequiresReadySourceForActiveChoice(string cardId)
+        => cardId == "S01-0215";
+
+    public static bool RequiresOwnLegionResponseTarget(string cardId)
+        => cardId == "S01-0019";
+
+    public static string? PostAttackDeclarationKind(string cardId, string trigger)
+    {
+        if (trigger != "reaction") return null;
+        return cardId switch
+        {
+            "S01-0017" => "last-stand",
+            "S01-0420" => "seppuku",
+            _ => null,
+        };
+    }
+
+    public static bool CanOfferPostAttackReaction(string cardId, bool hasAnyOpponentLegion,
+        bool hasRestedOpponentLegion)
+        => cardId switch
+        {
+            "S01-0017" => hasRestedOpponentLegion,
+            "S01-0420" => hasAnyOpponentLegion,
+            _ => false,
+        };
+
     public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatRuleAbilities(string cardId)
     {
         var result = new List<L12StructuredAbilityTemplate>();
@@ -259,6 +288,7 @@ public static class L12StructuredCardRules
     {
         abilities = cardId switch
         {
+            "S01-0215" => AnkhSteleAbilities(),
             "S02-0501" => HeraclesPromotedAbilities(),
             "S02-0502" => HeraclesAbilities(),
             "S02-0503" => AchillesPromotedAbilities(),
@@ -292,6 +322,63 @@ public static class L12StructuredCardRules
         };
         return abilities.Count > 0;
     }
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> AnkhSteleAbilities() =>
+    [
+        new("enter", "triggered", "登场时 选择我方1张<陵墓守卫>，本回合兵力+2000。",
+        [
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张<陵墓守卫>", "target", new()
+            {
+                ["zone"] = "controller.field", ["filter"] = "card-id=S01-0212", ["min"] = "1", ["max"] = "1",
+            }),
+            new(L12AtomKinds.ModifyTroops, "所选军团兵力 +2000", "resolution", new()
+            {
+                ["operation"] = "add", ["value"] = "2000", ["selection"] = "declared-targets",
+            }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ], "confirmed", "user-20260829"),
+        new("active", "activated", "主动休整 选择 ABILITY 3 或 ABILITY 4。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且来源活跃", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.ready=true",
+            }),
+            new(L12AtomKinds.SelectMode, "选择一项效果", "target", new()
+            {
+                ["options"] = "S01-0215:ability:3|S01-0215:ability:4",
+            }),
+            new(L12AtomKinds.RestSource, "将安卡神碑转为休整", "cost", new()),
+        ], "confirmed", "user-20260829"),
+        new("mode-ready-guard", "granted-effect", "弃置1张手牌：选择我方1张休整的<陵墓守卫>转为活跃。",
+        [
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张休整的<陵墓守卫>", "target", new()
+            {
+                ["zone"] = "controller.field", ["filter"] = "card-id=S01-0212;state=rested", ["min"] = "1", ["max"] = "1",
+                ["runtimeAbility"] = "ankhReady",
+            }),
+            new(L12AtomKinds.Discard, "弃置 1 张手牌", "cost", new()
+            {
+                ["zone"] = "controller.hand", ["amount"] = "1", ["reason"] = "ability-cost",
+            }),
+            new(L12AtomKinds.Ready, "所选<陵墓守卫>转为活跃", "resolution", new()
+            {
+                ["selection"] = "declared-targets",
+            }),
+        ], "confirmed", "user-20260829"),
+        new("mode-rest-and-draw", "granted-effect", "将我方1张<陵墓守卫>转为休整：抽取1张牌。",
+        [
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张活跃的<陵墓守卫>", "target", new()
+            {
+                ["zone"] = "controller.field", ["filter"] = "card-id=S01-0212;state=ready", ["min"] = "1", ["max"] = "1",
+                ["runtimeAbility"] = "ankhDraw",
+            }),
+            new(L12AtomKinds.Rest, "所选<陵墓守卫>转为休整", "cost", new()
+            {
+                ["selection"] = "declared-targets",
+            }),
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+        ], "confirmed", "user-20260829"),
+    ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> WukongAbilities() => Assisted(
     [

@@ -383,6 +383,48 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
+    public void AnkhSteleAtomicDefinitionMatchesTheFourAuthoritativeAbilitiesWithoutTurnUsage()
+    {
+        var ankh = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0215"));
+        Assert.Equal(4, ankh.Abilities.Count);
+        Assert.All(ankh.Abilities, ability =>
+        {
+            Assert.Equal("confirmed", ability.ReviewStatus);
+            Assert.DoesNotContain(ability.Atoms, atom => atom.Parameters.Values.Any(value =>
+                value.Contains("once-per-turn", StringComparison.OrdinalIgnoreCase)));
+        });
+
+        var enter = ankh.Abilities[0];
+        Assert.Equal("enter", enter.Trigger);
+        Assert.True(enter.Atoms.ToList().FindIndex(atom => atom.Kind == L12AtomKinds.SelectTarget)
+            < enter.Atoms.ToList().FindIndex(atom => atom.Kind == L12AtomKinds.ModifyTroops));
+        Assert.Equal("2000", Assert.Single(enter.Atoms, atom => atom.Kind == L12AtomKinds.ModifyTroops).Parameters["value"]);
+        Assert.Equal("this-turn", Assert.Single(enter.Atoms, atom => atom.Kind == L12AtomKinds.Duration).Parameters["duration"]);
+
+        var activation = ankh.Abilities[1];
+        Assert.Equal("activated", activation.ExecutionModel);
+        Assert.Equal("controller.turn;source.ready=true",
+            Assert.Single(activation.Atoms, atom => atom.Kind == L12AtomKinds.Condition).Parameters["expression"]);
+        Assert.Contains(activation.Atoms, atom => atom.Kind == L12AtomKinds.SelectMode);
+        Assert.Contains(activation.Atoms, atom => atom.Kind == L12AtomKinds.RestSource && atom.Stage == "cost");
+
+        var ready = ankh.Abilities[2];
+        Assert.Equal("ankhReady", Assert.Single(ready.Atoms, atom => atom.Kind == L12AtomKinds.SelectTarget)
+            .Parameters["runtimeAbility"]);
+        Assert.True(ready.Atoms.ToList().FindIndex(atom => atom.Kind == L12AtomKinds.SelectTarget)
+            < ready.Atoms.ToList().FindIndex(atom => atom.Kind == L12AtomKinds.Discard));
+        Assert.Contains(ready.Atoms, atom => atom.Kind == L12AtomKinds.Ready);
+
+        var draw = ankh.Abilities[3];
+        Assert.Equal("ankhDraw", Assert.Single(draw.Atoms, atom => atom.Kind == L12AtomKinds.SelectTarget)
+            .Parameters["runtimeAbility"]);
+        Assert.True(draw.Atoms.ToList().FindIndex(atom => atom.Kind == L12AtomKinds.SelectTarget)
+            < draw.Atoms.ToList().FindIndex(atom => atom.Kind == L12AtomKinds.Rest));
+        Assert.Contains(draw.Atoms, atom => atom.Kind == L12AtomKinds.Draw
+            && atom.Parameters.GetValueOrDefault("amount") == "1");
+    }
+
+    [Fact]
     public void UserReviewedOlympusCardsExposeReviewMarkersAndRequestedAbilityBoundaries()
     {
         var assisted = new[] { "S02-0501", "S02-0503", "S02-0504", "S02-0505", "S02-0507", "S02-0508", "S02-0509", "S02-0510", "S02-0511", "S02-0512", "S02-0513", "S02-0514", "S02-0515", "S02-0516", "S02-0517", "S02-0518", "S02-0519", "S02-0520", "S02-0522", "S02-0523", "S02-05M1" };

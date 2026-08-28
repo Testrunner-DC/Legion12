@@ -164,7 +164,7 @@ public sealed partial class L12GameEngine
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
-                field = SnapshotField(player, revealCounters: true), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
+                field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
                 player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
             : new
@@ -175,7 +175,7 @@ public sealed partial class L12GameEngine
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, player.Morale,
-                field = SnapshotField(player, revealCounters: false), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
+                field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
                 removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
@@ -198,16 +198,15 @@ public sealed partial class L12GameEngine
         };
         var stack = State.EffectStack.Select(item =>
         {
-            var privateHandCard = item.Data.GetValueOrDefault("eventType") == "effect-hand-add"
-                && !spectator && item.Controller != viewer;
+            var privateHandCard = item.Data.GetValueOrDefault("eventType") == "effect-hand-add";
             return (object)new
             {
                 item.StackItemId, item.Controller,
                 SourceInstanceId = privateHandCard ? string.Empty : item.SourceInstanceId,
                 SourceCardId = privateHandCard ? string.Empty : item.SourceCardId,
-                SourceName = privateHandCard ? "加入手牌的牌" : item.SourceName,
+                SourceName = item.SourceName,
                 item.Trigger,
-                Text = privateHandCard ? $"{State.Players[item.Controller].Name}因效果将1张牌加入手牌" : item.Text,
+                Text = item.Text,
                 item.Negated, Targets = privateHandCard ? [] : item.Targets,
             };
         }).ToArray();
@@ -412,6 +411,9 @@ public sealed partial class L12GameEngine
         {
             if (view.TriggerOnly)
                 return view with { Enabled = false, DisabledReason = view.DisabledReason ?? "仅在符合触发时点时发动" };
+            if (L12StructuredCardRules.RequiresReadySourceForActiveChoice(cardId)
+                && player.Relic?.InstanceId == sourceInstanceId && player.Relic.Tapped)
+                return view with { Enabled = false, DisabledReason = "安卡神碑已经休整" };
             if (!CanAct(player.PlayerIndex))
                 return view with { Enabled = false, DisabledReason = "仅在我方主要阶段可以发动" };
             if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
@@ -460,31 +462,16 @@ public sealed partial class L12GameEngine
             return snapshot;
         }).ToArray();
 
-    private object?[][] SnapshotField(L12PlayerState player, bool revealCounters)
+    private object?[][] SnapshotField(L12PlayerState player, int viewer, bool revealAllHidden)
         => player.Field.Select((row, rowIndex) => row.Select(card =>
         {
             if (card is null) return null;
-            if (card.CardId == "S01-0415" && card.Hidden && !revealCounters)
-                return new
-                {
-                    card.InstanceId,
-                    cardId = "hidden-card",
-                    name = "覆盖的隐匿卡",
-                    cardType = "covered",
-                    faction = "hidden",
-                    imageUrl = "/assets/l12/card-back-official.png",
-                    effectText = (string?)null,
-                    cost = 0,
-                    baseTroops = 0,
-                    troops = 0,
-                    disasterLevel = 0,
-                    hidden = true,
-                    tapped = false,
-                    summonRound = card.SummonRound,
-                };
-            if (revealCounters || !card.Hidden)
+            var owner = card.OwnerIndex ?? player.PlayerIndex;
+            var identityKnown = !card.Hidden || revealAllHidden || viewer >= 0 && owner == viewer;
+            if (identityKnown)
             {
                 var snapshot = card.Clone();
+                snapshot.IdentityKnown = card.Hidden;
                 // Battlefield abilities must be rebuilt for every viewer snapshot.  The
                 // enabled state can depend on live trial/resource state and therefore
                 // cannot safely reuse the ability list captured when the card instance
@@ -498,7 +485,7 @@ public sealed partial class L12GameEngine
                 card.InstanceId,
                 cardId = "hidden-card",
                 name = "覆盖的卡牌",
-                cardType = card.CardType,
+                cardType = "covered",
                 faction = "hidden",
                 imageUrl = "/assets/l12/card-back-official.png",
                 effectText = (string?)null,
@@ -507,6 +494,7 @@ public sealed partial class L12GameEngine
                 troops = 0,
                 disasterLevel = 0,
                 hidden = true,
+                identityKnown = false,
                 tapped = false,
                 summonRound = card.SummonRound,
             };

@@ -1,6 +1,7 @@
 using TwelveLegions.Server;
 using Xunit;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 
 namespace TwelveLegions.Tests;
 
@@ -128,26 +129,124 @@ public sealed class ExtendedCardEffectsTests
         var discard = player.Library[0]; player.Library.RemoveAt(0); player.Hand.Add(discard);
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhReady")).Accepted);
+        var guardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", guardPrompt.Continuation);
+        Assert.Contains(guard.InstanceId, guardPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId, Choice: guard.InstanceId)).Accepted);
         var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", discardPrompt.Continuation);
+        Assert.Contains(discard.InstanceId, discardPrompt.ValidChoices);
+        Assert.False(ankh.Tapped);
+        Assert.Contains(discard, player.Hand);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == ankh.InstanceId);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId, Choice: discard.InstanceId)).Accepted);
         PassResponses(game);
-        var guardPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("ankh-ready-target", guardPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId, Choice: guard.InstanceId)).Accepted);
 
         Assert.True(ankh.Tapped);
         Assert.False(guard.Tapped);
         Assert.Contains(discard, player.Graveyard);
 
-        ankh.Tapped = false; guard.Tapped = false;
+        guard.Tapped = false;
+        var restedAttempt = game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhDraw"));
+        Assert.False(restedAttempt.Accepted);
+        Assert.Contains("休整", restedAttempt.Error);
+        Assert.Empty(game.State.PendingPrompts);
+
+        ankh.Tapped = false;
         var handBefore = player.Hand.Count;
-        Assert.True(game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhDraw")).Accepted);
+        var readiedAttempt = game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhDraw"));
+        Assert.True(readiedAttempt.Accepted, readiedAttempt.Error);
         var guardCostPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardCostPrompt.PromptId, Choice: guard.InstanceId)).Accepted);
+        Assert.Contains(guard.InstanceId, guardCostPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardCostPrompt.PromptId,
+            Choice: guard.InstanceId)).Accepted);
         PassResponses(game);
         Assert.True(ankh.Tapped);
         Assert.True(guard.Tapped);
         Assert.Equal(handBefore + 1, player.Hand.Count);
+    }
+
+    [Fact]
+    public void AnkhSteleEntryDeclaresATombGuardAndGrantsTwoThousandForThisTurn()
+    {
+        var game = Create(2, 3);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var ankh = TakeCard(player, "S01-0215");
+        var guard = Card("S01-0212", "ankh-entry-guard");
+        player.Field[0][0] = guard;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", ankh.InstanceId)).Accepted);
+        if (game.State.PendingPrompts.SingleOrDefault()?.Kind == "resource-payment")
+        {
+            var payment = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+                CardInstanceIds: player.Morale.Where(card => !card.Tapped).Take(ankh.Cost)
+                    .Select(card => card.InstanceId).ToList())).Accepted);
+        }
+        PassResponses(game);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("card-effect", target.Continuation);
+        Assert.Contains("安卡神碑", target.Text);
+        Assert.Contains(guard.InstanceId, target.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: guard.InstanceId)).Accepted);
+
+        Assert.Equal(guard.BaseTroops + 2000, guard.Troops);
+        var bonus = Assert.Single(guard.TimedModifiers, modifier => modifier.Source == "安卡神碑");
+        Assert.Equal(2000, bonus.TroopsDelta);
+        Assert.Equal(game.State.TurnSerial, bonus.ExpiresAfterTurn);
+    }
+
+    [Fact]
+    public void EffectDrawResponsePublishesOnlyPlayerCountAndOriginSource()
+    {
+        var game = new L12GameEngine(Catalog, "draw-privacy", "DRAWPRIVATE", 9021,
+            ["甲", "乙"], [2, 3], skipPreparation: true, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var ankh = Card("S01-0215", "draw-privacy-ankh");
+        player.Relic = ankh;
+        var guard = Card("S01-0212", "draw-privacy-guard");
+        player.Field[0][0] = guard;
+        var secret = Card("S01-0205", "draw-privacy-secret");
+        player.Library.Clear();
+        player.Library.Add(secret);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhDraw")).Accepted);
+        var guardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId,
+            Choice: guard.InstanceId)).Accepted);
+
+        while (game.State.EffectStack.LastOrDefault()?.Data.GetValueOrDefault("eventType") != "effect-hand-add"
+            && game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var prompt = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt",
+                PromptId: prompt.PromptId, Choice: "pass")).Accepted);
+        }
+
+        var authority = Assert.Single(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("eventType") == "effect-hand-add");
+        Assert.NotEqual(secret.InstanceId, authority.SourceInstanceId);
+        Assert.NotEqual(secret.CardId, authority.SourceCardId);
+        Assert.Equal(ankh.Name, authority.SourceName);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1), game.SnapshotForSpectator() })
+        {
+            var protocol = JsonSerializer.Serialize(new
+            {
+                snapshot.Prompts,
+                snapshot.EffectStack,
+                snapshot.LastAction,
+                snapshot.RecentEvents,
+            }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+            Assert.DoesNotContain(secret.InstanceId, protocol);
+            Assert.DoesNotContain(secret.CardId, protocol);
+            Assert.DoesNotContain(secret.Name, protocol);
+            Assert.Contains(ankh.Name, protocol);
+            Assert.Contains("1张牌", protocol);
+        }
+        Assert.DoesNotContain(game.State.Log, line => line.Contains(secret.Name, StringComparison.Ordinal));
     }
 
     [Fact]

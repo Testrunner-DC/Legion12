@@ -37,6 +37,7 @@ export interface Card {
   hasRangedNoLoss?: boolean
   cannotBeRanged?: boolean
   hidden?: boolean
+  identityKnown?: boolean
   currentCost?: number
   playCost?: number
   playBlockedReason?: string

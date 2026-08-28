@@ -35,6 +35,8 @@ public sealed partial class L12GameEngine
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
             return CommandResult.Reject("该圣物被〈神圣伽锁〉叠放，当前无法使用");
+        if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability)))
+            return CommandResult.Reject("该效果本回合已经发动");
 
         string[] choices;
         switch (ability)

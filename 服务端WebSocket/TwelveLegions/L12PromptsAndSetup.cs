@@ -465,7 +465,8 @@ public sealed partial class L12GameEngine
             case "s2-mistletoe-rune-cost":
             {
                 var result = PlayCard(prompt.PlayerIndex, new L12Command(
-                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Choice: $"runes:{chosen.Count}"));
+                    "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Choice: $"runes:{chosen.Count}",
+                    Target: new L12AttackTarget("legion", prompt.Data.GetValueOrDefault("targetInstanceId"))));
                 if (!result.Accepted) return result;
                 break;
             }
@@ -545,6 +546,8 @@ public sealed partial class L12GameEngine
             Slot: slot,
             Choice: baseChoice,
             CardInstanceIds: chosen,
+            Target: string.IsNullOrWhiteSpace(prompt.Data.GetValueOrDefault("targetInstanceId"))
+                ? null : new L12AttackTarget("legion", prompt.Data.GetValueOrDefault("targetInstanceId")),
             TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex) ? targetPlayerIndex : null));
     }
 
@@ -983,7 +986,15 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["responseId"] = response.InstanceId });
             return;
         }
-        if (response.CardId is "S01-0019" or "S01-0020" or "S01-0120" or "S01-0224")
+        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(response.CardId))
+        {
+            var targets = PublicLegions(player).Select(card => card.InstanceId).ToArray();
+            if (targets.Length == 0) { PassPriority(playerIndex); return; }
+            BeginPendingResponseActivation(playerIndex, response, prompt.StackItemId!, targets,
+                "伏击：预先选择我方1张军团，本回合兵力+2000");
+            return;
+        }
+        if (response.CardId is "S01-0020" or "S01-0120" or "S01-0224")
         {
             CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!);
             return;

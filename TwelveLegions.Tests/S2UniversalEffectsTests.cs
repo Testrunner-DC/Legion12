@@ -303,6 +303,9 @@ public sealed class S2UniversalEffectsTests
         var absoluteDefense = SetCounter(game, 0, "S01-0016", slot: 1);
         TakeCard(game, 0, "S01-0103");
         var secondAmbush = SetCounter(game, 1, "S01-0019");
+        var defenderLegion = Instance("S02-0006", "response-chain-defender");
+        defenderLegion.SummonRound = 0;
+        game.State.Players[1].Field[0][0] = defenderLegion;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
@@ -314,6 +317,11 @@ public sealed class S2UniversalEffectsTests
         Assert.Contains(secondAmbush.InstanceId, defenderResponse.ValidChoices);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: defenderResponse.PromptId,
             Choice: secondAmbush.InstanceId)).Accepted);
+
+        var declaredTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaredTarget.Continuation);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: declaredTarget.PromptId,
+            Choice: defenderLegion.InstanceId)).Accepted);
 
         var attackerResponse = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(0, attackerResponse.PlayerIndex);

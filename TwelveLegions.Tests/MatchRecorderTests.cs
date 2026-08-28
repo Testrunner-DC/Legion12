@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -6,6 +7,18 @@ namespace TwelveLegions.Tests;
 
 public sealed class MatchRecorderTests
 {
+    private static L12CardInstance Card(L12Catalog catalog, string id, string instanceId)
+    {
+        var definition = catalog.Cards[id];
+        return new L12CardInstance
+        {
+            InstanceId = instanceId, CardId = id, Name = definition.NameZh, CardType = definition.CardType,
+            Faction = definition.Faction, ImageUrl = definition.ImageUrl, Cost = definition.Cost ?? 0,
+            EffectText = definition.Effect, BaseTroops = definition.Troops ?? 0, Troops = definition.Troops ?? 0,
+            DisasterLevel = definition.DisasterLevel ?? 0,
+        };
+    }
+
     [Fact]
     public async Task PersistsAcceptedAndRejectedCommandsWithStateSnapshots()
     {
@@ -56,5 +69,49 @@ public sealed class MatchRecorderTests
         Assert.Equal(1, reader.GetInt32(1));
         Assert.True(reader.GetInt32(2) > 1000);
         Assert.Equal(64, reader.GetInt32(3));
+    }
+
+    [Fact]
+    public async Task PlayerReplayRedactsOpponentPrivateZonesAndUsesCoveredCardOwnershipKnowledge()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-tests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var game = new L12GameEngine(catalog, "private-replay", "PRIVATE", 78,
+            ["甲", "乙"], [0, 0], skipPreparation: true);
+        foreach (var player in game.State.Players)
+        {
+            player.Hand.Clear();
+            player.Library.Clear();
+        }
+        var firstSecret = Card(catalog, "S01-0103", "first-private-hand");
+        var secondSecret = Card(catalog, "S01-0205", "second-private-hand");
+        game.State.Players[0].Hand.Add(firstSecret);
+        game.State.Players[1].Hand.Add(secondSecret);
+        var trojan = Card(catalog, "S02-0523", "private-trojan");
+        trojan.OwnerIndex = 1;
+        trojan.Hidden = true;
+        game.State.Players[0].Field[1][1] = trojan;
+
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        await recorder.StartAsync(game.State);
+        await recorder.AppendAsync(game, 1, 0, "{\"type\":\"noop\",\"cardInstanceId\":\"first-private-hand\"}", CommandResult.Ok());
+
+        var firstView = Assert.IsType<L12MatchDetail>(await recorder.GetMatchForPlayerAsync("private-replay", "甲"));
+        var secondView = Assert.IsType<L12MatchDetail>(await recorder.GetMatchForPlayerAsync("private-replay", "乙"));
+        var firstJson = JsonSerializer.Serialize(firstView);
+        var secondJson = JsonSerializer.Serialize(secondView);
+
+        Assert.Equal(0, firstView.ViewerPlayerIndex);
+        Assert.Equal(1, secondView.ViewerPlayerIndex);
+        Assert.Contains(firstSecret.CardId, firstJson);
+        Assert.DoesNotContain(secondSecret.CardId, firstJson);
+        Assert.DoesNotContain(trojan.CardId, firstJson);
+        Assert.Contains("hidden-card", firstJson);
+        Assert.Contains(secondSecret.CardId, secondJson);
+        Assert.DoesNotContain(firstSecret.CardId, secondJson);
+        Assert.Contains(trojan.CardId, secondJson);
+        Assert.Contains("\"IdentityKnown\":true", secondJson);
     }
 }

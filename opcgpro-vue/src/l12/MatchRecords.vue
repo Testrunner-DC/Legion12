@@ -31,7 +31,7 @@ interface RecordedCommand {
   state: Record<string, any>
 }
 
-interface MatchDetail { match: MatchSummary; commands: RecordedCommand[] }
+interface MatchDetail { match: MatchSummary; commands: RecordedCommand[]; viewerPlayerIndex?: number | null }
 
 const matches = ref<MatchSummary[]>([])
 const detail = ref<MatchDetail | null>(null)
@@ -73,7 +73,8 @@ function replayCard(raw: any): Card | null {
     disasterLevel: value(raw, 'DisasterLevel', 'disasterLevel', 0), trialValue: value(raw, 'TrialValue', 'trialValue', 0),
     attachedCards: value<any[]>(raw, 'AttachedCards', 'attachedCards', []).map(replayCard).filter(Boolean) as Card[],
     tapped: value(raw, 'Tapped', 'tapped', false),
-    hidden: value(raw, 'Hidden', 'hidden', false), summonRound: value(raw, 'SummonRound', 'summonRound', 0),
+    hidden: value(raw, 'Hidden', 'hidden', false), identityKnown: value(raw, 'IdentityKnown', 'identityKnown', false),
+    summonRound: value(raw, 'SummonRound', 'summonRound', 0),
     hasCharge: value(raw, 'HasCharge', 'hasCharge', false), hasStrongAttack: value(raw, 'HasStrongAttack', 'hasStrongAttack', false),
     hasSureHit: value(raw, 'HasSureHit', 'hasSureHit', false), cannotAttack: value(raw, 'CannotAttack', 'cannotAttack', false),
     cannotSupport: value(raw, 'CannotSupport', 'cannotSupport', false), immortalUses: value(raw, 'ImmortalUses', 'immortalUses', 0),
@@ -119,7 +120,7 @@ const replayGame = computed<GameState | null>(() => {
   }))
   return {
     matchId: value(raw, 'MatchId', 'matchId', detail.value?.match.matchId ?? ''), roomCode: value(raw, 'RoomCode', 'roomCode', detail.value?.match.roomCode ?? ''),
-    you: 0, revision: currentCommand.value?.revision ?? 0, activePlayer: value(raw, 'ActivePlayer', 'activePlayer', 0),
+    you: detail.value?.viewerPlayerIndex ?? 0, revision: currentCommand.value?.revision ?? 0, activePlayer: value(raw, 'ActivePlayer', 'activePlayer', 0),
     firstPlayer: value(raw, 'FirstPlayer', 'firstPlayer', 0), diceWinner: value(raw, 'DiceWinner', 'diceWinner', 0),
     initiativeRolls: value(raw, 'InitiativeRolls', 'initiativeRolls', [0, 0]), phase: typeof rawPhase === 'number' ? phaseNames[rawPhase] ?? 'Main' : rawPhase,
     round: value(raw, 'Round', 'round', 1), disasterMode: value(raw, 'DisasterMode', 'disasterMode', 'all'),

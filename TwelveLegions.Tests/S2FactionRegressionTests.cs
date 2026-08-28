@@ -562,17 +562,25 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", targetPrompt.Continuation);
+        Assert.Contains(target.InstanceId, targetPrompt.ValidChoices);
+        Assert.Contains(tactic, player.Hand);
+        Assert.Equal(2, player.SpecialZones.Runes);
+        Assert.Equal(1, player.Morale.Count(card => !card.Tapped));
+        Assert.Empty(game.State.EffectStack);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
         var runePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-mistletoe-rune-cost", runePrompt.Continuation);
         Assert.Equal("resource-payment", runePrompt.Kind);
         Assert.Equal(["rune:1", "rune:2"], runePrompt.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
-            CardInstanceIds: ["rune:1", "rune:2"])).Accepted);
+        var runePayment = game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
+            CardInstanceIds: ["rune:1", "rune:2"]));
+        Assert.True(runePayment.Accepted, runePayment.Error);
+        if (game.State.EffectStack.Count > 0)
+            Assert.Equal(target.InstanceId, game.State.EffectStack[^1].Data["target"]);
         PassResponses(game);
-
-        var targetPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-mistletoe-debuff", targetPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId, Choice: target.InstanceId)).Accepted);
 
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Single(player.Morale, card => card.Tapped);

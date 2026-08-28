@@ -34,7 +34,7 @@ public sealed partial class L12GameEngine
     private static List<L12AbilityView> GetS1FactionAbilities(string cardId) => cardId switch
     {
         "S01-0214" => [new("cleopatraGuard", "主动休整 可消耗1士气：将墓地1张<陵墓守卫>活跃登场。")],
-        "S01-0215" => [new("ankhReady", "弃置1张手牌：选择我方1张休整的<陵墓守卫>转为活跃。"), new("ankhDraw", "将我方1张<陵墓守卫>转为休整：抽取1张牌。")],
+        "S01-0215" => GetAnkhSteleAbilityViews(),
         "S01-02C1" => [new("sunGuard", "我方 回合1次 可消耗2士气：将1张<陵墓守卫>从我方墓地活跃登场。"), new("sunDraw", "我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌。")],
         "S01-03C1" => [new("asgardDraw", "我方 回合1次 可消耗2士气：抽取1张牌。若我方主宰血量不高于5，可额外消耗1士气：我方主宰增加1点血量。")],
         "S01-0307" => [new("alvidaSummon", "我方回合 可弃置此军团：对我方主宰造成1点伤害，将手牌中1张天灾等级2的军团活跃登场。")],
@@ -61,6 +61,21 @@ public sealed partial class L12GameEngine
         "S01-04M1" => [new("amaterasuKill", "我方 回合1次 可消耗1士气：选择对方1张军团，本回合费用-1。随后击杀对方1张费用为0的军团。"), new("amaterasuReady", "我方 回合1次 可弃置1张手牌：将我方最多2张士气转为活跃。")],
         _ => [],
     };
+
+    private static List<L12AbilityView> GetAnkhSteleAbilityViews()
+    {
+        if (!L12StructuredCardRules.TryGetStructuredAbilities("S01-0215", out var abilities)) return [];
+        return abilities.Where(ability => ability.ExecutionModel == "granted-effect")
+            .Select(ability => new
+            {
+                Ability = ability,
+                RuntimeId = ability.Atoms.Select(atom => atom.Parameters.GetValueOrDefault("runtimeAbility"))
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+            })
+            .Where(entry => entry.RuntimeId is not null)
+            .Select(entry => new L12AbilityView(entry.RuntimeId!, $"主动休整 选择此效果：{entry.Ability.Text}"))
+            .ToList();
+    }
 
     private bool TryResolveS1FactionEnter(L12StackItem item, L12CardInstance card)
     {
@@ -603,6 +618,8 @@ public sealed partial class L12GameEngine
         string[] choices;
         switch (ability)
         {
+            case "ankhReady" or "ankhDraw" when source.CardId == "S01-0215" && source.Tapped:
+                return CommandResult.Reject("安卡神碑已经休整，需先因其他效果转为活跃");
             case "olgaDebuff":
                 choices = enemy.Field[0].Where(card => card is not null && IsFieldLegion(card) && !card.Hidden).Select(card => card!.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "奥尔加：选择对方前排 1 张军团");
@@ -621,11 +638,22 @@ public sealed partial class L12GameEngine
             case "ankhReady":
                 if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
                     return CommandResult.Reject("需要我方存在休整的陵墓守卫");
-                choices = player.Hand.Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神杯：选择弃置的1张手牌");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "active-target", Text = "安卡神碑：选择我方1张休整的陵墓守卫",
+                        ValidChoices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && card.Tapped).Select(card => card.InstanceId).ToList(),
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "card", Text = "安卡神碑：选择弃置的1张手牌",
+                        ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(),
+                    },
+                ]);
             case "ankhDraw":
                 choices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神杯：选择转为休整的陵墓守卫");
+                return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神碑：选择转为休整的陵墓守卫");
             case "gramDamage":
                 choices = player.Graveyard.Where(card => card.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).ToArray();
@@ -731,14 +759,20 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("目标不再合法");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "ankhReady" when source.CardId == "S01-0215":
-                if (source.Tapped) return CommandResult.Reject("安卡神杯必须为活跃状态");
-                if (string.IsNullOrWhiteSpace(target) || !player.Hand.Any(card => card.InstanceId == target)) return CommandResult.Reject("弃置的手牌不再合法");
-                if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped)) return CommandResult.Reject("需要我方存在休整的陵墓守卫");
-                source.Tapped = true; MoveHandToGrave(player, target, causedByEffect: false); break;
+            {
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var guard = declared.Length == 2 ? PublicLegions(player).FirstOrDefault(card => card.InstanceId == declared[0]
+                    && card.CardId == "S01-0212" && card.Tapped) : null;
+                var discard = declared.Length == 2 ? player.Hand.FirstOrDefault(card => card.InstanceId == declared[1]) : null;
+                if (source.Tapped || guard is null || discard is null) return CommandResult.Reject("安卡神碑的目标或弃牌费用已不合法");
+                source.Tapped = true;
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
+                break;
+            }
             case "ankhDraw" when source.CardId == "S01-0215":
             {
                 var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == target && card.CardId == "S01-0212" && !card.Tapped);
-                if (source.Tapped || guard is null) return CommandResult.Reject("需要活跃的安卡神杯与陵墓守卫");
+                if (source.Tapped || guard is null) return CommandResult.Reject("需要活跃的安卡神碑与陵墓守卫");
                 source.Tapped = true; guard.Tapped = true; break;
             }
             case "gramDamage" when source.CardId == "S01-0317":
@@ -857,7 +891,14 @@ public sealed partial class L12GameEngine
             case "mengpoMorale": PromptDiscard(item, item.Controller, 1, "孟婆：弃置1张手牌", "mengpo-discard"); return true;
             case "sunTopThree": BeginFactionTopSearch(item, 3, "taiyangcheng", string.Empty, "sun-divinity"); return true;
             case "sunBottomEnemy": ReturnEnemyFieldToLibraryBottom(item.Controller, item.Data.GetValueOrDefault("target") ?? string.Empty); FinishStackItem(item); return true;
-            case "ankhReady": PromptOwnLegion(item, "ankh-ready-target", "安卡神杯：选择我方1张休整的陵墓守卫转为活跃", card => card.CardId == "S01-0212" && card.Tapped, false); return true;
+            case "ankhReady":
+            {
+                var guardId = item.Data.GetValueOrDefault("target", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == guardId && card.CardId == "S01-0212" && card.Tapped);
+                if (guard is not null) ReadyCardByEffect(item.Controller, source ?? guard, guard, $"{guard.Name}因安卡神碑转为活跃");
+                FinishStackItem(item);
+                return true;
+            }
             case "ankhDraw": Draw(player, 1); FinishStackItem(item); return true;
             case "gramDamage": DamageMasterNonLethal(1 - item.Controller, 1, "神剑格拉墨"); FinishStackItem(item); return true;
             case "isisCanopic":

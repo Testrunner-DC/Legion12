@@ -1063,18 +1063,21 @@ public sealed partial class L12GameEngine
         if (top.Controller == playerIndex) return false;
         var timing = ResponseTimingContext(top);
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
+        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId))
+            return PublicLegions(State.Players[playerIndex]).Any()
+                && (timing.Trigger == "opponent-attack"
+                    ? playerIndex == defendingPlayer
+                    : timing.Trigger is "enter" or "play" or "active" or "disaster");
         return cardId switch
         {
-            "S01-0019" => timing.Trigger == "opponent-attack"
-                ? playerIndex == defendingPlayer
-                : timing.Trigger is "enter" or "play" or "active" or "disaster",
             "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,
             "S01-0224" => FindSource(top)?.CardType is "tactic" or "artifact",
             _ => false,
         };
     }
 
-    private void CommitS1ReactionResponse(int playerIndex, L12CardInstance response, string targetStackId)
+    private void CommitS1ReactionResponse(int playerIndex, L12CardInstance response, string targetStackId,
+        string? declaredTarget = null)
     {
         var player = State.Players[playerIndex];
         if (FindOnField(player, response.InstanceId, out var row, out var slot) is not null) player.Field[row][slot] = null;
@@ -1087,6 +1090,7 @@ public sealed partial class L12GameEngine
             Trigger = "reaction", Text = "反击战术效果",
         };
         item.Targets.Add(targetStackId);
+        if (!string.IsNullOrWhiteSpace(declaredTarget)) item.Data["target"] = declaredTarget;
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
@@ -1107,10 +1111,9 @@ public sealed partial class L12GameEngine
         {
             case "伏击":
             {
-                var choices = PublicLegions(player).Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "target", "伏击：选择我方1张军团，本回合兵力+2000", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ambush-buff" });
+                var target = PublicLegions(player).FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target"));
+                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                FinishStackItem(item);
                 return;
             }
             case "战斗至黎明":
@@ -1123,12 +1126,28 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "empty-city-block" });
                 return;
             case "拼死反抗":
-                CreatePrompt(item.Controller, "option", "拼死反抗：选择1张休整军团-2000，或所有休整军团-1000", ["single", "all"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "last-stand-mode" });
+            {
+                var declared = item.Data.GetValueOrDefault("declaredTargets");
+                if (declared == "mode:all")
+                {
+                    foreach (var target in PublicLegions(State.Players[1 - item.Controller]).Where(card => card.Tapped))
+                        AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                }
+                else
+                {
+                    var target = PublicLegions(State.Players[1 - item.Controller])
+                        .FirstOrDefault(card => card.InstanceId == declared && card.Tapped);
+                    if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                }
+                FinishStackItem(item);
                 return;
+            }
             case "切腹仪式":
                 Draw(player, 1);
-                PromptEnemyLegion(item, "seppuku-cost", "切腹仪式：选择对方1张军团，直到下个我方回合结束前费用-2", _ => true, false);
+                var seppukuTarget = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("declaredTargets"));
+                if (seppukuTarget is not null)
+                    AddTimedModifier(seppukuTarget, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
+                FinishStackItem(item);
                 return;
             case "摄政皇权":
             {
@@ -1196,8 +1215,11 @@ public sealed partial class L12GameEngine
     {
         var defenderIndex = 1 - attackerPlayer;
         var defender = State.Players[defenderIndex];
+        var hasOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any();
+        var hasRestedOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any(target => target.Tapped);
         var candidates = defender.Field[1].Where(card => card is not null && card.SetRound < State.Round
-                && card.CardId is "S01-0017" or "S01-0420").Cast<L12CardInstance>()
+                && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
+                    hasRestedOpponentLegion)).Cast<L12CardInstance>()
             .Select(counter => CreateTriggerCandidate(defenderIndex, counter, "reaction", "【对方进攻后】反击战术"))
             .Concat(defender.Hand.Where(card => card.CardId == "S01-0213")
                 .Select(kaba => CreateTriggerCandidate(defenderIndex, kaba, "reaction", "【对方进攻后】手牌效果")))

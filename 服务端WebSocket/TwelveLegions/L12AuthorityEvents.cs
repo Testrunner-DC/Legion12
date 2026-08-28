@@ -29,19 +29,21 @@ public sealed partial class L12GameEngine
         };
         if (data is not null)
             foreach (var pair in data) authorityEvent.Data[pair.Key] = pair.Value;
-        if (State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
-            authorityEvent.Data["originStackId"] = origin.StackItemId;
+        var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+        if (origin is not null) authorityEvent.Data["originStackId"] = origin.StackItemId;
         State.AuthorityEvents.Add(authorityEvent);
 
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
             Controller = actorPlayer,
-            SourceInstanceId = source.InstanceId,
-            SourceCardId = source.CardId,
-            SourceName = source.Name,
+            SourceInstanceId = type == "effect-hand-add" ? origin?.SourceInstanceId ?? string.Empty : source.InstanceId,
+            SourceCardId = type == "effect-hand-add" ? origin?.SourceCardId ?? string.Empty : source.CardId,
+            SourceName = type == "effect-hand-add" ? origin?.SourceName ?? "加入手牌事件" : source.Name,
             Trigger = "authority-event",
-            Text = text,
+            Text = type == "effect-hand-add" && origin is not null
+                ? $"〈{origin.SourceName}〉使{State.Players[actorPlayer].Name}因效果将1张牌加入手牌"
+                : text,
         };
         item.Data["eventId"] = authorityEvent.EventId;
         item.Data["eventType"] = type;

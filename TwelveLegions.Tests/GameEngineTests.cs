@@ -228,9 +228,11 @@ public sealed class GameEngineTests
         var entering = PutCardInHand(game, 0, "S01-0103");
         var defender = game.State.Players[1];
         var ambush = Card("S01-0019", "covered-ambush");
+        var ambushTarget = Card("S01-0103", "covered-ambush-target");
         ambush.Hidden = true;
         ambush.SetRound = 0;
         defender.Field[1][0] = ambush;
+        defender.Field[0][0] = ambushTarget;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;

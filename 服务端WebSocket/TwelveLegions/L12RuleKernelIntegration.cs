@@ -29,6 +29,23 @@ public sealed partial class L12GameEngine
 
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<L12ActivationSelectionStep> selectionSteps, string? triggerCandidateId)
+        => BeginPendingActivationSequence(playerIndex, source, ability, selectionSteps, triggerCandidateId, null, null);
+
+    private CommandResult BeginPendingHandPlay(int playerIndex, L12CardInstance source,
+        IEnumerable<string> choices, string text)
+        => BeginPendingActivationSequence(playerIndex, source, "play-card",
+        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.ToList() }],
+        null, source.InstanceId, null);
+
+    private CommandResult BeginPendingResponseActivation(int playerIndex, L12CardInstance source,
+        string targetStackItemId, IEnumerable<string> choices, string text)
+        => BeginPendingActivationSequence(playerIndex, source, "response",
+        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.ToList() }],
+        null, null, targetStackItemId);
+
+    private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
+        IEnumerable<L12ActivationSelectionStep> selectionSteps, string? triggerCandidateId, string? playCardInstanceId,
+        string? responseTargetStackItemId)
     {
         var steps = selectionSteps.Select(step => new L12ActivationSelectionStep
         {
@@ -55,10 +72,15 @@ public sealed partial class L12GameEngine
             MaxChoose = first.MaxChoose,
             SelectionSteps = steps,
             TriggerCandidateId = triggerCandidateId,
+            PlayCardInstanceId = playCardInstanceId,
+            ResponseTargetStackItemId = responseTargetStackItemId,
         };
         State.PendingActivations.Add(activation);
         CreateActivationStepPrompt(activation);
-        AddEvent("activation-declare", playerIndex, $"{State.Players[playerIndex].Name} 正在声明〈{source.Name}〉的目标", source);
+        if (responseTargetStackItemId is null)
+            AddEvent("activation-declare", playerIndex, $"{State.Players[playerIndex].Name} 正在声明〈{source.Name}〉的目标", source);
+        else
+            AddEvent("activation-declare", playerIndex, $"{State.Players[playerIndex].Name} 正在声明反击战术目标");
         return CommandResult.Ok();
     }
 
@@ -237,6 +259,7 @@ public sealed partial class L12GameEngine
                 State.PendingTriggerStackCandidates.RemoveAll(candidate => candidate.CandidateId == activation.TriggerCandidateId);
                 AdvanceTriggerBatches();
             }
+            if (activation.ResponseTargetStackItemId is not null) ResumeResponseAfterCancelledDeclaration(activation);
             return;
         }
         var step = activation.SelectionSteps[activation.CurrentStep];
@@ -267,6 +290,39 @@ public sealed partial class L12GameEngine
             return;
         }
 
+        if (activation.PlayCardInstanceId is not null)
+        {
+            var declaredTarget = activation.DeclaredTargets.SingleOrDefault();
+            var card = State.Players[prompt.PlayerIndex].Hand.FirstOrDefault(candidate =>
+                candidate.InstanceId == activation.PlayCardInstanceId);
+            if (card is null || DeclaredEnemyTarget(prompt.PlayerIndex, declaredTarget) is null)
+            {
+                AddEvent("ability-rejected", prompt.PlayerIndex, "手牌来源或目标已不合法，未支付费用也未入栈");
+                return;
+            }
+            var handPlayResult = PlayCard(prompt.PlayerIndex, new L12Command("playCard", card.InstanceId,
+                Target: new L12AttackTarget("legion", declaredTarget)));
+            if (!handPlayResult.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, handPlayResult.Error ?? "手牌打出失败");
+            return;
+        }
+
+        if (activation.ResponseTargetStackItemId is not null)
+        {
+            var responsePlayer = State.Players[prompt.PlayerIndex];
+            var response = FindOnField(responsePlayer, activation.SourceInstanceId, out _, out _);
+            var declaredTarget = activation.DeclaredTargets.SingleOrDefault();
+            if (response is null || !L12StructuredCardRules.RequiresOwnLegionResponseTarget(response.CardId)
+                || State.EffectStack.All(item => item.StackItemId != activation.ResponseTargetStackItemId)
+                || !PublicLegions(responsePlayer).Any(card => card.InstanceId == declaredTarget))
+            {
+                AddEvent("ability-rejected", prompt.PlayerIndex, "响应来源或目标已不合法，未支付费用也未入栈");
+                ResumeResponseAfterCancelledDeclaration(activation);
+                return;
+            }
+            CommitS1ReactionResponse(prompt.PlayerIndex, response, activation.ResponseTargetStackItemId, declaredTarget);
+            return;
+        }
+
         var player = State.Players[prompt.PlayerIndex];
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == activation.SourceInstanceId ? player.Relic : null)
@@ -291,9 +347,21 @@ public sealed partial class L12GameEngine
         State.PendingActivations.Remove(activation);
         ClearFreeMasterActivation(activation);
         AddEvent("ability-rejected", activation.Controller, reason);
+        if (activation.ResponseTargetStackItemId is not null)
+        {
+            ResumeResponseAfterCancelledDeclaration(activation);
+            return;
+        }
         if (activation.TriggerCandidateId is null) return;
         State.PendingTriggerStackCandidates.RemoveAll(candidate => candidate.CandidateId == activation.TriggerCandidateId);
         AdvanceTriggerBatches();
+    }
+
+    private void ResumeResponseAfterCancelledDeclaration(L12PendingActivation activation)
+    {
+        if (State.EffectStack.All(item => item.StackItemId != activation.ResponseTargetStackItemId)) return;
+        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = activation.Controller };
+        OfferResponse();
     }
 
     private L12CardInstance CreateActiveMasterSource(L12PlayerState player, string instanceId)
@@ -607,13 +675,32 @@ public sealed partial class L12GameEngine
 
     private bool TryBeginTriggerDeclaration(L12TriggerCandidate candidate)
     {
-        if (candidate.Trigger != "death") return false;
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         var source = FindPromptCard(candidate.Controller, candidate.SourceInstanceId)
             ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         var steps = new List<L12ActivationSelectionStep>();
-        if (candidate.SourceCardId == "S01-0108" && State.ActivePlayer != candidate.Controller)
+        var postAttackDeclaration = L12StructuredCardRules.PostAttackDeclarationKind(
+            candidate.SourceCardId, candidate.Trigger);
+        if (postAttackDeclaration == "last-stand")
+        {
+            var rested = PublicLegions(opponent).Where(card => card.Tapped).ToList();
+            var choices = rested.Select(card => card.InstanceId).Prepend("mode:all").ToList();
+            var labels = rested.ToDictionary(card => card.InstanceId, card => $"单体：{card.Name}兵力-2000");
+            labels["mode:all"] = "全部休整军团兵力-1000";
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "option", Text = "拼死反抗：预先声明结算方式与合法目标",
+                ValidChoices = choices, MinChoose = 1, MaxChoose = 1, ChoiceLabels = labels,
+            });
+        }
+        else if (postAttackDeclaration == "seppuku")
+        {
+            steps.Add(TriggerStep("field-legion", "切腹仪式：预先选择对方1张军团，直到下个我方回合结束前费用-2",
+                PublicLegions(opponent).Select(card => card.InstanceId), 1));
+        }
+        else if (candidate.Trigger != "death") return false;
+        else if (candidate.SourceCardId == "S01-0108" && State.ActivePlayer != candidate.Controller)
         {
             steps.Add(TriggerStep("target-morale", "花木兰：选择对方1张休整士气，使其下个重置阶段无法转为活跃",
                 opponent.Morale.Where(card => card.Tapped).Select(card => card.InstanceId), 1));

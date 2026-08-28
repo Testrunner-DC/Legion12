@@ -113,7 +113,7 @@ function isCounterTactic(card: Card | null) {
     || ['S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021', 'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420'].includes(card?.cardId ?? '')
 }
 function counterState(card: Card | null) {
-  if (props.side === 'my' && card?.hidden && card.cardId === 'S01-0415') return 'hidden-dormant'
+  if (card?.hidden && card.identityKnown) return 'hidden-dormant'
   if (props.side !== 'my' || !isCounterTactic(card) || !card?.hidden) return ''
   return props.responsePlayableIds?.includes(card.instanceId) ? 'counter-ready' : 'counter-dormant'
 }
