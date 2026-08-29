@@ -687,7 +687,7 @@ public sealed partial class L12GameEngine
             player.Library.Add(card);
         }
         Draw(player, chosen.Count);
-        Shuffle(player.Library);
+        ShuffleLibrary(player, "调度后重洗牌库");
         player.MulliganDone = true;
         AddEvent("mulligan", playerIndex, $"{player.Name} 完成调度（{chosen.Count} 张）");
         if (State.Players.All(candidate => candidate.MulliganDone)) RunAutomaticTurnStart();
@@ -1513,4 +1513,10 @@ public sealed partial class L12GameEngine
 
     private void Shuffle<T>(IList<T> list)
         => L12LibraryOps.Shuffle(list, _random);
+
+    private void ShuffleLibrary(L12PlayerState player, string reason)
+    {
+        Shuffle(player.Library);
+        AddEvent("shuffle", player.PlayerIndex, $"{player.Name}洗切牌库：{reason}");
+    }
 }

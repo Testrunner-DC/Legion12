@@ -3500,7 +3500,10 @@ public sealed class S2FactionRegressionTests
         var horse = Card("S02-0523", "trojan-horse");
         attacker.SummonRound = 0;
         attackerPlayer.Field[0][0] = attacker;
-        owner.Hand.Add(horse);
+        horse.Hidden = true;
+        horse.OwnerIndex = 1;
+        horse.SetRound = 1;
+        owner.Field[1][0] = horse;
         var libraryBefore = owner.Library.Count;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
@@ -3518,7 +3521,7 @@ public sealed class S2FactionRegressionTests
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-slot");
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:1")).Accepted);
         Assert.Same(horse, attackerPlayer.Field[1][1]);
-        Assert.True(horse.Hidden);
+        Assert.False(horse.Hidden);
 
         game.State.ActivePlayer = 1;
         game.State.Phase = L12Phase.Main;
@@ -3528,6 +3531,168 @@ public sealed class S2FactionRegressionTests
         Assert.Null(attackerPlayer.Field[1][1]);
         Assert.Contains(horse, owner.Graveyard);
         Assert.Equal(libraryBefore - 1, owner.Library.Count);
+    }
+
+    [Fact]
+    public void TrojanHorseMustBeSetForTwoMoraleBeforeItsPostAttackReaction()
+    {
+        var game = Create(63371);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card("S02-0004", "trojan-set-attacker");
+        var horse = Card("S02-0523", "trojan-set-horse");
+        attacker.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Hand.Clear();
+        defender.Hand.Add(horse);
+        AddMorale(defender, 2);
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var set = game.Handle(1, new L12Command("playCard", horse.InstanceId, Row: 1, Slot: 1));
+        Assert.True(set.Accepted, set.Error);
+        Assert.Same(horse, defender.Field[1][1]);
+        Assert.True(horse.Hidden);
+        Assert.DoesNotContain(defender.Morale, card => !card.Tapped);
+
+        game.State.ActivePlayer = 0;
+        game.State.Round = 3;
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+        PassResponses(game);
+
+        var confirm = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-confirm");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId, Choice: "yes")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-slot");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:1")).Accepted);
+
+        Assert.Null(defender.Field[1][1]);
+        Assert.Same(horse, attackerPlayer.Field[1][1]);
+        Assert.False(horse.Hidden);
+        Assert.DoesNotContain(horse, defender.Graveyard);
+    }
+
+    [Fact]
+    public void TrojanHorseInHandCannotReactToAnOpponentAttack()
+    {
+        var game = Create(63372);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card("S02-0004", "trojan-hand-attacker");
+        var horse = Card("S02-0523", "trojan-hand-horse");
+        attacker.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Hand.Clear();
+        defender.Hand.Add(horse);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-confirm");
+        Assert.Contains(horse, defender.Hand);
+    }
+
+    [Fact]
+    public void TsukuyomiFrontToBackRecoveryCanTriggerRepeatedlyInOneTurn()
+    {
+        var game = CreateWithFirstMaster("S02-04M1", 63373);
+        var player = game.State.Players[0];
+        var moved = Card("S02-0401", "tsukuyomi-repeat-moved");
+        var movedAgain = Card("S02-0402", "tsukuyomi-repeat-moved-again");
+        moved.SummonRound = 0;
+        movedAgain.SummonRound = 0;
+        player.Field[0][0] = moved;
+        player.Field[0][2] = movedAgain;
+        player.Morale.Clear();
+        player.Morale.Add(new L12MoraleCard
+        {
+            CardId = "S02-04C1", InstanceId = "tsukuyomi-repeat-morale", Tapped = false,
+        });
+        player.UsedAbilities.Add("active:master-0:tsukuyomiFollowMove");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        foreach (var (legion, slot) in new[] { (moved, 0), (movedAgain, 2) })
+        {
+            var movement = game.Handle(0, new L12Command("move", legion.InstanceId, Row: 1, Slot: slot));
+            Assert.True(movement.Accepted, movement.Error);
+            PassResponses(game);
+            var ready = Assert.Single(game.State.PendingPrompts,
+                prompt => prompt.Data.GetValueOrDefault("action") == "s2-tsukuyomi-ready");
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ready.PromptId,
+                Choice: player.Morale[0].InstanceId)).Accepted);
+            PassResponses(game);
+            Assert.False(player.Morale[0].Tapped);
+        }
+    }
+
+    [Fact]
+    public void EmptyCanopicBoxSearchStillShufflesAndWritesAnAuthoritativeLog()
+    {
+        var game = Create(63374);
+        var player = game.State.Players[0];
+        var box = Card("S01-0216", "empty-canopic-box");
+        player.Hand.Clear();
+        player.Hand.Add(box);
+        player.Library.RemoveAll(card => card.Name.Contains("卡诺匹斯罐", StringComparison.Ordinal));
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", box.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "shuffle"
+            && entry.PlayerIndex == 0 && entry.Text.Contains("卡诺匹斯箱", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void YingzhengZeroMoraleRecoveryAddsExactlyTwoOnlyOnce()
+    {
+        var game = Create(63375);
+        var player = game.State.Players[0];
+        var yingzheng = Card("S02-0101", "yingzheng-enter");
+        var discard = Card("S02-0101", "yingzheng-cost");
+        var other = Card("S02-0401", "yingzheng-other-legion");
+        player.Hand.Clear();
+        player.Hand.Add(yingzheng);
+        player.Hand.Add(discard);
+        player.Field[0][1] = other;
+        AddMorale(player, 8);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", yingzheng.InstanceId, Row: 0, Slot: 2));
+        Assert.True(play.Accepted, play.Error);
+        var cost = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "s2-yingzheng-enter-cost");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: cost.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        PassResponses(game);
+        var recovery = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "faction-zero-recovery");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recovery.PromptId,
+            Choice: "yes")).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(2, player.Morale.Count);
+        Assert.Equal(1, game.State.Events.Count(entry => entry.Type == "faction-effect"
+            && entry.Text.Contains("追加 2 张休整士气", StringComparison.Ordinal)));
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "faction-zero-recovery");
     }
 
     [Fact]

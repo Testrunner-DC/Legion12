@@ -340,7 +340,7 @@ public sealed partial class L12GameEngine
                     AddCardToHandByEffect(player, target, "library", $"万物统御之戒将{target.Name}加入手牌");
                     AddEvent("search", item.Controller, $"万物统御之戒展示并将〈{target.Name}〉加入手牌", target);
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "万物统御之戒检索结算");
                 FinishStackItem(item);
                 break;
             }

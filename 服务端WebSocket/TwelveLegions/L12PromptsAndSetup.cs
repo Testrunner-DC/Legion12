@@ -67,7 +67,7 @@ public sealed partial class L12GameEngine
             }
             if (player.Relic?.CardId == "S02-0305") startingHandSize = 4;
             if (player.MasterId == "S02-03M1" && player.Hand.Any(card => card.CardId == "S02-0301")) startingHandSize--;
-            Shuffle(player.Library);
+            ShuffleLibrary(player, "对局准备");
             Draw(player, startingHandSize);
             if (player.MasterId is "S01-02D1" or "S01-03D1" or "S01-04D1" or "S02-05D1") AddMorale(player, 2);
         }
@@ -639,6 +639,7 @@ public sealed partial class L12GameEngine
         State.DisasterDeck.Clear();
         State.DisasterDeck.AddRange(normal);
         State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
+        AddEvent("shuffle", null, "随机模式洗切天灾牌库，〈堙灭〉固定置于最底部");
         State.DisasterPool.Clear();
         SetDisasterValue(0);
     }
@@ -742,6 +743,7 @@ public sealed partial class L12GameEngine
         Shuffle(State.SelectedDisasters);
         State.DisasterDeck.AddRange(State.SelectedDisasters);
         State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
+        AddEvent("shuffle", null, "洗切双方选定的天灾，〈堙灭〉固定置于最底部");
         State.DisasterPool.Clear();
         PrepareAfterDisasterSelection("本局 4 张天灾牌库已组成，〈堙灭〉位于牌库底部");
     }

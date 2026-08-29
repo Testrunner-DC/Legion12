@@ -6,6 +6,7 @@ import { destructionRoundBackUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
+import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
 import MasterOverlay from './MasterOverlay.vue'
@@ -87,6 +88,7 @@ const counterIds = new Set([
   'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
   'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
   'S02-0015', 'S02-0016', 'S02-0017', 'S02-0018',
+  'S02-0523',
 ])
 const isCounter = (card?: Card | null) => Boolean(card && (card.cardType === 'counter-tactic' || counterIds.has(card.cardId)))
 const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
@@ -773,6 +775,8 @@ function statusTexts(card: Card) {
             <PhasePlayback :events="game.recentEvents ?? []" @phase-change="phasePlaybackPhase = $event" />
             <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
               :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
+            <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
+              :viewer-player-index="game.you" :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
             <Teleport to="body">
               <Transition name="public-reveal">
                 <div v-if="publicReveal" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">

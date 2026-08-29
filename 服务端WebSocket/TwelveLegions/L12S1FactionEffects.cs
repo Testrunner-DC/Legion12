@@ -145,7 +145,7 @@ public sealed partial class L12GameEngine
             case "卡诺匹斯箱":
             {
                 var choices = player.Library.Where(candidate => candidate.Name.Contains("卡诺匹斯罐", StringComparison.Ordinal)).Select(candidate => candidate.InstanceId).ToArray();
-                if (choices.Length == 0) { HealMaster(item.Controller, 1, "卡诺匹斯箱"); DiscardRelic(player, card); FinishStackItem(item); return true; }
+                if (choices.Length == 0) { ShuffleLibrary(player, "卡诺匹斯箱检索未命中"); HealMaster(item.Controller, 1, "卡诺匹斯箱"); DiscardRelic(player, card); FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "search", "卡诺匹斯箱：选择牌库中1张卡诺匹斯罐加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "canopic-search" });
                 return true;
@@ -427,7 +427,7 @@ public sealed partial class L12GameEngine
             case "asgard-draw-heal": if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "asgard-heal"); else FinishStackItem(item); return true;
             case "canopic-search":
             {
-                var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]); player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"{selected.Name}因效果加入手牌"); Shuffle(player.Library);
+                var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]); player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"{selected.Name}因效果加入手牌"); ShuffleLibrary(player, "卡诺匹斯箱检索结算");
                 HealMaster(item.Controller, 1, "卡诺匹斯箱"); if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             }
             case "canopic-one":

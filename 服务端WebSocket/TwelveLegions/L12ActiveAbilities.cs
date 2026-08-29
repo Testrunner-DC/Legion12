@@ -372,7 +372,7 @@ public sealed partial class L12GameEngine
             case "searchBrothers":
             {
                 var choices = player.Library.Where(card => card.CardId is "S01-0106" or "S01-0107").Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { AddEvent("reveal", item.Controller, "刘备检索未命中，向对手展示牌库"); Shuffle(player.Library); FinishStackItem(item); return; }
+                if (choices.Length == 0) { AddEvent("reveal", item.Controller, "刘备检索未命中，向对手展示牌库"); ShuffleLibrary(player, "刘备检索未命中"); FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "search", "选择牌库中 1 张〈关羽〉或〈张飞〉加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "liubei-search" });
                 return;
@@ -474,7 +474,7 @@ public sealed partial class L12GameEngine
         player.Library.Remove(card);
         AddCardToHandByEffect(player, card, "library", $"刘备将{card.Name}加入手牌");
         AddEvent("search", item.Controller, $"刘备将 {card.Name} 加入手牌", card);
-        Shuffle(player.Library); FinishStackItem(item);
+        ShuffleLibrary(player, "刘备检索结算"); FinishStackItem(item);
     }
 
     private void CompleteShanheSearch(L12StackItem item, string cardId)

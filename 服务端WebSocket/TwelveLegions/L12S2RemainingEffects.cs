@@ -291,11 +291,11 @@ public sealed partial class L12GameEngine
     private void ResolveS2TrojanHorseAfterAttack(L12StackItem item)
     {
         var owner = State.Players[item.Controller];
-        var horse = owner.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId && card.CardId == "S02-0523");
+        var horse = FindOnField(owner, item.SourceInstanceId, out _, out _);
         var host = int.TryParse(item.Data.GetValueOrDefault("attacker"), out var attacker) && attacker is >= 0 and <= 1
             ? State.Players[attacker]
             : State.Players[1 - item.Controller];
-        if (horse is null || !EmptySlots(host).Any()) { FinishStackItem(item); return; }
+        if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Any()) { FinishStackItem(item); return; }
         CreatePrompt(item.Controller, "optional", "特洛伊木马：是否置入对方战场任意空位？", ["yes", "no"], 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string>
             {
@@ -329,16 +329,20 @@ public sealed partial class L12GameEngine
             {
                 var owner = State.Players[item.Controller];
                 var host = State.Players[1 - item.Controller];
-                var horse = owner.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId && card.CardId == "S02-0523");
-                if (horse is null || !EmptySlots(host).Contains(chosen[0])) { FinishStackItem(item); return true; }
+                var horse = FindOnField(owner, item.SourceInstanceId, out var sourceRow, out var sourceSlot);
+                if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Contains(chosen[0]))
+                {
+                    FinishStackItem(item); return true;
+                }
+                var resolvedHorse = horse!;
                 var (row, slot) = ParseSlot(chosen[0]);
-                owner.Hand.Remove(horse);
-                horse.OwnerIndex = item.Controller;
-                horse.Hidden = true;
-                horse.SetRound = State.Round;
-                horse.DiscardAtEndOfTurnUntilTurn = ExpiryAtNextOwnEnd(item.Controller);
-                host.Field[row][slot] = horse;
-                AddEvent("put", item.Controller, $"{horse.Name}置入{host.Name}战场，直到下个我方回合结束", horse);
+                owner.Field[sourceRow][sourceSlot] = null;
+                resolvedHorse.OwnerIndex = item.Controller;
+                resolvedHorse.Hidden = false;
+                resolvedHorse.SetRound = State.Round;
+                resolvedHorse.DiscardAtEndOfTurnUntilTurn = ExpiryAtNextOwnEnd(item.Controller);
+                host.Field[row][slot] = resolvedHorse;
+                AddEvent("put", item.Controller, $"{resolvedHorse.Name}置入{host.Name}战场，直到下个我方回合结束", resolvedHorse);
                 RecalculateContinuousTroops();
                 FinishStackItem(item);
                 return true;
@@ -454,6 +458,10 @@ public sealed partial class L12GameEngine
                 return false;
         }
     }
+
+    private static bool IsTrojanHorse(L12CardInstance? card) => card is { CardId: "S02-0523" };
+
+    private static bool IsSetTrojanHorse(L12CardInstance? card) => IsTrojanHorse(card) && card!.Hidden;
 
     private bool PromptNextDivinityDamage(L12StackItem item)
     {

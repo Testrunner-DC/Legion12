@@ -233,6 +233,7 @@ public static partial class L12StructuredCardRules
         {
             "S01-0017" => hasRestedOpponentLegion,
             "S01-0420" => hasAnyOpponentLegion,
+            "S02-0523" => true,
             _ => false,
         };
 

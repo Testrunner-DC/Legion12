@@ -585,7 +585,7 @@ public sealed partial class L12GameEngine
                 .ToArray();
             if (candidates.Length == 0)
             {
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "圆桌领域检索未命中");
                 PromptS2RoundTableBuff(item);
                 return true;
             }
@@ -1608,7 +1608,7 @@ public sealed partial class L12GameEngine
                 {
                     player.Library.Remove(target);
                     AddCardToHandByEffect(player, target, "library", "梅林检索主动战术");
-                    Shuffle(player.Library);
+                    ShuffleLibrary(player, "梅林检索结算");
                 }
             }
             FinishStackItem(item);
@@ -2104,7 +2104,7 @@ public sealed partial class L12GameEngine
                         AddCardToHandByEffect(player, selected, "library", "武田信玄检索高天原军团");
                     }
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "武田信玄检索结算");
                 var sanadas = player.Hand.Where(card => card.CardId == "S01-0404").Select(card => card.InstanceId).ToList();
                 if (sanadas.Count == 0 || !EmptySlots(player).Any())
                 {
@@ -2380,7 +2380,7 @@ public sealed partial class L12GameEngine
                     player.Graveyard.Remove(arthur);
                     player.Library.Add(arthur);
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "湖中仙女的馈赠结算");
                 FinishStackItem(item);
                 return true;
             }
@@ -2395,7 +2395,7 @@ public sealed partial class L12GameEngine
                         AddCardToHandByEffect(player, selected, "library", "寻找圣杯之旅将彼界军团加入手牌");
                     }
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "寻找圣杯之旅检索结算");
                 FinishStackItem(item);
                 return true;
             }
@@ -2729,7 +2729,7 @@ public sealed partial class L12GameEngine
                     player.Library.Remove(selected);
                     AddCardToHandByEffect(player, selected, "library", "圆桌领域将【圆桌骑士】军团加入手牌");
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "圆桌领域检索结算");
                 PromptS2RoundTableBuff(item);
                 return true;
             }
@@ -2747,7 +2747,7 @@ public sealed partial class L12GameEngine
                         AddEvent("reveal", item.Controller, $"八尺琼勾玉展示〈{selected.Name}〉", selected);
                     }
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "八尺琼勾玉检索结算");
                 FinishStackItem(item);
                 return true;
             }
@@ -2794,7 +2794,7 @@ public sealed partial class L12GameEngine
                     AddCardToHandByEffect(player, selected, "library", "荣耀之路将【奥林匹斯】卡牌加入手牌");
                     AddEvent("reveal", item.Controller, $"〈荣耀之路〉展示〈{selected.Name}〉并加入手牌", selected);
                 }
-                Shuffle(player.Library);
+                ShuffleLibrary(player, "荣耀之路检索结算");
                 FinishStackItem(item);
                 return true;
             }
@@ -3312,7 +3312,7 @@ public sealed partial class L12GameEngine
         if (choices.Length == 0)
         {
             AddEvent("reveal", item.Controller, "〈荣耀之路〉查看牌库但未找到【奥林匹斯】卡牌");
-            Shuffle(player.Library);
+            ShuffleLibrary(player, "荣耀之路检索未命中");
             FinishStackItem(item);
             return;
         }

@@ -31,6 +31,7 @@ public sealed partial class L12GameEngine
             Shuffle(all);
             State.DisasterDeck.AddRange(all);
             State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
+            AddEvent("shuffle", null, "洗切测试沙盒天灾牌库，〈堙灭〉固定置于最底部");
             State.DisasterPool.Clear();
             SetDisasterValue(0);
         }
@@ -392,7 +393,7 @@ public sealed partial class L12GameEngine
 
     private CommandResult GmShuffleLibrary(int playerIndex)
     {
-        Shuffle(State.Players[playerIndex].Library);
+        ShuffleLibrary(State.Players[playerIndex], "GM 指令");
         AddEvent("gm", playerIndex, $"[GM] 洗切玩家{playerIndex + 1}牌库");
         return CommandResult.Ok();
     }

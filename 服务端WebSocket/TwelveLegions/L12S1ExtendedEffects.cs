@@ -563,7 +563,7 @@ public sealed partial class L12GameEngine
             }
             case "scout-shuffle":
             {
-                var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); Shuffle(enemy.Library);
+                var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
                 FinishStackItem(item); return true;
             }
             case "scout-pay":
@@ -1056,7 +1056,7 @@ public sealed partial class L12GameEngine
     private static bool IsCounterTactic(string cardId) => cardId is
         "S01-0016" or "S01-0017" or "S01-0018" or "S01-0019" or "S01-0020" or "S01-0021" or "S01-0120" or
         "S01-0223" or "S01-0224" or "S01-0320" or "S01-0420" or
-        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106";
+        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106" or "S02-0523";
 
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {
@@ -1221,12 +1221,12 @@ public sealed partial class L12GameEngine
         var candidates = defender.Field[1].Where(card => card is not null && card.SetRound < State.Round
                 && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
                     hasRestedOpponentLegion)).Cast<L12CardInstance>()
-            .Select(counter => CreateTriggerCandidate(defenderIndex, counter, "reaction", "【对方进攻后】反击战术"))
+            .Select(counter => IsTrojanHorse(counter)
+                ? CreateTriggerCandidate(defenderIndex, counter, "trojan-after-attack", "【对方进攻后】反击战术",
+                    new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })
+                : CreateTriggerCandidate(defenderIndex, counter, "reaction", "【对方进攻后】反击战术"))
             .Concat(defender.Hand.Where(card => card.CardId == "S01-0213")
                 .Select(kaba => CreateTriggerCandidate(defenderIndex, kaba, "reaction", "【对方进攻后】手牌效果")))
-            .Concat(defender.Hand.Where(card => card.CardId == "S02-0523")
-                .Select(horse => CreateTriggerCandidate(defenderIndex, horse, "trojan-after-attack", "【对方进攻后】效果",
-                    new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })))
             .ToArray();
         QueueTriggerCandidates(candidates);
     }
