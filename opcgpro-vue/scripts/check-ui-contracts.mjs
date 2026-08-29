@@ -40,6 +40,8 @@ const decks = read('../src/l12/decks.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
 const deckShare = read('../src/l12/site/deckShare.ts')
 const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
+const deckProfile = read('../src/l12/DeckProfile.vue')
+const legacyLobby = read('../src/l12/LobbyPage.vue')
 const tournamentCenter = read('../src/l12/site/TournamentCenterPage.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
@@ -119,7 +121,11 @@ const contracts = [
   [!deckEditor.includes('STARTER COPY') && !deckEditor.includes('importPreset'), '牌库编辑器不得重新引入 Starter Copy 区块'],
   [specialAssets.includes('masterProfileUrl') && prompt.includes('masterProfileUrl(player.master.masterId'), '先后手掷骰必须使用官方主宰头像资源'],
   [playerMat.includes('godPowerLogoUrl') && specialAssets.includes('olympus-god-power.png'), '神力必须使用官方神力标志'],
-  [lobby.includes('<div class="deck-thumb">库</div>') && lobby.includes('masterProfileUrl(deck.masterId)'), '牌库入口保留“库”标志，具体牌库按钮使用主宰头像'],
+  [deckProfile.includes('data-deck-profile') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('class="deck-profile__portrait"'), '各类牌库框必须复用主宰 Profile 公共组件，不得各自裁切卡面'],
+  [deckEditor.includes("import DeckProfile from './DeckProfile.vue'") && deckLibrary.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && lobby.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && sandbox.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && legacyLobby.includes("import DeckProfile from './DeckProfile.vue'"), '牌库编辑器、牌库页、对战房间和沙盒的牌库框必须统一接入 DeckProfile'],
+  [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库框不得恢复多卡裁切条或“库”占位图替代已选择主宰 Profile'],
+  [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale?.instanceId') && playerMat.includes('selectMoralePayment(morale.instanceId)'), '费用资源必须按状态排序展示，同时保留真实士气实例 ID 作为支付与返还目标'],
+  [playerMat.includes('class="god-power-logo"') && playerMat.includes('sepia(1) saturate(3.2)') && playerMat.includes('border-color:#f4dda1'), '神力必须使用淡黄色 Logo 与独立描边，不能继续与白色士气图标混淆'],
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)"), '叠放卡牌必须由公共卡牌组件合并为圆形卡图，并可进入统一详情'],
   [cardTile.includes('card.activeKeywords') && cardTile.includes('card-keyword-stack') && cardTile.includes('top:25px') && !cardTile.includes('status-strong'), '当前生效关键词必须以完整文字从费用下方向下排列，不得恢复底部单字角标'],
   [cardTile.includes("props.card.isMasterLegion === true") && cardTile.includes('displayBaseTroops'), '孙悟空等主宰军团化实体必须显示权威兵力且设定兵力不误判为增益'],

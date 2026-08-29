@@ -188,3 +188,10 @@
 - `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1 -RequireZero`：248/248通过，legacy case 0、`cardConditional=212`、`cardSwitchArm=67`、`effectTextInference=3`。
 - `npm run check:ui-contracts`：148/148通过；`npm run build`：UI契约148/148、卡图架构19/19（248张）、Vue/TypeScript与Vite生产构建通过。
 - GrandUMI历史全套额外审计为213/223，10项既有`NewAtomicOps`、`EB_M6`、`OP16`和`OP16_045`失败；与本批L12规则文件无交集，不属于既定L12发布门禁。NU1900仅为NuGet漏洞元数据源离线警告。
+
+## 2026-08-30 费用资源排序、神力辨识与牌库 Profile
+
+- `npm run check:ui-contracts`：152/152通过；新增契约覆盖普通/奥林匹斯资源顺序、物理实例ID映射、淡黄色神力标识及牌库 Profile 公共组件消费者。
+- `npm run check:card-assets`：19/19通过，248张卡牌资产架构无回退。
+- `npm run build`：Vue/TypeScript类型检查与Vite生产构建通过。
+- 全入口扫描确认牌库编辑器、我的/公开牌库、详情、新旧友谊战房间与沙盒均使用 `DeckProfile`；排序不写回 `player.morale`，支付/返还仍提交真实 `instanceId`。

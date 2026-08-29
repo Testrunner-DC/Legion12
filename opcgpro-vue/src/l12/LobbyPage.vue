@@ -6,6 +6,7 @@ import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSav
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
 import { platformState } from './platform'
+import DeckProfile from './DeckProfile.vue'
 
 const roomCode = ref('')
 const router = useRouter()
@@ -65,12 +66,15 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
               <button v-for="deck in l12State.room.decks" :key="deck.index"
                 :class="{ selected: me?.deckIndex === deck.index }" :disabled="me?.ready"
                 @click="selectDeck(deck.index)">
-                <b>{{ deck.name }}</b><span>{{ deck.masterName }}</span>
+                <DeckProfile compact :master-id="deck.masterId" :master-name="deck.masterName" :name="deck.name"
+                  context="预组" :selected="me?.deckIndex === deck.index"/>
               </button>
               <button v-for="deck in customDecks" :key="`custom-${deck.name}`"
                 :class="{ selected: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready"
                 @click="selectCustomDeck(deck)">
-                <b>{{ deck.name }}</b><span>自定义 · {{ deckCountSummary(deck.cardIds, byId).label }} 张</span>
+                <DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh"
+                  :name="deck.name" context="自定义" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"
+                  :selected="me?.customDeck && me?.deckName === deck.name"/>
               </button>
             </div>
             <button class="deck-editor-link" :disabled="me?.ready" @click="router.push('/deck-editor')">＋ 编辑我的牌库</button>

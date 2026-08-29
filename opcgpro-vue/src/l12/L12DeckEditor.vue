@@ -11,6 +11,7 @@ import {
 } from './decks'
 import { platformState, publicDeckApi } from './platform'
 import CardImage from './CardImage.vue'
+import DeckProfile from './DeckProfile.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -325,7 +326,7 @@ onBeforeUnmount(closeDeckImage)
         <button class="filter-reset" @click="resetFilters">重置筛选</button>
 
         <p class="kicker preset-kicker">SAVED DECKS</p>
-        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><img :src="masterProfileUrl(deck.masterId, byId.get(deck.masterId)?.imageUrl)" :alt="byId.get(deck.masterId)?.nameZh || ''"/><span class="saved-deck-copy"><b>{{ deck.name }}</b><small>{{ deckCountSummary(deck.cardIds, byId).label }} 张 · {{ byId.get(deck.masterId)?.nameZh }}</small></span></button><button class="delete" @click="requestDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
+        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"/></button><button class="delete" @click="requestDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
       </aside>
 
       <section class="deck-catalog grand-panel">
@@ -441,4 +442,5 @@ onBeforeUnmount(closeDeckImage)
 .trial-thumb.upright img{width:100%;height:100%;object-fit:cover;transform:translate(-50%,-50%)}.automatic-extra-builder{border-color:#8a6a3d}.automatic-extra-list i{width:auto!important;padding:0 5px!important;color:#cdbb89!important;font-size:7px!important}
 .catalog-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:0 0 10px}.catalog-tabs button,.choose-special{min-height:32px;border:1px solid #48504e;background:#101617;color:#c8cfcb;font-weight:900}.catalog-tabs button.active,.choose-special:hover:not(:disabled){border-color:#73d4d8;background:#194b50;color:#fff}.choose-special{width:100%;border-width:1px 0 0}.empty-extra{grid-column:1/-1;padding:32px;color:#8b9490;text-align:center}
 .builder-modal-mask{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(0,4,7,.82);backdrop-filter:blur(6px)}.delete-confirm-dialog,.deck-image-dialog{width:min(92vw,520px);border:1px solid #8b7650;background:#111719;color:#f4f0e6;box-shadow:0 22px 80px #000;padding:22px}.delete-confirm-dialog h2,.deck-image-dialog h2{margin:0;font-size:20px}.delete-confirm-dialog p{margin:18px 0;color:#d9c9af;font-weight:900}.delete-confirm-dialog footer,.deck-image-dialog footer{display:flex;justify-content:center;gap:10px}.delete-confirm-dialog button,.deck-image-dialog button{min-width:120px;padding:10px 16px;border:1px solid #66716e;background:#171d1f;color:#f4f0e6;font-weight:900}.delete-confirm-dialog .danger{border-color:#a23943;background:#681f28;color:#fff}.deck-image-dialog{width:min(94vw,1100px)}.deck-image-dialog>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.deck-image-dialog>header button{min-width:42px}.deck-image-dialog>img{display:block;width:100%;max-height:70vh;object-fit:contain;background:#070a0c}.deck-image-dialog footer{margin-top:14px}.deck-image-dialog .primary{border-color:#d9bc72;background:#d9bc72;color:#111}
+.saved-list article>button:first-child{display:block;padding:0}.saved-list article>button:first-child :deep(.deck-profile){border:0;background:transparent}.saved-list article.active>button:first-child :deep(.deck-profile){background:#123e42}
 </style>

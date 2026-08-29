@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from '@/l12/decks'
-import { masterProfileUrl } from '@/l12/specialAssets'
+import DeckProfile from '@/l12/DeckProfile.vue'
 import { getEffectiveOperationsPolicy, platformState, type EffectiveOperationsPolicy } from '@/l12/platform'
 
 const router = useRouter()
@@ -16,6 +16,7 @@ const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.act
 const customDecks = ref(loadSavedDecks())
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
+const currentDeck = computed(() => Object.values(customDecks.value)[0])
 const roomCodeCopied = ref(false)
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 function visibleDeckLabel(index: number) {
@@ -96,12 +97,12 @@ async function copyRoomCode() {
         <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
       </div>
       <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>好友房</span><span>{{ l12State.room.options.useCardRestrictions ? '启用运营禁限卡' : '不启用运营禁限卡' }}</span><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span><span v-if="l12State.room.operationsPolicyVersion">运营规则 v{{ l12State.room.operationsPolicyVersion }}</span></div>
-      <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><img :src="masterProfileUrl(deck.masterId)" alt=""/><span><b>{{ deck.name }}</b><small>{{ deckCountSummary(deck.cardIds, byId).label }} 张 · {{ deck.masterId }}</small></span></button></div>
+      <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`" :selected="me?.customDeck && me?.deckName === deck.name"/></button></div>
       <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/deck-editor?returnTo=%2Fbattle%2Flobby">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
     </section>
 
     <template v-else>
-      <section class="current-deck panel"><div class="deck-thumb">库</div><div><small>当前牌库</small><b>{{ Object.values(customDecks)[0]?.name || '尚未选择' }}</b><span>{{ Object.values(customDecks)[0] ? `${deckCountSummary(Object.values(customDecks)[0].cardIds, byId).label} 张主牌` : '前往牌库页面建立或选择牌库' }}</span></div><router-link to="/decks?from=%2Fbattle%2Flobby">更换 →</router-link></section>
+      <section class="current-deck panel"><DeckProfile v-if="currentDeck" :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" context="当前牌库" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><DeckProfile v-else context="当前牌库" meta="前往牌库页面建立或选择牌库"/><router-link to="/decks?from=%2Fbattle%2Flobby">更换 →</router-link></section>
       <div class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'sandbox' }" @click="tab = 'sandbox'">单人</button></div>
 
       <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位与休闲匹配的数据服务尚未接入。页面结构已预留，不会用测试数据伪造排行榜或匹配结果。</p><div class="match-options"><button disabled>排位匹配</button><button disabled>休闲匹配</button></div><button class="primary" disabled>匹配服务待接入</button></section>
@@ -126,4 +127,6 @@ async function copyRoomCode() {
 @media(max-width:700px){.room-rule-summary{align-items:stretch;flex-direction:column}.room-rule-summary span{text-align:center}}
 .room-decks button{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;padding:8px}.room-decks button>img{width:38px;height:38px;object-fit:cover;border:1px solid #596269;border-radius:2px}.room-decks button>span,.room-decks button b,.room-decks button small{display:block}.room-decks button small{margin-top:4px;color:#77848a;font-size:9px}
 .maintenance-banner,.policy-warning{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:13px 16px;border:1px solid #9a7135;background:#2a1e0e;color:#f0d695;font-size:11px}.maintenance-banner span,.policy-warning span{color:#c8b98f}.policy-warning{border-color:#6b4c52;background:#221217;color:#e1b2b8}.join-row button:disabled,.room-settings select:disabled{cursor:not-allowed;opacity:.45}
+.current-deck{grid-template-columns:minmax(0,1fr) auto}.current-deck :deep(.deck-profile){border:0;background:transparent;padding:0}.room-decks button{display:block;padding:0}.room-decks button :deep(.deck-profile){width:100%;border:0;background:transparent}.room-decks button.active :deep(.deck-profile){background:#202017}
+@media(max-width:700px){.current-deck{grid-template-columns:1fr}.current-deck a{grid-column:auto}}
 </style>
