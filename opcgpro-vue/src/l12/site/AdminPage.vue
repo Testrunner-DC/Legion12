@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { adminApi, apiBase, canAccessAdmin, hasPermission, platformState, type AdminApproval, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type ContentBatch, type ContentBatchPreview, type ContentEntry, type EffectAtomDescriptor, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
+import { adminApi, apiBase, authState, canAccessAdmin, hasPermission, platformState, refreshCurrentAccount, type AdminApproval, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type ContentBatch, type ContentBatchPreview, type ContentEntry, type EffectAtomDescriptor, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
 import { createHomeContent, homeContentFields } from './homeContent'
 import CardImage from '@/l12/CardImage.vue'
 import AdminOperationsPanel from './AdminOperationsPanel.vue'
@@ -212,7 +212,9 @@ function reviewLabel(status: string) { return ({ confirmed: '人工确认', 'hum
 function atomDescriptor(kind: string) { return effectAtoms.value.find(atom => atom.kind === kind) }
 function previousEffectsPage() { if (effectPage.value > 1) { effectPage.value--; loadEffects() } }
 function nextEffectsPage() { if (effectPage.value * 50 < effectTotal.value) { effectPage.value++; loadEffects() } }
-onMounted(() => {
+async function initializeAdminPage() {
+  try { await refreshCurrentAccount() }
+  catch { return }
   if (!canAccessAdmin.value) return
   if (hasPermission('admin.content.read')) loadContent()
   if (hasPermission('admin.effects.read')) loadEffects()
@@ -222,13 +224,15 @@ onMounted(() => {
   if (hasPermission('admin.security.read')) loadSecurity()
   if (hasPermission('admin.commands.read')) loadControlPlane()
   if (hasPermission('releases.read') || hasPermission('releases.runtime.read')) loadReleases()
-})
+}
+onMounted(() => { void initializeAdminPage() })
 </script>
 
 <template>
   <div class="admin-page">
     <header><div><small>ADMINISTRATION</small><h1>管理后台</h1><p>账号权限、Bug 闭环、官网内容与运营配置。</p></div><router-link to="/me">← 返回我的</router-link></header>
-    <section v-if="!canAccessAdmin" class="denied"><b>需要管理员权限</b><span>请先在“我的”页面登录管理员账号。</span></section>
+    <section v-if="!authState.initialized || authState.refreshing" class="denied"><b>正在验证管理员权限</b><span>管理数据只会在服务端身份确认后加载。</span></section>
+    <section v-else-if="!canAccessAdmin" class="denied"><b>需要管理员权限</b><span>请先在“我的”页面登录管理员账号。</span></section>
     <template v-else>
       <div class="admin-shell">
       <aside class="admin-sidebar">

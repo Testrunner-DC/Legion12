@@ -13,6 +13,7 @@ const lobby = read('../src/l12/site/BattleHubPage.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
 const gamePage = read('../src/l12/GamePage.vue')
 const app = read('../src/App.vue')
+const mainEntry = read('../src/main.ts')
 const playerMat = read('../src/l12/game/PlayerMat.vue')
 const graveyardOverlay = read('../src/l12/game/GraveyardOverlay.vue')
 const masterOverlay = read('../src/l12/game/MasterOverlay.vue')
@@ -72,7 +73,8 @@ const contracts = [
   [!lobby.includes('l12State.room.decks'), '友谊战整备室不得同时渲染服务端预组与我的牌库'],
   [lobby.includes('platformState.account') && !lobby.includes('玩家昵称<input'), '对战大厅必须使用登录账号身份且不得保留手填昵称'],
   [l12Net.includes("JSON.stringify({ type: 'hello', authToken })") && !l12Net.includes("type: 'hello', name"), 'WebSocket 握手必须使用账号令牌而非任意昵称'],
-  [app.includes('startAutomaticConnection') && app.includes('platformState.token') && app.includes('{ immediate: true }'), '已登录玩家必须在全站启动自动连接，不得只在进入大厅后连接'],
+  [app.includes('startAutomaticConnection') && app.includes('[platformState.token, authState.verified]') && app.includes('token && verified') && app.includes('{ immediate: true }'), '只有经过服务端验证的登录玩家才能在全站启动自动连接'],
+  [mainEntry.includes('initializeAuth()') && mainEntry.includes('await Promise.race([') && mainEntry.includes('window.setTimeout(resolve, 3_000)') && mainEntry.indexOf('initializeAuth()') < mainEntry.indexOf("mount('#app')"), '应用挂载前必须有界等待权威身份初始化，认证服务不可达时也不能让公共站点无限白屏'],
   [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
   [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
   [lobby.includes('copyRoomCode') && lobby.includes('复制房间码'), '友谊战整备室必须保留房间码复制按钮'],
@@ -151,6 +153,10 @@ const contracts = [
   [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
+  [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null') && platform.includes("platformRequest<PlatformAccount>('/api/auth/me')") && platform.includes('remember(account, requestToken)') && platform.includes('if (authRefreshPromise) return authRefreshPromise'), '账号初始化与权限刷新必须去重读取 /api/auth/me，并以权威响应覆盖本地缓存'],
+  [platform.includes('response.status === 401 && requestToken && platformState.token === requestToken') && platform.includes('forgetAccount(requestToken)') && platform.includes('error instanceof PlatformRequestError && error.status === 401') && platform.includes('throw error'), '任意携带当前令牌的 401 必须按请求令牌防竞态清理，网络与 5xx 则保留令牌并保持未验证'],
+  [platform.includes('response.status === 403 && requestToken && platformState.token === requestToken') && platform.includes('authState.verified = false') && platform.includes('refreshCurrentAccount({ force: true })') && platform.includes('if (!authState.verified) return false'), '403 必须使权限 UI 立即失败关闭并触发去重身份刷新，缓存身份不得直接授予权限'],
+  [router.includes("meta: { requiresAdmin: true }") && router.includes('router.beforeEach(async to =>') && router.includes('refreshCurrentAccount({ force: true })') && router.includes("return { name: 'me', query: { redirect: to.fullPath } }") && adminPage.includes('await refreshCurrentAccount()') && adminPage.includes('if (!canAccessAdmin.value) return') && adminPage.includes('!authState.initialized || authState.refreshing'), '管理路由与 AdminPage 必须在加载管理数据前刷新权威身份，并在未验证或非管理员时失败关闭'],
   [platform.includes("'/api/auth/sessions/current'") && platform.includes("'/api/auth/sessions'") && profilePage.includes('登录设备与会话') && profilePage.includes('退出其他设备') && profilePage.includes('退出全部设备'), '账号安全页必须支持服务端会话列表、当前设备及全端撤销'],
   [platform.includes('options: { revokeServer?: boolean } = {}') && profilePage.includes('logout({ revokeServer: false })'), '服务端已撤销当前或全部会话后必须只清理本机状态，不得用失效令牌重复调用撤销接口'],
   [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('revokeAccountSessions') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],

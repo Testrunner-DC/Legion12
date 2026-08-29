@@ -241,15 +241,23 @@ export const platformState = reactive({
   account: loadAccount(),
 })
 
+export const authState = reactive({
+  initialized: false,
+  verified: false,
+  refreshing: false,
+})
+
+let authRefreshPromise: Promise<PlatformAccount | null> | null = null
+
 export function hasPermission(permission: string) {
+  if (!authState.verified) return false
   const account = platformState.account
   if (!account) return false
-  if (account.permissions?.length) return account.permissions.includes(permission)
-  return account.role === 'admin'
+  return account.permissions?.includes(permission) === true
 }
 
-export const isAdmin = computed(() => platformState.account?.role === 'admin')
-export const canAccessAdmin = computed(() => platformState.account?.role === 'admin')
+export const isAdmin = computed(() => authState.verified && platformState.account?.role === 'admin')
+export const canAccessAdmin = computed(() => authState.verified && platformState.account?.role === 'admin')
 
 export function apiBase() {
   try {
@@ -264,13 +272,22 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
   headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
-  if (platformState.token) headers.set('Authorization', `Bearer ${platformState.token}`)
+  // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
+  const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
+  const requestToken = anonymousCredentialRequest ? '' : platformState.token
+  if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
   const response = await fetch(`${apiBase()}${path}`, { ...init, headers })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
     const message = `${payload.message || `请求失败（${response.status}）`}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
-    if (response.status === 401 && payload.code === 'authentication_required' && platformState.token) forgetAccount()
+    // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
+    if (response.status === 401 && requestToken && platformState.token === requestToken) forgetAccount(requestToken)
+    // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
+    if (response.status === 403 && requestToken && platformState.token === requestToken && path !== '/api/auth/me') {
+      authState.verified = false
+      void refreshCurrentAccount({ force: true }).catch(() => undefined)
+    }
     throw new PlatformRequestError(message, response.status, String(payload.code || 'request_failed'), correlationId)
   }
   return payload as T
@@ -279,10 +296,53 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
 function remember(account: PlatformAccount, token: string) {
   platformState.account = account
   platformState.token = token
+  authState.initialized = true
+  authState.verified = true
+  authState.refreshing = false
   localStorage.setItem('l12-account', JSON.stringify(account))
   localStorage.setItem('l12-auth-token', token)
   l12State.nickname = account.username
   localStorage.setItem('l12-nickname', account.username)
+}
+
+export function refreshCurrentAccount(options: { force?: boolean } = {}): Promise<PlatformAccount | null> {
+  if (authRefreshPromise) return authRefreshPromise
+  if (!platformState.token) {
+    forgetAccount()
+    return Promise.resolve(null)
+  }
+  if (!options.force && authState.verified) return Promise.resolve(platformState.account)
+
+  const requestToken = platformState.token
+  authState.refreshing = true
+  authState.verified = false
+  const pending = (async () => {
+    try {
+      const account = await platformRequest<PlatformAccount>('/api/auth/me')
+      if (platformState.token !== requestToken) return platformState.account
+      remember(account, requestToken)
+      return account
+    } catch (error) {
+      if (platformState.token === requestToken) {
+        // 网络与 5xx 不销毁可重试的 token，但绝不能继续把缓存身份当成已验证权限。
+        authState.initialized = true
+        authState.verified = false
+      }
+      if (error instanceof PlatformRequestError && error.status === 401)
+        return platformState.token === requestToken ? null : platformState.account
+      throw error
+    } finally {
+      if (platformState.token === requestToken) authState.refreshing = false
+      authRefreshPromise = null
+    }
+  })()
+  authRefreshPromise = pending
+  return pending
+}
+
+export function initializeAuth() {
+  if (authState.initialized) return Promise.resolve(platformState.account)
+  return refreshCurrentAccount({ force: true })
 }
 
 export async function register(username: string, password: string) {
@@ -295,10 +355,14 @@ export async function login(username: string, password: string) {
   remember(result.account, result.token)
 }
 
-function forgetAccount() {
+function forgetAccount(expectedToken?: string) {
+  if (expectedToken !== undefined && platformState.token !== expectedToken) return
   disconnect()
   platformState.account = null
   platformState.token = ''
+  authState.initialized = true
+  authState.verified = false
+  authState.refreshing = false
   localStorage.removeItem('l12-account')
   localStorage.removeItem('l12-auth-token')
   l12State.nickname = ''
