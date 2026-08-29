@@ -172,3 +172,10 @@
 - 平台持久化聚焦：22/22通过。
 - `npm run build`：UI契约147/147、卡图架构19/19（248张）、Vue/TypeScript及Vite生产构建通过。
 - 原子审计：248/248、legacy case 0、`cardConditional=212`、`cardSwitchArm=67`、`effectTextInference=3`；新增身份判断进入结构化语义层，没有提高旧分支基线。
+
+## 2026-08-29 观战退出、重连与房间关闭生命周期
+
+- 聚焦回归4/4：观战者可退出运行中房间并立即创建新房间；显式退出后重连不恢复旧观战；房主关闭已结束房间会释放并通知全部观战者；既有玩家投降后离房保持正常。
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore --configuration Release --settings <串行配置>`：520/520通过，0失败、0跳过。
+- `npm run check:ui-contracts`：148/148通过；`npm run build`：UI契约148/148、卡图架构19/19（248张）、Vue/TypeScript及Vite生产构建通过。
+- 原子审计：248/248、legacy case 0、`cardConditional=212`、`cardSwitchArm=67`、`effectTextInference=3`。

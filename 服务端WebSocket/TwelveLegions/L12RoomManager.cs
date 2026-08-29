@@ -56,6 +56,7 @@ public sealed class L12RoomManager
         public long CommandSequence { get; set; }
         public bool IsSandbox { get; init; }
         public Guid? GmControllerSessionId { get; set; }
+        public bool Closed { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
     }
 
@@ -416,6 +417,9 @@ public sealed class L12RoomManager
         }
         lock (room.Spectators)
         {
+            if (room.Closed || !_rooms.TryGetValue(code, out var currentRoom)
+                || !ReferenceEquals(room, currentRoom))
+                return Error(sessionId, "房间已经关闭");
             room.Spectators.Add(sessionId);
             session.RoomCode = room.Code;
             session.PlayerIndex = null;
@@ -622,6 +626,21 @@ public sealed class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
+        if (!_sessions.TryGetValue(sessionId, out var currentSession)) return Error(sessionId, "会话不存在");
+        if (currentSession.IsSpectator)
+        {
+            if (currentSession.RoomCode is { } spectatorRoomCode
+                && _rooms.TryGetValue(spectatorRoomCode, out var spectatorRoom))
+            {
+                lock (spectatorRoom.Spectators) spectatorRoom.Spectators.Remove(sessionId);
+            }
+            ClearRoomMembership(currentSession);
+            return [new OutgoingMessage(sessionId, new
+            {
+                type = "roomLeft",
+                message = "已退出观战并返回大厅",
+            })];
+        }
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
@@ -629,14 +648,19 @@ public sealed class L12RoomManager
         var playerIndex = session.PlayerIndex!.Value;
         if (playerIndex == 0)
         {
-            _rooms.TryRemove(room.Code, out _);
             var messages = new List<OutgoingMessage>();
+            Guid[] spectators;
+            lock (room.Spectators)
+            {
+                room.Closed = true;
+                spectators = [.. room.Spectators];
+                room.Spectators.Clear();
+                _rooms.TryRemove(room.Code, out _);
+            }
             foreach (var id in room.Sessions.ToArray())
             {
                 if (!_sessions.TryGetValue(id, out var member)) continue;
-                member.RoomCode = null;
-                member.PlayerIndex = null;
-                member.CustomDeck = null;
+                ClearRoomMembership(member);
                 messages.Add(new OutgoingMessage(id, new
                 {
                     type = id == sessionId ? "roomLeft" : "roomClosed",
@@ -644,16 +668,33 @@ public sealed class L12RoomManager
                 }));
                 if (member.IsVirtual) _sessions.TryRemove(id, out _);
             }
+            foreach (var id in spectators)
+            {
+                if (!_sessions.TryGetValue(id, out var spectator)) continue;
+                ClearRoomMembership(spectator);
+                if (spectator.Connected)
+                    messages.Add(new OutgoingMessage(id, new
+                    {
+                        type = "roomClosed",
+                        message = "所观战的房间已关闭",
+                    }));
+            }
             return messages;
         }
 
         room.Sessions.Remove(sessionId);
         room.Ready[playerIndex] = false;
+        ClearRoomMembership(session);
+        return new[] { new OutgoingMessage(sessionId, new { type = "roomLeft", message = "已离开房间" }) }
+            .Concat(BroadcastRoom(room)).ToArray();
+    }
+
+    private static void ClearRoomMembership(Session session)
+    {
         session.RoomCode = null;
         session.PlayerIndex = null;
         session.CustomDeck = null;
-        return new[] { new OutgoingMessage(sessionId, new { type = "roomLeft", message = "已离开房间" }) }
-            .Concat(BroadcastRoom(room)).ToArray();
+        session.IsSpectator = false;
     }
 
     private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
@@ -694,16 +735,20 @@ public sealed class L12RoomManager
     }
 
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room)
-        => room.Sessions.Select(id => new OutgoingMessage(id, new
+    {
+        Guid[] spectators;
+        lock (room.Spectators) spectators = [.. room.Spectators];
+        return room.Sessions.Select(id => new OutgoingMessage(id, new
         {
             type = "gameState", state = room.IsSandbox && room.GmControllerSessionId == id
                 ? room.Game!.SnapshotForGm(_sessions[id].PlayerIndex!.Value)
                 : room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value),
             gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
-        })).Concat(room.Spectators.Select(id => new OutgoingMessage(id, new
+        })).Concat(spectators.Select(id => new OutgoingMessage(id, new
         {
             type = "gameState", spectating = true, gmEnabled = false, state = room.Game!.SnapshotForSpectator(),
         }))).ToArray();
+    }
 
     private L12PresetDeckDefinition SelectedDeck(Session session)
         => session.CustomDeck ?? _catalog.DeckAt(session.SelectedDeckIndex);

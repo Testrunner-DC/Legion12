@@ -60,6 +60,7 @@ export const l12State = reactive({
   room: null as RoomState | null,
   game: null as GameState | null,
   spectating: false,
+  leavingRoom: false,
   gmEnabled: false,
   pendingAction: false,
   notice: '',
@@ -99,6 +100,7 @@ export function connect(): Promise<void> {
         l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
         reconnectAttempts = 0
         startHeartbeat(socket)
+        if (l12State.leavingRoom) socket.send(JSON.stringify({ type: 'leaveRoom' }))
         if (!settled) { settled = true; resolve() }
       }
       else if (message.type === 'authenticationRequired') {
@@ -108,6 +110,7 @@ export function connect(): Promise<void> {
         socket.close()
       }
       else if (message.type === 'roomState') {
+        if (l12State.leavingRoom) return
         l12State.room = message
         if (!message.started) {
           l12State.game = null
@@ -133,11 +136,13 @@ export function connect(): Promise<void> {
         l12State.room = null
         l12State.game = null
         l12State.spectating = false
+        l12State.leavingRoom = false
         l12State.gmEnabled = false
         l12State.pendingAction = false
         l12State.notice = message.message || ''
       }
       else if (message.type === 'gameState') {
+        if (l12State.leavingRoom) return
         const incoming = message.state as GameState
         const current = l12State.game
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
@@ -149,7 +154,11 @@ export function connect(): Promise<void> {
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
         }
       }
-      else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') { l12State.notice = message.message; l12State.pendingAction = false }
+      else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') {
+        l12State.notice = message.message
+        l12State.pendingAction = false
+        l12State.leavingRoom = false
+      }
     }
     socket.onerror = () => {
       if (l12State.socket !== socket) return
@@ -197,6 +206,7 @@ export function disconnect() {
   l12State.room = null
   l12State.game = null
   l12State.spectating = false
+  l12State.leavingRoom = false
   l12State.gmEnabled = false
   l12State.pendingAction = false
 }
@@ -220,21 +230,25 @@ export interface RoomOptions {
 
 export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'
 
-export const createRoom = (options?: RoomOptions) => { l12State.spectating = false; send({ type: 'createRoom', options }) }
+export const createRoom = (options?: RoomOptions) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'createRoom', options }) }
 export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12Deck, disasterMode: SandboxDisasterMode = 'none') => {
   l12State.spectating = false
+  l12State.leavingRoom = false
   l12State.gmEnabled = false
   send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
 }
-export const joinRoom = (roomCode: string) => { l12State.spectating = false; send({ type: 'joinRoom', roomCode }) }
+export const joinRoom = (roomCode: string) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'joinRoom', roomCode }) }
 export const inviteFriend = (accountId: string) => send({ type: 'inviteFriend', accountId })
 export const resolveFriendInvitation = (invitationId: string, accept: boolean) => send({ type: 'resolveFriendInvitation', invitationId, accept })
-export const spectateRoom = (roomCode: string) => send({ type: 'spectateRoom', roomCode })
+export const spectateRoom = (roomCode: string) => { l12State.leavingRoom = false; send({ type: 'spectateRoom', roomCode }) }
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
 export const returnToRoom = () => setReady(false)
-export const leaveRoom = () => send({ type: 'leaveRoom' })
+export const leaveRoom = () => {
+  l12State.leavingRoom = true
+  send({ type: 'leaveRoom' })
+}
 export function gameAction(command: Record<string, unknown>) {
   if (l12State.pendingAction) return
   l12State.pendingAction = true

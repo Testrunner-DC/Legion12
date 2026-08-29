@@ -10,7 +10,7 @@ const route = useRoute()
 const router = useRouter()
 const immersive = computed(() => route.meta.immersive === true)
 watch(() => l12State.game, (game) => {
-  if (game && route.path !== '/game') router.push('/game')
+  if (game && !l12State.leavingRoom && route.path !== '/game') router.push('/game')
 })
 watch(() => [platformState.token, authState.verified] as const, ([token, verified]) => {
   if (token && verified) startAutomaticConnection()

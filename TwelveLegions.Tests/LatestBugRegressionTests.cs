@@ -597,6 +597,107 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public async Task SpectatorCanLeaveARunningRoomAndImmediatelyUseAnotherRoom()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-spectator-leave", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var host = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        var spectator = Guid.NewGuid();
+        manager.Connect(host, "host-account", "甲");
+        manager.Connect(guest, "guest-account", "乙");
+        manager.Connect(spectator, "spectator-account", "旁观者");
+        var created = manager.CreateRoom(host);
+        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, roomCode);
+        await manager.SetReadyAsync(host, true);
+        await manager.SetReadyAsync(guest, true);
+
+        var spectate = manager.SpectateRoom(spectator, roomCode);
+        Assert.Equal("gameState", JsonSerializer.SerializeToElement(Assert.Single(spectate).Payload)
+            .GetProperty("type").GetString());
+
+        var leave = manager.LeaveRoom(spectator);
+        var left = JsonSerializer.SerializeToElement(Assert.Single(leave).Payload);
+        Assert.Equal("roomLeft", left.GetProperty("type").GetString());
+        Assert.Empty(manager.RecoveryState(spectator));
+
+        var spectatorRoom = manager.CreateRoom(spectator);
+        Assert.Equal("roomState", JsonSerializer.SerializeToElement(Assert.Single(spectatorRoom).Payload)
+            .GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task ExplicitSpectatorLeaveIsNotRecoveredAfterReconnect()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-spectator-recovery", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var host = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        var spectator = Guid.NewGuid();
+        manager.Connect(host, "host-recovery", "甲");
+        manager.Connect(guest, "guest-recovery", "乙");
+        manager.Connect(spectator, "spectator-recovery", "旁观者");
+        var created = manager.CreateRoom(host);
+        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, roomCode);
+        await manager.SetReadyAsync(host, true);
+        await manager.SetReadyAsync(guest, true);
+        manager.SpectateRoom(spectator, roomCode);
+        manager.Disconnect(spectator);
+
+        var recoveredSession = Guid.NewGuid();
+        var recovered = JsonSerializer.SerializeToElement(
+            manager.Connect(recoveredSession, "spectator-recovery", "旁观者"));
+        Assert.True(recovered.GetProperty("recovered").GetBoolean());
+        Assert.Contains(manager.RecoveryState(recoveredSession), message =>
+            JsonSerializer.SerializeToElement(message.Payload).GetProperty("type").GetString() == "gameState");
+
+        Assert.Equal("roomLeft", JsonSerializer.SerializeToElement(
+            Assert.Single(manager.LeaveRoom(recoveredSession)).Payload).GetProperty("type").GetString());
+        manager.Disconnect(recoveredSession);
+        var nextSession = Guid.NewGuid();
+        var next = JsonSerializer.SerializeToElement(
+            manager.Connect(nextSession, "spectator-recovery", "旁观者"));
+        Assert.False(next.GetProperty("recovered").GetBoolean());
+        Assert.Empty(manager.RecoveryState(nextSession));
+    }
+
+    [Fact]
+    public async Task HostClosingCompletedRoomAlsoReleasesEverySpectator()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-spectator-room-close", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var host = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        var spectator = Guid.NewGuid();
+        manager.Connect(host, "host-close", "甲");
+        manager.Connect(guest, "guest-close", "乙");
+        manager.Connect(spectator, "spectator-close", "旁观者");
+        var created = manager.CreateRoom(host);
+        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, roomCode);
+        await manager.SetReadyAsync(host, true);
+        await manager.SetReadyAsync(guest, true);
+        manager.SpectateRoom(spectator, roomCode);
+        await manager.HandleActionAsync(host, JsonSerializer.SerializeToElement(new { type = "surrender" }));
+
+        var closed = manager.LeaveRoom(host);
+        var spectatorMessage = JsonSerializer.SerializeToElement(
+            closed.Single(message => message.SessionId == spectator).Payload);
+        Assert.Equal("roomClosed", spectatorMessage.GetProperty("type").GetString());
+        Assert.Empty(manager.RecoveryState(spectator));
+        Assert.Equal("roomState", JsonSerializer.SerializeToElement(
+            Assert.Single(manager.CreateRoom(spectator)).Payload).GetProperty("type").GetString());
+    }
+
+    [Fact]
     public async Task CompletedRoomCanResetReadinessAndStartANewMatchWithoutLeaving()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-room-rematch", Guid.NewGuid().ToString("N"));

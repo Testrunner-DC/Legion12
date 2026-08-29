@@ -31,7 +31,7 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
-  if (l12State.room?.sandbox) leaveRoom()
+  if (l12State.spectating || l12State.room?.sandbox) leaveRoom()
   else if (l12State.room && game.value?.phase === 'GameOver') returnToRoom()
   router.push('/lobby')
 }
