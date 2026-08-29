@@ -421,6 +421,9 @@ function beginCardAbility(card: Card) {
 <style scoped>
 .formation-slot.combat-attacker{z-index:8;border-color:#d35a61!important;box-shadow:0 0 0 3px #d35a61,0 0 24px rgba(211,90,97,.72)!important}
 .formation-slot.combat-target,.mini-master.combat-target{z-index:8;border-color:#e0b85a!important;box-shadow:0 0 0 3px #e0b85a,0 0 24px rgba(224,184,90,.7)!important}
+.formation-slot.combat-target :deep(.card-tile),.mini-master.combat-target{animation:l12-combat-target-cue .3s ease-out both}.card-power{transition:background-color .16s,color .16s,filter .16s}
+@keyframes l12-combat-target-cue{0%,100%{filter:none}45%{filter:brightness(1.22)}}
+@media(prefers-reduced-motion:reduce){.formation-slot.combat-target :deep(.card-tile),.mini-master.combat-target{animation:none}}
 .formation-slot.payment-resource{z-index:9;border-color:#52d58a!important;box-shadow:0 0 0 2px #52d58a,0 0 18px rgba(82,213,138,.55)!important;cursor:pointer}.formation-slot.payment-selected{border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.7)!important}
 .formation-slot.resource-ready:not(.payment-resource):not(.combat-attacker):not(.combat-target){border-color:#8cdbad;box-shadow:0 0 0 1px rgba(140,219,173,.72),0 0 10px rgba(82,213,138,.28)}
 .formation-slot.prompt-selected{z-index:10;border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.68)!important}.formation-slot.prompt-selected::after{content:'已选择';position:absolute;z-index:12;right:4px;top:4px;padding:3px 6px;background:#f1c75b;color:#15120a;font-size:8px;font-weight:900}

@@ -16,6 +16,7 @@ type Movement = {
   covered: boolean
   fromRect: AnchorRect
   toRect: AnchorRect
+  sourceGhost?: HTMLElement
 }
 
 const props = withDefaults(defineProps<{
@@ -40,6 +41,9 @@ function textSource(text: string): Zone {
 }
 
 function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: AnchorRect): Movement | null {
+  // Combat deaths already keep the exact battlefield visual until it reaches the
+  // owner's graveyard. Do not create a second card when delayed death triggers finish.
+  if (event.type === 'grave' && event.text.includes('阵亡触发已完成')) return null
   let from: Zone
   let to: Zone
   let label: string
@@ -112,21 +116,20 @@ const motionStyle = computed(() => {
   if (!active.value) return {}
   const start = active.value.fromRect
   const finish = active.value.toRect
-  const distance = Math.hypot(finish.x - start.x, finish.y - start.y)
-  const arc = Math.min(110, Math.max(30, distance * .18))
   return {
     '--move-from-x': `${start.x}px`,
     '--move-from-y': `${start.y}px`,
-    '--move-mid-x': `${(start.x + finish.x) / 2}px`,
-    '--move-mid-y': `${(start.y + finish.y) / 2 - arc}px`,
     '--move-to-x': `${finish.x}px`,
     '--move-to-y': `${finish.y}px`,
-    '--move-start-scale': `${Math.max(.72, Math.min(1.2, start.width / 72))}`,
+    '--move-from-scale': `${Math.max(.55, Math.min(1.45, start.width / 72))}`,
+    '--move-to-scale': `${Math.max(.55, Math.min(1.45, finish.width / 72))}`,
   }
 })
 
 let hiddenTarget: HTMLElement | null = null
 let hiddenTargetVisibility = ''
+let activeGhostWrapper: HTMLElement | null = null
+let activeGhostAnimation: Animation | null = null
 function revealTarget() {
   if (!hiddenTarget) return
   hiddenTarget.style.visibility = hiddenTargetVisibility
@@ -144,17 +147,63 @@ function showNext() {
     hiddenTargetVisibility = destination.style.visibility
     destination.style.visibility = 'hidden'
   }
-  timer = setTimeout(() => {
+  const finish = () => {
+    if (!active.value) return
+    if (timer) clearTimeout(timer)
+    activeGhostAnimation?.cancel()
+    activeGhostAnimation = null
+    activeGhostWrapper?.remove()
+    activeGhostWrapper = null
     revealTarget()
     active.value = null
     timer = null
     showNext()
-  }, 920)
+  }
+  if (active.value.sourceGhost) {
+    const source = active.value.fromRect
+    const target = active.value.toRect
+    const wrapper = document.createElement('div')
+    wrapper.className = 'l12-zone-flight-ghost'
+    Object.assign(wrapper.style, {
+      position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
+      width: `${source.width}px`, height: `${source.height}px`, zIndex: '2147482988', pointerEvents: 'none',
+      transformOrigin: 'left top', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
+    })
+    const ghost = active.value.sourceGhost
+    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', pointerEvents: 'none' })
+    ghost.removeAttribute('id')
+    ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+    wrapper.appendChild(ghost)
+    document.body.appendChild(wrapper)
+    activeGhostWrapper = wrapper
+    const dx = target.x - source.x
+    const dy = target.y - source.y
+    const scaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
+    const scaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
+    const distance = Math.hypot(dx, dy)
+    const duration = Math.round(Math.min(500, Math.max(340, 320 + distance * .16)))
+    activeGhostAnimation = wrapper.animate([
+      { transform: 'translate3d(0,0,0) scale(1)', opacity: 1 },
+      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY})`, opacity: 1 },
+    ], { duration, easing: 'cubic-bezier(.24,.72,.28,1)', fill: 'forwards' })
+    activeGhostAnimation.onfinish = finish
+    activeGhostAnimation.oncancel = () => {
+      activeGhostWrapper?.remove()
+      activeGhostWrapper = null
+    }
+    timer = setTimeout(finish, duration + 80)
+    return
+  }
+  timer = setTimeout(finish, 460)
 }
 
 function reset() {
   if (timer) clearTimeout(timer)
   timer = null
+  activeGhostAnimation?.cancel()
+  activeGhostAnimation = null
+  activeGhostWrapper?.remove()
+  activeGhostWrapper = null
   revealTarget()
   active.value = null
   queue.length = 0
@@ -173,14 +222,20 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
   const fresh = props.events.filter(item => item.sequence > lastSequence).sort((a, b) => a.sequence - b.sequence)
   const starts = fresh.map(event => {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
-    return draft ? resolveRect(draft.from, draft.playerIndex, draft.card?.instanceId) : null
+    if (!draft) return null
+    const source = cardElement(draft.card?.instanceId)
+    return {
+      rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex, draft.card?.instanceId),
+      ghost: source instanceof HTMLElement ? source.cloneNode(true) as HTMLElement : undefined,
+    }
   })
   await nextTick()
   for (const [index, event] of fresh.entries()) {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
     const movement = draft && starts[index]
-      ? movementFromEvent(event, starts[index]!, resolveRect(draft.to, draft.playerIndex, draft.card?.instanceId))
+      ? movementFromEvent(event, starts[index]!.rect, resolveRect(draft.to, draft.playerIndex, draft.card?.instanceId))
       : null
+    if (movement) movement.sourceGhost = starts[index]?.ghost
     const previous = queue.at(-1) ?? active.value
     const repeated = movement && previous && movement.card?.instanceId
       && movement.card.instanceId === previous.card?.instanceId
@@ -199,23 +254,21 @@ onBeforeUnmount(reset)
 
 <template>
   <Teleport to="body">
-    <div v-if="active" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
+    <div v-if="active && !active.sourceGhost" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
       <div class="moving-card" :class="{ concealed: active.concealed, covered: active.covered }">
         <img v-if="active.concealed" src="/assets/l12/card-back-official.png" alt="" />
         <CardImage v-else-if="active.card" :card-id="active.card.cardId" :legacy-url="active.card.imageUrl"
           :alt="active.card.name" intent="board" eager />
-        <small>{{ active.label }}</small>
       </div>
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight .9s cubic-bezier(.22,.76,.2,1) both;filter:drop-shadow(0 12px 14px #000);will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}.moving-card small{position:absolute;left:50%;bottom:-21px;transform:translateX(-50%);padding:3px 7px;border:1px solid #d6bd70;background:#090c0dec;color:#f5edcf;font-size:9px;font-weight:900;letter-spacing:.12em;white-space:nowrap}.moving-card::after{content:'';position:absolute;inset:-8px;border:1px solid rgba(225,196,104,.65);opacity:0;animation:l12-zone-card-pulse .9s ease-out}
+.zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight .44s cubic-bezier(.24,.72,.28,1) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
-@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-start-scale)) rotate(0)}52%{opacity:1;transform:translate3d(calc(var(--move-mid-x) - 36px),calc(var(--move-mid-y) - 50px),0) scale(1.08) rotate(-2deg)}88%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(1) rotate(0)}100%{opacity:0;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(1)}}
-@keyframes l12-zone-card-pulse{45%{opacity:0;transform:scale(.9)}72%{opacity:.9}100%{opacity:0;transform:scale(1.24)}}
+@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:8px}}
-@media(prefers-reduced-motion:reduce){.moving-card{animation-duration:.12s}.moving-card::after{animation:none}}
+@media(prefers-reduced-motion:reduce){.moving-card{animation-duration:.1s}}
 </style>

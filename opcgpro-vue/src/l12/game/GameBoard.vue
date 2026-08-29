@@ -7,6 +7,7 @@ import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
+import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
 import MasterOverlay from './MasterOverlay.vue'
@@ -786,6 +787,7 @@ function statusTexts(card: Card) {
               :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :viewer-player-index="game.you" :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
+            <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" />
             <Teleport to="body">
               <Transition name="public-reveal">
                 <div v-if="publicReveal" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
@@ -924,7 +926,10 @@ function statusTexts(card: Card) {
   grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr);
   align-items:stretch;
 }
-.battlefield-half{min-height:0;align-self:stretch}
+.battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch}
+.battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
+.battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
+.battlefield-half.my-half::before{border-color:rgba(57,171,181,.4)}
 .battlefield-half.opponent-half{grid-row:1}
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
 .battlefield-half.my-half{grid-row:3}

@@ -54,3 +54,16 @@ export function playL12ActionSound(kind: ActionPresentationKind) {
       break
   }
 }
+
+/** A restrained, locally generated cue matched to the seven-second Osiris sequence. */
+export function playL12OsirisVictorySound() {
+  const { isMuted, sfxVolume } = useAudioStore.getState()
+  if (isMuted || sfxVolume <= 0) return
+  primeL12ActionAudio()
+  const volume = Math.min(.065, .065 * sfxVolume)
+  ;[196, 220, 247, 294, 330].forEach((frequency, index) => {
+    tone(frequency, .42, volume * .42, 'sine', frequency * 1.03, .65 + index * .7)
+  })
+  tone(98, 1.7, volume * .68, 'sine', 73, 4.62)
+  tone(392, .75, volume * .48, 'triangle', 523, 5.55)
+}

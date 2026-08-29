@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import CardImage from '../CardImage.vue'
+import { playL12OsirisVictorySound } from './useL12ActionAudio'
 
 const emit = defineEmits<{ complete: [] }>()
 const stage = ref(0)
@@ -8,6 +9,7 @@ const jarIds = ['S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220']
 const timers: Array<ReturnType<typeof setTimeout>> = []
 
 onMounted(() => {
+  playL12OsirisVictorySound()
   jarIds.forEach((_, index) => timers.push(setTimeout(() => { stage.value = index + 1 }, 650 + index * 700)))
   timers.push(setTimeout(() => { stage.value = 6 }, 4700))
   timers.push(setTimeout(() => { stage.value = 7 }, 5650))
