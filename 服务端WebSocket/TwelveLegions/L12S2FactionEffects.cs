@@ -51,6 +51,10 @@ public sealed partial class L12GameEngine
 
     private static bool IsS2FactionDeathCard(string cardId) => S2FactionDeathCards.Contains(cardId);
 
+    private L12CardInstance? FindKingsSwordOwner(L12PlayerState player)
+        => PublicLegions(player).FirstOrDefault(candidate =>
+            candidate.AttachedCards.Any(attached => L12StructuredCardSemantics.IsKingsSword(attached.CardId)));
+
     private static List<L12AbilityView> GetS2FactionAbilities(string cardId) => cardId switch
     {
         "S02-02M1" =>
@@ -223,11 +227,17 @@ public sealed partial class L12GameEngine
         {
             case "亚瑟王":
                 if (player.SpecialZones.Runes < 1) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "亚瑟王：是否消耗1符文，将〈王者之剑〉叠放在此军团下方？",
+                var existingSwordOwner = FindKingsSwordOwner(player);
+                var promptText = existingSwordOwner is null
+                    ? "亚瑟王：是否消耗1符文，将〈王者之剑〉叠放在此军团下方？"
+                    : "场上已存在〈王者之剑〉。若继续发动，仍会消耗1符文，但不会叠放、生成或转移〈王者之剑〉。";
+                CreatePrompt(item.Controller, "optional", promptText,
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string>
                     {
-                        ["action"] = "s2-arthur-sword", ["yes"] = "消耗1符文并叠放〈王者之剑〉", ["no"] = "不发动",
+                        ["action"] = "s2-arthur-sword",
+                        ["yes"] = existingSwordOwner is null ? "消耗1符文并叠放〈王者之剑〉" : "继续支付并发动",
+                        ["no"] = existingSwordOwner is null ? "不发动" : "取消",
                     });
                 return true;
             case "李牧":
@@ -1875,8 +1885,7 @@ public sealed partial class L12GameEngine
                 var arthur = FindSource(item);
                 if (chosen[0] == "yes" && arthur is not null && L12S2ZoneOps.SpendRunes(player, 1))
                 {
-                    var existingSwordOwner = PublicLegions(player).FirstOrDefault(candidate =>
-                        candidate.AttachedCards.Any(attached => L12StructuredCardSemantics.IsKingsSword(attached.CardId)));
+                    var existingSwordOwner = FindKingsSwordOwner(player);
                     if (existingSwordOwner is not null)
                     {
                         AddEvent("effect-noop", item.Controller,

@@ -86,7 +86,8 @@ public sealed partial class L12GameEngine
                 PromptEnemyByTroops(item, "thutmose-kill", "图特摩斯三世：击杀对方1张兵力不高于5000的军团", 5000, false); return true;
             case "拉美西斯二世":
             {
-                var choices = PublicLegions(player).Where(target => target.InstanceId != card.InstanceId && target.Faction == "taiyangcheng")
+                var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng"
+                        && !target.Name.Equals(card.Name, StringComparison.Ordinal))
                     .Select(target => target.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
                 choices.Add("skip");
@@ -402,9 +403,25 @@ public sealed partial class L12GameEngine
         {
             case "thutmose-kill": case "hunt-kill": case "harald-kill": if (chosen[0] != "skip") KillTarget(chosen[0], $"被{source?.Name}击杀"); FinishStackItem(item); return true;
             case "ramses-repeat":
+            {
+                var inheritsCounterProtection = source is not null
+                    && L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
                 FinishStackItem(item);
-                foreach (var id in chosen.Where(id => id != "skip").Reverse()) { var target = FindOnField(player, id, out _, out _); if (target is not null && HasImmediateEffect(target, "enter")) PushEffect(item.Controller, target, "enter", "拉美西斯二世再次发动的【登场时】效果"); }
+                foreach (var id in chosen.Where(id => id != "skip").Reverse())
+                {
+                    var target = FindOnField(player, id, out _, out _);
+                    if (target is null || !HasImmediateEffect(target, "enter")) continue;
+                    PushEffect(item.Controller, target, "enter", "拉美西斯二世再次发动的【登场时】效果",
+                        data: inheritsCounterProtection
+                            ? new Dictionary<string, string>
+                            {
+                                ["inheritedCounterTacticProtection"] = "true",
+                                ["counterTacticProtectionSourceInstanceId"] = source!.InstanceId,
+                            }
+                            : null);
+                }
                 return true;
+            }
             case "horemheb-charge":
                 if (chosen[0] != "skip" && source is not null)
                 {

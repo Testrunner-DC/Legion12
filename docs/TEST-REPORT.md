@@ -179,3 +179,12 @@
 - `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore --configuration Release --settings <串行配置>`：520/520通过，0失败、0跳过。
 - `npm run check:ui-contracts`：148/148通过；`npm run build`：UI契约148/148、卡图架构19/19（248张）、Vue/TypeScript及Vite生产构建通过。
 - 原子审计：248/248、legacy case 0、`cardConditional=212`、`cardSwitchArm=67`、`effectTextInference=3`。
+
+## 2026-08-30 BQ-20260830-01 拉美西斯、狂热者与王者之剑
+
+- 新增5条回归首轮3失败/2通过；修复后与相关既有守卫合计13/13通过。
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore --configuration Release --settings <串行配置>`：525/525通过，0失败、0跳过。
+- 平台持久化聚焦：22/22通过。
+- `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1 -RequireZero`：248/248通过，legacy case 0、`cardConditional=212`、`cardSwitchArm=67`、`effectTextInference=3`。
+- `npm run check:ui-contracts`：148/148通过；`npm run build`：UI契约148/148、卡图架构19/19（248张）、Vue/TypeScript与Vite生产构建通过。
+- GrandUMI历史全套额外审计为213/223，10项既有`NewAtomicOps`、`EB_M6`、`OP16`和`OP16_045`失败；与本批L12规则文件无交集，不属于既定L12发布门禁。NU1900仅为NuGet漏洞元数据源离线警告。

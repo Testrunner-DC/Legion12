@@ -35,7 +35,8 @@ public sealed partial class L12GameEngine
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
             return CommandResult.Reject("该圣物被〈神圣伽锁〉叠放，当前无法使用");
-        if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability)))
+        if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability))
+            && !MatchesPendingFreeMasterActivation(playerIndex, source, ability))
             return CommandResult.Reject("该效果本回合已经发动");
 
         string[] choices;
@@ -289,13 +290,11 @@ public sealed partial class L12GameEngine
 
     private CommandResult? TryCommitFreeMasterActivation(int playerIndex, L12CardInstance source, string ability, string? target)
     {
-        var free = State.FreeMasterActivation;
-        if (free is null || free.Controller != playerIndex
-            || !free.Ability.Equals(ability, StringComparison.OrdinalIgnoreCase)) return null;
+        if (!MatchesPendingFreeMasterActivation(playerIndex, source, ability)) return null;
+        var free = State.FreeMasterActivation!;
 
         var player = State.Players[playerIndex];
-        var legalAbility = source.CardId == player.MasterId
-            && GetAbilities(player.MasterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase))
+        var legalAbility = GetAbilities(player.MasterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase))
             && GetActiveAbilityMoraleCost(source, ability) > 0;
         State.FreeMasterActivation = null;
         if (!legalAbility) return CommandResult.Reject("信仰狂热者选择的主宰效果已不合法");
@@ -310,6 +309,15 @@ public sealed partial class L12GameEngine
         PushEffect(playerIndex, source, "active", "由〈信仰狂热者〉无视消耗触发的主宰效果", data: data);
         AddEvent("effect", playerIndex, $"〈信仰狂热者〉无视全部消耗触发〈{source.Name}〉的主宰效果，且不计入使用次数", source);
         return CommandResult.Ok();
+    }
+
+    private bool MatchesPendingFreeMasterActivation(int playerIndex, L12CardInstance source, string ability)
+    {
+        var free = State.FreeMasterActivation;
+        return free is not null
+            && free.Controller == playerIndex
+            && source.CardId == State.Players[playerIndex].MasterId
+            && free.Ability.Equals(ability, StringComparison.OrdinalIgnoreCase);
     }
 
     private static int GetActiveAbilityMoraleCost(L12CardInstance source, string ability) => ability switch

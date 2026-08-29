@@ -955,7 +955,8 @@ public sealed partial class L12GameEngine
 
     private bool IsProtectedFromCounterTactics(L12StackItem top)
     {
-        if (top.Trigger == "disaster") return true;
+        if (top.Trigger == "disaster"
+            || top.Data.GetValueOrDefault("inheritedCounterTacticProtection") == "true") return true;
         var source = FindSource(top);
         return source is not null
             && L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
