@@ -1,0 +1,30 @@
+[Unit]
+Description=Legion12 isolated testrun environment
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=legion12
+Group=legion12
+UMask=0077
+WorkingDirectory=/opt/legion12-testrun/publish
+ExecStart=/usr/local/bin/dotnet /opt/legion12-testrun/publish/GrandUMIServer.dll 8084
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=20
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+Environment=L12_LISTEN_HOST=127.0.0.1
+Environment=L12_ALLOWED_ORIGINS=https://testrun.legion-12.com
+EnvironmentFile=/etc/legion12-testrun.env
+CPUQuota=50%
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/legion12-testrun-runtime
+
+[Install]
+WantedBy=multi-user.target
