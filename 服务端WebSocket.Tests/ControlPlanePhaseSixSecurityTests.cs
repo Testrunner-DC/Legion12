@@ -91,6 +91,9 @@ public sealed class ControlPlanePhaseSixSecurityTests
             await SendWebSocketAsync(socket, new { type = "hello", authToken = target.Token });
             Assert.Contains("session", await ReceiveWebSocketTextAsync(socket, TimeSpan.FromSeconds(3)),
                 StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("effectiveOperationsPolicy",
+                await ReceiveWebSocketTextAsync(socket, TimeSpan.FromSeconds(3)),
+                StringComparison.OrdinalIgnoreCase);
 
             var outsiderBody = new
             {

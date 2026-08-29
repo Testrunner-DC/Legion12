@@ -9,7 +9,7 @@ import {
   MAIN_DECK_TYPES, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
-import { platformState, publicDeckApi } from './platform'
+import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type OperationsCardRestriction } from './platform'
 import CardImage from './CardImage.vue'
 
 const router = useRouter()
@@ -37,6 +37,7 @@ const deckImageUrl = ref('')
 const deckImageBlob = ref<Blob | null>(null)
 const generatingDeckImage = ref(false)
 const publicationId = ref(typeof route.query.published === 'string' ? route.query.published : '')
+const activeRestrictions = ref<OperationsCardRestriction[]>([])
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -48,8 +49,11 @@ const typeLabels: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    catalog.value = await loadDeckCatalog()
-    savedDecks.value = await ensureOfficialPrebuiltDecks()
+    ;[catalog.value, savedDecks.value, activeRestrictions.value] = await Promise.all([
+      loadDeckCatalog(),
+      ensureOfficialPrebuiltDecks(),
+      getEffectiveOperationsPolicy().then(policy => policy.cardRestrictions).catch(() => []),
+    ])
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
     else selected.value = mainCards.value[0] ?? null
@@ -108,7 +112,7 @@ const validation = computed(() => validateDeck({
   cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
   moraleIds: moraleIds.value,
   specialIds: specialIds.value,
-}, catalog.value))
+}, catalog.value, activeRestrictions.value))
 const curve = computed(() => {
   const values = Array(9).fill(0) as number[]
   entries.value.forEach(({ card, count }) => values[Math.min(8, card.cost ?? 0)] += count)

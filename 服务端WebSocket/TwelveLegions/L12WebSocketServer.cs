@@ -69,11 +69,32 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             context.Response.Headers.AccessControlExposeHeaders =
                 $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
+            var featureId = context.Request.Path.StartsWithSegments("/api/public-decks") ? "publicDecks"
+                : context.Request.Path.StartsWithSegments("/api/tournaments") ? "tournaments"
+                : null;
+            if (featureId is not null && !_platform.CaptureOperationsPolicy().IsFeatureEnabled(featureId))
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "feature_disabled",
+                    message = "该功能当前未开放",
+                    correlationId,
+                });
+                return;
+            }
             await next();
         });
         _app.UseRouting();
         _app.UseWebSockets();
         _app.MapGet("/health", () => Results.Ok(new { service = "twelve-legions", cards = _cardCount }));
+        _app.MapGet("/api/operations/effective-policy", (HttpRequest request) =>
+        {
+            var policy = _platform.EffectiveOperationsPolicy();
+            request.HttpContext.Response.Headers.ETag = $"\"{policy.Version}\"";
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(policy);
+        });
         _app.MapGet("/api/matches", async (HttpRequest request, int? limit) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -229,7 +250,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error))
+            var policy = _platform.CaptureOperationsPolicy();
+            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error,
+                    policy.CardRestrictions))
                 return Results.BadRequest(new { message = error });
             return Results.Ok(_platform.UpsertDeck(account.Id, deck));
         });
@@ -249,7 +272,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             if (body.Deck is null) return Results.BadRequest(new { message = "牌库数据为空" });
-            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error))
+            var policy = _platform.CaptureOperationsPolicy();
+            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error,
+                    policy.CardRestrictions))
                 return Results.BadRequest(new { message = error });
             var published = _platform.PublishDeck(account.Id, deck, body.PublicationId);
             return published is null ? Results.NotFound() : Results.Ok(published);
@@ -1185,6 +1210,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "sandboxAction" when root.TryGetProperty("command", out var sandboxCommand)
                     => await _rooms.HandleSandboxActionAsync(sessionId, GetInt(root, "actingPlayerIndex", -1), sandboxCommand),
                 "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
+                "getEffectiveOperationsPolicy" => [EffectiveOperationsPolicyMessage(sessionId)],
                 "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
                 "deploymentProbe" => [new OutgoingMessage(sessionId, new
                 {
@@ -1207,8 +1233,16 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _socketPlatformSessions[sessionId] = authenticated.SessionId;
         var session = new OutgoingMessage(sessionId,
             _rooms.Connect(sessionId, authenticated.Account.Id, authenticated.Account.Username));
-        return new[] { session }.Concat(_rooms.RecoveryState(sessionId)).ToArray();
+        return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }
+            .Concat(_rooms.RecoveryState(sessionId)).ToArray();
     }
+
+    private OutgoingMessage EffectiveOperationsPolicyMessage(Guid sessionId)
+        => new(sessionId, new
+        {
+            type = "effectiveOperationsPolicy",
+            policy = _platform.EffectiveOperationsPolicy(),
+        });
 
     private static int GetInt(JsonElement root, string propertyName, int fallback = 0)
         => root.TryGetProperty(propertyName, out var element) && element.TryGetInt32(out var value) ? value : fallback;

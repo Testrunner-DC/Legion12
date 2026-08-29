@@ -259,6 +259,12 @@ public sealed class MatchRecorder : IAsyncDisposable
             }
         }
         RedactCardArray(root["DisasterDeck"] as JsonArray, "天灾牌库");
+        if (root["OperationsPolicy"] is JsonObject operationsPolicy)
+        {
+            operationsPolicy.Remove("VersionId");
+            operationsPolicy.Remove("DisasterCardIds");
+            operationsPolicy.Remove("FeatureFlags");
+        }
         RedactEffectHandAddStack(root["EffectStack"] as JsonArray, players, viewer);
         RedactEffectHandAddStack(root["DeferredEffectStack"] as JsonArray, players, viewer);
         if (root["AuthorityEvents"] is JsonArray authorityEvents)

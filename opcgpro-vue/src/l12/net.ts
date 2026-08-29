@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import type { GameState, RoomState } from './types'
 import type { SavedL12Deck } from './decks'
+import type { EffectiveOperationsPolicy } from './platform'
 
 function normalizeEndpoint(value: string) {
   return value.trim().replace(/\/ws\/$/, '/ws')
@@ -62,6 +63,7 @@ export const l12State = reactive({
   gmEnabled: false,
   pendingAction: false,
   notice: '',
+  operationsPolicy: null as EffectiveOperationsPolicy | null,
   friendInvitation: null as null | { invitationId: string; roomCode: string; fromAccountId: string; fromName: string },
 })
 
@@ -106,6 +108,11 @@ export function connect(): Promise<void> {
         socket.close()
       }
       else if (message.type === 'roomState') l12State.room = message
+      else if (message.type === 'effectiveOperationsPolicy') l12State.operationsPolicy = message.policy
+      else if (message.type === 'operationsBlocked') {
+        l12State.notice = message.message || '当前运营规则不允许执行此操作'
+        l12State.pendingAction = false
+      }
       else if (message.type === 'friendInvitation') l12State.friendInvitation = message
       else if (message.type === 'friendInvitationResolved') l12State.friendInvitation = null
       else if (message.type === 'friendRoomCreated') {
@@ -196,6 +203,7 @@ export function send(payload: unknown) {
 }
 
 export interface RoomOptions {
+  matchModeId: string
   spectating: 'public' | 'friends' | 'disabled'
   handVisibility: 'request' | 'public'
   disasterMode: 'all' | 'random' | 'season' | 'none' | 'custom'

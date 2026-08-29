@@ -4,12 +4,17 @@ import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from '@/l12/decks'
 import { masterProfileUrl } from '@/l12/specialAssets'
-import { platformState } from '@/l12/platform'
+import { getEffectiveOperationsPolicy, platformState, type EffectiveOperationsPolicy } from '@/l12/platform'
 
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('friendly')
 const roomCode = ref('')
-const roomOptions = ref<RoomOptions>({ spectating: 'public', handVisibility: 'request', disasterMode: 'all' })
+const roomOptions = ref<RoomOptions>({ matchModeId: 'casual', spectating: 'public', handVisibility: 'request', disasterMode: 'all' })
+const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
+const policyError = ref('')
+const enabledModes = computed(() => operationsPolicy.value?.matchModes.filter(mode => mode.enabled)
+  ?? [{ id: 'casual', name: '休闲对战', enabled: true }])
+const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.active === true)
 const customDecks = ref(loadSavedDecks())
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
@@ -27,9 +32,18 @@ const optionLabels = {
   handVisibility: { request: '查看手牌需申请', public: '观战者可看手牌' },
   disasterMode: { all: '全部天灾', random: '随机天灾', season: '赛季天灾', none: '不使用天灾', custom: '自定天灾（沙盒）' },
 } as const
+function matchModeLabel(id?: string) {
+  return operationsPolicy.value?.matchModes.find(mode => mode.id === id)?.name || id || '未指定模式'
+}
 
 onMounted(async () => {
   ;[customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
+  try {
+    const policy = await getEffectiveOperationsPolicy()
+    operationsPolicy.value = policy
+    l12State.operationsPolicy = policy
+    roomOptions.value = { ...policy.defaultRoomConfig }
+  } catch (error) { policyError.value = error instanceof Error ? error.message : '运营规则加载失败' }
   if (platformState.account && platformState.token && l12State.status === 'offline') {
     try { await connect() } catch { /* 页面保留离线提示，创建/加入时仍可重试。 */ }
   }
@@ -40,9 +54,14 @@ async function ensureConnected() {
   if (l12State.status !== 'online') await connect()
   return true
 }
-async function onCreate() { try { if (await ensureConnected()) createRoom(roomOptions.value) } catch {} }
-async function onJoin() { try { if (await ensureConnected()) joinRoom(roomCode.value.trim()) } catch {} }
-async function onSpectate() { try { if (await ensureConnected()) spectateRoom(roomCode.value.trim()) } catch {} }
+function operationsAllowed() {
+  if (!maintenanceActive.value) return true
+  l12State.notice = operationsPolicy.value?.maintenance.message || '服务器正在维护，暂时无法开始新的对局'
+  return false
+}
+async function onCreate() { try { if (operationsAllowed() && await ensureConnected()) createRoom(roomOptions.value) } catch {} }
+async function onJoin() { try { if (operationsAllowed() && await ensureConnected()) joinRoom(roomCode.value.trim()) } catch {} }
+async function onSpectate() { try { if (operationsAllowed() && await ensureConnected()) spectateRoom(roomCode.value.trim()) } catch {} }
 async function copyRoomCode() {
   const code = l12State.room?.roomCode
   if (!code) return
@@ -66,13 +85,15 @@ async function copyRoomCode() {
 <template>
   <div class="battle-hub">
     <header class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
+    <section v-if="maintenanceActive" class="maintenance-banner"><b>服务器维护中</b><span>{{ operationsPolicy?.maintenance.message || '暂时停止创建和加入新对局，已开始对局与重连不受影响。' }}</span></section>
+      <section v-else-if="policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
 
     <section v-if="l12State.room" class="room-stage panel">
       <header><div><small>FRIENDLY ROOM</small><h2>友谊战整备室</h2></div><div class="room-code"><code>{{ l12State.room.roomCode }}</code><button type="button" @click="copyRoomCode">{{ roomCodeCopied ? '已复制' : '复制房间码' }}</button></div></header>
       <div class="versus">
         <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
       </div>
-      <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span></div>
+      <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>{{ matchModeLabel(l12State.room.options.matchModeId) }}</span><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span><span v-if="l12State.room.operationsPolicyVersion">运营规则 v{{ l12State.room.operationsPolicyVersion }}</span></div>
       <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><img :src="masterProfileUrl(deck.masterId)" alt=""/><span><b>{{ deck.name }}</b><small>{{ deckCountSummary(deck.cardIds, byId).label }} 张 · {{ deck.masterId }}</small></span></button></div>
       <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/deck-editor?returnTo=%2Fbattle%2Flobby">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
     </section>
@@ -83,7 +104,7 @@ async function copyRoomCode() {
 
       <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位与休闲匹配的数据服务尚未接入。页面结构已预留，不会用测试数据伪造排行榜或匹配结果。</p><div class="match-options"><button disabled>排位匹配</button><button disabled>休闲匹配</button></div><button class="primary" disabled>匹配服务待接入</button></section>
 
-      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button @click="onJoin">加入对战</button><button class="spectate-button" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season" disabled>赛季天灾（后台配置后开放）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
+      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive || !enabledModes.length" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>对战模式</b><select v-model="roomOptions.matchModeId"><option v-for="mode in enabledModes" :key="mode.id" :value="mode.id">{{ mode.name }}</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season" :disabled="!operationsPolicy?.seasonDisasterModeAvailable">赛季天灾{{ operationsPolicy?.seasonDisasterModeAvailable ? '' : '（当前不可用）' }}</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
@@ -102,4 +123,5 @@ async function copyRoomCode() {
 .player-online{margin-top:8px;color:#b76570;font-size:9px;font-style:normal;font-weight:900}.player-online.online{color:#58c99a}.room-rule-summary{display:flex;align-items:center;gap:8px;margin:-8px 0 18px;padding:11px 14px;border:1px solid #354149;background:#0a1117}.room-rule-summary b{margin-right:6px;color:#e4c675;font-size:11px}.room-rule-summary span{padding:4px 7px;background:#17212a;color:#aab4b8;font-size:9px;font-weight:900}
 @media(max-width:700px){.room-rule-summary{align-items:stretch;flex-direction:column}.room-rule-summary span{text-align:center}}
 .room-decks button{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;padding:8px}.room-decks button>img{width:38px;height:38px;object-fit:cover;border:1px solid #596269;border-radius:2px}.room-decks button>span,.room-decks button b,.room-decks button small{display:block}.room-decks button small{margin-top:4px;color:#77848a;font-size:9px}
+.maintenance-banner,.policy-warning{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:13px 16px;border:1px solid #9a7135;background:#2a1e0e;color:#f0d695;font-size:11px}.maintenance-banner span,.policy-warning span{color:#c8b98f}.policy-warning{border-color:#6b4c52;background:#221217;color:#e1b2b8}.join-row button:disabled,.room-settings select:disabled{cursor:not-allowed;opacity:.45}
 </style>

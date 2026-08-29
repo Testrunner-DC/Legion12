@@ -81,9 +81,12 @@ public sealed class L12CustomDeckSubmission
 
 public sealed class L12RoomOptions
 {
-    public string Spectating { get; init; } = "public";
-    public string HandVisibility { get; init; } = "request";
-    public string DisasterMode { get; init; } = "all";
+    // Empty values are intentional: NormalizeOptions fills every omitted/invalid field from the
+    // current operations policy, so partial legacy payloads do not silently bypass configured defaults.
+    public string MatchModeId { get; init; } = string.Empty;
+    public string Spectating { get; init; } = string.Empty;
+    public string HandVisibility { get; init; } = string.Empty;
+    public string DisasterMode { get; init; } = string.Empty;
 }
 
 public sealed class L12CardInstance
@@ -459,6 +462,7 @@ public sealed class L12GameState
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }
     public required L12PlayerState[] Players { get; init; }
+    public required L12OperationsPolicySnapshot OperationsPolicy { get; init; }
     public int ActivePlayer { get; set; }
     public int FirstPlayer { get; set; }
     public int DiceWinner { get; set; }
@@ -514,6 +518,7 @@ public sealed class L12GameState
 public sealed record L12GameSnapshot(
     string MatchId,
     string RoomCode,
+    long OperationsPolicyVersion,
     int You,
     long Revision,
     int ActivePlayer,

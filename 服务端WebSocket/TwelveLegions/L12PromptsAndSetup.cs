@@ -17,6 +17,20 @@ public sealed partial class L12GameEngine
 
     private void BuildDisasterPool()
     {
+        if (State.DisasterMode == "season")
+        {
+            var index = 0;
+            foreach (var id in State.OperationsPolicy.DisasterCardIds.Where(id =>
+                         !string.Equals(id, L12PlatformStore.AnnihilationCardId,
+                             StringComparison.OrdinalIgnoreCase)))
+            {
+                if (_catalog.Cards.TryGetValue(id, out var card)
+                    && string.Equals(card.CardType, "destruction", StringComparison.OrdinalIgnoreCase))
+                    State.DisasterPool.Add(CreateCard(id, $"disaster-season-{++index:00}"));
+            }
+            return;
+        }
+
         for (var number = 1; number <= 9; number++)
         {
             var id = $"S01-DS{number:00}";

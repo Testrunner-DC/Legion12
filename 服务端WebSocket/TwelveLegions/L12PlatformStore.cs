@@ -218,6 +218,7 @@ public sealed partial class L12PlatformStore
     private readonly object _gate = new();
     private readonly string _path;
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
+    private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
     private DataFile _data;
 
     public event Action<IReadOnlyList<string>>? SessionsRevoked;
@@ -228,10 +229,12 @@ public sealed partial class L12PlatformStore
     }
 
     public L12PlatformStore(string path, IReadOnlyList<L12PresetDeckDefinition>? officialDecks = null,
-        IL12MfaCredentialProtector? mfaCredentialProtector = null)
+        IL12MfaCredentialProtector? mfaCredentialProtector = null,
+        IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
+        _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _databasePath = PlatformDatabasePath(path);
@@ -1092,7 +1095,9 @@ public sealed partial class L12PlatformStore
 
     private void SeedOfficialDecks(string accountId)
     {
-        foreach (var deck in _officialDecks)
+        var configuredIds = _data.OperationsConfig?.DefaultPresetDeckIds ?? [];
+        foreach (var deck in _officialDecks.Where(deck => configuredIds.Contains(deck.MasterId,
+                     StringComparer.OrdinalIgnoreCase)))
         {
             _data.Decks.Add(new DeckRow
             {

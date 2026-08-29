@@ -191,6 +191,248 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
     }
 
     [Fact]
+    public void DefaultRoomConfigMigratesAndDefaultPresetSelectionSeedsOnlyNewAccounts()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            var selectedMaster = catalog.PresetDecks[1].MasterId;
+            var applied = store.ApplyOperationsConfig(admin, current.Config with
+            {
+                DefaultPresetDeckIds = [selectedMaster],
+                DefaultRoomConfig = new L12DefaultRoomConfig("ranked", "friends", "public", "random"),
+            }, current.Version, "default policy", Context("default-policy"));
+
+            var account = store.Register("DefaultDeckUser", "password-123").Account!;
+            var seeded = store.Decks(account.Id);
+            Assert.NotEmpty(seeded);
+            Assert.All(seeded, deck => Assert.Equal(selectedMaster, deck.MasterId));
+            Assert.Equal("ranked", applied.Current.Config.DefaultRoomConfig.MatchModeId);
+
+            var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            mirror["OperationsConfig"]!.AsObject().Remove("DefaultRoomConfig");
+            foreach (var history in mirror["OperationsConfigHistory"]!.AsArray().OfType<JsonObject>())
+                history["Config"]?.AsObject().Remove("DefaultRoomConfig");
+            File.WriteAllText(path, mirror.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.Combine(root, "platform.db"));
+
+            var migrated = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var migratedAdmin = migrated.Login("Admin", "L12master").Account!;
+            var defaults = migrated.OperationsConfig(migratedAdmin).Config.DefaultRoomConfig;
+            Assert.Equal(new L12DefaultRoomConfig("casual", "public", "request", "all"), defaults);
+            Assert.NotNull(JsonNode.Parse(File.ReadAllText(path))!["OperationsConfig"]!["DefaultRoomConfig"]);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task CardRestrictionsCoverDeckApiRoomSelectionSandboxAndStartValidation()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var bannedIndex = Enumerable.Range(0, catalog.PresetDecks.Count).First(index =>
+                catalog.PresetDecks[index].CardIds.Any(cardId => catalog.PresetDecks
+                    .Where((_, otherIndex) => otherIndex != index)
+                    .Any(other => !other.CardIds.Contains(cardId, StringComparer.OrdinalIgnoreCase))));
+            var bannedPreset = catalog.PresetDecks[bannedIndex];
+            var bannedCardId = bannedPreset.CardIds.First(cardId => catalog.PresetDecks
+                .Where((_, index) => index != bannedIndex)
+                .Any(other => !other.CardIds.Contains(cardId, StringComparer.OrdinalIgnoreCase)));
+            Assert.Contains(catalog.PresetDecks, deck => !deck.CardIds.Contains(bannedCardId,
+                StringComparer.OrdinalIgnoreCase));
+
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            store.ApplyOperationsConfig(admin, current.Config with
+            {
+                CardRestrictions = [new L12CardRestrictionConfig(bannedCardId, 0, "regression ban")],
+            }, current.Version, "ban one card", Context("ban-card"));
+            var player = store.Register("RestrictedDeckUser", "password-123");
+            var opponent = store.Register("RestrictedOpponent", "password-123");
+
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            using (var request = Authorized(HttpMethod.Put, "/api/decks", player.Token!, "restricted-http",
+                       Submission(bannedPreset)))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+            var hostSession = Guid.NewGuid();
+            var joinSession = Guid.NewGuid();
+            rooms.Connect(hostSession, player.Account!.Id, player.Account.Username);
+            rooms.Connect(joinSession, opponent.Account!.Id, opponent.Account.Username);
+            var created = rooms.CreateRoom(hostSession);
+            var roomCode = Payload(created[0])["roomCode"]!.GetValue<string>();
+            Assert.Equal("deckRejected", Payload(Assert.Single(rooms.SelectDeck(hostSession, bannedIndex)))["type"]!
+                .GetValue<string>());
+            Assert.All(rooms.JoinRoom(joinSession, roomCode), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            Assert.All(await rooms.SetReadyAsync(hostSession, true), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            Assert.All(await rooms.SetReadyAsync(joinSession, true), message =>
+                Assert.Equal("gameState", Payload(message)["type"]!.GetValue<string>()));
+
+            var sandboxSession = Guid.NewGuid();
+            rooms.Connect(sandboxSession, "sandbox-restricted", "沙盒限制测试");
+            var sandbox = await rooms.CreateSandboxAsync(sandboxSession,
+                new L12SandboxRequest(Submission(bannedPreset)));
+            Assert.Equal("deckRejected", Payload(Assert.Single(sandbox))["type"]!.GetValue<string>());
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task RoomAndGamePinPolicyWhileMaintenanceAndModesGateOnlyNewFlow()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initialPolicy = store.CaptureOperationsPolicy();
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var host = store.Register("PolicyHost", "password-123").Account!;
+            var guest = store.Register("PolicyGuest", "password-123").Account!;
+            var hostSession = Guid.NewGuid();
+            var guestSession = Guid.NewGuid();
+            rooms.Connect(hostSession, host.Id, host.Username);
+            rooms.Connect(guestSession, guest.Id, guest.Username);
+            var created = rooms.CreateRoom(hostSession, new L12RoomOptions
+            {
+                MatchModeId = "casual",
+                DisasterMode = "season",
+            });
+            var createdPayload = Payload(created[0]);
+            var roomCode = createdPayload["roomCode"]!.GetValue<string>();
+            Assert.Equal(initialPolicy.Version, createdPayload["operationsPolicyVersion"]!.GetValue<long>());
+            Assert.All(rooms.JoinRoom(guestSession, roomCode), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+
+            var current = store.OperationsConfig(admin);
+            var maintenance = store.ApplyOperationsConfig(admin, current.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "维护门禁回归", null, null),
+            }, current.Version, "maintenance on", Context("maintenance-on")).Current;
+            Assert.Equal("maintenance_active", Payload(Assert.Single(await rooms.SetReadyAsync(hostSession, true)))["code"]!
+                .GetValue<string>());
+            var blockedRoomSession = Guid.NewGuid();
+            rooms.Connect(blockedRoomSession, "blocked-room", "维护建房");
+            Assert.Equal("maintenance_active", Payload(Assert.Single(rooms.CreateRoom(blockedRoomSession)))["code"]!
+                .GetValue<string>());
+            var blockedSandboxSession = Guid.NewGuid();
+            rooms.Connect(blockedSandboxSession, "blocked-sandbox", "维护沙盒");
+            Assert.Equal("maintenance_active",
+                Payload(Assert.Single(await rooms.CreateSandboxAsync(blockedSandboxSession, null)))["code"]!
+                    .GetValue<string>());
+
+            var mixedPool = Enumerable.Range(1, 6).Select(number => $"S02-DS{number:00}")
+                .Concat(Enumerable.Range(1, 3).Select(number => $"S01-DS{number:00}"))
+                .Append(L12PlatformStore.AnnihilationCardId).ToArray();
+            var live = store.ApplyOperationsConfig(admin, maintenance.Config with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(mixedPool),
+                MatchModes =
+                [
+                    new L12MatchModeConfig("casual", "休闲对战", false),
+                    new L12MatchModeConfig("ranked", "排位对战", true),
+                ],
+                DefaultRoomConfig = maintenance.Config.DefaultRoomConfig with { MatchModeId = "ranked" },
+                Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
+            }, maintenance.Version, "new policy", Context("new-policy")).Current;
+            var currentPolicy = store.CaptureOperationsPolicy();
+            Assert.NotEqual(initialPolicy.Version, currentPolicy.Version);
+
+            var casualSession = Guid.NewGuid();
+            rooms.Connect(casualSession, "casual-blocked", "休闲关闭");
+            var casualBlocked = rooms.CreateRoom(casualSession, new L12RoomOptions { MatchModeId = "casual" });
+            Assert.Equal("match_mode_disabled", Payload(Assert.Single(casualBlocked))["code"]!.GetValue<string>());
+
+            // 房间固定创建时的模式规则；后台后续关闭该模式不能污染已存在的房间。
+            Assert.All(await rooms.SetReadyAsync(hostSession, true), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            var started = await rooms.SetReadyAsync(guestSession, true);
+            Assert.All(started, message => Assert.Equal(initialPolicy.Version,
+                Payload(message)["state"]!["operationsPolicyVersion"]!.GetValue<long>()));
+
+            var oldEngine = new L12GameEngine(catalog, "old-policy", "OLD", 1, ["甲", "乙"], [0, 1],
+                disasterMode: "season", operationsPolicy: initialPolicy);
+            var newEngine = new L12GameEngine(catalog, "new-policy", "NEW", 1, ["甲", "乙"], [0, 1],
+                disasterMode: "season", operationsPolicy: currentPolicy);
+            Assert.All(oldEngine.State.DisasterPool,
+                card => Assert.StartsWith("S01-DS", card.CardId));
+            Assert.Contains(newEngine.State.DisasterPool, card => card.CardId.StartsWith("S02-DS", StringComparison.Ordinal));
+
+            var waitingHost = store.Register("WaitingHost", "password-123").Account!;
+            var waitingGuest = store.Register("WaitingGuest", "password-123").Account!;
+            var waitingHostSession = Guid.NewGuid();
+            var waitingGuestSession = Guid.NewGuid();
+            rooms.Connect(waitingHostSession, waitingHost.Id, waitingHost.Username);
+            rooms.Connect(waitingGuestSession, waitingGuest.Id, waitingGuest.Username);
+            var waitingRoom = rooms.CreateRoom(waitingHostSession);
+            var waitingCode = Payload(waitingRoom[0])["roomCode"]!.GetValue<string>();
+            store.ApplyOperationsConfig(admin, live.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "再次维护", null, null),
+            }, live.Version, "maintenance again", Context("maintenance-again"));
+            Assert.Equal("maintenance_active",
+                Payload(Assert.Single(rooms.JoinRoom(waitingGuestSession, waitingCode)))["code"]!.GetValue<string>());
+
+            using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
+            Assert.All(await rooms.HandleActionAsync(hostSession, surrender.RootElement), message =>
+                Assert.Equal("gameState", Payload(message)["type"]!.GetValue<string>()));
+            rooms.Disconnect(hostSession);
+            var recoveredSession = Guid.NewGuid();
+            var recovered = Payload(rooms.Connect(recoveredSession, host.Id, host.Username));
+            Assert.True(recovered["recovered"]!.GetValue<bool>());
+            Assert.NotEmpty(rooms.RecoveryState(recoveredSession));
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task HttpAccountChangesOperationsAndRuntimeAreDirectVersionedAndTruthful()
     {
         var root = TempRoot();
@@ -323,6 +565,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             {
                 FeatureFlags = new Dictionary<string, bool>(current.Config.FeatureFlags)
                 {
+                    ["publicDecks"] = false,
                     ["tournaments"] = false,
                 },
             };
@@ -334,6 +577,21 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                 var result = await response.Content.ReadFromJsonAsync<L12OperationsConfigOperationView>();
                 Assert.False(result!.Current.Config.FeatureFlags["tournaments"]);
             }
+
+            using (var effectiveResponse = await client.GetAsync("/api/operations/effective-policy"))
+            {
+                Assert.Equal(HttpStatusCode.OK, effectiveResponse.StatusCode);
+                var effective = JsonNode.Parse(await effectiveResponse.Content.ReadAsStringAsync())!.AsObject();
+                Assert.NotNull(effective["defaultRoomConfig"]);
+                Assert.NotNull(effective["matchModes"]);
+                Assert.NotNull(effective["maintenance"]);
+                Assert.Null(effective["featureFlags"]);
+                Assert.Null(effective["disasterPool"]);
+            }
+            Assert.Equal(HttpStatusCode.ServiceUnavailable,
+                (await client.GetAsync("/api/public-decks")).StatusCode);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable,
+                (await client.GetAsync("/api/tournaments")).StatusCode);
 
             using (var runtime = Authorized(HttpMethod.Get, "/api/admin/runtime/status", admin.Token!, "runtime"))
             using (var response = await client.SendAsync(runtime))
@@ -408,6 +666,21 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         if (body is not null) request.Content = JsonContent.Create(body);
         return request;
     }
+
+    private static L12CustomDeckSubmission Submission(L12PresetDeckDefinition deck)
+        => new()
+        {
+            Name = deck.Name,
+            MasterId = deck.MasterId,
+            CardIds = deck.CardIds.ToList(),
+            MoraleIds = deck.MoraleIds.ToList(),
+            SpecialIds = deck.SpecialIds.ToList(),
+        };
+
+    private static JsonObject Payload(OutgoingMessage message) => Payload(message.Payload);
+
+    private static JsonObject Payload(object payload)
+        => JsonSerializer.SerializeToNode(payload, JsonOptions)!.AsObject();
 
     private static string TempRoot()
     {

@@ -45,10 +45,11 @@ public sealed partial class L12GameEngine
         bool skipPreparation = false,
         string disasterMode = "all",
         bool? autoPassEmptyResponses = null,
-        bool? concealHiddenResponseAvailability = null)
+        bool? concealHiddenResponseAvailability = null,
+        L12OperationsPolicySnapshot? operationsPolicy = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
             deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
-            concealHiddenResponseAvailability)
+            concealHiddenResponseAvailability, operationsPolicy)
     {
     }
 
@@ -62,7 +63,8 @@ public sealed partial class L12GameEngine
         bool skipPreparation = false,
         string disasterMode = "all",
         bool? autoPassEmptyResponses = null,
-        bool? concealHiddenResponseAvailability = null)
+        bool? concealHiddenResponseAvailability = null,
+        L12OperationsPolicySnapshot? operationsPolicy = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
@@ -76,6 +78,7 @@ public sealed partial class L12GameEngine
             RoomCode = roomCode,
             Seed = seed,
             DisasterMode = NormalizeDisasterMode(disasterMode),
+            OperationsPolicy = operationsPolicy ?? L12OperationsPolicyDefaults.FromCatalog(catalog),
             ActivePlayer = 0,
             FirstPlayer = 0,
             Players =
@@ -219,7 +222,8 @@ public sealed partial class L12GameEngine
             : FilterDisasterEvent(State.LastAction, viewer, revealAllDisasters);
 
         return new L12GameSnapshot(
-            State.MatchId, State.RoomCode, spectator ? 0 : viewer, State.Revision, State.ActivePlayer,
+            State.MatchId, State.RoomCode, State.OperationsPolicy.Version, spectator ? 0 : viewer,
+            State.Revision, State.ActivePlayer,
             State.FirstPlayer, State.DiceWinner, State.InitiativeRolls, State.Phase, State.Round, State.TurnSerial,
             State.DisasterMode, State.DisasterValue, State.ActiveDisaster, State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
             State.BannedDisasters.Cast<object>().ToArray(), State.RemovedDisasters.Cast<object>().ToArray(),

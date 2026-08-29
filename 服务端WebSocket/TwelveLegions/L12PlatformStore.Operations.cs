@@ -21,6 +21,12 @@ public sealed record L12CardRestrictionConfig(
 
 public sealed record L12MatchModeConfig(string Id, string Name, bool Enabled);
 
+public sealed record L12DefaultRoomConfig(
+    string MatchModeId,
+    string Spectating,
+    string HandVisibility,
+    string DisasterMode);
+
 public sealed record L12MaintenanceConfig(
     bool Enabled,
     string Message,
@@ -32,9 +38,82 @@ public sealed record L12OperationsConfigPayload(
     L12SeasonDisasterPoolConfig DisasterPool,
     IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
     IReadOnlyList<string> DefaultPresetDeckIds,
+    L12DefaultRoomConfig DefaultRoomConfig,
     IReadOnlyList<L12MatchModeConfig> MatchModes,
     IReadOnlyDictionary<string, bool> FeatureFlags,
     L12MaintenanceConfig Maintenance);
+
+public sealed record L12EffectiveMaintenanceView(
+    bool Active,
+    string Message,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt);
+
+public sealed record L12EffectiveOperationsPolicyView(
+    long Version,
+    L12SeasonConfig Season,
+    IReadOnlyList<L12MatchModeConfig> MatchModes,
+    L12DefaultRoomConfig DefaultRoomConfig,
+    bool SeasonDisasterModeAvailable,
+    IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
+    IReadOnlyList<string> DefaultPresetDeckIds,
+    L12EffectiveMaintenanceView Maintenance);
+
+public sealed record L12OperationsPolicySnapshot(
+    long Version,
+    string VersionId,
+    L12SeasonConfig Season,
+    IReadOnlyList<string> DisasterCardIds,
+    IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
+    IReadOnlyList<string> DefaultPresetDeckIds,
+    L12DefaultRoomConfig DefaultRoomConfig,
+    IReadOnlyList<L12MatchModeConfig> MatchModes,
+    IReadOnlyDictionary<string, bool> FeatureFlags,
+    L12MaintenanceConfig Maintenance)
+{
+    public bool IsMatchModeEnabled(string? modeId)
+        => MatchModes.Any(mode => mode.Enabled
+            && string.Equals(mode.Id, modeId, StringComparison.OrdinalIgnoreCase));
+
+    public bool IsFeatureEnabled(string featureId)
+        => !FeatureFlags.TryGetValue(featureId, out var enabled) || enabled;
+
+    public bool IsMaintenanceActive(DateTimeOffset now)
+        => Maintenance.Enabled
+           && (Maintenance.StartsAt is null || Maintenance.StartsAt <= now)
+           && (Maintenance.EndsAt is null || Maintenance.EndsAt > now);
+
+    public bool IsSeasonDisasterModeAvailable(DateTimeOffset now)
+        => string.Equals(Season.Status, "active", StringComparison.OrdinalIgnoreCase)
+           && (Season.StartsAt is null || Season.StartsAt <= now)
+           && (Season.EndsAt is null || Season.EndsAt > now)
+           && DisasterCardIds.Count >= 10
+           && string.Equals(DisasterCardIds[^1], L12PlatformStore.AnnihilationCardId,
+               StringComparison.OrdinalIgnoreCase);
+}
+
+internal static class L12OperationsPolicyDefaults
+{
+    public static L12OperationsPolicySnapshot FromCatalog(L12Catalog catalog)
+        => new(
+            0,
+            "builtin-default",
+            new L12SeasonConfig("S01", "S01", "active", null, null),
+            Enumerable.Range(1, 10).Select(number => $"S01-DS{number:00}")
+                .Where(catalog.Cards.ContainsKey).ToArray(),
+            [],
+            catalog.PresetDecks.Select(deck => deck.MasterId)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            new L12DefaultRoomConfig("casual", "public", "request", "all"),
+            [new L12MatchModeConfig("casual", "休闲对战", true),
+                new L12MatchModeConfig("ranked", "排位对战", true)],
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["publicDecks"] = true,
+                ["tournaments"] = true,
+            },
+            new L12MaintenanceConfig(false, string.Empty, null, null));
+}
 
 public sealed record L12OperationsConfigView(
     long Version,
@@ -109,6 +188,14 @@ public sealed partial class L12PlatformStore
         public bool Enabled { get; set; }
     }
 
+    private sealed class OperationsDefaultRoomConfigRow
+    {
+        public string MatchModeId { get; set; } = "casual";
+        public string Spectating { get; set; } = "public";
+        public string HandVisibility { get; set; } = "request";
+        public string DisasterMode { get; set; } = "all";
+    }
+
     private sealed class OperationsMaintenanceRow
     {
         public bool Enabled { get; set; }
@@ -125,6 +212,7 @@ public sealed partial class L12PlatformStore
         public OperationsDisasterPoolRow DisasterPool { get; set; } = new();
         public List<OperationsCardRestrictionRow> CardRestrictions { get; set; } = [];
         public List<string> DefaultPresetDeckIds { get; set; } = [];
+        public OperationsDefaultRoomConfigRow? DefaultRoomConfig { get; set; }
         public List<OperationsMatchModeRow> MatchModes { get; set; } = [];
         public Dictionary<string, bool> FeatureFlags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public OperationsMaintenanceRow Maintenance { get; set; } = new();
@@ -238,6 +326,30 @@ public sealed partial class L12PlatformStore
         lock (_gate) return RequireOperationsConfig().Version;
     }
 
+    public L12OperationsPolicySnapshot CaptureOperationsPolicy()
+    {
+        lock (_gate) return ToPolicySnapshot(RequireOperationsConfig());
+    }
+
+    public L12EffectiveOperationsPolicyView EffectiveOperationsPolicy(DateTimeOffset? observedAt = null)
+    {
+        var now = observedAt ?? DateTimeOffset.UtcNow;
+        lock (_gate)
+        {
+            var policy = ToPolicySnapshot(RequireOperationsConfig());
+            return new L12EffectiveOperationsPolicyView(
+                policy.Version,
+                policy.Season,
+                policy.MatchModes.ToArray(),
+                policy.DefaultRoomConfig,
+                policy.IsSeasonDisasterModeAvailable(now),
+                policy.CardRestrictions.ToArray(),
+                policy.DefaultPresetDeckIds.ToArray(),
+                new L12EffectiveMaintenanceView(policy.IsMaintenanceActive(now), policy.Maintenance.Message,
+                    policy.Maintenance.StartsAt, policy.Maintenance.EndsAt));
+        }
+    }
+
     private void EnsureOperationsState()
     {
         lock (_gate)
@@ -250,7 +362,7 @@ public sealed partial class L12PlatformStore
             }
             else
             {
-                NormalizeOperationsRow(_data.OperationsConfig);
+                changed |= NormalizeOperationsRow(_data.OperationsConfig);
             }
             _data.OperationsConfigHistory ??= [];
             if (_data.OperationsConfigHistory.Count == 0)
@@ -267,10 +379,22 @@ public sealed partial class L12PlatformStore
             }
             foreach (var history in _data.OperationsConfigHistory)
             {
-                history.Config ??= CloneOperationsRow(_data.OperationsConfig);
-                NormalizeOperationsRow(history.Config);
-                if (string.IsNullOrWhiteSpace(history.Id)) history.Id = history.Config.VersionId;
-                if (history.Version < 1) history.Version = history.Config.Version;
+                if (history.Config is null)
+                {
+                    history.Config = CloneOperationsRow(_data.OperationsConfig);
+                    changed = true;
+                }
+                changed |= NormalizeOperationsRow(history.Config);
+                if (string.IsNullOrWhiteSpace(history.Id))
+                {
+                    history.Id = history.Config.VersionId;
+                    changed = true;
+                }
+                if (history.Version < 1)
+                {
+                    history.Version = history.Config.Version;
+                    changed = true;
+                }
             }
             if (changed) Save();
         }
@@ -283,6 +407,7 @@ public sealed partial class L12PlatformStore
                 .Select(number => $"S01-DS{number:00}").ToArray(), true),
             [],
             _officialDecks.Select(deck => deck.MasterId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            new L12DefaultRoomConfig("casual", "public", "request", "all"),
             [new L12MatchModeConfig("casual", "休闲对战", true),
                 new L12MatchModeConfig("ranked", "排位对战", true)],
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
@@ -295,7 +420,8 @@ public sealed partial class L12PlatformStore
     private L12OperationsConfigPayload NormalizeOperationsPayload(L12OperationsConfigPayload payload)
     {
         if (payload is null || payload.Season is null || payload.DisasterPool is null
-            || payload.CardRestrictions is null || payload.DefaultPresetDeckIds is null
+            || payload.DisasterPool.CardIds is null || payload.CardRestrictions is null
+            || payload.DefaultPresetDeckIds is null || payload.DefaultRoomConfig is null
             || payload.MatchModes is null || payload.FeatureFlags is null || payload.Maintenance is null)
             throw new L12OperationsConfigException("invalid_operations_config", "运营配置字段不完整");
 
@@ -310,12 +436,21 @@ public sealed partial class L12PlatformStore
             throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须保持锁定");
         var disasterIds = payload.DisasterPool.CardIds.Select(id => RequireCardId(id, "天灾卡号"))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (disasterIds.Length is < 1 or > 64 || disasterIds.Length != payload.DisasterPool.CardIds.Count)
-            throw new L12OperationsConfigException("invalid_disaster_pool", "天灾池必须包含 1–64 张不重复卡牌");
-        if (!string.Equals(disasterIds[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)
+        if (disasterIds.Length == 0
+            || !string.Equals(disasterIds[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)
             || disasterIds.Count(id => string.Equals(id, AnnihilationCardId,
                 StringComparison.OrdinalIgnoreCase)) != 1)
             throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须唯一且固定在天灾池末尾");
+        if (disasterIds.Length is < 10 or > 64 || disasterIds.Length != payload.DisasterPool.CardIds.Count)
+            throw new L12OperationsConfigException("invalid_disaster_pool", "天灾池必须包含 10–64 张不重复卡牌，以满足禁用、公开与选择流程");
+        if (_officialCards.Count > 0)
+        {
+            var unknownDisaster = disasterIds.FirstOrDefault(id => !_officialCards.TryGetValue(id, out var card)
+                || !string.Equals(card.CardType, "destruction", StringComparison.OrdinalIgnoreCase));
+            if (unknownDisaster is not null)
+                throw new L12OperationsConfigException("invalid_disaster_card",
+                    $"赛季天灾池包含未知或非天灾卡牌：{unknownDisaster}");
+        }
 
         var restrictions = payload.CardRestrictions.Select(item =>
         {
@@ -329,6 +464,13 @@ public sealed partial class L12PlatformStore
         }).ToArray();
         if (restrictions.GroupBy(item => item.CardId, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
             throw new L12OperationsConfigException("duplicate_card_restriction", "禁限卡列表包含重复卡号");
+        if (_officialCards.Count > 0)
+        {
+            var unknownRestriction = restrictions.FirstOrDefault(item => !_officialCards.ContainsKey(item.CardId));
+            if (unknownRestriction is not null)
+                throw new L12OperationsConfigException("unknown_restricted_card",
+                    $"禁限卡不存在：{unknownRestriction.CardId}");
+        }
 
         var defaultDecks = payload.DefaultPresetDeckIds.Select(id => RequireOperationsId(id, "默认预组 ID"))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -355,6 +497,17 @@ public sealed partial class L12PlatformStore
         if (modes.All(item => !item.Enabled))
             throw new L12OperationsConfigException("all_match_modes_disabled", "至少需要启用一种对战模式");
 
+        var defaultMatchModeId = RequireOperationsId(payload.DefaultRoomConfig.MatchModeId, "默认对战模式 ID");
+        if (!modes.Any(mode => mode.Enabled
+                && string.Equals(mode.Id, defaultMatchModeId, StringComparison.OrdinalIgnoreCase)))
+            throw new L12OperationsConfigException("default_match_mode_disabled", "默认对战模式必须存在且已启用");
+        var defaultSpectating = NormalizeOperationsChoice(payload.DefaultRoomConfig.Spectating,
+            "默认观战策略", "public", "friends", "disabled");
+        var defaultHandVisibility = NormalizeOperationsChoice(payload.DefaultRoomConfig.HandVisibility,
+            "默认手牌公开策略", "request", "public");
+        var defaultDisasterMode = NormalizeOperationsChoice(payload.DefaultRoomConfig.DisasterMode,
+            "默认天灾模式", "all", "random", "season", "none");
+
         if (payload.FeatureFlags.Count > 128)
             throw new L12OperationsConfigException("too_many_feature_flags", "功能开关不能超过 128 个");
         if (payload.FeatureFlags.GroupBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
@@ -375,6 +528,8 @@ public sealed partial class L12PlatformStore
             new L12SeasonDisasterPoolConfig(disasterIds, true),
             restrictions.OrderBy(item => item.CardId, StringComparer.OrdinalIgnoreCase).ToArray(),
             defaultDecks,
+            new L12DefaultRoomConfig(defaultMatchModeId, defaultSpectating, defaultHandVisibility,
+                defaultDisasterMode),
             modes.OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ToArray(),
             flags,
             new L12MaintenanceConfig(payload.Maintenance.Enabled, maintenanceMessage,
@@ -389,6 +544,7 @@ public sealed partial class L12PlatformStore
         if (!JsonEqual(current.DisasterPool, next.DisasterPool)) changes.Add("disasterPool");
         if (!JsonEqual(current.CardRestrictions, next.CardRestrictions)) changes.Add("cardRestrictions");
         if (!JsonEqual(current.DefaultPresetDeckIds, next.DefaultPresetDeckIds)) changes.Add("defaultPresetDeckIds");
+        if (!JsonEqual(current.DefaultRoomConfig, next.DefaultRoomConfig)) changes.Add("defaultRoomConfig");
         if (!JsonEqual(current.MatchModes, next.MatchModes)) changes.Add("matchModes");
         if (!JsonEqual(current.FeatureFlags, next.FeatureFlags)) changes.Add("featureFlags");
         if (!JsonEqual(current.Maintenance, next.Maintenance)) changes.Add("maintenance");
@@ -400,6 +556,10 @@ public sealed partial class L12PlatformStore
         var warnings = new List<string>();
         if (payload.Maintenance.Enabled) warnings.Add("maintenance-enabled");
         if (payload.CardRestrictions.Any(item => item.MaxCopies == 0)) warnings.Add("cards-banned");
+        if (payload.MatchModes.Any(item => !item.Enabled)) warnings.Add("match-modes-disabled");
+        if (payload.DefaultRoomConfig.DisasterMode == "season"
+            && !IsSeasonActive(payload.Season, DateTimeOffset.UtcNow))
+            warnings.Add("default-season-disaster-unavailable");
         if (payload.FeatureFlags.Any(item => !item.Value)) warnings.Add("features-disabled");
         return warnings;
     }
@@ -456,6 +616,13 @@ public sealed partial class L12PlatformStore
                 Reason = item.Reason,
             }).ToList(),
             DefaultPresetDeckIds = payload.DefaultPresetDeckIds.ToList(),
+            DefaultRoomConfig = new OperationsDefaultRoomConfigRow
+            {
+                MatchModeId = payload.DefaultRoomConfig.MatchModeId,
+                Spectating = payload.DefaultRoomConfig.Spectating,
+                HandVisibility = payload.DefaultRoomConfig.HandVisibility,
+                DisasterMode = payload.DefaultRoomConfig.DisasterMode,
+            },
             MatchModes = payload.MatchModes.Select(item => new OperationsMatchModeRow
             {
                 Id = item.Id,
@@ -483,10 +650,28 @@ public sealed partial class L12PlatformStore
             row.CardRestrictions.Select(item => new L12CardRestrictionConfig(item.CardId,
                 item.MaxCopies, item.Reason)).ToArray(),
             row.DefaultPresetDeckIds.ToArray(),
+            new L12DefaultRoomConfig(row.DefaultRoomConfig!.MatchModeId, row.DefaultRoomConfig.Spectating,
+                row.DefaultRoomConfig.HandVisibility, row.DefaultRoomConfig.DisasterMode),
             row.MatchModes.Select(item => new L12MatchModeConfig(item.Id, item.Name, item.Enabled)).ToArray(),
             new Dictionary<string, bool>(row.FeatureFlags, StringComparer.OrdinalIgnoreCase),
             new L12MaintenanceConfig(row.Maintenance.Enabled, row.Maintenance.Message,
                 row.Maintenance.StartsAt, row.Maintenance.EndsAt));
+
+    private static L12OperationsPolicySnapshot ToPolicySnapshot(OperationsConfigRow row)
+    {
+        var payload = ToPayload(row);
+        return new L12OperationsPolicySnapshot(
+            row.Version,
+            row.VersionId,
+            payload.Season,
+            payload.DisasterPool.CardIds.ToArray(),
+            payload.CardRestrictions.ToArray(),
+            payload.DefaultPresetDeckIds.ToArray(),
+            payload.DefaultRoomConfig,
+            payload.MatchModes.ToArray(),
+            new Dictionary<string, bool>(payload.FeatureFlags, StringComparer.OrdinalIgnoreCase),
+            payload.Maintenance);
+    }
 
     private static L12OperationsConfigView ToView(OperationsConfigRow row)
         => new(row.Version, row.VersionId, ToPayload(row), row.UpdatedBy, row.UpdatedAt);
@@ -501,22 +686,41 @@ public sealed partial class L12PlatformStore
     private static OperationsConfigRow CloneOperationsRow(OperationsConfigRow row)
         => JsonSerializer.Deserialize<OperationsConfigRow>(JsonSerializer.Serialize(row))!;
 
-    private static void NormalizeOperationsRow(OperationsConfigRow row)
+    private static bool NormalizeOperationsRow(OperationsConfigRow row)
     {
-        if (row.Version < 1) row.Version = 1;
+        var changed = false;
+        if (row.Version < 1) { row.Version = 1; changed = true; }
         if (string.IsNullOrWhiteSpace(row.VersionId))
+        {
             row.VersionId = $"ops-{row.Version:D8}-{Guid.NewGuid():N}";
-        row.Season ??= new OperationsSeasonRow();
-        row.DisasterPool ??= new OperationsDisasterPoolRow();
-        row.DisasterPool.CardIds ??= [];
-        row.DisasterPool.AnnihilationLocked = true;
-        row.CardRestrictions ??= [];
-        row.DefaultPresetDeckIds ??= [];
-        row.MatchModes ??= [];
-        row.FeatureFlags ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        row.Maintenance ??= new OperationsMaintenanceRow();
-        if (string.IsNullOrWhiteSpace(row.UpdatedBy)) row.UpdatedBy = "系统";
-        if (row.UpdatedAt == default) row.UpdatedAt = DateTimeOffset.UtcNow;
+            changed = true;
+        }
+        if (row.Season is null) { row.Season = new OperationsSeasonRow(); changed = true; }
+        if (row.DisasterPool is null) { row.DisasterPool = new OperationsDisasterPoolRow(); changed = true; }
+        if (row.DisasterPool.CardIds is null) { row.DisasterPool.CardIds = []; changed = true; }
+        if (!row.DisasterPool.AnnihilationLocked) { row.DisasterPool.AnnihilationLocked = true; changed = true; }
+        if (row.CardRestrictions is null) { row.CardRestrictions = []; changed = true; }
+        if (row.DefaultPresetDeckIds is null) { row.DefaultPresetDeckIds = []; changed = true; }
+        if (row.DefaultRoomConfig is null)
+        {
+            row.DefaultRoomConfig = new OperationsDefaultRoomConfigRow();
+            changed = true;
+        }
+        if (string.IsNullOrWhiteSpace(row.DefaultRoomConfig.MatchModeId))
+        { row.DefaultRoomConfig.MatchModeId = "casual"; changed = true; }
+        if (string.IsNullOrWhiteSpace(row.DefaultRoomConfig.Spectating))
+        { row.DefaultRoomConfig.Spectating = "public"; changed = true; }
+        if (string.IsNullOrWhiteSpace(row.DefaultRoomConfig.HandVisibility))
+        { row.DefaultRoomConfig.HandVisibility = "request"; changed = true; }
+        if (string.IsNullOrWhiteSpace(row.DefaultRoomConfig.DisasterMode))
+        { row.DefaultRoomConfig.DisasterMode = "all"; changed = true; }
+        if (row.MatchModes is null) { row.MatchModes = []; changed = true; }
+        if (row.FeatureFlags is null)
+        { row.FeatureFlags = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase); changed = true; }
+        if (row.Maintenance is null) { row.Maintenance = new OperationsMaintenanceRow(); changed = true; }
+        if (string.IsNullOrWhiteSpace(row.UpdatedBy)) { row.UpdatedBy = "系统"; changed = true; }
+        if (row.UpdatedAt == default) { row.UpdatedAt = DateTimeOffset.UtcNow; changed = true; }
+        return changed;
     }
 
     private static void EnsureOperationsVersion(OperationsConfigRow current, long? expectedVersion)
@@ -566,6 +770,20 @@ public sealed partial class L12PlatformStore
             throw new L12OperationsConfigException("invalid_operations_config", "配置文本长度或字符无效");
         return normalized;
     }
+
+    private static string NormalizeOperationsChoice(string? value, string label, params string[] allowed)
+    {
+        var normalized = value?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (!allowed.Contains(normalized, StringComparer.Ordinal))
+            throw new L12OperationsConfigException("invalid_operations_config",
+                $"{label}必须为 {string.Join("、", allowed)} 之一");
+        return normalized;
+    }
+
+    private static bool IsSeasonActive(L12SeasonConfig season, DateTimeOffset now)
+        => string.Equals(season.Status, "active", StringComparison.OrdinalIgnoreCase)
+           && (season.StartsAt is null || season.StartsAt <= now)
+           && (season.EndsAt is null || season.EndsAt > now);
 
     private static void EnsureTimeRange(DateTimeOffset? startsAt, DateTimeOffset? endsAt, string label)
     {

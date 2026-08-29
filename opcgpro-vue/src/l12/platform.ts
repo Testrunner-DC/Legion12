@@ -85,14 +85,31 @@ export interface OperationsDisasterPoolConfig { cardIds: string[]; annihilationL
 export interface OperationsCardRestriction { cardId: string; maxCopies: number; reason?: string }
 export interface OperationsMatchMode { id: string; name: string; enabled: boolean }
 export interface OperationsMaintenanceConfig { enabled: boolean; message: string; startsAt?: string; endsAt?: string }
+export interface OperationsDefaultRoomConfig {
+  matchModeId: string
+  spectating: 'public' | 'friends' | 'disabled'
+  handVisibility: 'request' | 'public'
+  disasterMode: 'all' | 'random' | 'season' | 'none'
+}
 export interface OperationsConfigPayload {
   season: OperationsSeasonConfig
   disasterPool: OperationsDisasterPoolConfig
   cardRestrictions: OperationsCardRestriction[]
   defaultPresetDeckIds: string[]
   matchModes: OperationsMatchMode[]
+  defaultRoomConfig: OperationsDefaultRoomConfig
   featureFlags: Record<string, boolean>
   maintenance: OperationsMaintenanceConfig
+}
+export interface EffectiveOperationsPolicy {
+  version: number
+  season: OperationsSeasonConfig
+  matchModes: OperationsMatchMode[]
+  defaultRoomConfig: OperationsDefaultRoomConfig
+  seasonDisasterModeAvailable: boolean
+  cardRestrictions: OperationsCardRestriction[]
+  defaultPresetDeckIds: string[]
+  maintenance: { active: boolean; message: string; startsAt?: string; endsAt?: string }
 }
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
@@ -313,6 +330,9 @@ export async function submitBug(input: { title: string; description: string; pag
 export async function getPublicContent(key: string) {
   return platformRequest<{ key: string; value: string }>(`/api/content/${encodeURIComponent(key)}`)
 }
+
+export const getEffectiveOperationsPolicy = () =>
+  platformRequest<EffectiveOperationsPolicy>('/api/operations/effective-policy')
 
 export const mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')
 

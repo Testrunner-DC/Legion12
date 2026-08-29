@@ -1,5 +1,5 @@
 import { normalizeLookupCardType } from './cardPresentation'
-import { platformRequest, platformState } from './platform'
+import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
 
 export interface DeckCard {
   id: string
@@ -169,8 +169,14 @@ export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]
 export async function ensureOfficialPrebuiltDecks() {
   const decks = await syncSavedDecksFromAccount()
   const presets = await loadOfficialPresetDecks()
+  const configuredMasterIds = await getEffectiveOperationsPolicy()
+    .then(policy => new Set(policy.defaultPresetDeckIds))
+    .catch(() => null)
+  const defaultPresets = configuredMasterIds?.size
+    ? presets.filter(preset => configuredMasterIds.has(preset.masterId))
+    : presets
   let changed = false
-  presets.forEach(preset => {
+  defaultPresets.forEach(preset => {
     if (decks[preset.name]) return
     decks[preset.name] = {
       ...preset,
@@ -207,7 +213,7 @@ export function deleteDeck(name: string) {
   if (platformState.account) void platformRequest(`/api/decks/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => undefined)
 }
 
-export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'> & { specialIds?: string[] }, catalog: DeckCard[]) {
+export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'> & { specialIds?: string[] }, catalog: DeckCard[], restrictions: readonly OperationsCardRestriction[] = []) {
   const byId = new Map(catalog.map(card => [card.id, card]))
   const master = byId.get(deck.masterId)
   if (!deck.name.trim() || deck.name.trim().length > 24) return '牌库名称须为 1–24 个字符'
@@ -216,12 +222,24 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   const countedMainDeckSize = deckCountSummary(deck.cardIds, byId).counted
   if (countedMainDeckSize < 40 || countedMainDeckSize > 50) return `主牌库须为 40–50 张（规则标明不计入构筑的卡牌除外，当前 ${countedMainDeckSize} 张）`
   const counts = new Map<string, number>()
+  const restrictionById = new Map(restrictions.map(rule => [rule.cardId, rule]))
+  const seasonalCounts = [deck.masterId, ...deck.cardIds, ...deck.moraleIds, ...(deck.specialIds ?? [])]
+    .reduce((map, id) => map.set(id, (map.get(id) ?? 0) + 1), new Map<string, number>())
+  for (const [id, count] of seasonalCounts) {
+    const rule = restrictionById.get(id)
+    if (!rule || count <= rule.maxCopies) continue
+    const name = byId.get(id)?.nameZh ?? id
+    return rule.maxCopies === 0
+      ? `${name} 当前被禁用${rule.reason ? `：${rule.reason}` : ''}`
+      : `${name} 当前最多可投入 ${rule.maxCopies} 张${rule.reason ? `：${rule.reason}` : ''}`
+  }
   for (const id of deck.cardIds) {
     const card = byId.get(id)
     if (!card || !MAIN_DECK_TYPES.has(card.cardType)) return `无效主牌：${id}`
     if (card.faction !== 'universal' && card.faction !== master.faction) return `${card.nameZh} 与主宰阵营不符`
     const count = (counts.get(id) || 0) + 1
-    const limit = card.deckLimit ?? 3
+    const seasonal = restrictionById.get(id)
+    const limit = Math.min(card.deckLimit ?? 3, seasonal?.maxCopies ?? Number.MAX_SAFE_INTEGER)
     if (count > limit) return `${card.nameZh} 同编号最多 ${limit} 张`
     counts.set(id, count)
   }

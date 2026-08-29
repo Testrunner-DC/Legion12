@@ -5,11 +5,26 @@ public static class L12DeckValidator
     private static readonly HashSet<string> MainDeckTypes =
         ["legion", "tactic", "counter-tactic", "artifact"];
 
+    public static bool TryValidatePreset(
+        L12Catalog catalog,
+        L12PresetDeckDefinition preset,
+        out string error,
+        IReadOnlyList<L12CardRestrictionConfig>? cardRestrictions = null)
+        => TryValidate(catalog, new L12CustomDeckSubmission
+        {
+            Name = preset.Name,
+            MasterId = preset.MasterId,
+            CardIds = preset.CardIds.ToList(),
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        }, out _, out error, cardRestrictions);
+
     public static bool TryValidate(
         L12Catalog catalog,
         L12CustomDeckSubmission submission,
         out L12PresetDeckDefinition deck,
-        out string error)
+        out string error,
+        IReadOnlyList<L12CardRestrictionConfig>? cardRestrictions = null)
     {
         deck = null!;
         var name = submission.Name.Trim();
@@ -27,6 +42,23 @@ public static class L12DeckValidator
         if (master.Id == "S01-02M2")
         {
             error = "复苏的奥西里斯不能被选择为主宰；选择伊西斯时会自动置入额外区并在开局进入墓地";
+            return false;
+        }
+        var restrictions = (cardRestrictions ?? [])
+            .ToDictionary(item => item.CardId, item => item, StringComparer.OrdinalIgnoreCase);
+        var restricted = submission.CardIds.Concat(submission.MoraleIds).Concat(submission.SpecialIds)
+            .Append(master.Id)
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new { Id = group.Key, Count = group.Count(), Rule = restrictions.GetValueOrDefault(group.Key) })
+            .FirstOrDefault(item => item.Rule is not null && item.Count > item.Rule.MaxCopies);
+        if (restricted is not null)
+        {
+            var reason = string.IsNullOrWhiteSpace(restricted.Rule!.Reason)
+                ? string.Empty
+                : $"（{restricted.Rule.Reason}）";
+            error = restricted.Rule.MaxCopies == 0
+                ? $"当前赛季禁用卡牌：{restricted.Id}{reason}"
+                : $"当前赛季同编号卡牌最多 {restricted.Rule.MaxCopies} 张：{restricted.Id}{reason}";
             return false;
         }
         var countedMainDeckSize = submission.CardIds.Count(id => !catalog.Cards.TryGetValue(id, out var card)

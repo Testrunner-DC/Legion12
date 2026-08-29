@@ -50,6 +50,7 @@ public sealed class L12RoomManager
         public List<Guid> Sessions { get; } = [];
         public List<Guid> Spectators { get; } = [];
         public L12RoomOptions Options { get; set; } = new();
+        public required L12OperationsPolicySnapshot OperationsPolicy { get; init; }
         public bool[] Ready { get; } = [false, false];
         public L12GameEngine? Game { get; set; }
         public long CommandSequence { get; set; }
@@ -133,6 +134,8 @@ public sealed class L12RoomManager
         var viewerInRoom = _sessions.Values.Any(session => session.Connected && !session.IsVirtual
             && string.Equals(session.AccountId, viewerAccountId, StringComparison.OrdinalIgnoreCase)
             && session.RoomCode is not null);
+        var currentPolicy = CaptureOperationsPolicy();
+        var maintenanceActive = currentPolicy.IsMaintenanceActive(DateTimeOffset.UtcNow);
         return _sessions.Values
             .Where(session => session.Connected && !session.IsVirtual && !string.IsNullOrWhiteSpace(session.AccountId))
             .GroupBy(session => session.AccountId!, StringComparer.OrdinalIgnoreCase)
@@ -146,8 +149,9 @@ public sealed class L12RoomManager
                 var friends = !isSelf && _platform?.AreFriends(viewerAccountId, group.Key) == true;
                 if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
                     return new L12OnlinePresence(group.Key, "idle", null,
-                        !isSelf && friends && !viewerInRoom, false,
-                        isSelf ? "当前账号" : !friends ? "成为好友后可邀请对战" : viewerInRoom ? "请先离开当前房间" : null);
+                        !maintenanceActive && !isSelf && friends && !viewerInRoom, false,
+                        isSelf ? "当前账号" : maintenanceActive ? currentPolicy.Maintenance.Message
+                            : !friends ? "成为好友后可邀请对战" : viewerInRoom ? "请先离开当前房间" : null);
 
                 if (session.IsSpectator)
                     return new L12OnlinePresence(group.Key, "spectating", null, false, false,
@@ -156,9 +160,11 @@ public sealed class L12RoomManager
                     return new L12OnlinePresence(group.Key, "inRoom", null, false, false,
                         isSelf ? "当前账号" : "该玩家正在房间中");
 
-                var canSpectate = !isSelf && !viewerInRoom && room.Options.Spectating != "disabled"
+                var canSpectate = !maintenanceActive && !isSelf && !viewerInRoom
+                    && room.Options.Spectating != "disabled"
                     && (room.Options.Spectating != "friends" || friends);
                 var reason = isSelf ? "当前账号"
+                    : maintenanceActive ? currentPolicy.Maintenance.Message
                     : viewerInRoom ? "请先离开当前房间"
                     : room.Options.Spectating == "disabled" ? "该房间禁止观战"
                     : room.Options.Spectating == "friends" && !friends ? "该房间仅限好友观战"
@@ -172,6 +178,9 @@ public sealed class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
             return Error(sessionId, "会话不存在");
+        var policy = CaptureOperationsPolicy();
+        if (TryOperationsEntryBlock(sessionId, policy, policy.DefaultRoomConfig.MatchModeId, out var blocked))
+            return blocked;
         if (sender.RoomCode is not null) return Error(sessionId, "请先离开当前房间再邀请好友");
         var targetId = (targetAccountId ?? string.Empty).Trim();
         if (_platform is null || !_platform.AreFriends(sender.AccountId, targetId)) return Error(sessionId, "只能邀请已成为好友的玩家");
@@ -204,6 +213,15 @@ public sealed class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var recipient) || recipient.AccountId is null)
             return Error(sessionId, "会话不存在");
+        L12OperationsPolicySnapshot? policy = null;
+        if (accept)
+        {
+            policy = CaptureOperationsPolicy();
+            if (TryOperationsEntryBlock(sessionId, policy, policy.DefaultRoomConfig.MatchModeId, out var blocked))
+                return blocked;
+            if (!TryDefaultPresetIndexes(policy, out _, out _))
+                return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新房间的合法官方预组");
+        }
         var id = (invitationId ?? string.Empty).Trim();
         if (!_friendInvitations.TryRemove(id, out var invitation)
             || invitation.ToAccountId != recipient.AccountId
@@ -220,15 +238,21 @@ public sealed class L12RoomManager
         if (host is null) return Error(sessionId, "发起方已离线或进入其他房间");
         if (recipient.RoomCode is not null) return Error(sessionId, "你已在其他房间");
 
-        var room = new Room { Code = invitation.RoomCode, Options = NormalizeOptions(null) };
+        var room = new Room
+        {
+            Code = invitation.RoomCode,
+            OperationsPolicy = policy!,
+            Options = NormalizeOptions(null, policy!.DefaultRoomConfig),
+        };
         if (!_rooms.TryAdd(room.Code, room)) return Error(sessionId, "预留房间码已失效，请重新邀请");
         room.Sessions.Add(host.Id);
         room.Sessions.Add(sessionId);
         host.RoomCode = recipient.RoomCode = room.Code;
         host.PlayerIndex = 0;
         recipient.PlayerIndex = 1;
-        host.SelectedDeckIndex = 0;
-        recipient.SelectedDeckIndex = Math.Min(1, _catalog.PresetDecks.Count - 1);
+        TryDefaultPresetIndexes(policy!, out var hostDeckIndex, out var recipientDeckIndex);
+        host.SelectedDeckIndex = hostDeckIndex;
+        recipient.SelectedDeckIndex = recipientDeckIndex;
         var created = room.Sessions.Select(memberId => new OutgoingMessage(memberId, new
         {
             type = "friendRoomCreated", roomCode = room.Code, hostAccountId = host.AccountId,
@@ -255,16 +279,30 @@ public sealed class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
-        var normalizedOptions = NormalizeOptions(options);
-        if (normalizedOptions.DisasterMode == "season")
-            return Error(sessionId, "赛季天灾池需由管理员后台配置，当前仅作功能占位");
+        var policy = CaptureOperationsPolicy();
+        var normalizedOptions = NormalizeOptions(options, policy.DefaultRoomConfig);
+        if (TryOperationsEntryBlock(sessionId, policy, normalizedOptions.MatchModeId, out var blocked))
+            return blocked;
+        if (normalizedOptions.DisasterMode == "season"
+            && !policy.IsSeasonDisasterModeAvailable(DateTimeOffset.UtcNow))
+            return OperationsBlocked(sessionId, "season_disaster_unavailable", "当前赛季天灾模式尚不可用");
+        if (!TryDefaultPresetIndexes(policy, out var hostDeckIndex, out _))
+            return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新房间的合法官方预组");
         Room room;
-        do { room = new Room { Code = GenerateRoomCode(), Options = normalizedOptions }; }
+        do
+        {
+            room = new Room
+            {
+                Code = GenerateRoomCode(),
+                Options = normalizedOptions,
+                OperationsPolicy = policy,
+            };
+        }
         while (!_rooms.TryAdd(room.Code, room));
         room.Sessions.Add(sessionId);
         session.RoomCode = room.Code;
         session.PlayerIndex = 0;
-        session.SelectedDeckIndex = 0;
+        session.SelectedDeckIndex = hostDeckIndex;
         return BroadcastRoom(room);
     }
 
@@ -273,22 +311,30 @@ public sealed class L12RoomManager
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         request ??= new L12SandboxRequest();
-        if (request.DisasterMode == "season") return Error(sessionId, "赛季天灾池尚未配置");
+        var policy = CaptureOperationsPolicy();
+        if (policy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+            return MaintenanceBlocked(sessionId, policy);
+        if (request.DisasterMode == "season" && !policy.IsSeasonDisasterModeAvailable(DateTimeOffset.UtcNow))
+            return OperationsBlocked(sessionId, "season_disaster_unavailable", "当前赛季天灾模式尚不可用");
+        if (!TryDefaultPresetIndexes(policy, out var playerDeckIndex, out var opponentDeckIndex))
+            return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新沙盒的合法官方预组");
 
         L12PresetDeckDefinition playerDeck;
         L12PresetDeckDefinition opponentDeck;
         if (request.PlayerDeck is not null)
         {
-            if (!L12DeckValidator.TryValidate(_catalog, request.PlayerDeck, out playerDeck!, out var playerError))
+            if (!L12DeckValidator.TryValidate(_catalog, request.PlayerDeck, out playerDeck!, out var playerError,
+                    policy.CardRestrictions))
                 return Error(sessionId, $"我方牌库无效：{playerError}", "deckRejected");
         }
-        else playerDeck = _catalog.DeckAt(0);
+        else playerDeck = _catalog.DeckAt(playerDeckIndex);
         if (request.OpponentDeck is not null)
         {
-            if (!L12DeckValidator.TryValidate(_catalog, request.OpponentDeck, out opponentDeck!, out var opponentError))
+            if (!L12DeckValidator.TryValidate(_catalog, request.OpponentDeck, out opponentDeck!, out var opponentError,
+                    policy.CardRestrictions))
                 return Error(sessionId, $"对手牌库无效：{opponentError}", "deckRejected");
         }
-        else opponentDeck = _catalog.DeckAt(Math.Min(1, _catalog.PresetDecks.Count - 1));
+        else opponentDeck = _catalog.DeckAt(opponentDeckIndex);
 
         Room room;
         do
@@ -298,12 +344,14 @@ public sealed class L12RoomManager
                 Code = GenerateRoomCode(),
                 IsSandbox = true,
                 GmControllerSessionId = sessionId,
+                OperationsPolicy = policy,
                 Options = NormalizeOptions(new L12RoomOptions
                 {
+                    MatchModeId = "sandbox",
                     Spectating = "disabled",
                     HandVisibility = "public",
                     DisasterMode = request.DisasterMode,
-                }, allowCustom: true),
+                }, policy.DefaultRoomConfig, allowCustom: true),
             };
         }
         while (!_rooms.TryAdd(room.Code, room));
@@ -315,7 +363,7 @@ public sealed class L12RoomManager
             Name = "测试对手",
             RoomCode = room.Code,
             PlayerIndex = 1,
-            SelectedDeckIndex = 1,
+            SelectedDeckIndex = opponentDeckIndex,
             CustomDeck = opponentDeck,
             IsVirtual = true,
         };
@@ -325,13 +373,13 @@ public sealed class L12RoomManager
         room.Ready[0] = room.Ready[1] = true;
         session.RoomCode = room.Code;
         session.PlayerIndex = 0;
-        session.SelectedDeckIndex = 0;
+        session.SelectedDeckIndex = playerDeckIndex;
         session.CustomDeck = playerDeck;
 
         room.Game = new L12GameEngine(
             _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
-            disasterMode: room.Options.DisasterMode);
+            disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
         room.Game.InitializeGmDisasters();
         await _recorder.StartAsync(room.Game.State);
         foreach (var playerIndex in new[] { 0, 1 })
@@ -349,6 +397,9 @@ public sealed class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
+        var currentPolicy = CaptureOperationsPolicy();
+        if (currentPolicy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+            return MaintenanceBlocked(sessionId, currentPolicy);
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
         if (room.Game is null) return Error(sessionId, "对局尚未开始");
@@ -381,13 +432,19 @@ public sealed class L12RoomManager
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
+        var currentPolicy = CaptureOperationsPolicy();
+        if (TryOperationsEntryBlock(sessionId, currentPolicy, room.Options.MatchModeId, out var blocked,
+                room.OperationsPolicy))
+            return blocked;
+        if (!TryDefaultPresetIndexes(room.OperationsPolicy, out _, out var joiningDeckIndex))
+            return OperationsBlocked(sessionId, "no_legal_default_preset", "该房间没有可用的合法官方预组");
         lock (room.Sessions)
         {
             if (room.Sessions.Count >= 2) return Error(sessionId, "房间已满");
             room.Sessions.Add(sessionId);
             session.RoomCode = room.Code;
             session.PlayerIndex = 1;
-            session.SelectedDeckIndex = Math.Min(1, _catalog.PresetDecks.Count - 1);
+            session.SelectedDeckIndex = joiningDeckIndex;
         }
         return BroadcastRoom(room);
     }
@@ -397,6 +454,8 @@ public sealed class L12RoomManager
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
         if (deckIndex < 0 || deckIndex >= _catalog.PresetDecks.Count) return Error(sessionId, "无效的预组");
+        if (!IsPresetAllowed(room.OperationsPolicy, deckIndex, out error))
+            return Error(sessionId, error, "deckRejected");
         session.SelectedDeckIndex = deckIndex;
         session.CustomDeck = null;
         room.Ready[session.PlayerIndex!.Value] = false;
@@ -407,7 +466,8 @@ public sealed class L12RoomManager
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
-        if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out error))
+        if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out error,
+                room.OperationsPolicy.CardRestrictions))
             return Error(sessionId, error, "deckRejected");
         session.CustomDeck = deck;
         room.Ready[session.PlayerIndex!.Value] = false;
@@ -421,6 +481,21 @@ public sealed class L12RoomManager
         try
         {
             if (room.Game is not null) return Error(sessionId, "对局已经开始");
+            if (ready)
+            {
+                var currentPolicy = CaptureOperationsPolicy();
+                if (TryOperationsEntryBlock(sessionId, currentPolicy, room.Options.MatchModeId, out var blocked,
+                        room.OperationsPolicy))
+                    return blocked;
+                foreach (var memberId in room.Sessions)
+                {
+                    var member = _sessions[memberId];
+                    if (!L12DeckValidator.TryValidatePreset(_catalog, SelectedDeck(member), out var deckError,
+                            room.OperationsPolicy.CardRestrictions))
+                        return Error(sessionId, $"{member.Name} 的牌库不符合该房间固定规则：{deckError}",
+                            "deckRejected");
+                }
+            }
             room.Ready[session.PlayerIndex!.Value] = ready;
             if (room.Sessions.Count == 2 && room.Ready.All(value => value))
             {
@@ -428,7 +503,7 @@ public sealed class L12RoomManager
                 room.Game = new L12GameEngine(
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
                     playerNames, room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray(),
-                    disasterMode: room.Options.DisasterMode);
+                    disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
                 await _recorder.StartAsync(room.Game.State);
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room);
@@ -572,12 +647,14 @@ public sealed class L12RoomManager
 
     private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
     {
-        var decks = _catalog.PresetDecks.Select((deck, index) => new
-        {
-            index, deck.Name, deck.MasterId,
-            masterName = _catalog.Cards[deck.MasterId].NameZh,
-            faction = _catalog.Cards[deck.MasterId].Faction,
-        }).ToArray();
+        var decks = _catalog.PresetDecks.Select((deck, index) => (deck, index))
+            .Where(item => IsPresetAllowed(room.OperationsPolicy, item.index, out _))
+            .Select(item => new
+            {
+                item.index, item.deck.Name, item.deck.MasterId,
+                masterName = _catalog.Cards[item.deck.MasterId].NameZh,
+                faction = _catalog.Cards[item.deck.MasterId].Faction,
+            }).ToArray();
         return room.Sessions.Select(id =>
         {
             var viewer = _sessions[id];
@@ -600,6 +677,7 @@ public sealed class L12RoomManager
             {
                 type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
                 players, decks, options = room.Options, started = room.Game is not null, sandbox = room.IsSandbox,
+                operationsPolicyVersion = room.OperationsPolicy.Version,
             });
         }).ToArray();
     }
@@ -633,6 +711,63 @@ public sealed class L12RoomManager
     private static IReadOnlyList<OutgoingMessage> Error(Guid sessionId, string message, string type = "error")
         => [new OutgoingMessage(sessionId, new { type, message })];
 
+    private static IReadOnlyList<OutgoingMessage> OperationsBlocked(Guid sessionId, string code, string message)
+        => [new OutgoingMessage(sessionId, new { type = "operationsBlocked", code, message })];
+
+    private static IReadOnlyList<OutgoingMessage> MaintenanceBlocked(Guid sessionId,
+        L12OperationsPolicySnapshot policy)
+        => OperationsBlocked(sessionId, "maintenance_active",
+            string.IsNullOrWhiteSpace(policy.Maintenance.Message) ? "系统维护中，暂不接受新的对局入口" : policy.Maintenance.Message);
+
+    private bool TryOperationsEntryBlock(Guid sessionId, L12OperationsPolicySnapshot policy,
+        string? matchModeId, out IReadOnlyList<OutgoingMessage> blocked,
+        L12OperationsPolicySnapshot? pinnedRoomPolicy = null)
+    {
+        if (policy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+        {
+            blocked = MaintenanceBlocked(sessionId, policy);
+            return true;
+        }
+        if (!(pinnedRoomPolicy ?? policy).IsMatchModeEnabled(matchModeId))
+        {
+            blocked = OperationsBlocked(sessionId, "match_mode_disabled", "所选对战模式当前未开放");
+            return true;
+        }
+        blocked = [];
+        return false;
+    }
+
+    private L12OperationsPolicySnapshot CaptureOperationsPolicy()
+        => _platform?.CaptureOperationsPolicy() ?? L12OperationsPolicyDefaults.FromCatalog(_catalog);
+
+    private bool TryDefaultPresetIndexes(L12OperationsPolicySnapshot policy, out int first, out int second)
+    {
+        var indexes = Enumerable.Range(0, _catalog.PresetDecks.Count)
+            .Where(index => IsPresetAllowed(policy, index, out _)).ToArray();
+        if (indexes.Length == 0)
+        {
+            first = second = -1;
+            return false;
+        }
+        first = indexes[0];
+        second = indexes[Math.Min(1, indexes.Length - 1)];
+        return true;
+    }
+
+    private bool IsPresetAllowed(L12OperationsPolicySnapshot policy, int deckIndex, out string error)
+    {
+        if (deckIndex < 0 || deckIndex >= _catalog.PresetDecks.Count)
+        {
+            error = "无效的预组";
+            return false;
+        }
+        var deck = _catalog.DeckAt(deckIndex);
+        if (!L12DeckValidator.TryValidatePreset(_catalog, deck, out error, policy.CardRestrictions))
+            return false;
+        error = string.Empty;
+        return true;
+    }
+
     private static string NormalizeName(string? name)
     {
         var value = string.IsNullOrWhiteSpace(name) ? $"旅人{Random.Shared.Next(1000, 9999)}" : name.Trim();
@@ -653,12 +788,24 @@ public sealed class L12RoomManager
         return code;
     }
 
-    private static L12RoomOptions NormalizeOptions(L12RoomOptions? options, bool allowCustom = false)
+    private static L12RoomOptions NormalizeOptions(L12RoomOptions? options, L12DefaultRoomConfig defaults,
+        bool allowCustom = false)
     {
-        var spectating = options?.Spectating is "friends" or "disabled" ? options.Spectating : "public";
-        var handVisibility = options?.HandVisibility == "public" ? "public" : "request";
+        var matchModeId = string.IsNullOrWhiteSpace(options?.MatchModeId)
+            ? defaults.MatchModeId : options.MatchModeId.Trim().ToLowerInvariant();
+        var spectating = options?.Spectating is "public" or "friends" or "disabled"
+            ? options.Spectating : defaults.Spectating;
+        var handVisibility = options?.HandVisibility is "request" or "public"
+            ? options.HandVisibility : defaults.HandVisibility;
         var disasterMode = options?.DisasterMode is "random" or "season" or "none"
-            || (allowCustom && options?.DisasterMode == "custom") ? options!.DisasterMode : "all";
-        return new L12RoomOptions { Spectating = spectating, HandVisibility = handVisibility, DisasterMode = disasterMode };
+            || options?.DisasterMode == "all" || (allowCustom && options?.DisasterMode == "custom")
+            ? options!.DisasterMode : defaults.DisasterMode;
+        return new L12RoomOptions
+        {
+            MatchModeId = matchModeId,
+            Spectating = spectating,
+            HandVisibility = handVisibility,
+            DisasterMode = disasterMode,
+        };
     }
 }
