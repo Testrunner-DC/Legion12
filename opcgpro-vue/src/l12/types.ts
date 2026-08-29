@@ -178,7 +178,7 @@ export interface RoomState {
   yourPlayerIndex: number
   players: Array<{ name: string; playerIndex: number; connected: boolean; ready: boolean; deckIndex: number; customDeck?: boolean; deckName: string; masterName: string; faction: string }>
   decks: Array<{ index: number; name: string; masterId: string; masterName: string; faction: string }>
-  options?: { matchModeId: string; spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'season' | 'none' | 'custom' }
+  options?: { matchModeId: string; spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'custom' | 'none'; useCardRestrictions?: boolean }
   operationsPolicyVersion?: number
   started: boolean
   sandbox?: boolean

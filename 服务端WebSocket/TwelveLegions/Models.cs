@@ -81,12 +81,13 @@ public sealed class L12CustomDeckSubmission
 
 public sealed class L12RoomOptions
 {
-    // Empty values are intentional: NormalizeOptions fills every omitted/invalid field from the
-    // current operations policy, so partial legacy payloads do not silently bypass configured defaults.
+    // Empty values are intentional: the room manager authoritatively normalizes legacy/partial payloads
+    // into a friendly-room scope; clients cannot select ranked rules or inject a season disaster pool here.
     public string MatchModeId { get; init; } = string.Empty;
     public string Spectating { get; init; } = string.Empty;
     public string HandVisibility { get; init; } = string.Empty;
     public string DisasterMode { get; init; } = string.Empty;
+    public bool UseCardRestrictions { get; init; }
 }
 
 public sealed class L12CardInstance

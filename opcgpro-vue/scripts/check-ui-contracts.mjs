@@ -94,6 +94,9 @@ const contracts = [
   [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
   [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
   [lobby.includes('copyRoomCode') && lobby.includes('复制房间码'), '友谊战整备室必须保留房间码复制按钮'],
+  [lobby.includes('v-model="roomOptions.useCardRestrictions"') && lobby.includes('不启用运营禁限卡') && lobby.includes('启用运营禁限卡') && !lobby.includes('v-model="roomOptions.matchModeId"') && !lobby.includes('<option value="season"'), '好友房必须以是否启用运营禁限卡取代排位/休闲模式，且不得选择赛季天灾'],
+  [l12Net.includes("export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'") && sandbox.includes('<option value="custom"') && !sandbox.includes('<option value="season"'), '沙盒只能使用全部、随机、自定或无天灾，不得接入赛季天灾池'],
+  [lobby.includes('排位与休闲匹配的数据服务尚未接入') && lobby.includes('匹配服务待接入'), '公开匹配尚未实现时必须保持占位和禁用状态，不得伪造匹配结果'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],
   [!board.includes('.modal-card-inspector') && !prompt.includes('.prompt-card-inspector'), '不得保留第二套弹框详情框样式'],
   [deckEditor.includes("deck.name === activeDeckName") && deckEditor.includes('.saved-list b{color:#f1eee5}') && deckEditor.includes('.saved-list span{color:#aab4b0}') && deckEditor.includes('.saved-list article.active{border-color:#86e8ee;background:#123e42'), '牌库编辑器左下牌库列表及当前牌库状态必须保持高对比'],
@@ -135,10 +138,11 @@ const contracts = [
   [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
   [deckEditor.includes('<h2>筛选</h2>') && !deckEditor.includes('<h2>构筑设定</h2>') && deckEditor.includes('costFilter') && deckEditor.includes('disasterFilter') && deckEditor.includes('sortMode'), '牌库编辑器必须复用卡牌档案的搜索、类型、卡池、费用、天灾等级与排序筛选（不含阵营）'],
   [deckEditor.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>'), '牌库编辑器卡池筛选必须统一使用全部卡池、S01、S02'],
-  [deckEditor.includes('effectiveDeckLimit(card, masterId.value, activeRestrictions.value)')
-    && deckEditor.includes('effectiveDeckLimit(entry.card, masterId, activeRestrictions)')
+  [deckEditor.includes('effectiveDeckLimit(card, masterId.value)')
+    && deckEditor.includes('effectiveDeckLimit(entry.card, masterId)')
+    && !deckEditor.includes('activeRestrictions') && !deckLibrary.includes('activeRestrictions')
     && decks.includes('rule.masterId === masterId') && decks.includes('rule.masterId === deck.masterId'),
-  '卡牌默认上限、全局运营规则与主宰专属规则必须共同驱动加牌按钮和保存校验'],
+  '通用牌库编辑、保存、导入与公开不得全局应用运营禁限卡；显式规则作用域仍保留主宰专属解析能力'],
   [cardArchive.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>') && sandboxPicker.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>'), '卡牌档案与沙盒选择器不得回退为 S1 + S2、S1、S2 旧称'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],

@@ -9,7 +9,7 @@ import {
   MAIN_DECK_TYPES, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
-import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type OperationsCardRestriction } from './platform'
+import { platformState, publicDeckApi } from './platform'
 import CardImage from './CardImage.vue'
 
 const router = useRouter()
@@ -37,7 +37,6 @@ const deckImageUrl = ref('')
 const deckImageBlob = ref<Blob | null>(null)
 const generatingDeckImage = ref(false)
 const publicationId = ref(typeof route.query.published === 'string' ? route.query.published : '')
-const activeRestrictions = ref<OperationsCardRestriction[]>([])
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -49,10 +48,9 @@ const typeLabels: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    ;[catalog.value, savedDecks.value, activeRestrictions.value] = await Promise.all([
+    ;[catalog.value, savedDecks.value] = await Promise.all([
       loadDeckCatalog(),
       ensureOfficialPrebuiltDecks(),
-      getEffectiveOperationsPolicy().then(policy => policy.cardRestrictions).catch(() => []),
     ])
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
@@ -112,7 +110,7 @@ const validation = computed(() => validateDeck({
   cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
   moraleIds: moraleIds.value,
   specialIds: specialIds.value,
-}, catalog.value, activeRestrictions.value))
+}, catalog.value))
 const curve = computed(() => {
   const values = Array(9).fill(0) as number[]
   entries.value.forEach(({ card, count }) => values[Math.min(8, card.cost ?? 0)] += count)
@@ -154,7 +152,7 @@ function toggleTrial(card: DeckCard) {
 function add(card: DeckCard) {
   if (!selectedMaster.value) { notice.value = '请先选择主宰'; return }
   const count = counts.value[card.id] || 0
-  const limit = effectiveDeckLimit(card, masterId.value, activeRestrictions.value)
+  const limit = effectiveDeckLimit(card, masterId.value)
   if (count >= limit) { notice.value = `同编号卡牌最多 ${limit} 张`; return }
   if (!doesNotCountTowardMainDeck(card) && totalCards.value >= 50) { notice.value = '主牌库最多 50 张'; return }
   counts.value = { ...counts.value, [card.id]: count + 1 }
@@ -354,7 +352,7 @@ onBeforeUnmount(closeDeckImage)
             <div class="pool-count-controls">
               <button :disabled="!(counts[card.id] || 0)" aria-label="减少一张" @click.stop="remove(card.id)">−</button>
               <strong>{{ counts[card.id] || 0 }}</strong>
-              <button :disabled="!masterId || (counts[card.id] || 0) >= effectiveDeckLimit(card, masterId, activeRestrictions) || (!doesNotCountTowardMainDeck(card) && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
+              <button :disabled="!masterId || (counts[card.id] || 0) >= effectiveDeckLimit(card, masterId) || (!doesNotCountTowardMainDeck(card) && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
             </div>
           </article>
         </div>
@@ -378,7 +376,7 @@ onBeforeUnmount(closeDeckImage)
         <div class="deck-entries"><article v-for="entry in entries" :key="entry.card.id" @click="selected = entry.card">
           <CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" object-position="center 28%"/>
           <span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong>
-          <button aria-label="增加一张" :disabled="entry.count >= effectiveDeckLimit(entry.card, masterId, activeRestrictions) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
+          <button aria-label="增加一张" :disabled="entry.count >= effectiveDeckLimit(entry.card, masterId) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
           <button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button>
         </article><p v-if="!entries.length">从中间卡池加入卡牌，双击卡面也可快速加入。</p></div>
         <section v-if="trialCapacity" class="selected-trials">

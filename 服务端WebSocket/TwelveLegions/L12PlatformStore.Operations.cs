@@ -89,9 +89,37 @@ public sealed record L12OperationsPolicySnapshot(
         => string.Equals(Season.Status, "active", StringComparison.OrdinalIgnoreCase)
            && (Season.StartsAt is null || Season.StartsAt <= now)
            && (Season.EndsAt is null || Season.EndsAt > now)
-           && DisasterCardIds.Count >= 10
+           && DisasterCardIds.Count >= 9
            && string.Equals(DisasterCardIds[^1], L12PlatformStore.AnnihilationCardId,
                StringComparison.OrdinalIgnoreCase);
+
+    public L12OperationsPolicySnapshot ForRankedMatch()
+        => ScopeFor("ranked", "season", useCardRestrictions: true, useSeasonDisasterPool: true);
+
+    public L12OperationsPolicySnapshot ForCasualMatch()
+        => ScopeFor("casual", "all", useCardRestrictions: false, useSeasonDisasterPool: false);
+
+    public L12OperationsPolicySnapshot ForFriendlyRoom(bool useCardRestrictions, string disasterMode)
+        => ScopeFor("friendly", disasterMode is "all" or "random" or "none" ? disasterMode : "all",
+            useCardRestrictions, useSeasonDisasterPool: false);
+
+    public L12OperationsPolicySnapshot ForSandbox(string disasterMode)
+        => ScopeFor("sandbox", disasterMode is "all" or "random" or "custom" or "none"
+                ? disasterMode : throw new ArgumentOutOfRangeException(nameof(disasterMode)),
+            useCardRestrictions: false, useSeasonDisasterPool: false);
+
+    private L12OperationsPolicySnapshot ScopeFor(string matchModeId, string disasterMode,
+        bool useCardRestrictions, bool useSeasonDisasterPool)
+        => this with
+        {
+            DisasterCardIds = useSeasonDisasterPool ? DisasterCardIds.ToArray() : [],
+            CardRestrictions = useCardRestrictions ? CardRestrictions.ToArray() : [],
+            DefaultRoomConfig = DefaultRoomConfig with
+            {
+                MatchModeId = matchModeId,
+                DisasterMode = disasterMode,
+            },
+        };
 }
 
 internal static class L12OperationsPolicyDefaults

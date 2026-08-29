@@ -250,9 +250,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var policy = _platform.CaptureOperationsPolicy();
-            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error,
-                    policy.CardRestrictions))
+            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error))
                 return Results.BadRequest(new { message = error });
             return Results.Ok(_platform.UpsertDeck(account.Id, deck));
         });
@@ -272,9 +270,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             if (body.Deck is null) return Results.BadRequest(new { message = "牌库数据为空" });
-            var policy = _platform.CaptureOperationsPolicy();
-            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error,
-                    policy.CardRestrictions))
+            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error))
                 return Results.BadRequest(new { message = error });
             var published = _platform.PublishDeck(account.Id, deck, body.PublicationId);
             return published is null ? Results.NotFound() : Results.Ok(published);

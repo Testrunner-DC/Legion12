@@ -4,7 +4,7 @@ import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode 
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
 import { compareDeckCardIds } from '../deckOrdering'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type OperationsCardRestriction, type PublishedDeck } from '@/l12/platform'
+import { platformState, publicDeckApi, type PublishedDeck } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 
@@ -21,7 +21,6 @@ const showPublish = ref(false)
 const factionFilter = ref('all')
 const sortMode = ref<'popular' | 'newest' | 'name'>('popular')
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
-const activeRestrictions = ref<OperationsCardRestriction[]>([])
 const route = useRoute()
 const router = useRouter()
 const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
@@ -33,10 +32,9 @@ const factionLabels: Record<string, string> = {
 }
 onMounted(async () => {
   try {
-    ;[catalog.value, saved.value, activeRestrictions.value] = await Promise.all([
+    ;[catalog.value, saved.value] = await Promise.all([
       loadDeckCatalog(),
       ensureOfficialPrebuiltDecks(),
-      getEffectiveOperationsPolicy().then(policy => policy.cardRestrictions).catch(() => []),
     ])
     const [presets, community] = await Promise.all([loadOfficialPresetDecks(), publicDeckApi.list()])
     published.value = [
@@ -106,7 +104,7 @@ async function publishDeck() {
   const deck = saved.value[publishName.value]
   if (!deck) return
   if (!platformState.account) { notice.value = '请先登录账号再公开牌库'; return }
-  const error = validateDeck(deck, catalog.value, activeRestrictions.value)
+  const error = validateDeck(deck, catalog.value)
   if (error) { notice.value = error; return }
   try {
     const entry = await publicDeckApi.publish(deck)
@@ -150,7 +148,7 @@ function importFromCode() {
   try {
     const deck = decodeDeckCode(importCode.value)
     deck.name = uniqueName(deck.name)
-    const error = validateDeck(deck, catalog.value, activeRestrictions.value)
+    const error = validateDeck(deck, catalog.value)
     if (error) throw new Error(error)
     saveDeck(deck); saved.value = loadSavedDecks(); importCode.value = ''; notice.value = `已导入《${deck.name}》`
   } catch (error) { notice.value = error instanceof Error ? error.message : '牌库码导入失败' }

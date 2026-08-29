@@ -179,7 +179,7 @@ public sealed class L12RoomManager
         if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
             return Error(sessionId, "会话不存在");
         var policy = CaptureOperationsPolicy();
-        if (TryOperationsEntryBlock(sessionId, policy, policy.DefaultRoomConfig.MatchModeId, out var blocked))
+        if (TryOperationsEntryBlock(sessionId, policy, "friendly", out var blocked))
             return blocked;
         if (sender.RoomCode is not null) return Error(sessionId, "请先离开当前房间再邀请好友");
         var targetId = (targetAccountId ?? string.Empty).Trim();
@@ -216,9 +216,10 @@ public sealed class L12RoomManager
         L12OperationsPolicySnapshot? policy = null;
         if (accept)
         {
-            policy = CaptureOperationsPolicy();
-            if (TryOperationsEntryBlock(sessionId, policy, policy.DefaultRoomConfig.MatchModeId, out var blocked))
+            var currentPolicy = CaptureOperationsPolicy();
+            if (TryOperationsEntryBlock(sessionId, currentPolicy, "friendly", out var blocked))
                 return blocked;
+            policy = currentPolicy.ForFriendlyRoom(useCardRestrictions: false, disasterMode: "all");
             if (!TryDefaultPresetIndexes(policy, out _, out _))
                 return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新房间的合法官方预组");
         }
@@ -242,7 +243,7 @@ public sealed class L12RoomManager
         {
             Code = invitation.RoomCode,
             OperationsPolicy = policy!,
-            Options = NormalizeOptions(null, policy!.DefaultRoomConfig),
+            Options = NormalizeFriendlyOptions(null, policy!.DefaultRoomConfig),
         };
         if (!_rooms.TryAdd(room.Code, room)) return Error(sessionId, "预留房间码已失效，请重新邀请");
         room.Sessions.Add(host.Id);
@@ -279,13 +280,12 @@ public sealed class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
-        var policy = CaptureOperationsPolicy();
-        var normalizedOptions = NormalizeOptions(options, policy.DefaultRoomConfig);
-        if (TryOperationsEntryBlock(sessionId, policy, normalizedOptions.MatchModeId, out var blocked))
+        var currentPolicy = CaptureOperationsPolicy();
+        var normalizedOptions = NormalizeFriendlyOptions(options, currentPolicy.DefaultRoomConfig);
+        if (TryOperationsEntryBlock(sessionId, currentPolicy, normalizedOptions.MatchModeId, out var blocked))
             return blocked;
-        if (normalizedOptions.DisasterMode == "season"
-            && !policy.IsSeasonDisasterModeAvailable(DateTimeOffset.UtcNow))
-            return OperationsBlocked(sessionId, "season_disaster_unavailable", "当前赛季天灾模式尚不可用");
+        var policy = currentPolicy.ForFriendlyRoom(normalizedOptions.UseCardRestrictions,
+            normalizedOptions.DisasterMode);
         if (!TryDefaultPresetIndexes(policy, out var hostDeckIndex, out _))
             return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新房间的合法官方预组");
         Room room;
@@ -311,11 +311,13 @@ public sealed class L12RoomManager
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         request ??= new L12SandboxRequest();
-        var policy = CaptureOperationsPolicy();
-        if (policy.IsMaintenanceActive(DateTimeOffset.UtcNow))
-            return MaintenanceBlocked(sessionId, policy);
-        if (request.DisasterMode == "season" && !policy.IsSeasonDisasterModeAvailable(DateTimeOffset.UtcNow))
-            return OperationsBlocked(sessionId, "season_disaster_unavailable", "当前赛季天灾模式尚不可用");
+        var currentPolicy = CaptureOperationsPolicy();
+        if (currentPolicy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+            return MaintenanceBlocked(sessionId, currentPolicy);
+        var disasterMode = (request.DisasterMode ?? string.Empty).Trim().ToLowerInvariant();
+        if (disasterMode is not ("all" or "random" or "custom" or "none"))
+            return Error(sessionId, "沙盒天灾模式仅支持全部、随机、自定或不使用天灾", "sandboxRejected");
+        var policy = currentPolicy.ForSandbox(disasterMode);
         if (!TryDefaultPresetIndexes(policy, out var playerDeckIndex, out var opponentDeckIndex))
             return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新沙盒的合法官方预组");
 
@@ -345,13 +347,14 @@ public sealed class L12RoomManager
                 IsSandbox = true,
                 GmControllerSessionId = sessionId,
                 OperationsPolicy = policy,
-                Options = NormalizeOptions(new L12RoomOptions
+                Options = new L12RoomOptions
                 {
                     MatchModeId = "sandbox",
                     Spectating = "disabled",
                     HandVisibility = "public",
-                    DisasterMode = request.DisasterMode,
-                }, policy.DefaultRoomConfig, allowCustom: true),
+                    DisasterMode = disasterMode,
+                    UseCardRestrictions = false,
+                },
             };
         }
         while (!_rooms.TryAdd(room.Code, room));
@@ -736,7 +739,8 @@ public sealed class L12RoomManager
             blocked = MaintenanceBlocked(sessionId, policy);
             return true;
         }
-        if (!(pinnedRoomPolicy ?? policy).IsMatchModeEnabled(matchModeId))
+        if (!string.Equals(matchModeId, "friendly", StringComparison.OrdinalIgnoreCase)
+            && !(pinnedRoomPolicy ?? policy).IsMatchModeEnabled(matchModeId))
         {
             blocked = OperationsBlocked(sessionId, "match_mode_disabled", "所选对战模式当前未开放");
             return true;
@@ -796,24 +800,23 @@ public sealed class L12RoomManager
         return code;
     }
 
-    private static L12RoomOptions NormalizeOptions(L12RoomOptions? options, L12DefaultRoomConfig defaults,
-        bool allowCustom = false)
+    private static L12RoomOptions NormalizeFriendlyOptions(L12RoomOptions? options, L12DefaultRoomConfig defaults)
     {
-        var matchModeId = string.IsNullOrWhiteSpace(options?.MatchModeId)
-            ? defaults.MatchModeId : options.MatchModeId.Trim().ToLowerInvariant();
         var spectating = options?.Spectating is "public" or "friends" or "disabled"
             ? options.Spectating : defaults.Spectating;
         var handVisibility = options?.HandVisibility is "request" or "public"
             ? options.HandVisibility : defaults.HandVisibility;
-        var disasterMode = options?.DisasterMode is "random" or "season" or "none"
-            || options?.DisasterMode == "all" || (allowCustom && options?.DisasterMode == "custom")
-            ? options!.DisasterMode : defaults.DisasterMode;
+        var configuredDisasterMode = options?.DisasterMode?.Trim().ToLowerInvariant();
+        var disasterMode = configuredDisasterMode is "all" or "random" or "none"
+            ? configuredDisasterMode
+            : defaults.DisasterMode is "all" or "random" or "none" ? defaults.DisasterMode : "all";
         return new L12RoomOptions
         {
-            MatchModeId = matchModeId,
+            MatchModeId = "friendly",
             Spectating = spectating,
             HandVisibility = handVisibility,
             DisasterMode = disasterMode,
+            UseCardRestrictions = options?.UseCardRestrictions == true,
         };
     }
 }

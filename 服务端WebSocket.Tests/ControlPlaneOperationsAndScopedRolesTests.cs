@@ -219,6 +219,63 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             };
             Assert.Equal("invalid_disaster_pool", Assert.Throws<L12OperationsConfigException>(() =>
                 store.PreviewOperationsConfig(admin, invalid, current.Version, Context("eight-disasters"))).Code);
+            store.ApplyOperationsConfig(admin, valid, current.Version, "activate nine disasters",
+                Context("apply-nine-disasters"));
+            Assert.True(store.CaptureOperationsPolicy().IsSeasonDisasterModeAvailable(DateTimeOffset.UtcNow));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsPolicyBuildsAuthoritativeRankedCasualFriendlyAndSandboxScopes()
+    {
+        var root = TempRoot();
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            store.ApplyOperationsConfig(admin, current.Config with
+            {
+                CardRestrictions = [new L12CardRestrictionConfig("S01-0001", 0, "scope regression")],
+            }, current.Version, "scope regression", Context("scope-regression"));
+            var policy = store.CaptureOperationsPolicy();
+
+            var ranked = policy.ForRankedMatch();
+            Assert.Equal("ranked", ranked.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("season", ranked.DefaultRoomConfig.DisasterMode);
+            Assert.NotEmpty(ranked.DisasterCardIds);
+            Assert.Single(ranked.CardRestrictions);
+
+            var casual = policy.ForCasualMatch();
+            Assert.Equal("casual", casual.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("all", casual.DefaultRoomConfig.DisasterMode);
+            Assert.Empty(casual.DisasterCardIds);
+            Assert.Empty(casual.CardRestrictions);
+
+            var unrestrictedFriendly = policy.ForFriendlyRoom(false, "random");
+            Assert.Equal("friendly", unrestrictedFriendly.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("random", unrestrictedFriendly.DefaultRoomConfig.DisasterMode);
+            Assert.Empty(unrestrictedFriendly.DisasterCardIds);
+            Assert.Empty(unrestrictedFriendly.CardRestrictions);
+            Assert.Equal("all", policy.ForFriendlyRoom(false, "season").DefaultRoomConfig.DisasterMode);
+
+            var restrictedFriendly = policy.ForFriendlyRoom(true, "none");
+            Assert.Single(restrictedFriendly.CardRestrictions);
+            Assert.Empty(restrictedFriendly.DisasterCardIds);
+
+            var sandbox = policy.ForSandbox("custom");
+            Assert.Equal("sandbox", sandbox.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("custom", sandbox.DefaultRoomConfig.DisasterMode);
+            Assert.Empty(sandbox.DisasterCardIds);
+            Assert.Empty(sandbox.CardRestrictions);
+            Assert.Throws<ArgumentOutOfRangeException>(() => policy.ForSandbox("season"));
         }
         finally
         {
@@ -273,7 +330,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
     }
 
     [Fact]
-    public async Task CardRestrictionsCoverDeckApiRoomSelectionSandboxAndStartValidation()
+    public async Task OperationsRestrictionsOnlyApplyToOptInFriendlyRoomsWhileDeckStorageAndSandboxStayOpen()
     {
         var root = TempRoot();
         var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
@@ -314,16 +371,29 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             using (var request = Authorized(HttpMethod.Put, "/api/decks", player.Token!, "restricted-http",
                        Submission(bannedPreset)))
             using (var response = await client.SendAsync(request))
-                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using (var request = Authorized(HttpMethod.Post, "/api/public-decks", player.Token!,
+                       "restricted-publish", new { Deck = Submission(bannedPreset) }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
             var hostSession = Guid.NewGuid();
             var joinSession = Guid.NewGuid();
             rooms.Connect(hostSession, player.Account!.Id, player.Account.Username);
             rooms.Connect(joinSession, opponent.Account!.Id, opponent.Account.Username);
-            var created = rooms.CreateRoom(hostSession);
-            var roomCode = Payload(created[0])["roomCode"]!.GetValue<string>();
-            Assert.Equal("deckRejected", Payload(Assert.Single(rooms.SelectDeck(hostSession, bannedIndex)))["type"]!
-                .GetValue<string>());
+            var created = rooms.CreateRoom(hostSession, new L12RoomOptions
+            {
+                MatchModeId = "ranked",
+                DisasterMode = "season",
+                UseCardRestrictions = false,
+            });
+            var createdPayload = Payload(created[0]);
+            var roomCode = createdPayload["roomCode"]!.GetValue<string>();
+            Assert.Equal("friendly", createdPayload["options"]!["matchModeId"]!.GetValue<string>());
+            Assert.Equal("all", createdPayload["options"]!["disasterMode"]!.GetValue<string>());
+            Assert.False(createdPayload["options"]!["useCardRestrictions"]!.GetValue<bool>());
+            Assert.All(rooms.SelectDeck(hostSession, bannedIndex), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
             Assert.All(rooms.JoinRoom(joinSession, roomCode), message =>
                 Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
             Assert.All(await rooms.SetReadyAsync(hostSession, true), message =>
@@ -335,7 +405,44 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             rooms.Connect(sandboxSession, "sandbox-restricted", "沙盒限制测试");
             var sandbox = await rooms.CreateSandboxAsync(sandboxSession,
                 new L12SandboxRequest(Submission(bannedPreset)));
-            Assert.Equal("deckRejected", Payload(Assert.Single(sandbox))["type"]!.GetValue<string>());
+            Assert.Contains(sandbox, message => Payload(message)["type"]!.GetValue<string>() == "gameState");
+
+            var seasonSandboxSession = Guid.NewGuid();
+            rooms.Connect(seasonSandboxSession, "season-sandbox", "赛季沙盒伪造");
+            var seasonSandbox = await rooms.CreateSandboxAsync(seasonSandboxSession,
+                new L12SandboxRequest(DisasterMode: "season"));
+            Assert.Equal("sandboxRejected", Payload(Assert.Single(seasonSandbox))["type"]!.GetValue<string>());
+
+            var restrictedHost = Guid.NewGuid();
+            rooms.Connect(restrictedHost, "restricted-friend-room", "禁限卡好友房");
+            var restrictedRoom = rooms.CreateRoom(restrictedHost, new L12RoomOptions
+            {
+                DisasterMode = "random",
+                UseCardRestrictions = true,
+            });
+            var restrictedPayload = Payload(restrictedRoom[0]);
+            Assert.True(restrictedPayload["options"]!["useCardRestrictions"]!.GetValue<bool>());
+            Assert.Equal("deckRejected", Payload(Assert.Single(rooms.SelectDeck(restrictedHost, bannedIndex)))["type"]!
+                .GetValue<string>());
+
+            var inviter = store.Register("InvitePolicyHost", "password-123").Account!;
+            var invitee = store.Register("InvitePolicyGuest", "password-123").Account!;
+            Assert.True(store.SendFriendRequest(inviter.Id, invitee.Id).Success);
+            Assert.True(store.ResolveFriendRequest(invitee.Id, inviter.Id, true).Success);
+            var inviterSession = Guid.NewGuid();
+            var inviteeSession = Guid.NewGuid();
+            rooms.Connect(inviterSession, inviter.Id, inviter.Username);
+            rooms.Connect(inviteeSession, invitee.Id, invitee.Username);
+            var invitation = rooms.InviteFriend(inviterSession, invitee.Id)
+                .Select(Payload).Single(payload => payload["type"]!.GetValue<string>() == "friendInvitationSent");
+            var resolved = rooms.ResolveFriendInvitation(inviteeSession,
+                invitation["invitationId"]!.GetValue<string>(), true);
+            var invitedRoom = resolved.Select(Payload)
+                .First(payload => payload["type"]!.GetValue<string>() == "roomState");
+            Assert.False(invitedRoom["options"]!["useCardRestrictions"]!.GetValue<bool>());
+            Assert.Equal("all", invitedRoom["options"]!["disasterMode"]!.GetValue<string>());
+            Assert.All(rooms.SelectDeck(inviterSession, bannedIndex), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
         }
         finally
         {
@@ -352,7 +459,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
     }
 
     [Fact]
-    public async Task RoomAndGamePinPolicyWhileMaintenanceAndModesGateOnlyNewFlow()
+    public async Task RoomAndGamePinPolicyWhileMaintenanceGatesNewFriendlyFlows()
     {
         var root = TempRoot();
         MatchRecorder? recorder = null;
@@ -374,12 +481,15 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             rooms.Connect(guestSession, guest.Id, guest.Username);
             var created = rooms.CreateRoom(hostSession, new L12RoomOptions
             {
-                MatchModeId = "casual",
-                DisasterMode = "season",
+                MatchModeId = "ranked",
+                DisasterMode = "random",
+                UseCardRestrictions = true,
             });
             var createdPayload = Payload(created[0]);
             var roomCode = createdPayload["roomCode"]!.GetValue<string>();
             Assert.Equal(initialPolicy.Version, createdPayload["operationsPolicyVersion"]!.GetValue<long>());
+            Assert.Equal("friendly", createdPayload["options"]!["matchModeId"]!.GetValue<string>());
+            Assert.Equal("random", createdPayload["options"]!["disasterMode"]!.GetValue<string>());
             Assert.All(rooms.JoinRoom(guestSession, roomCode), message =>
                 Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
 
@@ -418,11 +528,13 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.NotEqual(initialPolicy.Version, currentPolicy.Version);
 
             var casualSession = Guid.NewGuid();
-            rooms.Connect(casualSession, "casual-blocked", "休闲关闭");
-            var casualBlocked = rooms.CreateRoom(casualSession, new L12RoomOptions { MatchModeId = "casual" });
-            Assert.Equal("match_mode_disabled", Payload(Assert.Single(casualBlocked))["code"]!.GetValue<string>());
+            rooms.Connect(casualSession, "friendly-independent", "好友房独立");
+            var friendlyUnaffected = rooms.CreateRoom(casualSession,
+                new L12RoomOptions { MatchModeId = "casual" });
+            Assert.Equal("roomState", Payload(Assert.Single(friendlyUnaffected))["type"]!.GetValue<string>());
+            Assert.Equal("friendly", Payload(friendlyUnaffected[0])["options"]!["matchModeId"]!.GetValue<string>());
 
-            // 房间固定创建时的模式规则；后台后续关闭该模式不能污染已存在的房间。
+            // 好友房固定创建时的作用域策略；公开匹配模式开关不能污染已存在的好友房。
             Assert.All(await rooms.SetReadyAsync(hostSession, true), message =>
                 Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
             var started = await rooms.SetReadyAsync(guestSession, true);
