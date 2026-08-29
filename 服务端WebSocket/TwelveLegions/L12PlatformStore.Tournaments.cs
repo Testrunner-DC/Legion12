@@ -1004,9 +1004,9 @@ public sealed partial class L12PlatformStore
         var normalizedBanList = OptionalText(banList, 2000);
         var normalizedDisasters = normalizedDisaster == "none" ? [] : disasterCardIds
             .Select(id => RequireCardId(id, "赛事天灾卡号")).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (normalizedDisaster != "none" && (normalizedDisasters.Length is < 10 or > 64
+        if (normalizedDisaster != "none" && (normalizedDisasters.Length is < 9 or > 64
             || !string.Equals(normalizedDisasters[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("赛事天灾池须为 10–64 张，且堙灭固定在最后一张");
+            throw new ArgumentException("赛事天灾池须为 9–64 张（含堙灭），且堙灭固定在最后一张");
         if (_officialCards.Count > 0 && normalizedDisasters.Any(id => !_officialCards.TryGetValue(id, out var card)
                 || card.CardType != "destruction"))
             throw new ArgumentException("赛事天灾池包含非天灾卡牌");

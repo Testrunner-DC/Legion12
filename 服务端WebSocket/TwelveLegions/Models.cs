@@ -164,6 +164,9 @@ public sealed class L12CardInstance
     public bool IsMasterLegion { get; set; }
     /// <summary>当前公开场面中实际生效的关键词；由快照层按位置与限时状态计算。</summary>
     public List<string> ActiveKeywords { get; set; } = [];
+    /// <summary>当前公开场面中实际生效的短期状态图标；由快照层权威派生。</summary>
+    public List<string> StatusIcons { get; set; } = [];
+    public List<L12StatusEffectView> StatusEffects { get; set; } = [];
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
@@ -195,6 +198,9 @@ public sealed record L12AbilityView(
     bool Enabled = true,
     string? DisabledReason = null,
     bool TriggerOnly = false);
+
+/// <summary>卡面短期状态的结构化投影；Kind 决定图标，Label/Source 用于提示。</summary>
+public sealed record L12StatusEffectView(string Kind, string Label, string? Source = null);
 
 public sealed class L12TimedModifier
 {
@@ -488,6 +494,8 @@ public sealed class L12GameState
     public List<L12CardInstance> CustomDisasters { get; } = [];
     public Dictionary<string, int> ChosenDisasterOwners { get; } = [];
     public L12CardInstance? ActiveDisaster { get; set; }
+    /// <summary>〈天地异变〉持续期间牌库是否已按权威列表翻转，防止重连或 GM 刷新重复翻转。</summary>
+    public bool LibrariesReversedByDisaster { get; set; }
     public int DisasterPreparationStep { get; set; }
     public L12PendingDefense? PendingDefense { get; set; }
     /// <summary>贯穿等击杀时生成进攻使用的可恢复父交战栈。</summary>

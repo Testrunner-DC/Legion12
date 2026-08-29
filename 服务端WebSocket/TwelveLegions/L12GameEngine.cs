@@ -342,6 +342,10 @@ public sealed partial class L12GameEngine
             tapped = player.MasterTapped,
             player.Hp,
             player.MaxHp,
+            statusIcons = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial ? new[] { "shield" } : Array.Empty<string>(),
+            statusEffects = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial
+                ? new[] { new L12StatusEffectView("shield", "主宰暂时不可被进攻") }
+                : Array.Empty<L12StatusEffectView>(),
             abilities = BuildAbilityViews(player, player.MasterId, $"master-{player.PlayerIndex}"),
         };
     }
@@ -482,6 +486,9 @@ public sealed partial class L12GameEngine
                 // was created.
                 snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
+                snapshot.StatusEffects = BuildStatusEffects(player, card, rowIndex);
+                snapshot.StatusIcons = snapshot.StatusEffects.Select(effect => effect.Kind)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 return (object)snapshot;
             }
             return new
@@ -516,6 +523,42 @@ public sealed partial class L12GameEngine
         if (card.HasShock) keywords.Add("震击");
         if (controller.UsedAbilities.Contains($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}")) keywords.Add("贯穿");
         return keywords;
+    }
+
+    private List<L12StatusEffectView> BuildStatusEffects(L12PlayerState controller, L12CardInstance card, int row)
+    {
+        if (card.Hidden) return [];
+        var effects = new List<L12StatusEffectView>();
+        var activeTimed = card.TimedModifiers.Where(modifier => modifier.ExpiresAfterTurn >= State.TurnSerial).ToArray();
+        var positive = activeTimed.Where(modifier => modifier.TroopsDelta > 0).Sum(modifier => modifier.TroopsDelta);
+        var negative = activeTimed.Where(modifier => modifier.TroopsDelta < 0).Sum(modifier => modifier.TroopsDelta);
+        if (positive > 0)
+            effects.Add(new("power-up", $"临时兵力+{positive}", string.Join('、', activeTimed.Where(item => item.TroopsDelta > 0).Select(item => item.Source).Distinct())));
+        if (negative < 0)
+            effects.Add(new("power-down", $"临时兵力{negative}", string.Join('、', activeTimed.Where(item => item.TroopsDelta < 0).Select(item => item.Source).Distinct())));
+        if (card.CannotUntapUntilRound >= State.Round || card.CannotReadyByEffectUntilTurn >= State.TurnSerial)
+            effects.Add(new("lock", "暂时无法转为活跃"));
+        if (card.CannotAttack) effects.Add(new("disabled", "无法进攻"));
+        if (card.CannotSupport) effects.Add(new("disabled", "无法支援"));
+        if (row == 1 && controller.BackRowCannotSupport) effects.Add(new("disabled", "后排军团无法支援"));
+        if (card.CannotRespondUntilRound >= State.Round) effects.Add(new("disabled", "无法响应或发动效果"));
+        if (card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
+            effects.Add(new("shield", "免死或致命伤害保护"));
+        if (card.AttachedCards.Any(attached => L12StructuredCardSemantics.IsKingsSword(attached.CardId)))
+            effects.Add(new("shield", "〈王者之剑〉可代替承受致命进攻或效果", "湖中仙女的馈赠"));
+        if (IsProtectedByRestedAmakine(controller, card))
+            effects.Add(new("shield", "暂时不可被进攻", "阿麦金"));
+        if (L12StructuredCardSemantics.IsHannibal(card.CardId) && !card.Tapped)
+            effects.Add(new("shield", "活跃时不可被进攻", "汉尼拔"));
+        if (card.DiscardAtEndOfTurnUntilTurn >= State.TurnSerial)
+            effects.Add(new("discard-end", "回合结束时弃置"));
+        if (card.CanAttackBackAndMasterUntilTurn >= State.TurnSerial
+            || card.CanAttackMasterOnSummonUntilTurn >= State.TurnSerial
+            || card.CanAttackLegionsOnSummonUntilTurn >= State.TurnSerial)
+            effects.Add(new("extra-attack", "本回合获得额外进攻对象权限"));
+        if (card.ReadyAfterNextKillUntilTurn >= State.TurnSerial)
+            effects.Add(new("extra-attack", "下次击杀对方军团后转为活跃", card.ReadyAfterNextKillSourceName));
+        return effects;
     }
 
     public string SerializeFullState() => JsonSerializer.Serialize(State);

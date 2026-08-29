@@ -308,7 +308,12 @@ public sealed partial class L12GameEngine
                 var choices = State.Players[1 - item.Controller].Morale.Where(morale => morale.Tapped).Select(morale => morale.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "target-morale", "选择对方 1 张休整士气，使其下个重置阶段无法转为活跃", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "mulan-lock-morale" });
+                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
+                    {
+                        ["action"] = "mulan-lock-morale",
+                        ["targetPlayerIndex"] = (1 - item.Controller).ToString(),
+                        ["choiceMode"] = "resource-selection",
+                    });
                 return;
             }
             default:

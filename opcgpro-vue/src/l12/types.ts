@@ -5,7 +5,16 @@ export interface ActionEvent {
   type: string
   playerIndex?: number
   text: string
+  effectText?: string
   cards?: Card[]
+}
+
+export type CardStatusIconKind = 'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'
+
+export interface CardStatusEffect {
+  kind: CardStatusIconKind | string
+  label: string
+  source?: string
 }
 
 export interface Card {
@@ -27,6 +36,8 @@ export interface Card {
   ownerIndex?: number
   isMasterLegion?: boolean
   activeKeywords?: string[]
+  statusIcons?: string[]
+  statusEffects?: CardStatusEffect[]
   displayBaseTroops?: number
   lastCavalryMoveTurn?: number
   hasCharge?: boolean
@@ -66,7 +77,7 @@ export interface PlayerView {
   deckName: string
   faction: string
   factionEffect?: { cardId: string; name: string; imageUrl?: string; effectText: string; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
-  master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; hp: number; maxHp: number; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
+  master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; hp: number; maxHp: number; statusIcons?: string[]; statusEffects?: CardStatusEffect[]; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
   libraryCount: number
   libraryTop?: Card | null
   hand?: Card[]

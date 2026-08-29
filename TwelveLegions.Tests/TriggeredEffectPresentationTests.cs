@@ -20,12 +20,23 @@ public sealed class TriggeredEffectPresentationTests
             {
                 var resolved = L12GameEngine.ResolveTriggeredEffectDisplayText(source, trigger, fallback);
                 Assert.DoesNotContain('\n', resolved);
-                Assert.Contains(resolved, lines);
+                Assert.Contains(Normalize(resolved), Normalize(definition.Effect!), StringComparison.Ordinal);
                 audited++;
             }
         }
 
         Assert.True(audited >= 100, $"应审计至少100条触发能力，实际仅{audited}条");
+    }
+
+    [Fact]
+    public void SameLineMultiAbilityCardShowsOnlyCurrentTriggeredAbility()
+    {
+        var source = CreateInstance(Catalog.Cards["S01-0102"]);
+
+        var resolved = L12GameEngine.ResolveTriggeredEffectDisplayText(source, "death", "【阵亡时】效果");
+
+        Assert.Equal("阵亡时 抽取1张牌，我方主宰增加1点血量。", resolved);
+        Assert.DoesNotContain("登场时", resolved, StringComparison.Ordinal);
     }
 
     [Fact]

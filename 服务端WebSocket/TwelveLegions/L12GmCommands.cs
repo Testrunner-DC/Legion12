@@ -448,7 +448,14 @@ public sealed partial class L12GameEngine
         var revealedIndex = State.RevealedDisasters.FindIndex(card => card.InstanceId == previous.InstanceId);
         if (revealedIndex >= 0) State.RevealedDisasters[revealedIndex] = replacement;
         if (State.ActiveDisaster?.InstanceId == previous.InstanceId)
+        {
+            if (L12StructuredCardSemantics.IsHeavenEarthChange(previous.CardId)
+                && !L12StructuredCardSemantics.IsHeavenEarthChange(replacement.CardId))
+                SetLibrariesReversedByDisaster(false);
             State.ActiveDisaster = replacement;
+            if (L12StructuredCardSemantics.IsHeavenEarthChange(replacement.CardId))
+                SetLibrariesReversedByDisaster(true);
+        }
 
         RecalculateContinuousTroops();
         AddEvent("gm", null,

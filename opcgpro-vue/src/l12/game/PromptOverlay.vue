@@ -13,7 +13,8 @@ const props = withDefaults(defineProps<{
   suppressedPromptId?: string | null
   suppressDefenseWait?: boolean
   readOnly?: boolean
-}>(), { mulliganSelectedIds: () => [], busy: false, suppressDefenseWait: false, readOnly: false })
+  inspectorVisible?: boolean
+}>(), { mulliganSelectedIds: () => [], busy: false, suppressDefenseWait: false, readOnly: false, inspectorVisible: false })
 const emit = defineEmits<{
   mulliganToggle: [id: string]
   mulliganConfirm: []
@@ -388,7 +389,7 @@ function kindLabel() {
 <template>
   <Teleport to="body">
     <div v-if="visible" class="l12-prompt-overlay"
-      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized }">
+      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
         <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
       </section>
@@ -411,7 +412,7 @@ function kindLabel() {
             <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
               <img v-if="entry.card.hidden" src="/assets/l12/card-back-disaster.png" alt="未揭示天灾"/>
-              <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="thumb" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
+               <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
@@ -480,7 +481,7 @@ function kindLabel() {
           <button v-for="choice in displayedChoices" :key="choice"
             :class="{ selected: selected.includes(choice), unavailable: displayedCardsAreChoices && !prompt.validChoices.includes(choice), 'card-choice': detailFor(choice), 'horizontal-card': isHorizontalCardType(detailFor(choice)?.cardType) }"
             @mouseenter="focusChoice(choice)" @focus="focusChoice(choice)" @click="focusChoice(choice); toggle(choice)">
-            <CardImage v-if="imageFor(choice)" :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :alt="label(choice)" intent="thumb" eager/>
+            <CardImage v-if="imageFor(choice)" :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :alt="label(choice)" :intent="isDisasterChoice ? 'detail' : 'thumb'" eager/>
             <span>{{ label(choice) }}</span>
             <b v-if="selected.includes(choice) && prompt.maxChoose > 1">{{ selected.indexOf(choice) + 1 }}</b>
           </button>
@@ -548,7 +549,7 @@ function kindLabel() {
             <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
               <img v-if="entry.card.hidden" src="/assets/l12/card-back-disaster.png" alt="未揭示天灾"/>
-              <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="thumb" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
+               <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
@@ -570,6 +571,7 @@ function kindLabel() {
 <style scoped>
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:12px}.initiative-race span{color:#89928e;font-size:9px}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:52px;line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:9px;font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:1000!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
+.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
 .prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow:hidden}
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:18px;line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:18px}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
@@ -587,6 +589,7 @@ function kindLabel() {
 .prompt-panel footer button.primary{border:2px solid #fff!important;background:#f2eee3!important;color:#090c0d!important}.prompt-panel footer button.primary:disabled{border-color:#646966!important;background:#2a2e2d!important;color:#929792!important}.l12-prompt-overlay.waiting{background:rgba(2,4,5,.3)!important;backdrop-filter:blur(2px)}.waiting-panel{position:relative;width:min(430px,calc(100vw - 32px));padding:25px;text-align:center}.waiting-panel>.prompt-minimize{right:10px;top:10px}.waiting-panel small{color:#73d7de;font-size:9px;letter-spacing:.16em}.waiting-panel h2{margin:10px 0;color:#fff;font-size:21px}.waiting-panel p{color:#c0c5bf;font-size:11px}.waiting-panel i{display:inline-block;width:7px;height:7px;margin:10px 4px 0;border-radius:50%;background:#70d7df;animation:waiting-pulse 1.2s infinite}.waiting-panel i:nth-of-type(2){animation-delay:.2s}.waiting-panel i:nth-of-type(3){animation-delay:.4s}@keyframes waiting-pulse{0%,70%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-4px)}}
 .l12-prompt-overlay.minimized{z-index:2000;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:block;pointer-events:auto}.prompt-minimized-bar button{padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-weight:900;box-shadow:0 12px 35px #000}
 @media(max-width:760px){.l12-prompt-overlay.minimized{right:10px;bottom:60px}}
+@media(max-width:520px){.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:92px;padding:8px 8px 8px var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 8px);padding:10px}}
 /* 天灾卡是横版；所有天灾准备、公开、触发与详情场景共用同一比例。 */
 .prompt-choices.card-grid>button.horizontal-card{grid-column:span 2;min-width:0}
 .prompt-choices.card-grid>button.horizontal-card .l12-card-image{width:min(220px,100%);height:auto;aspect-ratio:8/5}

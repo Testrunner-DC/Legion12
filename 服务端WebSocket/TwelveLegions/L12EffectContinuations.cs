@@ -439,8 +439,9 @@ public sealed partial class L12GameEngine
         if (choice != "skip")
         {
             var card = player.Library.First(candidate => candidate.InstanceId == choice);
-            player.Library.Remove(card); AddCardToHandByEffect(player, card, "library", $"花魁的馈赠将{card.Name}加入手牌");
-            AddEvent("search", item.Controller, $"花魁的馈赠将 {card.Name} 加入手牌", card);
+            player.Library.Remove(card);
+            AddCardToHandByEffect(player, card, "library", $"花魁的馈赠将〈{card.Name}〉加入手牌");
+            AddEvent("search", item.Controller, $"花魁的馈赠将〈{card.Name}〉加入手牌", card);
         }
         var remaining = item.Data["oiran-cards"].Split('|').Where(id => id != choice).ToList();
         if (remaining.Count <= 1)

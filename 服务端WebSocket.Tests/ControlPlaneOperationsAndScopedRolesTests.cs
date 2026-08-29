@@ -191,6 +191,43 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
     }
 
     [Fact]
+    public void OperationsConfigAcceptsNineDisastersIncludingFinalAnnihilation()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            var ordinary = current.Config.DisasterPool.CardIds
+                .Where(id => !id.Equals(L12PlatformStore.AnnihilationCardId, StringComparison.OrdinalIgnoreCase))
+                .Take(8).ToArray();
+            Assert.Equal(8, ordinary.Length);
+            var valid = current.Config with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(
+                    ordinary.Append(L12PlatformStore.AnnihilationCardId).ToArray(), true),
+            };
+
+            var preview = store.PreviewOperationsConfig(admin, valid, current.Version, Context("nine-disasters"));
+            Assert.Equal(9, preview.Normalized.DisasterPool.CardIds.Count);
+
+            var invalid = valid with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(
+                    ordinary.Take(7).Append(L12PlatformStore.AnnihilationCardId).ToArray(), true),
+            };
+            Assert.Equal("invalid_disaster_pool", Assert.Throws<L12OperationsConfigException>(() =>
+                store.PreviewOperationsConfig(admin, invalid, current.Version, Context("eight-disasters"))).Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void DefaultRoomConfigMigratesAndDefaultPresetSelectionSeedsOnlyNewAccounts()
     {
         var root = TempRoot();

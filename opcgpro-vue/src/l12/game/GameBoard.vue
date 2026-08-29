@@ -168,13 +168,16 @@ const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && f
 function updateInspectorFloatRect() {
   if (!modalInspectorVisible.value || !inspectorAnchor.value) return
   const rect = inspectorAnchor.value.getBoundingClientRect()
-  const boardScale = scale.value || 1
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const laneWidth = Math.min(258, Math.max(viewportWidth < 520 ? 92 : 118, viewportWidth * .19))
+  const top = Math.max(8, Math.min(rect.top, viewportHeight - 140))
   inspectorFloatStyle.value = {
-    left: `${rect.left}px`,
-    top: `${rect.top}px`,
-    width: `${rect.width / boardScale}px`,
-    height: `${rect.height / boardScale}px`,
-    transform: `scale(${boardScale})`,
+    left: '8px',
+    top: `${top}px`,
+    width: `${Math.max(76, laneWidth - 16)}px`,
+    height: `${Math.max(120, viewportHeight - top - 8)}px`,
+    transform: 'none',
   }
 }
 watch(modalInspectorVisible, visible => {
@@ -262,6 +265,12 @@ function showNextPublicReveal() {
     showNextPublicReveal()
   }, 3000)
 }
+function publicRevealText(event: ActionEvent) {
+  const text = event.effectText?.trim() || event.text.trim()
+  const card = event.cards?.[0]
+  if (card && /花魁的馈赠/.test(text)) return `花魁的馈赠将〈${card.name}〉加入手牌`
+  return text
+}
 function diceValuesFromEvent(event: ActionEvent) {
   const result = event.text.match(/结果为\s*([1-6])/)?.[1]
   if (result) return [Number(result)]
@@ -296,14 +305,15 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
       && (event.type === 'disaster-reveal' || event.playerIndex === null || event.playerIndex !== props.game.you)
       && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'
-        || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示'))
+        || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示')
+        || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
     publicRevealQueue.push({
       sequence: event.sequence,
       cards: event.cards ?? [],
-      text: event.text,
+      text: publicRevealText(event),
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
@@ -730,7 +740,7 @@ function statusTexts(card: Card) {
           <HandArea v-else hidden :count="viewEnemy.handCount || 0" />
           <div class="felt-board" data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
-              :active="game.activePlayer === viewEnemy.playerIndex && !combat" :viewer-player-index="game.you"
+              :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
@@ -800,7 +810,7 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
-              :active="game.activePlayer === viewMe.playerIndex && !combat" :viewer-player-index="game.you"
+              :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard"
               :selected-id="supportId || selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
@@ -887,7 +897,7 @@ function statusTexts(card: Card) {
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
       </div>
-      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction"
+      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" />
     </div>
   </div>
@@ -937,7 +947,7 @@ function statusTexts(card: Card) {
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:8px;font-weight:800;line-height:1.45}
 .inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:8px;font-weight:900}
 .session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:44px;min-width:44px;height:44px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
-.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:hidden!important;transform-origin:left top;pointer-events:none}
+.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(146px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:44px;line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 </style>

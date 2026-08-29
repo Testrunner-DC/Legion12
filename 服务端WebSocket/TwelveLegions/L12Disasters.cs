@@ -18,6 +18,8 @@ public sealed partial class L12GameEngine
         }
         if (State.ActiveDisaster is not null)
         {
+            if (L12StructuredCardSemantics.IsHeavenEarthChange(State.ActiveDisaster.CardId))
+                SetLibrariesReversedByDisaster(false);
             State.RemovedDisasters.Add(State.ActiveDisaster);
             AddEvent("disaster-removed", null, $"旧天灾〈{State.ActiveDisaster.Name}〉移出游戏", State.ActiveDisaster);
         }
@@ -69,6 +71,7 @@ public sealed partial class L12GameEngine
             case "天启默示录": BeginApocalypse(item); return;
             case "诸神黄昏": ResolveRagnarok(item); return;
             case "天地异变":
+                SetLibrariesReversedByDisaster(true);
                 AddEvent("disaster-active", null, "〈天地异变〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
             case "迷雾绝境": BeginS2FogDeadEnd(item); return;
@@ -92,6 +95,16 @@ public sealed partial class L12GameEngine
     private static IEnumerable<L12CardInstance> DisasterLegions(L12PlayerState player)
         => player.Field.SelectMany(row => row).Where(card => card is not null && IsDisasterFieldCard(card))
             .Cast<L12CardInstance>();
+
+    private void SetLibrariesReversedByDisaster(bool reversed)
+    {
+        if (State.LibrariesReversedByDisaster == reversed) return;
+        foreach (var player in State.Players) player.Library.Reverse();
+        State.LibrariesReversedByDisaster = reversed;
+        AddEvent("library-orientation", null, reversed
+            ? "〈天地异变〉使双方牌库翻转；原牌库底成为牌库顶"
+            : "〈天地异变〉离场，双方牌库恢复原方向");
+    }
 
     private void BeginS2FogDeadEnd(L12StackItem item)
     {

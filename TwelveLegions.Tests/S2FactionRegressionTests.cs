@@ -1995,6 +1995,34 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void KingsSwordLimitOneConsumesSecondRuneButDoesNotMoveOrDuplicateTheSword()
+    {
+        var game = Create(63081);
+        var player = game.State.Players[0];
+        var firstArthur = Card("S02-0601", "arthur-with-existing-sword");
+        var sword = Card("S02-06S2", "only-kings-sword");
+        firstArthur.AttachedCards.Add(sword);
+        player.Field[0][0] = firstArthur;
+        var secondArthur = Card("S02-0601", "second-arthur");
+        player.Hand.Add(secondArthur);
+        AddMorale(player, secondArthur.Cost);
+        player.SpecialZones.Runes = 1;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", secondArthur.InstanceId, Row: 0, Slot: 1)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Same(sword, Assert.Single(firstArthur.AttachedCards));
+        Assert.Empty(secondArthur.AttachedCards);
+        Assert.Single(player.Field.SelectMany(row => row).Where(card => card is not null)
+            .SelectMany(card => card!.AttachedCards), card => card.CardId == "S02-06S2");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop" && entry.Text.Contains("Limit 1"));
+    }
+
+    [Fact]
     public void RestedAmakineProtectsOnlyActiveTrialLegionsFromAttack()
     {
         var game = Create(6309);

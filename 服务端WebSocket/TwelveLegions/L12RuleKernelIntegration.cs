@@ -237,6 +237,13 @@ public sealed partial class L12GameEngine
                 promptKind = "active-target";
             }
         }
+        else if (step.Kind == "target-morale")
+        {
+            targetPlayerIndex = Enumerable.Range(0, State.Players.Length)
+                .FirstOrDefault(index => step.ValidChoices.Any(choice =>
+                    State.Players[index].Morale.Any(morale => morale.InstanceId == choice)), -1);
+            if (targetPlayerIndex < 0) targetPlayerIndex = null;
+        }
         var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
@@ -568,17 +575,28 @@ public sealed partial class L12GameEngine
                 _ => [],
             },
         };
-        var markerMatch = lines.FirstOrDefault(line => markers.Length > 0
-            && (ability is null ? markers.Any(marker => NormalizeTriggeredEffectText(line).Contains(
+        var abilitySegments = lines.SelectMany(SplitEffectAbilitySegments).ToArray();
+        var markerMatch = abilitySegments.FirstOrDefault(segment => markers.Length > 0
+            && (ability is null ? markers.Any(marker => NormalizeTriggeredEffectText(segment).Contains(
                     NormalizeTriggeredEffectText(marker), StringComparison.Ordinal))
-                : markers.All(marker => NormalizeTriggeredEffectText(line).Contains(
+                : markers.All(marker => NormalizeTriggeredEffectText(segment).Contains(
                     NormalizeTriggeredEffectText(marker), StringComparison.Ordinal))));
-        if (!string.IsNullOrWhiteSpace(markerMatch)) return markerMatch;
+        if (!string.IsNullOrWhiteSpace(markerMatch)) return markerMatch.Trim();
 
         var normalizedFallback = NormalizeTriggeredEffectText(fallback);
-        var fallbackMatch = lines.FirstOrDefault(line => normalizedFallback.Length >= 2
-            && NormalizeTriggeredEffectText(line).Contains(normalizedFallback, StringComparison.Ordinal));
+        var fallbackMatch = abilitySegments.FirstOrDefault(segment => normalizedFallback.Length >= 2
+            && NormalizeTriggeredEffectText(segment).Contains(normalizedFallback, StringComparison.Ordinal));
         return fallbackMatch ?? fallback;
+    }
+
+    private static IEnumerable<string> SplitEffectAbilitySegments(string text)
+    {
+        const string boundary = @"(?=(?:(?:我方|对方)\s*回合(?:1次)?\s*)?(?:晋升登场|登场时|进攻时|阵亡时|离场时|击杀时|进攻后|主动休整|主动\s|触发\s))";
+        var pieces = System.Text.RegularExpressions.Regex.Split(text, boundary)
+            .Select(piece => piece.Trim().TrimStart('。').Trim())
+            .Where(piece => piece.Length > 0)
+            .ToArray();
+        return pieces.Length == 0 ? [text] : pieces;
     }
 
     private static string NormalizeTriggeredEffectText(string value)

@@ -614,6 +614,9 @@ public sealed class NewSystemsTests
             new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId, Choice: "no")).Accepted);
         Assert.Equal(bottomOrder, player.Library.TakeLast(bottomOrder.Count).Select(card => card.InstanceId));
         Assert.Contains(eligible, player.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "search"
+            && entry.Text == $"花魁的馈赠将〈{eligible.Name}〉加入手牌"
+            && entry.Cards.Single().InstanceId == eligible.InstanceId);
         Assert.Contains(gift, player.Graveyard);
     }
 
@@ -1559,5 +1562,113 @@ public sealed class NewSystemsTests
         Assert.Equal(handBefore + 1, player.Hand.Count);
         Assert.Null(player.Field[0][0]);
         Assert.Same(legion, player.Field[0][1]);
+    }
+
+    [Fact]
+    public void EarthlyChangeReversesLibrariesExactlyOnceAndRestoresTheirCurrentOrder()
+    {
+        var game = Create(seed: 8864);
+        var before = game.State.Players.Select(player => player.Library.Select(card => card.InstanceId).ToArray()).ToArray();
+        var method = typeof(L12GameEngine).GetMethod("SetLibrariesReversedByDisaster",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+        method.Invoke(game, [true]);
+        Assert.True(game.State.LibrariesReversedByDisaster);
+        for (var player = 0; player < 2; player++)
+            Assert.Equal(before[player].Reverse(), game.State.Players[player].Library.Select(card => card.InstanceId));
+
+        method.Invoke(game, [true]);
+        for (var player = 0; player < 2; player++)
+            Assert.Equal(before[player].Reverse(), game.State.Players[player].Library.Select(card => card.InstanceId));
+
+        method.Invoke(game, [false]);
+        Assert.False(game.State.LibrariesReversedByDisaster);
+        for (var player = 0; player < 2; player++)
+            Assert.Equal(before[player], game.State.Players[player].Library.Select(card => card.InstanceId));
+    }
+
+    [Fact]
+    public void CorruptEarthRemovesRearRowFromEveryCommonPlacementAndMoveChoice()
+    {
+        var game = Create(seed: 8865);
+        var player = game.State.Players[1];
+        game.State.ActivePlayer = 1;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S01-DS03", "corrupt-earth-active");
+        foreach (var morale in player.MoraleDeck.Take(2).ToArray())
+        {
+            player.MoraleDeck.Remove(morale);
+            player.Morale.Add(morale);
+        }
+        var legion = player.Hand.First(card => card.CardType == "legion");
+        player.Hand.Remove(legion);
+        legion.SummonRound = 0;
+        player.Field[0][0] = legion;
+
+        Assert.True(game.Handle(1, new L12Command("activateAbility", "faction-1", Ability: "factionDrawMove")).Accepted);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: target.PromptId, Choice: legion.InstanceId)).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("1:0", slot.ValidChoices);
+        Assert.Contains("0:1", slot.ValidChoices);
+    }
+
+    [Fact]
+    public void SnapshotPublishesStructuredTemporaryStatusIcons()
+    {
+        var game = Create(seed: 8866);
+        var player = game.State.Players[0];
+        var legion = CreateInstance("S01-0108", "status-icon-legion");
+        legion.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = 2000, ExpiresAfterTurn = 5, Source = "须佐之男" });
+        legion.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = -1000, ExpiresAfterTurn = 5, Source = "测试减兵力" });
+        legion.CannotAttack = true;
+        legion.CannotSupport = true;
+        legion.CannotReadyByEffectUntilTurn = 5;
+        legion.ImmortalUses = 1;
+        legion.ImmortalUntilTurn = 5;
+        legion.DiscardAtEndOfTurnUntilTurn = 5;
+        legion.ReadyAfterNextKillUntilTurn = 5;
+        player.Field[0][0] = legion;
+        game.State.TurnSerial = 1;
+
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(game.SnapshotFor(0));
+        var fieldCard = json.GetProperty("Players")[0].GetProperty("field")[0][0];
+        var kinds = fieldCard.GetProperty("StatusEffects").EnumerateArray()
+            .Select(item => item.GetProperty("Kind").GetString()).ToArray();
+        Assert.Contains("power-up", kinds);
+        Assert.Contains("power-down", kinds);
+        Assert.Contains("lock", kinds);
+        Assert.Contains("disabled", kinds);
+        Assert.Contains("shield", kinds);
+        Assert.Contains("discard-end", kinds);
+        Assert.Contains("extra-attack", kinds);
+    }
+
+    [Fact]
+    public void MulanDeathResourceSelectionExplicitlyTargetsOpponentMoraleOnBoard()
+    {
+        var game = Create(seed: 8867);
+        var mulanOwner = 0;
+        var opponent = 1;
+        var mulan = CreateInstance("S01-0108", "mulan-resource-target");
+        game.State.Players[mulanOwner].Field[0][0] = mulan;
+        var morale = game.State.Players[opponent].MoraleDeck[0];
+        game.State.Players[opponent].MoraleDeck.RemoveAt(0);
+        morale.Tapped = true;
+        game.State.Players[opponent].Morale.Add(morale);
+        game.State.ActivePlayer = opponent;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", mulanOwner,
+            CardInstanceId: mulan.InstanceId)).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("target-morale", prompt.Kind);
+        Assert.Equal(opponent.ToString(), prompt.Data["targetPlayerIndex"]);
+        Assert.Contains(morale.InstanceId, prompt.ValidChoices);
     }
 }

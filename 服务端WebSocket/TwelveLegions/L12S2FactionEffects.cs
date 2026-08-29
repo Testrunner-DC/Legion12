@@ -1883,6 +1883,16 @@ public sealed partial class L12GameEngine
                 var arthur = FindSource(item);
                 if (chosen[0] == "yes" && arthur is not null && L12S2ZoneOps.SpendRunes(player, 1))
                 {
+                    var existingSwordOwner = PublicLegions(player).FirstOrDefault(candidate =>
+                        candidate.AttachedCards.Any(attached => L12StructuredCardSemantics.IsKingsSword(attached.CardId)));
+                    if (existingSwordOwner is not null)
+                    {
+                        AddEvent("effect-noop", item.Controller,
+                            $"〈王者之剑〉为 Limit 1，符文已消耗；剑仍叠放在〈{existingSwordOwner.Name}〉下方，本次效果无事发生",
+                            arthur, existingSwordOwner);
+                        FinishStackItem(item);
+                        return true;
+                    }
                     var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
                         ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
                     player.Graveyard.Remove(sword);
