@@ -17,7 +17,8 @@ public sealed record L12SeasonDisasterPoolConfig(
 public sealed record L12CardRestrictionConfig(
     string CardId,
     int MaxCopies,
-    string? Reason = null);
+    string? Reason = null,
+    string? MasterId = null);
 
 public sealed record L12MatchModeConfig(string Id, string Name, bool Enabled);
 
@@ -52,6 +53,7 @@ public sealed record L12EffectiveMaintenanceView(
 public sealed record L12EffectiveOperationsPolicyView(
     long Version,
     L12SeasonConfig Season,
+    IReadOnlyList<string> DisasterCardIds,
     IReadOnlyList<L12MatchModeConfig> MatchModes,
     L12DefaultRoomConfig DefaultRoomConfig,
     bool SeasonDisasterModeAvailable,
@@ -179,6 +181,7 @@ public sealed partial class L12PlatformStore
         public string CardId { get; set; } = string.Empty;
         public int MaxCopies { get; set; }
         public string? Reason { get; set; }
+        public string? MasterId { get; set; }
     }
 
     private sealed class OperationsMatchModeRow
@@ -340,6 +343,7 @@ public sealed partial class L12PlatformStore
             return new L12EffectiveOperationsPolicyView(
                 policy.Version,
                 policy.Season,
+                policy.DisasterCardIds.ToArray(),
                 policy.MatchModes.ToArray(),
                 policy.DefaultRoomConfig,
                 policy.IsSeasonDisasterModeAvailable(now),
@@ -459,17 +463,27 @@ public sealed partial class L12PlatformStore
             if (item.MaxCopies is < 0 or > 3)
                 throw new L12OperationsConfigException("invalid_card_restriction", "禁限卡张数必须为 0–3");
             var reason = OptionalOperationsText(item.Reason, 500);
+            var masterId = string.IsNullOrWhiteSpace(item.MasterId)
+                ? null
+                : RequireCardId(item.MasterId, "主宰卡号");
             return new L12CardRestrictionConfig(RequireCardId(item.CardId, "禁限卡卡号"),
-                item.MaxCopies, string.IsNullOrEmpty(reason) ? null : reason);
+                item.MaxCopies, string.IsNullOrEmpty(reason) ? null : reason, masterId);
         }).ToArray();
-        if (restrictions.GroupBy(item => item.CardId, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
-            throw new L12OperationsConfigException("duplicate_card_restriction", "禁限卡列表包含重复卡号");
+        if (restrictions.GroupBy(item => $"{item.MasterId ?? "*"}|{item.CardId}", StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Count() > 1))
+            throw new L12OperationsConfigException("duplicate_card_restriction", "禁限卡列表包含重复的主宰/卡牌组合");
         if (_officialCards.Count > 0)
         {
             var unknownRestriction = restrictions.FirstOrDefault(item => !_officialCards.ContainsKey(item.CardId));
             if (unknownRestriction is not null)
                 throw new L12OperationsConfigException("unknown_restricted_card",
                     $"禁限卡不存在：{unknownRestriction.CardId}");
+            var unknownMaster = restrictions.FirstOrDefault(item => item.MasterId is not null
+                && (!_officialCards.TryGetValue(item.MasterId, out var master)
+                    || master.CardType != "master"));
+            if (unknownMaster is not null)
+                throw new L12OperationsConfigException("unknown_restriction_master",
+                    $"主宰专属构筑规则的主宰不存在：{unknownMaster.MasterId}");
         }
 
         var defaultDecks = payload.DefaultPresetDeckIds.Select(id => RequireOperationsId(id, "默认预组 ID"))
@@ -614,6 +628,7 @@ public sealed partial class L12PlatformStore
                 CardId = item.CardId,
                 MaxCopies = item.MaxCopies,
                 Reason = item.Reason,
+                MasterId = item.MasterId,
             }).ToList(),
             DefaultPresetDeckIds = payload.DefaultPresetDeckIds.ToList(),
             DefaultRoomConfig = new OperationsDefaultRoomConfigRow
@@ -648,7 +663,7 @@ public sealed partial class L12PlatformStore
                 row.Season.StartsAt, row.Season.EndsAt),
             new L12SeasonDisasterPoolConfig(row.DisasterPool.CardIds.ToArray(), true),
             row.CardRestrictions.Select(item => new L12CardRestrictionConfig(item.CardId,
-                item.MaxCopies, item.Reason)).ToArray(),
+                item.MaxCopies, item.Reason, item.MasterId)).ToArray(),
             row.DefaultPresetDeckIds.ToArray(),
             new L12DefaultRoomConfig(row.DefaultRoomConfig!.MatchModeId, row.DefaultRoomConfig.Spectating,
                 row.DefaultRoomConfig.HandVisibility, row.DefaultRoomConfig.DisasterMode),

@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
+import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
+import DisasterPoolPicker from './DisasterPoolPicker.vue'
 import {
-  friendApi, hasPermission, platformState, tournamentApi,
+  friendApi, getEffectiveOperationsPolicy, hasPermission, platformState, tournamentApi,
   type LegacyTournamentInput, type PlatformFriend,
+  type OperationsCardRestriction,
   type Tournament, type TournamentCreateInput, type TournamentDeckVisibility, type TournamentDisasterMode,
   type TournamentLegacyImport, type TournamentMatch, type TournamentParticipant, type TournamentRound,
   type TournamentStatus,
@@ -18,6 +22,7 @@ const loading = ref(false)
 const platformVersion = ref(0)
 const tournaments = ref<Tournament[]>([])
 const friends = ref<PlatformFriend[]>([])
+const catalog = ref<DeckCard[]>([])
 const legacyCandidates = ref<LegacyTournamentInput[]>([])
 const legacyPreview = ref<TournamentLegacyImport | null>(null)
 const deckDrafts = reactive<Record<string, { name: string; code: string }>>({})
@@ -30,6 +35,7 @@ const form = reactive({
   name: '', format: 'swiss' as Tournament['format'], visibility: 'public' as Tournament['visibility'], maxPlayers: 16,
   startAt: '', ruleset: '现行规则', description: '', deckVisibility: 'after' as TournamentDeckVisibility,
   disasterMode: 'season' as TournamentDisasterMode, banList: '', roundMinutes: 50, checkInMinutes: 5,
+  disasterCardIds: [] as string[], cardRestrictions: [] as OperationsCardRestriction[],
   referees: [] as string[],
 })
 
@@ -118,6 +124,8 @@ function createTournament() { void runAction(async () => {
     startAt: form.startAt ? new Date(form.startAt).toISOString() : undefined,
     ruleset: form.ruleset.trim() || '现行规则', description: form.description.trim(),
     deckVisibility: form.deckVisibility, disasterMode: form.disasterMode, banList: form.banList.trim(),
+    disasterCardIds: form.disasterMode === 'none' ? [] : [...form.disasterCardIds],
+    cardRestrictions: form.cardRestrictions.map(item => ({ ...item })),
     roundMinutes: Math.max(5, Number(form.roundMinutes) || 50),
     checkInMinutes: Math.max(1, Number(form.checkInMinutes) || 5), refereeAccountIds: [...form.referees],
   }
@@ -238,7 +246,12 @@ async function copyRoom(match: TournamentMatch) { await navigator.clipboard.writ
 onMounted(async () => {
   legacyCandidates.value = readLegacyCandidates()
   if (!platformState.account) { notice.value = '请先登录账号后使用赛事中心'; return }
-  try { await Promise.all([refreshTournaments(), loadFriends()]) } catch (error) { notice.value = errorText(error) }
+  try {
+    const [, , cards, policy] = await Promise.all([refreshTournaments(), loadFriends(), loadDeckCatalog(), getEffectiveOperationsPolicy()])
+    catalog.value = cards
+    form.disasterCardIds = [...policy.disasterCardIds]
+    form.cardRestrictions = policy.cardRestrictions.map(item => ({ ...item }))
+  } catch (error) { notice.value = errorText(error) }
 })
 </script>
 
@@ -259,13 +272,13 @@ onMounted(async () => {
     <section v-else class="create-panel">
       <header><small>ORGANIZER WORKFLOW</small><h2>创建赛事</h2><p>创建者自动成为本场主办者；裁判只能从自己的好友中指定，两种身份均随赛事结束失效。</p></header>
       <div class="form-grid">
-        <label class="wide">赛事名称<input v-model="form.name" maxlength="40"/></label><label>赛制<select v-model="form.format"><option value="swiss">瑞士轮</option><option value="single">单败淘汰</option><option value="league">循环赛</option></select></label><label>人数上限<input v-model.number="form.maxPlayers" type="number" min="2" max="256"/></label><label>加入方式<select v-model="form.visibility"><option value="public">公开发现或赛事代码</option><option value="code">仅赛事代码</option></select></label><label>计划时间<input v-model="form.startAt" type="datetime-local"/></label><label>每轮分钟<input v-model.number="form.roundMinutes" type="number" min="5" max="240"/></label><label>未进房间判负等待<input v-model.number="form.checkInMinutes" type="number" min="1" max="60"/></label><label>天灾模式<select v-model="form.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></label><label>牌库公开<select v-model="form.deckVisibility"><option value="always">全程公开牌库</option><option value="after">赛后公开牌库</option><option value="private">不公开牌库</option></select></label><label class="wide">规则版本<input v-model="form.ruleset"/></label><label class="wide">禁限卡规则<textarea v-model="form.banList" rows="2" placeholder="留空表示按当前官方禁限卡规则"/></label>
+        <label class="wide">赛事名称<input v-model="form.name" maxlength="40"/></label><label>赛制<select v-model="form.format"><option value="swiss">瑞士轮</option><option value="single">单败淘汰</option><option value="league">循环赛</option></select></label><label>人数上限<input v-model.number="form.maxPlayers" type="number" min="2" max="256"/></label><label>加入方式<select v-model="form.visibility"><option value="public">公开发现或赛事代码</option><option value="code">仅赛事代码</option></select></label><label>计划时间<input v-model="form.startAt" type="datetime-local"/></label><label>每轮分钟<input v-model.number="form.roundMinutes" type="number" min="5" max="240"/></label><label>未进房间判负等待<input v-model.number="form.checkInMinutes" type="number" min="1" max="60"/></label><label>天灾模式<select v-model="form.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></label><label>牌库公开<select v-model="form.deckVisibility"><option value="always">全程公开牌库</option><option value="after">赛后公开牌库</option><option value="private">不公开牌库</option></select></label><label class="wide">规则版本<input v-model="form.ruleset"/></label><fieldset v-if="form.disasterMode !== 'none'" class="wide"><legend>本场天灾池</legend><DisasterPoolPicker v-model="form.disasterCardIds" :cards="catalog" locked-id="S01-DS10"/></fieldset><fieldset class="wide"><legend>本场构筑规则</legend><ConstructionRuleEditor v-model="form.cardRestrictions" :cards="catalog"/></fieldset><label class="wide">补充规则说明<textarea v-model="form.banList" rows="2" placeholder="结构化规则以外的说明（可留空）"/></label>
         <fieldset class="wide"><legend>从好友中选择本场裁判</legend><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:form.referees.includes(friend.accountId)}" @click="toggleReferee(friend)">{{ friend.username }}</button><span v-if="!friends.length">暂无可选好友；可先到好友页面添加裁判。</span></fieldset><label class="wide">赛事说明<textarea v-model="form.description" rows="4"/></label>
       </div><button class="gold create-action" :disabled="busy||!hasPermission('tournaments.create')" @click="createTournament">建立服务端赛事</button>
     </section>
 
     <div v-if="detail" class="mask" @click.self="detailId=null"><section class="detail">
-      <header><div><small>{{ detail.code }} · v{{ detail.version }}</small><h2>{{ detail.name }}</h2></div><button @click="detailId=null">×</button></header><div class="summary"><span>{{ statusText(detail.status) }}</span><span>{{ formatText(detail.format) }}</span><span>{{ disasterText(detail.rules.disasterMode) }}</span><span>{{ deckVisibilityText(detail.rules.deckVisibility) }}</span><span>每轮 {{ detail.roundMinutes }} 分钟</span><span v-if="detail.legacyImported">已导入旧赛事</span></div><p>{{ detail.description || '赛事方尚未发布说明。' }}</p><section class="rules"><b>规则快照：{{ detail.rules.ruleset }}</b><span>禁限卡：{{ detail.rules.banList || '当前官方规则' }}</span><span>快照 {{ detail.rules.hash.slice(0,12) }}</span><span>计划开始：{{ detail.startAt ? new Date(detail.startAt).toLocaleString() : '由主办者通知' }}</span></section>
+      <header><div><small>{{ detail.code }} · v{{ detail.version }}</small><h2>{{ detail.name }}</h2></div><button @click="detailId=null">×</button></header><div class="summary"><span>{{ statusText(detail.status) }}</span><span>{{ formatText(detail.format) }}</span><span>{{ disasterText(detail.rules.disasterMode) }}</span><span>{{ deckVisibilityText(detail.rules.deckVisibility) }}</span><span>每轮 {{ detail.roundMinutes }} 分钟</span><span v-if="detail.legacyImported">已导入旧赛事</span></div><p>{{ detail.description || '赛事方尚未发布说明。' }}</p><section class="rules"><b>规则快照：{{ detail.rules.ruleset }}</b><span>天灾池 {{ detail.rules.disasterCardIds.length }} 张</span><span>构筑规则 {{ detail.rules.cardRestrictions.length }} 条</span><span>补充说明：{{ detail.rules.banList || '无' }}</span><span>快照 {{ detail.rules.hash.slice(0,12) }}</span><span>计划开始：{{ detail.startAt ? new Date(detail.startAt).toLocaleString() : '由主办者通知' }}</span></section>
       <h3>本场工作人员</h3><div class="chips"><span>主办者 · {{ detail.organizerName }}</span><span v-for="person in detail.referees" :key="person.accountId">裁判 · {{ person.username }}</span></div><section v-if="detail.status !== 'completed' && isOrganizer(detail)" class="staff-editor"><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:staffDraft.includes(friend.accountId)}" @click="toggleStaffDraft(friend)">{{ friend.username }}</button><input v-model="staffReason" placeholder="本场裁判变更理由（写入审计）"/><button :disabled="busy" @click="saveStaff(detail)">保存本场裁判</button></section>
       <h3>参赛人员与牌库快照</h3><div class="participants"><div v-for="person in detail.participants" :key="person.accountId"><b>{{ person.username }}<em v-if="person.dropped"> · 已退赛</em></b><span>{{ person.checkedIn ? '已准备' : '未准备' }}</span><template v-if="person.accountId===accountId&&detail.status==='registration'"><input v-model="deckDrafts[detail.id].name" placeholder="牌库名称"/><input v-model="deckDrafts[detail.id].code" placeholder="牌库码"/><button :disabled="busy" @click="saveDeck(detail,person)">保存快照</button></template><template v-else-if="person.deck"><span>{{ person.deck.name }}</span><code>{{ person.deck.code || '仅保存哈希' }}</code></template><em v-else>牌库未公开或尚未提交</em></div></div>
       <template v-if="currentRound"><h3>第 {{ currentRound.number }} 轮 · {{ currentRound.status==='checkin'?'签到/准备':currentRound.status==='running'?'对局中':'已完成' }}</h3><div class="round-controls" v-if="isStaff(detail)"><input v-model="roundReason" placeholder="开轮、暂停或下一轮的操作理由（写入审计）"/><button v-if="currentRound.status==='checkin'" class="gold" :disabled="busy" @click="startRound(detail,currentRound)">开始本轮</button><button v-if="currentRound.status==='running'" :disabled="busy" @click="pauseRound(detail,currentRound)">{{ currentRound.paused?'恢复计时':'暂停计时' }}</button><button v-if="currentRound.status==='completed'" :disabled="busy" @click="nextRound(detail)">生成下一轮配对</button></div>

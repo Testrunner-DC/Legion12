@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
+import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
+import DisasterPoolPicker from './DisasterPoolPicker.vue'
 import {
   adminApi,
-  type OperationsCardRestriction,
   type OperationsConfigPayload,
   type OperationsConfigPreview,
   type OperationsConfigVersion,
@@ -19,8 +21,7 @@ const preview = ref<OperationsConfigPreview | null>(null)
 const history = ref<OperationsConfigVersion[]>([])
 const runtime = ref<RuntimeStatus | null>(null)
 const reason = ref('')
-const disasterCards = ref('')
-const restrictions = ref('')
+const catalog = ref<DeckCard[]>([])
 const presetDecks = ref('')
 const featureFlags = ref('')
 type OperationsSection = 'season' | 'construction' | 'room' | 'features' | 'maintenance' | 'versions'
@@ -51,15 +52,6 @@ const observedAt = computed(() => runtime.value ? new Date(runtime.value.observe
 function lines(value: string) {
   return value.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
 }
-function parseRestrictions(value: string): OperationsCardRestriction[] {
-  return lines(value).map((line, index) => {
-    const [cardId, copies = '3', ...rest] = line.split('|').map(item => item.trim())
-    if (!cardId) throw new Error(`禁限卡第 ${index + 1} 行缺少卡号`)
-    const maxCopies = Number(copies)
-    if (!Number.isInteger(maxCopies) || maxCopies < 0 || maxCopies > 3) throw new Error(`禁限卡第 ${index + 1} 行数量须为 0 至 3`)
-    return { cardId, maxCopies, reason: rest.join('|') || undefined }
-  })
-}
 function parseFlags(value: string) {
   return Object.fromEntries(lines(value).map((line, index) => {
     const [key, raw = 'false'] = line.split('=').map(item => item.trim())
@@ -81,8 +73,6 @@ function toIsoDateTime(value?: string) {
   return date.toISOString()
 }
 function syncTextFields() {
-  disasterCards.value = form.disasterPool.cardIds.join('\n')
-  restrictions.value = form.cardRestrictions.map(item => `${item.cardId}|${item.maxCopies}${item.reason ? `|${item.reason}` : ''}`).join('\n')
   presetDecks.value = form.defaultPresetDeckIds.join('\n')
   featureFlags.value = Object.entries(form.featureFlags).map(([key, enabled]) => `${key}=${enabled}`).join('\n')
 }
@@ -105,8 +95,8 @@ function hydrate(payload: OperationsConfigPayload) {
 function serialize(): OperationsConfigPayload {
   return {
     season: { ...form.season, startsAt: toIsoDateTime(form.season.startsAt), endsAt: toIsoDateTime(form.season.endsAt) },
-    disasterPool: { cardIds: lines(disasterCards.value), annihilationLocked: true },
-    cardRestrictions: parseRestrictions(restrictions.value),
+    disasterPool: { cardIds: [...form.disasterPool.cardIds], annihilationLocked: true },
+    cardRestrictions: form.cardRestrictions.map(item => ({ ...item })),
     defaultPresetDeckIds: lines(presetDecks.value),
     matchModes: form.matchModes.map(item => ({ ...item })),
     defaultRoomConfig: { ...form.defaultRoomConfig },
@@ -118,8 +108,8 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [current, versions, status] = await Promise.all([
-      adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(),
+    const [current, versions, status, cards] = await Promise.all([
+      adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(), loadDeckCatalog(),
     ])
     version.value = current.version
     versionId.value = current.versionId
@@ -127,12 +117,18 @@ async function load() {
     updatedAt.value = current.updatedAt
     history.value = versions
     runtime.value = status
+    catalog.value = cards
     hydrate(current.config)
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '运营配置加载失败'
     emit('notice', loadError.value)
   }
   finally { loading.value = false }
+}
+function toggleSeasonEnd(event: Event) {
+  form.season.endsAt = (event.target as HTMLInputElement).checked
+    ? undefined
+    : toLocalDateTimeInput(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString())
 }
 async function previewChanges() {
   try {
@@ -180,11 +176,11 @@ onMounted(load)
       <header><div><h2>{{ currentSection.title }}</h2><p>{{ currentSection.summary }}</p></div><span class="version-badge">配置 v{{ version }}</span></header>
       <div class="config-grid section-grid">
         <template v-if="activeSection === 'season'">
-          <fieldset><legend>当前赛季</legend><label>赛季 ID<input v-model="form.season.id"/></label><label>名称<input v-model="form.season.name"/></label><label>状态<select v-model="form.season.status"><option value="upcoming">待开始</option><option value="active">进行中</option><option value="archived">已归档</option></select></label><label>开始时间<input v-model="form.season.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.season.endsAt" type="datetime-local"/></label></fieldset>
-          <fieldset><legend>赛季天灾池</legend><label class="wide">每行一个天灾卡号；保存时校验卡牌存在且堙灭唯一固定在末尾<textarea v-model="disasterCards" rows="12"/></label><span class="locked-note">堙灭锁定：开启（不可关闭）</span></fieldset>
+          <fieldset><legend>当前赛季</legend><label>赛季 ID<input v-model="form.season.id"/></label><label>名称<input v-model="form.season.name"/></label><label>状态<select v-model="form.season.status"><option value="upcoming">待开始</option><option value="active">进行中</option><option value="archived">已归档</option></select></label><label>开始时间<input v-model="form.season.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.season.endsAt" type="datetime-local" :disabled="!form.season.endsAt"/></label><label class="toggle-row wide"><span><b>不设置结束时间</b><small>赛季持续有效，直到管理员归档或设置结束时间。</small></span><input type="checkbox" :checked="!form.season.endsAt" @change="toggleSeasonEnd"/></label></fieldset>
+          <fieldset><legend>赛季天灾池</legend><DisasterPoolPicker v-model="form.disasterPool.cardIds" class="wide" :cards="catalog" locked-id="S01-DS10"/><span class="locked-note wide">堙灭固定公开并锁定在最后一张。</span></fieldset>
         </template>
         <template v-else-if="activeSection === 'construction'">
-          <fieldset><legend>禁限卡</legend><label class="wide">格式：卡号 | 上限(0-3) | 原因。0 为禁止使用。<textarea v-model="restrictions" rows="14"/></label></fieldset>
+          <fieldset class="wide"><legend>构筑规则</legend><p class="wide field-help">筛选卡牌后设置全局构筑上限，或指定某位主宰的专属上限；主宰专属规则优先于全局规则。</p><ConstructionRuleEditor v-model="form.cardRestrictions" class="wide" :cards="catalog"/></fieldset>
           <fieldset><legend>新账号默认预组</legend><label class="wide">每行一个官方预组的主宰卡号；仅用于新账号初始化，与默认房间设置相互独立。<textarea v-model="presetDecks" rows="14"/></label></fieldset>
         </template>
         <template v-else-if="activeSection === 'room'">

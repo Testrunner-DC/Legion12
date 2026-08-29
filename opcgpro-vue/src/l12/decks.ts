@@ -222,11 +222,12 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   const countedMainDeckSize = deckCountSummary(deck.cardIds, byId).counted
   if (countedMainDeckSize < 40 || countedMainDeckSize > 50) return `主牌库须为 40–50 张（规则标明不计入构筑的卡牌除外，当前 ${countedMainDeckSize} 张）`
   const counts = new Map<string, number>()
-  const restrictionById = new Map(restrictions.map(rule => [rule.cardId, rule]))
+  const resolveRestriction = (cardId: string) => restrictions.find(rule => rule.cardId === cardId && rule.masterId === deck.masterId)
+    ?? restrictions.find(rule => rule.cardId === cardId && !rule.masterId)
   const seasonalCounts = [deck.masterId, ...deck.cardIds, ...deck.moraleIds, ...(deck.specialIds ?? [])]
     .reduce((map, id) => map.set(id, (map.get(id) ?? 0) + 1), new Map<string, number>())
   for (const [id, count] of seasonalCounts) {
-    const rule = restrictionById.get(id)
+    const rule = resolveRestriction(id)
     if (!rule || count <= rule.maxCopies) continue
     const name = byId.get(id)?.nameZh ?? id
     return rule.maxCopies === 0
@@ -238,7 +239,7 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     if (!card || !MAIN_DECK_TYPES.has(card.cardType)) return `无效主牌：${id}`
     if (card.faction !== 'universal' && card.faction !== master.faction) return `${card.nameZh} 与主宰阵营不符`
     const count = (counts.get(id) || 0) + 1
-    const seasonal = restrictionById.get(id)
+    const seasonal = resolveRestriction(id)
     const limit = Math.min(card.deckLimit ?? 3, seasonal?.maxCopies ?? Number.MAX_SAFE_INTEGER)
     if (count > limit) return `${card.nameZh} 同编号最多 ${limit} 张`
     counts.set(id, count)
@@ -259,6 +260,13 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     return !card || card.cardType !== 'trial' || card.faction !== master.faction
   })) return '特殊区卡牌与主宰阵营不符'
   return ''
+}
+
+export function effectiveDeckLimit(card: DeckCard, masterId: string, restrictions: readonly OperationsCardRestriction[] = []) {
+  const configured = restrictions.find(rule => rule.cardId === card.id && rule.masterId === masterId)?.maxCopies
+    ?? restrictions.find(rule => rule.cardId === card.id && !rule.masterId)?.maxCopies
+    ?? Number.MAX_SAFE_INTEGER
+  return Math.min(card.deckLimit ?? 3, configured)
 }
 
 export function doesNotCountTowardMainDeck(card: DeckCard | undefined) {

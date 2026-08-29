@@ -82,7 +82,7 @@ export interface SecurityStatus {
 }
 export interface OperationsSeasonConfig { id: string; name: string; status: string; startsAt?: string; endsAt?: string }
 export interface OperationsDisasterPoolConfig { cardIds: string[]; annihilationLocked: boolean }
-export interface OperationsCardRestriction { cardId: string; maxCopies: number; reason?: string }
+export interface OperationsCardRestriction { cardId: string; maxCopies: number; reason?: string; masterId?: string }
 export interface OperationsMatchMode { id: string; name: string; enabled: boolean }
 export interface OperationsMaintenanceConfig { enabled: boolean; message: string; startsAt?: string; endsAt?: string }
 export interface OperationsDefaultRoomConfig {
@@ -104,6 +104,7 @@ export interface OperationsConfigPayload {
 export interface EffectiveOperationsPolicy {
   version: number
   season: OperationsSeasonConfig
+  disasterCardIds: string[]
   matchModes: OperationsMatchMode[]
   defaultRoomConfig: OperationsDefaultRoomConfig
   seasonDisasterModeAvailable: boolean
@@ -176,6 +177,7 @@ export type TournamentDeckVisibility = 'always' | 'after' | 'private'
 export type TournamentDisasterMode = 'all' | 'random' | 'season' | 'none'
 export interface TournamentRulesSnapshot {
   ruleset: string; disasterMode: TournamentDisasterMode; banList: string
+  disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
   deckVisibility: TournamentDeckVisibility; hash: string; capturedAt: string
 }
 export interface TournamentDeckSnapshot { name: string; code?: string; hash: string; submittedAt: string; lockedAt?: string }
@@ -208,7 +210,8 @@ export interface TournamentList { platformVersion: number; items: Tournament[] }
 export interface TournamentCreateInput {
   name: string; format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   ruleset: string; description: string; deckVisibility: TournamentDeckVisibility; disasterMode: TournamentDisasterMode
-  banList: string; roundMinutes: number; checkInMinutes: number; refereeAccountIds: string[]
+  banList: string; disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
+  roundMinutes: number; checkInMinutes: number; refereeAccountIds: string[]
 }
 export interface LegacyTournamentParticipantInput {
   name: string; deckName?: string; deckCode?: string; checkedIn?: boolean; dropped?: boolean

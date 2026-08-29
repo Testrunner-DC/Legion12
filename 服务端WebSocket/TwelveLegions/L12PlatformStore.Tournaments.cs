@@ -8,6 +8,8 @@ public sealed record L12TournamentRulesSnapshotView(
     string Ruleset,
     string DisasterMode,
     string BanList,
+    IReadOnlyList<string> DisasterCardIds,
+    IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
     string DeckVisibility,
     string Hash,
     DateTimeOffset CapturedAt);
@@ -107,7 +109,9 @@ public sealed record L12TournamentCreatePayload(
     string BanList,
     int RoundMinutes,
     int CheckInMinutes,
-    IReadOnlyList<string>? RefereeAccountIds = null);
+    IReadOnlyList<string>? RefereeAccountIds = null,
+    IReadOnlyList<string>? DisasterCardIds = null,
+    IReadOnlyList<L12CardRestrictionConfig>? CardRestrictions = null);
 
 public sealed record L12TournamentRegistrationPayload(string DeckName, string DeckCode);
 public sealed record L12TournamentStaffPayload(IReadOnlyList<string> RefereeAccountIds);
@@ -196,6 +200,8 @@ public sealed partial class L12PlatformStore
         public string Ruleset { get; set; } = "现行规则";
         public string DisasterMode { get; set; } = "season";
         public string BanList { get; set; } = string.Empty;
+        public List<string> DisasterCardIds { get; set; } = [];
+        public List<L12CardRestrictionConfig> CardRestrictions { get; set; } = [];
         public string DeckVisibility { get; set; } = "after";
         public string Hash { get; set; } = string.Empty;
         public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -392,6 +398,7 @@ public sealed partial class L12PlatformStore
                 throw new L12TournamentVersionConflictException("账号已经报名该赛事");
             if (row.Participants.Count(item => !item.Dropped) >= row.MaxPlayers)
                 throw new L12TournamentVersionConflictException("赛事名额已满");
+            ValidateTournamentDeckCode(row.Rules, payload.DeckCode);
             return Mutate(actor, row, "register", actor.Id, context, apply, working =>
                 working.Participants.Add(new TournamentParticipantRow
                 {
@@ -411,6 +418,7 @@ public sealed partial class L12PlatformStore
             if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事开始后牌库快照已锁定");
             var participant = row.Participants.FirstOrDefault(item => item.AccountId == actor.Id)
                 ?? throw new KeyNotFoundException("尚未报名该赛事");
+            ValidateTournamentDeckCode(row.Rules, payload.DeckCode);
             var deck = DeckSnapshot(payload.DeckName, payload.DeckCode);
             return Mutate(actor, row, "registration-update", actor.Id, context, apply, working =>
             {
@@ -713,8 +721,10 @@ public sealed partial class L12PlatformStore
         if (payload.MaxPlayers is < 2 or > 256) throw new ArgumentException("赛事人数必须为 2–256");
         if (payload.RoundMinutes is < 5 or > 240) throw new ArgumentException("每轮时长必须为 5–240 分钟");
         if (payload.CheckInMinutes is < 1 or > 60) throw new ArgumentException("签到时限必须为 1–60 分钟");
+        var policy = ToPolicySnapshot(RequireOperationsConfig());
         var rules = RulesSnapshot(payload.Ruleset, payload.DisasterMode, payload.BanList,
-            payload.DeckVisibility);
+            payload.DeckVisibility, payload.DisasterCardIds ?? policy.DisasterCardIds,
+            payload.CardRestrictions ?? policy.CardRestrictions);
         var now = DateTimeOffset.UtcNow;
         return new TournamentRow
         {
@@ -872,7 +882,8 @@ public sealed partial class L12PlatformStore
         return new L12TournamentView(row.Id, row.Code, row.Name, row.OrganizerAccountId,
             organizer?.Username ?? "已删除账号", staff, row.Status, row.Format, row.Visibility, row.MaxPlayers,
             row.StartAt, row.Description, new L12TournamentRulesSnapshotView(row.Rules.Ruleset,
-                row.Rules.DisasterMode, row.Rules.BanList, row.Rules.DeckVisibility, row.Rules.Hash,
+                row.Rules.DisasterMode, row.Rules.BanList, row.Rules.DisasterCardIds.ToArray(),
+                row.Rules.CardRestrictions.ToArray(), row.Rules.DeckVisibility, row.Rules.Hash,
                 row.Rules.CapturedAt), row.RoundMinutes, row.CheckInMinutes, participants,
             row.Rounds.OrderBy(round => round.Number).Select(round => ToView(round)).ToArray(), row.Version,
             row.LegacySourceId is not null, row.CreatedAt, row.UpdatedAt, row.CompletedAt);
@@ -983,20 +994,48 @@ public sealed partial class L12PlatformStore
         : _data.Accounts.FirstOrDefault(item => string.Equals(item.Username, username.Trim(),
             StringComparison.OrdinalIgnoreCase))?.Id;
 
-    private static TournamentRulesSnapshotRow RulesSnapshot(string ruleset, string disasterMode, string banList,
-        string deckVisibility)
+    private TournamentRulesSnapshotRow RulesSnapshot(string ruleset, string disasterMode, string banList,
+        string deckVisibility, IReadOnlyList<string> disasterCardIds,
+        IReadOnlyList<L12CardRestrictionConfig> cardRestrictions)
     {
         var normalizedRuleset = RequireText(ruleset, "规则版本", 200);
         var normalizedDisaster = Allowed(disasterMode, "天灾模式", "all", "random", "season", "none");
         var normalizedVisibility = Allowed(deckVisibility, "牌库可见性", "always", "after", "private");
         var normalizedBanList = OptionalText(banList, 2000);
+        var normalizedDisasters = normalizedDisaster == "none" ? [] : disasterCardIds
+            .Select(id => RequireCardId(id, "赛事天灾卡号")).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (normalizedDisaster != "none" && (normalizedDisasters.Length is < 10 or > 64
+            || !string.Equals(normalizedDisasters[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("赛事天灾池须为 10–64 张，且堙灭固定在最后一张");
+        if (_officialCards.Count > 0 && normalizedDisasters.Any(id => !_officialCards.TryGetValue(id, out var card)
+                || card.CardType != "destruction"))
+            throw new ArgumentException("赛事天灾池包含非天灾卡牌");
+        var normalizedRestrictions = cardRestrictions.Select(item => new L12CardRestrictionConfig(
+            RequireCardId(item.CardId, "赛事构筑规则卡号"),
+            item.MaxCopies is >= 0 and <= 3 ? item.MaxCopies : throw new ArgumentException("赛事构筑上限须为 0–3"),
+            string.IsNullOrWhiteSpace(item.Reason) ? null : OptionalText(item.Reason, 500),
+            string.IsNullOrWhiteSpace(item.MasterId) ? null : RequireCardId(item.MasterId, "赛事构筑规则主宰")))
+            .ToArray();
+        if (normalizedRestrictions.GroupBy(item => $"{item.MasterId ?? "*"}|{item.CardId}", StringComparer.OrdinalIgnoreCase)
+            .Any(group => group.Count() > 1)) throw new ArgumentException("赛事构筑规则包含重复的主宰/卡牌组合");
+        if (_officialCards.Count > 0)
+        {
+            var unknownCard = normalizedRestrictions.FirstOrDefault(item => !_officialCards.ContainsKey(item.CardId));
+            if (unknownCard is not null) throw new ArgumentException($"赛事构筑规则卡牌不存在：{unknownCard.CardId}");
+            var unknownMaster = normalizedRestrictions.FirstOrDefault(item => item.MasterId is not null
+                && (!_officialCards.TryGetValue(item.MasterId, out var master) || master.CardType != "master"));
+            if (unknownMaster is not null) throw new ArgumentException($"赛事构筑规则主宰不存在：{unknownMaster.MasterId}");
+        }
         var captured = DateTimeOffset.UtcNow;
-        var canonical = $"{normalizedRuleset}\n{normalizedDisaster}\n{normalizedBanList}\n{normalizedVisibility}";
+        var structured = JsonSerializer.Serialize(new { normalizedDisasters, normalizedRestrictions });
+        var canonical = $"{normalizedRuleset}\n{normalizedDisaster}\n{normalizedBanList}\n{normalizedVisibility}\n{structured}";
         return new TournamentRulesSnapshotRow
         {
             Ruleset = normalizedRuleset,
             DisasterMode = normalizedDisaster,
             BanList = normalizedBanList,
+            DisasterCardIds = [.. normalizedDisasters],
+            CardRestrictions = [.. normalizedRestrictions],
             DeckVisibility = normalizedVisibility,
             Hash = Hash(canonical),
             CapturedAt = captured,
@@ -1015,6 +1054,40 @@ public sealed partial class L12PlatformStore
             Hash = Hash($"{normalizedName}\n{normalizedCode}"),
             SubmittedAt = DateTimeOffset.UtcNow,
         };
+    }
+
+    private static void ValidateTournamentDeckCode(TournamentRulesSnapshotRow rules, string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return;
+        var value = code.Trim();
+        // 旧赛事快照可能保存不可解析的历史码；新 L12D1 牌库码执行结构化规则校验。
+        if (!value.StartsWith("L12D1.", StringComparison.Ordinal)) return;
+        try
+        {
+            var encoded = value[6..].Replace('-', '+').Replace('_', '/');
+            encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
+            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
+            var root = document.RootElement;
+            var masterId = root.GetProperty("m").GetString() ?? string.Empty;
+            var cardIds = new List<string> { masterId };
+            foreach (var key in new[] { "c", "r", "s" })
+                if (root.TryGetProperty(key, out var items) && items.ValueKind == JsonValueKind.Array)
+                    cardIds.AddRange(items.EnumerateArray().Select(item => item.GetString()).OfType<string>());
+            foreach (var group in cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase))
+            {
+                var rule = rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
+                               StringComparison.OrdinalIgnoreCase) && string.Equals(item.MasterId, masterId,
+                               StringComparison.OrdinalIgnoreCase))
+                           ?? rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
+                               StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(item.MasterId));
+                if (rule is null || group.Count() <= rule.MaxCopies) continue;
+                throw new ArgumentException(rule.MaxCopies == 0
+                    ? $"赛事规则禁止使用 {group.Key}"
+                    : $"赛事规则限制 {group.Key} 最多投入 {rule.MaxCopies} 张");
+            }
+        }
+        catch (ArgumentException) { throw; }
+        catch (Exception) { throw new ArgumentException("赛事牌库码无法解析"); }
     }
 
     private static TournamentRulingRow NewRuling(L12AccountView actor, string matchId, string kind,
@@ -1059,6 +1132,8 @@ public sealed partial class L12PlatformStore
         row.Participants ??= [];
         row.Rounds ??= [];
         row.Rules ??= new TournamentRulesSnapshotRow();
+        row.Rules.DisasterCardIds ??= [];
+        row.Rules.CardRestrictions ??= [];
         foreach (var participant in row.Participants) participant.Deck ??= new TournamentDeckSnapshotRow();
         foreach (var round in row.Rounds)
         {

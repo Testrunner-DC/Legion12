@@ -44,12 +44,16 @@ public static class L12DeckValidator
             error = "复苏的奥西里斯不能被选择为主宰；选择伊西斯时会自动置入额外区并在开局进入墓地";
             return false;
         }
-        var restrictions = (cardRestrictions ?? [])
-            .ToDictionary(item => item.CardId, item => item, StringComparer.OrdinalIgnoreCase);
+        var restrictions = (cardRestrictions ?? []).ToArray();
+        L12CardRestrictionConfig? ResolveRestriction(string cardId)
+            => restrictions.FirstOrDefault(item => string.Equals(item.CardId, cardId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.MasterId, master.Id, StringComparison.OrdinalIgnoreCase))
+               ?? restrictions.FirstOrDefault(item => string.Equals(item.CardId, cardId, StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrWhiteSpace(item.MasterId));
         var restricted = submission.CardIds.Concat(submission.MoraleIds).Concat(submission.SpecialIds)
             .Append(master.Id)
             .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new { Id = group.Key, Count = group.Count(), Rule = restrictions.GetValueOrDefault(group.Key) })
+            .Select(group => new { Id = group.Key, Count = group.Count(), Rule = ResolveRestriction(group.Key) })
             .FirstOrDefault(item => item.Rule is not null && item.Count > item.Rule.MaxCopies);
         if (restricted is not null)
         {
@@ -73,7 +77,8 @@ public static class L12DeckValidator
             {
                 Id = group.Key,
                 Count = group.Count(),
-                Limit = catalog.Cards.TryGetValue(group.Key, out var card) ? card.DeckLimit : 3,
+                Limit = Math.Min(catalog.Cards.TryGetValue(group.Key, out var card) ? card.DeckLimit : 3,
+                    ResolveRestriction(group.Key)?.MaxCopies ?? int.MaxValue),
             })
             .FirstOrDefault(group => group.Count > group.Limit);
         if (excessive is not null)

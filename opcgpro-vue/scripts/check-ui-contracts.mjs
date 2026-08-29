@@ -1,10 +1,15 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const shell = read('../src/l12/site/SiteShell.vue')
 const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
+const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
+const actionPresentation = read('../src/l12/game/actionPresentation.ts')
+const actionAudio = read('../src/l12/game/useL12ActionAudio.ts')
+const indexHtml = read('../index.html')
+const faviconPath = new URL('../public/favicon.png', import.meta.url)
 const globalStyle = read('../src/style.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
@@ -52,6 +57,13 @@ const confirmedS1DisasterLevels = {
 }
 
 const contracts = [
+  [indexHtml.includes('<link rel="icon" type="image/png" href="/favicon.png" />') && existsSync(faviconPath), '网页标签必须使用项目提供的 Logo-Mini PNG，不得回退默认 Vite 图标'],
+  [board.includes("import ActionPresentationLayer from './ActionPresentationLayer.vue'") && board.includes('<ActionPresentationLayer :events="game.recentEvents ?? []"') && actionLayer.includes('data-ui-contract="authoritative-action-presentation"'), 'L12 对局必须消费服务端 recentEvents 播放统一的基础动作呈现'],
+  [actionPresentation.includes("event.type === 'draw'") && actionPresentation.includes("event.type === 'play' || event.type === 'put'") && actionPresentation.includes("event.type === 'attack'") && actionPresentation.includes("event.type === 'defense'") && actionPresentation.includes("event.type === 'support'") && actionPresentation.includes("event.type === 'damage' || event.type === 'combat'") && actionPresentation.includes("event.type === 'grave'") && actionPresentation.includes("event.type === 'turn-start'"), '基础动作呈现必须覆盖抽牌、打出、进攻、抵挡、支援、伤害、阵亡与回合切换'],
+  [actionPresentation.includes("text: kind === 'draw' ? '抽取卡牌' : event.text") && actionPresentation.includes("kind !== 'draw'") && actionPresentation.includes('firstPublicCard(event)'), '抽牌动画不得读取或显示抽到的卡牌身份，其他动作也只能展示投影视图中的公开卡牌'],
+  [actionLayer.includes('lastSequence = highest') && actionLayer.includes('item.sequence > lastSequence') && actionLayer.includes('repeatedPlacement') && actionLayer.includes(':paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)"') === false && board.includes(':paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)"'), '动作呈现必须以首次事件序列建立基线，避免重连重播和同一卡牌打出/置入重复播放，并在现有展示/掷骰动画播放时排队'],
+  [actionAudio.includes('createOscillator()') && actionAudio.includes('createBuffer(1, length') && actionAudio.includes('useAudioStore.getState()') && !actionAudio.includes('playBgm') && !actionAudio.includes('new Audio('), '基础动作音效必须使用本地程序化短音效、遵循音效设置且不得增加 BGM 或远程音频依赖'],
+  [actionLayer.includes('pointer-events:none') && actionLayer.includes('@media(prefers-reduced-motion:reduce)') && !actionLayer.includes('action-mask'), '基础动作动画必须无蒙版、不可阻塞操作并遵循减少动态效果偏好'],
   [Object.entries(confirmedS1DisasterLevels).every(([id, level]) => s1Cards.find(card => card.id === id)?.disasterLevel === level), '第一季补充天灾等级必须进入前端卡牌目录'],
   [shell.includes('const siteBrandIcon = defaultSiteLogoUrl'), '主页入口必须引用默认网页图标'],
   [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)') && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"'), '在线玩家窗口必须支持直接添加好友、邀请空闲好友，并将对局中玩家替换为带权限原因的观战入口'],
@@ -117,7 +129,10 @@ const contracts = [
   [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
   [deckEditor.includes('<h2>筛选</h2>') && !deckEditor.includes('<h2>构筑设定</h2>') && deckEditor.includes('costFilter') && deckEditor.includes('disasterFilter') && deckEditor.includes('sortMode'), '牌库编辑器必须复用卡牌档案的搜索、类型、卡池、费用、天灾等级与排序筛选（不含阵营）'],
   [deckEditor.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>'), '牌库编辑器卡池筛选必须统一使用全部卡池、S01、S02'],
-  [deckEditor.includes('card.deckLimit ?? 3') && deckEditor.includes('entry.card.deckLimit ?? 3') && decks.includes('card.deckLimit ?? 3'), '限1与其他特殊构筑上限必须由卡牌数据共同驱动加牌按钮和保存校验'],
+  [deckEditor.includes('effectiveDeckLimit(card, masterId.value, activeRestrictions.value)')
+    && deckEditor.includes('effectiveDeckLimit(entry.card, masterId, activeRestrictions)')
+    && decks.includes('rule.masterId === masterId') && decks.includes('rule.masterId === deck.masterId'),
+  '卡牌默认上限、全局运营规则与主宰专属规则必须共同驱动加牌按钮和保存校验'],
   [cardArchive.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>') && sandboxPicker.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>'), '卡牌档案与沙盒选择器不得回退为 S1 + S2、S1、S2 旧称'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],

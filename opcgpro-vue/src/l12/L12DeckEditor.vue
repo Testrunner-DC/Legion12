@@ -6,7 +6,7 @@ import { masterProfileUrl } from './specialAssets'
 import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
-  MAIN_DECK_TYPES, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
+  MAIN_DECK_TYPES, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type OperationsCardRestriction } from './platform'
@@ -154,7 +154,7 @@ function toggleTrial(card: DeckCard) {
 function add(card: DeckCard) {
   if (!selectedMaster.value) { notice.value = '请先选择主宰'; return }
   const count = counts.value[card.id] || 0
-  const limit = card.deckLimit ?? 3
+  const limit = effectiveDeckLimit(card, masterId.value, activeRestrictions.value)
   if (count >= limit) { notice.value = `同编号卡牌最多 ${limit} 张`; return }
   if (!doesNotCountTowardMainDeck(card) && totalCards.value >= 50) { notice.value = '主牌库最多 50 张'; return }
   counts.value = { ...counts.value, [card.id]: count + 1 }
@@ -354,7 +354,7 @@ onBeforeUnmount(closeDeckImage)
             <div class="pool-count-controls">
               <button :disabled="!(counts[card.id] || 0)" aria-label="减少一张" @click.stop="remove(card.id)">−</button>
               <strong>{{ counts[card.id] || 0 }}</strong>
-              <button :disabled="!masterId || (counts[card.id] || 0) >= (card.deckLimit ?? 3) || (!doesNotCountTowardMainDeck(card) && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
+              <button :disabled="!masterId || (counts[card.id] || 0) >= effectiveDeckLimit(card, masterId, activeRestrictions) || (!doesNotCountTowardMainDeck(card) && totalCards >= 50)" aria-label="增加一张" @click.stop="add(card)">＋</button>
             </div>
           </article>
         </div>
@@ -378,7 +378,7 @@ onBeforeUnmount(closeDeckImage)
         <div class="deck-entries"><article v-for="entry in entries" :key="entry.card.id" @click="selected = entry.card">
           <CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" object-position="center 28%"/>
           <span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong>
-          <button aria-label="增加一张" :disabled="entry.count >= (entry.card.deckLimit ?? 3) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
+          <button aria-label="增加一张" :disabled="entry.count >= effectiveDeckLimit(entry.card, masterId, activeRestrictions) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
           <button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button>
         </article><p v-if="!entries.length">从中间卡池加入卡牌，双击卡面也可快速加入。</p></div>
         <section v-if="trialCapacity" class="selected-trials">

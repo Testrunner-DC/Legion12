@@ -121,6 +121,37 @@ public sealed class DeckValidatorTests
     }
 
     [Fact]
+    public void MasterSpecificConstructionRuleOverridesGlobalRule()
+    {
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "tianting");
+        var cardId = preset.CardIds[0];
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = "主宰专属构筑规则",
+            MasterId = preset.MasterId,
+            CardIds = preset.CardIds.ToList(),
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        };
+
+        var matching = new[]
+        {
+            new L12CardRestrictionConfig(cardId, 3, "global"),
+            new L12CardRestrictionConfig(cardId, 0, "specific", preset.MasterId),
+        };
+        Assert.False(L12DeckValidator.TryValidate(Catalog, submission, out _, out var blocked, matching));
+        Assert.Contains("禁用", blocked);
+
+        var anotherMaster = Catalog.PresetDecks.First(deck => deck.MasterId != preset.MasterId).MasterId;
+        var unrelated = new[]
+        {
+            new L12CardRestrictionConfig(cardId, 3, "global"),
+            new L12CardRestrictionConfig(cardId, 0, "other master", anotherMaster),
+        };
+        Assert.True(L12DeckValidator.TryValidate(Catalog, submission, out _, out var allowed, unrelated), allowed);
+    }
+
+    [Fact]
     public void TombGuardsDoNotCountTowardMainDeckButRemainLimitedToThreeCopies()
     {
         var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "taiyangcheng");

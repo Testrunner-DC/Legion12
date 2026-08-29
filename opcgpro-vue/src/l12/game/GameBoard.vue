@@ -5,6 +5,7 @@ import { isHorizontalCardType } from '../cardPresentation'
 import { destructionRoundBackUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
+import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
 import MasterOverlay from './MasterOverlay.vue'
@@ -760,6 +761,8 @@ function statusTexts(card: Card) {
               <PhaseTrack :phase="phasePlaybackPhase ?? game.phase" :round="game.round" :active-side="game.activePlayer === game.you ? 'my' : 'opponent'" />
             </div>
             <PhasePlayback :events="game.recentEvents ?? []" @phase-change="phasePlaybackPhase = $event" />
+            <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
+              :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
             <Teleport to="body">
               <Transition name="public-reveal">
                 <div v-if="publicReveal" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">

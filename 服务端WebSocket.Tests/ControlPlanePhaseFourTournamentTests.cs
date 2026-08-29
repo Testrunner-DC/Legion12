@@ -12,6 +12,42 @@ namespace GrandUMI.Tests;
 public sealed class ControlPlanePhaseFourTournamentTests
 {
     [Fact]
+    public void TournamentCapturesIndependentDisasterPoolAndConstructionRules()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var organizer = Promote(store, admin, "RuleSnapHost", "organizer");
+            var policy = store.CaptureOperationsPolicy();
+            var restrictions = new[] { new L12CardRestrictionConfig("S01-0001", 1, "赛事限一") };
+            var payload = CreatePayload() with
+            {
+                DisasterCardIds = policy.DisasterCardIds,
+                CardRestrictions = restrictions,
+            };
+
+            var tournament = store.CreateTournament(organizer, payload, Context("rules-snapshot"), true);
+
+            Assert.Equal(policy.DisasterCardIds, tournament.Rules.DisasterCardIds);
+            Assert.Equal(restrictions, tournament.Rules.CardRestrictions);
+            Assert.False(string.IsNullOrWhiteSpace(tournament.Rules.Hash));
+            var payloadJson = JsonSerializer.Serialize(new
+            {
+                v = 1, n = "违规赛事牌库", m = "S01-01M1", c = new[] { "S01-0001", "S01-0001" },
+                r = Array.Empty<string>(), s = Array.Empty<string>(),
+            });
+            var deckCode = "L12D1." + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(payloadJson))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            Assert.Throws<ArgumentException>(() => store.UpdateTournamentRegistration(organizer, tournament.Id,
+                new L12TournamentRegistrationPayload("违规赛事牌库", deckCode), tournament.Version,
+                Context("rules-deck-reject"), true));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void TournamentPermissionsAndAccountScopeAreBothRequired()
     {
         var root = TempRoot();
