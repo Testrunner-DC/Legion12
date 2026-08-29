@@ -516,7 +516,7 @@ public sealed partial class L12GameEngine
         if (card.Hidden) return [];
         var keywords = new List<string>();
         if (card.HasStrongAttack) keywords.Add("强攻");
-        if (card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial) keywords.Add("免死");
+        if (HasActiveImmortal(card, row)) keywords.Add("免死");
         if (card.HasSureHit) keywords.Add("必中");
         if (L12StructuredCardRules.HasTaunt(card, row)) keywords.Add("挑衅");
         if (card.HasCharge && card.SummonRound >= State.Round) keywords.Add("冲锋");
@@ -542,7 +542,7 @@ public sealed partial class L12GameEngine
         if (card.CannotSupport) effects.Add(new("disabled", "无法支援"));
         if (row == 1 && controller.BackRowCannotSupport) effects.Add(new("disabled", "后排军团无法支援"));
         if (card.CannotRespondUntilRound >= State.Round) effects.Add(new("disabled", "无法响应或发动效果"));
-        if (card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
+        if (HasActiveImmortal(card, row))
             effects.Add(new("shield", "免死或致命伤害保护"));
         if (card.AttachedCards.Any(attached => L12StructuredCardSemantics.IsKingsSword(attached.CardId)))
             effects.Add(new("shield", "〈王者之剑〉可代替承受致命进攻或效果", "湖中仙女的馈赠"));
@@ -698,6 +698,7 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        ExpireEffectsAtPlayerTurnStart(playerIndex);
         AddEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合");
 
         State.Phase = L12Phase.Disaster;
@@ -1077,6 +1078,62 @@ public sealed partial class L12GameEngine
         }
     }
 
+    private void ExpireEffectsAtPlayerTurnStart(int playerIndex)
+    {
+        foreach (var player in State.Players)
+        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>())
+        {
+            if (card.TauntExpiresAtPlayerTurnStart == playerIndex)
+            {
+                card.TauntUntilTurn = -1;
+                card.TauntExpiresAtPlayerTurnStart = -1;
+            }
+            if (card.ImmortalExpiresAtPlayerTurnStart == playerIndex)
+            {
+                card.ImmortalUses = 0;
+                card.ImmortalUntilTurn = -1;
+                card.ImmortalExpiresAtPlayerTurnStart = -1;
+            }
+        }
+
+        var active = State.Players[playerIndex];
+        if (active.MasterCannotBeAttackedExpiresAtPlayerTurnStart == playerIndex)
+        {
+            active.MasterCannotBeAttackedUntilTurn = -1;
+            active.MasterCannotBeAttackedExpiresAtPlayerTurnStart = -1;
+        }
+        if (State.CounterTacticsDisabledExpiresAtPlayerTurnStart == playerIndex)
+        {
+            State.CounterTacticsDisabledUntilTurnSerial = -1;
+            State.CounterTacticsDisabledExpiresAtPlayerTurnStart = -1;
+        }
+    }
+
+    private static void GrantTauntUntilNextTurnStart(L12CardInstance card, int controller,
+        bool requiresFrontRow = false)
+    {
+        card.TauntUntilTurn = int.MaxValue;
+        card.TauntRequiresFrontRow = requiresFrontRow;
+        card.TauntExpiresAtPlayerTurnStart = controller;
+    }
+
+    private static void GrantImmortalUntilNextTurnStart(L12CardInstance card, int controller)
+    {
+        card.ImmortalUses = Math.Max(card.ImmortalUses, 1);
+        card.ImmortalUntilTurn = int.MaxValue;
+        card.ImmortalExpiresAtPlayerTurnStart = controller;
+    }
+
+    private static void ProtectMasterUntilNextTurnStart(L12PlayerState player, int controller)
+    {
+        player.MasterCannotBeAttackedUntilTurn = int.MaxValue;
+        player.MasterCannotBeAttackedExpiresAtPlayerTurnStart = controller;
+    }
+
+    private bool HasActiveImmortal(L12CardInstance card, int row)
+        => card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial
+            && (!card.ImmortalRequiresFrontRow || row == 0);
+
     private static L12CardInstance? FindOnField(L12PlayerState player, string? instanceId, out int row, out int slot)
     {
         for (row = 0; row < 2; row++)
@@ -1114,7 +1171,7 @@ public sealed partial class L12GameEngine
         if (isDefeat && !bypassLethalReplacement && TryApplyLakeLadySwordReplacement(player, card, reason)) return false;
         if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason)) return false;
         if (isDefeat && TryPreventS1FactionDeath(player, card)) return false;
-        if (isDefeat && card.ImmortalUses > 0 && card.ImmortalUntilTurn >= State.TurnSerial)
+        if (isDefeat && HasActiveImmortal(card, row))
         {
             card.ImmortalUses--;
             L12DerivedStats.SetUntilTurnEnd(card, 1000, State.TurnSerial);
@@ -1348,8 +1405,12 @@ public sealed partial class L12GameEngine
         card.CanAttackMasterOnSummonUntilTurn = -1;
         card.CanAttackLegionsOnSummonUntilTurn = -1;
         card.TauntUntilTurn = -1;
+        card.TauntRequiresFrontRow = false;
+        card.TauntExpiresAtPlayerTurnStart = -1;
         card.ImmortalUses = 0;
         card.ImmortalUntilTurn = -1;
+        card.ImmortalRequiresFrontRow = false;
+        card.ImmortalExpiresAtPlayerTurnStart = -1;
         card.SuppressDeathUntilTurn = -1;
         card.EffectiveProfession = card.Profession;
         card.TimedModifiers.Clear();

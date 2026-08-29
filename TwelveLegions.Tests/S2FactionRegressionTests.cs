@@ -873,6 +873,10 @@ public sealed class S2FactionRegressionTests
 
         Assert.Contains(victim, game.State.Players[1].Graveyard);
         Assert.True(achilles.TauntUntilTurn > game.State.TurnSerial);
+        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnStart);
+        Assert.True(achilles.TauntRequiresFrontRow);
+        Assert.True(L12StructuredCardRules.HasTaunt(achilles, 0));
+        Assert.False(L12StructuredCardRules.HasTaunt(achilles, 1));
 
         var enemyAttacker = Card("S02-0003", "achilles-taunt-enemy");
         enemyAttacker.SummonRound = -1;
@@ -884,6 +888,158 @@ public sealed class S2FactionRegressionTests
 
         Assert.False(attackMaster.Accepted);
         Assert.Contains("挑衅", attackMaster.Error);
+    }
+
+    [Fact]
+    public void AchillesDoesNotGainTauntWhenMercenaryBlocksWithoutAKill()
+    {
+        var game = Create(631340);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var achilles = Card("S02-0503", "achilles-mercenary-attacker");
+        var target = Card("S02-0005", "achilles-mercenary-target");
+        var mercenary = Card("S01-0002", "achilles-mercenary-response");
+        achilles.SummonRound = target.SummonRound = -1;
+        attackerPlayer.Field[0][0] = achilles;
+        defender.Field[0][0] = target;
+        defender.Hand.Clear();
+        defender.Hand.Add(mercenary);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", achilles.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+
+        L12Prompt? mercenaryWindow = null;
+        for (var step = 0; step < 20 && mercenaryWindow is null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            if (prompt.Kind == "response" && prompt.ValidChoices.Contains(mercenary.InstanceId))
+            {
+                mercenaryWindow = prompt;
+                break;
+            }
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.NotNull(mercenaryWindow);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mercenaryWindow!.PromptId,
+            Choice: mercenary.InstanceId)).Accepted);
+        for (var step = 0; step < 20 && game.State.PendingPrompts.Count > 0; step++)
+        {
+            var prompt = game.State.PendingPrompts[0];
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Same(target, defender.Field[0][0]);
+        Assert.Contains(mercenary, defender.Graveyard);
+        Assert.Equal(-1, achilles.TauntUntilTurn);
+        Assert.Equal(-1, achilles.TauntExpiresAtPlayerTurnStart);
+        Assert.False(achilles.TauntRequiresFrontRow);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("因击杀军团")
+            && entry.Cards.Any(card => card.InstanceId == achilles.InstanceId));
+    }
+
+    [Fact]
+    public void AchillesTauntExpiresAtItsControllersActualNextTurnStartIncludingExtraTurns()
+    {
+        var game = Create(631341);
+        var achilles = Card("S02-0503", "achilles-extra-turn-attacker");
+        var victim = Card("S02-0005", "achilles-extra-turn-victim");
+        achilles.SummonRound = -1;
+        victim.SummonRound = -1;
+        game.State.Players[0].Field[0][0] = achilles;
+        game.State.Players[1].Field[0][0] = victim;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", achilles.InstanceId,
+            Target: new L12AttackTarget("legion", victim.InstanceId))).Accepted);
+        PassResponses(game);
+        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnStart);
+
+        game.State.ExtraTurnsForPlayer = 0;
+        Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
+
+        Assert.Equal(0, game.State.ActivePlayer);
+        Assert.Equal(-1, achilles.TauntUntilTurn);
+        Assert.Equal(-1, achilles.TauntExpiresAtPlayerTurnStart);
+    }
+
+    [Fact]
+    public void PrideSurchargeCannotReuseTheThreeTombGuardsDiscardedByIsis()
+    {
+        var game = CreateWithFirstMaster("S01-02M1", 631342);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        var initialGuardGraves = player.Graveyard.Count(card => card.CardId == "S01-0212");
+        for (var slot = 0; slot < 3; slot++)
+            player.Field[0][slot] = Card("S01-0212", $"isis-pride-reserved-{slot}");
+        game.State.ActiveDisaster = Card("S02-DS06", "isis-pride-disaster");
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "isisCanopic"));
+
+        Assert.False(result.Accepted);
+        Assert.Contains("傲慢之罪", result.Error);
+        Assert.Equal(3, player.Field.SelectMany(row => row).Count(card => card?.CardId == "S01-0212"));
+        Assert.Equal(initialGuardGraves, player.Graveyard.Count(card => card.CardId == "S01-0212"));
+    }
+
+    [Fact]
+    public void PrideSurchargeMayUseAnAdditionalActiveTombGuardForIsis()
+    {
+        var game = CreateWithFirstMaster("S01-02M1", 631343);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        var initialGuardGraves = player.Graveyard.Count(card => card.CardId == "S01-0212");
+        for (var slot = 0; slot < 3; slot++)
+            player.Field[0][slot] = Card("S01-0212", $"isis-pride-cost-front-{slot}");
+        player.Field[1][0] = Card("S01-0212", "isis-pride-surcharge-guard");
+        game.State.ActiveDisaster = Card("S02-DS06", "isis-pride-guard-disaster");
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "isisCanopic"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(initialGuardGraves + 3, player.Graveyard.Count(card => card.CardId == "S01-0212"));
+        var remaining = Assert.Single(player.Field.SelectMany(row => row), card => card?.CardId == "S01-0212");
+        Assert.True(remaining!.Tapped);
+    }
+
+    [Fact]
+    public void CuchulainnEnterGrantsFrontRowImmortalityUntilNextTurnStart()
+    {
+        var game = Create(631344);
+
+        Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0611", Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+
+        var cuchulainn = Assert.IsType<L12CardInstance>(game.State.Players[0].Field[0][0]);
+        Assert.Equal(1, cuchulainn.ImmortalUses);
+        Assert.Equal(int.MaxValue, cuchulainn.ImmortalUntilTurn);
+        Assert.Equal(0, cuchulainn.ImmortalExpiresAtPlayerTurnStart);
+        Assert.True(cuchulainn.ImmortalRequiresFrontRow);
+
+        game.State.Players[0].Field[0][0] = null;
+        game.State.Players[0].Field[1][0] = cuchulainn;
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: cuchulainn.InstanceId)).Accepted);
+        Assert.Contains(cuchulainn, game.State.Players[0].Graveyard);
     }
 
     [Fact]
@@ -2752,6 +2908,39 @@ public sealed class S2FactionRegressionTests
 
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-prevented");
+    }
+
+    [Fact]
+    public void AmaterasusTwoAbilitiesPayTheirOwnIndependentCosts()
+    {
+        var game = CreateWithFirstMaster("S01-04M1", 632001);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        player.Hand.Clear();
+        player.Hand.Add(Card("S02-0003", "amaterasu-independent-discard"));
+        AddMorale(player, 2);
+        player.Morale[0].Tapped = false;
+        player.Morale[1].Tapped = true;
+        enemy.Field[0][0] = Card("S02-0005", "amaterasu-independent-target");
+        game.State.Phase = L12Phase.Main;
+
+        var ready = game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "amaterasuReady"));
+        Assert.True(ready.Accepted, ready.Error);
+        Assert.False(player.Morale[0].Tapped);
+        PassResponses(game);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("amaterasu-discard", discard.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
+            Choice: "amaterasu-independent-discard")).Accepted);
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+
+        var kill = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "amaterasuKill"));
+        Assert.True(kill.Accepted, kill.Error);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: "amaterasu-independent-target")).Accepted);
+        Assert.Equal(1, player.Morale.Count(morale => morale.Tapped));
     }
 
     [Fact]

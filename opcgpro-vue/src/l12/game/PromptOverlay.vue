@@ -356,6 +356,7 @@ function confirmAllPlacement(destination: 'top' | 'bottom') {
   }, p.playerIndex)
 }
 const isInfoConfirm = computed(() => ['disaster-reveal', 'disaster-trigger'].includes(prompt.value?.kind ?? ''))
+const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)
 function waitingText() {
   if (waitingDefense.value) return `${props.game.players[1 - props.game.you].name} 正在选择是否支援或抵挡`
   const waiting = waitingPrompt.value
@@ -481,7 +482,7 @@ function kindLabel() {
           <button v-for="choice in displayedChoices" :key="choice"
             :class="{ selected: selected.includes(choice), unavailable: displayedCardsAreChoices && !prompt.validChoices.includes(choice), 'card-choice': detailFor(choice), 'horizontal-card': isHorizontalCardType(detailFor(choice)?.cardType) }"
             @mouseenter="focusChoice(choice)" @focus="focusChoice(choice)" @click="focusChoice(choice); toggle(choice)">
-            <CardImage v-if="imageFor(choice)" :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :alt="label(choice)" :intent="isDisasterChoice ? 'detail' : 'thumb'" eager/>
+            <CardImage v-if="imageFor(choice)" :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :alt="label(choice)" :intent="usesDetailCardImages ? 'detail' : 'thumb'" eager/>
             <span>{{ label(choice) }}</span>
             <b v-if="selected.includes(choice) && prompt.maxChoose > 1">{{ selected.indexOf(choice) + 1 }}</b>
           </button>

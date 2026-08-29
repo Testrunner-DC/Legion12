@@ -127,7 +127,8 @@ public sealed class S2UniversalEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", magician.InstanceId, Ability: "disableCounters")).Accepted);
         Assert.True(magician.Tapped);
-        Assert.Equal(game.State.TurnSerial + 2, game.State.CounterTacticsDisabledUntilTurnSerial);
+        Assert.Equal(int.MaxValue, game.State.CounterTacticsDisabledUntilTurnSerial);
+        Assert.Equal(0, game.State.CounterTacticsDisabledExpiresAtPlayerTurnStart);
     }
 
     [Fact]

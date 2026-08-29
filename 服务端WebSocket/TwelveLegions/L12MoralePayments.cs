@@ -121,6 +121,19 @@ public sealed partial class L12GameEngine
         return morale.Length + guards.Length == visibleCost;
     }
 
+    private string[] SelectAutomaticOrdinaryResourcePaymentIds(L12PlayerState player, int totalCost,
+        IReadOnlyCollection<string>? excludedResourceIds = null)
+    {
+        var excluded = excludedResourceIds?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
+        return player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId))
+            .Select(card => card.InstanceId)
+            .Concat(ActiveTombGuardResources(player)
+                .Where(card => !excluded.Contains(card.InstanceId))
+                .Select(card => card.InstanceId))
+            .Take(visibleCost).ToArray();
+    }
+
     private int ActiveResourceCountExcluding(L12PlayerState player, IReadOnlyCollection<string>? excludedResourceIds)
     {
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];

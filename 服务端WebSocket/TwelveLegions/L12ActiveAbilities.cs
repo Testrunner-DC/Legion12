@@ -92,11 +92,18 @@ public sealed partial class L12GameEngine
             ? $"active:{sourceInstanceId}:loki"
             : $"active:{sourceInstanceId}:{ability}";
 
-    private static string[] ActiveAbilityReservedResourceIds(L12CardInstance source, string ability, string? target)
+    private string[] ActiveAbilityReservedResourceIds(L12PlayerState player, L12CardInstance source, string ability,
+        string? target, bool reserveInternalCosts)
     {
-        if (source.CardId != "S01-02M3" || ability != "medjedDebuff") return [];
-        var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-        return declared.Length == 3 && declared[0] == "mode:strong" ? [declared[1]] : [];
+        if (L12StructuredCardSemantics.IsMedjed(source.CardId) && ability == "medjedDebuff")
+        {
+            var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            return declared.Length == 3 && declared[0] == "mode:strong" ? [declared[1]] : [];
+        }
+        if (reserveInternalCosts && L12StructuredCardSemantics.IsIsis(source.CardId) && ability == "isisCanopic")
+            return PublicLegions(player).Where(card => card.CardId == "S01-0212")
+                .Take(3).Select(card => card.InstanceId).ToArray();
+        return [];
     }
 
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
@@ -112,8 +119,9 @@ public sealed partial class L12GameEngine
         var moraleCost = GetActiveAbilityMoraleCost(source, ability) + disasterMasterSurcharge;
         var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);
         var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
-        var reservedResourceIds = ActiveAbilityReservedResourceIds(source, ability, target);
-        if (reservedResourceIds.Length > 0)
+        var reservedResourceIds = ActiveAbilityReservedResourceIds(player, source, ability, target,
+            reserveInternalCosts: disasterMasterSurcharge > 0);
+        if (L12StructuredCardSemantics.IsMedjed(source.CardId) && ability == "medjedDebuff" && reservedResourceIds.Length > 0)
         {
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == reservedResourceIds[0]
@@ -145,17 +153,11 @@ public sealed partial class L12GameEngine
             .Concat(reservedResourceIds).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (disasterMasterSurcharge > 0 && ActiveResourceCountExcluding(player, excludedResourceIds) < moraleCost)
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
-        if (moraleCost > 0 && reservedResourceIds.Length > 0 && selectedResourceIds is null
+        if (moraleCost > 0 && (reservedResourceIds.Length > 0 || disasterMasterSurcharge > 0)
+            && selectedResourceIds is null
             && !NeedsManualOrdinaryResourcePayment(player, moraleCost, excludedResourceIds))
         {
-            var visibleCost = Math.Max(0, moraleCost - player.TemporaryMorale);
-            selectedResourceIds = player.Morale.Where(card => !card.Tapped
-                    && !excludedResourceIds.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
-                .Select(card => card.InstanceId)
-                .Concat(ActiveTombGuardResources(player)
-                    .Where(card => !excludedResourceIds.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
-                    .Select(card => card.InstanceId))
-                .Take(visibleCost).ToArray();
+            selectedResourceIds = SelectAutomaticOrdinaryResourcePaymentIds(player, moraleCost, excludedResourceIds);
         }
         if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
             && NeedsManualOrdinaryResourcePayment(player, moraleCost, excludedResourceIds))

@@ -482,7 +482,7 @@ public sealed partial class L12GameEngine
             case "abe-immortal":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) { target.ImmortalUses = 1; target.ImmortalUntilTurn = ExpiryAtNextOwnStart(item.Controller); }
+                if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller);
                 FinishStackItem(item); return true;
             }
             case "ryoma-pick":

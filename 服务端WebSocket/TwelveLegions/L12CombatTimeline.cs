@@ -227,6 +227,10 @@ public sealed partial class L12GameEngine
 
     private void QueueCombatKillTriggers(L12PendingDefense pending)
     {
+        // 击杀时效果只能由本次交战的权威伤害结果建立。响应抵挡、支援、目标存活，
+        // 或恢复自旧快照但缺少被击杀实例时，都不得仅凭后续的 killed 标记生成触发。
+        if (pending.BlockedByResponse || string.IsNullOrWhiteSpace(pending.DefeatedDefenderInstanceId)
+            || !string.IsNullOrWhiteSpace(pending.DefeatedAttackerInstanceId)) return;
         var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
         if (attacker is null) return;
         var candidates = new List<L12TriggerCandidate>();
@@ -235,7 +239,13 @@ public sealed partial class L12GameEngine
                 $"crusade-piercing:{attacker.InstanceId}:{State.TurnSerial}"))
         {
             candidates.Add(CreateTriggerCandidate(pending.AttackerPlayer, attacker, "after-attack", "【击杀时】效果",
-                new Dictionary<string, string> { ["killed"] = "true", ["combatTiming"] = "kill" }));
+                new Dictionary<string, string>
+                {
+                    ["killed"] = "true",
+                    ["combatKillConfirmed"] = "true",
+                    ["defeatedInstanceId"] = pending.DefeatedDefenderInstanceId,
+                    ["combatTiming"] = "kill",
+                }));
         }
         if (attacker.ReadyAfterNextKillUntilTurn == State.TurnSerial)
         {

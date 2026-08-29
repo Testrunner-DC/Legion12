@@ -231,7 +231,8 @@ public sealed partial class L12GameEngine
     {
         if (ability == "disableCounters" && source?.CardId == "S02-0003")
         {
-            State.CounterTacticsDisabledUntilTurnSerial = Math.Max(State.CounterTacticsDisabledUntilTurnSerial, State.TurnSerial + 2);
+            State.CounterTacticsDisabledUntilTurnSerial = int.MaxValue;
+            State.CounterTacticsDisabledExpiresAtPlayerTurnStart = item.Controller;
             AddEvent("effect", item.Controller, "直到发动方下个回合开始前，战场上所有反击战术无法发动", source);
             FinishStackItem(item);
             return true;

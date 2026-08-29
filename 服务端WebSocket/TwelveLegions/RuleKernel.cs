@@ -325,8 +325,12 @@ public static class L12S2ZoneOps
         promoted.HasCharge |= foundation.HasCharge;
         promoted.HasStrongAttack |= foundation.HasStrongAttack;
         promoted.HasSureHit |= foundation.HasSureHit;
+        promoted.TauntRequiresFrontRow |= foundation.TauntRequiresFrontRow;
         promoted.ImmortalUses += foundation.ImmortalUses;
         promoted.ImmortalUntilTurn = Math.Max(promoted.ImmortalUntilTurn, foundation.ImmortalUntilTurn);
+        promoted.ImmortalRequiresFrontRow |= foundation.ImmortalRequiresFrontRow;
+        if (foundation.ImmortalExpiresAtPlayerTurnStart >= 0)
+            promoted.ImmortalExpiresAtPlayerTurnStart = foundation.ImmortalExpiresAtPlayerTurnStart;
         promoted.SummonRound = foundation.SummonRound;
         promoted.AttacksThisTurn = foundation.AttacksThisTurn;
         promoted.AttachedCards.Add(foundation);

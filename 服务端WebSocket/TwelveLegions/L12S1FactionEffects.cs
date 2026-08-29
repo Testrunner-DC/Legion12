@@ -436,7 +436,7 @@ public sealed partial class L12GameEngine
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             }
             case "canopic-four":
-                foreach (var id in chosen.Where(id => id != "skip")) { var target = FindOnField(player, id, out _, out _); if (target is not null) { target.ImmortalUses = 1; target.ImmortalUntilTurn = ExpiryAtNextOwnStart(item.Controller); } }
+                foreach (var id in chosen.Where(id => id != "skip")) { var target = FindOnField(player, id, out _, out _); if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             case "brynhild-sigurd":
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }

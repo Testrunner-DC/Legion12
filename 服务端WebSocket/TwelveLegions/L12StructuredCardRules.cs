@@ -110,7 +110,7 @@ public static partial class L12StructuredCardRules
 
     public static bool HasTaunt(L12CardInstance card, int row)
     {
-        if (card.TauntUntilTurn >= 0) return true;
+        if (card.TauntUntilTurn >= 0) return !card.TauntRequiresFrontRow || row == 0;
         var abilities = GetCombatRuleAbilities(card.CardId);
         return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
             .Any(ability => AbilityGrantsKeyword(ability, abilities, "taunt"));

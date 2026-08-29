@@ -178,8 +178,7 @@ public sealed partial class L12GameEngine
                 {
                     var target = FindOnField(player, id, out _, out _);
                     if (target is null) continue;
-                    target.ImmortalUses = 1;
-                    target.ImmortalUntilTurn = ExpiryAtNextOwnStart(item.Controller);
+                    GrantImmortalUntilNextTurnStart(target, item.Controller);
                 }
                 FinishStackItem(item);
                 break;

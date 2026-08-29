@@ -163,3 +163,12 @@
 - `npm run check:ui-contracts`：121/121 通过；`npm run build`：Vue/TypeScript 类型检查与 Vite 生产构建通过。
 - `powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-atomic-effects.ps1 -RequireZero`：248/248 通过，旧卡号 `case` 0处/0卡。
 - 精确覆盖：进攻方/防守方时点隔离、攻击者离场自动中止、重连快照子阶段、冻结进攻值、同列后排支援、权威防御重校验、仅防守者阵亡时击杀、双方同归无击杀且进攻者阵亡先行、触发结束后入墓、贯穿父子进攻恢复。
+
+## 2026-08-29 傲慢资源、天灾高清、精确回合开始期限与击杀门禁
+
+- 阿喀琉斯聚焦回归8/8：真实击杀获得挑衅、佣兵抵挡且没有击杀时不获得、前排动态生效、额外回合开始精确失效、晋升登场及远程入伤规则。
+- 其余聚焦覆盖：伊西斯三守卫不可双付、第四守卫支付傲慢、库丘林前排免死、宫廷魔术师期限、晋升状态转移及天照双能力独立费用。
+- `dotnet test .\TwelveLegions.Tests\TwelveLegions.Tests.csproj --no-restore --configuration Release --settings <串行配置>`：517/517通过。普通并行运行首次因 .NET 10 正则引擎内部 CLR 错误中止，已通过禁用测试集合并行完成全量复验；没有断言失败。
+- 平台持久化聚焦：22/22通过。
+- `npm run build`：UI契约147/147、卡图架构19/19（248张）、Vue/TypeScript及Vite生产构建通过。
+- 原子审计：248/248、legacy case 0、`cardConditional=212`、`cardSwitchArm=67`、`effectTextInference=3`；新增身份判断进入结构化语义层，没有提高旧分支基线。

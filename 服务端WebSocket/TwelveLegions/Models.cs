@@ -173,8 +173,14 @@ public sealed class L12CardInstance
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
     /// <summary>由限时效果赋予的挑畔持续到哪个回合结束；前排判定仍由进攻规则实时计算。</summary>
     public int TauntUntilTurn { get; set; } = -1;
+    public bool TauntRequiresFrontRow { get; set; }
+    /// <summary>若不小于0，则挑衅在该玩家的下个回合开始时精确失效；用于兼容额外回合。</summary>
+    public int TauntExpiresAtPlayerTurnStart { get; set; } = -1;
     public int ImmortalUses { get; set; }
     public int ImmortalUntilTurn { get; set; } = -1;
+    public bool ImmortalRequiresFrontRow { get; set; }
+    /// <summary>若不小于0，则免死在该玩家的下个回合开始时精确失效；用于兼容额外回合。</summary>
+    public int ImmortalExpiresAtPlayerTurnStart { get; set; } = -1;
     public int SuppressDeathUntilTurn { get; set; } = -1;
     public List<L12AbilityView> Abilities { get; set; } = [];
     public List<L12TimedModifier> TimedModifiers { get; init; } = [];
@@ -268,6 +274,7 @@ public sealed class L12PlayerState
     public int S2ArthurDiscountUntilTurn { get; set; } = -1;
     public int FactionMoraleAdditionForbiddenUntilTurn { get; set; } = -1;
     public int MasterCannotBeAttackedUntilTurn { get; set; } = -1;
+    public int MasterCannotBeAttackedExpiresAtPlayerTurnStart { get; set; } = -1;
     public int TombNamedLegionsLeftThisTurn { get; set; }
     public int NextActiveTacticSurcharge { get; set; }
     public bool MulliganDone { get; set; }
@@ -515,6 +522,7 @@ public sealed class L12GameState
     public bool CheckDisasterAfterStack { get; set; }
     public int ExtraTurnsForPlayer { get; set; } = -1;
     public int CounterTacticsDisabledUntilTurnSerial { get; set; } = -1;
+    public int CounterTacticsDisabledExpiresAtPlayerTurnStart { get; set; } = -1;
     public int? Winner { get; set; }
     public string? WinnerReason { get; set; }
     public long Revision { get; set; }
