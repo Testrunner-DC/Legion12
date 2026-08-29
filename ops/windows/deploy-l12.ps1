@@ -4,6 +4,8 @@ param(
     [string]$ArtifactManifest = "",
     [string]$CacheRoot = "",
     [switch]$DryRun,
+    # 兼容旧调用；隔离工作树现在会自动通过 HEAD == origin/main 的强校验，
+    # 不再需要调用者手动追加此参数。
     [switch]$AllowVerifiedWorktree,
     [switch]$ForceVerification
 )
@@ -50,11 +52,11 @@ try {
     foreach ($commandName in @("git", "ssh", "scp", "powershell")) { Require-Command $commandName }
 
     $branch = (& git branch --show-current).Trim()
-    if ($LASTEXITCODE -ne 0 -or ($branch -ne "main" -and -not $AllowVerifiedWorktree)) {
-        throw "只能从 main 分支部署，当前分支：$branch"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
+        throw "无法确定当前 Git 分支，拒绝部署。"
     }
     if ($branch -ne "main") {
-        Write-Host "[L12 部署] 使用隔离验证工作区：$branch；仍会强制校验 HEAD 与 origin/main 完全一致。"
+        Write-Host "[L12 部署] 自动使用隔离验证工作区：$branch；将强制校验 HEAD 与 origin/main 完全一致。"
     }
     if (& git status --porcelain) { throw "工作区存在未提交修改，请先提交或妥善处理后再部署。" }
 

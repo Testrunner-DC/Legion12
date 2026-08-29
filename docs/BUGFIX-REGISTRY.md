@@ -2061,4 +2061,11 @@
 - 修改文件：公共模型/规则/资源/动作/提示/天灾/房间及响应处理位于 `Models.cs`、`L12RuleKernelIntegration.cs`、`L12MoralePayments.cs`、`L12Actions.cs`、`L12ActiveAbilities.cs`、`L12PromptsAndSetup.cs`、`L12Disasters.cs`、`L12GameEngine.cs`、`L12RoomManager.cs`、`L12S1ExtendedEffects.cs`、`L12S1FactionEffects.cs`、`L12S2CounterTactics.cs`；前端位于 `net.ts`、`GamePage.vue`、`GameBoard.vue` 与 UI 契约；回归位于 `TriggeredEffectPresentationTests.cs`、`GameEngineTests.cs`、`NewSystemsTests.cs`、`LatestBugRegressionTests.cs`、`S2FactionRegressionTests.cs`。
 - 红测与验证：首轮 7 项聚焦中 6 项按预期失败，分别命中梅杰德旧目标/后询问流程、风暴无动画、佣兵无响应动画、GameOver 不能重备、真实圣物出牌未写入场回合；服部组合因既有自动跳过支援路径已通过。修复后新需求聚焦 7/7、资源/声明/响应专项 23/23、响应文本与草薙剑专项 6/6；最终 Release 后端 499/499。原子审计 248/248、legacy case 0、`cardConditional=213`、`cardSwitchArm=67`、`effectTextInference=3`；UI 契约 130/130、卡图 19/19（248 张）、Vue/TypeScript/Vite 生产构建、Codex 严格路由和 `git diff --check` 通过。Batch 包装器在 Windows 受限语言模式调用旧 `powershell` 路由子脚本时失败，改用 `pwsh` 单独通过路由，并直接完成其 Release 后端、原子审计和前端生产构建实质门禁。
 - 防回滚与风险：新增效果入口必须在成功入栈后通过公共发布器产生且只产生一次准确能力动画；不得用整卡文本、普通日志或客户端猜测补动画。隐藏军团不应伪造响应窗口；此举会让“盖伏反击战术”和“隐藏军团”是否出现响应窗口存在规则层差异，但不公开具体反击卡身份。梅杰德保留守卫必须从所有普通资源候选、自动选择和最终消费校验中排除。赛后重备只适用于正式 GameOver，不改变进行中对局离房限制或沙盒退出。圣物入场回合是公共字段；若未来新增“圣物转军团”，应自动继承同一召唤失调语义。
-- 发布边界：本批未提交、未推送、未部署。
+- 发布：本批已以 `7dc0935` 提交并推送至 `origin/main`；用户随后明确授权部署到 `legion-12.com`。
+
+### OPS-20260829-158 隔离工作树自动部署门禁
+
+- 现象：规范工作目录位于隔离分支，即使工作区干净且 `HEAD` 已与 `origin/main` 完全一致，发布脚本仍要求额外追加 `-AllowVerifiedWorktree`，使日常“同步并部署”流程产生一次没有新增安全证据的人工参数。
+- 修改：发布脚本自动接受可识别的 Git 分支；非 `main` 时明确提示正在使用隔离验证工作区。旧参数保留兼容但不再必需。
+- 安全边界：没有放宽工作区与提交校验。脚本仍会拒绝未提交修改，部署前仍执行 `git fetch origin main`，且必须满足当前 `HEAD == origin/main`；发布包清单提交号与 SHA256、远端切换和健康检查门禁保持不变。
+- 验证与发布：使用当前隔离工作树直接运行不带额外参数的干运行，确认分支提示、远端一致性和发布制品门禁；通过后以独立提交推送，再使用同一无额外参数命令部署到用户明确授权的 `legion-12.com`。
