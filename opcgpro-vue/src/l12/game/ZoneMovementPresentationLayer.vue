@@ -40,6 +40,15 @@ function textSource(text: string): Zone {
   return 'field'
 }
 
+function isMovementIdentityConcealed(event: ActionEvent, card?: Card) {
+  // identityKnown is meaningful only for a card that is still covered. Normal
+  // authoritative event cards keep the model default false even after their
+  // identity has become public (for example, an opponent playing from hand).
+  if (!card || event.type === 'counter-set') return true
+  if (!card.cardId || card.cardId === 'hidden-card') return true
+  return card.hidden === true && card.identityKnown !== true
+}
+
 function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: AnchorRect): Movement | null {
   // Combat deaths already keep the exact battlefield visual until it reaches the
   // owner's graveyard. Do not create a second card when delayed death triggers finish.
@@ -68,7 +77,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
 
   const cards = event.cards ?? []
   const card = event.type === 'move' ? cards.at(-1) : cards[0]
-  const concealed = !card || card.identityKnown === false
+  const concealed = isMovementIdentityConcealed(event, card)
   return {
     sequence: event.sequence,
     playerIndex: event.playerIndex ?? props.viewerPlayerIndex,

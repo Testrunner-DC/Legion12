@@ -2217,3 +2217,11 @@
 - 修改文件：`ZoneMovementPresentationLayer.vue`、`CombatMotionPresentationLayer.vue`、`GameBoard.vue`、`PlayerMat.vue`、`OsirisVictorySequence.vue`、`useL12ActionAudio.ts`、前端契约及任务台账。
 - 防回滚：禁止恢复 `--move-mid-x`、中途 `scale(1.08)` 或区域移动脉冲；来源实体存在时必须克隆观察者当时实际看到的 DOM；阵亡必须先表现0再离开战场且不得由延迟入墓事件重复生成卡牌；战场外框必须覆盖完整上下战场轨道；特殊胜利音效必须本地生成并遵循用户音效设置。
 - 验证：UI契约161/161、卡图架构19/19（248张）、平台持久化/控制面发布门禁60/60、Vue TypeScript、Vite生产构建、Codex严格路由及发布级门禁通过；本地浏览器确认站点无控制台错误，正式服战场视觉复核在部署后继续执行。
+
+### UI-20260830-07 公开手牌跨区移动保持正面
+
+- 现象与根因：对手从匿名手牌打出的公开卡找不到来源实体锚点，跨区层转而重建动画卡。权威事件内的普通正面卡虽已公开，`identityKnown` 仍保持权威模型默认值 `false`；旧展示策略把该值单独当成“身份未知”，从而在飞行期间错用卡背，落点才翻回正面。
+- 公共修改：跨区层改为联合判定卡牌当前是否真正隐藏。有完整卡身份且 `hidden !== true` 的权威事件卡全程使用正面，不再受 `identityKnown` 默认值影响；无卡、`hidden-card` 占位、`counter-set` 以及 `hidden === true && identityKnown !== true` 的真正未知盖伏卡仍使用官方卡背。
+- 同类型扫描：以 `rg -n 'AddEvent\(\"(play|put|enter|move|counter-set|grave|discard|return|search)\"'` 覆盖全部现有区域事件。`play/put/enter/move` 的现有目标均是已公开或显式翻正的战场卡；`grave/discard` 进入公开墓地；携卡的 `return/search` 现有事件文本均显式公开卡名。匿名对手手牌返牌的 `return` 不附卡，`counter-set` 也不附卡，两者继续失败关闭为卡背；未扩大服务端事件投影，未增加任何卡号特判。
+- 回归与防回滚：UI 契约新增正反两端守卫：普通公开卡不得因 `identityKnown=false` 变卡背；无身份、占位卡和真正未知盖伏卡不得显示正面。红测精确失败1项，修复后 Focused UI 契约 162/162；Batch 的 UI 契约 162/162、卡图架构 19/19（248张）、Vue TypeScript、Vite 生产构建及全工作树 `git diff --check` 通过。
+- 修改文件：`ZoneMovementPresentationLayer.vue`、`check-ui-contracts.mjs`、`BUGFIX-REGISTRY.md`、`TASK-LEDGER.md`。用户已明确授权本批验证后同步 GitHub 并部署正式服。
