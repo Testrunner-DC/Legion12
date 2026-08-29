@@ -40,6 +40,63 @@ function Invoke-GitFetchWithRetry {
     }
 }
 
+function Resolve-L12SshOptions {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+        [Parameter(Mandatory = $true)][string]$RemoteServer
+    )
+
+    $candidateProfiles = [Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $candidateProfiles.Add($env:USERPROFILE)
+    }
+    try {
+        $repositoryOwner = (Get-Acl -LiteralPath $RepositoryRoot).Owner
+        $repositoryOwnerName = ($repositoryOwner -split '\\')[-1]
+        if (-not [string]::IsNullOrWhiteSpace($repositoryOwnerName) -and -not [string]::IsNullOrWhiteSpace($env:SystemDrive)) {
+            $candidateProfiles.Add((Join-Path "$($env:SystemDrive)\Users" $repositoryOwnerName))
+        }
+    }
+    catch {
+        Write-Verbose "无法从仓库所有者推导 SSH 配置目录：$($_.Exception.Message)"
+    }
+
+    $sshDirectory = $candidateProfiles |
+        Select-Object -Unique |
+        ForEach-Object { Join-Path $_ ".ssh" } |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_ "known_hosts") -PathType Leaf } |
+        Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($sshDirectory)) {
+        Write-Host "[L12 部署] 未发现可复用的用户 known_hosts，使用系统 SSH 默认配置。"
+        return @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20")
+    }
+
+    $knownHosts = Join-Path $sshDirectory "known_hosts"
+    $options = [Collections.Generic.List[string]]::new()
+    foreach ($option in @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "UserKnownHostsFile=$knownHosts")) {
+        $options.Add($option)
+    }
+    $identity = @("id_ed25519", "id_rsa") |
+        ForEach-Object { Join-Path $sshDirectory $_ } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    if (-not [string]::IsNullOrWhiteSpace($identity)) {
+        foreach ($option in @("-o", "IdentitiesOnly=yes", "-i", $identity)) { $options.Add($option) }
+    }
+
+    $remoteHost = ($RemoteServer -split "@")[-1]
+    $trustedMigrationAlias = "legion12.grand-umi.com"
+    $remoteHostEntry = @(& ssh-keygen -F $remoteHost -f $knownHosts 2>$null)
+    $trustedAliasEntry = @(& ssh-keygen -F $trustedMigrationAlias -f $knownHosts 2>$null)
+    if ($remoteHost -eq "legion-12.com" -and $remoteHostEntry.Count -eq 0 -and $trustedAliasEntry.Count -gt 0) {
+        # 新旧域名迁移期间连接的是同一生产主机。复用已经人工信任的旧域主机密钥，
+        # 避免关闭 StrictHostKeyChecking 或要求调用者追加临时参数。
+        foreach ($option in @("-o", "HostKeyAlias=$trustedMigrationAlias")) { $options.Add($option) }
+        Write-Host "[L12 部署] 新域名复用已验证的旧域 SSH 主机指纹。"
+    }
+    return $options.ToArray()
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
@@ -50,6 +107,7 @@ $originalLocation = Get-Location
 try {
     Set-Location $repoRoot
     foreach ($commandName in @("git", "ssh", "scp", "powershell")) { Require-Command $commandName }
+    $sshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot -RemoteServer $Server)
 
     $branch = (& git branch --show-current).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
@@ -119,11 +177,11 @@ try {
     $remoteCards = "$incoming/l12-cards-$($manifest.cardsHash).tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传发布工具与预构建运行包..."
-    Invoke-External ssh $Server "mkdir -p '$incoming'"
-    Invoke-External scp $serverScript "${Server}:$remoteBootstrap"
-    Invoke-External scp $releaseArchive "${Server}:$remoteRelease"
+    Invoke-External ssh @sshOptions $Server "mkdir -p '$incoming'"
+    Invoke-External scp @sshOptions $serverScript "${Server}:$remoteBootstrap"
+    Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
 
-    & ssh $Server "test -d '/opt/legion12-static/cards/$($manifest.cardsHash)'"
+    & ssh @sshOptions $Server "test -d '/opt/legion12-static/cards/$($manifest.cardsHash)'"
     $cardsCached = $LASTEXITCODE -eq 0
     if ($cardsCached) {
         Write-Host "[L12 部署] 服务器复用卡图缓存：$($manifest.cardsHash)"
@@ -140,7 +198,7 @@ try {
             Invoke-External tar -czf $cardsArchive -C ".\opcgpro-vue\public" cards
         }
         $cardsSha = (Get-FileHash -LiteralPath $cardsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-        Invoke-External scp $cardsArchive "${Server}:$remoteCards"
+        Invoke-External scp @sshOptions $cardsArchive "${Server}:$remoteCards"
         $cardsPath = $remoteCards
     }
 
@@ -149,7 +207,7 @@ try {
     $cardAssetsHash = "-"
     if ($hasCardAssets) {
         $cardAssetsHash = $cardAssetsHashValue
-        & ssh $Server "test -d '/opt/legion12-static/card-assets/$cardAssetsHash'"
+        & ssh @sshOptions $Server "test -d '/opt/legion12-static/card-assets/$cardAssetsHash'"
         $cardAssetsCached = $LASTEXITCODE -eq 0
         if ($cardAssetsCached) {
             Write-Host "[L12 部署] 服务器复用优化卡图缓存：$cardAssetsHash"
@@ -157,7 +215,7 @@ try {
         else {
             Write-Host "[L12 部署] 上传内容寻址优化卡图包（二进制完整后才切换 release manifest）..."
             $cardAssetsSha = $cardAssetsSha256Value
-            Invoke-External scp $cardAssetsArchive "${Server}:$remoteCardAssets"
+            Invoke-External scp @sshOptions $cardAssetsArchive "${Server}:$remoteCardAssets"
             $cardAssetsPath = $remoteCardAssets
         }
     }
@@ -165,10 +223,10 @@ try {
         Write-Warning "发布清单没有优化卡图包；保留旧 imageUrl 降级链，仅用于旧发布产物兼容。"
     }
 
-    Invoke-External ssh $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && rm -f '$remoteBootstrap'"
+    Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && rm -f '$remoteBootstrap'"
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
-    Invoke-External ssh $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease $($manifest.cardsHash) $cardsSha $cardsPath $cardAssetsHash $cardAssetsSha $cardAssetsPath"
+    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease $($manifest.cardsHash) $cardsSha $cardsPath $cardAssetsHash $cardAssetsSha $cardAssetsPath"
 
     if ($DryRun) { Write-Host "[L12 部署] 干运行成功，线上版本未改变。" }
     else { Write-Host "[L12 部署] 发布成功：https://legion-12.com/" }

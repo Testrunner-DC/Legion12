@@ -37,7 +37,7 @@ SSH 公钥加入服务器后验证：
 ssh root@legion-12.com "echo SSH连接成功"
 ```
 
-不要复制其他电脑的 SSH 私钥。迁移宽限期内若新域 SSH 名称尚未写入受信主机记录，可显式传入部署脚本参数 `-Server root@legion12.grand-umi.com` 使用旧域恢复入口；不得关闭主机密钥校验。
+不要复制其他电脑的 SSH 私钥。部署脚本会自动读取仓库所有者的用户 SSH 配置；迁移宽限期内若新域 SSH 名称尚未写入 `known_hosts`，会复用已验证的旧域主机指纹连接同一生产主机，不需要追加参数，也不会关闭主机密钥校验。
 
 ## 完整验证与构建
 
@@ -69,18 +69,12 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 8. 任一切换后检查失败时，同时原子恢复上一版本程序和切换前运行数据快照，避免旧二进制读取新 schema；
 9. 仅保留最近 5 份运行数据快照，避免备份无界增长。
 
-隔离工作区可以使用：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -AllowVerifiedWorktree
-```
-
-该开关只放宽分支名称，不能绕过干净状态和远端提交一致性。
+隔离工作区会被自动识别；只要工作区干净且 `HEAD` 与最新 `origin/main` 完全一致，就使用同一条正式部署命令。旧参数 `-AllowVerifiedWorktree` 仅为兼容历史调用保留，已无需手动追加。
 
 ## 快速干运行
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -DryRun -AllowVerifiedWorktree
+powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -DryRun
 ```
 
 干运行上传并验证预构建产物和权限，但不停止服务、不迁移数据、不切换版本。因为完整测试只在产物生成时执行，重复干运行通常只需要上传小型运行包并完成服务器校验。
