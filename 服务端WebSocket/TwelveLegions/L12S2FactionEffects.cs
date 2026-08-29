@@ -1059,24 +1059,23 @@ public sealed partial class L12GameEngine
         if (ability == "magatamaMove" && source.CardId == "S02-0404")
         {
             if (source.Tapped) return CommandResult.Reject("八尺琼勾玉必须为活跃状态");
-            var candidates = State.Players
-                .Where(battlefield => EffectCavalryDestinations(battlefield).Any())
-                .SelectMany(PublicLegions)
-                .Where(card => card.LastCavalryMoveTurn != State.TurnSerial)
-                .Select(card => card.InstanceId).ToList();
+            var candidates = EffectCavalryDestinations(player).Any()
+                ? PublicLegions(player)
+                    .Where(card => !card.Tapped)
+                    .Select(card => card.InstanceId).ToList()
+                : [];
             if (candidates.Count == 0) return CommandResult.Reject("战场上没有可进行骑兵位移的军团");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
                 new L12ActivationSelectionStep
                 {
-                    Kind = "active-target", Text = "八尺琼勾玉：选择双方战场上1张军团",
+                    Kind = "active-target", Text = "八尺琼勾玉：选择我方1张活跃军团",
                     ValidChoices = candidates,
                 },
                 new L12ActivationSelectionStep
                 {
                     Kind = "cavalry-slot", Text = "八尺琼勾玉：选择该军团进行骑兵位移后的空位",
-                    ValidChoices = State.Players.SelectMany(EffectCavalryDestinations)
-                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    ValidChoices = EffectCavalryDestinations(player).ToList(),
                 },
             ]);
         }
@@ -1359,19 +1358,10 @@ public sealed partial class L12GameEngine
         {
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             if (source.Tapped || declared.Length != 2) return CommandResult.Reject("八尺琼勾玉必须为活跃状态且位移声明完整");
-            var targetPlayerIndex = -1;
-            for (var index = 0; index < State.Players.Length; index++)
-            {
-                if (FindOnField(State.Players[index], declared[0], out _, out _) is null) continue;
-                targetPlayerIndex = index;
-                break;
-            }
-            var targetPlayer = targetPlayerIndex < 0 ? null : State.Players[targetPlayerIndex];
-            var legion = targetPlayer is null ? null : FindOnField(targetPlayer, declared[0], out _, out _);
+            var legion = FindOnField(player, declared[0], out _, out _);
             var destination = ParseSlot(declared[1]);
-            if (legion is null || legion.Hidden || !IsFieldLegion(legion) || targetPlayer is null
-                || legion.LastCavalryMoveTurn == State.TurnSerial
-                || !EffectCavalryDestinations(targetPlayer).Contains(declared[1]))
+            if (legion is null || legion.Hidden || legion.Tapped || !IsFieldLegion(legion)
+                || !EffectCavalryDestinations(player).Contains(declared[1]))
                 return CommandResult.Reject("所选军团或位移位置已不合法");
             source.Tapped = true;
             PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
@@ -1379,7 +1369,7 @@ public sealed partial class L12GameEngine
                 ["ability"] = ability,
                 ["target"] = legion.InstanceId,
                 ["destination"] = $"{destination.Row}:{destination.Slot}",
-                ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
+                ["targetPlayerIndex"] = playerIndex.ToString(),
             });
             return CommandResult.Ok();
         }
@@ -1660,22 +1650,18 @@ public sealed partial class L12GameEngine
         }
         if (ability == "magatamaMove" && source?.CardId == "S02-0404")
         {
-            var targetPlayerIndex = int.TryParse(item.Data.GetValueOrDefault("targetPlayerIndex"), out var parsedTargetPlayer)
-                && parsedTargetPlayer is 0 or 1 ? parsedTargetPlayer : item.Controller;
-            var targetPlayer = State.Players[targetPlayerIndex];
+            var targetPlayer = State.Players[item.Controller];
             var legion = FindOnField(targetPlayer, item.Data.GetValueOrDefault("target"), out var row, out var slot);
             var destinationText = item.Data.GetValueOrDefault("destination") ?? string.Empty;
-            if (legion is not null && !legion.Hidden && IsFieldLegion(legion)
-                && legion.LastCavalryMoveTurn != State.TurnSerial
+            if (legion is not null && !legion.Hidden && !legion.Tapped && IsFieldLegion(legion)
                 && EffectCavalryDestinations(targetPlayer).Contains(destinationText))
             {
                 var (targetRow, targetSlot) = ParseSlot(destinationText);
                 targetPlayer.Field[row][slot] = null;
                 targetPlayer.Field[targetRow][targetSlot] = legion;
                 legion.LastMovedTurn = State.TurnSerial;
-                legion.LastCavalryMoveTurn = State.TurnSerial;
                 AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
-                NotifyS2LegionMoved(targetPlayerIndex, legion, row, targetRow);
+                NotifyS2LegionMoved(item.Controller, legion, row, targetRow);
             }
             FinishStackItem(item);
             return true;

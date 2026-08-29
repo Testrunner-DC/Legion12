@@ -163,7 +163,7 @@ public static partial class L12StructuredCardRules
             "S02-0404" => HumanCard(
                 H("enter", "triggered", "登场时 可查看我方牌库，选择1张【高天原】的【骑兵】军团展示并加入手牌。随后重洗牌库。"),
                 H("active", "activated", "主动休整 选择ABILITY 3或ABILITY 4。"),
-                H("granted", "granted-effect", "选择战场上1张军团，进行1次骑兵位移。"),
+                H("granted", "granted-effect", "选择我方1张活跃军团，进行1次不占用该军团自身次数的骑兵位移。"),
                 H("granted", "granted-effect", "选择我方1张本回合位移过的军团，本回合获得ABILITY 5。"),
                 H("granted", "granted-continuous", "免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。")),
             "S02-0405" => HumanCard(

@@ -862,12 +862,16 @@ public sealed partial class L12GameEngine
         var targetTroops = target.Troops;
         var attackValue = EffectiveAttackValue(pending, attacker);
         var targetProfile = L12StructuredCardRules.CombatProfile(target, targetRow);
-        var defenderDamage = pending.IsRanged
-            ? Math.Max(0, attackValue - targetProfile.IncomingRangedCombatDamageReduction)
-            : attackValue;
+        var rangedDamageAdjustment = pending.IsRanged
+            ? targetProfile.IncomingRangedCombatDamageAdjustment
+            : 0;
+        var defenderDamage = Math.Max(0, attackValue + rangedDamageAdjustment);
         if (defenderDamage < attackValue)
             AddEvent("effect", defender.PlayerIndex,
                 $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 降为 {defenderDamage}", target, attacker);
+        else if (defenderDamage > attackValue)
+            AddEvent("effect", defender.PlayerIndex,
+                $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 增为 {defenderDamage}", target, attacker);
         var attackerTakesDamage = !pending.AttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
         if (targetTroops - defenderDamage <= 0
             && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();

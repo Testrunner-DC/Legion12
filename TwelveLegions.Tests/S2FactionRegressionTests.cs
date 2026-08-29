@@ -806,7 +806,7 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void AchillesReducesFinalRangedCombatDamageByOneThousand()
+    public void AchillesIncreasesFinalIncomingRangedCombatDamageByOneThousand()
     {
         var game = Create(63132);
         var attacker = Card("S02-0003", "achilles-ranged-attacker");
@@ -823,11 +823,10 @@ public sealed class S2FactionRegressionTests
             Target: new L12AttackTarget("legion", achilles.InstanceId))).Accepted);
         PassResponses(game);
 
-        Assert.Same(achilles, game.State.Players[1].Field[0][0]);
-        Assert.Equal(2000, achilles.Troops);
-        Assert.DoesNotContain(achilles, game.State.Players[1].Graveyard);
+        Assert.Null(game.State.Players[1].Field[0][0]);
+        Assert.Contains(achilles, game.State.Players[1].Graveyard);
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("受到远程进攻")
-            && entry.Text.Contains("最终战斗伤害由 7000 降为 6000"));
+            && entry.Text.Contains("最终战斗伤害由 7000 增为 8000"));
 
         var supportedGame = Create(63133);
         var supportedAttacker = Card("S02-0003", "achilles-supported-attacker");
@@ -3319,15 +3318,20 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void MagatamaMoveUsesCavalryMovementOnEitherBattlefieldAndAllowsRestedLegions()
+    public void MagatamaMoveTargetsOnlyOwnActiveLegionAndIgnoresItsNativeCavalryUsage()
     {
         var game = Create(6334);
         var player = game.State.Players[0];
         var magatama = Card("S02-0404", "magatama-move-source");
-        var legion = Card("S02-0401", "magatama-moving-legion");
-        legion.Tapped = true;
+        var legion = Card("S01-0409", "magatama-moving-legion");
+        var rested = Card("S02-0401", "magatama-rested-legion");
+        var opponent = Card("S02-0402", "magatama-opponent-legion");
+        rested.Tapped = true;
+        legion.LastCavalryMoveTurn = game.State.TurnSerial;
         player.Relic = magatama;
-        game.State.Players[1].Field[0][1] = legion;
+        player.Field[0][0] = legion;
+        player.Field[0][1] = rested;
+        game.State.Players[1].Field[0][1] = opponent;
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
@@ -3337,21 +3341,23 @@ public sealed class S2FactionRegressionTests
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", target.Continuation);
         Assert.Contains(legion.InstanceId, target.ValidChoices);
+        Assert.DoesNotContain(rested.InstanceId, target.ValidChoices);
+        Assert.DoesNotContain(opponent.InstanceId, target.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
             Choice: legion.InstanceId)).Accepted);
 
         var slot = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("slot", slot.Kind);
-        Assert.Equal("1", slot.Data["targetPlayerIndex"]);
+        Assert.Equal("0", slot.Data["targetPlayerIndex"]);
         Assert.Contains("1:2", slot.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
             Choice: "1:2")).Accepted);
         Assert.True(magatama.Tapped);
         PassResponses(game);
 
-        Assert.Null(game.State.Players[1].Field[0][1]);
-        Assert.Same(legion, game.State.Players[1].Field[1][2]);
-        Assert.True(legion.Tapped);
+        Assert.Null(player.Field[0][0]);
+        Assert.Same(legion, player.Field[1][2]);
+        Assert.False(legion.Tapped);
         Assert.Equal(game.State.TurnSerial, legion.LastMovedTurn);
         Assert.Equal(game.State.TurnSerial, legion.LastCavalryMoveTurn);
     }
@@ -3390,25 +3396,31 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void MagatamaCannotGiveTheSameLegionASecondCavalryMoveThisTurn()
+    public void MagatamaMoveDoesNotConsumeTheLegionsNativeCavalryMove()
     {
         var game = Create(63342);
         var player = game.State.Players[0];
         var magatama = Card("S02-0404", "magatama-repeat-source");
-        var legion = Card("S02-0401", "magatama-already-moved-legion");
-        legion.Tapped = true;
-        legion.LastCavalryMoveTurn = game.State.TurnSerial;
+        var legion = Card("S01-0409", "magatama-independent-cavalry-legion");
         player.Relic = magatama;
         player.Field[0][0] = legion;
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
-        var result = game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
-            Ability: "magatamaMove"));
+        Assert.True(game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
+            Ability: "magatamaMove")).Accepted);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: legion.InstanceId)).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "1:2")).Accepted);
+        PassResponses(game);
 
-        Assert.False(result.Accepted);
-        Assert.Contains("没有可进行骑兵位移", result.Error);
-        Assert.False(magatama.Tapped);
+        Assert.Equal(-1, legion.LastCavalryMoveTurn);
+        Assert.True(game.Handle(0, new L12Command("cavalryMove", legion.InstanceId, Row: 0, Slot: 2)).Accepted);
+        Assert.Same(legion, player.Field[0][2]);
+        Assert.Equal(game.State.TurnSerial, legion.LastCavalryMoveTurn);
     }
 
     [Fact]

@@ -122,13 +122,9 @@ public sealed partial class L12GameEngine
         }
         else if (step.Kind == "cavalry-slot")
         {
-            for (var index = 0; index < State.Players.Length; index++)
-            {
-                if (activation.DeclaredTargets.Count == 0
-                    || FindOnField(State.Players[index], activation.DeclaredTargets[0], out _, out _) is null) continue;
-                targetPlayerIndex = index;
-                break;
-            }
+            if (activation.DeclaredTargets.Count > 0
+                && FindOnField(State.Players[activation.Controller], activation.DeclaredTargets[0], out _, out _) is not null)
+                targetPlayerIndex = activation.Controller;
             var choices = targetPlayerIndex is null ? [] : EffectCavalryDestinations(State.Players[targetPlayerIndex.Value]).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
@@ -431,9 +427,9 @@ public sealed partial class L12GameEngine
                 return State.Players[effectEntryBattlefield.Value].Field[row][slot] is null;
             if (activation?.Ability == "magatamaMove" && activation.DeclaredTargets.Count > 0)
             {
-                var battlefield = State.Players.FirstOrDefault(candidate =>
-                    FindOnField(candidate, activation.DeclaredTargets[0], out _, out _) is not null);
-                return battlefield is not null && battlefield.Field[row][slot] is null
+                var battlefield = State.Players[controller];
+                return FindOnField(battlefield, activation.DeclaredTargets[0], out _, out _) is not null
+                    && battlefield.Field[row][slot] is null
                     && EffectCavalryDestinations(battlefield).Contains(choice);
             }
             return State.Players[controller].Field[row][slot] is null;

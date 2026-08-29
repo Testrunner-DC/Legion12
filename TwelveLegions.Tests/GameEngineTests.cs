@@ -545,7 +545,7 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void PromotedAchillesReducesIncomingRangedCombatDamageInsteadOfItsTroops()
+    public void PromotedAchillesTakesOneThousandExtraIncomingRangedCombatDamage()
     {
         var game = Create(1218);
         var attackerPlayer = game.State.ActivePlayer;
@@ -554,7 +554,7 @@ public sealed class GameEngineTests
         var achilles = Card("S02-0503", "promoted-achilles-target");
         attacker.Troops = 4000;
         attacker.SummonRound = -1;
-        achilles.Troops = 5000;
+        achilles.Troops = 7000;
         achilles.SummonRound = -1;
         game.State.Players[attackerPlayer].Field[0] = new L12CardInstance?[3];
         game.State.Players[attackerPlayer].Field[1] = new L12CardInstance?[3];
@@ -586,7 +586,7 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void PromotedAchillesDoesNotReduceFrontToFrontCombatDamage()
+    public void PromotedAchillesDoesNotAddDamageToFrontToFrontCombat()
     {
         var game = Create(1219);
         var attackerPlayer = game.State.ActivePlayer;
