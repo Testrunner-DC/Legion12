@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, type RoomOptions } from '@/l12/net'
+import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from '@/l12/decks'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import { getEffectiveOperationsPolicy, platformState, type EffectiveOperationsPolicy } from '@/l12/platform'
@@ -19,6 +19,8 @@ const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const currentDeck = computed(() => Object.values(customDecks.value)[0])
 const roomCodeCopied = ref(false)
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
+const isRoomHost = computed(() => l12State.room?.yourPlayerIndex === 0)
+const editableRoomOptions = ref<RoomOptions>({ ...roomOptions.value })
 function visibleDeckLabel(index: number) {
   const player = l12State.room?.players[index]
   if (!player) return '尚未选择牌库'
@@ -31,6 +33,17 @@ const optionLabels = {
   handVisibility: { request: '查看手牌需申请', public: '观战者可看手牌' },
   disasterMode: { all: '全部天灾', random: '随机天灾', custom: '自定天灾（沙盒）', none: '不使用天灾' },
 } as const
+
+watch(() => l12State.room?.options, options => {
+  if (!options) return
+  editableRoomOptions.value = {
+    matchModeId: 'friendly',
+    spectating: options.spectating,
+    handVisibility: options.handVisibility,
+    disasterMode: options.disasterMode === 'custom' ? 'all' : options.disasterMode,
+    useCardRestrictions: options.useCardRestrictions === true,
+  }
+}, { immediate: true, deep: true })
 
 onMounted(async () => {
   ;[customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
@@ -62,6 +75,7 @@ function operationsAllowed() {
   l12State.notice = operationsPolicy.value?.maintenance.message || '服务器正在维护，暂时无法开始新的对局'
   return false
 }
+function saveRoomRules() { if (isRoomHost.value) updateRoomOptions(editableRoomOptions.value) }
 async function onCreate() { try { if (operationsAllowed() && await ensureConnected()) createRoom(roomOptions.value) } catch {} }
 async function onJoin() { try { if (operationsAllowed() && await ensureConnected()) joinRoom(roomCode.value.trim()) } catch {} }
 async function onSpectate() { try { if (operationsAllowed() && await ensureConnected()) spectateRoom(roomCode.value.trim()) } catch {} }
@@ -97,6 +111,11 @@ async function copyRoomCode() {
         <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
       </div>
       <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>好友房</span><span>{{ l12State.room.options.useCardRestrictions ? '启用运营禁限卡' : '不启用运营禁限卡' }}</span><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span><span v-if="l12State.room.operationsPolicyVersion">运营规则 v{{ l12State.room.operationsPolicyVersion }}</span></div>
+      <section v-if="isRoomHost" class="room-rule-editor">
+        <header><b>调整房间规则</b><span>保存后双方准备状态会重置</span></header>
+        <div class="room-settings"><div><b>禁限卡规则</b><select v-model="editableRoomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="editableRoomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="editableRoomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="editableRoomOptions.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="none">不使用天灾</option></select></div></div>
+        <button type="button" @click="saveRoomRules">保存房间规则</button>
+      </section>
       <div class="room-decks"><button v-for="deck in customDecks" :key="deck.name" :class="{ active: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready" @click="selectCustomDeck(deck)"><DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`" :selected="me?.customDeck && me?.deckName === deck.name"/></button></div>
       <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/deck-editor?returnTo=%2Fbattle%2Flobby">编辑我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
     </section>
@@ -128,5 +147,6 @@ async function copyRoomCode() {
 .room-decks button{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;padding:8px}.room-decks button>img{width:38px;height:38px;object-fit:cover;border:1px solid #596269;border-radius:2px}.room-decks button>span,.room-decks button b,.room-decks button small{display:block}.room-decks button small{margin-top:4px;color:#77848a;font-size:9px}
 .maintenance-banner,.policy-warning{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:13px 16px;border:1px solid #9a7135;background:#2a1e0e;color:#f0d695;font-size:11px}.maintenance-banner span,.policy-warning span{color:#c8b98f}.policy-warning{border-color:#6b4c52;background:#221217;color:#e1b2b8}.join-row button:disabled,.room-settings select:disabled{cursor:not-allowed;opacity:.45}
 .current-deck{grid-template-columns:minmax(0,1fr) auto}.current-deck :deep(.deck-profile){border:0;background:transparent;padding:0}.room-decks button{display:block;padding:0}.room-decks button :deep(.deck-profile){width:100%;border:0;background:transparent}.room-decks button.active :deep(.deck-profile){background:#202017}
+.room-rule-editor{margin:0 0 18px;padding:14px;border:1px solid #695b36;background:#11140f}.room-rule-editor>header{display:flex;align-items:center;justify-content:space-between}.room-rule-editor>header span{color:#877d62;font-size:9px}.room-rule-editor>.room-settings{margin-top:12px}.room-rule-editor>button{display:block;margin:12px 0 0 auto;padding:9px 18px;border:1px solid #d7bb69;background:#d7bb69;color:#111;font-weight:900}
 @media(max-width:700px){.current-deck{grid-template-columns:1fr}.current-deck a{grid-column:auto}}
 </style>

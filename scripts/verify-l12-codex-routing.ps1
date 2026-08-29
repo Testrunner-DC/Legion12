@@ -73,8 +73,19 @@ if (-not $codex) {
 }
 if (-not $codex) { throw "Codex CLI was not found" }
 
-$helpOutput = & $codex --strict-config --help 2>&1
-if ($LASTEXITCODE -ne 0) { throw "Codex strict-config startup failed: $($helpOutput -join [Environment]::NewLine)" }
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    # Windows PowerShell 5 wraps native stderr warnings as non-terminating ErrorRecord objects.
+    # Codex may warn that the sandbox cannot create optional PATH aliases while still returning 0;
+    # strict startup is therefore judged by the process exit code, not by the presence of stderr text.
+    $helpOutput = & $codex --strict-config --help 2>&1
+    $codexExitCode = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $previousErrorAction
+}
+if ($codexExitCode -ne 0) { throw "Codex strict-config startup failed: $($helpOutput -join [Environment]::NewLine)" }
 
 Write-Host "[L12 Codex] Project registration, agent files, tiers, TOML syntax, AGENTS markers, and strict-config entry passed."
 Write-Host "[L12 Codex] Runtime activation still requires this repository canonical path to be trusted and the Codex project to be reloaded."

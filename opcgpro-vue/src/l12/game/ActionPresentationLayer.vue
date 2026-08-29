@@ -37,6 +37,7 @@ const sideLabel = computed(() => {
   if (active.value.playerIndex === 1) return '玩家 B'
   return ''
 })
+const actionSymbol = computed(() => active.value?.kind === 'turn-start' ? '启' : active.value?.kind === 'turn-end' ? '终' : '主')
 
 function showNext() {
   if (active.value || props.paused || !queue.length) return
@@ -63,7 +64,7 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
   for (const event of props.events.filter(item => item.sequence > lastSequence).sort((left, right) => left.sequence - right.sequence)) {
     const presentation = actionPresentationFromEvent(event)
     const previous = queue.at(-1) ?? active.value
-    const repeatedPhase = presentation?.kind === 'phase' && previous?.kind === 'phase'
+    const repeatedPhase = presentation && previous && presentation.kind === previous.kind
       && presentation.text === previous.text
     if (presentation && !repeatedPhase) queue.push(presentation)
     lastSequence = Math.max(lastSequence, event.sequence)
@@ -98,7 +99,7 @@ onBeforeUnmount(() => {
       <div v-if="active" :key="active.sequence" class="l12-action-presentation" :class="`kind-${active.kind}`"
         data-ui-contract="authoritative-action-presentation" aria-live="polite">
         <i class="action-flare" aria-hidden="true" />
-        <div class="action-symbol" aria-hidden="true"><span>阶</span></div>
+        <div class="action-symbol" aria-hidden="true"><span>{{ actionSymbol }}</span></div>
         <div class="action-copy">
           <small>{{ sideLabel }}<template v-if="sideLabel"> · </template>{{ active.label }}</small>
           <strong>{{ active.text }}</strong>

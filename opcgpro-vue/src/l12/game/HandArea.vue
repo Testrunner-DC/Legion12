@@ -11,6 +11,7 @@ const props = defineProps<{
   playableIds?: string[]
   showPlayAction?: boolean
   dimUnplayable?: boolean
+  playerIndex?: number
 }>()
 const emit = defineEmits<{ select: [card: Card]; focus: [card: Card]; play: [card: Card] }>()
 const handElement = ref<HTMLElement | null>(null)
@@ -45,7 +46,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <template>
-  <div ref="handElement" class="l12-hand" :class="{ hidden, 'playability-active': dimUnplayable, overflowing: isOverflowing }">
+  <div ref="handElement" class="l12-hand" data-l12-zone="hand" :data-player-index="playerIndex" :class="{ hidden, 'playability-active': dimUnplayable, overflowing: isOverflowing }">
     <template v-if="hidden">
       <div v-for="index in count || 0" :key="index" class="card-back" :style="fanStyle(index - 1, count || 0)"><i>XII</i></div>
     </template>

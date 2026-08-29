@@ -1,6 +1,6 @@
 import type { ActionEvent } from '../types'
 
-export type ActionPresentationKind = 'phase'
+export type ActionPresentationKind = 'turn-start' | 'main-phase' | 'turn-end'
 
 export interface ActionPresentation {
   sequence: number
@@ -11,7 +11,9 @@ export interface ActionPresentation {
 }
 
 const genericLabels: Record<ActionPresentationKind, string> = {
-  phase: '阶段变化',
+  'turn-start': '回合开始',
+  'main-phase': '主要阶段',
+  'turn-end': '回合结束',
 }
 
 /**
@@ -20,16 +22,25 @@ const genericLabels: Record<ActionPresentationKind, string> = {
  * sequence remains the only ordering and de-duplication key.
  */
 export function actionPresentationFromEvent(event: ActionEvent): ActionPresentation | null {
-  if (event.type !== 'phase') return null
+  const kind: ActionPresentationKind | null = event.type === 'turn-start'
+    ? 'turn-start'
+    : event.type === 'phase' && event.text === '进入主要阶段'
+      ? 'main-phase'
+      : event.type === 'phase' && event.text === '执行结束阶段'
+        ? 'turn-end'
+        : null
+  if (!kind) return null
   return {
     sequence: event.sequence,
-    kind: 'phase',
+    kind,
     playerIndex: event.playerIndex,
-    label: genericLabels.phase,
+    label: genericLabels[kind],
     text: event.text,
   }
 }
 
 export const actionPresentationDurations: Record<ActionPresentationKind, number> = {
-  phase: 620,
+  'turn-start': 780,
+  'main-phase': 680,
+  'turn-end': 680,
 }

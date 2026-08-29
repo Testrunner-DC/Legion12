@@ -1191,6 +1191,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             {
                 "hello" => AuthenticateSession(sessionId, root),
                 "createRoom" => CreateRoom(sessionId, root),
+                "updateRoomOptions" => UpdateRoomOptions(sessionId, root),
                 "createSandbox" => await CreateSandboxAsync(sessionId, root),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                 "inviteFriend" => _rooms.InviteFriend(sessionId, GetString(root, "accountId")),
@@ -1351,6 +1352,24 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         authenticated = null!;
         failure = ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
         return false;
+    }
+
+    private IReadOnlyList<OutgoingMessage> UpdateRoomOptions(Guid sessionId, JsonElement root)
+    {
+        if (!root.TryGetProperty("options", out var optionsElement))
+            return [new OutgoingMessage(sessionId, new { type = "error", message = "缺少房间设置" })];
+        try
+        {
+            var options = optionsElement.Deserialize<L12RoomOptions>(new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+            });
+            return _rooms.UpdateRoomOptions(sessionId, options);
+        }
+        catch (JsonException)
+        {
+            return [new OutgoingMessage(sessionId, new { type = "error", message = "房间设置格式错误" })];
+        }
     }
 
     private bool TryAuthorize(HttpRequest request, L12Permission permission,

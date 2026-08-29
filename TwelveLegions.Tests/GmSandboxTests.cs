@@ -339,6 +339,24 @@ public sealed class GmSandboxTests
         Assert.Equal(roomCode, hostRoom.GetProperty("roomCode").GetString());
         Assert.Equal(0, hostRoom.GetProperty("yourPlayerIndex").GetInt32());
         Assert.Equal(1, guestRoom.GetProperty("yourPlayerIndex").GetInt32());
+
+        var rejected = manager.UpdateRoomOptions(guest, new L12RoomOptions { Spectating = "disabled" });
+        Assert.Contains("只有房主", JsonSerializer.SerializeToElement(Assert.Single(rejected).Payload, WebJson)
+            .GetProperty("message").GetString());
+
+        var updated = manager.UpdateRoomOptions(host, new L12RoomOptions
+        {
+            Spectating = "friends",
+            HandVisibility = "public",
+            DisasterMode = "random",
+            UseCardRestrictions = true,
+        }).Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        var updatedHost = updated.Single(payload => payload.GetProperty("yourPlayerIndex").GetInt32() == 0);
+        Assert.Equal("friends", updatedHost.GetProperty("options").GetProperty("spectating").GetString());
+        Assert.Equal("public", updatedHost.GetProperty("options").GetProperty("handVisibility").GetString());
+        Assert.Equal("random", updatedHost.GetProperty("options").GetProperty("disasterMode").GetString());
+        Assert.True(updatedHost.GetProperty("options").GetProperty("useCardRestrictions").GetBoolean());
+        Assert.All(updatedHost.GetProperty("players").EnumerateArray(), player => Assert.False(player.GetProperty("ready").GetBoolean()));
     }
 
     [Fact]

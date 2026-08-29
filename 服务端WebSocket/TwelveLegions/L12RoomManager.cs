@@ -50,7 +50,7 @@ public sealed class L12RoomManager
         public List<Guid> Sessions { get; } = [];
         public List<Guid> Spectators { get; } = [];
         public L12RoomOptions Options { get; set; } = new();
-        public required L12OperationsPolicySnapshot OperationsPolicy { get; init; }
+        public required L12OperationsPolicySnapshot OperationsPolicy { get; set; }
         public bool[] Ready { get; } = [false, false];
         public L12GameEngine? Game { get; set; }
         public long CommandSequence { get; set; }
@@ -304,6 +304,28 @@ public sealed class L12RoomManager
         session.RoomCode = room.Code;
         session.PlayerIndex = 0;
         session.SelectedDeckIndex = hostDeckIndex;
+        return BroadcastRoom(room);
+    }
+
+    public IReadOnlyList<OutgoingMessage> UpdateRoomOptions(Guid sessionId, L12RoomOptions? options)
+    {
+        if (!TryGetMembership(sessionId, out var session, out var room, out var error))
+            return Error(sessionId, error);
+        if (room.Game is not null) return Error(sessionId, "对局开始后不能修改房间规则");
+        if (session.PlayerIndex != 0 || room.Sessions.FirstOrDefault() != sessionId)
+            return Error(sessionId, "只有房主可以修改房间规则");
+
+        var currentPolicy = CaptureOperationsPolicy();
+        var normalized = NormalizeFriendlyOptions(options, currentPolicy.DefaultRoomConfig);
+        if (TryOperationsEntryBlock(sessionId, currentPolicy, normalized.MatchModeId, out var blocked))
+            return blocked;
+        var scopedPolicy = currentPolicy.ForFriendlyRoom(normalized.UseCardRestrictions, normalized.DisasterMode);
+        if (!TryDefaultPresetIndexes(scopedPolicy, out _, out _))
+            return OperationsBlocked(sessionId, "no_legal_default_preset", "当前规则下没有可用于房间的合法官方预组");
+
+        room.Options = normalized;
+        room.OperationsPolicy = scopedPolicy;
+        for (var index = 0; index < room.Ready.Length; index++) room.Ready[index] = false;
         return BroadcastRoom(room);
     }
 

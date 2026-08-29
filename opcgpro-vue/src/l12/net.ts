@@ -231,6 +231,7 @@ export interface RoomOptions {
 export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'
 
 export const createRoom = (options?: RoomOptions) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'createRoom', options }) }
+export const updateRoomOptions = (options: RoomOptions) => send({ type: 'updateRoomOptions', options })
 export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12Deck, disasterMode: SandboxDisasterMode = 'none') => {
   l12State.spectating = false
   l12State.leavingRoom = false

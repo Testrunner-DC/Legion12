@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import CardImage from '../CardImage.vue'
-import { roundCardUrl } from '../specialAssets'
 
 const emit = defineEmits<{ complete: [] }>()
 const stage = ref(0)
@@ -9,10 +8,10 @@ const jarIds = ['S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220']
 const timers: Array<ReturnType<typeof setTimeout>> = []
 
 onMounted(() => {
-  jarIds.forEach((_, index) => timers.push(setTimeout(() => { stage.value = index + 1 }, 320 + index * 360)))
-  timers.push(setTimeout(() => { stage.value = 6 }, 2350))
-  timers.push(setTimeout(() => { stage.value = 7 }, 3050))
-  timers.push(setTimeout(() => emit('complete'), 5450))
+  jarIds.forEach((_, index) => timers.push(setTimeout(() => { stage.value = index + 1 }, 650 + index * 700)))
+  timers.push(setTimeout(() => { stage.value = 6 }, 4700))
+  timers.push(setTimeout(() => { stage.value = 7 }, 5650))
+  timers.push(setTimeout(() => emit('complete'), 7000))
 })
 onBeforeUnmount(() => timers.forEach(timer => clearTimeout(timer)))
 </script>
@@ -23,10 +22,12 @@ onBeforeUnmount(() => timers.forEach(timer => clearTimeout(timer)))
       aria-label="复苏的奥西里斯特殊胜利动画">
       <div class="osiris-void" />
       <div class="canopic-pentagram">
-        <i class="pentagram-lines" />
+        <svg class="pentagram-lines" viewBox="0 0 100 100" aria-hidden="true">
+          <polyline points="50,92 20,18 92,56 8,56 80,18 50,92" pathLength="100" />
+        </svg>
         <span v-for="(cardId, index) in jarIds" :key="cardId" class="canopic-vessel"
           :class="[`vessel-${index + 1}`, { visible: stage >= index + 1 }]">
-          <img :src="roundCardUrl(cardId)" alt="卡诺匹斯圣物" />
+          <CardImage :card-id="cardId" alt="卡诺匹斯圣物" intent="board" eager />
         </span>
       </div>
       <div class="osiris-card" :class="{ visible: stage >= 6 }">
@@ -39,8 +40,8 @@ onBeforeUnmount(() => timers.forEach(timer => clearTimeout(timer)))
 </template>
 
 <style scoped>
-.osiris-victory-sequence{position:fixed;z-index:2147483646;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(20,93,70,.44),rgba(0,5,6,.97) 58%,#000);pointer-events:all}.osiris-void{position:absolute;inset:0;background:repeating-radial-gradient(circle at center,transparent 0 32px,rgba(84,217,168,.045) 34px 35px);animation:osiris-void-turn 12s linear infinite}.canopic-pentagram{position:absolute;left:50%;top:50%;width:min(68vw,590px);aspect-ratio:1;transform:translate(-50%,-50%)}.pentagram-lines{position:absolute;inset:12%;opacity:.55;background:conic-gradient(from 18deg,transparent 0 7%,rgba(105,245,194,.58) 7.5% 8%,transparent 8.5% 27%,rgba(105,245,194,.58) 27.5% 28%,transparent 28.5% 47%,rgba(105,245,194,.58) 47.5% 48%,transparent 48.5% 67%,rgba(105,245,194,.58) 67.5% 68%,transparent 68.5% 87%,rgba(105,245,194,.58) 87.5% 88%,transparent 88.5%);clip-path:polygon(50% 96%,61% 62%,98% 61%,68% 40%,79% 5%,50% 27%,21% 5%,32% 40%,2% 61%,39% 62%);filter:drop-shadow(0 0 8px #62e4b6);animation:osiris-lines 2.8s ease-out both}.canopic-vessel{position:absolute;width:62px;height:62px;opacity:0;transform:translate(-50%,-50%) scale(.25);filter:drop-shadow(0 0 10px rgba(103,242,190,.8));transition:opacity .25s ease,transform .45s cubic-bezier(.2,1.45,.35,1)}.canopic-vessel.visible{opacity:1;transform:translate(-50%,-50%) scale(.78)}.canopic-vessel img{width:100%;height:100%;object-fit:contain}.vessel-1{left:50%;top:92%}.vessel-2{left:7%;top:58%}.vessel-3{left:23%;top:10%}.vessel-4{left:77%;top:10%}.vessel-5{left:93%;top:58%}.osiris-card{position:absolute;left:50%;top:50%;width:min(180px,28vw);aspect-ratio:5/7;opacity:0;transform:translate(-50%,-46%) scale(.42);transition:opacity .45s ease,transform .72s cubic-bezier(.18,1.4,.28,1);filter:drop-shadow(0 0 18px rgba(117,255,203,.85)) drop-shadow(0 18px 28px #000)}.osiris-card.visible{opacity:1;transform:translate(-50%,-50%) scale(1)}.osiris-card :deep(.l12-card-image){width:100%;height:100%}.osiris-card strong{position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);color:#dffff1;font:900 17px Georgia,'Songti SC',serif;letter-spacing:.18em;text-shadow:0 0 12px #55f0b4;white-space:nowrap}.osiris-flash{position:absolute;inset:-20%;opacity:0;background:radial-gradient(circle,#fff 0 2%,#b7ffe2 4%,rgba(65,242,172,.34) 18%,transparent 46%);pointer-events:none}.osiris-flash.active{animation:osiris-flash 1.1s ease-out}.osiris-card.visible::after{content:'';position:absolute;inset:-14px;border:2px solid rgba(134,255,210,.65);animation:osiris-aura 1.4s ease-in-out infinite}
-@keyframes osiris-lines{from{opacity:0;transform:scale(.55) rotate(22deg)}to{opacity:.55;transform:scale(1)}}@keyframes osiris-void-turn{to{transform:rotate(360deg) scale(1.05)}}@keyframes osiris-flash{0%{opacity:0}18%{opacity:1}45%{opacity:.55}100%{opacity:0}}@keyframes osiris-aura{50%{opacity:.25;transform:scale(1.08)}}
-@media(max-width:700px){.canopic-vessel{width:48px;height:48px}.osiris-card strong{font-size:12px}}
+.osiris-victory-sequence{position:fixed;z-index:2147483646;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(158,118,19,.5),rgba(34,23,2,.97) 58%,#080500);pointer-events:all}.osiris-void{position:absolute;inset:0;background:repeating-radial-gradient(circle at center,transparent 0 32px,rgba(255,220,93,.055) 34px 35px);animation:osiris-void-turn 14s linear infinite}.canopic-pentagram{position:absolute;left:50%;top:50%;width:min(70vw,620px);aspect-ratio:1;transform:translate(-50%,-50%)}.pentagram-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 10px #e8bb39)}.pentagram-lines polyline{fill:none;stroke:#e6bd4d;stroke-width:.7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:osiris-lines 4.4s .35s ease-in-out forwards}.canopic-vessel{position:absolute;width:min(104px,14vw);aspect-ratio:5/7;opacity:0;transform:translate(-50%,-50%) scale(.35);filter:drop-shadow(0 0 12px rgba(255,211,78,.8));transition:opacity .3s ease,transform .58s cubic-bezier(.2,1.3,.35,1)}.canopic-vessel.visible{opacity:1;transform:translate(-50%,-50%) scale(1)}.canopic-vessel :deep(.l12-card-image){width:100%;height:100%}.vessel-1{left:50%;top:92%}.vessel-2{left:20%;top:18%}.vessel-3{left:92%;top:56%}.vessel-4{left:8%;top:56%}.vessel-5{left:80%;top:18%}.osiris-card{position:absolute;left:50%;top:50%;width:min(190px,29vw);aspect-ratio:5/7;opacity:0;transform:translate(-50%,-46%) scale(.42);transition:opacity .55s ease,transform .85s cubic-bezier(.18,1.32,.28,1);filter:drop-shadow(0 0 22px rgba(255,219,94,.92)) drop-shadow(0 18px 28px #000)}.osiris-card.visible{opacity:1;transform:translate(-50%,-50%) scale(1)}.osiris-card :deep(.l12-card-image){width:100%;height:100%}.osiris-card strong{position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);color:#fff0a8;font:900 17px Georgia,'Songti SC',serif;letter-spacing:.18em;text-shadow:0 0 12px #e8b82f;white-space:nowrap}.osiris-flash{position:absolute;inset:-20%;opacity:0;background:radial-gradient(circle,#fff 0 2%,#fff1a6 4%,rgba(255,205,54,.4) 18%,transparent 46%);pointer-events:none}.osiris-flash.active{animation:osiris-flash 1.25s ease-out}.osiris-card.visible::after{content:'';position:absolute;inset:-14px;border:2px solid rgba(255,224,110,.72);animation:osiris-aura 1.6s ease-in-out infinite}
+@keyframes osiris-lines{to{stroke-dashoffset:0}}@keyframes osiris-void-turn{to{transform:rotate(360deg) scale(1.05)}}@keyframes osiris-flash{0%{opacity:0}18%{opacity:1}48%{opacity:.58}100%{opacity:0}}@keyframes osiris-aura{50%{opacity:.25;transform:scale(1.08)}}
+@media(max-width:700px){.canopic-vessel{width:min(76px,16vw)}.osiris-card strong{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.osiris-void,.pentagram-lines,.osiris-flash.active,.osiris-card.visible::after{animation:none}.canopic-vessel,.osiris-card{transition-duration:.01s}}
 </style>

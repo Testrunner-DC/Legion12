@@ -46,7 +46,9 @@ export function playL12ActionSound(kind: ActionPresentationKind) {
   if (isMuted || sfxVolume <= 0) return
   const volume = Math.min(0.12, 0.12 * sfxVolume)
   switch (kind) {
-    case 'phase':
+    case 'turn-start':
+    case 'main-phase':
+    case 'turn-end':
       tone(392, 0.12, volume * 0.42, 'sine', 392)
       tone(587, 0.18, volume * 0.46, 'sine', 587, 0.1)
       break

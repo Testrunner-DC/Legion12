@@ -89,7 +89,7 @@ const statusIndicators = computed<StatusIndicator[]>(() => {
 </script>
 
 <template>
-  <button class="card-tile" :class="[{ selected, tapped: card.tapped, compact, 'horizontal-card': isHorizontalCardType(card.cardType), 'has-status-effects': statusIndicators.length }, `type-${card.cardType}`]" @click="$emit('select')">
+  <button class="card-tile" :data-card-instance-id="card.instanceId" :class="[{ selected, tapped: card.tapped, compact, 'horizontal-card': isHorizontalCardType(card.cardType), 'has-status-effects': statusIndicators.length }, `type-${card.cardType}`]" @click="$emit('select')">
     <CardImage v-if="showFace" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="board" eager />
     <img v-else class="covered-card-back" src="/assets/l12/card-back-official.png" alt="盖伏卡牌" />
     <span v-if="showFace && card.hasPrintedCost !== false" class="card-cost" :class="costState" :title="displayCost === card.cost ? `印刷费用 ${card.cost}` : `当前费用 ${displayCost}；印刷费用 ${card.cost}`">{{ displayCost }}</span>

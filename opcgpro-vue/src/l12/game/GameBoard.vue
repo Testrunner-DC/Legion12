@@ -256,6 +256,15 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
   hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, 3000)
 })
+watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
+  const specialVictory = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'special-victory'
+    && item.cards?.some(card => card.cardId === 'S01-02M2'))
+  if (!specialVictory) return
+  graveyardPlayer.value = null
+  masterPlayerIndex.value = null
+  focusCard.value = null
+  promptMinimized.value = false
+})
 function showNextPublicReveal() {
   if (publicReveal.value || !publicRevealQueue.length) return
   publicReveal.value = publicRevealQueue.shift() ?? null
@@ -733,14 +742,14 @@ function statusTexts(card: Card) {
           </div>
         </aside>
 
-        <main class="board-center">
-          <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand"
+        <main class="board-center" data-l12-game-stage>
+          <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
-          <HandArea v-else hidden :count="viewEnemy.handCount || 0" />
-          <div class="felt-board" data-ui-contract="persistent-board-safe-layout">
+          <HandArea v-else hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
+          <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
@@ -837,7 +846,7 @@ function statusTexts(card: Card) {
               @faction-ability="ability => activateFactionAbilityFor(viewMe.playerIndex, ability)"
               @payment-resource="togglePaymentResource" />
           </div>
-          <HandArea :cards="viewMe.hand" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
+          <HandArea :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />

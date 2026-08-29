@@ -104,8 +104,9 @@ function watchOnlinePlayer(player: PlatformPresence) {
 }
 function answerInvitation(accept: boolean) {
   if (!l12State.friendInvitation) return
-  resolveFriendInvitation(l12State.friendInvitation.invitationId, accept)
-  if (!accept) l12State.friendInvitation = null
+  const invitationId = l12State.friendInvitation.invitationId
+  l12State.friendInvitation = null
+  resolveFriendInvitation(invitationId, accept)
 }
 watch(() => platformState.account?.id, () => void refreshPresence())
 onMounted(() => {
