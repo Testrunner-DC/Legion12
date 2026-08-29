@@ -61,9 +61,6 @@ public sealed partial class L12GameEngine
                     .Select(card => card!.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团，本回合获得强攻");
             default:
-                if (GetActiveAbilityMoraleCost(source, ability) > 0
-                    && NeedsManualOrdinaryResourcePayment(player, GetActiveAbilityMoraleCost(source, ability)))
-                    return CommitActiveAbility(playerIndex, source, ability, command.CardInstanceIds?.FirstOrDefault());
                 return TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability)
@@ -95,6 +92,13 @@ public sealed partial class L12GameEngine
             ? $"active:{sourceInstanceId}:loki"
             : $"active:{sourceInstanceId}:{ability}";
 
+    private static string[] ActiveAbilityReservedResourceIds(L12CardInstance source, string ability, string? target)
+    {
+        if (source.CardId != "S01-02M3" || ability != "medjedDebuff") return [];
+        var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+        return declared.Length == 3 && declared[0] == "mode:strong" ? [declared[1]] : [];
+    }
+
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
         bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null,
         IReadOnlyCollection<string>? selectedReturnIds = null)
@@ -108,6 +112,15 @@ public sealed partial class L12GameEngine
         var moraleCost = GetActiveAbilityMoraleCost(source, ability) + disasterMasterSurcharge;
         var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);
         var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
+        var reservedResourceIds = ActiveAbilityReservedResourceIds(source, ability, target);
+        if (reservedResourceIds.Length > 0)
+        {
+            var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == reservedResourceIds[0]
+                && card.CardId == "S01-0212" && !card.Tapped);
+            if (declared.Length != 3 || guard is null || DeclaredEnemyTarget(playerIndex, declared[2]) is null)
+                return CommandResult.Reject("梅杰德强模式声明的陵墓守卫或目标已失效");
+        }
         if (returnCost > 0 && ValidateActiveReturnPrepayment(playerIndex, source, ability, target) is { } returnError)
             return CommandResult.Reject(returnError);
         var declaredReturnIds = selectedReturnIds?.ToArray();
@@ -128,10 +141,24 @@ public sealed partial class L12GameEngine
         if (declaredReturnIds is not null
             && !CanReturnSelectedMoraleById(player, declaredReturnIds, returnCost, requireActiveReturn))
             return CommandResult.Reject("选择的返还士气已失效或数量不正确");
-        if (disasterMasterSurcharge > 0 && ActiveResourceCountExcluding(player, declaredReturnIds) < moraleCost)
+        var excludedResourceIds = (declaredReturnIds ?? [])
+            .Concat(reservedResourceIds).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (disasterMasterSurcharge > 0 && ActiveResourceCountExcluding(player, excludedResourceIds) < moraleCost)
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
+        if (moraleCost > 0 && reservedResourceIds.Length > 0 && selectedResourceIds is null
+            && !NeedsManualOrdinaryResourcePayment(player, moraleCost, excludedResourceIds))
+        {
+            var visibleCost = Math.Max(0, moraleCost - player.TemporaryMorale);
+            selectedResourceIds = player.Morale.Where(card => !card.Tapped
+                    && !excludedResourceIds.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
+                .Select(card => card.InstanceId)
+                .Concat(ActiveTombGuardResources(player)
+                    .Where(card => !excludedResourceIds.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
+                    .Select(card => card.InstanceId))
+                .Take(visibleCost).ToArray();
+        }
         if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
-            && NeedsManualOrdinaryResourcePayment(player, moraleCost, declaredReturnIds))
+            && NeedsManualOrdinaryResourcePayment(player, moraleCost, excludedResourceIds))
         {
             var paymentData = new Dictionary<string, string>
             {
@@ -140,11 +167,11 @@ public sealed partial class L12GameEngine
             };
             if (declaredReturnIds is not null) paymentData["returnIds"] = string.Join('|', declaredReturnIds);
             CreateResourcePaymentPrompt(playerIndex, moraleCost, "active-morale-choice", null, paymentData,
-                declaredReturnIds);
+                excludedResourceIds);
             return CommandResult.Ok();
         }
         if (selectedResourceIds is not null
-            && !CanConsumeSelectedResources(player, moraleCost, selectedResourceIds, declaredReturnIds))
+            && !CanConsumeSelectedResources(player, moraleCost, selectedResourceIds, excludedResourceIds))
             return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         var returnPrepaid = false;
         if (declaredReturnIds is not null)
@@ -155,15 +182,10 @@ public sealed partial class L12GameEngine
         }
         if (selectedResourceIds is not null)
         {
-            if (!TryConsumeSelectedResources(player, moraleCost, selectedResourceIds))
+            if (!TryConsumeSelectedResources(player, moraleCost, selectedResourceIds, excludedResourceIds))
                 return CommandResult.Reject("选择的支付资源已失效或数量不正确");
             // 下层各阵营效果仍通过统一 ConsumeMorale 申报费用；以临时士气作为一次性预付凭证，避免重复扣费。
             player.TemporaryMorale += moraleCost;
-
-            var specialized = TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
-                ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
-                ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability);
-            if (specialized is not null) return specialized;
         }
         bool ConsumeMorale(int cost) => useTombGuards switch
         {

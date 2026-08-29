@@ -245,13 +245,13 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void MedjedCannotReuseTheSameTombGuardForItsCostAndExtraReplacement()
+    public void MedjedDeclaresStrongModeGuardAndTargetBeforePayingAtomically()
     {
         var game = CreateWithFirstMaster("S01-02M3", 630114);
         var player = game.State.Players[0];
         var opponent = game.State.Players[1];
-        player.Morale.Clear();
-        var guard = Card("S01-0212", "medjed-payment-guard");
+        AddMorale(player, 1);
+        var guard = Card("S01-0212", "medjed-strong-guard");
         var target = Card("S02-0601", "medjed-debuff-target");
         player.Field[0][0] = guard;
         opponent.Field[0][0] = target;
@@ -260,6 +260,49 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "medjedDebuff")).Accepted);
+        var modePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["mode:normal", "mode:strong", "skip"], modePrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: modePrompt.PromptId,
+            Choice: "mode:strong")).Accepted);
+        var guardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(guard.InstanceId, guardPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId,
+            Choice: guard.InstanceId)).Accepted);
+        Assert.False(guard.Tapped);
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.True(guard.Tapped);
+        Assert.Single(player.Morale, morale => morale.Tapped);
+        Assert.Equal(2000, target.Troops);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") is "medjed-extra-choice" or "medjed-extra-guard");
+    }
+
+    [Fact]
+    public void MedjedNormalModeMayUseATombGuardAsItsOrdinaryOneResourcePayment()
+    {
+        var game = CreateWithFirstMaster("S01-02M3", 630115);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Morale.Clear();
+        var guard = Card("S01-0212", "medjed-normal-resource");
+        var target = Card("S02-0601", "medjed-normal-target");
+        player.Field[0][0] = guard;
+        opponent.Field[0][0] = target;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "medjedDebuff")).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("mode:strong", mode.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:normal")).Accepted);
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
             Choice: target.InstanceId)).Accepted);
@@ -267,8 +310,6 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(guard.Tapped);
         Assert.Equal(4000, target.Troops);
-        Assert.DoesNotContain(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") is "medjed-extra-choice" or "medjed-extra-guard");
     }
 
     [Fact]
@@ -2396,6 +2437,65 @@ public sealed class S2FactionRegressionTests
         Assert.DoesNotContain(sword.InstanceId, game.SnapshotFor(0).LegalAttackTargets.Keys);
 
         game.State.Round++;
+        Assert.Contains("master", game.SnapshotFor(0).LegalAttackTargets[sword.InstanceId]);
+    }
+
+    [Fact]
+    public void KusanagiRealHandPlayKeepsSummonSicknessOnlyForItsArtifactEntryRound()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 631551);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-real-play");
+        player.Hand.Clear();
+        player.Hand.Add(sword);
+        AddMorale(player, 6);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", sword.InstanceId)).Accepted);
+        PassResponses(game);
+        Assert.Same(sword, player.Relic);
+        Assert.Equal(game.State.Round, sword.SummonRound);
+
+        foreach (var morale in player.Morale) morale.Tapped = false;
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "kusanagi")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "0:0")).Accepted);
+        PassResponses(game);
+        Assert.DoesNotContain(sword.InstanceId, game.SnapshotFor(0).LegalAttackTargets.Keys);
+
+        sword.HasCharge = true;
+        Assert.Contains("master", game.SnapshotFor(0).LegalAttackTargets[sword.InstanceId]);
+        sword.HasCharge = false;
+
+        game.State.Round++;
+        Assert.Contains("master", game.SnapshotFor(0).LegalAttackTargets[sword.InstanceId]);
+    }
+
+    [Fact]
+    public void KusanagiPlayedAsArtifactOnAPriorRoundCanAttackImmediatelyAfterLaterTransformation()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 631552);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-prior-round-play");
+        player.Hand.Clear();
+        player.Hand.Add(sword);
+        AddMorale(player, 6);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", sword.InstanceId)).Accepted);
+        PassResponses(game);
+        var artifactEntryRound = sword.SummonRound;
+        game.State.Round = artifactEntryRound + 1;
+        foreach (var morale in player.Morale) morale.Tapped = false;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "kusanagi")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "0:0")).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(artifactEntryRound, sword.SummonRound);
         Assert.Contains("master", game.SnapshotFor(0).LegalAttackTargets[sword.InstanceId]);
     }
 

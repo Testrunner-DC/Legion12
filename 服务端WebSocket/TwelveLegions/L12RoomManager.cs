@@ -480,7 +480,15 @@ public sealed class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Game is not null) return Error(sessionId, "对局已经开始");
+            if (room.Game?.State.Phase == L12Phase.GameOver)
+            {
+                // 完成记录已经在对局进入 GameOver 时落盘；这里只重置房间内的赛局槽与准备状态，
+                // 保留成员、房号、牌库和固定运营策略，供双方重新准备开启全新 match。
+                room.Game = null;
+                room.CommandSequence = 0;
+                Array.Fill(room.Ready, false);
+            }
+            else if (room.Game is not null) return Error(sessionId, "对局已经开始");
             if (ready)
             {
                 var currentPolicy = CaptureOperationsPolicy();

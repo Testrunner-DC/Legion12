@@ -597,6 +597,43 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public async Task CompletedRoomCanResetReadinessAndStartANewMatchWithoutLeaving()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-room-rematch", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var host = Guid.NewGuid();
+        var guest = Guid.NewGuid();
+        manager.Connect(host, "甲");
+        manager.Connect(guest, "乙");
+        var created = manager.CreateRoom(host);
+        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, roomCode);
+        await manager.SetReadyAsync(host, true);
+        var firstStart = await manager.SetReadyAsync(guest, true);
+        var firstMatch = JsonSerializer.SerializeToElement(firstStart.Single(message => message.SessionId == host).Payload,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .GetProperty("state").GetProperty("matchId").GetString();
+
+        await manager.HandleActionAsync(host, JsonSerializer.SerializeToElement(new { type = "surrender" }));
+        var hostReady = await manager.SetReadyAsync(host, true);
+        var hostRoom = JsonSerializer.SerializeToElement(hostReady.Single(message => message.SessionId == host).Payload,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal("roomState", hostRoom.GetProperty("type").GetString());
+        Assert.True(hostRoom.GetProperty("players").EnumerateArray()
+            .Single(player => player.GetProperty("playerIndex").GetInt32() == 0).GetProperty("ready").GetBoolean());
+        Assert.False(hostRoom.GetProperty("players").EnumerateArray()
+            .Single(player => player.GetProperty("playerIndex").GetInt32() == 1).GetProperty("ready").GetBoolean());
+
+        var secondStart = await manager.SetReadyAsync(guest, true);
+        var secondMatch = JsonSerializer.SerializeToElement(secondStart.Single(message => message.SessionId == host).Payload,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .GetProperty("state").GetProperty("matchId").GetString();
+        Assert.NotEqual(firstMatch, secondMatch);
+    }
+
+    [Fact]
     public void RagashaOpponentTurnBonusDoesNotStackWhenMercenaryBlocksTheAttack()
     {
         var game = Create();
@@ -627,6 +664,11 @@ public sealed class LatestBugRegressionTests
         Assert.Same(ragasha, game.State.Players[1].Field[0][0]);
         Assert.Equal(expectedTroops, ragasha.Troops);
         Assert.Contains(mercenary, game.State.Players[1].Graveyard);
+        var presentation = Assert.Single(game.State.Events, entry => entry.Type == "effect-response"
+            && entry.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Equal(1, presentation.PlayerIndex);
+        Assert.Contains("进攻我方军团时", presentation.Text);
+        Assert.DoesNotContain("可进行1次位移", presentation.Text);
     }
 
     [Fact]

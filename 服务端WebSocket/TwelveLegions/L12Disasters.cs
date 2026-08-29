@@ -26,7 +26,9 @@ public sealed partial class L12GameEngine
         State.ActiveDisaster = disaster;
         State.DisasterValue = 0;
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
-        if (!HasTriggeredDisasterEffect(disaster))
+        if (HasTriggeredDisasterEffect(disaster))
+            PublishEffectPresentation("effect-trigger", null, disaster, "disaster", "天灾触发效果");
+        else
             AddEvent("disaster-reveal", null, $"天灾〈{disaster.Name}〉公开", disaster);
         PushEffect(State.ActivePlayer, disaster, "disaster", "天灾触发效果",
             data: new Dictionary<string, string> { ["opening"] = opening ? "true" : "false" });
@@ -87,6 +89,10 @@ public sealed partial class L12GameEngine
     private static bool IsDisasterFieldCard(L12CardInstance card)
         => IsFieldLegion(card) || card.CardId == "S01-0415";
 
+    private static IEnumerable<L12CardInstance> DisasterLegions(L12PlayerState player)
+        => player.Field.SelectMany(row => row).Where(card => card is not null && IsDisasterFieldCard(card))
+            .Cast<L12CardInstance>();
+
     private void BeginS2FogDeadEnd(L12StackItem item)
     {
         var prompted = 0;
@@ -132,7 +138,7 @@ public sealed partial class L12GameEngine
             for (var slot = 0; slot < 3; slot++)
             {
                 var front = player.Field[0][slot];
-                if (front is null || !IsFieldLegion(front)) continue;
+                if (front is null || !IsDisasterFieldCard(front)) continue;
                 player.Field[0][slot] = null;
                 player.Field[1][slot] = front;
                 AddEvent("move", owner, $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排", front);
@@ -143,7 +149,7 @@ public sealed partial class L12GameEngine
 
     private void BeginS2Pride(L12StackItem item)
     {
-        var counts = State.Players.Select(player => PublicLegions(player).Count()).ToArray();
+        var counts = State.Players.Select(player => DisasterLegions(player).Count()).ToArray();
         if (counts[0] == counts[1]) { FinishStackItem(item); return; }
         var owner = counts[0] > counts[1] ? 0 : 1;
         var difference = Math.Abs(counts[0] - counts[1]);
@@ -163,7 +169,7 @@ public sealed partial class L12GameEngine
         var count = int.Parse(prompt.Data["count"]);
         var player = State.Players[owner];
         var candidates = choice == "field"
-            ? PublicLegions(player).Select(card => card.InstanceId)
+            ? DisasterLegions(player).Select(card => card.InstanceId)
             : player.Hand.Select(card => card.InstanceId);
         CreatePrompt(owner, choice == "field" ? "targets" : "discard", $"〈傲慢之罪〉：选择弃置{count}张{(choice == "field" ? "军团" : "手牌")}",
             candidates, count, count, "disaster-effect", item.StackItemId, isPrivate: choice != "field",
@@ -348,7 +354,7 @@ public sealed partial class L12GameEngine
 
     private void PromptApocalypseField(L12StackItem item, int playerIndex)
     {
-        var cards = State.Players[playerIndex].Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Select(card => card!.InstanceId).ToArray();
+        var cards = DisasterLegions(State.Players[playerIndex]).Select(card => card.InstanceId).ToArray();
         var excess = Math.Max(0, cards.Length - 2);
         if (excess == 0)
         {
@@ -440,7 +446,7 @@ public sealed partial class L12GameEngine
     private void ResolveRagnarok(L12StackItem item)
     {
         for (var owner = 0; owner < 2; owner++)
-            foreach (var card in State.Players[owner].Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Cast<L12CardInstance>().ToArray())
+            foreach (var card in DisasterLegions(State.Players[owner]).ToArray())
                 RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地",
                     queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
         var opening = item.Data.GetValueOrDefault("opening") == "true";

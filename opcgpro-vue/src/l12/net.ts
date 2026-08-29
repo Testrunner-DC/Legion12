@@ -107,7 +107,15 @@ export function connect(): Promise<void> {
         if (!settled) { settled = true; reject(new Error(l12State.notice)) }
         socket.close()
       }
-      else if (message.type === 'roomState') l12State.room = message
+      else if (message.type === 'roomState') {
+        l12State.room = message
+        if (!message.started) {
+          l12State.game = null
+          l12State.spectating = false
+          l12State.gmEnabled = false
+          l12State.pendingAction = false
+        }
+      }
       else if (message.type === 'effectiveOperationsPolicy') l12State.operationsPolicy = message.policy
       else if (message.type === 'operationsBlocked') {
         l12State.notice = message.message || '当前运营规则不允许执行此操作'
@@ -222,6 +230,7 @@ export const spectateRoom = (roomCode: string) => send({ type: 'spectateRoom', r
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
+export const returnToRoom = () => setReady(false)
 export const leaveRoom = () => send({ type: 'leaveRoom' })
 export function gameAction(command: Record<string, unknown>) {
   if (l12State.pendingAction) return

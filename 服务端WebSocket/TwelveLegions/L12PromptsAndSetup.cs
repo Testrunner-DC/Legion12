@@ -793,9 +793,10 @@ public sealed partial class L12GameEngine
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
         if (trigger == "disaster") item.Data["unrespondable"] = "true";
-        if (IsDirectTriggeredEffect(trigger, source, text))
-            AddEvent("effect-trigger", controller,
-                ResolveTriggeredEffectDisplayText(source, trigger, text, item.Data), source);
+        if (trigger is "active" or "play")
+            PublishEffectPresentation("effect-activation", controller, source, trigger, text, item.Data);
+        else if (IsDirectTriggeredEffect(trigger, source, text))
+            PublishEffectPresentation("effect-trigger", controller, source, trigger, text, item.Data);
         if (State.IsResolvingStack)
         {
             State.DeferredEffectStack.Add(item);
@@ -897,7 +898,7 @@ public sealed partial class L12GameEngine
 
         // 盖伏区数量、盖伏回合和禁用状态均为公开场面信息；牌的真实身份不是。
         var hasEligibleCoveredCard = State.TurnSerial >= State.CounterTacticsDisabledUntilTurnSerial
-            && player.Field[1].Any(card => card is { Hidden: true }
+            && player.Field[1].Any(card => card is { Hidden: true, CardType: "tactic" }
                 && card.SetRound < State.Round && card.CannotRespondUntilRound < State.Round);
         if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top, timing)))
             return true;
@@ -1068,6 +1069,7 @@ public sealed partial class L12GameEngine
         item.Data["slot"] = slotChoice;
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{State.Players[playerIndex].Name} 发动〈{response.Name}〉响应主宰进攻", response);
+        PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
         State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
         OfferResponse();
     }
@@ -1091,6 +1093,7 @@ public sealed partial class L12GameEngine
         item.Targets.Add(targetStackId);
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name} 打出〈{response.Name}〉响应", response);
+        PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
         State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
         OfferResponse();
     }
@@ -1110,6 +1113,7 @@ public sealed partial class L12GameEngine
         item.Targets.Add(targetStackId);
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{playerIndex + 1} 号玩家发动〈佣兵部队〉抵挡进攻", response);
+        PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
         State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
         OfferResponse();
     }

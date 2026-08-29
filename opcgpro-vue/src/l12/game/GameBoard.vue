@@ -293,8 +293,9 @@ function showNextDiceReveal() {
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.type === 'disaster-reveal' || event.playerIndex !== props.game.you)
-      && (event.type === 'effect-trigger' || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示'))
+      && (event.type === 'disaster-reveal' || event.playerIndex === null || event.playerIndex !== props.game.you)
+      && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'
+        || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示'))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
@@ -327,7 +328,7 @@ const events = computed(() => [...(props.game.recentEvents ?? [])]
 const eventLabels: Record<string, string> = {
   play: '出牌', attack: '进攻', combat: '战斗', defense: '抵挡', support: '支援', move: '位移',
   response: '响应', 'counter-set': '盖伏', effect: '效果', 'faction-effect': '阵营',
-  'effect-trigger': '触发',
+  'effect-trigger': '触发', 'effect-response': '响应', 'effect-activation': '发动',
   'effect-negated': '无效', 'initiative-choice': '先后攻', mulligan: '调度', cost: '费用',
   disaster: '天灾', 'disaster-active': '天灾', 'disaster-value': '天灾', damage: '伤害',
   'disaster-reveal': '天灾',

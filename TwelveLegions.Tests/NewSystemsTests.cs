@@ -939,6 +939,58 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void HiddenHattoriCannotSupportOrCreateATheoreticalCounterResponse()
+    {
+        var game = Create(seed: 88662);
+        var attacker = CreateInstance("S01-0002", "hanzo-support-attacker");
+        var target = CreateInstance("S01-0109", "hanzo-support-target");
+        var hanzo = CreateInstance("S01-0415", "hanzo-hidden-support");
+        attacker.SummonRound = target.SummonRound = hanzo.SummonRound = 0;
+        attacker.Troops = 5000;
+        target.Troops = 1000;
+        hanzo.Hidden = true;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Field[1][0] = hanzo;
+        game.State.Players[0].Hand.Clear();
+        game.State.Players[1].Hand.Clear();
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "stack-response");
+        Assert.Contains(game.State.Events, entry => entry.Type == "support-skipped");
+        Assert.Contains(target, game.State.Players[1].Graveyard);
+        Assert.Same(hanzo, game.State.Players[1].Field[1][0]);
+    }
+
+    [Fact]
+    public void TriggeredDisasterStillTreatsHiddenHattoriAsALegionAndPublishesToBothPlayers()
+    {
+        var game = Create(seed: 88663);
+        var hanzo = CreateInstance("S01-0415", "hanzo-hidden-disaster");
+        hanzo.Hidden = true;
+        game.State.Players[0].Field[0][0] = hanzo;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S02-DS04", "storm-animation"));
+
+        Assert.True(game.HandleGm(new L12GmCommand("triggerDisaster")).Accepted);
+
+        Assert.Null(game.State.Players[0].Field[0][0]);
+        Assert.Same(hanzo, game.State.Players[0].Field[1][0]);
+        var presentation = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == "storm-animation"));
+        Assert.Null(presentation.PlayerIndex);
+        Assert.StartsWith("触发 双方后排所有卡牌", presentation.Text);
+        Assert.DoesNotContain("持续 军团无法发动远程进攻", presentation.Text);
+    }
+
+    [Fact]
     public void ShanheShejituReusesObservingStarsAllTopBottomOrdering()
     {
         var game = Create(seed: 8867);

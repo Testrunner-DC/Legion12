@@ -1044,7 +1044,7 @@ public sealed partial class L12GameEngine
     }
 
     private static bool IsFieldLegion(L12CardInstance card)
-        => card.CardType == "legion" || card.CardId == "S01-0417" || card.IsMasterLegion;
+        => !card.Hidden && (card.CardType == "legion" || card.CardId == "S01-0417" || card.IsMasterLegion);
 
     private L12CardInstance? FindPublicCard(string? instanceId, out int owner)
     {

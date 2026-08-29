@@ -56,8 +56,12 @@ public sealed partial class L12GameEngine
             MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
+            RequiredDeclaredChoice = step.RequiredDeclaredChoice,
         }).ToList();
-        if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose)) return CommandResult.Reject("没有足够的合法目标");
+        if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
+                && (step.RequiredDeclaredChoice is null || steps.SelectMany(candidate => candidate.ValidChoices)
+                    .Contains(step.RequiredDeclaredChoice, StringComparer.OrdinalIgnoreCase))))
+            return CommandResult.Reject("没有足够的合法目标");
         var first = steps[0];
         var activation = new L12PendingActivation
         {
@@ -86,6 +90,15 @@ public sealed partial class L12GameEngine
 
     private void CreateActivationStepPrompt(L12PendingActivation activation)
     {
+        while (activation.CurrentStep < activation.SelectionSteps.Count
+            && activation.SelectionSteps[activation.CurrentStep].RequiredDeclaredChoice is { } requiredChoice
+            && !activation.DeclaredTargets.Contains(requiredChoice, StringComparer.OrdinalIgnoreCase))
+            activation.CurrentStep++;
+        if (activation.CurrentStep >= activation.SelectionSteps.Count)
+        {
+            RejectPendingActivation(activation, "条件声明步骤已失效，效果未支付费用也未入栈");
+            return;
+        }
         var step = activation.SelectionSteps[activation.CurrentStep];
         var promptKind = step.Kind;
         int? targetPlayerIndex = null;
@@ -536,6 +549,7 @@ public sealed partial class L12GameEngine
                 "enter" => ["登场时"],
                 "attack" => ["进攻时"],
                 "after-damage" => ["对主宰造成伤害时", "主宰受到伤害时"],
+                "disaster" => ["触发"],
                 "death" => ["阵亡时"],
                 "leave" or "play" => ["离场时"],
                 "after-attack" or "trojan-after-attack" => ["进攻后"],
@@ -584,8 +598,61 @@ public sealed partial class L12GameEngine
             "enter" or "promotion-enter" or "after-damage" => true,
             "attack" => !text.Contains("不触发", StringComparison.Ordinal)
                 && HasImmediateEffect(source, trigger),
+            "play" or "active" or "disaster" => false,
+            "response-negate" or "response-block" or "response-retarget-master" or "reaction" or "s2-reaction" => false,
+            _ when !string.IsNullOrWhiteSpace(source.EffectText) => true,
             _ => false,
         };
+
+    private string ResolveEffectPresentationText(L12CardInstance source, string trigger, string fallback,
+        IReadOnlyDictionary<string, string>? data = null)
+    {
+        var abilityId = data?.GetValueOrDefault("ability");
+        if (!string.IsNullOrWhiteSpace(abilityId))
+        {
+            var ability = GetAbilities(source.CardId)
+                .FirstOrDefault(candidate => candidate.Id.Equals(abilityId, StringComparison.OrdinalIgnoreCase));
+            if (ability is not null && !string.IsNullOrWhiteSpace(ability.Label)) return ability.Label;
+        }
+
+        if (trigger is "response-block" or "response-retarget-master" or "response-negate" or "reaction" or "s2-reaction")
+            return ResolveResponseEffectDisplayText(source, fallback);
+
+        var lines = (source.EffectText ?? string.Empty).Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (trigger == "play")
+            return lines.Length == 0 ? fallback : string.Join(' ', lines);
+        return ResolveTriggeredEffectDisplayText(source, trigger, fallback, data);
+    }
+
+    internal static string ResolveResponseEffectDisplayText(L12CardInstance source, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(source.EffectText)) return fallback;
+        string[] markers =
+        [
+            "进攻我方军团时", "进攻我方主宰时", "进攻或发动效果时", "军团登场时",
+            "进攻时", "发动战术效果或圣物效果时", "进行抵挡/支援时", "以手牌以外的方式登场时",
+            "因效果将1张卡牌加入手牌时", "休整的卡牌因效果转为活跃时",
+        ];
+        var lines = source.EffectText.Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var index = Array.FindIndex(lines, line => markers.Any(marker => NormalizeTriggeredEffectText(line)
+            .Contains(NormalizeTriggeredEffectText(marker), StringComparison.Ordinal)));
+        if (index < 0) return fallback;
+
+        var abilityLines = new List<string> { lines[index] };
+        for (var next = index + 1; next < lines.Length && lines[next].StartsWith('•'); next++)
+            abilityLines.Add(lines[next]);
+        var selected = string.Join(' ', abilityLines);
+        var sentences = selected.Split('。', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var firstResponseSentence = Array.FindIndex(sentences, sentence => markers.Any(marker =>
+            NormalizeTriggeredEffectText(sentence).Contains(NormalizeTriggeredEffectText(marker), StringComparison.Ordinal)));
+        return firstResponseSentence <= 0 ? selected : string.Join('。', sentences.Skip(firstResponseSentence));
+    }
+
+    private void PublishEffectPresentation(string eventType, int? controller, L12CardInstance source,
+        string trigger, string fallback, IReadOnlyDictionary<string, string>? data = null)
+        => AddEvent(eventType, controller, ResolveEffectPresentationText(source, trigger, fallback, data), source);
 
     private bool HasDeathTrigger(L12CardInstance card)
         => card.SuppressDeathUntilTurn < State.TurnSerial && (card.CardId is "S01-0102" or "S01-0108" or "S01-0417"

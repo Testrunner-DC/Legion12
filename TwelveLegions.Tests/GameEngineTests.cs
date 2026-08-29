@@ -172,8 +172,8 @@ public sealed class GameEngineTests
 
     [Theory]
     [InlineData("S01-0017")]
-    [InlineData("S01-0103")]
-    public void FormalResponseVisibilityIgnoresCoveredCardIdentity(string coveredCardId)
+    [InlineData("S01-0019")]
+    public void FormalResponseVisibilityIgnoresCoveredCounterTacticIdentity(string coveredCardId)
     {
         var game = new L12GameEngine(Catalog, $"response-covered-{coveredCardId}", "COVERED", 1211,
             ["甲", "乙"], [0, 1], skipPreparation: true,
@@ -192,6 +192,26 @@ public sealed class GameEngineTests
         var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Equal(1, response.PlayerIndex);
         Assert.Equal(["pass"], response.ValidChoices);
+    }
+
+    [Fact]
+    public void FormalResponseVisibilityDoesNotTreatAHiddenLegionAsACounterTactic()
+    {
+        var game = new L12GameEngine(Catalog, "response-hidden-legion", "COVERED", 12111,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            concealHiddenResponseAvailability: true);
+        var entering = PutCardInHand(game, 0, "S01-0103");
+        var hiddenLegion = Card("S01-0415", "covered-hattori");
+        hiddenLegion.Hidden = true;
+        hiddenLegion.SetRound = 0;
+        game.State.Players[1].Field[1][0] = hiddenLegion;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 
     [Fact]

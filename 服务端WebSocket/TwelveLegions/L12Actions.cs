@@ -164,6 +164,10 @@ public sealed partial class L12GameEngine
         else if (card.CardType == "artifact")
         {
             player.Hand.Remove(card);
+            card.OwnerIndex ??= playerIndex;
+            // 圣物的实际打出回合也是其入场回合；若同回合随后被规则视为军团，
+            // 公共进攻合法性仍应据此施加召唤失调。
+            card.SummonRound = State.Round;
             if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
             {
                 player.ExtraRelics.Add(card);

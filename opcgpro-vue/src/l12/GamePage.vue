@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import GmPanel from './game/GmPanel.vue'
-import { gameAction, l12State, leaveRoom } from './net'
+import { gameAction, l12State, leaveRoom, returnToRoom } from './net'
 
 const router = useRouter()
 const game = computed(() => l12State.game)
@@ -22,7 +22,8 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
-  if (l12State.room && (game.value?.phase === 'GameOver' || l12State.room.sandbox)) leaveRoom()
+  if (l12State.room?.sandbox) leaveRoom()
+  else if (l12State.room && game.value?.phase === 'GameOver') returnToRoom()
   router.push('/lobby')
 }
 </script>

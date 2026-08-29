@@ -561,32 +561,6 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "draw") Draw(player, 1); else HealMaster(item.Controller, 1, "伊西斯");
                 FinishStackItem(item); return true;
             case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); FinishStackItem(item); return true; }
-            case "medjed-extra-choice":
-                if (chosen[0] == "normal") { ApplyDeclaredTroopsDelta(item, -1000); FinishStackItem(item); }
-                else
-                {
-                    var guards = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped)
-                        .Select(card => card.InstanceId).ToArray();
-                    if (guards.Length == 0) { ApplyDeclaredTroopsDelta(item, -1000); FinishStackItem(item); }
-                    else CreatePrompt(item.Controller, "friendly-target", "梅杰德：选择额外休整的陵墓守卫", guards, 1, 1,
-                        "card-effect", item.StackItemId, isPrivate: true,
-                        data: new Dictionary<string, string> { ["action"] = "medjed-extra-guard", ["choiceMode"] = "board-target" });
-                }
-                return true;
-            case "medjed-extra-guard":
-            {
-                var guard = FindOnField(player, chosen[0], out _, out _);
-                if (guard is null || guard.CardId != "S01-0212" || guard.Tapped)
-                {
-                    ApplyDeclaredTroopsDelta(item, -1000);
-                    FinishStackItem(item);
-                    return true;
-                }
-                guard.Tapped = true;
-                ApplyDeclaredTroopsDelta(item, -3000);
-                FinishStackItem(item);
-                return true;
-            }
             case "medjed-damage-response":
                 player.UsedAbilities.Remove("pending:medjedDamageResponse");
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
@@ -710,10 +684,44 @@ public sealed partial class L12GameEngine
                 ]);
             }
             case "medjedDebuff":
+            {
+                var targets = PublicLegions(enemy).Select(card => card.InstanceId).ToList();
+                var strongGuards = PublicLegions(player)
+                    .Where(card => card.CardId == "S01-0212" && !card.Tapped
+                        && ActiveResourceCountExcluding(player, [card.InstanceId]) >= 1)
+                    .Select(card => card.InstanceId).ToList();
+                var modes = new List<string>();
+                if (ActiveResourceCount(player) >= 1) modes.Add("mode:normal");
+                if (strongGuards.Count > 0) modes.Add("mode:strong");
+                if (modes.Count == 0) return CommandResult.Reject("需要1张可用资源；强模式还需另有1张活跃陵墓守卫");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "option", Text = "梅杰德：先声明本次兵力降低模式",
+                        ValidChoices = modes, MinChoose = 1, MaxChoose = 1,
+                        ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["mode:normal"] = "普通模式：目标本回合兵力-1000",
+                            ["mode:strong"] = "强模式：额外休整1张活跃〈陵墓守卫〉，目标本回合兵力-3000",
+                        },
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "active-target", Text = "梅杰德：选择强模式要休整的1张活跃〈陵墓守卫〉",
+                        ValidChoices = strongGuards, MinChoose = 1, MaxChoose = 1,
+                        RequiredDeclaredChoice = "mode:strong",
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "active-target", Text = "梅杰德：选择本回合降低兵力的对方军团",
+                        ValidChoices = targets, MinChoose = 1, MaxChoose = 1,
+                    },
+                ]);
+            }
             case "amaterasuKill":
                 choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, ability == "medjedDebuff"
-                    ? "梅杰德：选择本回合兵力 -1000 的军团" : "天照大神：选择本回合费用 -1 的军团");
+                return PromptActiveTarget(playerIndex, source, ability, choices, "天照大神：选择本回合费用 -1 的军团");
             default:
                 return CommitActiveAbility(playerIndex, source, ability, null);
         }
@@ -796,8 +804,23 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "medjedDebuff" when source.CardId == "S01-02M3":
-                if (DeclaredEnemyTarget(playerIndex, target) is null) return CommandResult.Reject("目标不再合法");
-                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            {
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var strong = declared.FirstOrDefault() == "mode:strong";
+                var targetId = declared.LastOrDefault();
+                var enemyTarget = DeclaredEnemyTarget(playerIndex, targetId);
+                var guard = strong && declared.Length == 3
+                    ? PublicLegions(player).FirstOrDefault(card => card.InstanceId == declared[1]
+                        && card.CardId == "S01-0212" && !card.Tapped)
+                    : null;
+                if (declared.FirstOrDefault() is not ("mode:normal" or "mode:strong") || enemyTarget is null
+                    || strong && guard is null)
+                    return CommandResult.Reject("梅杰德声明的模式、陵墓守卫或目标不再合法");
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张可用资源");
+                if (guard is not null) guard.Tapped = true;
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); player.UsedAbilities.Add(onceKey); break;
             case "valhallaRecover" when source.CardId == "S01-03D1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "valhallaKill" when source.CardId == "S01-03D1":
@@ -911,23 +934,13 @@ public sealed partial class L12GameEngine
             }
             case "medjedDebuff":
             {
-                var activeGuards = PublicLegions(player)
-                    .Where(card => card.CardId == "S01-0212" && !card.Tapped)
-                    .Select(card => card.InstanceId).ToArray();
-                if (activeGuards.Length == 0)
-                {
-                    ApplyDeclaredTroopsDelta(item, -1000);
-                    FinishStackItem(item);
-                    return true;
-                }
-                CreatePrompt(item.Controller, "option", "梅杰德：是否额外休整1张陵墓守卫？",
-                    ["normal", "extra"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "medjed-extra-choice", ["choiceMode"] = "instant",
-                        ["normal"] = "使选择的军团本回合兵力-1000。",
-                        ["extra"] = "额外休整我方1张〈陵墓守卫〉：改为使选择的军团本回合兵力-3000。",
-                    });
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var target = DeclaredEnemyTarget(item.Controller, declared.LastOrDefault());
+                if (target is not null)
+                    AddTimedModifier(target, declared.FirstOrDefault() == "mode:strong" ? -3000 : -1000,
+                        0, State.TurnSerial, "梅杰德");
+                FinishStackItem(item);
                 return true;
             }
             case "valhallaDiscount": player.NextFactionLegionDiscount = Math.Max(player.NextFactionLegionDiscount, 1); FinishStackItem(item); return true;

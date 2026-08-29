@@ -403,6 +403,11 @@ public sealed class L12ActivationSelectionStep
     /// 用于“选择最多 1 张军团登场”这类只有选中军团后才需要声明位置的效果。
     /// </summary>
     public bool SkipWhenPreviousStepEmpty { get; init; }
+    /// <summary>
+    /// 非空时，仅当此前已经声明该稳定选项才执行本步骤。
+    /// 用于“先选模式，再仅为强模式声明额外费用对象”的公共预声明流程。
+    /// </summary>
+    public string? RequiredDeclaredChoice { get; init; }
 }
 
 public sealed class L12TriggerCandidate
