@@ -35,6 +35,7 @@ const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
 const profilePage = read('../src/l12/site/ProfilePage.vue')
+const recoveryPage = read('../src/l12/site/AccountRecoveryPage.vue')
 const platform = read('../src/l12/platform.ts')
 const decks = read('../src/l12/decks.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
@@ -195,6 +196,10 @@ const contracts = [
   [platform.includes('response.status === 403 && requestToken && platformState.token === requestToken') && platform.includes('authState.verified = false') && platform.includes('refreshCurrentAccount({ force: true })') && platform.includes('if (!authState.verified) return false'), '403 必须使权限 UI 立即失败关闭并触发去重身份刷新，缓存身份不得直接授予权限'],
   [router.includes("meta: { requiresAdmin: true }") && router.includes('router.beforeEach(async to =>') && router.includes('refreshCurrentAccount({ force: true })') && router.includes("return { name: 'me', query: { redirect: to.fullPath } }") && adminPage.includes('await refreshCurrentAccount()') && adminPage.includes('if (!canAccessAdmin.value) return') && adminPage.includes('!authState.initialized || authState.refreshing'), '管理路由与 AdminPage 必须在加载管理数据前刷新权威身份，并在未验证或非管理员时失败关闭'],
   [platform.includes("'/api/auth/sessions/current'") && platform.includes("'/api/auth/sessions'") && profilePage.includes('登录设备与会话') && profilePage.includes('退出其他设备') && profilePage.includes('退出全部设备'), '账号安全页必须支持服务端会话列表、当前设备及全端撤销'],
+  [platform.includes("path === '/api/auth/email/verify'") && platform.includes("path === '/api/auth/password/forgot'") && platform.includes("path === '/api/auth/password/reset'") && platform.includes("'/api/auth/email/bind'") && platform.includes("'/api/auth/email/unbind'") && profilePage.includes('邮箱与账号恢复') && profilePage.includes('忘记密码？使用已验证邮箱找回'), '邮箱验证、解绑和密码恢复端点必须完整接入，匿名恢复请求不得携带或清理现有登录令牌'],
+  [router.includes("path: '/auth/recovery'") && recoveryPage.includes("location.hash.replace(/^#/, '')") && recoveryPage.includes("history.replaceState(null, '',") && recoveryPage.includes('确认验证邮箱') && !recoveryPage.includes('submitVerification() }'), '恢复页必须从 URL fragment 读取并立即清除令牌，邮箱链接不得自动消费一次性令牌'],
+  [platform.includes('resetAccountPassword:') && platform.includes('deleteAccount:') && adminPage.includes('临时密码 123456') && adminPage.includes('删除与清理') && adminPage.includes('根 Admin 与操作者自身受保护'), '管理后台必须提供受保护的临时密码重置、全会话撤销与逻辑删除个人数据清理入口'],
+  [platform.includes('mustChangePassword?: boolean') && router.includes('platformState.account.mustChangePassword') && profilePage.includes('必须修改密码'), '管理员重置后的账号必须被导航守卫限制到我的页并明确要求修改临时密码'],
   [platform.includes('options: { revokeServer?: boolean } = {}') && profilePage.includes('logout({ revokeServer: false })'), '服务端已撤销当前或全部会话后必须只清理本机状态，不得用失效令牌重复调用撤销接口'],
   [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('revokeAccountSessions') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],
   [platform.includes("headers.set('X-Correlation-ID'") && platform.includes('PlatformRequestError') && adminPage.includes('关联 ID：'), 'HTTP 请求、错误提示与管理审计必须贯通关联 ID'],

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { l12State } from '@/l12/net'
-import { canAccessAdmin, changePassword, login, logout, mfaCapability as loadMfaCapability, platformRequest, platformState, register, sessionApi, type MfaCapability, type PlatformSession } from '@/l12/platform'
+import { canAccessAdmin, changePassword, emailApi, login, logout, mfaCapability as loadMfaCapability, platformRequest, platformState, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 
 interface Match { player0: string; player1: string; winner?: number | null; endedUtc?: string | null; startedUtc: string }
@@ -10,27 +10,39 @@ const matches = ref<Match[]>([])
 const notice = ref('')
 const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '', currentPassword: '', newPassword: '' })
+const emailForm = reactive({ email: '', currentPassword: '' })
 const authBusy = ref(false)
 const sessions = ref<PlatformSession[]>([])
 const mfa = ref<MfaCapability | null>(null)
+const emailStatus = ref<EmailStatus | null>(null)
 
 async function loadAccountData() {
-  if (!platformState.account) return
+  if (!platformState.account || platformState.account.mustChangePassword) return
   const [matchResult, sessionResult] = await Promise.allSettled([
     platformRequest<Match[]>('/api/matches?limit=200'), sessionApi.list(),
   ])
   if (matchResult.status === 'fulfilled') matches.value = matchResult.value
   if (sessionResult.status === 'fulfilled') sessions.value = sessionResult.value
 }
-onMounted(() => { loadAccountData(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
+async function loadEmailStatus() {
+  if (!platformState.account || platformState.account.mustChangePassword) { emailStatus.value = null; return }
+  try { emailStatus.value = await emailApi.status() } catch { emailStatus.value = null }
+}
+onMounted(() => { loadAccountData(); loadEmailStatus(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 async function submitAuth() {
   authBusy.value = true; notice.value = ''
   try {
     if (authMode.value === 'login') await login(auth.username, auth.password)
     else await register(auth.username, auth.password)
+    if (platformState.account?.mustChangePassword) {
+      notice.value = '当前使用管理员临时密码登录，必须先在下方修改密码'
+      auth.password = ''
+      return
+    }
     await ensureOfficialPrebuiltDecks()
     await loadAccountData()
+    await loadEmailStatus()
     notice.value = authMode.value === 'login' ? '登录成功' : '账号建立成功，六阵营预组会自动加入牌库'
     auth.password = ''
   } catch (error) { notice.value = error instanceof Error ? error.message : '操作失败' }
@@ -38,7 +50,7 @@ async function submitAuth() {
 }
 async function submitPassword() {
   authBusy.value = true; notice.value = ''
-  try { const result = await changePassword(auth.currentPassword, auth.newPassword); notice.value = result.message; auth.currentPassword = ''; auth.newPassword = '' }
+  try { const result = await changePassword(auth.currentPassword, auth.newPassword); notice.value = result.message; auth.currentPassword = ''; auth.newPassword = ''; await loadAccountData(); await loadEmailStatus() }
   catch (error) { notice.value = error instanceof Error ? error.message : '修改失败' }
   finally { authBusy.value = false }
 }
@@ -47,6 +59,22 @@ async function signOut() {
   try { await logout(); notice.value = '当前设备已退出，服务器会话已撤销' }
   catch (error) { notice.value = `本机已退出；服务器会话撤销失败：${error instanceof Error ? error.message : '未知错误'}` }
   finally { sessions.value = []; authBusy.value = false }
+}
+async function submitEmailBinding() {
+  authBusy.value = true; notice.value = ''
+  try {
+    const result = await emailApi.bind(emailForm.email, emailForm.currentPassword)
+    notice.value = result.message; emailForm.currentPassword = ''; await loadEmailStatus()
+  } catch (error) { notice.value = error instanceof Error ? error.message : '邮箱验证请求失败' }
+  finally { authBusy.value = false }
+}
+async function unbindEmail() {
+  authBusy.value = true; notice.value = ''
+  try {
+    const result = await emailApi.unbind(emailForm.currentPassword)
+    notice.value = result.message; emailForm.email = ''; emailForm.currentPassword = ''; await loadEmailStatus()
+  } catch (error) { notice.value = error instanceof Error ? error.message : '邮箱解绑失败' }
+  finally { authBusy.value = false }
 }
 async function revokeSession(session: PlatformSession) {
   authBusy.value = true; notice.value = ''
@@ -93,9 +121,16 @@ const losses = computed(() => myMatches.value.filter(match => match.endedUtc && 
       <template v-if="!platformState.account">
         <div class="auth-tabs"><button :class="{ active: authMode === 'login' }" @click="authMode = 'login'">登录</button><button :class="{ active: authMode === 'register' }" @click="authMode = 'register'">注册</button></div>
         <div class="account-form"><label>用户名<input v-model="auth.username" maxlength="20" autocomplete="username"/></label><label>密码<input v-model="auth.password" type="password" maxlength="128" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"/></label><button class="primary" :disabled="authBusy" @click="submitAuth">{{ authMode === 'login' ? '登录' : '建立账号' }}</button></div>
+        <router-link v-if="authMode === 'login'" class="recovery-link" to="/auth/recovery">忘记密码？使用已验证邮箱找回</router-link>
       </template>
       <template v-else>
+        <p v-if="platformState.account.mustChangePassword" class="password-required">管理员已重置此账号密码，必须修改密码。完成下方操作前，请勿继续使用临时密码。</p>
         <div class="account-form"><label>当前密码<input v-model="auth.currentPassword" type="password" autocomplete="current-password"/></label><label>新密码<input v-model="auth.newPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password"/></label><button class="primary" :disabled="authBusy" @click="submitPassword">修改密码</button><button class="logout" :disabled="authBusy" @click="signOut">退出当前设备</button><router-link v-if="canAccessAdmin" class="admin-link" to="/admin">进入管理后台 →</router-link></div>
+        <section class="email-manager">
+          <header><div><h3>邮箱与账号恢复</h3><p v-if="emailStatus?.verified">已验证：{{ emailStatus.maskedEmail }}</p><p v-else>尚未绑定已验证邮箱，忘记密码时无法找回。</p><small v-if="emailStatus?.pendingMaskedEmail">待验证：{{ emailStatus.pendingMaskedEmail }} · {{ new Date(emailStatus.pendingExpiresAt || '').toLocaleString() }} 前有效</small></div></header>
+          <div class="email-form"><label>新邮箱 / 换绑邮箱<input v-model="emailForm.email" type="email" maxlength="254" autocomplete="email"/></label><label>当前密码<input v-model="emailForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !emailStatus?.mailConfigured" @click="submitEmailBinding">发送验证邮件</button><button v-if="emailStatus?.verified" class="danger" :disabled="authBusy" @click="unbindEmail">解绑邮箱</button></div>
+          <small v-if="emailStatus && !emailStatus.mailConfigured" class="mail-unavailable">邮件服务尚未配置，绑定和换绑暂不可用。</small>
+        </section>
         <section class="mfa-boundary"><b>MFA：{{ mfa?.enrollmentEnabled ? '已启用' : '尚未启用' }}</b><span>{{ mfa?.requirement || '正在读取服务端能力边界' }}</span><small>在环境密钥保护、TOTP 双次校验与恢复码 hash 生命周期完成前，页面不会收集或保存 MFA 密钥。</small></section>
         <section class="session-manager">
           <header><div><h3>登录设备与会话</h3><p>撤销后对应设备的令牌立即失效。</p></div><span class="session-actions"><button :disabled="authBusy || sessions.length <= 1" @click="revokeOtherSessions">退出其他设备</button><button class="danger" :disabled="authBusy || !sessions.length" @click="revokeAllSessions">退出全部设备</button></span></header>
@@ -119,4 +154,5 @@ const losses = computed(() => myMatches.value.filter(match => match.endedUtc && 
 .account-panel{margin-bottom:12px}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:16px}.auth-tabs button{padding:10px;border:1px solid #46535b;background:#080e13;color:#879197;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.account-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:10px}.account-form label{margin:14px 0 0}.account-form .primary{margin:0}.logout{padding:10px 16px;border:1px solid #7e3c45;background:#2b1116;color:#eab5bb;font-weight:900}.admin-link{align-self:center;color:#e1c16c;font-size:11px;font-weight:900;text-decoration:none}@media(max-width:900px){.account-form{grid-template-columns:1fr 1fr}.account-form .primary,.account-form .logout,.account-form .admin-link{width:100%}}
 .session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:9px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:8px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:9px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:760px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}
 .mfa-boundary{grid-column:1/-1;display:flex;flex-direction:column;gap:5px;margin-top:14px;padding:11px;border-left:3px solid #8a6b32;background:#20190d}.mfa-boundary span,.mfa-boundary small{color:#859197;font-size:9px}.mfa-boundary small{line-height:1.6}.session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:9px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:8px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:9px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:760px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}
+.recovery-link{display:inline-block;margin-top:12px;color:#70cbd2;font-size:10px;text-decoration:none}.password-required{padding:10px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}.email-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.email-manager h3{margin:0;font-size:14px}.email-manager p,.email-manager small{margin:4px 0;color:#7f8c91;font-size:9px}.email-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:8px}.email-form label{margin:12px 0 0}.email-form button{padding:10px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.email-form button.danger{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.email-form button:disabled{opacity:.45}.mail-unavailable{display:block;margin-top:8px!important;color:#d9a46d!important}@media(max-width:900px){.email-form{grid-template-columns:1fr 1fr}.email-form button{width:100%}}
 </style>

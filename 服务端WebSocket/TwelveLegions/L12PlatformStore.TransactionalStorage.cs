@@ -525,7 +525,11 @@ public sealed partial class L12PlatformStore
         var data = JsonSerializer.Deserialize<DataFile>(json, PlatformSnapshotJsonOptions) ?? new DataFile();
         data.Accounts ??= [];
         foreach (var account in data.Accounts)
+        {
             if (account.PermissionVersion < 1) account.PermissionVersion = 1;
+            if (account.EmailVerifiedAt is not null && string.IsNullOrWhiteSpace(account.NormalizedEmail))
+                account.NormalizedEmail = NormalizeEmail(account.Email);
+        }
         data.Sessions ??= [];
         foreach (var session in data.Sessions)
         {
@@ -561,6 +565,8 @@ public sealed partial class L12PlatformStore
         foreach (var run in data.ReleaseRuns) NormalizeReleaseRun(run);
         data.LoginThrottles ??= [];
         foreach (var throttle in data.LoginThrottles) NormalizeLoginThrottle(throttle);
+        data.EmailAuthTokens ??= [];
+        data.AuthActionThrottles ??= [];
         data.Security ??= new SecurityStateRow();
         NormalizeSecurityState(data.Security);
         data.BusinessVersion ??= data.Version;
@@ -578,11 +584,29 @@ public sealed partial class L12PlatformStore
         if (data.Accounts.GroupBy(row => row.Username, StringComparer.OrdinalIgnoreCase)
             .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("账号名为空或重复");
+        if (data.Accounts.Where(row => !row.Deleted && row.EmailVerifiedAt is not null)
+            .Any(row => NormalizeEmail(row.NormalizedEmail) is null)
+            || data.Accounts.Where(row => !row.Deleted && row.EmailVerifiedAt is not null)
+                .GroupBy(row => row.NormalizedEmail, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1))
+            throw new InvalidDataException("已验证邮箱为空、无效或重复");
         if (data.Sessions.GroupBy(row => row.Id).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("会话 ID 为空或重复");
         if (data.LoginThrottles.GroupBy(row => row.Key, StringComparer.Ordinal)
             .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("登录限流键为空或重复");
+        if (data.EmailAuthTokens.GroupBy(row => row.Id, StringComparer.Ordinal)
+            .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.EmailAuthTokens.Any(row => string.IsNullOrWhiteSpace(row.TokenHash)
+                || row.TokenHash.Length != 64
+                || row.TokenHash.Any(character => !Uri.IsHexDigit(character))
+                || NormalizeEmail(row.TargetEmail) is null
+                || row.Purpose is not ("email-verify" or "password-reset")
+                || !data.Accounts.Any(account => account.Id == row.AccountId)))
+            throw new InvalidDataException("邮箱认证令牌 ID、hash 或用途无效");
+        if (data.AuthActionThrottles.GroupBy(row => row.Key, StringComparer.Ordinal)
+            .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
+            throw new InvalidDataException("认证操作限流键为空或重复");
         if (data.AdminCommands.GroupBy(row => row.Id).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("管理命令 ID 为空或重复");
         if (data.Tournaments.GroupBy(row => row.Id).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)

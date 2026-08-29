@@ -69,6 +69,19 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             context.Response.Headers.AccessControlExposeHeaders =
                 $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
+            var passwordChangeAccount = context.Request.Path.StartsWithSegments("/api")
+                ? _platform.Authenticate(context.Request.Headers.Authorization) : null;
+            var passwordChangePathAllowed = context.Request.Path == "/api/auth/me"
+                || context.Request.Path == "/api/auth/change-password"
+                || context.Request.Path == "/api/auth/mfa/capability"
+                || context.Request.Path.StartsWithSegments("/api/auth/sessions");
+            if (passwordChangeAccount is { MustChangePassword: true } && !passwordChangePathAllowed)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new L12ApiError("password_change_required",
+                    "必须先修改管理员设置的临时密码", correlationId));
+                return;
+            }
             var featureId = context.Request.Path.StartsWithSegments("/api/public-decks") ? "publicDecks"
                 : context.Request.Path.StartsWithSegments("/api/tournaments") ? "tournaments"
                 : null;
@@ -144,6 +157,71 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var result = _platform.ChangePassword(authenticated.Account.Id, body.CurrentPassword ?? string.Empty,
                 body.NewPassword ?? string.Empty, authenticated.SessionId);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapGet("/api/auth/email", (HttpRequest request) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            return authenticated is null
+                ? ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized)
+                : Results.Ok(_platform.EmailStatus(authenticated.Account.Id));
+        });
+        _app.MapPost("/api/auth/email/bind", (HttpRequest request, EmailBindingRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            try
+            {
+                var result = _platform.RequestEmailBinding(authenticated.Account.Id,
+                    body.CurrentPassword ?? string.Empty, body.Email ?? string.Empty, ClientKey(request));
+                if (result.RetryAfterSeconds > 0) request.HttpContext.Response.Headers.RetryAfter = result.RetryAfterSeconds.ToString();
+                return result.Success ? Results.Json(new { result.Code, result.Message }, statusCode: StatusCodes.Status202Accepted)
+                    : ApiError(request, result.Code, result.Message,
+                        result.RetryAfterSeconds > 0 ? StatusCodes.Status429TooManyRequests
+                            : result.Code == "mail_unavailable" ? StatusCodes.Status503ServiceUnavailable
+                            : StatusCodes.Status400BadRequest);
+            }
+            catch
+            {
+                return ApiError(request, "email_binding_failed", "邮箱绑定请求处理失败",
+                    StatusCodes.Status500InternalServerError);
+            }
+        });
+        _app.MapPost("/api/auth/email/unbind", (HttpRequest request, CurrentPasswordRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            var result = _platform.UnbindEmail(authenticated.Account.Id, body.CurrentPassword ?? string.Empty);
+            return result.Success ? Results.Ok(new { result.Code, result.Message })
+                : ApiError(request, result.Code, result.Message, StatusCodes.Status400BadRequest);
+        });
+        _app.MapPost("/api/auth/email/verify", (HttpRequest request, TokenRequest body) =>
+        {
+            var result = _platform.VerifyEmail(body.Token ?? string.Empty, ClientKey(request));
+            if (result.RetryAfterSeconds > 0) request.HttpContext.Response.Headers.RetryAfter = result.RetryAfterSeconds.ToString();
+            return result.Success ? Results.Ok(new { result.Code, result.Message })
+                : ApiError(request, result.Code, result.Message,
+                    result.RetryAfterSeconds > 0 ? StatusCodes.Status429TooManyRequests
+                        : StatusCodes.Status400BadRequest);
+        });
+        _app.MapPost("/api/auth/password/forgot", (HttpRequest request, ForgotPasswordRequest body) =>
+        {
+            var result = _platform.RequestPasswordReset(body.Email ?? string.Empty, ClientKey(request));
+            if (result.RetryAfterSeconds > 0) request.HttpContext.Response.Headers.RetryAfter = result.RetryAfterSeconds.ToString();
+            return result.RetryAfterSeconds > 0
+                ? ApiError(request, result.Code, result.Message, StatusCodes.Status429TooManyRequests)
+                : Results.Json(new { result.Code, result.Message }, statusCode: StatusCodes.Status202Accepted);
+        });
+        _app.MapPost("/api/auth/password/reset", (HttpRequest request, PasswordResetRequest body) =>
+        {
+            var result = _platform.ResetPassword(body.Token ?? string.Empty, body.NewPassword ?? string.Empty,
+                ClientKey(request));
+            if (result.RetryAfterSeconds > 0) request.HttpContext.Response.Headers.RetryAfter = result.RetryAfterSeconds.ToString();
+            return result.Success ? Results.Ok(new { result.Code, result.Message })
+                : ApiError(request, result.Code, result.Message,
+                    result.RetryAfterSeconds > 0 ? StatusCodes.Status429TooManyRequests
+                        : StatusCodes.Status400BadRequest);
         });
         _app.MapGet("/api/auth/sessions", (HttpRequest request) =>
         {
@@ -719,6 +797,40 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 current => ExecuteAccountStatus(current.Actor, current.Payload, current.AuditContext, false));
             return AdminCommandResponse(request, command, outcome);
         });
+        _app.MapPost("/api/admin/accounts/{id}/reset-password",
+            (HttpRequest request, string id, AccountSecurityActionRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminAccountStatusWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TrySecurityCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var idempotencyKey, out var expectedVersion, out failure))
+                return failure;
+            var payload = new AccountPasswordResetCommandPayload(id, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "account.password-admin-reset", $"account:{id}", payload, idempotencyKey, expectedVersion,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteAdminPasswordReset(current.Actor, current.Payload, current.AuditContext, true),
+                current => ExecuteAdminPasswordReset(current.Actor, current.Payload, current.AuditContext, false));
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/accounts/{id}/delete",
+            (HttpRequest request, string id, AccountSecurityActionRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminAccountStatusWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TrySecurityCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var idempotencyKey, out var expectedVersion, out failure))
+                return failure;
+            var payload = new AccountDeletionCommandPayload(id, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "account.logical-delete", $"account:{id}", payload, idempotencyKey, expectedVersion,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteAccountDeletion(current.Actor, current.Payload, current.AuditContext, true),
+                current => ExecuteAccountDeletion(current.Actor, current.Payload, current.AuditContext, false));
+            return AdminCommandResponse(request, command, outcome);
+        });
         _app.MapGet("/api/admin/operations/config", (HttpRequest request) =>
         {
             const L12Permission permission = L12Permission.AdminOperationsRead;
@@ -1227,6 +1339,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         var authenticated = _platform.AuthenticateTokenSession(GetString(root, "authToken"));
         if (authenticated is null)
             return [new OutgoingMessage(sessionId, new { type = "authenticationRequired", message = "请先登录账号" })];
+        if (authenticated.Account.MustChangePassword)
+            return [new OutgoingMessage(sessionId, new { type = "passwordChangeRequired", message = "必须先修改临时密码" })];
         _socketPlatformSessions[sessionId] = authenticated.SessionId;
         var session = new OutgoingMessage(sessionId,
             _rooms.Connect(sessionId, authenticated.Account.Id, authenticated.Account.Username));
@@ -1397,6 +1511,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
            && value is string correlationId
             ? correlationId
             : L12CorrelationIds.AcceptOrCreate(request.Headers[L12CorrelationIds.HeaderName]);
+
+    private static string ClientKey(HttpRequest request)
+        => request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-client";
 
     private static IResult ApiError(HttpRequest request, string code, string message, int statusCode)
         => Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
@@ -1966,6 +2083,57 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         }
     }
 
+    private L12AdminCommandResult<L12AdminPasswordResetView> ExecuteAdminPasswordReset(L12AccountView actor,
+        AccountPasswordResetCommandPayload payload, L12AdminAuditContext audit, bool apply)
+    {
+        try
+        {
+            var operation = _platform.AdminResetPassword(actor, payload.AccountId, payload.Reason, audit, apply);
+            return L12AdminCommandResult<L12AdminPasswordResetView>.Ok(operation,
+                apply ? "账号密码已重置" : "干运行验证通过");
+        }
+        catch (L12SecurityPolicyException error)
+        {
+            return L12AdminCommandResult<L12AdminPasswordResetView>.Fail(error.Code, error.Message,
+                error.Code == "security_reason_required" ? StatusCodes.Status400BadRequest
+                    : StatusCodes.Status403Forbidden);
+        }
+        catch (KeyNotFoundException error)
+        {
+            return L12AdminCommandResult<L12AdminPasswordResetView>.Fail("account_not_found", error.Message,
+                StatusCodes.Status404NotFound);
+        }
+    }
+
+    private L12AdminCommandResult<L12AccountDeletionView> ExecuteAccountDeletion(L12AccountView actor,
+        AccountDeletionCommandPayload payload, L12AdminAuditContext audit, bool apply)
+    {
+        try
+        {
+            var preview = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
+                audit, false);
+            if (!apply)
+                return L12AdminCommandResult<L12AccountDeletionView>.Ok(preview, "干运行验证通过");
+            var prior = _platform.Account(payload.AccountId)!;
+            var cleanedMatches = _recorder.AnonymizePlayerAsync(prior.Username,
+                L12PlatformStore.DeletedAccountName(prior.Id)).GetAwaiter().GetResult();
+            var operation = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
+                audit, true) with { CleanedMatchRecords = cleanedMatches };
+            return L12AdminCommandResult<L12AccountDeletionView>.Ok(operation, "账号已逻辑删除并清理个人数据");
+        }
+        catch (L12SecurityPolicyException error)
+        {
+            return L12AdminCommandResult<L12AccountDeletionView>.Fail(error.Code, error.Message,
+                error.Code == "security_reason_required" ? StatusCodes.Status400BadRequest
+                    : StatusCodes.Status403Forbidden);
+        }
+        catch (KeyNotFoundException error)
+        {
+            return L12AdminCommandResult<L12AccountDeletionView>.Fail("account_not_found", error.Message,
+                StatusCodes.Status404NotFound);
+        }
+    }
+
     private L12AdminCommandResult<L12AuditArchiveOperationView> ExecuteAuditArchive(L12AccountView actor,
         L12AuditArchiveCommandPayload payload, L12AdminAuditContext audit, bool apply)
     {
@@ -2180,6 +2348,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 
 public sealed record AuthRequest(string? Username, string? Password);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+public sealed record CurrentPasswordRequest(string? CurrentPassword);
+public sealed record EmailBindingRequest(string? Email, string? CurrentPassword);
+public sealed record ForgotPasswordRequest(string? Email);
+public sealed record TokenRequest(string? Token);
+public sealed record PasswordResetRequest(string? Token, string? NewPassword);
 public sealed record FriendRequest(string? AccountId);
 public sealed record FriendResolveRequest(bool Accept);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,
@@ -2188,6 +2361,10 @@ public sealed record RoleCommandPayload(string AccountId, string Role);
 public sealed record RoleCommandResult(string AccountId, string Role, bool Changed);
 public sealed record AccountStatusRequest(bool Disabled, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record AccountSecurityActionRequest(string? Reason, string? IdempotencyKey = null,
+    long? ExpectedVersion = null, bool DryRun = false);
+public sealed record AccountPasswordResetCommandPayload(string AccountId, string Reason);
+public sealed record AccountDeletionCommandPayload(string AccountId, string Reason);
 public sealed record OperationsConfigPreviewRequest(L12OperationsConfigPayload Config,
     long? ExpectedVersion = null);
 public sealed record OperationsConfigApplyRequest(L12OperationsConfigPayload Config, string? Reason = null,

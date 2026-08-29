@@ -5,6 +5,7 @@ import type { SavedL12Deck } from './decks'
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
   permissionVersion?: number; disabled?: boolean; disabledAt?: string; disabledReason?: string
+  mustChangePassword?: boolean; deleted?: boolean; deletedAt?: string; emailMasked?: string; emailVerified?: boolean
 }
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
 export interface AccountStatusOperation { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }
@@ -12,6 +13,15 @@ export interface PlatformSession {
   id: string; createdAt: string; expiresAt: string; current: boolean; authStrength: string; permissionVersion: number
 }
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
+export interface EmailStatus {
+  bound: boolean; verified: boolean; maskedEmail?: string; pendingMaskedEmail?: string
+  pendingExpiresAt?: string; mailConfigured: boolean
+}
+export interface AuthOperation { code: string; message: string }
+export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number }
+export interface AccountDeletion {
+  applied: boolean; account: PlatformAccount; revokedSessions: number; removedPrivateRecords: number; cleanedMatchRecords?: number
+}
 export interface PlatformFriend {
   accountId: string; username: string; status: 'none' | 'pending' | 'accepted'
   direction: 'none' | 'incoming' | 'outgoing'; createdAt: string; online?: boolean
@@ -277,6 +287,8 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
   headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
   const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
+    || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
+    || path === '/api/auth/password/reset'
   const requestToken = anonymousCredentialRequest ? '' : platformState.token
   if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
   const response = await fetch(`${apiBase()}${path}`, { ...init, headers })
@@ -387,8 +399,31 @@ export const sessionApi = {
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
-  return platformRequest<{ message: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+  const result = await platformRequest<{ message: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+  await refreshCurrentAccount({ force: true })
+  return result
 }
+
+export const emailApi = {
+  status: () => platformRequest<EmailStatus>('/api/auth/email'),
+  bind: (email: string, currentPassword: string) => platformRequest<AuthOperation>('/api/auth/email/bind', {
+    method: 'POST', body: JSON.stringify({ email, currentPassword }),
+  }),
+  verify: (token: string) => platformRequest<AuthOperation>('/api/auth/email/verify', {
+    method: 'POST', body: JSON.stringify({ token }),
+  }),
+  unbind: (currentPassword: string) => platformRequest<AuthOperation>('/api/auth/email/unbind', {
+    method: 'POST', body: JSON.stringify({ currentPassword }),
+  }),
+}
+
+export const requestPasswordReset = (email: string) => platformRequest<AuthOperation>('/api/auth/password/forgot', {
+  method: 'POST', body: JSON.stringify({ email }),
+})
+
+export const resetPassword = (token: string, newPassword: string) => platformRequest<AuthOperation>('/api/auth/password/reset', {
+  method: 'POST', body: JSON.stringify({ token, newPassword }),
+})
 
 export async function submitBug(input: { title: string; description: string; page: string; roomCode?: string; matchId?: string; version: string }) {
   return platformRequest<BugReport>('/api/bugs', { method: 'POST', body: JSON.stringify(input) })
@@ -417,6 +452,12 @@ export const adminApi = {
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
   setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
     method: 'PUT', body: JSON.stringify(commandBody('account-status', { disabled, reason, expectedVersion })),
+  }),
+  resetAccountPassword: (id: string, reason: string, expectedVersion?: number, dryRun = false) => platformRequest<AdminPasswordReset>(`/api/admin/accounts/${encodeURIComponent(id)}/reset-password`, {
+    method: 'POST', body: JSON.stringify(commandBody('account-password-reset', { reason, expectedVersion, dryRun })),
+  }),
+  deleteAccount: (id: string, reason: string, expectedVersion?: number, dryRun = false) => platformRequest<AccountDeletion>(`/api/admin/accounts/${encodeURIComponent(id)}/delete`, {
+    method: 'POST', body: JSON.stringify(commandBody('account-delete', { reason, expectedVersion, dryRun })),
   }),
   sessions: (id: string) => platformRequest<PlatformSession[]>(`/api/admin/accounts/${encodeURIComponent(id)}/sessions`),
   revokeSession: (id: string, sessionId: string) => platformRequest<SessionRevocation>(`/api/admin/accounts/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),

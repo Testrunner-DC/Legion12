@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { canAccessAdmin, refreshCurrentAccount } from '@/l12/platform'
+import { canAccessAdmin, platformState, refreshCurrentAccount } from '@/l12/platform'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -15,6 +15,7 @@ export const router = createRouter({
     { path: '/cards', name: 'cards', component: () => import('@/l12/CardArchive.vue') },
     { path: '/battle/rankings', name: 'rankings', component: () => import('@/l12/site/RankingsPage.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/me', name: 'me', component: () => import('@/l12/site/ProfilePage.vue') },
+    { path: '/auth/recovery', name: 'account-recovery', component: () => import('@/l12/site/AccountRecoveryPage.vue') },
     { path: '/admin', name: 'admin', component: () => import('@/l12/site/AdminPage.vue'), meta: { requiresAdmin: true } },
     { path: '/battle/records', name: 'records', component: () => import('@/l12/MatchRecords.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue') },
@@ -30,13 +31,17 @@ export const router = createRouter({
 })
 
 router.beforeEach(async to => {
-  if (to.meta.requiresAdmin !== true) return true
+  if (to.meta.requiresAdmin !== true && to.meta.requiresAccount !== true) return true
   try {
     await Promise.race([
       refreshCurrentAccount({ force: true }),
       new Promise<void>(resolve => window.setTimeout(resolve, 3_000)),
     ])
   } catch { /* 权限校验不可用时保持失败关闭。 */ }
+  if (!platformState.account) return { name: 'me', query: { redirect: to.fullPath } }
+  if (platformState.account.mustChangePassword && to.name !== 'me')
+    return { name: 'me', query: { redirect: to.fullPath, reason: 'password-change-required' } }
+  if (to.meta.requiresAdmin !== true) return true
   if (!canAccessAdmin.value) return { name: 'me', query: { redirect: to.fullPath } }
   return true
 })

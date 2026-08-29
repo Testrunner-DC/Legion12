@@ -109,12 +109,14 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId)
                 ?? throw new KeyNotFoundException("账号不存在");
+            if (row.Deleted)
+                throw new L12SecurityPolicyException("account_deleted", "已逻辑删除的账号不能恢复或变更状态");
             if (string.Equals(row.Username, "Admin", StringComparison.Ordinal))
                 throw new L12SecurityPolicyException("root_admin_protected", "根 Admin 账号不能被禁用或通过该入口改状态");
             if (row.Id == actor.Id)
                 throw new L12SecurityPolicyException("self_status_change_forbidden", "不能通过后台命令禁用或启用自己的账号");
             if (disabled && string.Equals(row.Role, "admin", StringComparison.OrdinalIgnoreCase)
-                && _data.Accounts.Count(item => !item.Disabled
+                && _data.Accounts.Count(item => !item.Disabled && !item.Deleted
                     && string.Equals(item.Role, "admin", StringComparison.OrdinalIgnoreCase)) <= 1)
                 throw new L12SecurityPolicyException("last_admin_protected", "不能禁用最后一个可用管理员账号");
 

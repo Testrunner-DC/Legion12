@@ -226,6 +226,99 @@ public sealed class MatchRecorder : IAsyncDisposable
         return new L12MatchDetail(detail.Match, commands, viewer);
     }
 
+    public async Task<int> AnonymizePlayerAsync(string playerName, string anonymousName)
+    {
+        if (string.IsNullOrWhiteSpace(playerName)) return 0;
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        var matches = new List<string>();
+        var selectMatches = connection.CreateCommand();
+        selectMatches.Transaction = (SqliteTransaction)transaction;
+        selectMatches.CommandText = "SELECT match_id,player_0,player_1 FROM matches WHERE player_0=$player OR player_1=$player;";
+        selectMatches.Parameters.AddWithValue("$player", playerName);
+        await using (var reader = await selectMatches.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                matches.Add(reader.GetString(0));
+        }
+
+        foreach (var match in matches)
+        {
+            var updateMatch = connection.CreateCommand();
+            updateMatch.Transaction = (SqliteTransaction)transaction;
+            updateMatch.CommandText = """
+                UPDATE matches SET
+                    player_0=CASE WHEN player_0=$player THEN $anonymous ELSE player_0 END,
+                    player_1=CASE WHEN player_1=$player THEN $anonymous ELSE player_1 END,
+                    deck_0=CASE WHEN player_0=$player THEN '已清理牌库' ELSE deck_0 END,
+                    deck_1=CASE WHEN player_1=$player THEN '已清理牌库' ELSE deck_1 END
+                WHERE match_id=$id;
+                """;
+            updateMatch.Parameters.AddWithValue("$player", playerName);
+            updateMatch.Parameters.AddWithValue("$anonymous", anonymousName);
+            updateMatch.Parameters.AddWithValue("$id", match);
+            await updateMatch.ExecuteNonQueryAsync();
+
+            var events = new List<(long Id, string Command, string State)>();
+            var selectEvents = connection.CreateCommand();
+            selectEvents.Transaction = (SqliteTransaction)transaction;
+            selectEvents.CommandText = "SELECT id,command_json,state_json FROM match_events WHERE match_id=$id;";
+            selectEvents.Parameters.AddWithValue("$id", match);
+            await using (var reader = await selectEvents.ExecuteReaderAsync())
+                while (await reader.ReadAsync()) events.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
+            foreach (var recorded in events)
+            {
+                var updateEvent = connection.CreateCommand();
+                updateEvent.Transaction = (SqliteTransaction)transaction;
+                updateEvent.CommandText = "UPDATE match_events SET command_json=$command,state_json=$state WHERE id=$id;";
+                updateEvent.Parameters.AddWithValue("$command", ScrubJsonString(recorded.Command, playerName, anonymousName));
+                updateEvent.Parameters.AddWithValue("$state", ScrubJsonString(recorded.State, playerName, anonymousName));
+                updateEvent.Parameters.AddWithValue("$id", recorded.Id);
+                await updateEvent.ExecuteNonQueryAsync();
+            }
+        }
+        await transaction.CommitAsync();
+        return matches.Count;
+    }
+
+    private static string ScrubJsonString(string json, string value, string replacement)
+    {
+        try
+        {
+            var node = JsonNode.Parse(json);
+            return ScrubNode(node, value, replacement)?.ToJsonString() ?? json;
+        }
+        catch { return json.Replace(value, replacement, StringComparison.Ordinal); }
+    }
+
+    private static JsonNode? ScrubNode(JsonNode? node, string value, string replacement)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (var key in obj.Select(item => item.Key).ToArray())
+            {
+                var current = obj[key];
+                var scrubbed = ScrubNode(current, value, replacement);
+                if (!ReferenceEquals(current, scrubbed)) obj[key] = scrubbed;
+            }
+            return obj;
+        }
+        if (node is JsonArray array)
+        {
+            for (var index = 0; index < array.Count; index++)
+            {
+                var current = array[index];
+                var scrubbed = ScrubNode(current, value, replacement);
+                if (!ReferenceEquals(current, scrubbed)) array[index] = scrubbed;
+            }
+            return array;
+        }
+        if (node is JsonValue scalar && scalar.TryGetValue<string>(out var text))
+            return JsonValue.Create(text.Replace(value, replacement, StringComparison.Ordinal));
+        return node;
+    }
+
     private static JsonElement SanitizeRecordedCommand(JsonElement command, bool ownCommand)
     {
         if (ownCommand) return command;

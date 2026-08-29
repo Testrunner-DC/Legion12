@@ -6,7 +6,9 @@ namespace TwelveLegions.Server;
 
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt,
     bool PublicHistory, int PermissionVersion = 1, bool Disabled = false,
-    DateTimeOffset? DisabledAt = null, string? DisabledReason = null)
+    DateTimeOffset? DisabledAt = null, string? DisabledReason = null, bool MustChangePassword = false,
+    bool Deleted = false, DateTimeOffset? DeletedAt = null, string? EmailMasked = null,
+    bool EmailVerified = false)
 {
     public IReadOnlyList<string> Permissions => L12Authorization.PermissionsForRole(Role);
 }
@@ -53,6 +55,14 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? DisabledAt { get; set; }
         public string? DisabledByAccountId { get; set; }
         public string? DisabledReason { get; set; }
+        public string? Email { get; set; }
+        public string? NormalizedEmail { get; set; }
+        public DateTimeOffset? EmailVerifiedAt { get; set; }
+        public bool MustChangePassword { get; set; }
+        public bool Deleted { get; set; }
+        public DateTimeOffset? DeletedAt { get; set; }
+        public string? DeletedByAccountId { get; set; }
+        public string? DeletedReason { get; set; }
     }
 
     private sealed class BugRow
@@ -206,6 +216,8 @@ public sealed partial class L12PlatformStore
         public List<ReleaseEnvironmentRow> ReleaseEnvironments { get; set; } = [];
         public List<ReleaseRunRow> ReleaseRuns { get; set; } = [];
         public List<LoginThrottleRow> LoginThrottles { get; set; } = [];
+        public List<EmailAuthTokenRow> EmailAuthTokens { get; set; } = [];
+        public List<AuthActionThrottleRow> AuthActionThrottles { get; set; } = [];
         public SecurityStateRow Security { get; set; } = new();
         public OperationsConfigRow? OperationsConfig { get; set; }
         public List<OperationsConfigVersionRow> OperationsConfigHistory { get; set; } = [];
@@ -219,6 +231,7 @@ public sealed partial class L12PlatformStore
     private readonly string _path;
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
+    private readonly IL12EmailSender _emailSender;
     private DataFile _data;
 
     public event Action<IReadOnlyList<string>>? SessionsRevoked;
@@ -230,12 +243,14 @@ public sealed partial class L12PlatformStore
 
     public L12PlatformStore(string path, IReadOnlyList<L12PresetDeckDefinition>? officialDecks = null,
         IL12MfaCredentialProtector? mfaCredentialProtector = null,
-        IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null)
+        IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null,
+        IL12EmailSender? emailSender = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
         _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
+        _emailSender = emailSender ?? L12SmtpEmailSender.FromEnvironment();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();
@@ -281,11 +296,12 @@ public sealed partial class L12PlatformStore
 
             var row = _data.Accounts.FirstOrDefault(item =>
                 string.Equals(item.Username, normalizedUsername, StringComparison.OrdinalIgnoreCase));
-            if (row is null || !Verify(password, row) || row.Disabled)
+            if (row is null || !Verify(password, row) || row.Disabled || row.Deleted)
             {
                 retryAfter = RegisterLoginFailure(throttleKeys, now);
                 AddAuthenticationAudit(row is null ? null : ToView(row), normalizedUsername,
-                    retryAfter > 0 ? "locked" : row?.Disabled == true ? "account-disabled" : "invalid-credentials",
+                    retryAfter > 0 ? "locked" : row?.Deleted == true ? "account-deleted"
+                        : row?.Disabled == true ? "account-disabled" : "invalid-credentials",
                     context, "denied");
                 Save(false);
                 return retryAfter > 0
@@ -324,7 +340,8 @@ public sealed partial class L12PlatformStore
             var session = _data.Sessions.FirstOrDefault(item => item.TokenHash == hash
                 && item.RevokedAt is null && item.ExpiresAt > now);
             var account = session is null ? null : _data.Accounts.FirstOrDefault(row => row.Id == session.AccountId);
-            return account is null || account.Disabled ? null : new L12AuthenticatedSession(ToView(account), session!.Id);
+            return account is null || account.Disabled || account.Deleted
+                ? null : new L12AuthenticatedSession(ToView(account), session!.Id);
         }
     }
 
@@ -334,7 +351,7 @@ public sealed partial class L12PlatformStore
         {
             var now = DateTimeOffset.UtcNow;
             return _data.Sessions.Any(row => row.Id == sessionId && row.RevokedAt is null && row.ExpiresAt > now
-                && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled));
+                && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
         }
     }
 
@@ -389,6 +406,7 @@ public sealed partial class L12PlatformStore
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
             if (row is null || !Verify(currentPassword, row)) return (false, "当前密码不正确");
             SetPassword(row, newPassword);
+            row.MustChangePassword = false;
             var now = DateTimeOffset.UtcNow;
             var sessionsToRevoke = _data.Sessions.Where(session => session.AccountId == accountId
                 && (string.IsNullOrWhiteSpace(currentSessionId) || session.Id != currentSessionId)
@@ -418,7 +436,7 @@ public sealed partial class L12PlatformStore
     public IReadOnlyList<L12FriendView> FindPlayers(string accountId, string? search)
     {
         var query = (search ?? string.Empty).Trim();
-        lock (_gate) return _data.Accounts.Where(row => row.Id != accountId && !row.Disabled)
+        lock (_gate) return _data.Accounts.Where(row => row.Id != accountId && !row.Disabled && !row.Deleted)
             .Where(row => query.Length == 0 || row.Username.Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderBy(row => row.Username).Take(30).Select(row => ToFriendView(accountId, row)).ToArray();
     }
@@ -573,6 +591,7 @@ public sealed partial class L12PlatformStore
 
     private bool CanSetRoleLocked(AccountRow? row, string role)
         => row is not null
+           && !row.Deleted
            && !string.Equals(row.Username, "Admin", StringComparison.Ordinal)
            && !IsLastAdminDemotion(row, role);
 
@@ -580,7 +599,7 @@ public sealed partial class L12PlatformStore
         => row is not null
            && string.Equals(row.Role, "admin", StringComparison.OrdinalIgnoreCase)
            && !string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase)
-           && _data.Accounts.Count(item => !item.Disabled
+            && _data.Accounts.Count(item => !item.Disabled && !item.Deleted
                && string.Equals(item.Role, "admin", StringComparison.OrdinalIgnoreCase)) <= 1;
 
     public IReadOnlyList<L12PublishedDeckView> PublishedDecks(string? viewerAccountId)
@@ -1115,7 +1134,8 @@ public sealed partial class L12PlatformStore
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
     private static L12AccountView ToView(AccountRow row) => new(row.Id, row.Username, row.Role, row.CreatedAt,
-        row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason);
+        row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason,
+        row.MustChangePassword, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null);
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
     {
         var relation = FindFriendRow(viewerId, row.Id);
