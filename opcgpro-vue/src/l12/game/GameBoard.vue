@@ -187,9 +187,14 @@ watch(modalInspectorVisible, visible => {
   if (visible) updateInspectorFloatRect()
 }, { flush: 'sync' })
 const sessionDisasters = computed(() => props.game.sessionDisasters ?? [])
-const canActivateOsiris = computed(() => me.value.master.masterId === 'S01-02M1'
-  && (me.value.specialZones?.canopicTrack?.filter(card => card.completed).length ?? 0) >= 5
-  && Boolean(me.value.graveyard?.some(card => card.cardId === 'S01-02M2')))
+const osirisVictoryCard = computed(() => me.value.graveyard?.find(card => card.cardId === 'S01-02M2') ?? null)
+const osirisVictoryAbility = computed(() => me.value.master.abilities?.find(entry => entry.id === 'isisVictory')
+  ?? osirisVictoryCard.value?.abilities?.find(entry => entry.id === 'isisVictory'))
+const canActivateOsiris = computed(() => Boolean(!props.readOnly && isMyMain.value && !l12State.pendingAction
+  && osirisVictoryCard.value && osirisVictoryAbility.value
+  && osirisVictoryAbility.value.enabled !== false && !osirisVictoryAbility.value.triggerOnly))
+const osirisVictoryDisabledReason = computed(() => osirisVictoryAbility.value?.disabledReason
+  ?? '需要伊西斯、墓地的复苏的奥西里斯与5种已完成的卡诺匹斯圣物')
 const sessionDisasterSlots = computed<(DisasterCardView | null)[]>(() =>
   Array.from({ length: 4 }, (_, index) => sessionDisasters.value[index] ?? null),
 )
@@ -638,6 +643,7 @@ function enemyMaster() {
   masterPlayerIndex.value = enemy.value.playerIndex
 }
 function activateMaster(ability: string) {
+  if (ability === 'isisVictory') return activateOsirisVictory()
   command('activateAbility', { cardInstanceId: me.value.master.masterId, ability })
   masterPlayerIndex.value = null
 }
@@ -683,8 +689,19 @@ function selectPublicCard(card: Card) {
   mode.value = 'play'
 }
 function activateAbility(card: Card, ability: string) {
+  if (ability === 'isisVictory') { activateOsirisVictory(); return }
   command('activateAbility', { cardInstanceId: card.instanceId, ability })
   selectedId.value = null
+}
+function activateOsirisVictory() {
+  const osiris = osirisVictoryCard.value
+  if (!osiris || !canActivateOsiris.value) return
+  graveyardPlayer.value = null
+  masterPlayerIndex.value = null
+  focusCard.value = null
+  promptMinimized.value = false
+  selectedId.value = null
+  command('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })
 }
 function activateFactionAbility(ability: string) {
   command('activateAbility', { cardInstanceId: `faction-${me.value.playerIndex}`, ability })
@@ -763,6 +780,8 @@ function statusTexts(card: Card) {
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewEnemy.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewEnemy.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewEnemy.playerIndex) ? responsePlayableIds : []"
               :selected-target-ids="boardTargetIds"
+              :can-activate-osiris="isControlledPlayer(viewEnemy.playerIndex) && canActivateOsiris"
+              :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewEnemy.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === viewEnemy.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === viewEnemy.playerIndex && !combat.target"
@@ -836,6 +855,8 @@ function statusTexts(card: Card) {
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
               :selected-target-ids="boardTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :can-activate-osiris="isControlledPlayer(viewMe.playerIndex) && canActivateOsiris"
+              :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === viewMe.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"

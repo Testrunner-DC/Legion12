@@ -35,6 +35,8 @@ const props = defineProps<{
   paymentChoiceIds?: string[]
   paymentSelectedIds?: string[]
   hiddenRevealCard?: Card | null
+  canActivateOsiris?: boolean
+  osirisVictoryDisabledReason?: string
 }>()
 const emit = defineEmits<{
   slot: [row: number, slot: number, card: Card | null]
@@ -84,7 +86,6 @@ function moraleLabel(card: MoraleResource | null) {
   return labels[state]
 }
 const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length)
-const canopicComplete = computed(() => (props.player.specialZones?.canopicTrack?.filter(card => card.completed).length ?? 0) >= 5)
 const currentTrialInstanceId = computed(() => props.player.specialZones?.trials?.find(card => !card.trialCompleted)?.instanceId ?? null)
 const spendableMorale = computed(() => activeMorale.value + (props.player.temporaryMorale ?? 0))
 type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
@@ -235,10 +236,11 @@ function beginCardAbility(card: Card) {
         </template>
         <template v-else>
           <button v-for="card in player.specialZones?.canopicTrack ?? []" :key="card.cardId" type="button"
-            class="canopic-orb" :class="{ completed: card.completed, activatable: controllable && canopicComplete }"
-            :title="`${card.name}${card.completed ? '（已置入）' : '（未完成）'}`"
+            class="canopic-orb" :class="{ completed: card.completed, activatable: controllable && canActivateOsiris }"
+            :aria-disabled="!controllable || !canActivateOsiris"
+            :title="`${card.name}${card.completed ? '（已置入）' : '（未完成）'}${controllable && !canActivateOsiris ? `：${osirisVictoryDisabledReason || '当前不可发动特殊胜利'}` : ''}`"
             @mouseenter="emit('focus', card)" @focus="emit('focus', card)"
-            @click.stop="emit('focus', card); controllable && canopicComplete && emit('ability', masterCard, 'isisVictory')">
+            @click.stop="emit('focus', card); controllable && canActivateOsiris && emit('ability', masterCard, 'isisVictory')">
             <img v-if="roundCardUrl(card.cardId, card.imageUrl)" :src="roundCardUrl(card.cardId, card.imageUrl)" :alt="card.name" />
           </button>
         </template>

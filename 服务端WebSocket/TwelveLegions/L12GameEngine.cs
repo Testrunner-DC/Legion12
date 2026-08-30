@@ -436,12 +436,8 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = "没有可翻转为神力的士气" };
             if (view.Id == "isisVictory")
             {
-                var completed = player.SpecialZones.CanopicProgress
-                    .Where(card => card.CardId is "S01-0216" or "S01-0217" or "S01-0218" or "S01-0219" or "S01-0220")
-                    .Select(card => card.CardId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-                if (player.MasterId != "S01-02M1" || completed < 5
-                    || !player.Graveyard.Any(card => card.CardId == "S01-02M2"))
-                    return view with { Enabled = false, DisabledReason = "需要完成5种卡诺匹斯圣物且复苏的奥西里斯位于墓地" };
+                if (!TryGetIsisVictorySource(player, out _, out var error))
+                    return view with { Enabled = false, DisabledReason = error };
             }
             if (view.Id == "thorHammerRevive")
             {

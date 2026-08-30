@@ -2,6 +2,21 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private bool TryGetIsisVictorySource(L12PlayerState player, out L12CardInstance? osiris, out string error)
+    {
+        osiris = player.Graveyard.FirstOrDefault(card => card.CardId == "S01-02M2");
+        var completed = player.SpecialZones.CanopicProgress
+            .Where(card => card.CardId is "S01-0216" or "S01-0217" or "S01-0218" or "S01-0219" or "S01-0220")
+            .Select(card => card.CardId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        if (player.MasterId == "S01-02M1" && completed >= 5 && osiris is not null)
+        {
+            error = string.Empty;
+            return true;
+        }
+        error = "需要伊西斯、墓地的复苏的奥西里斯与5种已完成的卡诺匹斯圣物";
+        return false;
+    }
+
     private CommandResult BeginActiveAbility(int playerIndex, L12Command command)
     {
         var player = State.Players[playerIndex];
@@ -211,14 +226,10 @@ public sealed partial class L12GameEngine
         {
             case "isisVictory" when source.CardId is "S01-02M1" or "S01-02M2":
             {
-                var completed = player.SpecialZones.CanopicProgress
-                    .Where(card => card.CardId is "S01-0216" or "S01-0217" or "S01-0218" or "S01-0219" or "S01-0220")
-                    .Select(card => card.CardId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-                if (player.MasterId != "S01-02M1" || completed < 5
-                    || !player.Graveyard.Any(card => card.CardId == "S01-02M2"))
-                    return CommandResult.Reject("需要伊西斯、墓地的复苏的奥西里斯与5种已完成的卡诺匹斯圣物");
+                if (!TryGetIsisVictorySource(player, out var osiris, out var error))
+                    return CommandResult.Reject(error);
                 SetWinner(playerIndex, "复苏的奥西里斯登场，达成伊西斯特殊胜利");
-                AddEvent("special-victory", playerIndex, "〈复苏的奥西里斯〉替换〈伊西斯〉登场，达成特殊胜利", source);
+                AddEvent("special-victory", playerIndex, "〈复苏的奥西里斯〉替换〈伊西斯〉登场，达成特殊胜利", osiris!);
                 return CommandResult.Ok();
             }
             case "drawCycle" when source.CardId == "S01-01M1":

@@ -72,6 +72,17 @@ public sealed class LatestBugRegressionTests
             });
     }
 
+    private static L12CardInstance PrepareIsisVictory(L12GameEngine game)
+    {
+        var player = game.State.Players[0];
+        player.SpecialZones.CanopicProgress.Clear();
+        foreach (var cardId in new[] { "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220" })
+            player.SpecialZones.CanopicProgress.Add(Card(cardId, $"completed-{cardId}"));
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        return Assert.Single(player.Graveyard, card => card.CardId == "S01-02M2");
+    }
+
     private static void PassResponses(L12GameEngine game)
     {
         while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
@@ -970,6 +981,29 @@ public sealed class LatestBugRegressionTests
         Assert.Equal(3, player.Graveyard.Count(card => card.CardId == "S01-0212"));
         Assert.Equal(3, SnapshotGraveyard(game, 0).Count(card => card.CardId == "S01-0212"));
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "death" && entry.Cards.Any(card => card.CardId == "S01-0212"));
+    }
+
+    [Fact]
+    public void IsisAndOsirisVictorySourcesPublishTheSameSingleCanonicalEvent()
+    {
+        foreach (var activateFromMaster in new[] { true, false })
+        {
+            var game = CreateWithFirstMaster("S01-02M1", activateFromMaster ? 64081 : 64082);
+            var osiris = PrepareIsisVictory(game);
+            var sourceId = activateFromMaster ? "master-0" : osiris.InstanceId;
+
+            var result = game.Handle(0, new L12Command("activateAbility", sourceId, Ability: "isisVictory"));
+
+            Assert.True(result.Accepted, result.Error);
+            Assert.Equal(0, game.State.Winner);
+            var victory = Assert.Single(game.State.Events, entry => entry.Type == "special-victory");
+            Assert.Equal("S01-02M2", Assert.Single(victory.Cards).CardId);
+            Assert.Single(game.State.Events, entry => entry.Type == "game-over");
+
+            var duplicate = game.Handle(0, new L12Command("activateAbility", sourceId, Ability: "isisVictory"));
+            Assert.False(duplicate.Accepted);
+            Assert.Single(game.State.Events, entry => entry.Type == "special-victory");
+        }
     }
 
     [Fact]
