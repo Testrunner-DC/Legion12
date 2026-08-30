@@ -204,3 +204,12 @@
 - Focused：十二军团规则550/550，UI契约166/166。
 - Batch：Release规则550/550；原子审计248/248、legacy case 0、`cardConditional=211`、`cardSwitchArm=67`、`effectTextInference=0`；UI166/166、卡图19/19（248张）、Vue/TypeScript/Vite生产构建通过。
 - Release：规则550/550；平台持久化/控制平面60/60；原子、UI、卡图和生产构建再次通过；`verify-l12.ps1` commit-level验证成功。未部署。
+
+## 2026-08-31 第一批卡效审查：复合预声明与FAQ53类型化击杀
+
+- 红测：新增 `AtomicReviewBatch1RegressionTests` 首轮4/4按预期失败，分别命中〈倪克斯的陨星〉支付后才选择公开对象、〈沙漠君临〉支付后才选择弃牌/召唤/空位、〈乾坤阳〉取消声明仍可能付费，以及后续独立段目标失效后费用/父流程边界；实现类型化来源击杀后再加入震击连带双杀专项。最终新增专项5/5通过。
+- 相关回归：`AtomicReviewBatch1RegressionTests|S2FactionRegressionTests|S2UniversalEffectsTests|LatestBugRegressionTests|CombatTimelineRegressionTests` 合计278/278，覆盖7张迁移卡、李牧/冲田总司免费发动链与FAQ19双方同归直接战斗击杀。
+- Focused：Debug规则555/555，0失败、0跳过。
+- Batch：首次Release规则555/555通过，随后Windows PowerShell 5因新增审计帮助脚本为UTF-8无BOM而解析失败；补齐BOM后同一旧PowerShell审计通过，完整Batch重跑规则555/555及原子审计均通过。该次失败仅为脚本宿主编码兼容，不是业务断言失败。
+- Release：首轮规则555/555、平台持久化/控制面60/60、原子审计通过；commit-level再次通过规则555/555、平台60/60、UI契约166项、卡图架构19项/248张、Vue TypeScript、Vite生产构建与发布包构建。未执行部署。
+- 原子审计：卡池248；legacy卡号case 0；`cardConditional=208`、`cardSwitchArm=67`、`effectTextInference=0`；44项细原子覆盖41张、179条复合路由覆盖148张；74张未进入两个原子路由文件，但74张均有权威实战入口，0张无实战入口，63张另有测试证据。

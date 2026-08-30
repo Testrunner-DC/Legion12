@@ -391,12 +391,23 @@ public sealed class L12PendingActivation
     public int CurrentStep { get; set; }
     public List<string> DeclaredTargets { get; } = [];
     /// <summary>
+    /// 复合效果按声明键保存每一步的选择边界。旧主动/触发流程继续读取扁平的
+    /// DeclaredTargets；事务化复合计划不得再靠实例类型猜测“哪个目标属于哪一段”。
+    /// </summary>
+    public Dictionary<string, List<string>> DeclaredValues { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
     /// 非空时表示这不是主动效果，而是尚未进入堆叠的触发效果声明。
     /// 目标与费用全部声明完成后，才会把对应候选压入堆叠。
     /// </summary>
     public string? TriggerCandidateId { get; init; }
     /// <summary>非空时表示这是尚未支付费用、尚未入栈的手牌打出声明。</summary>
     public string? PlayCardInstanceId { get; init; }
+    /// <summary>
+    /// 非空时表示复合战术已由另一效果免费打出，声明完成或取消后必须
+    /// 恢复该父效果，不得把已离开隐藏区的卡或父堆栈卡死。
+    /// </summary>
+    public string? CommittedParentStackItemId { get; set; }
+    public string? CommittedCompletion { get; set; }
     /// <summary>非空时表示这是尚未揭示、尚未入栈的响应卡目标声明。</summary>
     public string? ResponseTargetStackItemId { get; init; }
 }
@@ -415,6 +426,8 @@ public sealed class L12ActivationSelectionStep
     public required List<string> ValidChoices { get; init; }
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
+    /// <summary>复合效果预声明中的稳定字段名；为空时保持旧的扁平声明协议。</summary>
+    public string? DeclarationKey { get; init; }
     /// <summary>仅用于界面呈现；规则判断始终使用稳定的 ValidChoices 标识。</summary>
     public Dictionary<string, string> ChoiceLabels { get; init; } = [];
     /// <summary>

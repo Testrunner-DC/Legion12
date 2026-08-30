@@ -258,32 +258,15 @@ public sealed partial class L12GameEngine
         var killer = FindOnField(killerPlayer, killerInstanceId, out _, out _)
             ?? killerPlayer.Resolving.FirstOrDefault(candidate => candidate.InstanceId == killerInstanceId);
         if (killer is null) return;
-        var candidates = new List<L12TriggerCandidate>();
-        var printedKillTimingIsLegal = NativeCombatKillCards.Contains(killer.CardId)
-            && (killer.CardId != "S02-0002" || killerController == State.ActivePlayer);
-        if (printedKillTimingIsLegal
-            || killer.CardId == "S02-0608" && killerPlayer.UsedAbilities.Contains(
-                $"crusade-piercing:{killer.InstanceId}:{State.TurnSerial}"))
-        {
-            candidates.Add(CreateTriggerCandidate(killerController, killer, "after-attack", "【击杀时】效果",
-                new Dictionary<string, string>
-                {
-                    ["killed"] = "true",
-                    ["combatKillConfirmed"] = "true",
-                    ["defeatedInstanceId"] = defeatedInstanceId,
-                    ["combatTiming"] = "kill",
-                }));
-        }
-        if (killer.ReadyAfterNextKillUntilTurn == State.TurnSerial)
-        {
-            var sourceName = killer.ReadyAfterNextKillSourceName ?? "效果";
-            killer.ReadyAfterNextKillUntilTurn = -1;
-            killer.ReadyAfterNextKillSourceName = null;
-            candidates.Add(CreateTriggerCandidate(killerController, killer, "forge-ready-after-kill",
-                $"{sourceName}赋予的击杀后转为活跃效果",
-                new Dictionary<string, string> { ["source-name"] = sourceName, ["combatTiming"] = "kill" }));
-        }
-        QueueTriggerCandidates(candidates);
+        ResolveTypedKillSourceEvent(new L12KillSourceEvent(
+            $"combat-kill:{State.TurnSerial}:{pending.AttackerInstanceId}:{killerInstanceId}",
+            L12KillSourceKind.CombatDamage,
+            killerController,
+            killer.InstanceId,
+            killer.CardId,
+            TriggersPrintedKillTiming: true,
+            CausedBySourceCard: true,
+            [defeatedInstanceId]));
     }
 
     private void QueueAttackerAfterAttackTriggers(int playerIndex, L12CardInstance attacker)

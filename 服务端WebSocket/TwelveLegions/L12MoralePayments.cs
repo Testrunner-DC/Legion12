@@ -40,9 +40,10 @@ public sealed partial class L12GameEngine
             : [];
 
     private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost,
-        IReadOnlyCollection<string>? excludedResourceIds = null)
+        IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)
     {
-        var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
+        var usableTemporaryMorale = Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve);
+        var visibleCost = Math.Max(0, totalCost - usableTemporaryMorale);
         if (visibleCost <= 0) return false;
 
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
@@ -63,11 +64,12 @@ public sealed partial class L12GameEngine
     }
 
     private void CreateResourcePaymentPrompt(int playerIndex, int totalCost, string continuation, string? stackItemId,
-        Dictionary<string, string> data, IReadOnlyCollection<string>? excludedResourceIds = null)
+        Dictionary<string, string> data, IReadOnlyCollection<string>? excludedResourceIds = null,
+        int temporaryMoraleReserve = 0)
     {
         var player = State.Players[playerIndex];
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
-        var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
+        var visibleCost = Math.Max(0, totalCost - Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve));
         var availableMorale = player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
         var availableGuards = ActiveTombGuardResources(player).Where(card => !excluded.Contains(card.InstanceId)).ToArray();
         var choices = availableMorale.Select(card => card.InstanceId)
@@ -90,11 +92,11 @@ public sealed partial class L12GameEngine
     }
 
     private bool TryConsumeSelectedResources(L12PlayerState player, int totalCost, IReadOnlyCollection<string> selectedIds,
-        IReadOnlyCollection<string>? excludedResourceIds = null)
+        IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)
     {
-        if (!CanConsumeSelectedResources(player, totalCost, selectedIds, excludedResourceIds)) return false;
+        if (!CanConsumeSelectedResources(player, totalCost, selectedIds, excludedResourceIds, temporaryMoraleReserve)) return false;
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
-        var temporary = Math.Min(totalCost, player.TemporaryMorale);
+        var temporary = Math.Min(totalCost, Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve));
         var visibleCost = totalCost - temporary;
         var morale = player.Morale.Where(card => selectedIds.Contains(card.InstanceId) && !card.Tapped).ToArray();
         var guards = ActiveTombGuardResources(player)
@@ -106,11 +108,12 @@ public sealed partial class L12GameEngine
     }
 
     private bool CanConsumeSelectedResources(L12PlayerState player, int totalCost,
-        IReadOnlyCollection<string> selectedIds, IReadOnlyCollection<string>? excludedResourceIds = null)
+        IReadOnlyCollection<string> selectedIds, IReadOnlyCollection<string>? excludedResourceIds = null,
+        int temporaryMoraleReserve = 0)
     {
         if (totalCost < 0) return false;
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
-        var temporary = Math.Min(totalCost, player.TemporaryMorale);
+        var temporary = Math.Min(totalCost, Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve));
         var visibleCost = totalCost - temporary;
         if (selectedIds.Count != visibleCost || selectedIds.Distinct(StringComparer.Ordinal).Count() != visibleCost)
             return false;
@@ -122,10 +125,10 @@ public sealed partial class L12GameEngine
     }
 
     private string[] SelectAutomaticOrdinaryResourcePaymentIds(L12PlayerState player, int totalCost,
-        IReadOnlyCollection<string>? excludedResourceIds = null)
+        IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)
     {
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
-        var visibleCost = Math.Max(0, totalCost - player.TemporaryMorale);
+        var visibleCost = Math.Max(0, totalCost - Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve));
         return player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId))
             .Select(card => card.InstanceId)
             .Concat(ActiveTombGuardResources(player)
@@ -134,10 +137,11 @@ public sealed partial class L12GameEngine
             .Take(visibleCost).ToArray();
     }
 
-    private int ActiveResourceCountExcluding(L12PlayerState player, IReadOnlyCollection<string>? excludedResourceIds)
+    private int ActiveResourceCountExcluding(L12PlayerState player, IReadOnlyCollection<string>? excludedResourceIds,
+        int temporaryMoraleReserve = 0)
     {
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
-        return player.TemporaryMorale
+        return Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve)
             + player.Morale.Count(card => !card.Tapped && !excluded.Contains(card.InstanceId))
             + ActiveTombGuardResources(player).Count(card => !excluded.Contains(card.InstanceId));
     }
@@ -180,18 +184,6 @@ public sealed partial class L12GameEngine
                     AddEvent("morale", item.Controller, "〈黑色莲花〉休整置入士气区，视为1张士气", source);
                 }
                 FinishStackItem(item); break;
-            case "s2-round-table-buff":
-            {
-                var target = FindOnField(player, data.GetValueOrDefault("target") ?? string.Empty, out _, out _);
-                if (target is not null && target.HasTrait("圆桌骑士"))
-                {
-                    AddTimedModifier(target, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "圆桌领域");
-                    AddEvent("effect", item.Controller, $"〈圆桌领域〉使{target.Name}本回合兵力+2000", source is null ? [target] : [source, target]);
-                }
-                FinishStackItem(item); break;
-            }
-            case "s2-rune-power-search":
-                BeginRunePowerSearch(item); break;
             case "s2-bors-strong":
                 if (source is not null)
                 {

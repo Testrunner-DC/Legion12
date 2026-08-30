@@ -335,7 +335,7 @@ public sealed partial class L12GameEngine
             case "荆轲":
                 if (item.Data.TryGetValue("declaredTargets", out var jingkeTarget))
                 {
-                    if (!string.IsNullOrWhiteSpace(jingkeTarget)) KillTarget(jingkeTarget, "被荆轲阵亡效果击杀");
+                    if (!string.IsNullOrWhiteSpace(jingkeTarget)) KillTarget(item, jingkeTarget, "被荆轲阵亡效果击杀");
                     FinishStackItem(item); return true;
                 }
                 if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return true; }
@@ -455,7 +455,7 @@ public sealed partial class L12GameEngine
             case "nobunaga-kill":
             case "kenshin-kill":
             case "hijikata-attack-kill":
-                if (chosen[0] != "skip") KillTarget(chosen[0], $"被{source?.Name}击杀");
+                if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀");
                 FinishStackItem(item); return true;
             case "nobunaga-attack-pay":
                 if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "nobunaga-debuff"); else FinishStackItem(item); return true;
@@ -464,7 +464,7 @@ public sealed partial class L12GameEngine
             case "takasugi-attack-pay":
                 if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "takasugi-debuff"); else FinishStackItem(item); return true;
             case "hijikata-enter-kill":
-                if (chosen[0] != "skip") KillTarget(chosen[0], "被土方岁三击杀");
+                if (chosen[0] != "skip") KillTarget(item, chosen[0], "被土方岁三击杀");
                 if (item.Data["hijikata-step"] == "2")
                 {
                     item.Data["hijikata-step"] = "1";
@@ -761,7 +761,7 @@ public sealed partial class L12GameEngine
             }
             case "destroyInfiltrator" when source is not null:
                 if (FindPublicCard(source.InstanceId, out var battlefieldController) is not null)
-                    RemoveFromField(State.Players[battlefieldController], source, true, "被主动效果击杀");
+                    KillTarget(item, source.InstanceId, "被主动效果击杀");
                 FinishStackItem(item); return true;
             default:
                 return TryResolveS1FactionActive(item, source, ability);

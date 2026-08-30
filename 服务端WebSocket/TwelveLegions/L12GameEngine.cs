@@ -1452,7 +1452,11 @@ public sealed partial class L12GameEngine
                     .Where(card => !IsPendingCombatDeath(card.InstanceId))
                     .Select(card => (Controller: player.PlayerIndex, Card: card)))
                 .ToArray();
-            if (defeated.Length == 0) return;
+            if (defeated.Length == 0)
+            {
+                ClearPendingStateBasedKillSources();
+                return;
+            }
             var removed = new List<(int Controller, L12CardInstance Card, L12CardInstance SourceSnapshot)>();
             foreach (var entry in defeated)
             {
@@ -1463,6 +1467,7 @@ public sealed partial class L12GameEngine
                     removed.Add((entry.Controller, entry.Card, sourceSnapshot));
             }
             if (!suppressDeathTriggers) QueueSimultaneousDeathTriggers(removed);
+            ResolvePendingStateBasedKillSources(removed);
             if (removed.Count == 0) return;
         }
         throw new InvalidOperationException("兵力状态检查超过安全迭代次数");

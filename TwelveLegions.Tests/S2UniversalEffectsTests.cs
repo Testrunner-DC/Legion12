@@ -170,6 +170,16 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal(L12Phase.Defense, game.State.Phase);
     }
 
+    private static void PassResponses(L12GameEngine game)
+    {
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var prompt = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
+        }
+    }
+
     [Fact]
     public void MagiciansPuppetMayCancelBeforeCommittingAndReturnsToTheSameResponseWindow()
     {
@@ -715,15 +725,17 @@ public sealed class S2UniversalEffectsTests
         player.Morale.Insert(0, converted);
 
         Assert.True(game.Handle(0, new L12Command("playCard", qianyang.InstanceId)).Accepted);
-        var killPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killPrompt.PromptId,
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:draw")).Accepted);
+        var killTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
             CardInstanceIds: [target.InstanceId])).Accepted);
-        var drawPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "yes")).Accepted);
         var returnPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("resource-return", returnPrompt.Kind);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
             CardInstanceIds: [converted.InstanceId])).Accepted);
+        PassResponses(game);
 
         Assert.Contains(player.Graveyard, card => card.InstanceId == lotus.InstanceId && card.CardId == "S02-0010");
         Assert.DoesNotContain(player.MoraleDeck, card => card.InstanceId == lotus.InstanceId);
@@ -889,15 +901,17 @@ public sealed class S2UniversalEffectsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
-        var killPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killPrompt.PromptId,
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:draw")).Accepted);
+        var killTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
             CardInstanceIds: [target.InstanceId])).Accepted);
-        var drawPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "yes")).Accepted);
         var returnPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("resource-return", returnPrompt.Kind);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
             CardInstanceIds: [returnPrompt.ValidChoices[0]])).Accepted);
+        PassResponses(game);
 
         Assert.Contains(target, game.State.Players[1].Graveyard);
         Assert.Equal(2, player.Morale.Count);

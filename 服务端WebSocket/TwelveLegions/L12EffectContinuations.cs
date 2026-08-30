@@ -43,7 +43,7 @@ public sealed partial class L12GameEngine
             case "kusanagi-enter-kill":
             case "divine-punishment-kill":
             case "honda-kill-zero":
-                KillTarget(chosen[0], $"被{item.SourceName}击杀");
+                KillTarget(item, chosen[0], $"被{item.SourceName}击杀");
                 FinishStackItem(item); break;
             case "peace-talk":
                 if (chosen[0] == "agree")
@@ -216,13 +216,24 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void KillTarget(string instanceId, string reason)
+    private void KillTarget(L12StackItem sourceItem, string instanceId, string reason)
     {
         for (var owner = 0; owner < 2; owner++)
         {
             var target = FindOnField(State.Players[owner], instanceId, out _, out _);
             if (target is null) continue;
-            RemoveFromField(State.Players[owner], target, true, reason);
+            var source = FindSource(sourceItem);
+            if (!RemoveFromField(State.Players[owner], target, true, reason)) return;
+            if (source is null) return;
+            ResolveTypedKillSourceEvent(new L12KillSourceEvent(
+                $"effect-kill:{sourceItem.StackItemId}:{source.InstanceId}",
+                L12KillSourceKind.CardEffect,
+                sourceItem.Controller,
+                source.InstanceId,
+                source.CardId,
+                TriggersPrintedKillTiming: false,
+                CausedBySourceCard: true,
+                [target.InstanceId]));
             return;
         }
     }

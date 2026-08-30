@@ -1,9 +1,10 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$OutputPath = 'docs/l12/CARD-EFFECT-REVIEW-MATRIX.md'
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib/l12-card-runtime-evidence.ps1')
 $sourcePath = Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions'
 $dataPath = Join-Path $sourcePath 'Data'
 $atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
@@ -13,40 +14,44 @@ $programMatches = [regex]::Matches($atomicSource,
 $routeMatches = [regex]::Matches($routeSource,
     'new\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
 
-$fineByCard = @{}
-foreach ($match in $programMatches) {
-    $id = $match.Groups['id'].Value
-    if (-not $fineByCard.ContainsKey($id)) { $fineByCard[$id] = New-Object System.Collections.Generic.List[string] }
-    $fineByCard[$id].Add($match.Groups['trigger'].Value)
+function Group-TriggersByCard([System.Text.RegularExpressions.MatchCollection]$matches) {
+    $grouped = @{}
+    foreach ($match in $matches) {
+        $id = $match.Groups['id'].Value
+        if (-not $grouped.ContainsKey($id)) { $grouped[$id] = New-Object System.Collections.Generic.List[string] }
+        $grouped[$id].Add($match.Groups['trigger'].Value)
+    }
+    return $grouped
 }
-$compositeByCard = @{}
-foreach ($match in $routeMatches) {
-    $id = $match.Groups['id'].Value
-    if (-not $compositeByCard.ContainsKey($id)) { $compositeByCard[$id] = New-Object System.Collections.Generic.List[string] }
-    $compositeByCard[$id].Add($match.Groups['trigger'].Value)
-}
+$fineByCard = Group-TriggersByCard $programMatches
+$compositeByCard = Group-TriggersByCard $routeMatches
 
 $cards = New-Object System.Collections.Generic.List[object]
 foreach ($fileName in @('cards.s1.json', 'cards.s2.json')) {
     $decoded = [System.IO.File]::ReadAllText((Join-Path $dataPath $fileName), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
     foreach ($card in $decoded) { $cards.Add($card) }
 }
+$runtimeEvidence = Get-L12CardRuntimeEvidence -ProjectRoot $ProjectRoot -Cards $cards
 
 $rows = foreach ($card in ($cards | Sort-Object id)) {
-    $fine = if ($fineByCard.ContainsKey($card.id)) {
-        @($fineByCard[$card.id] | Sort-Object -Unique)
-    } else { @() }
-    $composite = if ($compositeByCard.ContainsKey($card.id)) {
-        @($compositeByCard[$card.id] | Sort-Object -Unique)
-    } else { @() }
-    $runtime = if ($fine.Count -gt 0 -and $composite.Count -gt 0) {
-        '混合：细原子已验证 + 复合过渡'
+    $fine = if ($fineByCard.ContainsKey($card.id)) { @($fineByCard[$card.id] | Sort-Object -Unique) } else { @() }
+    $composite = if ($compositeByCard.ContainsKey($card.id)) { @($compositeByCard[$card.id] | Sort-Object -Unique) } else { @() }
+    $evidence = $runtimeEvidence[$card.id]
+    $route = if ($fine.Count -gt 0 -and $composite.Count -gt 0) {
+        '混合：细原子 + 复合过渡'
     } elseif ($fine.Count -gt 0) {
         '细原子已验证'
     } elseif ($composite.Count -gt 0) {
         '复合过渡'
     } else {
-        '仅入清单 / 待迁移'
+        '未进入原子路由'
+    }
+    $review = if ($fine.Count -gt 0 -or $composite.Count -gt 0) {
+        '已入原子路由；逐能力待验收'
+    } elseif ($evidence.Sources.Count -gt 0) {
+        '未进入原子路由（有实战入口）'
+    } else {
+        '无实战入口'
     }
     [pscustomobject]@{
         Id = $card.id
@@ -54,35 +59,44 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
         Product = $card.product
         Faction = $card.faction
         Type = $card.cardType
-        Runtime = $runtime
+        Route = $route
         Fine = if ($fine.Count) { $fine -join '、' } else { '—' }
         Composite = if ($composite.Count) { $composite -join '、' } else { '—' }
-        Review = '待独立验收'
+        Runtime = if ($evidence.Categories.Count) { $evidence.Categories -join '、' } else { '—' }
+        RuntimeSources = if ($evidence.Sources.Count) { $evidence.Sources -join '、' } else { '—' }
+        Tests = if ($evidence.Tests.Count) { $evidence.Tests -join '、' } else { '—' }
+        Review = $review
     }
 }
 
-$fineOnly = @($rows | Where-Object Runtime -eq '细原子已验证').Count
-$mixed = @($rows | Where-Object Runtime -eq '混合：细原子已验证 + 复合过渡').Count
-$compositeOnly = @($rows | Where-Object Runtime -eq '复合过渡').Count
-$catalogOnly = @($rows | Where-Object Runtime -eq '仅入清单 / 待迁移').Count
+$fineOnly = @($rows | Where-Object Route -eq '细原子已验证').Count
+$mixed = @($rows | Where-Object Route -eq '混合：细原子 + 复合过渡').Count
+$compositeOnly = @($rows | Where-Object Route -eq '复合过渡').Count
+$unrouted = @($rows | Where-Object Route -eq '未进入原子路由')
+$unroutedRuntime = @($unrouted | Where-Object Review -eq '未进入原子路由（有实战入口）')
+$noRuntime = @($unrouted | Where-Object Review -eq '无实战入口')
+$unroutedWithTests = @($unrouted | Where-Object Tests -ne '—')
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add('# 248 张卡效独立审查矩阵')
 $lines.Add('')
 $lines.Add("生成日期：$(Get-Date -Format 'yyyy-MM-dd')")
 $lines.Add('')
-$lines.Add('本表只记录可由源码和测试证据证明的运行时迁移层级；“细原子已验证”表示该卡至少有一个能力由细原子程序接管，并不自动证明同卡全部能力均已通过独立验收。“复合过渡”仍由 `operation.composite-flow` 承接，不能视为完成细原子化。人工/独立验收必须逐能力补证。')
+$lines.Add('本表把“是否进入原子路由”与“是否存在权威实战入口”分开。主动注册、时机集合、响应池、静态/派生规则、主宰/阵营与试炼/Token/特殊区都是真实运行入口；测试文件只是独立证据，不会单独把卡升级为“已实装”。`细原子已验证`仍只证明至少1项能力被接管。')
 $lines.Add('')
 $lines.Add("- 卡池：$($rows.Count) 张")
 $lines.Add("- 仅细原子已验证：$fineOnly 张")
 $lines.Add("- 细原子与复合过渡混合：$mixed 张")
 $lines.Add("- 仅复合过渡：$compositeOnly 张")
-$lines.Add("- 仅入清单 / 待迁移：$catalogOnly 张")
+$lines.Add("- 未进入原子路由：$($unrouted.Count) 张")
+$lines.Add("  - 有权威实战入口：$($unroutedRuntime.Count) 张")
+$lines.Add("  - 无实战入口：$($noRuntime.Count) 张")
+$lines.Add("  - 已有至少1个自动测试文件证据：$($unroutedWithTests.Count) 张")
 $lines.Add("- 细原子程序：$($programMatches.Count) 条；复合过渡路由：$($routeMatches.Count) 条")
 $lines.Add('')
-$lines.Add('| 卡号 | 卡名 | 赛季 | 阵营 | 类型 | 运行时层级 | 细原子时机 | 复合过渡时机 | 独立验收 |')
-$lines.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+$lines.Add('| 卡号 | 卡名 | 赛季 | 阵营 | 类型 | 原子路由层级 | 细原子时机 | 复合过渡时机 | 其他权威实战入口 | 源码证据 | 测试证据 | 审查结论 |')
+$lines.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($row in $rows) {
-    $lines.Add("| $($row.Id) | $($row.Name) | $($row.Product) | $($row.Faction) | $($row.Type) | $($row.Runtime) | $($row.Fine) | $($row.Composite) | $($row.Review) |")
+    $lines.Add("| $($row.Id) | $($row.Name) | $($row.Product) | $($row.Faction) | $($row.Type) | $($row.Route) | $($row.Fine) | $($row.Composite) | $($row.Runtime) | $($row.RuntimeSources) | $($row.Tests) | $($row.Review) |")
 }
 
 $target = if ([System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath } else { Join-Path $ProjectRoot $OutputPath }

@@ -1619,16 +1619,14 @@ public sealed class LatestBugRegressionTests
 
         var played = game.Handle(0, new L12Command("playCard", runePower.InstanceId));
         Assert.True(played.Accepted, played.Error);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:search")).Accepted);
+        var resource = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", resource.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: resource.PromptId,
+            CardInstanceIds: resource.ValidChoices.Take(1).ToList())).Accepted);
         PassResponses(game);
-        var pay = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-rune-power-pay-choice", pay.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pay.PromptId, Choice: "yes")).Accepted);
-        if (game.State.PendingPrompts.SingleOrDefault()?.Kind == "resource-payment")
-        {
-            var resource = Assert.Single(game.State.PendingPrompts);
-            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: resource.PromptId,
-                CardInstanceIds: resource.ValidChoices.Take(1).ToList())).Accepted);
-        }
 
         var pick = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-rune-power-pick", pick.Data["action"]);

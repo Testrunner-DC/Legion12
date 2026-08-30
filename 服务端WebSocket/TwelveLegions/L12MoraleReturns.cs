@@ -140,7 +140,7 @@ public sealed partial class L12GameEngine
                         "march-kill" => "被神妙行军击杀",
                         _ => "被吕布效果击杀",
                     };
-                    KillTarget(killTarget, reason);
+                    KillTarget(item, killTarget, reason);
                 }
                 FinishStackItem(item);
                 break;
@@ -246,10 +246,6 @@ public sealed partial class L12GameEngine
                 break;
             case "free-tactic":
                 player.FreeTacticCount++;
-                FinishStackItem(item);
-                break;
-            case "qianyang-draw":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "〈乾坤 阳〉抽牌时牌库为空");
                 FinishStackItem(item);
                 break;
             default:

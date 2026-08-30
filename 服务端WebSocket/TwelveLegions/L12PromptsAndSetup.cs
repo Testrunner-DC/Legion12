@@ -1248,9 +1248,10 @@ public sealed partial class L12GameEngine
         if (item.Trigger == "authority-event" && FindAuthorityEvent(item) is { } authorityEvent)
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);
-        var queueAngusTrial = !item.Negated && completedSource?.CardType == "tactic"
+        var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
+        var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction" or "s2-reaction";
-        var queueExorcistReturn = !item.Negated
+        var queueExorcistReturn = !queuedCompositeContinuation && !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";
         State.EffectStack.Remove(item);

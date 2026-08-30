@@ -1931,25 +1931,20 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", road.InstanceId)).Accepted);
-        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:search")).Accepted);
         var flip = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-glory-flip", flip.Data["action"]);
         Assert.Equal(3, flip.MaxChoose);
         var flipIds = player.Morale.Where(card => !card.Tapped && flip.ValidChoices.Contains(card.InstanceId))
             .Take(3).Select(card => card.InstanceId).ToArray();
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: flip.PromptId,
             CardInstanceIds: flipIds.ToList())).Accepted);
-        Assert.All(player.Morale.Where(card => flipIds.Contains(card.InstanceId)), card => Assert.True(card.IsGodPower));
-
-        var usePower = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-glory-use-power", usePower.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: usePower.PromptId, Choice: "yes")).Accepted);
         var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-glory-pay-power", payment.Data["action"]);
         var paidIds = payment.ValidChoices.Take(2).ToArray();
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
             CardInstanceIds: paidIds.ToList())).Accepted);
-
+        PassResponses(game);
         var search = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-glory-search", search.Data["action"]);
         Assert.Equal([olympus.InstanceId], search.ValidChoices);
@@ -2535,21 +2530,21 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", hannibal.InstanceId,
             Target: new L12AttackTarget("legion", enemyTarget.InstanceId))).Accepted);
-        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
         var pay = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-hannibal-pay", pay.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pay.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "hannibal-power")).Accepted);
 
         var own = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-hannibal-own", own.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: own.PromptId,
             Choice: ownTarget.InstanceId)).Accepted);
 
         var enemy = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-hannibal-enemy", enemy.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: enemy.PromptId,
             Choice: enemyTarget.InstanceId)).Accepted);
+        PassResponses(game);
 
         var power = Assert.Single(player.Morale, card => card.InstanceId == "hannibal-power");
         Assert.True(power.Tapped);
@@ -3284,6 +3279,10 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(runePower.InstanceId, tactic.Data["previewCardId"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: tactic.PromptId, Choice: "play")).Accepted);
 
+        var mode = Assert.Single(game.State.PendingPrompts);
+        var declared = game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:none"));
+        Assert.True(declared.Accepted, declared.Error);
         var draw = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-limu-draw", draw.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: draw.PromptId, Choice: "no")).Accepted);
@@ -3456,6 +3455,16 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:buff")).Accepted);
+        var buffTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(fieldKnight.InstanceId, buffTarget.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: buffTarget.PromptId,
+            Choice: fieldKnight.InstanceId)).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            Choice: payment.ValidChoices[0])).Accepted);
         PassResponses(game);
 
         var search = Assert.Single(game.State.PendingPrompts);
@@ -3463,10 +3472,7 @@ public sealed class S2FactionRegressionTests
         Assert.Equal([searchedKnight.InstanceId], search.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: search.PromptId, Choice: searchedKnight.InstanceId)).Accepted);
 
-        var buff = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-round-table-buff", buff.Data["action"]);
-        Assert.Contains(fieldKnight.InstanceId, buff.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: buff.PromptId, Choice: fieldKnight.InstanceId)).Accepted);
+        PassResponses(game);
 
         Assert.Contains(searchedKnight, player.Hand);
         Assert.Equal(nonKnight, Assert.Single(player.Library));

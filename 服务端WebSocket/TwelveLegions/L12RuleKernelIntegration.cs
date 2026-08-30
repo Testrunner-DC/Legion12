@@ -57,10 +57,10 @@ public sealed partial class L12GameEngine
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
+            DeclarationKey = step.DeclarationKey,
         }).ToList();
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
-                && (step.RequiredDeclaredChoice is null || steps.SelectMany(candidate => candidate.ValidChoices)
-                    .Contains(step.RequiredDeclaredChoice, StringComparer.OrdinalIgnoreCase))))
+                && step.RequiredDeclaredChoice is null))
             return CommandResult.Reject("没有足够的合法目标");
         var first = steps[0];
         var activation = new L12PendingActivation
@@ -96,7 +96,7 @@ public sealed partial class L12GameEngine
             activation.CurrentStep++;
         if (activation.CurrentStep >= activation.SelectionSteps.Count)
         {
-            RejectPendingActivation(activation, "条件声明步骤已失效，效果未支付费用也未入栈");
+            CompleteResolvedPendingActivation(activation);
             return;
         }
         var step = activation.SelectionSteps[activation.CurrentStep];
@@ -240,6 +240,71 @@ public sealed partial class L12GameEngine
                     State.Players[index].Morale.Any(morale => morale.InstanceId == choice)), -1);
             if (targetPlayerIndex < 0) targetPlayerIndex = null;
         }
+        else if (step.Kind == "composite-glory-god-power-cost")
+        {
+            var player = State.Players[activation.Controller];
+            var plannedFlips = activation.DeclaredValues.GetValueOrDefault("flipTargets", [])
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var choices = player.Morale.Where(card => !card.Tapped
+                    && (card.IsGodPower || plannedFlips.Contains(card.InstanceId)))
+                .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "荣耀之路没有足够的已声明神力费用，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "resource-payment";
+            targetPlayerIndex = activation.Controller;
+        }
+        else if (step.Kind == "composite-ordinary-payment")
+        {
+            var choices = CompositeOrdinaryPaymentChoices(State.Players[activation.Controller]).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "没有可预声明的支付资源，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "resource-payment";
+            targetPlayerIndex = activation.Controller;
+        }
+        else if (step.Kind == "composite-desert-hand")
+        {
+            var player = State.Players[activation.Controller];
+            var discardCount = activation.DeclaredValues.GetValueOrDefault("discardTargets", [])
+                .Count(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase));
+            var choices = player.Hand.Where(card => card.CardType == "legion" && card.Faction == "taiyangcheng"
+                    && card.DisasterLevel == discardCount && card.InstanceId != activation.SourceInstanceId)
+                .Select(card => card.InstanceId).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count == 0)
+            {
+                RejectPendingActivation(activation, "手牌中没有天灾等级等于弃置数量的【太阳城】军团，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "hand-card";
+        }
+        else if (step.Kind == "composite-desert-slot")
+        {
+            var player = State.Players[activation.Controller];
+            var choices = EmptySlots(player).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var id in activation.DeclaredValues.GetValueOrDefault("discardTargets", []))
+                if (FindOnField(player, id, out var row, out var slot) is not null)
+                    choices.Add($"{row}:{slot}");
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count == 0)
+            {
+                RejectPendingActivation(activation, "弃置结算后仍没有合法登场位置，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+            targetPlayerIndex = activation.Controller;
+        }
         var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
@@ -270,6 +335,11 @@ public sealed partial class L12GameEngine
             State.PendingActivations.Remove(activation);
             ClearFreeMasterActivation(activation);
             AddEvent("ability-cancelled", prompt.PlayerIndex, "已取消发动，未支付费用且未进入堆叠");
+            if (activation.Ability == "composite-committed-play")
+            {
+                AbortCommittedCompositeEffectDeclaration(activation, "已打出的复合战术取消声明，卡牌结算至墓地");
+                return;
+            }
             if (activation.TriggerCandidateId is not null)
             {
                 State.PendingTriggerStackCandidates.RemoveAll(candidate => candidate.CandidateId == activation.TriggerCandidateId);
@@ -286,6 +356,8 @@ public sealed partial class L12GameEngine
             return;
         }
         activation.DeclaredTargets.AddRange(chosen);
+        if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+            activation.DeclaredValues[step.DeclarationKey] = chosen.ToList();
         activation.CurrentStep++;
         while (activation.CurrentStep < activation.SelectionSteps.Count
             && activation.SelectionSteps[activation.CurrentStep].SkipWhenPreviousStepEmpty
@@ -298,6 +370,11 @@ public sealed partial class L12GameEngine
             CreateActivationStepPrompt(activation);
             return;
         }
+        CompleteResolvedPendingActivation(activation);
+    }
+
+    private void CompleteResolvedPendingActivation(L12PendingActivation activation)
+    {
         State.PendingActivations.Remove(activation);
 
         if (activation.TriggerCandidateId is not null)
@@ -308,60 +385,75 @@ public sealed partial class L12GameEngine
 
         if (activation.PlayCardInstanceId is not null)
         {
-            var declaredTarget = activation.DeclaredTargets.SingleOrDefault();
-            var card = State.Players[prompt.PlayerIndex].Hand.FirstOrDefault(candidate =>
-                candidate.InstanceId == activation.PlayCardInstanceId);
-            if (card is null || DeclaredEnemyTarget(prompt.PlayerIndex, declaredTarget) is null)
+            if (activation.Ability == "composite-committed-play")
             {
-                AddEvent("ability-rejected", prompt.PlayerIndex, "手牌来源或目标已不合法，未支付费用也未入栈");
+                CompleteCommittedCompositeEffectDeclaration(activation);
                 return;
             }
-            var handPlayResult = PlayCard(prompt.PlayerIndex, new L12Command("playCard", card.InstanceId,
+            if (activation.Ability == "composite-play")
+            {
+                CompleteCompositeHandPlayDeclaration(activation);
+                return;
+            }
+            var declaredTarget = activation.DeclaredTargets.SingleOrDefault();
+            var card = State.Players[activation.Controller].Hand.FirstOrDefault(candidate =>
+                candidate.InstanceId == activation.PlayCardInstanceId);
+            if (card is null || DeclaredEnemyTarget(activation.Controller, declaredTarget) is null)
+            {
+                AddEvent("ability-rejected", activation.Controller, "手牌来源或目标已不合法，未支付费用也未入栈");
+                return;
+            }
+            var handPlayResult = PlayCard(activation.Controller, new L12Command("playCard", card.InstanceId,
                 Target: new L12AttackTarget("legion", declaredTarget)));
-            if (!handPlayResult.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, handPlayResult.Error ?? "手牌打出失败");
+            if (!handPlayResult.Accepted) AddEvent("ability-rejected", activation.Controller, handPlayResult.Error ?? "手牌打出失败");
             return;
         }
 
         if (activation.ResponseTargetStackItemId is not null)
         {
-            var responsePlayer = State.Players[prompt.PlayerIndex];
+            var responsePlayer = State.Players[activation.Controller];
             var response = FindOnField(responsePlayer, activation.SourceInstanceId, out _, out _);
             var declaredTarget = activation.DeclaredTargets.SingleOrDefault();
             if (response is null || !L12StructuredCardRules.RequiresOwnLegionResponseTarget(response.CardId)
                 || State.EffectStack.All(item => item.StackItemId != activation.ResponseTargetStackItemId)
                 || !PublicLegions(responsePlayer).Any(card => card.InstanceId == declaredTarget))
             {
-                AddEvent("ability-rejected", prompt.PlayerIndex, "响应来源或目标已不合法，未支付费用也未入栈");
+                AddEvent("ability-rejected", activation.Controller, "响应来源或目标已不合法，未支付费用也未入栈");
                 ResumeResponseAfterCancelledDeclaration(activation);
                 return;
             }
-            CommitS1ReactionResponse(prompt.PlayerIndex, response, activation.ResponseTargetStackItemId, declaredTarget);
+            CommitS1ReactionResponse(activation.Controller, response, activation.ResponseTargetStackItemId, declaredTarget);
             return;
         }
 
-        var player = State.Players[prompt.PlayerIndex];
+        var player = State.Players[activation.Controller];
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == activation.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId)
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId
                 && IsLegalGraveyardActiveAbilitySource(player, card, activation.Ability))
             ?? (activation.SourceCardId == player.MasterId ? CreateActiveMasterSource(player, activation.SourceInstanceId) : null)
-            ?? (activation.SourceInstanceId == $"faction-{prompt.PlayerIndex}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
-        if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(prompt.PlayerIndex, id, activation)))
+            ?? (activation.SourceInstanceId == $"faction-{activation.Controller}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
+        if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(activation.Controller, id, activation)))
         {
             ClearFreeMasterActivation(activation);
-            AddEvent("ability-rejected", prompt.PlayerIndex, "来源或目标已不合法，效果未支付费用也未入栈");
+            AddEvent("ability-rejected", activation.Controller, "来源或目标已不合法，效果未支付费用也未入栈");
             return;
         }
-        var result = CommitActiveAbility(prompt.PlayerIndex, source, activation.Ability,
+        var result = CommitActiveAbility(activation.Controller, source, activation.Ability,
             activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets));
-        if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
+        if (!result.Accepted) AddEvent("ability-rejected", activation.Controller, result.Error ?? "主动效果发动失败");
     }
 
     private void RejectPendingActivation(L12PendingActivation activation, string reason)
     {
         State.PendingActivations.Remove(activation);
         ClearFreeMasterActivation(activation);
+        if (activation.Ability == "composite-committed-play")
+        {
+            AbortCommittedCompositeEffectDeclaration(activation, reason);
+            return;
+        }
         AddEvent("ability-rejected", activation.Controller, reason);
         if (activation.ResponseTargetStackItemId is not null)
         {
@@ -459,7 +551,7 @@ public sealed partial class L12GameEngine
         var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
         if (target is null) { FinishStackItem(item); return; }
         var paid = int.TryParse(item.Data.GetValueOrDefault("paid"), out var parsed) ? parsed : target.CurrentCost;
-        KillTarget(target.InstanceId, "被凌霄宝殿击杀");
+        KillTarget(item, target.InstanceId, "被凌霄宝殿击杀");
         var choices = player.Graveyard.Where(card => card.CardType == "legion"
             && L12StructuredCardRules.HasFaction(player, card, "tianting") && card.CurrentCost <= paid)
             .Select(card => card.InstanceId).ToList();
@@ -763,9 +855,28 @@ public sealed partial class L12GameEngine
         var source = FindPromptCard(candidate.Controller, candidate.SourceInstanceId)
             ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         var steps = new List<L12ActivationSelectionStep>();
+        if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
+        {
+            var canUse = player.Morale.Any(card => card.IsGodPower && !card.Tapped)
+                && PublicLegions(player).Any() && PublicLegions(opponent).Any();
+            steps.Add(CompositeStep("option", "mode", "汉尼拔：预先声明是否消耗1神力并选择双方各1张军团",
+                canUse ? ["mode:none", "mode:use"] : ["mode:none"], 1, 1,
+                new() { ["mode:none"] = "不发动汉尼拔的可选效果", ["mode:use"] = "消耗1神力并令双方各1张军团兵力-2000" }));
+            steps.Add(CompositeStep("target-morale", "hannibalCost", "汉尼拔：预先选择消耗的1神力",
+                player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId), 1,
+                requiredChoice: "mode:use"));
+            steps.Add(CompositeStep("field-legion", "hannibalOwn", "汉尼拔：预先选择我方1张军团",
+                PublicLegions(player).Select(card => card.InstanceId), 1, requiredChoice: "mode:use"));
+            steps.Add(CompositeStep("enemy-legion", "hannibalEnemy", "汉尼拔：预先选择对方1张军团",
+                PublicLegions(opponent).Select(card => card.InstanceId), 1, requiredChoice: "mode:use"));
+        }
         var postAttackDeclaration = L12StructuredCardRules.PostAttackDeclarationKind(
             candidate.SourceCardId, candidate.Trigger);
-        if (postAttackDeclaration == "last-stand")
+        if (steps.Count > 0)
+        {
+            // 已由公共复合声明计划建立。
+        }
+        else if (postAttackDeclaration == "last-stand")
         {
             var rested = PublicLegions(opponent).Where(card => card.Tapped).ToList();
             var choices = rested.Select(card => card.InstanceId).Prepend("mode:all").ToList();
@@ -932,7 +1043,36 @@ public sealed partial class L12GameEngine
         var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
         if (candidate is null) { AdvanceTriggerBatches(); return; }
         var declared = activation.DeclaredTargets.ToList();
-        if (candidate.SourceCardId == "S01-0115" && declared.Count > 0)
+        if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
+        {
+            var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
+            candidate.Data["declaredMode"] = mode ?? "mode:none";
+            if (mode == "mode:use")
+            {
+                var player = State.Players[candidate.Controller];
+                var source = FindOnField(player, candidate.SourceInstanceId, out _, out _);
+                var costId = activation.DeclaredValues.GetValueOrDefault("hannibalCost", []).SingleOrDefault();
+                var ownId = activation.DeclaredValues.GetValueOrDefault("hannibalOwn", []).SingleOrDefault();
+                var enemyId = activation.DeclaredValues.GetValueOrDefault("hannibalEnemy", []).SingleOrDefault();
+                var power = player.Morale.FirstOrDefault(card => card.InstanceId == costId && card.IsGodPower && !card.Tapped);
+                var own = FindOnField(player, ownId, out _, out _);
+                var enemy = DeclaredEnemyTarget(candidate.Controller, enemyId);
+                if (source is null || power is null || own is null || enemy is null)
+                {
+                    State.PendingTriggerStackCandidates.Remove(candidate);
+                    AddEvent("ability-rejected", candidate.Controller,
+                        "汉尼拔的来源、费用对象或目标已失效；未消耗神力且效果未进入堆叠");
+                    AdvanceTriggerBatches();
+                    return;
+                }
+                power.Tapped = true;
+                candidate.Data["hannibalOwn"] = own.InstanceId;
+                candidate.Data["hannibalEnemy"] = enemy.InstanceId;
+                AddEvent("cost", candidate.Controller, "汉尼拔消耗1神力", source);
+            }
+            declared.Clear();
+        }
+        else if (candidate.SourceCardId == "S01-0115" && declared.Count > 0)
         {
             var moraleId = declared.FirstOrDefault(id => State.Players[candidate.Controller].Morale.Any(card => card.InstanceId == id));
             if (moraleId is not null)

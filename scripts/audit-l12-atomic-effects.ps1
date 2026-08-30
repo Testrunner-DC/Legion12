@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib/l12-card-runtime-evidence.ps1')
 $baselinePath = Join-Path $ProjectRoot 'docs/l12/ATOMIC-EFFECT-BASELINE.json'
 $serverProject = Get-ChildItem -LiteralPath $ProjectRoot -Recurse -Filter 'GrandUMIServer.csproj' -File | Select-Object -First 1
 if ($null -eq $serverProject) { throw 'GrandUMIServer.csproj not found.' }
@@ -17,7 +18,7 @@ foreach ($fileName in @('cards.s1.json', 'cards.s2.json')) {
     foreach ($card in $decoded) { $cards.Add($card) }
 }
 $runtimeFiles = @(Get-ChildItem -LiteralPath $sourcePath -Filter 'L12*.cs' -File | Where-Object {
-    ($_.Name -notin @('AtomicEffects.cs', 'L12RuntimeEffectRoutes.cs')) -and
+    ($_.Name -notin @('AtomicEffects.cs', 'L12RuntimeEffectRoutes.cs', 'L12CompositeEffectPlans.cs')) -and
         ($_.Name -notmatch '^L12StructuredCardRules(?:\.|$)')
 })
 $source = ($runtimeFiles | Get-Content -Raw) -join "`n"
@@ -42,6 +43,16 @@ $compositeCardIds = @($compositeRouteMatches | ForEach-Object { $_.Groups['id'].
 $catalogOnlyCardIds = @($cards | Where-Object {
     $fineCardIds -notcontains $_.id -and $compositeCardIds -notcontains $_.id
 } | ForEach-Object { $_.id } | Sort-Object -Unique)
+$runtimeEvidence = Get-L12CardRuntimeEvidence -ProjectRoot $ProjectRoot -Cards $cards
+$unroutedRuntimeCardIds = @($catalogOnlyCardIds | Where-Object {
+    $runtimeEvidence[$_].Sources.Count -gt 0
+} | Sort-Object -Unique)
+$noRuntimeEntranceCardIds = @($catalogOnlyCardIds | Where-Object {
+    $runtimeEvidence[$_].Sources.Count -eq 0
+} | Sort-Object -Unique)
+$unroutedWithTestEvidenceCardIds = @($catalogOnlyCardIds | Where-Object {
+    $runtimeEvidence[$_].Tests.Count -gt 0
+} | Sort-Object -Unique)
 $branchCounts = [ordered]@{}
 $details = New-Object System.Collections.Generic.List[object]
 foreach ($file in $runtimeFiles) {
@@ -91,6 +102,10 @@ if (($baseline.PSObject.Properties.Name -contains 'catalogOnlyPendingCards') -an
     ($catalogOnlyCardIds.Count -gt [int]$baseline.catalogOnlyPendingCards)) {
     $failures += "Catalog-only pending card count grew from $($baseline.catalogOnlyPendingCards) to $($catalogOnlyCardIds.Count)."
 }
+if (($baseline.PSObject.Properties.Name -contains 'noRuntimeEntranceCards') -and
+    ($noRuntimeEntranceCardIds.Count -gt [int]$baseline.noRuntimeEntranceCards)) {
+    $failures += "Cards without an authoritative runtime entrance grew from $($baseline.noRuntimeEntranceCards) to $($noRuntimeEntranceCardIds.Count)."
+}
 if ($RequireZero -and $matches.Count -ne 0) {
     $failures += "Runtime card-id case dispatch is not zero: $($matches.Count) occurrence(s)."
 }
@@ -114,6 +129,10 @@ $summary = [ordered]@{
     compositeTransitionRoutes = $compositeRouteMatches.Count
     compositeTransitionCards = $compositeCardIds.Count
     catalogOnlyPendingCards = $catalogOnlyCardIds.Count
+    unroutedWithAuthoritativeRuntimeCards = $unroutedRuntimeCardIds.Count
+    noRuntimeEntranceCards = $noRuntimeEntranceCardIds.Count
+    unroutedWithTestEvidenceCards = $unroutedWithTestEvidenceCardIds.Count
+    noRuntimeEntranceCardIds = $noRuntimeEntranceCardIds
 }
 $summary | ConvertTo-Json
 if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {

@@ -312,7 +312,7 @@ public sealed partial class L12GameEngine
             case "无情者哈拉尔":
                 if (item.Data.TryGetValue("declaredTargets", out var haraldTarget))
                 {
-                    if (!string.IsNullOrWhiteSpace(haraldTarget)) KillTarget(haraldTarget, "被无情者哈拉尔阵亡效果击杀");
+                    if (!string.IsNullOrWhiteSpace(haraldTarget)) KillTarget(item, haraldTarget, "被无情者哈拉尔阵亡效果击杀");
                     FinishStackItem(item); return true;
                 }
                 PromptEnemyByTroops(item, "harald-kill", "无情者哈拉尔阵亡：击杀对方1张兵力不高于2000的军团", 2000, false); return true;
@@ -401,7 +401,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller]; var enemy = State.Players[1 - item.Controller]; var source = FindSource(item);
         switch (action)
         {
-            case "thutmose-kill": case "hunt-kill": case "harald-kill": if (chosen[0] != "skip") KillTarget(chosen[0], $"被{source?.Name}击杀"); FinishStackItem(item); return true;
+            case "thutmose-kill": case "hunt-kill": case "harald-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀"); FinishStackItem(item); return true;
             case "ramses-repeat":
             {
                 var inheritsCounterProtection = source is not null
@@ -469,7 +469,7 @@ public sealed partial class L12GameEngine
             case "duat-mode":
                 if (chosen[0] == "kill") PromptEnemyByTroops(item, "duat-kill", "杜阿特之门：击杀对方1张兵力不高于5000的军团", 5000, false);
                 else RecoverSunCard(item, "S01-0221"); return true;
-            case "duat-kill": if (chosen[0] != "skip") KillTarget(chosen[0], "被杜阿特之门击杀"); FinishStackItem(item); return true;
+            case "duat-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被杜阿特之门击杀"); FinishStackItem(item); return true;
             case "faction-search-pick": CompleteFactionTopSearch(item, chosen); return true;
             case "faction-search-order": CompleteFactionSearchOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
             case "festival-hand": ContinuePharaohFestivalHand(item, chosen[0]); return true;
@@ -584,14 +584,14 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add("trigger:medjedDamageResponse");
                 BeginQueuedSummons(item, [chosen[0]], tapped: false, "梅杰德：选择〈陵墓守卫〉活跃登场的位置");
                 return true;
-            case "yomi-kill3": if (chosen[0] != "skip") KillTarget(chosen[0], "被黄泉之门击杀"); PromptEnemyLegion(item, "yomi-kill1", "黄泉之门：可击杀对方1张费用不高于1的军团", target => target.CurrentCost <= 1, true); return true;
-            case "yomi-kill1": if (chosen[0] != "skip") KillTarget(chosen[0], "被黄泉之门击杀"); FinishStackItem(item); return true;
+            case "yomi-kill3": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被黄泉之门击杀"); PromptEnemyLegion(item, "yomi-kill1", "黄泉之门：可击杀对方1张费用不高于1的军团", target => target.CurrentCost <= 1, true); return true;
+            case "yomi-kill1": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被黄泉之门击杀"); FinishStackItem(item); return true;
             case "amaterasu-debuff":
             {
                 var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.CostModifier--;
                 PromptEnemyLegion(item, "amaterasu-kill", "天照大神：击杀对方1张费用为0的军团", card => card.CurrentCost == 0, true); return true;
             }
-            case "amaterasu-kill": if (chosen[0] != "skip") KillTarget(chosen[0], "被天照大神击杀"); FinishStackItem(item); return true;
+            case "amaterasu-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被天照大神击杀"); FinishStackItem(item); return true;
             case "amaterasu-discard":
                 MoveHandToGrave(player, chosen[0], causedByEffect: false); if (source is not null) foreach (var morale in player.Morale.Where(card => card.Tapped).Take(2).ToArray()) ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
                 foreach (var legion in player.Field[0].Where(card => card?.Faction == "gaotianyuan").Cast<L12CardInstance>())
@@ -967,8 +967,8 @@ public sealed partial class L12GameEngine
                 var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
                 if (ids.Length == 4)
                 {
-                    if (ids[2] != "mode:none") KillTarget(ids[2], "被英灵殿击杀");
-                    if (ids[3] != "mode:none") KillTarget(ids[3], "被英灵殿击杀");
+                    if (ids[2] != "mode:none") KillTarget(item, ids[2], "被英灵殿击杀");
+                    if (ids[3] != "mode:none") KillTarget(item, ids[3], "被英灵殿击杀");
                 }
                 FinishStackItem(item); return true;
             }

@@ -12,5 +12,8 @@
   "compositeTransitionRoutes": 179,
   "compositeTransitionCards": 148,
   "catalogOnlyPendingCards": 74,
-  "rule": "Runtime card-id case dispatch and EffectText runtime inference must remain zero. Card identity references and composite routes may only decrease; fine-grained verified card coverage may not decrease."
+  "unroutedWithAuthoritativeRuntimeCards": 74,
+  "noRuntimeEntranceCards": 0,
+  "unroutedWithTestEvidenceCards": 63,
+  "rule": "Runtime card-id case dispatch and EffectText runtime inference must remain zero. Cards outside the two atomic route registries are audited separately for authoritative runtime entrances and test evidence; cards with no authoritative runtime entrance may not grow. Card identity references and composite routes may only decrease; fine-grained verified card coverage may not decrease."
 }

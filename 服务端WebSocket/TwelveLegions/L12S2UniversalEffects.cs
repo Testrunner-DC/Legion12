@@ -121,15 +121,18 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-holy-lock-attach" });
                 return true;
             }
-            case "乾坤 阳":
+            case "qianyang-kill":
             {
-                var choices = PublicLegions(State.Players[1 - item.Controller])
-                    .Where(target => target.BaseTroops <= 3000 && !target.Hidden)
-                    .Select(target => target.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", "乾坤 阳：击杀对方1张原本兵力不高于3000的军团",
-                    choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-qianyang-kill" });
+                var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.BaseTroops <= 3000) is not null)
+                    KillTarget(item, targetId!, "被〈乾坤 阳〉击杀");
+                FinishStackItem(item);
+                return true;
+            }
+            case "qianyang-draw":
+            {
+                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "〈乾坤 阳〉抽牌时牌库为空");
+                FinishStackItem(item);
                 return true;
             }
             default:
@@ -392,22 +395,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 break;
             }
-            case "s2-qianyang-kill":
-                KillTarget(chosen[0], "被〈乾坤 阳〉击杀");
-                if (CanReturnMorale(State.Players[item.Controller], 1))
-                    CreatePrompt(item.Controller, "optional", "乾坤 阳：是否返还1士气并抽取1张牌？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string>
-                        {
-                            ["action"] = "s2-qianyang-draw", ["choiceMode"] = "instant",
-                            ["yes"] = "返还1士气并抽1张", ["no"] = "不发动",
-                        });
-                else FinishStackItem(item);
-                break;
-            case "s2-qianyang-draw":
-                if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "qianyang-draw");
-                else FinishStackItem(item);
-                break;
             case "s2-magician-remove-counter":
                 if (chosen[0] != "skip")
                 {
@@ -418,7 +405,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 break;
             case "s2-chaotic-arrows":
-                foreach (var targetId in chosen) KillTarget(targetId, "被〈纷乱箭〉击杀");
+                foreach (var targetId in chosen) KillTarget(item, targetId, "被〈纷乱箭〉击杀");
                 FinishStackItem(item);
                 break;
             case "s2-alice-ready":

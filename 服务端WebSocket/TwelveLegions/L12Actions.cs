@@ -28,6 +28,15 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0306" && player.UsedAbilities.Contains("s2-mimir-used"))
             return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
+        Dictionary<string, List<string>>? compositeDeclaration = null;
+        if (L12CompositeEffectPlans.RequiresHandPlayDeclaration(card.CardId))
+        {
+            if (!TryDecodeCompositeDeclaration(command.Choice, out var decoded))
+                return BeginCompositeHandPlayDeclaration(playerIndex, card);
+            if (!ValidateCompositeHandPlayDeclaration(playerIndex, card, decoded, out var declarationError))
+                return CommandResult.Reject(declarationError);
+            compositeDeclaration = decoded;
+        }
         if (L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
             && command.Target?.Type != "legion")
         {
@@ -126,14 +135,22 @@ public sealed partial class L12GameEngine
                 && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))))
             return CommandResult.Reject("〈步行者罗洛〉选择的墓地卡牌已失效或数量不合法");
         var cost = GetPlayCost(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes, rolloReturns.Length);
-        if (ActiveResourceCount(player) < cost) return CommandResult.Reject("活跃士气不足");
+        var compositeReservation = CompositeReservedBasePayment(compositeDeclaration);
+        if (ActiveResourceCountExcluding(player, compositeReservation.ResourceIds,
+                compositeReservation.TemporaryMorale) < cost)
+            return CommandResult.Reject("预留复合效果费用后，活跃士气不足");
         if (mistletoeRunes > 0 && player.SpecialZones.Runes < mistletoeRunes)
             return CommandResult.Reject("可用符文数量不足");
-        var paymentChoice = EnsurePlayResourcePaymentChoice(playerIndex, card, command, cost);
+        var paymentChoice = EnsurePlayResourcePaymentChoice(playerIndex, card, command, cost,
+            compositeReservation.ResourceIds, compositeReservation.TemporaryMorale);
         if (paymentChoice is not null) return paymentChoice;
         var paid = command.CardInstanceIds is not null
-            ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds)
-            : TryConsumeMorale(player, cost);
+            ? TryConsumeSelectedResources(player, cost, command.CardInstanceIds,
+                compositeReservation.ResourceIds, compositeReservation.TemporaryMorale)
+            : TryConsumeSelectedResources(player, cost,
+                SelectAutomaticOrdinaryResourcePaymentIds(player, cost, compositeReservation.ResourceIds,
+                    compositeReservation.TemporaryMorale),
+                compositeReservation.ResourceIds, compositeReservation.TemporaryMorale);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         if (rolloReturns.Length > 0)
             MoveGraveToLibraryBottom(player, rolloReturns.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
@@ -221,10 +238,12 @@ public sealed partial class L12GameEngine
                 BeginYingzhengEnterActivation(playerIndex, card);
             else
             {
-                Dictionary<string, string>? declaredData = L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
-                    && command.Target is { Type: "legion" }
-                    ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
-                    : null;
+                Dictionary<string, string>? declaredData = compositeDeclaration is not null
+                    ? CompositeFirstSegmentData(card.CardId, compositeDeclaration)
+                    : L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
+                        && command.Target is { Type: "legion" }
+                        ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
+                        : null;
                 PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果", data: declaredData);
             }
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
@@ -471,11 +490,12 @@ public sealed partial class L12GameEngine
         return CommandResult.Ok();
     }
 
-    private CommandResult? EnsurePlayResourcePaymentChoice(int playerIndex, L12CardInstance card, L12Command command, int cost)
+    private CommandResult? EnsurePlayResourcePaymentChoice(int playerIndex, L12CardInstance card, L12Command command, int cost,
+        IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)
     {
         if (cost <= 0 || command.CardInstanceIds is not null) return null;
         var player = State.Players[playerIndex];
-        if (!NeedsManualOrdinaryResourcePayment(player, cost)) return null;
+        if (!NeedsManualOrdinaryResourcePayment(player, cost, excludedResourceIds, temporaryMoraleReserve)) return null;
         CreateResourcePaymentPrompt(playerIndex, cost, "play-morale-choice", null, new Dictionary<string, string>
         {
             ["cardInstanceId"] = card.InstanceId,
@@ -484,7 +504,7 @@ public sealed partial class L12GameEngine
             ["baseChoice"] = command.Choice ?? "normal-cost",
             ["targetPlayerIndex"] = (command.TargetPlayerIndex ?? playerIndex).ToString(),
             ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
-        });
+        }, excludedResourceIds, temporaryMoraleReserve);
         return CommandResult.Ok();
     }
 
@@ -581,7 +601,14 @@ public sealed partial class L12GameEngine
             AddEvent("attack", playerIndex,
                 $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.Troops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.Troops}", attacker, attackTarget);
         if (hasAttackerAttackTiming)
-            PushEffect(playerIndex, attacker, "attack", "进攻方【进攻时】效果");
+        {
+            if (L12CompositeEffectPlans.RequiresTriggerDeclaration(attacker.CardId, "attack"))
+                QueueTriggerCandidates([
+                    CreateTriggerCandidate(playerIndex, attacker, "attack", "进攻方【进攻时】效果")
+                ]);
+            else
+                PushEffect(playerIndex, attacker, "attack", "进攻方【进攻时】效果");
+        }
         else
             AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();
