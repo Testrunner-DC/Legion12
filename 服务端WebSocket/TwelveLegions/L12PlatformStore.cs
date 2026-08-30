@@ -232,6 +232,7 @@ public sealed partial class L12PlatformStore
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
     private readonly IL12EmailSender _emailSender;
+    private readonly bool _emailFeatureEnabled;
     private DataFile _data;
 
     public event Action<IReadOnlyList<string>>? SessionsRevoked;
@@ -244,13 +245,15 @@ public sealed partial class L12PlatformStore
     public L12PlatformStore(string path, IReadOnlyList<L12PresetDeckDefinition>? officialDecks = null,
         IL12MfaCredentialProtector? mfaCredentialProtector = null,
         IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null,
-        IL12EmailSender? emailSender = null)
+        IL12EmailSender? emailSender = null,
+        bool? emailFeatureEnabled = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
         _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
         _emailSender = emailSender ?? L12SmtpEmailSender.FromEnvironment();
+        _emailFeatureEnabled = emailFeatureEnabled ?? L12EmailFeature.EnabledFromEnvironment();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();

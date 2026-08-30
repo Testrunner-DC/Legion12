@@ -771,7 +771,7 @@ public sealed partial class L12GameEngine
             && sourceAbilities.Any(ability => ability.Id == data?.GetValueOrDefault("ability")
                 && (ability.Label.Contains("主动休整", StringComparison.Ordinal)
                     || sourceAbilities.Count == 1
-                    && source.EffectText?.Contains("主动休整", StringComparison.Ordinal) == true)))
+                    && L12StructuredCardRules.HasActiveRestAbility(source.CardId))))
         {
             DamageMasterNonLethal(controller, 1, "〈无眠之夜〉的持续效果", neutralSource: true);
         }

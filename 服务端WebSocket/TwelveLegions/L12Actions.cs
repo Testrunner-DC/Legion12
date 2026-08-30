@@ -3,7 +3,7 @@ namespace TwelveLegions.Server;
 public sealed partial class L12GameEngine
 {
     private static bool HasOptionalSelfDamageEntryDiscount(L12CardInstance card)
-        => card.EffectText?.Contains("可对我方主宰造成1点伤害：此军团登场费用-1", StringComparison.Ordinal) == true;
+        => L12StructuredCardRules.HasOptionalSelfDamageEntryDiscount(card.CardId);
 
     private CommandResult PlayCard(int playerIndex, L12Command command)
     {

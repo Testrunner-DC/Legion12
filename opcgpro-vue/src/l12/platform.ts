@@ -15,8 +15,9 @@ export interface PlatformSession {
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
 export interface EmailStatus {
   bound: boolean; verified: boolean; maskedEmail?: string; pendingMaskedEmail?: string
-  pendingExpiresAt?: string; mailConfigured: boolean
+  pendingExpiresAt?: string; featureEnabled: boolean; mailConfigured: boolean
 }
+export interface EmailCapability { enabled: boolean; mailConfigured: boolean }
 export interface AuthOperation { code: string; message: string }
 export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number }
 export interface AccountDeletion {
@@ -309,6 +310,7 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
   headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
   const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
+    || path === '/api/auth/email/capability'
     || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
     || path === '/api/auth/password/reset'
   const requestToken = anonymousCredentialRequest ? '' : platformState.token
@@ -427,6 +429,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
 }
 
 export const emailApi = {
+  capability: () => platformRequest<EmailCapability>('/api/auth/email/capability'),
   status: () => platformRequest<EmailStatus>('/api/auth/email'),
   bind: (email: string, currentPassword: string) => platformRequest<AuthOperation>('/api/auth/email/bind', {
     method: 'POST', body: JSON.stringify({ email, currentPassword }),

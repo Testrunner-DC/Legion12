@@ -8,10 +8,12 @@ const form = reactive({ email: '', password: '', confirmPassword: '' })
 const busy = ref(false)
 const notice = ref('')
 const complete = ref(false)
+const capabilityLoaded = ref(false)
+const emailFeatureEnabled = ref(false)
 const title = computed(() => mode.value === 'verify-email' ? '验证邮箱'
   : mode.value === 'reset-password' ? '设置新密码' : '找回密码')
 
-onMounted(() => {
+onMounted(async () => {
   const params = new URLSearchParams(location.search)
   const requestedMode = params.get('mode')
   if (requestedMode === 'verify-email' || requestedMode === 'reset-password') mode.value = requestedMode
@@ -19,6 +21,9 @@ onMounted(() => {
   token.value = fragment.get('token') || ''
   if (location.hash) history.replaceState(null, '', `${location.pathname}${location.search}`)
   if (mode.value !== 'request' && !token.value) notice.value = '链接缺少令牌，请重新发起请求'
+  try { emailFeatureEnabled.value = (await emailApi.capability()).enabled }
+  catch { emailFeatureEnabled.value = false }
+  finally { capabilityLoaded.value = true }
 })
 
 async function submitRequest() {
@@ -50,7 +55,9 @@ async function submitReset() {
   <main class="recovery-page">
     <section class="recovery-card">
       <small>ACCOUNT RECOVERY</small><h1>{{ title }}</h1>
-      <template v-if="mode === 'request'">
+      <p v-if="!capabilityLoaded">正在读取账号恢复能力…</p>
+      <p v-else-if="!emailFeatureEnabled" class="feature-disabled">邮箱绑定、验证与找回功能当前未开放。</p>
+      <template v-else-if="mode === 'request'">
         <p>仅已验证的绑定邮箱可以找回密码。无论邮箱是否存在，服务端都会返回相同提示。</p>
         <label>绑定邮箱<input v-model="form.email" type="email" maxlength="254" autocomplete="email"/></label>
         <button :disabled="busy || complete" @click="submitRequest">发送重置邮件</button>
@@ -73,4 +80,5 @@ async function submitReset() {
 
 <style scoped>
 .recovery-page{display:grid;min-height:calc(100vh - 90px);place-items:center;padding:30px 16px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.recovery-card{box-sizing:border-box;width:min(520px,100%);padding:28px;border:1px solid #3a4850;background:#101821}.recovery-card>small{color:#58c7ce;font:900 9px monospace;letter-spacing:.18em}.recovery-card h1{margin:7px 0 12px}.recovery-card p{color:#879499;font-size:10px;line-height:1.7}.recovery-card label{display:block;margin:16px 0;color:#b8c0c1;font-size:10px;font-weight:900}.recovery-card input{box-sizing:border-box;width:100%;margin-top:7px;padding:11px;border:1px solid #4b5960;background:#080e13;color:#fff}.recovery-card button{display:block;width:100%;margin-top:16px;padding:11px;border:1px solid #dfbf68;background:#dfbf68;color:#080b0d;font-weight:900}.recovery-card button:disabled{opacity:.45}.recovery-card a{display:inline-block;margin-top:18px;color:#72cbd2;font-size:10px;text-decoration:none}.notice{padding:10px;border-left:3px solid #d1b25c;background:#241c0a;color:#edd584!important}
+.feature-disabled{padding:12px;border-left:3px solid #8a6b32;background:#20190d;color:#d9c082!important}
 </style>

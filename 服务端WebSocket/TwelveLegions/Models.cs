@@ -192,11 +192,10 @@ public sealed class L12CardInstance
     public int CurrentCost => Math.Max(0, Cost + CostModifier + ContinuousCostModifier);
     /// <summary>场面兵力 UI 的比较基准；设定兵力不是兵力增益。</summary>
     public int DisplayBaseTroops => SetTroopsValue ?? BaseTroops;
-    public bool HasRangeBonus => EffectText?.Contains("进攻距离+1", StringComparison.Ordinal) == true;
-    public bool HasRangedNoLoss => EffectText?.Contains("远程进攻无损", StringComparison.Ordinal) == true;
-    public bool HasAttackNoLoss => EffectText?.Contains("进攻无损", StringComparison.Ordinal) == true
-        && EffectText?.Contains("远程进攻无损", StringComparison.Ordinal) != true;
-    public bool CannotBeRanged => EffectText?.Contains("无法被远程进攻", StringComparison.Ordinal) == true;
+    public bool HasRangeBonus => L12StructuredCardRules.HasAnyRowRangeBonus(this);
+    public bool HasRangedNoLoss => L12StructuredCardRules.HasAnyRowRangedNoLoss(this);
+    public bool HasAttackNoLoss => L12StructuredCardRules.HasAnyRowAttackNoLoss(this);
+    public bool CannotBeRanged => L12StructuredCardRules.CannotBeRangedInAnyRow(this);
     public bool HasTrait(string trait) => Traits.Contains(trait, StringComparer.Ordinal);
 
     public L12CardInstance Clone() => (L12CardInstance)MemberwiseClone();

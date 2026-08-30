@@ -1359,6 +1359,90 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void EveryPrintedOptionalSelfDamageEntryDiscountUsesStructuredSemantics()
+    {
+        var expected = Catalog.Cards.Values
+            .Where(card => card.Effect?.Contains("可对我方主宰造成1点伤害：此军团登场费用-1", StringComparison.Ordinal) == true)
+            .Select(card => card.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(6, expected.Count);
+        foreach (var definition in Catalog.Cards.Values)
+            Assert.Equal(expected.Contains(definition.Id),
+                L12StructuredCardRules.HasOptionalSelfDamageEntryDiscount(definition.Id));
+    }
+
+    [Fact]
+    public void EveryTriggeredDisasterUsesStructuredPresentationSemantics()
+    {
+        var expected = Catalog.Cards.Values
+            .Where(card => card.CardType == "destruction"
+                && card.Effect?.Contains("触发", StringComparison.Ordinal) == true)
+            .Select(card => card.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(12, expected.Count);
+        foreach (var definition in Catalog.Cards.Values.Where(card => card.CardType == "destruction"))
+            Assert.Equal(expected.Contains(definition.Id),
+                L12StructuredCardRules.HasTriggeredDisasterEffect(definition.Id));
+    }
+
+    [Fact]
+    public void EveryPrintedActiveRestSourceUsesStructuredSemantics()
+    {
+        var expected = Catalog.Cards.Values
+            .Where(card => card.CardType != "destruction"
+                && card.Effect?.Contains("主动休整", StringComparison.Ordinal) == true)
+            .Select(card => card.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(21, expected.Count);
+        foreach (var definition in Catalog.Cards.Values.Where(card => card.CardType != "destruction"))
+            Assert.Equal(expected.Contains(definition.Id), L12StructuredCardRules.HasActiveRestAbility(definition.Id));
+    }
+
+    [Fact]
+    public void CardInstanceCombatFlagsIgnoreMutableEffectText()
+    {
+        var archer = new L12CardInstance
+        {
+            InstanceId = "structured-archer",
+            CardId = "S01-0110",
+            Name = "结构化弓手",
+            CardType = "legion",
+            Faction = "tianting",
+            EffectText = "不含任何战斗关键词",
+        };
+        var plain = new L12CardInstance
+        {
+            InstanceId = "fake-text-legion",
+            CardId = "S02-0005",
+            Name = "伪造文本军团",
+            CardType = "legion",
+            Faction = "universal",
+            EffectText = "进攻距离+1，远程进攻无损。进攻无损。无法被远程进攻。",
+        };
+        var protectedLegion = new L12CardInstance
+        {
+            InstanceId = "structured-protected-legion",
+            CardId = "S01-0101",
+            Name = "结构化保护军团",
+            CardType = "legion",
+            Faction = "tianting",
+            EffectText = string.Empty,
+        };
+
+        Assert.True(archer.HasRangeBonus);
+        Assert.True(archer.HasRangedNoLoss);
+        Assert.False(plain.HasRangeBonus);
+        Assert.False(plain.HasRangedNoLoss);
+        Assert.False(plain.HasAttackNoLoss);
+        Assert.False(plain.CannotBeRanged);
+        Assert.True(protectedLegion.HasAttackNoLoss);
+        Assert.True(protectedLegion.CannotBeRanged);
+    }
+
+    [Fact]
     public void EveryPrintedRangedRuleUsesTheSharedConditionalCombatProfile()
     {
         var ranged = Catalog.Cards.Values

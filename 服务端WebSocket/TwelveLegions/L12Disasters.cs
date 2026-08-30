@@ -29,16 +29,13 @@ public sealed partial class L12GameEngine
         State.DisasterValue = 0;
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
         if (atTurnStart) ResolveTurnStartDisasterEffectIfNeeded();
-        if (HasTriggeredDisasterEffect(disaster))
+        if (L12StructuredCardRules.HasTriggeredDisasterEffect(disaster.CardId))
             PublishEffectPresentation("effect-trigger", null, disaster, "disaster", "天灾触发效果");
         else
             AddEvent("disaster-reveal", null, $"天灾〈{disaster.Name}〉公开", disaster);
         PushEffect(State.ActivePlayer, disaster, "disaster", "天灾触发效果",
             data: new Dictionary<string, string> { ["opening"] = opening ? "true" : "false" });
     }
-
-    private static bool HasTriggeredDisasterEffect(L12CardInstance disaster)
-        => disaster.EffectText?.Contains("触发", StringComparison.Ordinal) == true;
 
     private void ResolveTurnStartDisasterEffectIfNeeded()
     {

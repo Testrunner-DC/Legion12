@@ -31,6 +31,17 @@ $branchPatterns = [ordered]@{
     cardSwitchArm = '(?m)^\s*"S\d{2}-[A-Za-z0-9]+"\s*=>'
     effectTextInference = '(?:EffectText|\.Effect)\??\.Contains\s*\('
 }
+$atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
+$routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
+$fineProgramMatches = [regex]::Matches($atomicSource,
+    'Program\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
+$compositeRouteMatches = [regex]::Matches($routeSource,
+    'new\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
+$fineCardIds = @($fineProgramMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
+$compositeCardIds = @($compositeRouteMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
+$catalogOnlyCardIds = @($cards | Where-Object {
+    $fineCardIds -notcontains $_.id -and $compositeCardIds -notcontains $_.id
+} | ForEach-Object { $_.id } | Sort-Object -Unique)
 $branchCounts = [ordered]@{}
 $details = New-Object System.Collections.Generic.List[object]
 foreach ($file in $runtimeFiles) {
@@ -68,6 +79,18 @@ foreach ($entry in $branchCounts.GetEnumerator()) {
         $failures += "$($entry.Key) count grew from $($baseline.$baselineName) to $($entry.Value)."
     }
 }
+if (($baseline.PSObject.Properties.Name -contains 'fineGrainedVerifiedCards') -and
+    ($fineCardIds.Count -lt [int]$baseline.fineGrainedVerifiedCards)) {
+    $failures += "Fine-grained verified card coverage fell from $($baseline.fineGrainedVerifiedCards) to $($fineCardIds.Count)."
+}
+if (($baseline.PSObject.Properties.Name -contains 'compositeTransitionRoutes') -and
+    ($compositeRouteMatches.Count -gt [int]$baseline.compositeTransitionRoutes)) {
+    $failures += "Composite transition routes grew from $($baseline.compositeTransitionRoutes) to $($compositeRouteMatches.Count)."
+}
+if (($baseline.PSObject.Properties.Name -contains 'catalogOnlyPendingCards') -and
+    ($catalogOnlyCardIds.Count -gt [int]$baseline.catalogOnlyPendingCards)) {
+    $failures += "Catalog-only pending card count grew from $($baseline.catalogOnlyPendingCards) to $($catalogOnlyCardIds.Count)."
+}
 if ($RequireZero -and $matches.Count -ne 0) {
     $failures += "Runtime card-id case dispatch is not zero: $($matches.Count) occurrence(s)."
 }
@@ -86,6 +109,11 @@ $summary = [ordered]@{
     baselineLegacyCaseOccurrences = [int]$baseline.legacyCardCaseOccurrences
     identityReferenceAndInferenceTotal = $legacyDispatchTotal
     branchCounts = $branchCounts
+    fineGrainedVerifiedPrograms = $fineProgramMatches.Count
+    fineGrainedVerifiedCards = $fineCardIds.Count
+    compositeTransitionRoutes = $compositeRouteMatches.Count
+    compositeTransitionCards = $compositeCardIds.Count
+    catalogOnlyPendingCards = $catalogOnlyCardIds.Count
 }
 $summary | ConvertTo-Json
 if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {

@@ -44,16 +44,18 @@
 - `L12AtomicRuntimeIntegration.cs`：只执行已验证程序，并调用现有规则内核操作。
 - `Data/effects/atoms.schema.json`：可持久化定义的 JSON Schema。
 - 管理后台“卡效原子化”：查看原文、能力拆分、参数、流程图、迁移状态和原始 JSON。
-- `ATOMIC-EFFECT-BASELINE.json` 与 `scripts/audit-l12-atomic-effects.ps1`：阻止卡池漏图和旧分支数量反向增长。
+- `ATOMIC-EFFECT-BASELINE.json` 与 `scripts/audit-l12-atomic-effects.ps1`：阻止卡池漏图、运行时文本推断和旧分支数量反向增长。
 - `L12RuntimeEffectRoutes.cs`：由结构化路由注册表承接原有逐卡运行入口；后台审计与实战解释器读取同一 `CompositeFlow` 原子。
 
 ## 旧卡号分支清零
 
-2026-08-26 已将历史统计口径中的 181 个 `case "Sxx-..."` 全部迁入 178 条结构化运行路由，另有 3 条已完成试炼映射改为按试炼名称处理。`scripts/audit-l12-atomic-effects.ps1 -RequireZero` 会强制卡号 `case` 数量保持为 0；任何后续恢复都会直接失败。
+2026-08-26 已将历史统计口径中的 181 个 `case "Sxx-..."` 全部迁入结构化运行路由，另有 3 条已完成试炼映射改为按试炼名称处理。2026-08-31 的当前权威计数为：44 条细原子程序覆盖 41 张卡、179 条复合过渡路由覆盖 148 张卡，其中 15 张同时含两种层级，另有 74 张仅进入清单而尚无上述运行时接管证据。`scripts/audit-l12-atomic-effects.ps1 -RequireZero` 会强制卡号 `case` 与 `EffectText.Contains` 运行时推断保持为 0，并禁止复合过渡或待迁移卡数量反向增长。
 
-审计同时单列 283 处卡号身份引用或文本推断（213 个状态/集合条件、67 个数据映射 `switch`、3 个文本推断）。这些不是历史“旧卡效 case 分支”：其中包含卡表映射、区域身份、主宰配置和合法的状态查询，因此不能靠删除统计项伪造清零。它们继续由独立棘轮审查，并逐步迁到派生职介、条件战斗配置和结构化数据表。
+审计同时单列 278 处卡号身份引用（211 个状态/集合条件、67 个数据映射 `switch`、0 个运行时文本推断）。这些不是历史“旧卡效 case 分支”：其中包含卡表映射、区域身份、主宰配置和合法的状态查询，因此不能靠删除统计项伪造清零。它们继续由独立棘轮审查，并逐步迁到派生职介、条件战斗配置和结构化数据表。
 
 `operation.composite-flow` 是本次清零使用的过渡执行原子：它消除了逐卡分派并建立单一可审计路由，但并不冒充所有复合卡效都已拆成最细原子。后续人工原子化仍按本文件的能力边界和迁移门槛，将复合流程逐步替换为 condition/cost/target/resolution/duration/visibility 原子。
+
+逐卡运行时层级与独立验收待办见 [248 张卡效独立审查矩阵](CARD-EFFECT-REVIEW-MATRIX.md)。矩阵由 `scripts/export-l12-card-effect-review-matrix.ps1` 从卡池、细原子程序与复合路由生成；“细原子已验证”只证明该卡至少一个能力已接管，不能自动推导同卡全部能力通过。
 
 ## 迁移门槛
 

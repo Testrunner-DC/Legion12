@@ -19,7 +19,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
         {
             var path = Path.Combine(root, "platform.json");
             var sender = new FakeEmailSender();
-            var store = new L12PlatformStore(path, emailSender: sender);
+            var store = new L12PlatformStore(path, emailSender: sender, emailFeatureEnabled: true);
             var registered = store.Register("EmailOwner", "password-123");
 
             var request = store.RequestEmailBinding(registered.Account!.Id, "password-123",
@@ -34,7 +34,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
             Assert.Equal("ow***@example.com", store.EmailStatus(registered.Account.Id).MaskedEmail);
             Assert.False(store.VerifyEmail(token, "127.0.0.1").Success);
 
-            var reloaded = new L12PlatformStore(path, emailSender: sender);
+            var reloaded = new L12PlatformStore(path, emailSender: sender, emailFeatureEnabled: true);
             Assert.True(reloaded.EmailStatus(registered.Account.Id).Verified);
             Assert.True(reloaded.Login("EmailOwner", "password-123").Success);
         }
@@ -49,7 +49,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
         {
             var sender = new FakeEmailSender();
             var path = Path.Combine(root, "platform.json");
-            var store = new L12PlatformStore(path, emailSender: sender);
+            var store = new L12PlatformStore(path, emailSender: sender, emailFeatureEnabled: true);
             var account = store.Register("ResetOwner", "password-123").Account!;
             BindAndVerify(store, sender, account.Id, "password-123", "reset@example.com");
             sender.Messages.Clear();
@@ -88,7 +88,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"),
-                emailSender: new L12UnavailableEmailSender());
+                emailSender: new L12UnavailableEmailSender(), emailFeatureEnabled: true);
             var account = store.Register("NoMailOwner", "password-123").Account!;
             var bind = store.RequestEmailBinding(account.Id, "password-123", "owner@example.com", "client");
             Assert.False(bind.Success);
@@ -104,6 +104,126 @@ public sealed class EmailAuthAndAccountLifecycleTests
             Assert.True(limited.RetryAfterSeconds > 0);
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void DisabledEmailFeatureFailsClosedWithoutDeletingVerifiedEmail()
+    {
+        var root = TempRoot();
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var sender = new FakeEmailSender();
+            var enabled = new L12PlatformStore(path, emailSender: sender, emailFeatureEnabled: true);
+            var account = enabled.Register("PreservedEmailOwner", "password-123").Account!;
+            BindAndVerify(enabled, sender, account.Id, "password-123", "preserved@example.com");
+            var previousMessageCount = sender.Messages.Count;
+
+            var disabled = new L12PlatformStore(path, emailSender: sender, emailFeatureEnabled: false);
+            var capability = disabled.EmailCapability();
+            Assert.False(capability.Enabled);
+            Assert.False(capability.MailConfigured);
+            var status = disabled.EmailStatus(account.Id);
+            Assert.True(status.Bound);
+            Assert.True(status.Verified);
+            Assert.False(status.FeatureEnabled);
+            Assert.Equal("pr***@example.com", status.MaskedEmail);
+
+            Assert.Equal("email_feature_disabled", disabled.RequestEmailBinding(account.Id, "password-123",
+                "other@example.com", "client").Code);
+            Assert.Equal("email_feature_disabled", disabled.VerifyEmail("unused-token", "client").Code);
+            Assert.Equal("email_feature_disabled", disabled.RequestPasswordReset("preserved@example.com", "client").Code);
+            Assert.Equal("email_feature_disabled", disabled.ResetPassword("unused-token", "replacement-123", "client").Code);
+            Assert.Equal(previousMessageCount, sender.Messages.Count);
+            Assert.True(disabled.Login("PreservedEmailOwner", "password-123").Success);
+
+            var reenabled = new L12PlatformStore(path, emailSender: sender, emailFeatureEnabled: true);
+            Assert.True(reenabled.EmailStatus(account.Id).Verified);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void EmailFeatureEnvironmentSwitchIsExplicitOptIn()
+    {
+        var previous = Environment.GetEnvironmentVariable(L12EmailFeature.EnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(L12EmailFeature.EnvironmentVariable, null);
+            Assert.False(L12EmailFeature.EnabledFromEnvironment());
+            Environment.SetEnvironmentVariable(L12EmailFeature.EnvironmentVariable, "false");
+            Assert.False(L12EmailFeature.EnabledFromEnvironment());
+            Environment.SetEnvironmentVariable(L12EmailFeature.EnvironmentVariable, "true");
+            Assert.True(L12EmailFeature.EnabledFromEnvironment());
+        }
+        finally { Environment.SetEnvironmentVariable(L12EmailFeature.EnvironmentVariable, previous); }
+    }
+
+    [Fact]
+    public async Task HttpEmailRoutesFailClosedWhenFeatureIsDisabled()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        L12WebSocketServer? server = null;
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var sender = new FakeEmailSender();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, emailSender: sender, emailFeatureEnabled: false);
+            var registered = store.Register("HttpDisabledEmail", "password-123");
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+
+            using (var capabilityResponse = await client.GetAsync("/api/auth/email/capability"))
+            {
+                Assert.Equal(HttpStatusCode.OK, capabilityResponse.StatusCode);
+                var capability = await capabilityResponse.Content.ReadFromJsonAsync<L12EmailCapabilityView>();
+                Assert.NotNull(capability);
+                Assert.False(capability.Enabled);
+                Assert.False(capability.MailConfigured);
+            }
+
+            using (var bind = new HttpRequestMessage(HttpMethod.Post, "/api/auth/email/bind"))
+            {
+                bind.Headers.Authorization = new("Bearer", registered.Token);
+                bind.Content = JsonContent.Create(new
+                    { email = "disabled@example.com", currentPassword = "password-123" });
+                using var response = await client.SendAsync(bind);
+                await AssertEmailFeatureDisabled(response);
+            }
+            using (var response = await client.PostAsJsonAsync("/api/auth/email/verify",
+                       new { token = "unused-token" }))
+                await AssertEmailFeatureDisabled(response);
+            using (var response = await client.PostAsJsonAsync("/api/auth/password/forgot",
+                       new { email = "disabled@example.com" }))
+                await AssertEmailFeatureDisabled(response);
+            using (var response = await client.PostAsJsonAsync("/api/auth/password/reset",
+                       new { token = "unused-token", newPassword = "replacement-password" }))
+                await AssertEmailFeatureDisabled(response);
+
+            Assert.Empty(sender.Messages);
+            Assert.True(store.Login("HttpDisabledEmail", "password-123").Success);
+            Assert.False(store.EmailStatus(registered.Account!.Id).Bound);
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]
@@ -152,7 +272,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
             var sender = new FakeEmailSender();
             var platformPath = Path.Combine(root, "platform.json");
             var store = new L12PlatformStore(platformPath, catalog.PresetDecks,
-                officialCards: catalog.Cards, emailSender: sender);
+                officialCards: catalog.Cards, emailSender: sender, emailFeatureEnabled: true);
             var registered = store.Register("HttpEmailOwner", "password-123");
             recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
@@ -292,6 +412,14 @@ public sealed class EmailAuthAndAccountLifecycleTests
     {
         Assert.True(store.RequestEmailBinding(accountId, password, email, "client").Success);
         Assert.True(store.VerifyEmail(sender.LastToken(), "client").Success);
+    }
+
+    private static async Task AssertEmailFeatureDisabled(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<L12ApiError>();
+        Assert.NotNull(error);
+        Assert.Equal("email_feature_disabled", error.Code);
     }
 
     private static string TempRoot()

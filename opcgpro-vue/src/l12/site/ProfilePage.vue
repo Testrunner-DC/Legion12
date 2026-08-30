@@ -18,6 +18,7 @@ const router = useRouter()
 const sessions = ref<PlatformSession[]>([])
 const mfa = ref<MfaCapability | null>(null)
 const emailStatus = ref<EmailStatus | null>(null)
+const emailFeatureEnabled = ref(false)
 
 async function loadAccountData() {
   if (!platformState.account || platformState.account.mustChangePassword) return
@@ -28,10 +29,17 @@ async function loadAccountData() {
   if (sessionResult.status === 'fulfilled') sessions.value = sessionResult.value
 }
 async function loadEmailStatus() {
-  if (!platformState.account || platformState.account.mustChangePassword) { emailStatus.value = null; return }
+  if (!emailFeatureEnabled.value || !platformState.account || platformState.account.mustChangePassword) { emailStatus.value = null; return }
   try { emailStatus.value = await emailApi.status() } catch { emailStatus.value = null }
 }
-onMounted(() => { loadAccountData(); loadEmailStatus(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
+async function loadEmailCapability() {
+  try {
+    const capability = await emailApi.capability()
+    emailFeatureEnabled.value = capability.enabled
+    await loadEmailStatus()
+  } catch { emailFeatureEnabled.value = false; emailStatus.value = null }
+}
+onMounted(() => { loadAccountData(); loadEmailCapability(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 async function submitAuth() {
   authBusy.value = true; notice.value = ''
@@ -52,7 +60,7 @@ async function submitAuth() {
       return
     }
     await loadAccountData()
-    await loadEmailStatus()
+    await loadEmailCapability()
     notice.value = authMode.value === 'login' ? '登录成功' : '账号建立成功，六阵营预组会自动加入牌库'
     auth.password = ''
   } catch (error) { notice.value = error instanceof Error ? error.message : '操作失败' }
@@ -131,12 +139,12 @@ const losses = computed(() => myMatches.value.filter(match => match.endedUtc && 
       <template v-if="!platformState.account">
         <div class="auth-tabs"><button :class="{ active: authMode === 'login' }" @click="authMode = 'login'">登录</button><button :class="{ active: authMode === 'register' }" @click="authMode = 'register'">注册</button></div>
         <div class="account-form"><label>用户名<input v-model="auth.username" maxlength="20" autocomplete="username"/></label><label>密码<input v-model="auth.password" type="password" maxlength="128" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"/></label><button class="primary" :disabled="authBusy" @click="submitAuth">{{ authMode === 'login' ? '登录' : '建立账号' }}</button></div>
-        <router-link v-if="authMode === 'login'" class="recovery-link" to="/auth/recovery">忘记密码？使用已验证邮箱找回</router-link>
+        <router-link v-if="authMode === 'login' && emailFeatureEnabled" class="recovery-link" to="/auth/recovery">忘记密码？使用已验证邮箱找回</router-link>
       </template>
       <template v-else>
         <p v-if="platformState.account.mustChangePassword" class="password-required">管理员已重置此账号密码，必须修改密码。完成下方操作前，请勿继续使用临时密码。</p>
         <div class="account-form"><label>当前密码<input v-model="auth.currentPassword" type="password" autocomplete="current-password"/></label><label>新密码<input v-model="auth.newPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password"/></label><button class="primary" :disabled="authBusy" @click="submitPassword">修改密码</button><button class="logout" :disabled="authBusy" @click="signOut">退出当前设备</button><router-link v-if="canAccessAdmin" class="admin-link" to="/admin">进入管理后台 →</router-link></div>
-        <section class="email-manager">
+        <section v-if="emailFeatureEnabled" class="email-manager">
           <header><div><h3>邮箱与账号恢复</h3><p v-if="emailStatus?.verified">已验证：{{ emailStatus.maskedEmail }}</p><p v-else>尚未绑定已验证邮箱，忘记密码时无法找回。</p><small v-if="emailStatus?.pendingMaskedEmail">待验证：{{ emailStatus.pendingMaskedEmail }} · {{ new Date(emailStatus.pendingExpiresAt || '').toLocaleString() }} 前有效</small></div></header>
           <div class="email-form"><label>新邮箱 / 换绑邮箱<input v-model="emailForm.email" type="email" maxlength="254" autocomplete="email"/></label><label>当前密码<input v-model="emailForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !emailStatus?.mailConfigured" @click="submitEmailBinding">发送验证邮件</button><button v-if="emailStatus?.verified" class="danger" :disabled="authBusy" @click="unbindEmail">解绑邮箱</button></div>
           <small v-if="emailStatus && !emailStatus.mailConfigured" class="mail-unavailable">邮件服务尚未配置，绑定和换绑暂不可用。</small>

@@ -8,6 +8,14 @@ namespace TwelveLegions.Server;
 public sealed record L12EmailMessage(string To, string Subject, string TextBody, string Purpose);
 public sealed record L12EmailSendResult(bool Success, string Code, string Message);
 
+public static class L12EmailFeature
+{
+    public const string EnvironmentVariable = "L12_EMAIL_FEATURE_ENABLED";
+
+    public static bool EnabledFromEnvironment()
+        => bool.TryParse(Environment.GetEnvironmentVariable(EnvironmentVariable), out var enabled) && enabled;
+}
+
 public interface IL12EmailSender
 {
     bool IsConfigured { get; }
@@ -102,8 +110,9 @@ public sealed class L12SmtpEmailSender : IL12EmailSender
     }
 }
 
+public sealed record L12EmailCapabilityView(bool Enabled, bool MailConfigured);
 public sealed record L12EmailStatusView(bool Bound, bool Verified, string? MaskedEmail,
-    string? PendingMaskedEmail, DateTimeOffset? PendingExpiresAt, bool MailConfigured);
+    string? PendingMaskedEmail, DateTimeOffset? PendingExpiresAt, bool FeatureEnabled, bool MailConfigured);
 public sealed record L12AuthOperationResult(bool Success, string Code, string Message,
     int RetryAfterSeconds = 0);
 public sealed record L12AdminPasswordResetView(bool Applied, L12AccountView Account,
@@ -119,6 +128,7 @@ public sealed partial class L12PlatformStore
     private static readonly TimeSpan PasswordResetLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan AuthActionWindow = TimeSpan.FromMinutes(15);
     private const string PasswordResetGenericMessage = "如果该邮箱已绑定并完成验证，我们会发送密码重置邮件";
+    private const string EmailFeatureDisabledMessage = "邮箱绑定、验证与找回功能当前未开放";
 
     private sealed class EmailAuthTokenRow
     {
@@ -140,6 +150,9 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset WindowStartedAt { get; set; }
     }
 
+    public L12EmailCapabilityView EmailCapability()
+        => new(_emailFeatureEnabled, _emailFeatureEnabled && _emailSender.IsConfigured);
+
     public L12EmailStatusView EmailStatus(string accountId)
     {
         lock (_gate)
@@ -153,13 +166,15 @@ public sealed partial class L12PlatformStore
                 .OrderByDescending(row => row.CreatedAt).FirstOrDefault();
             return new(account.EmailVerifiedAt is not null, account.EmailVerifiedAt is not null,
                 MaskEmail(account.Email), MaskEmail(pending?.TargetEmail), pending?.ExpiresAt,
-                _emailSender.IsConfigured);
+                _emailFeatureEnabled, _emailFeatureEnabled && _emailSender.IsConfigured);
         }
     }
 
     public L12AuthOperationResult RequestEmailBinding(string accountId, string currentPassword, string email,
         string clientKey)
     {
+        if (!_emailFeatureEnabled)
+            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
         var normalized = NormalizeEmail(email);
         if (normalized is null)
             return new(false, "invalid_email", "请输入有效邮箱地址");
@@ -195,6 +210,8 @@ public sealed partial class L12PlatformStore
 
     public L12AuthOperationResult VerifyEmail(string token, string clientKey)
     {
+        if (!_emailFeatureEnabled)
+            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
         lock (_gate)
         {
             if (!TryConsumeAuthAction("email-verify", clientKey, 10, out var retryAfter))
@@ -249,6 +266,8 @@ public sealed partial class L12PlatformStore
 
     public L12AuthOperationResult RequestPasswordReset(string email, string clientKey)
     {
+        if (!_emailFeatureEnabled)
+            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
         var normalized = NormalizeEmail(email);
         EmailAuthTokenRow? issued = null;
         string? rawToken = null;
@@ -282,6 +301,8 @@ public sealed partial class L12PlatformStore
 
     public L12AuthOperationResult ResetPassword(string token, string newPassword, string clientKey)
     {
+        if (!_emailFeatureEnabled)
+            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
         if (newPassword.Length is < 8 or > 128)
             return new(false, "invalid_password", "新密码长度需为 8–128 个字符");
         string[] revokedIds;

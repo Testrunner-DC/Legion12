@@ -44,6 +44,30 @@ public static partial class L12StructuredCardRules
         "S01-0101",
     };
 
+    // 卡面冒号前的可选主宰伤害属于登场费用替代，必须由结构化身份语义驱动，
+    // 禁止根据可变的 EffectText 推断按钮合法性或最终费用。
+    private static readonly HashSet<string> OptionalSelfDamageEntryDiscountCards = new(StringComparer.Ordinal)
+    {
+        "S01-0303", "S01-0304", "S01-0308", "S01-0310", "S01-0314", "S02-0303",
+    };
+
+    // 只有写明“触发”的天灾在翻开时播放触发式效果展示；纯持续天灾只公开卡牌。
+    // 此列表同时供实战展示和原子审计使用，不再扫描卡面文本。
+    private static readonly HashSet<string> TriggeredDisasterCards = new(StringComparer.Ordinal)
+    {
+        "S01-DS02", "S01-DS03", "S01-DS04", "S01-DS05", "S01-DS06", "S01-DS07", "S01-DS09",
+        "S02-DS02", "S02-DS03", "S02-DS04", "S02-DS05", "S02-DS06",
+    };
+
+    // 主动休整是规则费用类型而非按钮文案。无眠之夜等监听入口查询此集合，
+    // 不得从实例 EffectText 推断，以免卡面纠错或展示裁剪改变实战结果。
+    private static readonly HashSet<string> ActiveRestSourceCards = new(StringComparer.Ordinal)
+    {
+        "S01-0105", "S01-0109", "S01-0117", "S01-01D1", "S01-0214", "S01-0215", "S01-0317",
+        "S01-03D1", "S01-04D1", "S02-0003", "S02-0104", "S02-0204", "S02-0205", "S02-0404",
+        "S02-0510", "S02-0513", "S02-0520", "S02-05D1", "S02-0603", "S02-0616", "S02-06D1",
+    };
+
     // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
     // 响应窗口只查询这一处结构化规则，禁止再从 EffectText.Contains 推断。
     private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards = new(StringComparer.Ordinal)
@@ -68,6 +92,27 @@ public static partial class L12StructuredCardRules
 
     public static bool HasFaction(L12PlayerState owner, L12CardInstance card, string faction)
         => string.Equals(EffectiveFaction(owner, card), faction, StringComparison.Ordinal);
+
+    public static bool HasOptionalSelfDamageEntryDiscount(string cardId)
+        => OptionalSelfDamageEntryDiscountCards.Contains(cardId);
+
+    public static bool HasTriggeredDisasterEffect(string cardId)
+        => TriggeredDisasterCards.Contains(cardId);
+
+    public static bool HasActiveRestAbility(string cardId)
+        => ActiveRestSourceCards.Contains(cardId);
+
+    public static bool HasAnyRowRangeBonus(L12CardInstance card)
+        => CombatProfile(card, 0).HasRangeBonus || CombatProfile(card, 1).HasRangeBonus;
+
+    public static bool HasAnyRowRangedNoLoss(L12CardInstance card)
+        => CombatProfile(card, 0).HasRangedNoLoss || CombatProfile(card, 1).HasRangedNoLoss;
+
+    public static bool HasAnyRowAttackNoLoss(L12CardInstance card)
+        => CombatProfile(card, 0).HasAttackNoLoss || CombatProfile(card, 1).HasAttackNoLoss;
+
+    public static bool CannotBeRangedInAnyRow(L12CardInstance card)
+        => CombatProfile(card, 0).CannotBeRanged || CombatProfile(card, 1).CannotBeRanged;
 
     public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
     {

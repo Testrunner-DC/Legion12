@@ -1,11 +1,16 @@
 {
-  "capturedAt": "2026-08-26",
+  "capturedAt": "2026-08-31",
   "catalogCards": 248,
   "cardsWithEffectText": 248,
   "legacyUniqueCardIds": 0,
   "legacyCardCaseOccurrences": 0,
-  "legacyCardConditionalOccurrences": 213,
+  "legacyCardConditionalOccurrences": 211,
   "legacyCardSwitchArmOccurrences": 67,
-  "legacyEffectTextInferenceOccurrences": 3,
-  "rule": "Runtime card-id case dispatch must remain zero. Other identity references and EffectText inferences are separately ratcheted and must not grow."
+  "legacyEffectTextInferenceOccurrences": 0,
+  "fineGrainedVerifiedPrograms": 44,
+  "fineGrainedVerifiedCards": 41,
+  "compositeTransitionRoutes": 179,
+  "compositeTransitionCards": 148,
+  "catalogOnlyPendingCards": 74,
+  "rule": "Runtime card-id case dispatch and EffectText runtime inference must remain zero. Card identity references and composite routes may only decrease; fine-grained verified card coverage may not decrease."
 }

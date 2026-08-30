@@ -144,6 +144,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     : StatusCodes.Status401Unauthorized);
         });
         _app.MapGet("/api/auth/mfa/capability", () => Results.Ok(_platform.MfaCapability()));
+        _app.MapGet("/api/auth/email/capability", () => Results.Ok(_platform.EmailCapability()));
         _app.MapGet("/api/auth/me", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -178,7 +179,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return result.Success ? Results.Json(new { result.Code, result.Message }, statusCode: StatusCodes.Status202Accepted)
                     : ApiError(request, result.Code, result.Message,
                         result.RetryAfterSeconds > 0 ? StatusCodes.Status429TooManyRequests
-                            : result.Code == "mail_unavailable" ? StatusCodes.Status503ServiceUnavailable
+                            : result.Code is "mail_unavailable" or "email_feature_disabled" ? StatusCodes.Status503ServiceUnavailable
                             : StatusCodes.Status400BadRequest);
             }
             catch
@@ -203,6 +204,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return result.Success ? Results.Ok(new { result.Code, result.Message })
                 : ApiError(request, result.Code, result.Message,
                     result.RetryAfterSeconds > 0 ? StatusCodes.Status429TooManyRequests
+                        : result.Code == "email_feature_disabled" ? StatusCodes.Status503ServiceUnavailable
                         : StatusCodes.Status400BadRequest);
         });
         _app.MapPost("/api/auth/password/forgot", (HttpRequest request, ForgotPasswordRequest body) =>
@@ -211,6 +213,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (result.RetryAfterSeconds > 0) request.HttpContext.Response.Headers.RetryAfter = result.RetryAfterSeconds.ToString();
             return result.RetryAfterSeconds > 0
                 ? ApiError(request, result.Code, result.Message, StatusCodes.Status429TooManyRequests)
+                : !result.Success
+                    ? ApiError(request, result.Code, result.Message,
+                        result.Code == "email_feature_disabled" ? StatusCodes.Status503ServiceUnavailable
+                            : StatusCodes.Status400BadRequest)
                 : Results.Json(new { result.Code, result.Message }, statusCode: StatusCodes.Status202Accepted);
         });
         _app.MapPost("/api/auth/password/reset", (HttpRequest request, PasswordResetRequest body) =>
@@ -221,6 +227,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return result.Success ? Results.Ok(new { result.Code, result.Message })
                 : ApiError(request, result.Code, result.Message,
                     result.RetryAfterSeconds > 0 ? StatusCodes.Status429TooManyRequests
+                        : result.Code == "email_feature_disabled" ? StatusCodes.Status503ServiceUnavailable
                         : StatusCodes.Status400BadRequest);
         });
         _app.MapGet("/api/auth/sessions", (HttpRequest request) =>
