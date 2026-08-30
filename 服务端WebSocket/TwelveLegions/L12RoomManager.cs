@@ -56,6 +56,11 @@ public sealed class L12RoomManager
         public long CommandSequence { get; set; }
         public bool IsSandbox { get; init; }
         public Guid? GmControllerSessionId { get; set; }
+        public string? TournamentId { get; init; }
+        public string? TournamentCode { get; init; }
+        public string? TournamentMatchId { get; init; }
+        public string? TournamentRulesHash { get; init; }
+        public bool TournamentResultReported { get; set; }
         public bool Closed { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
     }
@@ -66,6 +71,7 @@ public sealed class L12RoomManager
     private readonly ConcurrentDictionary<Guid, Session> _sessions = new();
     private readonly ConcurrentDictionary<string, Room> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FriendInvitation> _friendInvitations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _tournamentRoomGate = new();
 
     public L12RoomManager(L12Catalog catalog, MatchRecorder recorder, L12PlatformStore? platform = null)
     {
@@ -277,6 +283,26 @@ public sealed class L12RoomManager
             : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
     }
 
+    public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateAsync(Guid sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)
+            || session.RoomCode is null
+            || !_rooms.TryGetValue(session.RoomCode, out var room)) return [];
+        await room.Gate.WaitAsync();
+        try
+        {
+            if (room.TournamentId is not null)
+            {
+                await StartTournamentGameIfReadyLockedAsync(room);
+                if (room.Game?.State.Phase == L12Phase.GameOver)
+                    await CompleteTournamentRoomGameAsync(room);
+            }
+            return room.Game is null ? BroadcastRoom(room)
+                : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
+        }
+        finally { room.Gate.Release(); }
+    }
+
     public IReadOnlyList<OutgoingMessage> CreateRoom(Guid sessionId, L12RoomOptions? options = null)
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
@@ -311,6 +337,8 @@ public sealed class L12RoomManager
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error);
+        if (room.TournamentId is not null)
+            return Error(sessionId, "赛事房间已绑定规则快照，不能通过普通房间命令修改");
         if (room.Game is not null) return Error(sessionId, "对局开始后不能修改房间规则");
         if (session.PlayerIndex != 0 || room.Sessions.FirstOrDefault() != sessionId)
             return Error(sessionId, "只有房主可以修改房间规则");
@@ -478,9 +506,188 @@ public sealed class L12RoomManager
         return BroadcastRoom(room);
     }
 
+    /// <summary>
+    /// 赛事玩家不输入房间码；服务端按已登录账号与权威配对直接放入固定席位。
+    /// 房间首次进入时由赛事快照创建，牌库和规则不再接受客户端选择。
+    /// </summary>
+    public async Task<IReadOnlyList<OutgoingMessage>> EnterTournamentMatchAsync(Guid sessionId,
+        string? tournamentId, string? matchId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
+            return Error(sessionId, "请先登录账号");
+        if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
+        L12TournamentRoomAssignment assignment;
+        try
+        {
+            assignment = _platform.TournamentRoomAssignment(session.AccountId,
+                tournamentId?.Trim() ?? string.Empty, matchId?.Trim() ?? string.Empty, spectate: false);
+        }
+        catch (Exception error) when (error is L12TournamentScopeException or L12TournamentVersionConflictException
+                                      or KeyNotFoundException or ArgumentException)
+        {
+            return Error(sessionId, error.Message, "tournamentRoomRejected");
+        }
+        if (!L12DeckValidator.TryValidatePreset(_catalog, assignment.PlayerA.Deck, out var deckError,
+                assignment.OperationsPolicy.CardRestrictions)
+            || !L12DeckValidator.TryValidatePreset(_catalog, assignment.PlayerB.Deck, out deckError,
+                assignment.OperationsPolicy.CardRestrictions))
+            return Error(sessionId, $"赛事牌库快照无效：{deckError}", "tournamentRoomRejected");
+        if (session.RoomCode is not null)
+        {
+            if (string.Equals(session.RoomCode, assignment.RoomCode, StringComparison.OrdinalIgnoreCase)
+                && _rooms.TryGetValue(session.RoomCode, out var current))
+            {
+                await current.Gate.WaitAsync();
+                try
+                {
+                    await StartTournamentGameIfReadyLockedAsync(current);
+                    if (current.Game?.State.Phase == L12Phase.GameOver)
+                        await CompleteTournamentRoomGameAsync(current);
+                    return current.Game is null ? BroadcastRoom(current)
+                        : BroadcastRoom(current).Concat(BroadcastGame(current)).ToArray();
+                }
+                finally { current.Gate.Release(); }
+            }
+            return Error(sessionId, "请先离开当前房间", "tournamentRoomRejected");
+        }
+
+        Room room;
+        lock (_tournamentRoomGate)
+        {
+            if (!_rooms.TryGetValue(assignment.RoomCode, out room!))
+            {
+                room = CreateTournamentRoom(assignment);
+                if (!_rooms.TryAdd(room.Code, room)) room = _rooms[room.Code];
+            }
+            if (room.TournamentId != assignment.TournamentId
+                || room.TournamentMatchId != assignment.MatchId
+                || room.TournamentRulesHash != assignment.RulesHash)
+                return Error(sessionId, "赛事房间绑定冲突", "tournamentRoomRejected");
+        }
+
+        await room.Gate.WaitAsync();
+        try
+        {
+            var playerIndex = assignment.PlayerA.AccountId == session.AccountId ? 0 : 1;
+            var occupiedId = room.Sessions[playerIndex];
+            if (_sessions.TryGetValue(occupiedId, out var occupied) && !occupied.IsVirtual
+                && occupied.Connected && occupiedId != sessionId)
+                return Error(sessionId, "该账号已在本桌连接", "tournamentRoomRejected");
+            if (occupiedId != sessionId)
+            {
+                room.Sessions[playerIndex] = sessionId;
+                if (occupied is not null) ClearRoomMembership(occupied);
+                if (occupied?.IsVirtual == true) _sessions.TryRemove(occupiedId, out _);
+            }
+            var player = playerIndex == 0 ? assignment.PlayerA : assignment.PlayerB;
+            session.RoomCode = room.Code;
+            session.PlayerIndex = playerIndex;
+            session.IsSpectator = false;
+            session.CustomDeck = player.Deck;
+            room.Ready[playerIndex] = true;
+            await StartTournamentGameIfReadyLockedAsync(room);
+            return room.Game is null ? BroadcastRoom(room)
+                : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
+        }
+        finally { room.Gate.Release(); }
+    }
+
+    public IReadOnlyList<OutgoingMessage> SpectateTournamentMatch(Guid sessionId, string? tournamentId,
+        string? matchId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
+            return Error(sessionId, "请先登录账号");
+        if (session.RoomCode is not null) return Error(sessionId, "请先离开当前房间");
+        if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
+        L12TournamentRoomAssignment assignment;
+        try
+        {
+            assignment = _platform.TournamentRoomAssignment(session.AccountId,
+                tournamentId?.Trim() ?? string.Empty, matchId?.Trim() ?? string.Empty, spectate: true);
+        }
+        catch (Exception error) when (error is L12TournamentScopeException or L12TournamentVersionConflictException
+                                      or KeyNotFoundException or ArgumentException)
+        {
+            return Error(sessionId, error.Message, "tournamentRoomRejected");
+        }
+        if (!_rooms.TryGetValue(assignment.RoomCode, out var room) || room.Game is null)
+            return Error(sessionId, "本桌对局尚未开始", "tournamentRoomRejected");
+        if (room.TournamentId != assignment.TournamentId || room.TournamentMatchId != assignment.MatchId)
+            return Error(sessionId, "赛事房间绑定冲突", "tournamentRoomRejected");
+        lock (room.Spectators)
+        {
+            if (!room.Spectators.Contains(sessionId)) room.Spectators.Add(sessionId);
+            session.RoomCode = room.Code;
+            session.PlayerIndex = null;
+            session.IsSpectator = true;
+        }
+        return [new OutgoingMessage(sessionId, new
+        {
+            type = "gameState", spectating = true, gmEnabled = false,
+            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+            tournamentMatchId = room.TournamentMatchId,
+            state = room.Game.SnapshotForSpectator(),
+        })];
+    }
+
+    private Room CreateTournamentRoom(L12TournamentRoomAssignment assignment)
+    {
+        var room = new Room
+        {
+            Code = assignment.RoomCode,
+            TournamentId = assignment.TournamentId,
+            TournamentCode = assignment.TournamentCode,
+            TournamentMatchId = assignment.MatchId,
+            TournamentRulesHash = assignment.RulesHash,
+            OperationsPolicy = assignment.OperationsPolicy,
+            Options = new L12RoomOptions
+            {
+                MatchModeId = "tournament",
+                Spectating = "disabled",
+                HandVisibility = "request",
+                DisasterMode = assignment.DisasterMode,
+                UseCardRestrictions = true,
+            },
+        };
+        foreach (var item in new[] { assignment.PlayerA, assignment.PlayerB }.Select((player, index) => (player, index)))
+        {
+            var virtualId = Guid.NewGuid();
+            _sessions[virtualId] = new Session
+            {
+                Id = virtualId,
+                AccountId = item.player.AccountId,
+                Name = item.player.Username,
+                RoomCode = room.Code,
+                PlayerIndex = item.index,
+                CustomDeck = item.player.Deck,
+                IsVirtual = true,
+                Connected = false,
+            };
+            room.Sessions.Add(virtualId);
+            room.Ready[item.index] = true;
+        }
+        return room;
+    }
+
+    private async Task StartTournamentGameIfReadyLockedAsync(Room room)
+    {
+        if (room.Game is not null || room.TournamentId is null
+            || !room.Sessions.All(id => _sessions.TryGetValue(id, out var member)
+                && !member.IsVirtual && member.Connected)) return;
+        var members = room.Sessions.Select(id => _sessions[id]).ToArray();
+        var game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code,
+            Random.Shared.Next(), members.Select(member => member.Name).ToArray(),
+            members.Select(SelectedDeck).ToArray(), disasterMode: room.Options.DisasterMode,
+            operationsPolicy: room.OperationsPolicy);
+        // 只有对局记录成功落库后才发布可操作引擎；失败时下一次进入/恢复可安全重试。
+        await _recorder.StartAsync(game.State);
+        room.Game = game;
+    }
+
     public IReadOnlyList<OutgoingMessage> SelectDeck(Guid sessionId, int deckIndex)
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
         if (deckIndex < 0 || deckIndex >= _catalog.PresetDecks.Count) return Error(sessionId, "无效的预组");
         if (!IsPresetAllowed(room.OperationsPolicy, deckIndex, out error))
@@ -494,6 +701,7 @@ public sealed class L12RoomManager
     public IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, L12CustomDeckSubmission submission)
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
         if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out error,
                 room.OperationsPolicy.CardRestrictions))
@@ -506,6 +714,8 @@ public sealed class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> SetReadyAsync(Guid sessionId, bool ready)
     {
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (room.TournamentId is not null)
+            return Error(sessionId, "赛事房间由轮次签到与进入身份自动准备");
         await room.Gate.WaitAsync();
         try
         {
@@ -555,6 +765,13 @@ public sealed class L12RoomManager
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始");
+            if (room.Game.State.Phase == L12Phase.GameOver)
+            {
+                var reportError = await CompleteTournamentRoomGameAsync(room);
+                var completed = BroadcastGame(room).ToList();
+                if (reportError is not null) completed.AddRange(Error(sessionId, reportError, "tournamentResultPending"));
+                return completed;
+            }
             L12Command? command;
             try
             {
@@ -566,8 +783,12 @@ public sealed class L12RoomManager
             room.CommandSequence++;
             await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex.Value, commandElement.GetRawText(), result);
             if (!result.Accepted) return Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected");
-            if (room.Game.State.Phase == L12Phase.GameOver) await _recorder.CompleteAsync(room.Game);
-            return BroadcastGame(room);
+            if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
+            var errorMessage = await CompleteTournamentRoomGameAsync(room);
+            var messages = BroadcastGame(room).ToList();
+            if (errorMessage is not null)
+                messages.AddRange(Error(sessionId, errorMessage, "tournamentResultPending"));
+            return messages;
         }
         finally { room.Gate.Release(); }
     }
@@ -632,8 +853,11 @@ public sealed class L12RoomManager
             await _recorder.AppendAsync(room.Game, room.CommandSequence, actingPlayerIndex,
                 commandElement.GetRawText(), result);
             if (!result.Accepted) return Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected");
-            if (room.Game.State.Phase == L12Phase.GameOver) await _recorder.CompleteAsync(room.Game);
-            return BroadcastGame(room);
+            if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
+            var errorMessage = await CompleteTournamentRoomGameAsync(room);
+            var messages = BroadcastGame(room).ToList();
+            if (errorMessage is not null) messages.AddRange(Error(sessionId, errorMessage, "tournamentResultPending"));
+            return messages;
         }
         finally { room.Gate.Release(); }
     }
@@ -666,6 +890,29 @@ public sealed class L12RoomManager
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
+
+        if (room.TournamentId is not null)
+        {
+            var tournamentPlayerIndex = session.PlayerIndex!.Value;
+            var virtualId = Guid.NewGuid();
+            _sessions[virtualId] = new Session
+            {
+                Id = virtualId,
+                AccountId = session.AccountId,
+                Name = session.Name,
+                RoomCode = room.Code,
+                PlayerIndex = tournamentPlayerIndex,
+                CustomDeck = session.CustomDeck,
+                IsVirtual = true,
+                Connected = false,
+            };
+            room.Sessions[tournamentPlayerIndex] = virtualId;
+            ClearRoomMembership(session);
+            return [new OutgoingMessage(sessionId, new
+            {
+                type = "roomLeft", message = "已离开赛事房间，可在赛事中重新进入",
+            })];
+        }
 
         var playerIndex = session.PlayerIndex!.Value;
         if (playerIndex == 0)
@@ -751,6 +998,8 @@ public sealed class L12RoomManager
             {
                 type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
                 players, decks, options = room.Options, started = room.Game is not null, sandbox = room.IsSandbox,
+                tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+                tournamentMatchId = room.TournamentMatchId,
                 operationsPolicyVersion = room.OperationsPolicy.Version,
             });
         }).ToArray();
@@ -766,10 +1015,35 @@ public sealed class L12RoomManager
                 ? room.Game!.SnapshotForGm(_sessions[id].PlayerIndex!.Value)
                 : room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value),
             gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
+            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+            tournamentMatchId = room.TournamentMatchId,
         })).Concat(spectators.Select(id => new OutgoingMessage(id, new
         {
-            type = "gameState", spectating = true, gmEnabled = false, state = room.Game!.SnapshotForSpectator(),
+            type = "gameState", spectating = true, gmEnabled = false,
+            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+            tournamentMatchId = room.TournamentMatchId, state = room.Game!.SnapshotForSpectator(),
         }))).ToArray();
+    }
+
+    private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
+    {
+        if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
+        await _recorder.CompleteAsync(room.Game);
+        if (room.TournamentId is null || room.TournamentMatchId is null || room.TournamentResultReported)
+            return null;
+        if (_platform is null) return "赛事赛果回写服务不可用，已保留对局记录待重试";
+        if (room.Game.State.Winner is not { } winner) return "对局已结束但缺少胜者，已保留记录待裁决";
+        try
+        {
+            _platform.RecordTournamentGameResult(room.TournamentId, room.TournamentMatchId,
+                room.Game.State.MatchId, winner);
+            room.TournamentResultReported = true;
+            return null;
+        }
+        catch (Exception error)
+        {
+            return $"赛果回写待重试：{error.Message}";
+        }
     }
 
     private L12PresetDeckDefinition SelectedDeck(Session session)

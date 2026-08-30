@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
 import { canAccessAdmin, changePassword, emailApi, login, logout, mfaCapability as loadMfaCapability, platformRequest, platformState, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
@@ -12,6 +13,8 @@ const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '', currentPassword: '', newPassword: '' })
 const emailForm = reactive({ email: '', currentPassword: '' })
 const authBusy = ref(false)
+const route = useRoute()
+const router = useRouter()
 const sessions = ref<PlatformSession[]>([])
 const mfa = ref<MfaCapability | null>(null)
 const emailStatus = ref<EmailStatus | null>(null)
@@ -41,6 +44,13 @@ async function submitAuth() {
       return
     }
     await ensureOfficialPrebuiltDecks()
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+      && !route.query.redirect.startsWith('//')
+      ? route.query.redirect : ''
+    if (redirect) {
+      await router.replace(redirect)
+      return
+    }
     await loadAccountData()
     await loadEmailStatus()
     notice.value = authMode.value === 'login' ? '登录成功' : '账号建立成功，六阵营预组会自动加入牌库'

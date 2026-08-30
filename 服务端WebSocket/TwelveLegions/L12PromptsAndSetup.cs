@@ -17,7 +17,9 @@ public sealed partial class L12GameEngine
 
     private void BuildDisasterPool()
     {
-        if (State.DisasterMode == "season")
+        if (State.DisasterMode == "season"
+            || string.Equals(State.OperationsPolicy.DefaultRoomConfig.MatchModeId, "tournament",
+                StringComparison.OrdinalIgnoreCase))
         {
             var index = 0;
             foreach (var id in State.OperationsPolicy.DisasterCardIds.Where(id =>

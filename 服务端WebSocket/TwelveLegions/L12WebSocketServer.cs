@@ -384,7 +384,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             if (!TryAuthorize(request, L12Permission.TournamentsRead, out var authenticated, out var failure))
                 return failure;
-            var result = _platform.Tournament(authenticated.Account, code);
+            var result = _platform.TournamentByCode(authenticated.Account, code);
             if (result is null) return ApiError(request, "tournament_not_found", "赛事不存在",
                 StatusCodes.Status404NotFound);
             request.HttpContext.Response.Headers.ETag = $"\"{result.Version}\"";
@@ -596,6 +596,23 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.ApplyTournamentRuling(current.Actor, current.Payload.TournamentId,
                     current.Payload.MatchId, current.Payload.Ruling,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/matches/{matchId}/rematch",
+            (HttpRequest request, string id, string matchId, TournamentRematchRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentRulingsWrite;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new TournamentRematchCommandPayload(id, matchId,
+                new L12TournamentRematchPayload(body.Reason ?? string.Empty));
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.rematch",
+                $"tournament:{id}/match:{matchId}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.RequestTournamentRematch(current.Actor,
+                    current.Payload.TournamentId, current.Payload.MatchId, current.Payload.Rematch,
                     expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
@@ -1301,15 +1318,19 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             }
             IReadOnlyList<OutgoingMessage> outgoing = messageType switch
             {
-                "hello" => AuthenticateSession(sessionId, root),
+                "hello" => await AuthenticateSessionAsync(sessionId, root),
                 "createRoom" => CreateRoom(sessionId, root),
                 "updateRoomOptions" => UpdateRoomOptions(sessionId, root),
                 "createSandbox" => await CreateSandboxAsync(sessionId, root),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
+                "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
+                    GetString(root, "tournamentId"), GetString(root, "matchId")),
                 "inviteFriend" => _rooms.InviteFriend(sessionId, GetString(root, "accountId")),
                 "resolveFriendInvitation" => _rooms.ResolveFriendInvitation(sessionId,
                     GetString(root, "invitationId"), GetBool(root, "accept", false)),
                 "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),
+                "spectateTournamentMatch" => _rooms.SpectateTournamentMatch(sessionId,
+                    GetString(root, "tournamentId"), GetString(root, "matchId")),
                 "leaveRoom" => _rooms.LeaveRoom(sessionId),
                 "selectDeck" => _rooms.SelectDeck(sessionId, GetInt(root, "deckIndex")),
                 "selectCustomDeck" when root.TryGetProperty("deck", out var deckElement)
@@ -1334,7 +1355,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         }
     }
 
-    private IReadOnlyList<OutgoingMessage> AuthenticateSession(Guid sessionId, JsonElement root)
+    private async Task<IReadOnlyList<OutgoingMessage>> AuthenticateSessionAsync(Guid sessionId, JsonElement root)
     {
         var authenticated = _platform.AuthenticateTokenSession(GetString(root, "authToken"));
         if (authenticated is null)
@@ -1345,7 +1366,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         var session = new OutgoingMessage(sessionId,
             _rooms.Connect(sessionId, authenticated.Account.Id, authenticated.Account.Username));
         return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }
-            .Concat(_rooms.RecoveryState(sessionId)).ToArray();
+            .Concat(await _rooms.RecoveryStateAsync(sessionId)).ToArray();
     }
 
     private OutgoingMessage EffectiveOperationsPolicyMessage(Guid sessionId)
@@ -1737,6 +1758,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         catch (L12TournamentVersionConflictException error)
         {
             return L12AdminCommandResult<T>.Fail("tournament_version_conflict", error.Message,
+                StatusCodes.Status409Conflict);
+        }
+        catch (L12TournamentPairingException error)
+        {
+            return L12AdminCommandResult<T>.Fail("tournament_pairing_unavailable", error.Message,
                 StatusCodes.Status409Conflict);
         }
         catch (KeyNotFoundException error)
@@ -2411,6 +2437,8 @@ public sealed record TournamentTimeExtensionRequest(int Minutes, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentRulingRequest(string? Kind, string? TargetAccountId, string? Decision,
     string? Reason, string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentRematchRequest(string? Reason, string? IdempotencyKey = null,
+    long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentMatchReferenceRequest(string? RecordedMatchId, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentEmptyPayload;
@@ -2419,6 +2447,8 @@ public sealed record TournamentRoundCommandPayload(string TournamentId, int Roun
 public sealed record TournamentStaffCommandPayload(string TournamentId, L12TournamentStaffPayload Staff);
 public sealed record TournamentRulingCommandPayload(string TournamentId, string MatchId,
     L12TournamentRulingPayload Ruling);
+public sealed record TournamentRematchCommandPayload(string TournamentId, string MatchId,
+    L12TournamentRematchPayload Rematch);
 public sealed record TournamentReferenceCommandPayload(string TournamentId, string MatchId,
     L12TournamentMatchReferencePayload Reference);
 public sealed record ReleaseDeployRequest(string? ArtifactId, string? Environment,

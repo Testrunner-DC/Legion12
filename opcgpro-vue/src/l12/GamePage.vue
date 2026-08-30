@@ -31,9 +31,10 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
-  if (l12State.spectating || l12State.room?.sandbox) leaveRoom()
+  const tournamentCode = l12State.room?.tournamentCode ?? game.value?.tournamentCode
+  if (l12State.spectating || l12State.room?.sandbox || l12State.room?.tournamentId || game.value?.tournamentId) leaveRoom()
   else if (l12State.room && game.value?.phase === 'GameOver') returnToRoom()
-  router.push('/lobby')
+  router.push(tournamentCode ? { path: '/battle/tournaments', query: { code: tournamentCode } } : '/lobby')
 }
 </script>
 
@@ -65,7 +66,7 @@ function returnToLobby() {
   </div>
   <main v-else class="missing-game">
     <h1>对局状态尚未加载</h1>
-    <button @click="router.push('/lobby')">返回大厅</button>
+    <button @click="returnToLobby">返回赛事/大厅</button>
   </main>
 </template>
 

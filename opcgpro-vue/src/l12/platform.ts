@@ -190,10 +190,21 @@ export interface TournamentRulesSnapshot {
   disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
   deckVisibility: TournamentDeckVisibility; hash: string; capturedAt: string
 }
-export interface TournamentDeckSnapshot { name: string; code?: string; hash: string; submittedAt: string; lockedAt?: string }
+export interface TournamentDeckSnapshot {
+  name: string; code?: string; hash: string; submittedAt: string; lockedAt?: string
+  masterId: string; cardIds: string[]; moraleIds: string[]; specialIds: string[]
+}
 export interface TournamentStaff { accountId: string; username: string }
 export interface TournamentParticipant {
-  accountId: string; username: string; checkedIn: boolean; dropped: boolean; deck?: TournamentDeckSnapshot
+  accountId: string; username: string; checkedIn: boolean; dropped: boolean; eliminated: boolean; seed: number
+  deck?: TournamentDeckSnapshot
+}
+export interface TournamentStanding {
+  roundNumber: number; rank: number; accountId: string; username: string; wins: number; losses: number
+  draws: number; byes: number; opponentScore: number; opponentsOpponentScore: number; seed: number
+}
+export interface TournamentMatchEvent {
+  id: string; kind: string; result?: string; recordedMatchId?: string; actorId: string; detail: string; createdAt: string
 }
 export interface TournamentRuling {
   id: string; matchId: string; kind: string; targetAccountId?: string; decision: string; minutes: number
@@ -203,25 +214,36 @@ export interface TournamentMatch {
   id: string; table: number; playerAAccountId: string; playerAName: string; playerBAccountId?: string
   playerBName: string; roomCode: string; readyA: boolean; readyB: boolean; status: 'waiting' | 'running' | 'completed'
   result?: string; timeExtensionMinutes: number; startedAt?: string; deadline?: string; recordedMatchId?: string
-  rulings: TournamentRuling[]
+  rulings: TournamentRuling[]; graceDeadline?: string; sourceMatchIds: string[]; rulesHash: string
+  playerADeckHash?: string; playerBDeckHash?: string; replayNumber: number; canEnter: boolean; canSpectate: boolean
+  events: TournamentMatchEvent[]
 }
 export interface TournamentRound {
   id: string; number: number; status: TournamentRoundStatus; paused: boolean; startedAt?: string; pausedAt?: string
-  totalPausedSeconds: number; matches: TournamentMatch[]
+  totalPausedSeconds: number; matches: TournamentMatch[]; stage: 'swiss' | 'elimination'; standingsCapturedAt?: string
+  standings: TournamentStanding[]; pairingFailure?: string
 }
+export interface TournamentBracketMatch {
+  id: string; table: number; playerAAccountId: string; playerAName: string; playerBAccountId?: string
+  playerBName: string; result?: string; sourceMatchIds: string[]
+}
+export interface TournamentBracketRound { number: number; matches: TournamentBracketMatch[] }
 export interface Tournament {
   id: string; code: string; name: string; organizerAccountId: string; organizerName: string; referees: TournamentStaff[]
-  status: TournamentStatus; format: 'single' | 'swiss' | 'league'; visibility: 'public' | 'code'; maxPlayers: number
+  status: TournamentStatus; format: 'single' | 'swiss' | 'swiss-cut' | 'league'; visibility: 'public' | 'code'; maxPlayers: number
   startAt?: string; description: string; rules: TournamentRulesSnapshot; roundMinutes: number; checkInMinutes: number
   participants: TournamentParticipant[]; rounds: TournamentRound[]; version: number; legacyImported: boolean
-  createdAt: string; updatedAt: string; completedAt?: string
+  createdAt: string; updatedAt: string; completedAt?: string; swissRounds: number; cutSize?: number
+  registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
+  finalSwissStandings: TournamentStanding[]; eliminationBracket: TournamentBracketRound[]
 }
 export interface TournamentList { platformVersion: number; items: Tournament[] }
 export interface TournamentCreateInput {
   name: string; format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   ruleset: string; description: string; deckVisibility: TournamentDeckVisibility; disasterMode: TournamentDisasterMode
   banList: string; disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
-  roundMinutes: number; checkInMinutes: number; refereeAccountIds: string[]
+  roundMinutes: number; checkInMinutes: number; refereeAccountIds: string[]; swissRounds: number; cutSize?: number
+  registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
 }
 export interface LegacyTournamentParticipantInput {
   name: string; deckName?: string; deckCode?: string; checkedIn?: boolean; dropped?: boolean
@@ -577,6 +599,9 @@ export const tournamentApi = {
   }),
   ruleMatch: (id: string, matchId: string, expectedVersion: number, body: { kind: 'result' | 'penalty' | 'no-show'; targetAccountId?: string; decision: string; reason: string }) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/rulings`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-ruling', { expectedVersion, ...body })),
+  }),
+  rematch: (id: string, matchId: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/rematch`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-rematch', { expectedVersion, reason })),
   }),
   linkMatch: (id: string, matchId: string, expectedVersion: number, recordedMatchId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/reference`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-reference', { expectedVersion, recordedMatchId, reason })),

@@ -110,6 +110,9 @@ export interface GameState {
   matchId: string
   roomCode: string
   operationsPolicyVersion?: number
+  tournamentId?: string
+  tournamentCode?: string
+  tournamentMatchId?: string
   you: number
   revision: number
   activePlayer: number
@@ -175,6 +178,9 @@ export interface StackItem {
 
 export interface RoomState {
   roomCode: string
+  tournamentId?: string
+  tournamentCode?: string
+  tournamentMatchId?: string
   yourPlayerIndex: number
   players: Array<{ name: string; playerIndex: number; connected: boolean; ready: boolean; deckIndex: number; customDeck?: boolean; deckName: string; masterName: string; faction: string }>
   decks: Array<{ index: number; name: string; masterId: string; masterName: string; faction: string }>

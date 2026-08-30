@@ -144,6 +144,11 @@ export function connect(): Promise<void> {
       else if (message.type === 'gameState') {
         if (l12State.leavingRoom) return
         const incoming = message.state as GameState
+        if (message.tournamentId) {
+          incoming.tournamentId = message.tournamentId
+          incoming.tournamentCode = message.tournamentCode
+          incoming.tournamentMatchId = message.tournamentMatchId
+        }
         const current = l12State.game
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
         if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {
@@ -154,7 +159,8 @@ export function connect(): Promise<void> {
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
         }
       }
-      else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected') {
+      else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
+        || message.type === 'tournamentRoomRejected' || message.type === 'tournamentResultPending') {
         l12State.notice = message.message
         l12State.pendingAction = false
         l12State.leavingRoom = false
@@ -239,9 +245,19 @@ export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12
   send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
 }
 export const joinRoom = (roomCode: string) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'joinRoom', roomCode }) }
+export const enterTournamentMatch = (tournamentId: string, matchId: string) => {
+  l12State.spectating = false
+  l12State.leavingRoom = false
+  send({ type: 'enterTournamentMatch', tournamentId, matchId })
+}
 export const inviteFriend = (accountId: string) => send({ type: 'inviteFriend', accountId })
 export const resolveFriendInvitation = (invitationId: string, accept: boolean) => send({ type: 'resolveFriendInvitation', invitationId, accept })
 export const spectateRoom = (roomCode: string) => { l12State.leavingRoom = false; send({ type: 'spectateRoom', roomCode }) }
+export const spectateTournamentMatch = (tournamentId: string, matchId: string) => {
+  l12State.spectating = true
+  l12State.leavingRoom = false
+  send({ type: 'spectateTournamentMatch', tournamentId, matchId })
+}
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
