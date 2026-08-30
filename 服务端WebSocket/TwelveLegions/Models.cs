@@ -33,6 +33,7 @@ public enum L12CombatStage
     DefenseChoice,
     CombatDamage,
     KillTriggers,
+    DefenderKillTriggers,
     AttackerDeathTriggers,
     DefenderDeathTriggers,
     FinalizeDeaths,

@@ -280,7 +280,7 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void MutualCombatDefeatResolvesAttackerDeathBeforeDefenderDeathWithoutKill()
+    public void MutualCombatDefeatResolvesAttackerDeathBeforeDefenderDeath()
     {
         var game = new L12GameEngine(Catalog, "trigger-integration", "TRIGGER", 8131,
             ["甲", "乙"], [0, 0], skipPreparation: true);
@@ -317,7 +317,6 @@ public sealed class RuleKernelTests
         var attackerDeath = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
         var defenderDeath = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId));
         Assert.True(attackerDeath >= 0 && defenderDeath > attackerDeath);
-        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("【击杀时】", StringComparison.Ordinal));
         Assert.Contains(attacker, game.State.Players[0].Graveyard);
         Assert.Contains(defender, game.State.Players[1].Graveyard);
     }

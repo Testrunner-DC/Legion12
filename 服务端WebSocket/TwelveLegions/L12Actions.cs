@@ -894,13 +894,11 @@ public sealed partial class L12GameEngine
             bypassLethalReplacement: true, deferGraveyard: true);
         if (defenderDefeated) pending.DefeatedDefenderInstanceId = target.InstanceId;
         if (attackerDefeated) pending.DefeatedAttackerInstanceId = attacker.InstanceId;
-        pending.Stage = defenderDefeated && !attackerDefeated
+        pending.Stage = defenderDefeated
             ? L12CombatStage.KillTriggers
             : attackerDefeated
-                ? L12CombatStage.AttackerDeathTriggers
-                : defenderDefeated
-                    ? L12CombatStage.DefenderDeathTriggers
-                    : L12CombatStage.AttackerAfterAttack;
+                ? L12CombatStage.DefenderKillTriggers
+                : L12CombatStage.AttackerAfterAttack;
         AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
             ? $"进攻无损：防守军团承受 {defenderDamage} 点战斗伤害，进攻军团不减损"
             : $"进攻者以冻结进攻值 {attackValue} 造成 {defenderDamage} 点战斗伤害；防守军团以当前兵力 {targetTroops} 反击",

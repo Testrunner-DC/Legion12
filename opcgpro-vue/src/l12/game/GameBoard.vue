@@ -370,6 +370,7 @@ function eventLabel(event: ActionEvent) { return eventLabels[event.type] ?? '记
 const combatStageLabels: Record<string, string> = {
   AttackerAttackTiming: '进攻方【进攻时】', DefenderAttackTiming: '防守方【对方进攻时】',
   DefenseChoice: '抵挡 / 支援', CombatDamage: '战斗伤害', KillTriggers: '进攻者【击杀时】',
+  DefenderKillTriggers: '被攻击者【击杀时】',
   AttackerDeathTriggers: '进攻者【阵亡时】', DefenderDeathTriggers: '被攻击者【阵亡时】',
   FinalizeDeaths: '阵亡军团进入墓地', AttackerAfterAttack: '进攻者【进攻后】',
   DefenderAfterAttack: '防守方【对方进攻后 / 被进攻后】', Complete: '进攻结束',

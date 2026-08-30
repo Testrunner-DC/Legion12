@@ -140,7 +140,7 @@ export interface GameState {
     attackerInstanceId: string
     target: { type: string; instanceId?: string }
     stage: 'AttackerAttackTiming' | 'DefenderAttackTiming' | 'DefenseChoice' | 'CombatDamage'
-      | 'KillTriggers' | 'AttackerDeathTriggers' | 'DefenderDeathTriggers' | 'FinalizeDeaths'
+      | 'KillTriggers' | 'DefenderKillTriggers' | 'AttackerDeathTriggers' | 'DefenderDeathTriggers' | 'FinalizeDeaths'
       | 'AttackerAfterAttack' | 'DefenderAfterAttack' | 'Complete'
     attackValue: number
   } | null

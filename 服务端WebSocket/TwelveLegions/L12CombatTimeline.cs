@@ -88,11 +88,26 @@ public sealed partial class L12GameEngine
                     if (!pending.StageEffectsQueued)
                     {
                         pending.StageEffectsQueued = true;
-                        QueueCombatKillTriggers(pending);
+                        QueueCombatKillTriggers(pending, pending.AttackerPlayer, pending.AttackerInstanceId,
+                            pending.DefeatedDefenderInstanceId);
                         if (!CombatTimelineIsIdle()) return;
                     }
                     pending.StageEffectsQueued = false;
-                    pending.Stage = L12CombatStage.DefenderDeathTriggers;
+                    pending.Stage = pending.DefeatedAttackerInstanceId is null
+                        ? L12CombatStage.DefenderDeathTriggers
+                        : L12CombatStage.DefenderKillTriggers;
+                    continue;
+
+                case L12CombatStage.DefenderKillTriggers:
+                    if (!pending.StageEffectsQueued)
+                    {
+                        pending.StageEffectsQueued = true;
+                        QueueCombatKillTriggers(pending, 1 - pending.AttackerPlayer,
+                            pending.Target.InstanceId, pending.DefeatedAttackerInstanceId);
+                        if (!CombatTimelineIsIdle()) return;
+                    }
+                    pending.StageEffectsQueued = false;
+                    pending.Stage = L12CombatStage.AttackerDeathTriggers;
                     continue;
 
                 case L12CombatStage.AttackerDeathTriggers:
@@ -225,34 +240,46 @@ public sealed partial class L12GameEngine
         if (State.Phase != L12Phase.GameOver) State.Phase = L12Phase.Main;
     }
 
-    private void QueueCombatKillTriggers(L12PendingDefense pending)
+    private void QueueCombatKillTriggers(L12PendingDefense pending, int killerController,
+        string? killerInstanceId, string? defeatedInstanceId)
     {
         // 击杀时效果只能由本次交战的权威伤害结果建立。响应抵挡、支援、目标存活，
         // 或恢复自旧快照但缺少被击杀实例时，都不得仅凭后续的 killed 标记生成触发。
-        if (pending.BlockedByResponse || string.IsNullOrWhiteSpace(pending.DefeatedDefenderInstanceId)
-            || !string.IsNullOrWhiteSpace(pending.DefeatedAttackerInstanceId)) return;
-        var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
-        if (attacker is null) return;
+        if (pending.BlockedByResponse || string.IsNullOrWhiteSpace(killerInstanceId)
+            || string.IsNullOrWhiteSpace(defeatedInstanceId)) return;
+        var isAttackerKill = killerController == pending.AttackerPlayer;
+        if (isAttackerKill
+                ? killerInstanceId != pending.AttackerInstanceId
+                  || defeatedInstanceId != pending.DefeatedDefenderInstanceId
+                : killerInstanceId != pending.Target.InstanceId
+                  || defeatedInstanceId != pending.DefeatedAttackerInstanceId)
+            return;
+        var killerPlayer = State.Players[killerController];
+        var killer = FindOnField(killerPlayer, killerInstanceId, out _, out _)
+            ?? killerPlayer.Resolving.FirstOrDefault(candidate => candidate.InstanceId == killerInstanceId);
+        if (killer is null) return;
         var candidates = new List<L12TriggerCandidate>();
-        if (NativeCombatKillCards.Contains(attacker.CardId)
-            || attacker.CardId == "S02-0608" && State.Players[pending.AttackerPlayer].UsedAbilities.Contains(
-                $"crusade-piercing:{attacker.InstanceId}:{State.TurnSerial}"))
+        var printedKillTimingIsLegal = NativeCombatKillCards.Contains(killer.CardId)
+            && (killer.CardId != "S02-0002" || killerController == State.ActivePlayer);
+        if (printedKillTimingIsLegal
+            || killer.CardId == "S02-0608" && killerPlayer.UsedAbilities.Contains(
+                $"crusade-piercing:{killer.InstanceId}:{State.TurnSerial}"))
         {
-            candidates.Add(CreateTriggerCandidate(pending.AttackerPlayer, attacker, "after-attack", "【击杀时】效果",
+            candidates.Add(CreateTriggerCandidate(killerController, killer, "after-attack", "【击杀时】效果",
                 new Dictionary<string, string>
                 {
                     ["killed"] = "true",
                     ["combatKillConfirmed"] = "true",
-                    ["defeatedInstanceId"] = pending.DefeatedDefenderInstanceId,
+                    ["defeatedInstanceId"] = defeatedInstanceId,
                     ["combatTiming"] = "kill",
                 }));
         }
-        if (attacker.ReadyAfterNextKillUntilTurn == State.TurnSerial)
+        if (killer.ReadyAfterNextKillUntilTurn == State.TurnSerial)
         {
-            var sourceName = attacker.ReadyAfterNextKillSourceName ?? "效果";
-            attacker.ReadyAfterNextKillUntilTurn = -1;
-            attacker.ReadyAfterNextKillSourceName = null;
-            candidates.Add(CreateTriggerCandidate(pending.AttackerPlayer, attacker, "forge-ready-after-kill",
+            var sourceName = killer.ReadyAfterNextKillSourceName ?? "效果";
+            killer.ReadyAfterNextKillUntilTurn = -1;
+            killer.ReadyAfterNextKillSourceName = null;
+            candidates.Add(CreateTriggerCandidate(killerController, killer, "forge-ready-after-kill",
                 $"{sourceName}赋予的击杀后转为活跃效果",
                 new Dictionary<string, string> { ["source-name"] = sourceName, ["combatTiming"] = "kill" }));
         }

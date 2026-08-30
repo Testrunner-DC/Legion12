@@ -353,7 +353,7 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
-    public void MutualDefeatSkipsKillAndOrdersAttackerDeathBeforeDefenderDeath()
+    public void MutualDefeatOrdersAttackerDeathBeforeDefenderDeath()
     {
         var game = Create(82806);
         ReadyForCombat(game);
@@ -370,13 +370,201 @@ public sealed class CombatTimelineRegressionTests
         var attackerDeath = triggers.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
         var defenderDeath = triggers.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId));
         Assert.True(attackerDeath >= 0 && defenderDeath > attackerDeath);
-        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("【击杀时】", StringComparison.Ordinal));
         Assert.Contains(attacker, game.State.Players[0].Graveyard);
         Assert.Contains(defender, game.State.Players[1].Graveyard);
         var firstGrave = game.State.Events.FindIndex(entry => entry.Type == "grave");
         var lastDeathTrigger = game.State.Events.FindLastIndex(entry => entry.Type == "effect-trigger"
             && entry.Cards.Any(card => card.InstanceId is "mutual-attacker" or "mutual-defender"));
         Assert.True(firstGrave > lastDeathTrigger);
+    }
+
+    [Fact]
+    public void MutualDefeatQueuesBothPrintedKillTimingsBeforeDelayedGrave()
+    {
+        var game = Create(828061);
+        ReadyForCombat(game);
+        var attacker = Card("S01-0409", "mutual-kill-attacker");
+        var defender = Card("S02-0602", "mutual-kill-defender");
+        attacker.Troops = defender.Troops = 1000;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = defender;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
+
+        Assert.Equal(L12CombatStage.KillTriggers, game.State.PendingDefense?.Stage);
+        Assert.Contains(attacker, game.State.Players[0].Resolving);
+        Assert.Contains(defender, game.State.Players[1].Resolving);
+        Assert.Empty(game.State.Players[0].Graveyard);
+        Assert.Empty(game.State.Players[1].Graveyard);
+        var attackerKill = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, attackerKill.PlayerIndex);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerKill.PromptId,
+            Choice: "no")).Accepted);
+
+        Assert.Equal(L12CombatStage.DefenderKillTriggers, game.State.PendingDefense?.Stage);
+        Assert.Contains(attacker, game.State.Players[0].Resolving);
+        Assert.Contains(defender, game.State.Players[1].Resolving);
+        var defenderKill = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, defenderKill.PlayerIndex);
+        var runesBefore = game.State.Players[1].SpecialZones.Runes;
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: defenderKill.PromptId,
+            Choice: "rune")).Accepted);
+
+        var triggerEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
+        var attackerKillIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId)
+            && entry.Text.Contains("击杀时", StringComparison.Ordinal));
+        var defenderKillIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
+            && entry.Text.Contains("击杀时", StringComparison.Ordinal));
+        Assert.True(attackerKillIndex >= 0 && defenderKillIndex > attackerKillIndex);
+        Assert.Equal(runesBefore + 1, game.State.Players[1].SpecialZones.Runes);
+        Assert.Contains(attacker, game.State.Players[0].Graveyard);
+        Assert.Contains(defender, game.State.Players[1].Graveyard);
+        var firstGrave = game.State.Events.FindIndex(entry => entry.Type == "grave");
+        var lastKillTrigger = game.State.Events.FindLastIndex(entry => entry.Type == "effect-trigger"
+            && entry.Text.Contains("击杀时", StringComparison.Ordinal));
+        Assert.True(firstGrave > lastKillTrigger);
+    }
+
+    [Fact]
+    public void DefenderCombatKillConsumesGrantedReadyEffect()
+    {
+        var game = Create(828062);
+        ReadyForCombat(game);
+        var attacker = PlainLegion("defender-kill-attacker", 1000);
+        var defender = PlainLegion("defender-kill-survivor", 2000);
+        defender.Tapped = true;
+        defender.ReadyAfterNextKillUntilTurn = game.State.TurnSerial;
+        defender.ReadyAfterNextKillSourceName = "莫瑞甘";
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = defender;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
+
+        for (var step = 0; step < 20 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) break;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Contains(attacker, game.State.Players[0].Graveyard);
+        Assert.Same(defender, game.State.Players[1].Field[0][0]);
+        Assert.False(defender.Tapped);
+        Assert.Equal(-1, defender.ReadyAfterNextKillUntilTurn);
+        Assert.Null(defender.ReadyAfterNextKillSourceName);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
+            && entry.Text.Contains("击杀后转为活跃", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MutualDefeatConsumesGrantedKillEffectsForBothSidesBeforeGrave()
+    {
+        var game = Create(8280621);
+        ReadyForCombat(game);
+        var attacker = Card("S01-0102", "mutual-granted-attacker");
+        var defender = Card("S01-0102", "mutual-granted-defender");
+        attacker.Troops = defender.Troops = 1000;
+        defender.Tapped = true;
+        attacker.ReadyAfterNextKillUntilTurn = defender.ReadyAfterNextKillUntilTurn = game.State.TurnSerial;
+        attacker.ReadyAfterNextKillSourceName = "莫瑞甘";
+        defender.ReadyAfterNextKillSourceName = "匠神锻造炉";
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = defender;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
+
+        var grantedKillEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger"
+            && entry.Text.Contains("击杀后转为活跃", StringComparison.Ordinal)).ToList();
+        Assert.Contains(grantedKillEvents, entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
+        Assert.Contains(grantedKillEvents, entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId));
+        Assert.Equal(-1, attacker.ReadyAfterNextKillUntilTurn);
+        Assert.Equal(-1, defender.ReadyAfterNextKillUntilTurn);
+        Assert.False(defender.Tapped);
+        Assert.Contains(attacker, game.State.Players[0].Graveyard);
+        Assert.Contains(defender, game.State.Players[1].Graveyard);
+        var triggerEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
+        var attackerKill = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId)
+            && entry.Text.Contains("击杀后转为活跃", StringComparison.Ordinal));
+        var defenderKill = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
+            && entry.Text.Contains("击杀后转为活跃", StringComparison.Ordinal));
+        var attackerDeath = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId)
+            && entry.Text.Contains("阵亡时", StringComparison.Ordinal));
+        var defenderDeath = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
+            && entry.Text.Contains("阵亡时", StringComparison.Ordinal));
+        Assert.True(attackerKill >= 0 && defenderKill > attackerKill
+            && attackerDeath > defenderKill && defenderDeath > attackerDeath);
+        var firstGrave = game.State.Events.FindIndex(entry => entry.Type == "grave");
+        var lastGrantedKill = game.State.Events.FindLastIndex(entry => entry.Type == "effect-trigger"
+            && entry.Text.Contains("击杀后转为活跃", StringComparison.Ordinal));
+        Assert.True(firstGrave > lastGrantedKill);
+    }
+
+    [Fact]
+    public void DefenderCombatKillPiercingSuspendsAndResumesParentCombat()
+    {
+        var game = Create(828063);
+        ReadyForCombat(game);
+        var attacker = PlainLegion("defender-piercing-attacker", 1000);
+        var defender = Card("S02-0606", "defender-piercing-survivor");
+        defender.Troops = 2000;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = defender;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
+
+        for (var step = 0; step < 20 && game.State.SuspendedCombatContexts.Count == 0; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) break;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Single(game.State.SuspendedCombatContexts);
+        Assert.Equal(L12CombatStage.AttackerDeathTriggers, game.State.SuspendedCombatContexts[0].Stage);
+        Assert.Equal(1, game.State.PendingDefense?.AttackerPlayer);
+        Assert.Equal("master", game.State.PendingDefense?.Target.Type);
+        Assert.Equal(1000, game.State.PendingDefense?.AttackValue);
+
+        for (var step = 0; step < 20 && game.State.PendingDefense is not null; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is not null)
+            {
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("skip") ? "skip"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices[0];
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+                continue;
+            }
+            if (game.State.Phase == L12Phase.Defense)
+            {
+                Assert.True(game.Handle(1 - game.State.PendingDefense.AttackerPlayer,
+                    new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+            }
+        }
+
+        Assert.Null(game.State.PendingDefense);
+        Assert.Empty(game.State.SuspendedCombatContexts);
+        Assert.Contains(attacker, game.State.Players[0].Graveyard);
+        Assert.Same(defender, game.State.Players[1].Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "combat-resume");
     }
 
     [Fact]
