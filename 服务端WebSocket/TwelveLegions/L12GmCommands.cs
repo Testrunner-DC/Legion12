@@ -557,13 +557,13 @@ public sealed partial class L12GameEngine
             case L12Phase.Reset:
                 State.Phase = L12Phase.Draw;
                 AddEvent("phase", playerIndex, "执行抽牌阶段");
-                if (State.Round == 1 && playerIndex == State.FirstPlayer)
-                    AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
-                else if (player.MasterId == "S01-03M1")
+                if (player.MasterId == "S01-03M1")
                 {
                     Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
                     AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
                 }
+                else if (State.Round == 1 && playerIndex == State.FirstPlayer)
+                    AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
                 else if (!Draw(player, 1))
                 {
                     SetWinner(1 - playerIndex, "抽牌阶段牌库为空");

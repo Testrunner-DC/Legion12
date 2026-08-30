@@ -2,7 +2,7 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private void BeginDisasterTrigger(bool opening)
+    private void BeginDisasterTrigger(bool opening, bool atTurnStart = false)
     {
         if (!DisastersEnabled) { SetDisasterValue(0); return; }
         if (State.ActiveDisaster?.CardId == "S01-DS10" && State.DisasterDeck.Count == 0)
@@ -28,6 +28,7 @@ public sealed partial class L12GameEngine
         State.ActiveDisaster = disaster;
         State.DisasterValue = 0;
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
+        if (atTurnStart) ResolveTurnStartDisasterEffectIfNeeded();
         if (HasTriggeredDisasterEffect(disaster))
             PublishEffectPresentation("effect-trigger", null, disaster, "disaster", "天灾触发效果");
         else
@@ -38,6 +39,19 @@ public sealed partial class L12GameEngine
 
     private static bool HasTriggeredDisasterEffect(L12CardInstance disaster)
         => disaster.EffectText?.Contains("触发", StringComparison.Ordinal) == true;
+
+    private void ResolveTurnStartDisasterEffectIfNeeded()
+    {
+        if (!DisastersEnabled || State.ActiveDisaster is not { CardId: "S01-DS10" } disaster) return;
+        if (State.LastTurnStartDisasterEffectTurn == State.TurnSerial
+            && State.LastTurnStartDisasterEffectInstanceId == disaster.InstanceId)
+            return;
+
+        State.LastTurnStartDisasterEffectTurn = State.TurnSerial;
+        State.LastTurnStartDisasterEffectInstanceId = disaster.InstanceId;
+        DamageMasterNonLethal(0, 1, "〈堙灭〉", neutralSource: true);
+        DamageMasterNonLethal(1, 1, "〈堙灭〉", neutralSource: true);
+    }
 
     private void ResolveDisasterEffect(L12StackItem item)
     {
@@ -154,6 +168,7 @@ public sealed partial class L12GameEngine
                 if (front is null || !IsDisasterFieldCard(front)) continue;
                 player.Field[0][slot] = null;
                 player.Field[1][slot] = front;
+                RecordLegionMovement(owner, front, 0, 1);
                 AddEvent("move", owner, $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排", front);
             }
         }

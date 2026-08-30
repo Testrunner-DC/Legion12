@@ -1677,7 +1677,7 @@ public sealed partial class L12GameEngine
                 targetPlayer.Field[targetRow][targetSlot] = legion;
                 legion.LastMovedTurn = State.TurnSerial;
                 AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
-                NotifyS2LegionMoved(item.Controller, legion, row, targetRow);
+                RecordLegionMovement(item.Controller, legion, row, targetRow);
             }
             FinishStackItem(item);
             return true;

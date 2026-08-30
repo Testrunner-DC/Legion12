@@ -153,6 +153,9 @@ public sealed class L12CardInstance
     public int SummonRound { get; set; }
     public int LastMovedTurn { get; set; } = -1;
     public int LastCavalryMoveTurn { get; set; } = -1;
+    /// <summary>月读：本回合该军团由后排位移至前排的累计次数。</summary>
+    public int TsukuyomiFrontMoveBonusCount { get; set; }
+    public int TsukuyomiFrontMoveBonusTurn { get; set; } = -1;
     public int CannotUntapUntilRound { get; set; }
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
@@ -365,6 +368,8 @@ public sealed class L12StackItem
     public required string SourceName { get; init; }
     public required string Trigger { get; init; }
     public required string Text { get; init; }
+    /// <summary>由触发候选传入的来源最后已知快照，不参与区域归属。</summary>
+    public L12CardInstance? SourceSnapshot { get; init; }
     public int Step { get; set; }
     public bool Negated { get; set; }
     public List<string> Targets { get; } = [];
@@ -433,6 +438,8 @@ public sealed class L12TriggerCandidate
     public required string SourceName { get; init; }
     public required string Trigger { get; init; }
     public required string Text { get; init; }
+    /// <summary>触发时来源的最后已知快照；来源随后离场或衍生消灭时仍由此快照结算。</summary>
+    public L12CardInstance? SourceSnapshot { get; init; }
     public Dictionary<string, string> Data { get; init; } = [];
 }
 
@@ -519,6 +526,9 @@ public sealed class L12GameState
     public L12ResponseWindow? ResponseWindow { get; set; }
     public bool IsResolvingStack { get; set; }
     public bool ResumeTurnStartAfterStack { get; set; }
+    /// <summary>防止同一回合开始流程因同步结算重入而重复执行同一张天灾的回合开始效果。</summary>
+    public int LastTurnStartDisasterEffectTurn { get; set; } = -1;
+    public string? LastTurnStartDisasterEffectInstanceId { get; set; }
     public bool CheckDisasterAfterStack { get; set; }
     public int ExtraTurnsForPlayer { get; set; } = -1;
     public int CounterTacticsDisabledUntilTurnSerial { get; set; } = -1;

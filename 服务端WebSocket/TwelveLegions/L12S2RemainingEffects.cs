@@ -438,7 +438,7 @@ public sealed partial class L12GameEngine
                         legion.LastMovedTurn = State.TurnSerial;
                         AddTimedModifier(legion, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读");
                         AddEvent("move", item.Controller, $"月读使〈{legion.Name}〉位移1格", legion);
-                        NotifyS2LegionMoved(item.Controller, legion, oldRow, newRow);
+                        RecordLegionMovement(item.Controller, legion, oldRow, newRow);
                     }
                 }
                 FinishStackItem(item); return true;
@@ -567,14 +567,22 @@ public sealed partial class L12GameEngine
             new Dictionary<string, string> { ["ability"] = "anderstorpRingDraw" });
     }
 
-    private void NotifyS2LegionMoved(int playerIndex, L12CardInstance moved, int fromRow, int toRow)
+    private void RecordLegionMovement(int playerIndex, L12CardInstance moved, int fromRow, int toRow)
     {
+        moved.LastMovedTurn = State.TurnSerial;
         var player = State.Players[playerIndex];
         if (player.MasterId != "S02-04M1" || State.ActivePlayer != playerIndex) return;
         var master = CreateCard("S02-04M1", $"master-{playerIndex}");
         var candidates = new List<L12TriggerCandidate>();
         if (fromRow == 1 && toRow == 0)
-            player.UsedAbilities.Add($"s2-tsukuyomi-attack:{moved.InstanceId}:{State.TurnSerial}");
+        {
+            if (moved.TsukuyomiFrontMoveBonusTurn != State.TurnSerial)
+            {
+                moved.TsukuyomiFrontMoveBonusTurn = State.TurnSerial;
+                moved.TsukuyomiFrontMoveBonusCount = 0;
+            }
+            moved.TsukuyomiFrontMoveBonusCount++;
+        }
         if (fromRow == 0 && toRow == 1 && player.Morale.Any(card => card.Tapped))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));

@@ -109,7 +109,8 @@ public sealed partial class L12GameEngine
                 .Concat(candidate.Graveyard)
                 .Concat(candidate.Removed)
                 .Concat(candidate.Relic is null ? [] : [candidate.Relic]))
-            .FirstOrDefault(card => card.InstanceId == item.SourceInstanceId);
+            .FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
+            ?? item.SourceSnapshot;
     }
 
     private void ResolveEnterEffect(L12StackItem item)

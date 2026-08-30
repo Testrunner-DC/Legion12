@@ -1345,6 +1345,6 @@ public sealed partial class L12GameEngine
     private void MoveOwnCardToSlot(L12PlayerState player, string instanceId, string slotChoice)
     {
         var card = FindOnField(player, instanceId, out var row, out var slot); if (card is null) return; var (targetRow, targetSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[targetRow][targetSlot] = card; card.LastMovedTurn = State.TurnSerial;
-        NotifyS2LegionMoved(player.PlayerIndex, card, row, targetRow);
+        RecordLegionMovement(player.PlayerIndex, card, row, targetRow);
     }
 }

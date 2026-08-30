@@ -879,14 +879,14 @@ public sealed partial class L12GameEngine
                 player.Field[nextRow][nextSlot] = target;
                 target.LastMovedTurn = State.TurnSerial;
                 occupant.LastMovedTurn = State.TurnSerial;
-                NotifyS2LegionMoved(item.Controller, target, row, nextRow);
-                NotifyS2LegionMoved(item.Controller, occupant, nextRow, row);
+                RecordLegionMovement(item.Controller, target, row, nextRow);
+                RecordLegionMovement(item.Controller, occupant, nextRow, row);
                 AddEvent("move", item.Controller, $"坂本龙马使{target.Name}与{occupant.Name}互换阵地", target, occupant);
                 FinishStackItem(item);
                 return;
             }
             player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
-            NotifyS2LegionMoved(item.Controller, target, row, nextRow);
+            RecordLegionMovement(item.Controller, target, row, nextRow);
         }
         item.Data["ryoma-index"] = (int.Parse(item.Data["ryoma-index"]) + 1).ToString(); ContinueRyomaMove(item);
     }
@@ -917,7 +917,8 @@ public sealed partial class L12GameEngine
         var target = FindOnField(enemy, item.Data["orders-current"], out var row, out var slot);
         if (target is not null)
         {
-            var (nextRow, nextSlot) = ParseSlot(slotChoice); enemy.Field[row][slot] = null; enemy.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
+            var (nextRow, nextSlot) = ParseSlot(slotChoice); enemy.Field[row][slot] = null; enemy.Field[nextRow][nextSlot] = target;
+            RecordLegionMovement(1 - item.Controller, target, row, nextRow);
         }
         item.Data["orders-index"] = (int.Parse(item.Data["orders-index"]) + 1).ToString(); ContinueOrdersMove(item);
     }
@@ -1218,7 +1219,7 @@ public sealed partial class L12GameEngine
         var defender = State.Players[defenderIndex];
         var hasOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any();
         var hasRestedOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any(target => target.Tapped);
-        var candidates = defender.Field[1].Where(card => card is not null && card.SetRound < State.Round
+        var candidates = defender.Field[1].Where(card => card is not null
                 && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
                     hasRestedOpponentLegion)).Cast<L12CardInstance>()
             .Select(counter => IsTrojanHorse(counter)
@@ -1235,7 +1236,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
-        var counter = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0021" } && card.SetRound < State.Round);
+        var counter = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0021" });
         if (counter is not null)
             candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
         if (player.MasterId == "S01-02M3" && sourcePlayer == 1 - damagedPlayer
@@ -1267,11 +1268,11 @@ public sealed partial class L12GameEngine
         if (left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
             candidates.Add(CreateTriggerCandidate(owner, left, "leave", "【离场时】效果"));
         if (!IsFieldLegion(left)) return candidates;
-        var bloodEagle = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0320" } && card.SetRound < State.Round);
+        var bloodEagle = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0320" });
         if (bloodEagle is not null) candidates.Add(CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术"));
         if (left.CurrentCost > 2 && State.ActivePlayer != owner)
         {
-            var gift = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0223" } && card.SetRound < State.Round);
+            var gift = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0223" });
             if (gift is not null) candidates.Add(CreateTriggerCandidate(owner, gift, "reaction", "【我方高费用军团离场时】反击战术"));
         }
         return candidates;

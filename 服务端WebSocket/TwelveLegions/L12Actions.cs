@@ -546,11 +546,13 @@ public sealed partial class L12GameEngine
             attacker.Troops += 2000;
             AddEvent("effect", playerIndex, $"须佐之男使 {attacker.Name} 本次前排进攻兵力 +2000", attacker);
         }
-        if (State.Players[playerIndex].UsedAbilities.Contains($"s2-tsukuyomi-attack:{attacker.InstanceId}:{State.TurnSerial}"))
+        if (attacker.TsukuyomiFrontMoveBonusTurn == State.TurnSerial
+            && attacker.TsukuyomiFrontMoveBonusCount > 0)
         {
-            temporaryAttackerTroopsBonus += 1000;
-            attacker.Troops += 1000;
-            AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+1000", attacker);
+            var tsukuyomiBonus = attacker.TsukuyomiFrontMoveBonusCount * 1000;
+            temporaryAttackerTroopsBonus += tsukuyomiBonus;
+            attacker.Troops += tsukuyomiBonus;
+            AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+{tsukuyomiBonus}", attacker);
         }
         var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
@@ -1021,7 +1023,7 @@ public sealed partial class L12GameEngine
         card.LastMovedTurn = State.TurnSerial;
         if (hasTenkaFreeMove) player.UsedAbilities.Remove(tenkaFreeMoveKey);
         AddEvent("move", playerIndex, $"{card.Name} 移动至相邻阵地", card);
-        NotifyS2LegionMoved(playerIndex, card, sourceRow, targetRow);
+        RecordLegionMovement(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }
 
@@ -1045,7 +1047,7 @@ public sealed partial class L12GameEngine
         card.LastMovedTurn = State.TurnSerial;
         card.LastCavalryMoveTurn = State.TurnSerial;
         AddEvent("move", playerIndex, $"{card.Name} 发动骑兵位移", card);
-        NotifyS2LegionMoved(playerIndex, card, sourceRow, targetRow);
+        RecordLegionMovement(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }
 

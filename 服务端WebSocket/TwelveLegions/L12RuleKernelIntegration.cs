@@ -469,15 +469,16 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string> { ["action"] = "palace-revive" });
     }
 
-    private void QueueSimultaneousDeathTriggers(IEnumerable<(int Controller, L12CardInstance Card)> deaths)
+    private void QueueSimultaneousDeathTriggers(
+        IEnumerable<(int Controller, L12CardInstance Card, L12CardInstance SourceSnapshot)> deaths)
     {
         var materializedDeaths = deaths.ToArray();
         var candidates = materializedDeaths.SelectMany(entry =>
         {
-            var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.Card).ToList();
-            if (HasDeathTrigger(entry.Card))
-                sameTime.Add(CreateTriggerCandidate(entry.Controller, entry.Card, "death", "【阵亡时】效果",
-                    new Dictionary<string, string> { ["cause"] = "combat" }));
+            var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.SourceSnapshot).ToList();
+            if (HasDeathTrigger(entry.SourceSnapshot))
+                sameTime.Add(CreateTriggerCandidate(entry.Controller, entry.SourceSnapshot, "death", "【阵亡时】效果",
+                    new Dictionary<string, string> { ["cause"] = "effect" }, entry.SourceSnapshot));
             return sameTime;
         }).ToList();
         foreach (var defeatedController in materializedDeaths.Select(entry => entry.Controller).Distinct())
@@ -487,9 +488,9 @@ public sealed partial class L12GameEngine
         }
         foreach (var entry in materializedDeaths)
         {
-            var nephthys = BuildNephthysOwnDeathCandidate(entry.Controller, entry.Card);
+            var nephthys = BuildNephthysOwnDeathCandidate(entry.Controller, entry.SourceSnapshot);
             if (nephthys is not null) candidates.Add(nephthys);
-            var artemis = BuildArtemisRangedDeathCandidate(entry.Controller, entry.Card);
+            var artemis = BuildArtemisRangedDeathCandidate(entry.Controller, entry.SourceSnapshot);
             if (artemis is not null) candidates.Add(artemis);
         }
         QueueTriggerCandidates(candidates);
@@ -514,13 +515,13 @@ public sealed partial class L12GameEngine
     }
 
     private L12TriggerCandidate CreateTriggerCandidate(int controller, L12CardInstance card, string trigger, string text,
-        IReadOnlyDictionary<string, string>? data = null)
+        IReadOnlyDictionary<string, string>? data = null, L12CardInstance? sourceSnapshot = null)
     {
         var candidate = new L12TriggerCandidate
         {
             CandidateId = $"trigger-{++State.TriggerBatchSequence}", Controller = controller,
             SourceInstanceId = card.InstanceId, SourceCardId = card.CardId, SourceName = card.Name,
-            Trigger = trigger, Text = text,
+            Trigger = trigger, Text = text, SourceSnapshot = sourceSnapshot?.Clone(),
         };
         if (data is not null)
             foreach (var pair in data) candidate.Data[pair.Key] = pair.Value;
@@ -742,6 +743,7 @@ public sealed partial class L12GameEngine
             SourceName = candidate.SourceName,
             Trigger = candidate.Trigger,
             Text = candidate.Text,
+            SourceSnapshot = candidate.SourceSnapshot,
         };
         foreach (var pair in candidate.Data) item.Data[pair.Key] = pair.Value;
         if (State.IsResolvingStack) State.DeferredEffectStack.Add(item);

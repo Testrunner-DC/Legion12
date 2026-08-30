@@ -193,7 +193,7 @@ public sealed partial class L12GameEngine
                         player.Field[targetRow][targetSlot] = legion;
                         legion.LastMovedTurn = State.TurnSerial;
                         AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
-                        NotifyS2LegionMoved(item.Controller, legion, row, targetRow);
+                        RecordLegionMovement(item.Controller, legion, row, targetRow);
                     }
                 }
                 FinishStackItem(item); break;

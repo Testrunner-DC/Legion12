@@ -849,7 +849,7 @@ public sealed partial class L12GameEngine
         var defenderAttackTimingRoot = top.Trigger == "opponent-attack";
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         var responseCards = player.Field[1].Where(card => card is { CardType: "tactic" }
-            && card.SetRound < State.Round && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
+            && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
         if (State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial || protectedFromCounters) responseCards = [];
         foreach (var card in responseCards)
         {
@@ -900,10 +900,10 @@ public sealed partial class L12GameEngine
         var pool = _catalog.Cards.Values.Where(card =>
             card.Faction == "universal" || card.Faction == player.Faction);
 
-        // 盖伏区数量、盖伏回合和禁用状态均为公开场面信息；牌的真实身份不是。
+        // 盖伏区数量和禁用状态均为公开场面信息；牌的真实身份不是。同回合盖伏可以立即响应。
         var hasEligibleCoveredCard = State.TurnSerial >= State.CounterTacticsDisabledUntilTurnSerial
             && player.Field[1].Any(card => card is { Hidden: true, CardType: "tactic" }
-                && card.SetRound < State.Round && card.CannotRespondUntilRound < State.Round);
+                && card.CannotRespondUntilRound < State.Round);
         if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top, timing)))
             return true;
 

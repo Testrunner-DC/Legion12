@@ -699,14 +699,11 @@ public sealed partial class L12GameEngine
 
         State.Phase = L12Phase.Disaster;
         AddEvent("phase", playerIndex, "执行触发天灾");
-        if (DisastersEnabled && State.ActiveDisaster?.CardId == "S01-DS10")
-            DamageMasterNonLethal(0, 1, "〈堙灭〉", neutralSource: true);
-        if (DisastersEnabled && State.ActiveDisaster?.CardId == "S01-DS10")
-            DamageMasterNonLethal(1, 1, "〈堙灭〉", neutralSource: true);
+        ResolveTurnStartDisasterEffectIfNeeded();
         if (DisastersEnabled && State.DisasterValue > 8)
         {
             State.ResumeTurnStartAfterStack = true;
-            BeginDisasterTrigger(opening: State.Round == 1);
+            BeginDisasterTrigger(opening: State.Round == 1, atTurnStart: true);
             // Effects may settle synchronously.  In that case AfterStackSettled
             // has already resumed (or ended) the turn-start sequence; continuing
             // here would execute Reset/Draw/Morale a second time.
@@ -740,13 +737,13 @@ public sealed partial class L12GameEngine
 
         State.Phase = L12Phase.Draw;
         AddEvent("phase", playerIndex, "执行抽牌阶段");
-        if (State.Round == 1 && playerIndex == State.FirstPlayer)
-            AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
-        else if (player.MasterId == "S01-03M1")
+        if (player.MasterId == "S01-03M1")
         {
             Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
             AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
         }
+        else if (State.Round == 1 && playerIndex == State.FirstPlayer)
+            AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
         else if (!Draw(player, 1))
         {
             SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
@@ -1059,6 +1056,8 @@ public sealed partial class L12GameEngine
             card.HasSureHit = false;
             card.HasShock = false;
             card.AttacksThisTurn = 0;
+            card.TsukuyomiFrontMoveBonusCount = 0;
+            card.TsukuyomiFrontMoveBonusTurn = -1;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
             card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
             if (card.ReadyAfterNextKillUntilTurn <= completedTurn)
@@ -1178,6 +1177,7 @@ public sealed partial class L12GameEngine
             AddEvent("effect", player.PlayerIndex, $"{card.Name} 在持续兵力修正重算后兵力仍不高于 0", card);
         }
         CaptureLastKnownFieldState(card, row);
+        var sourceSnapshot = card.Clone();
         player.Field[row][slot] = null;
         if (toGraveyard)
         {
@@ -1210,17 +1210,17 @@ public sealed partial class L12GameEngine
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueDeathTrigger)
         {
-            var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, card).ToList();
-            if (isDefeat && HasDeathTrigger(card))
-                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, card, "death", "【阵亡时】效果",
-                    new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }));
+            var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot).ToList();
+            if (isDefeat && HasDeathTrigger(sourceSnapshot))
+                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, sourceSnapshot, "death", "【阵亡时】效果",
+                    new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }, sourceSnapshot));
             if (isDefeat)
             {
                 var morrigan = BuildMorriganEnemyDeathCandidate(player.PlayerIndex);
                 if (morrigan is not null) candidates.Add(morrigan);
-                var nephthys = BuildNephthysOwnDeathCandidate(player.PlayerIndex, card);
+                var nephthys = BuildNephthysOwnDeathCandidate(player.PlayerIndex, sourceSnapshot);
                 if (nephthys is not null) candidates.Add(nephthys);
-                var artemis = BuildArtemisRangedDeathCandidate(player.PlayerIndex, card);
+                var artemis = BuildArtemisRangedDeathCandidate(player.PlayerIndex, sourceSnapshot);
                 if (artemis is not null) candidates.Add(artemis);
             }
             QueueTriggerCandidates(candidates);
@@ -1389,6 +1389,8 @@ public sealed partial class L12GameEngine
         card.SummonRound = 0;
         card.LastMovedTurn = -1;
         card.LastCavalryMoveTurn = -1;
+        card.TsukuyomiFrontMoveBonusCount = 0;
+        card.TsukuyomiFrontMoveBonusTurn = -1;
         card.CannotUntapUntilRound = 0;
         card.CannotRespondUntilRound = 0;
         card.SetRound = 0;
@@ -1451,10 +1453,15 @@ public sealed partial class L12GameEngine
                     .Select(card => (Controller: player.PlayerIndex, Card: card)))
                 .ToArray();
             if (defeated.Length == 0) return;
-            var removed = new List<(int Controller, L12CardInstance Card)>();
+            var removed = new List<(int Controller, L12CardInstance Card, L12CardInstance SourceSnapshot)>();
             foreach (var entry in defeated)
+            {
+                FindOnField(State.Players[entry.Controller], entry.Card.InstanceId, out var row, out _);
+                CaptureLastKnownFieldState(entry.Card, row);
+                var sourceSnapshot = entry.Card.Clone();
                 if (RemoveFromField(State.Players[entry.Controller], entry.Card, true, "因兵力不高于0阵亡", queueDeathTrigger: false))
-                    removed.Add(entry);
+                    removed.Add((entry.Controller, entry.Card, sourceSnapshot));
+            }
             if (!suppressDeathTriggers) QueueSimultaneousDeathTriggers(removed);
             if (removed.Count == 0) return;
         }
