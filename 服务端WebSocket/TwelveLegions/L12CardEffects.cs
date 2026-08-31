@@ -188,8 +188,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return;
             }
-            case "议和谈判":
-                if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "议和谈判抽牌时牌库为空"); FinishStackItem(item); return; }
+            case "peace-draw":
+                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "议和谈判抽牌时牌库为空");
+                FinishStackItem(item);
+                return;
+            case "peace-negotiation":
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "是否同意〈议和谈判〉？", ["agree", "refuse"], 1, 1,
                     "card-effect", item.StackItemId, isPrivate: false,
                     data: new Dictionary<string, string> { ["action"] = "peace-talk" });
@@ -198,11 +201,25 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional", "是否将离场的〈草薙剑〉放回牌库顶部？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kusanagi-return-top" });
                 return;
-            case "观星": BeginTopDeckReorder(item, 5, "observing-stars"); return;
+            case "observing-stars-reorder": BeginTopDeckReorder(item, 5, "observing-stars"); return;
+            case "observing-stars-morale":
+                AddMorale(player, 1, tapped: false);
+                AddEvent("morale", item.Controller, "观星从士气牌库追加1张活跃士气", card);
+                FinishStackItem(item);
+                return;
             case "天诛":
                 PromptEnemyLegion(item, "divine-punishment-kill", "选择对方 1 张费用不高于 7 的军团并击杀",
                     target => target.CurrentCost <= 7, optional: false); return;
-            case "花魁的馈赠": BeginOiranGift(item); return;
+            case "oiran-search": BeginOiranGift(item); return;
+            case "oiran-ready-morale":
+            {
+                var targetId = CompositeDeclared(item, "moraleTarget").SingleOrDefault();
+                var morale = player.Morale.FirstOrDefault(candidate => candidate.InstanceId == targetId && candidate.Tapped);
+                if (morale is not null) ReadyMoraleByEffect(item.Controller, card, morale, "士气因〈花魁的馈赠〉转为活跃");
+                else AddEvent("effect-cancelled", item.Controller, "花魁的馈赠已声明的休整士气目标已失效", card);
+                FinishStackItem(item);
+                return;
+            }
             default:
                 if (!TryResolveS1ExtendedTactic(item, card) && !TryResolveS2UniversalTactic(item, card)
                     && !TryResolveS2FactionTactic(item, card)) FinishStackItem(item);

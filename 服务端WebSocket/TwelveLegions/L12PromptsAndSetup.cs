@@ -177,6 +177,7 @@ public sealed partial class L12GameEngine
             ["mode:single"] = "选择1张军团",
             ["mode:kill"] = "击杀目标军团",
             ["mode:morale"] = "追加休整士气",
+            ["mode:mill"] = "弃置牌库顶部2张牌",
             ["mode:discard"] = "盲选并弃置对方1张手牌",
             ["mode:suppress"] = "令目标效果无效并削弱目标军团",
             ["mode:row-cost"] = "选择对方1排并降低费用",

@@ -545,9 +545,8 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2FactionTactic(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        if (card.CardId == "S02-0306")
+        if (AtomicFlowKey(item, card) == "mimir-recover-draw")
         {
-            player.UsedAbilities.Add("s2-mimir-used");
             HealMaster(item.Controller, 1, "〈密米尔之泉〉");
             if (!Draw(player, 1))
             {
@@ -555,13 +554,13 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            CreatePrompt(item.Controller, "optional", "〈密米尔之泉〉：是否弃置我方牌库顶部2张牌？",
-                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-mimir-mill", ["choiceMode"] = "instant",
-                    ["yes"] = "弃置牌库顶部2张牌", ["no"] = "不弃置",
-                });
+            FinishStackItem(item);
+            return true;
+        }
+        if (AtomicFlowKey(item, card) == "mimir-mill")
+        {
+            Mill(player, 2, "〈密米尔之泉〉");
+            FinishStackItem(item);
             return true;
         }
         if (card.CardId == "S02-0405")
@@ -1890,10 +1889,6 @@ public sealed partial class L12GameEngine
             case "s2-fortune-bottom-order":
                 CompleteS2FortuneBottomOrder(item, command.BottomCardInstanceIds ?? chosen);
                 return true;
-            case "s2-mimir-mill":
-                if (chosen[0] == "yes") Mill(player, 2, "〈密米尔之泉〉");
-                FinishStackItem(item);
-                return true;
             case "s2-prometheus-pick":
             {
                 var topIds = item.Data.GetValueOrDefault("prometheus-top", string.Empty)
@@ -2496,7 +2491,7 @@ public sealed partial class L12GameEngine
         AddEvent("play", item.Controller, $"李牧无需消耗费用打出〈{card.Name}〉", card);
         if (HasImmediateEffect(card, "play"))
         {
-            if (L12CompositeEffectPlans.RequiresHandPlayDeclaration(card.CardId))
+            if (L12CompositeEffectPlans.HasHandPlayPlan(card.CardId))
             {
                 var result = BeginCommittedCompositeEffectDeclaration(item.Controller, card, item, "s2-limu-draw");
                 if (!result.Accepted)
@@ -2943,7 +2938,7 @@ public sealed partial class L12GameEngine
             AddEvent("play", item.Controller, $"冲田总司使〈{card.Name}〉无需消耗费用打出", card);
             if (HasImmediateEffect(card, "play"))
             {
-                if (L12CompositeEffectPlans.RequiresHandPlayDeclaration(card.CardId))
+                if (L12CompositeEffectPlans.HasHandPlayPlan(card.CardId))
                 {
                     var result = BeginCommittedCompositeEffectDeclaration(item.Controller, card, item, "finish-parent");
                     if (!result.Accepted)

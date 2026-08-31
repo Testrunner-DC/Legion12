@@ -2383,10 +2383,11 @@ public sealed class S2FactionRegressionTests
 
         player.MasterDamageTakenThisTurn = 2;
         Assert.True(game.Handle(playerIndex, new L12Command("playCard", spring.InstanceId)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:mill")).Accepted);
         PassResponses(game);
-        var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-mimir-mill", prompt.Data["action"]);
-        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
 
         Assert.Equal(player.MaxHp - 1, player.Hp);
         Assert.Contains(draw, player.Hand);

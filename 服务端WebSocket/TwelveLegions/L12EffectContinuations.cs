@@ -105,21 +105,10 @@ public sealed partial class L12GameEngine
                 else ContinueReorderOrder(item, prompt, chosen);
                 break;
             case "reorder-count": CompleteTopDeckReorder(item, prompt, chosen[0]); break;
-            case "observing-stars-morale":
-                if (chosen[0] == "yes") AddMorale(player, 1);
-                FinishStackItem(item); break;
             case "oiran-pick": ContinueOiranPick(item, chosen[0]); break;
             case "oiran-order":
                 CompleteOiranOrder(item, command.BottomCardInstanceIds ?? chosen);
                 break;
-            case "oiran-morale":
-                if (chosen[0] == "yes")
-                {
-                    var morale = player.Morale.FirstOrDefault(card => card.Tapped);
-                    if (morale is not null && source is not null)
-                        ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
-                }
-                FinishStackItem(item); break;
             case "yangjian-return-card":
                 if (command.Destination is "top" or "bottom") CompleteYangJianReturn(item, chosen[0], command.Destination);
                 else ContinueYangJianReturn(item, chosen[0]);
@@ -311,12 +300,6 @@ public sealed partial class L12GameEngine
         player.Library.InsertRange(0, topIds.Select(id => cards[id]));
         player.Library.AddRange(bottomIds.Select(id => cards[id]));
         AddEvent("reorder", item.Controller, $"将 {topIds.Count} 张牌放回牌库顶部、{bottomIds.Count} 张牌放回牌库底部");
-        if (item.Data["reorder-context"] == "observing-stars")
-        {
-            CreatePrompt(item.Controller, "optional", "是否从士气牌库追加 1 张活跃士气？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "observing-stars-morale" });
-            return;
-        }
         FinishStackItem(item);
     }
 
@@ -329,12 +312,6 @@ public sealed partial class L12GameEngine
         var topCount = int.Parse(topCountText);
         player.Library.InsertRange(0, cards.Take(topCount));
         player.Library.AddRange(cards.Skip(topCount));
-        if (item.Data["reorder-context"] == "observing-stars")
-        {
-            CreatePrompt(item.Controller, "optional", "是否从士气牌库追加 1 张活跃士气？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "observing-stars-morale" });
-            return;
-        }
         FinishStackItem(item);
     }
 
@@ -397,14 +374,7 @@ public sealed partial class L12GameEngine
             if (card is null) continue;
             player.Library.Remove(card); player.Library.Add(card);
         }
-        if (player.Morale.Any(card => card.Tapped))
-            CreatePrompt(item.Controller, "optional", "是否将 1 张士气转为活跃？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                {
-                    ["action"] = "oiran-morale",
-                    ["choiceMode"] = "instant"
-                });
-        else FinishStackItem(item);
+        FinishStackItem(item);
     }
 
     private void ReturnFieldCardToLibraryTop(int playerIndex, L12CardInstance card)

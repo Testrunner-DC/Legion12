@@ -299,10 +299,14 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "scout-pay" });
                 return true;
             }
-            case "祭天仪式":
-                if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "祭天仪式抽牌时牌库为空"); FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "option", "祭天仪式：将天灾值增加或减少最多2点", ["-2", "-1", "0", "1", "2"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ritual-disaster" });
+            case "ritual-draw":
+                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "祭天仪式抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
+            case "ritual-disaster":
+                if (int.TryParse(CompositeDeclared(item, "disasterValue").SingleOrDefault(), out var delta))
+                    AdjustDisasterValue(delta);
+                FinishStackItem(item);
                 return true;
             default:
                 return TryResolveS1FactionTactic(item, card);
@@ -539,8 +543,6 @@ public sealed partial class L12GameEngine
             }
             case "scout-pay":
                 if (chosen[0] == "yes" && enemy.Hand.Count > 0) BeginEffectMoralePayment(item, 1, "scout-shuffle"); else FinishStackItem(item); return true;
-            case "ritual-disaster":
-                AdjustDisasterValue(int.Parse(chosen[0])); FinishStackItem(item); return true;
             case "ambush-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");

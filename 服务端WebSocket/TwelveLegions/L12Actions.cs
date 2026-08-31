@@ -29,13 +29,17 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
         Dictionary<string, List<string>>? compositeDeclaration = null;
-        if (L12CompositeEffectPlans.RequiresHandPlayDeclaration(card.CardId))
+        if (L12CompositeEffectPlans.HasHandPlayPlan(card.CardId))
         {
-            if (!TryDecodeCompositeDeclaration(command.Choice, out var decoded))
-                return BeginCompositeHandPlayDeclaration(playerIndex, card);
-            if (!ValidateCompositeHandPlayDeclaration(playerIndex, card, decoded, out var declarationError))
-                return CommandResult.Reject(declarationError);
-            compositeDeclaration = decoded;
+            if (L12CompositeEffectPlans.RequiresHandPlayDeclaration(card.CardId))
+            {
+                if (!TryDecodeCompositeDeclaration(command.Choice, out var decoded))
+                    return BeginCompositeHandPlayDeclaration(playerIndex, card);
+                if (!ValidateCompositeHandPlayDeclaration(playerIndex, card, decoded, out var declarationError))
+                    return CommandResult.Reject(declarationError);
+                compositeDeclaration = decoded;
+            }
+            else compositeDeclaration = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         }
         if (L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
             && command.Target?.Type != "legion")

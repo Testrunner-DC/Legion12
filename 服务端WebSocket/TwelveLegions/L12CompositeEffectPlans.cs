@@ -46,12 +46,27 @@ internal static class L12CompositeEffectPlans
                 new("plague-effect", "令已声明的对方军团或士气在下个重置阶段无法转为活跃",
                     PublicTargetKeys: ["lockTarget"]),
             ],
+            ["S01-0014"] =
+            [
+                new("ritual-draw", "抽取1张牌"),
+                new("ritual-disaster", "将天灾值增加或减少已声明的数值"),
+            ],
+            ["S01-0015"] =
+            [
+                new("peace-draw", "我方抽取1张牌"),
+                new("peace-negotiation", "询问对方是否议和谈判"),
+            ],
             ["S01-0118"] =
             [
                 new("march-buff-effect", "选择我方前排1张军团，本回合兵力+2000",
                     PublicTargetKeys: ["buffTarget"]),
                 new("march-kill-effect", "返还2士气：击杀对方1张兵力不高于6000的军团",
                     "mode:kill", "morale-return", "marchCost", 2, ["killTarget"], true),
+            ],
+            ["S01-0119"] =
+            [
+                new("observing-stars-reorder", "查看并排列牌库顶部5张牌"),
+                new("observing-stars-morale", "从士气牌库追加1张活跃士气", "mode:morale"),
             ],
             ["S01-0221"] =
             [
@@ -69,6 +84,12 @@ internal static class L12CompositeEffectPlans
                 new("hunt-kill-effect", "击杀已声明的对方军团",
                     CostKind: "grave-bottom", CostKey: "graveCost", Cost: 4,
                     PublicTargetKeys: ["killTarget"], PreStackCost: true),
+            ],
+            ["S01-0419"] =
+            [
+                new("oiran-search", "查看牌库顶部3张牌，将符合条件的1张加入手牌并排列其余牌"),
+                new("oiran-ready-morale", "将已声明的1张休整士气转为活跃", "mode:morale",
+                    PublicTargetKeys: ["moraleTarget"]),
             ],
             ["S02-0009"] =
             [
@@ -91,6 +112,11 @@ internal static class L12CompositeEffectPlans
             [
                 new("holy-lock-effect", "叠放至已声明的对方圣物之上",
                     PublicTargetKeys: ["artifactTarget"]),
+            ],
+            ["S02-0306"] =
+            [
+                new("mimir-recover-draw", "我方主宰增加1点血量并抽取1张牌"),
+                new("mimir-mill", "弃置我方牌库顶部2张牌", "mode:mill"),
             ],
             ["S02-0522"] =
             [
@@ -191,7 +217,13 @@ internal static class L12CompositeEffectPlans
             ],
         };
 
-    public static bool RequiresHandPlayDeclaration(string cardId) => HandPlayPlans.ContainsKey(cardId);
+    private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
+        new(StringComparer.OrdinalIgnoreCase) { "S01-0015" };
+
+    public static bool HasHandPlayPlan(string cardId) => HandPlayPlans.ContainsKey(cardId);
+
+    public static bool RequiresHandPlayDeclaration(string cardId)
+        => HasHandPlayPlan(cardId) && !HandPlayPlansWithoutControllerDeclaration.Contains(cardId);
 
     public static bool RequiresTriggerDeclaration(string cardId, string trigger)
         => cardId.Equals("S02-0516", StringComparison.OrdinalIgnoreCase)
@@ -213,6 +245,24 @@ public sealed partial class L12GameEngine
     private CommandResult BeginCommittedCompositeEffectDeclaration(int playerIndex, L12CardInstance source,
         L12StackItem parent, string completion)
     {
+        if (!L12CompositeEffectPlans.RequiresHandPlayDeclaration(source.CardId))
+        {
+            var direct = new L12PendingActivation
+            {
+                ActivationId = $"activation-{++State.ActivationSequence}",
+                Controller = playerIndex,
+                SourceInstanceId = source.InstanceId,
+                SourceCardId = source.CardId,
+                Ability = "composite-committed-play",
+                Text = $"自动提交〈{source.Name}〉无公开声明的复合计划",
+                ValidChoices = [],
+                PlayCardInstanceId = source.InstanceId,
+                CommittedParentStackItemId = parent.StackItemId,
+                CommittedCompletion = completion,
+            };
+            CompleteCommittedCompositeEffectDeclaration(direct);
+            return CommandResult.Ok();
+        }
         var result = BeginCompositeDeclaration(playerIndex, source, "composite-committed-play");
         if (!result.Accepted) return result;
         var activation = State.PendingActivations.Last(candidate => candidate.Controller == playerIndex
@@ -280,6 +330,11 @@ public sealed partial class L12GameEngine
                         .Concat(opponent.Morale.Select(card => card.InstanceId)), 1));
                 break;
 
+            case "S01-0014":
+                steps.Add(CompositeStep("option", "disasterValue", "祭天仪式：预先声明独立后段的天灾值调整",
+                    ["-2", "-1", "0", "1", "2"], 1, 1));
+                break;
+
             case "S01-0118":
             {
                 var modes = new List<string> { "mode:none" };
@@ -299,6 +354,19 @@ public sealed partial class L12GameEngine
                     player.Morale.Select(card => card.InstanceId), 2, 2, requiredChoice: "mode:kill"));
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "神妙行军：预先选择第二段击杀目标",
                     killTargets, 1, requiredChoice: "mode:kill"));
+                break;
+            }
+
+            case "S01-0119":
+            {
+                var modes = new List<string> { "mode:none" };
+                if (player.MoraleDeck.Count > 0) modes.Add("mode:morale");
+                steps.Add(CompositeStep("option", "mode", "观星：预先声明是否发动独立士气段",
+                    modes, 1, 1, new()
+                    {
+                        ["mode:none"] = "只查看并排列牌库顶部卡牌",
+                        ["mode:morale"] = "随后从士气牌库追加1张活跃士气",
+                    }));
                 break;
             }
 
@@ -343,6 +411,21 @@ public sealed partial class L12GameEngine
                     PublicLegions(opponent).Where(card => card.Troops <= 6000).Select(card => card.InstanceId), 1));
                 break;
 
+            case "S01-0419":
+            {
+                var rested = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
+                steps.Add(CompositeStep("option", "mode", "花魁的馈赠：预先声明是否发动独立士气段",
+                    rested.Length > 0 ? ["mode:none", "mode:morale"] : ["mode:none"], 1, 1,
+                    new()
+                    {
+                        ["mode:none"] = "只结算牌库顶部查看、加手与排序",
+                        ["mode:morale"] = "随后将己方1张休整士气转为活跃",
+                    }));
+                steps.Add(CompositeStep("target-morale", "moraleTarget", "花魁的馈赠：预先选择转为活跃的休整士气",
+                    rested, 1, requiredChoice: "mode:morale"));
+                break;
+            }
+
             case "S02-0009":
                 steps.Add(CompositeStep("hand-cards", "entryCards", "防御部署：私密选择手牌中最多2张反击战术",
                     player.Hand.Where(card => card.InstanceId != source.InstanceId && IsCounterTactic(card.CardId))
@@ -382,6 +465,15 @@ public sealed partial class L12GameEngine
                 steps.Add(CompositeStep("artifact-target", "artifactTarget", "神圣伽锁：预先选择叠放的对方圣物",
                     new[] { opponent.Relic }.Concat(opponent.ExtraRelics).Where(card => card is not null)
                         .Select(card => card!.InstanceId), 1));
+                break;
+
+            case "S02-0306":
+                steps.Add(CompositeStep("option", "mode", "密米尔之泉：预先声明是否发动独立弃牌库段",
+                    ["mode:none", "mode:mill"], 1, 1, new()
+                    {
+                        ["mode:none"] = "只结算主宰回血与抽牌",
+                        ["mode:mill"] = "随后弃置我方牌库顶部2张牌",
+                    }));
                 break;
 
             case "S02-0522":
@@ -661,12 +753,17 @@ public sealed partial class L12GameEngine
             "S01-0011" => declared.GetValueOrDefault("lockTarget", []).SingleOrDefault() is { } lockTarget
                 && (PublicLegions(opponent).Any(target => target.InstanceId == lockTarget && !target.Hidden)
                     || opponent.Morale.Any(target => target.InstanceId == lockTarget)),
+            "S01-0014" => declared.GetValueOrDefault("disasterValue", []).SingleOrDefault()
+                is "-2" or "-1" or "0" or "1" or "2",
+            "S01-0015" => declared.Count == 0,
             "S01-0118" => (mode is "mode:none" or "mode:kill") && Own("buffTarget", target =>
                     FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0)
                 && (mode == "mode:none" || declared.GetValueOrDefault("marchCost", []) is { Count: 2 } marchCost
                     && marchCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 2
                     && marchCost.All(id => player.Morale.Any(resource => resource.InstanceId == id))
                     && Enemy("killTarget", target => target.Troops <= 6000)),
+            "S01-0119" => mode is "mode:none" or "mode:morale"
+                && (mode == "mode:none" || player.MoraleDeck.Count > 0),
             "S01-0221" => declared.GetValueOrDefault("duatMode", []).SingleOrDefault() is { } duatMode
                 && duatMode is "mode:kill" or "mode:recover"
                 && (duatMode != "mode:kill" || Enemy("killTarget", target => target.Troops <= 5000))
@@ -680,6 +777,9 @@ public sealed partial class L12GameEngine
                 && graveCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 4
                 && graveCost.All(id => player.Graveyard.Any(target => target.InstanceId == id && CanEnterHandOrLibrary(target)))
                 && Enemy("killTarget", target => target.Troops <= 6000),
+            "S01-0419" => mode is "mode:none" or "mode:morale"
+                && (mode == "mode:none" || declared.GetValueOrDefault("moraleTarget", []).SingleOrDefault() is { } moraleTarget
+                    && player.Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped)),
             "S02-0009" => ValidateDefenseDeploymentDeclaration(player, card, declared),
             "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1"
                 && (mode is "mode:none" or "mode:morale")
@@ -688,6 +788,9 @@ public sealed partial class L12GameEngine
             "S02-0013" => declared.GetValueOrDefault("artifactTarget", []).SingleOrDefault() is { } artifactId
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
+            "S02-0306" => player.MasterDamageTakenThisTurn >= 2
+                && !player.UsedAbilities.Contains("s2-mimir-used")
+                && mode is "mode:none" or "mode:mill",
             "S02-0522" => mode is "mode:none" or "mode:second"
                 && Enemy("primaryTarget")
                 && (mode == "mode:none" || GodPowerCost("secondCost", 1) && Enemy("secondaryTarget")),
@@ -764,10 +867,14 @@ public sealed partial class L12GameEngine
         var mode = declaration.GetValueOrDefault("mode", []).SingleOrDefault();
         var preStackCosts = segments.Where(segment => segment.PreStackCost
             && (segment.RequiredMode is null || segment.RequiredMode == mode)).ToArray();
-        if (preStackCosts.Length > 0)
-            return preStackCosts.All(segment => TryPayCompositeDeclaredCost(controller, source, segment, declaration));
+        if (preStackCosts.Length > 0
+            && !preStackCosts.All(segment => TryPayCompositeDeclaredCost(controller, source, segment, declaration)))
+            return false;
         var first = segments.FirstOrDefault();
-        return first is null || TryPayCompositeDeclaredCost(controller, source, first, declaration);
+        if (preStackCosts.Length == 0 && first is not null
+            && !TryPayCompositeDeclaredCost(controller, source, first, declaration)) return false;
+        if (source.CardId == "S02-0306") player.UsedAbilities.Add("s2-mimir-used");
+        return true;
     }
 
     private static bool ValidateGloryPlannedCost(L12PlayerState player,
@@ -900,6 +1007,8 @@ public sealed partial class L12GameEngine
                     card.InstanceId == id && card.InstanceId != item.SourceInstanceId
                     && CanEnterHandOrLibrary(card)
                     && L12StructuredCardRules.HasFaction(State.Players[controller], card, "asgard"))),
+            "oiran-ready-morale" => CompositeDeclared(item, "moraleTarget").SingleOrDefault() is { } moraleTarget
+                && State.Players[controller].Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped),
             _ => true,
         };
 

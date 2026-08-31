@@ -39,6 +39,7 @@ $batch6HReviewedCardIds = @(
     'S02-0608', 'S02-0612', 'S02-0617'
 )
 $batch6BReviewedCardIds = @('S02-06M2', 'S02-06S3', 'S02-06S4', 'S02-06S5')
+$batch6CReviewedCardIds = @('S01-0014', 'S01-0015', 'S01-0119', 'S01-0419', 'S02-0306')
 
 $rows = foreach ($card in ($cards | Sort-Object id)) {
     $fine = if ($fineByCard.ContainsKey($card.id)) { @($fineByCard[$card.id] | Sort-Object -Unique) } else { @() }
@@ -66,6 +67,9 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
     if ($batch6BReviewedCardIds -contains $card.id) {
         $review += '；6B试炼完成触发链已验收'
     }
+    if ($batch6CReviewedCardIds -contains $card.id) {
+        $review += '；6C复合手牌战术独立段已验收'
+    }
     [pscustomobject]@{
         Id = $card.id
         Name = ($card.nameZh -replace '\|', '\|')
@@ -86,8 +90,8 @@ $fineOnly = @($rows | Where-Object Route -eq '细原子已验证').Count
 $mixed = @($rows | Where-Object Route -eq '混合：细原子 + 复合过渡').Count
 $compositeOnly = @($rows | Where-Object Route -eq '复合过渡').Count
 $unrouted = @($rows | Where-Object Route -eq '未进入原子路由')
-$unroutedRuntime = @($unrouted | Where-Object Review -eq '未进入原子路由（有实战入口）')
-$noRuntime = @($unrouted | Where-Object Review -eq '无实战入口')
+$unroutedRuntime = @($unrouted | Where-Object { $_.Review.StartsWith('未进入原子路由（有实战入口）', [StringComparison]::Ordinal) })
+$noRuntime = @($unrouted | Where-Object { $_.Review.StartsWith('无实战入口', [StringComparison]::Ordinal) })
 $unroutedWithTests = @($unrouted | Where-Object Tests -ne '—')
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add('# 248 张卡效独立审查矩阵')

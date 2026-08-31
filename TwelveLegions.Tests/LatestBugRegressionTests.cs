@@ -1944,8 +1944,21 @@ public sealed class LatestBugRegressionTests
         Assert.Equal(opponentLibraryBefore, opponent.Library.Count);
         Assert.Empty(codexOwner.Hand);
         Assert.Contains(wisdom, codexOwner.Graveyard);
-        Assert.Contains(negotiation, opponent.Graveyard);
+        Assert.DoesNotContain(negotiation, opponent.Graveyard);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-abandoned");
+
+        var negotiationSegment = Assert.Single(game.State.EffectStack, item =>
+            item.SourceInstanceId == negotiation.InstanceId
+            && item.Data.GetValueOrDefault("atomicFlow") == "peace-negotiation");
+        Assert.Equal("1", negotiationSegment.Data["compositeSegment"]);
+        PassResponses(game);
+
+        var decision = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("opponent-confirm", decision.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: decision.PromptId,
+            Choice: "refuse")).Accepted);
+
+        Assert.Contains(negotiation, opponent.Graveyard);
     }
 
     [Fact]
