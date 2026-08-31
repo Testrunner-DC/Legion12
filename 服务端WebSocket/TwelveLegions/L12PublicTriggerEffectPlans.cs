@@ -23,6 +23,7 @@ public sealed partial class L12GameEngine
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
         => HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
+            || HasTrialCompletionTriggerDeclarationPlan(cardId, trigger, data)
             || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
             || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
         {
@@ -67,6 +68,8 @@ public sealed partial class L12GameEngine
         List<L12ActivationSelectionStep>? steps = null;
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
 
+        if (TryBeginTrialCompletionTriggerDeclaration(candidate, source))
+            return true;
         if (TryBeginAttackPublicTriggerDeclaration(candidate, source))
             return true;
 
@@ -395,6 +398,8 @@ public sealed partial class L12GameEngine
 
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
+        if (TryCompleteTrialCompletionTriggerDeclaration(candidate, activation))
+            return true;
         if (TryCompleteAttackPublicTriggerDeclaration(candidate, activation))
             return true;
         var key = (candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability"));

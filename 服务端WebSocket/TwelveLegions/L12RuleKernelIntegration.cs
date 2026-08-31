@@ -54,6 +54,7 @@ public sealed partial class L12GameEngine
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
             MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
+            AllowCancel = step.AllowCancel,
             AutoSelectWhenExact = step.AutoSelectWhenExact,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
@@ -61,6 +62,8 @@ public sealed partial class L12GameEngine
             DeclarationKey = step.DeclarationKey,
             ReferenceDeclarationKey = step.ReferenceDeclarationKey,
             MinimumReferenceCount = step.MinimumReferenceCount,
+            MinimumReferenceNumericValue = step.MinimumReferenceNumericValue,
+            ReferenceNumericChoicePrefix = step.ReferenceNumericChoicePrefix,
             ReferenceChoiceIndex = step.ReferenceChoiceIndex,
             SkipWhenReferenceIsNone = step.SkipWhenReferenceIsNone,
             CostThreshold = step.CostThreshold,
@@ -116,6 +119,14 @@ public sealed partial class L12GameEngine
             if (pendingStep.MinimumReferenceCount > 0
                 && pendingStep.ReferenceDeclarationKey is { } countedReference
                 && activation.DeclaredValues.GetValueOrDefault(countedReference, []).Count < pendingStep.MinimumReferenceCount)
+            {
+                activation.CurrentStep++;
+                continue;
+            }
+            if (pendingStep.MinimumReferenceNumericValue > 0
+                && pendingStep.ReferenceDeclarationKey is { } numericReference
+                && !DeclaredNumericValueAtLeast(activation, numericReference,
+                    pendingStep.ReferenceNumericChoicePrefix, pendingStep.MinimumReferenceNumericValue))
             {
                 activation.CurrentStep++;
                 continue;
@@ -510,7 +521,8 @@ public sealed partial class L12GameEngine
             anonymousPrompt.Data["skip"] = "取消发动";
             return;
         }
-        var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var promptChoices = (step.AllowCancel ? step.ValidChoices.Append("skip") : step.ValidChoices)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
@@ -523,6 +535,15 @@ public sealed partial class L12GameEngine
                 && !(State.ActiveDisaster?.CardId == "S01-DS03" && position.Item1 == 1)
                 && player.Field[position.Item1][position.Item2] is null)
             .Select(position => $"{position.Item1}:{position.Item2}");
+
+    private static bool DeclaredNumericValueAtLeast(L12PendingActivation activation, string referenceKey,
+        string? prefix, int minimum)
+    {
+        var choice = activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault();
+        if (choice is null || prefix is null || !choice.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+        return int.TryParse(choice[prefix.Length..], out var value) && value >= minimum;
+    }
 
     private void ResolvePendingActivation(L12Prompt prompt, List<string> chosen)
     {
@@ -1043,6 +1064,7 @@ public sealed partial class L12GameEngine
 
     private void AddTriggerCandidateToStack(L12TriggerCandidate candidate)
     {
+        var stackText = candidate.Data.GetValueOrDefault("stackText", candidate.Text);
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -1051,7 +1073,7 @@ public sealed partial class L12GameEngine
             SourceCardId = candidate.SourceCardId,
             SourceName = candidate.SourceName,
             Trigger = candidate.Trigger,
-            Text = candidate.Text,
+            Text = stackText,
             SourceSnapshot = candidate.SourceSnapshot,
         };
         foreach (var pair in candidate.Data) item.Data[pair.Key] = pair.Value;
@@ -1061,7 +1083,7 @@ public sealed partial class L12GameEngine
         AddEvent("effect-trigger", candidate.Controller,
             candidate.Data.GetValueOrDefault("triggerEffectText", candidate.Text),
             source);
-        AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{candidate.Text}进入同一时点触发批次",
+        AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{stackText}进入同一时点触发批次",
             source);
     }
 

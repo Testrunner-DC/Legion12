@@ -72,6 +72,7 @@ public sealed partial class L12GameEngine
             case "master-morale-return": ResolveS2MasterMoraleReturn(item); break;
             case "medjed-master-damage": ResolveMedjedMasterDamageReaction(item); break;
             case "trojan-after-attack": ResolveS2TrojanHorseAfterAttack(item); break;
+            case "trial-complete": ResolveTrialCompletionTriggerEffect(item); break;
             default: FinishStackItem(item); break;
         }
     }

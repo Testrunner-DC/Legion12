@@ -182,6 +182,8 @@ public sealed partial class L12GameEngine
             ["mode:row-cost"] = "选择对方1排并降低费用",
             ["mode:front-attack"] = "强化我方前排军团进攻",
             ["mode:free-move"] = "获得免费前后位移",
+            ["mode:grave"] = "从墓地选择公开卡牌",
+            ["mode:library"] = "结算时查看牌库并选择",
             ["row:0"] = "选择前排", ["row:1"] = "选择后排",
             ["pay:god-power"] = "支付神力", ["buff:strong"] = "获得强攻", ["buff:shock"] = "获得震击",
         };
@@ -1366,7 +1368,7 @@ public sealed partial class L12GameEngine
 
     private void FinishStackItem(L12StackItem item)
     {
-        QueueNextFenianDebuff(item);
+        QueueNextTrialCompletionSegment(item);
         if (!item.Negated && item.Data.GetValueOrDefault("wisdomRewards") is { Length: > 0 } rewards)
         {
             foreach (var marker in rewards.Split(';', StringSplitOptions.RemoveEmptyEntries))

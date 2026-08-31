@@ -1736,14 +1736,8 @@ public sealed partial class L12GameEngine
             source.TrialCompleted = true;
             player.SpecialZones.TrialLevel = player.SpecialZones.Trials.Where(card => !card.TrialCompleted).Select(card => card.TrialProgress).DefaultIfEmpty().Max();
             AddEvent("trial", item.Controller, $"完成试炼《{source.Name}》", source);
-            AddEvent("effect-trigger", item.Controller,
-                ResolveTriggeredEffectDisplayText(source, "trial-complete", "触发", item.Data), source);
-            if (player.MasterId == "S02-06M2")
-            {
-                L12S2ZoneOps.GainRunes(player, 1);
-                AddEvent("runes", item.Controller, "完成试炼，安格斯·麦·奥格获得1枚符文", source);
-            }
-            ResolveCompletedTrialTrigger(item, source);
+            QueueCompletedTrialTriggerBatch(item.Controller, source);
+            FinishStackItem(item);
             return true;
         }
         if (source?.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
@@ -1776,93 +1770,12 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
-        if (source?.CardType == "trial" && ability == "fenianSingleDebuff")
-        {
-            var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
-            if (target is not null)
-                AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
-            ResolveStateBasedLegionDeaths();
-            FinishStackItem(item);
-            return true;
-        }
         return TryResolveS2RemainingAbility(item, source, ability);
-    }
-
-    private void ResolveCompletedTrialTrigger(L12StackItem item, L12CardInstance trial)
-    {
-        var player = State.Players[item.Controller];
-        switch (trial.Name)
-        {
-            case "湖中仙女的馈赠":
-            {
-                player.S2ArthurDiscountUntilTurn = Math.Max(player.S2ArthurDiscountUntilTurn, State.TurnSerial);
-                var choices = player.Library.Concat(player.Graveyard).Where(card => card.CardId == "S02-0601")
-                    .Select(card => card.InstanceId).ToList();
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "可从牌库或墓地将1张〈亚瑟王〉加入手牌；随后墓地其余〈亚瑟王〉返回牌库并重洗",
-                    choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-lake-lady-arthur" });
-                return;
-            }
-            case "寻找圣杯之旅":
-            {
-                var choices = player.Library.Where(card => card.Faction == "otherworld" && card.CardType == "legion")
-                    .Select(card => card.InstanceId).ToList();
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "可查看牌库并选择1张【彼界】军团展示加入手牌，随后重洗牌库",
-                    choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-grail-search" });
-                return;
-            }
-            case "芬尼亚传奇":
-            {
-                var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(card => card is not null && IsFieldLegion(card) && !card.Hidden)
-                    .Select(card => card!.InstanceId).ToList();
-                choices.Add("skip");
-                if (player.SpecialZones.Runes == 0 || choices.Count == 1) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "optional-target", "可逐次消耗1符文；选择对方1张军团，本回合兵力-3000（可重复选择）",
-                    choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-fenian-trial-debuff" });
-                return;
-            }
-            default:
-                FinishStackItem(item);
-                return;
-        }
-    }
-
-    private void QueueFirstFenianDebuff(L12StackItem item)
-    {
-        var targets = (item.Data.GetValueOrDefault("fenianTargets") ?? string.Empty)
-            .Split('|', StringSplitOptions.RemoveEmptyEntries);
-        if (targets.Length == 0 || FindSource(item) is not { } trial) return;
-        PushEffect(item.Controller, trial, "active", $"芬尼亚传奇：目标本回合兵力-3000",
-            targets: [targets[0]], data: new Dictionary<string, string>
-            {
-                ["ability"] = "fenianSingleDebuff",
-                ["target"] = targets[0],
-                ["fenianRemaining"] = string.Join('|', targets.Skip(1)),
-            });
-    }
-
-    private void QueueNextFenianDebuff(L12StackItem item)
-    {
-        if (item.Data.GetValueOrDefault("ability") != "fenianSingleDebuff") return;
-        var remaining = (item.Data.GetValueOrDefault("fenianRemaining") ?? string.Empty)
-            .Split('|', StringSplitOptions.RemoveEmptyEntries);
-        if (remaining.Length == 0 || FindSource(item) is not { } trial) return;
-        PushEffect(item.Controller, trial, "active", $"芬尼亚传奇：目标本回合兵力-3000",
-            targets: [remaining[0]], data: new Dictionary<string, string>
-            {
-                ["ability"] = "fenianSingleDebuff",
-                ["target"] = remaining[0],
-                ["fenianRemaining"] = string.Join('|', remaining.Skip(1)),
-            });
     }
 
     private bool TryContinueS2Faction(L12StackItem item, L12Prompt prompt, List<string> chosen, L12Command command)
     {
+        if (TryContinueTrialCompletionEffect(item, prompt, chosen)) return true;
         var player = State.Players[item.Controller];
         switch (prompt.Data.GetValueOrDefault("action"))
         {
@@ -2250,65 +2163,6 @@ public sealed partial class L12GameEngine
                     var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                     if (target is { Tapped: true }) target.CannotUntapUntilRound = Math.Max(target.CannotUntapUntilRound, State.Round + 1);
                 }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-lake-lady-arthur":
-            {
-                if (chosen[0] != "skip")
-                {
-                    var selected = player.Library.Concat(player.Graveyard).FirstOrDefault(card => card.InstanceId == chosen[0] && card.CardId == "S02-0601");
-                    if (selected is not null)
-                    {
-                        player.Library.Remove(selected);
-                        player.Graveyard.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library-or-graveyard", "湖中仙女的馈赠将亚瑟王加入手牌");
-                    }
-                }
-                foreach (var arthur in player.Graveyard.Where(card => card.CardId == "S02-0601").ToArray())
-                {
-                    player.Graveyard.Remove(arthur);
-                    player.Library.Add(arthur);
-                }
-                ShuffleLibrary(player, "湖中仙女的馈赠结算");
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-grail-search":
-            {
-                if (chosen[0] != "skip")
-                {
-                    var selected = player.Library.FirstOrDefault(card => card.InstanceId == chosen[0] && card.Faction == "otherworld" && card.CardType == "legion");
-                    if (selected is not null)
-                    {
-                        player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library", "寻找圣杯之旅将彼界军团加入手牌");
-                    }
-                }
-                ShuffleLibrary(player, "寻找圣杯之旅检索结算");
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-fenian-trial-debuff":
-            {
-                if (chosen[0] != "skip" && DeclaredEnemyTarget(item.Controller, chosen[0]) is not null
-                    && L12S2ZoneOps.SpendRunes(player, 1))
-                {
-                    var selected = item.Data.GetValueOrDefault("fenianTargets") ?? string.Empty;
-                    item.Data["fenianTargets"] = string.IsNullOrEmpty(selected) ? chosen[0] : $"{selected}|{chosen[0]}";
-                }
-                var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(card => card is not null && IsFieldLegion(card) && !card.Hidden)
-                    .Select(card => card!.InstanceId).ToList();
-                choices.Add("skip");
-                if (chosen[0] != "skip" && player.SpecialZones.Runes > 0 && choices.Count > 1)
-                {
-                    CreatePrompt(item.Controller, "optional-target", "芬尼亚传奇：可继续消耗1符文选择军团（可重复选择）",
-                        choices, 1, 1, "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string> { ["action"] = "s2-fenian-trial-debuff" });
-                    return true;
-                }
-                QueueFirstFenianDebuff(item);
                 FinishStackItem(item);
                 return true;
             }

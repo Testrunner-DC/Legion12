@@ -170,6 +170,8 @@ try {
             (Join-Path $repoRoot "scripts\test-l12-public-response-declarations.ps1")
         Invoke-CheckedPowerShellScript "Public hand-play predeclaration and independent-segment guard" `
             (Join-Path $repoRoot "scripts\test-l12-hand-play-declarations.ps1")
+        Invoke-CheckedPowerShellScript "Trial completion TriggerBatch and declaration guard" `
+            (Join-Path $repoRoot "scripts\test-l12-trial-completion-declarations.ps1")
     }
 
     if ($configChanged) {

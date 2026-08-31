@@ -437,6 +437,11 @@ public sealed class L12ActivationSelectionStep
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
     /// <summary>
+    /// 是否允许取消整次声明。包含后续强制独立段的触发会关闭此项，并以显式 mode:none
+    /// 仅跳过可选段，避免把同一张卡的强制后段一并吞掉。
+    /// </summary>
+    public bool AllowCancel { get; init; } = true;
+    /// <summary>
     /// 合法候选数量恰好等于固定选择数量时，服务端直接记录整个集合而不弹出无意义选择。
     /// 仅用于“必须选择全部现有公开对象”的声明步；候选更多时仍由玩家明确选择。
     /// </summary>
@@ -447,6 +452,10 @@ public sealed class L12ActivationSelectionStep
     public string? ReferenceDeclarationKey { get; init; }
     /// <summary>引用列表至少达到此数量才执行本步；用于“最多选择多张对象”后逐个声明位置。</summary>
     public int MinimumReferenceCount { get; init; }
+    /// <summary>引用的稳定数值选项至少达到此值才执行本步；用于可变数量费用后的逐项目标声明。</summary>
+    public int MinimumReferenceNumericValue { get; init; }
+    /// <summary>从引用选项解析数值时使用的稳定前缀，例如 rune-count:。</summary>
+    public string? ReferenceNumericChoicePrefix { get; init; }
     /// <summary>本步对应引用列表中的第几个对象；用于公共多对象位移的逐一位置声明。</summary>
     public int ReferenceChoiceIndex { get; init; }
     /// <summary>引用字段为 mode:none 时跳过本步；用于可选登场对象之后的战场/位置声明。</summary>

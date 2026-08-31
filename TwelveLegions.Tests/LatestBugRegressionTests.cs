@@ -26,7 +26,7 @@ public sealed class LatestBugRegressionTests
             ["甲", "乙"], [deck, baseDeck], skipPreparation: true);
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId)
+    private static L12CardInstance Card(string cardId, string instanceId, int troops = 0)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -41,8 +41,8 @@ public sealed class LatestBugRegressionTests
             EffectText = definition.Effect,
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
-            BaseTroops = definition.Troops ?? 0,
-            Troops = definition.Troops ?? 0,
+            BaseTroops = troops > 0 ? troops : definition.Troops ?? 0,
+            Troops = troops > 0 ? troops : definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
             TrialValue = definition.TrialValue ?? 0,
         };
@@ -1159,6 +1159,8 @@ public sealed class LatestBugRegressionTests
         completableTrial.TrialProgress = 8;
         completionPlayer.SpecialZones.Trials.Clear();
         completionPlayer.SpecialZones.Trials.Add(completableTrial);
+        completionPlayer.Library.Clear();
+        completionPlayer.Library.Add(Card("S02-0604", "trial-completion-search-target"));
         completionGame.State.ActivePlayer = 0;
         completionGame.State.Phase = L12Phase.Main;
 
@@ -1168,6 +1170,10 @@ public sealed class LatestBugRegressionTests
         Assert.True(completion.Accepted, completion.Error);
         PassResponses(completionGame);
         Assert.True(completableTrial.TrialCompleted);
+        var declaration = Assert.Single(completionGame.State.PendingPrompts);
+        Assert.Contains("mode:use", declaration.ValidChoices);
+        Assert.True(completionGame.Handle(0, new L12Command("resolvePrompt",
+            PromptId: declaration.PromptId, Choice: "mode:use")).Accepted);
         var trialAnimation = Assert.Single(completionGame.State.Events, entry => entry.Type == "effect-trigger");
         Assert.Equal("触发 可查看我方牌库，选择1张【彼界】军团展示并加入手牌。随后重洗牌库。", trialAnimation.Text);
         Assert.Contains(trialAnimation.Cards, card => card.InstanceId == completableTrial.InstanceId);
@@ -1194,21 +1200,17 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void FenianLegendCreatesThreeIndependentRepeatableDebuffEffects()
+    public void FenianLegendPrepaysThreeRunesForThreeRepeatableIndependentDebuffs()
     {
         var game = Create(64105);
         var player = game.State.Players[0];
         var trial = Card("S02-06S5", "fenian-independent-trial");
-        var enemy = Card("S02-0302", "fenian-repeat-target");
-        var counter = Card("S01-0019", "fenian-independent-counter");
+        var enemy = Card("S02-0302", "fenian-repeat-target", 20000);
         trial.TrialProgress = 8;
         player.SpecialZones.Trials.Clear();
         player.SpecialZones.Trials.Add(trial);
         player.SpecialZones.Runes = 3;
         game.State.Players[1].Field[0][0] = enemy;
-        counter.Hidden = true;
-        counter.SetRound = 0;
-        game.State.Players[1].Field[1][0] = counter;
         game.State.Round = 2;
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
@@ -1216,35 +1218,26 @@ public sealed class LatestBugRegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
             Ability: "completeTrial")).Accepted);
         PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var amount = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: amount.PromptId,
+            Choice: "rune-count:3")).Accepted);
         for (var index = 0; index < 3; index++)
         {
             var target = Assert.Single(game.State.PendingPrompts);
-            Assert.Equal("s2-fenian-trial-debuff", target.Data["action"]);
             Assert.Contains(enemy.InstanceId, target.ValidChoices);
             Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
                 Choice: enemy.InstanceId)).Accepted);
         }
 
-        Assert.True(game.State.EffectStack.Count == 1,
-            $"stack={game.State.EffectStack.Count}; deferred={game.State.DeferredEffectStack.Count}; prompts={string.Join(',', game.State.PendingPrompts.Select(prompt => prompt.Kind + ':' + prompt.Continuation))}; events={string.Join(" / ", game.State.Events.TakeLast(5).Select(entry => entry.Text))}");
-        var first = game.State.EffectStack[0];
-        Assert.Equal("fenianSingleDebuff", first.Data["ability"]);
-        first.Negated = true;
-        for (var index = 0; index < 2; index++)
-        {
-            var response = Assert.Single(game.State.PendingPrompts);
-            Assert.Equal("response", response.Kind);
-            Assert.True(game.Handle(response.PlayerIndex, new L12Command("resolvePrompt",
-                PromptId: response.PromptId, Choice: "pass")).Accepted);
-        }
-
-        var second = Assert.Single(game.State.EffectStack);
-        Assert.NotEqual(first.StackItemId, second.StackItemId);
-        Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         PassResponses(game);
 
         Assert.Equal(0, player.SpecialZones.Runes);
-        Assert.Equal(enemy.BaseTroops - 6000, enemy.Troops);
+        Assert.Equal(enemy.BaseTroops - 9000, enemy.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("第2个目标", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("第3个目标", StringComparison.Ordinal));
     }
 
     [Fact]
