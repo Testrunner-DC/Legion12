@@ -209,29 +209,51 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
-            case "杜阿特之门":
-                CreatePrompt(item.Controller, "option", "杜阿特之门：选择击杀军团，或回收太阳城卡牌", ["kill", "recover"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "duat-mode", ["choiceMode"] = "instant",
-                        ["kill"] = "击杀对方1张兵力不高于5000的军团。",
-                        ["recover"] = "选择墓地最多1张〈杜阿特之门〉以外的【太阳城】卡牌加入手牌。",
-                    }); return true;
-            case "法老王的庆典": BeginPharaohFestival(item); return true;
-            case "女武神的召唤":
+            case "duat-effect":
             {
-                var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, candidate, "asgard") && candidate.CurrentCost <= 5)
-                    .Select(candidate => candidate.InstanceId).ToArray();
-                if (choices.Length == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
-                if (player.Hp > 5) DamageMaster(item.Controller, 1, "女武神的召唤");
-                CreatePrompt(item.Controller, "card", "女武神的召唤：选择墓地1张费用不高于5的【阿斯加德】军团活跃登场", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "valkyrie-card" }); return true;
+                var mode = CompositeDeclared(item, "duatMode").SingleOrDefault();
+                if (mode == "mode:kill")
+                {
+                    var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                    if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 5000) is not null)
+                        KillTarget(item, targetId!, "被杜阿特之门击杀");
+                }
+                else
+                {
+                    var targetId = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
+                    var target = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == targetId
+                        && candidate.CardId != card.CardId && CanEnterHandOrLibrary(candidate)
+                        && L12StructuredCardRules.HasFaction(player, candidate, "taiyangcheng"));
+                    if (target is not null)
+                    {
+                        player.Graveyard.Remove(target);
+                        AddCardToHandByEffect(player, target, "graveyard", $"{target.Name}从墓地加入手牌");
+                    }
+                }
+                FinishStackItem(item);
+                return true;
             }
-            case "猎杀时刻":
-                if (player.Graveyard.Count < 4) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "order", "猎杀时刻：选择墓地4张牌，依选择顺序返回牌库底部", player.Graveyard.Select(card => card.InstanceId), 4, 4,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "hunt-return" }); return true;
+            case "valkyrie-summon-effect":
+            {
+                var targetId = CompositeDeclared(item, "entryCard").SingleOrDefault();
+                var slot = CompositeDeclared(item, "entrySlot").SingleOrDefault();
+                if (targetId is not null && slot is not null
+                    && player.Graveyard.Any(candidate => candidate.InstanceId == targetId && candidate.CardType == "legion"
+                        && candidate.CurrentCost <= 5 && L12StructuredCardRules.HasFaction(player, candidate, "asgard"))
+                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    SummonFromAnyPrivateZone(player, targetId, slot, false);
+                FinishStackItem(item);
+                return true;
+            }
+            case "hunt-kill-effect":
+            {
+                var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
+                    KillTarget(item, targetId!, "被猎杀时刻击杀");
+                FinishStackItem(item);
+                return true;
+            }
+            case "法老王的庆典": BeginPharaohFestival(item); return true;
             default: return false;
         }
     }
@@ -423,7 +445,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller]; var enemy = State.Players[1 - item.Controller]; var source = FindSource(item);
         switch (action)
         {
-            case "thutmose-kill": case "hunt-kill": case "harald-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀"); FinishStackItem(item); return true;
+            case "thutmose-kill": case "harald-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀"); FinishStackItem(item); return true;
             case "ramses-repeat":
             {
                 var inheritsCounterProtection = source is not null
@@ -484,16 +506,11 @@ public sealed partial class L12GameEngine
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
                 FinishStackItem(item); return true;
-            case "duat-mode":
-                if (chosen[0] == "kill") PromptEnemyByTroops(item, "duat-kill", "杜阿特之门：击杀对方1张兵力不高于5000的军团", 5000, false);
-                else RecoverSunCard(item, "S01-0221"); return true;
-            case "duat-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被杜阿特之门击杀"); FinishStackItem(item); return true;
             case "faction-search-pick": CompleteFactionTopSearch(item, chosen); return true;
             case "faction-search-order": CompleteFactionSearchOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
             case "festival-hand": ContinuePharaohFestivalHand(item, chosen[0]); return true;
             case "festival-grave": ContinuePharaohFestivalGrave(item, chosen[0]); return true;
             case "festival-bottom-order": CompletePharaohFestivalOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
-            case "valkyrie-card": item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); return true;
             case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
             case "menes-sacrifice":
                 if (chosen[0] != "skip" && source is not null)
@@ -536,9 +553,6 @@ public sealed partial class L12GameEngine
                 MoveGraveToLibraryBottom(player, chosen.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
                 if (source is not null) { ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃"); player.UsedAbilities.Add(prompt.Data["onceKey"]); AddEvent("effect", item.Controller, "古斯塔夫一世回收墓地2张牌并转为活跃", source); }
                 FinishStackItem(item); return true;
-            case "hunt-return":
-                MoveGraveToLibraryBottom(player, chosen.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
-                PromptEnemyByTroops(item, "hunt-kill", "猎杀时刻：击杀对方1张兵力不高于6000的军团", 6000, false); return true;
             case "tutankhamun-top": if (chosen[0] != "skip") MoveGraveToLibraryTop(player, chosen[0]); FinishStackItem(item); return true;
             case "nitocris-summon":
                 if (chosen[0] == "skip") FinishStackItem(item);
@@ -1525,12 +1539,6 @@ public sealed partial class L12GameEngine
             }
         }
         FinishStackItem(item);
-    }
-
-    private void RecoverSunCard(L12StackItem item, string excluded)
-    {
-        var choices = State.Players[item.Controller].Graveyard.Where(card => CanEnterHandOrLibrary(card) && card.Faction == "taiyangcheng" && card.CardId != excluded).Select(card => card.InstanceId).ToList(); choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【太阳城】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" });
     }
 
     private void ReturnEnemyFieldToLibraryBottom(int controller, string instanceId)

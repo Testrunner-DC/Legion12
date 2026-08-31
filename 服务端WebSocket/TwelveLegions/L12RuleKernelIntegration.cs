@@ -189,6 +189,49 @@ public sealed partial class L12GameEngine
             }
             promptKind = "slot";
         }
+        else if (step.Kind == "composite-defense-slot")
+        {
+            var player = State.Players[activation.Controller];
+            var choices = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null)
+                .Select(slot => $"1:{slot}")
+                .Except(activation.DeclaredValues.Values.SelectMany(values => values), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "防御部署没有足够的合法后排位置；效果未入栈");
+                return;
+            }
+            promptKind = "slot";
+            targetPlayerIndex = activation.Controller;
+        }
+        else if (step.Kind == "composite-opposite-slot")
+        {
+            var opponent = State.Players[1 - activation.Controller];
+            var movingIds = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []) : [];
+            var movingId = movingIds.ElementAtOrDefault(step.ReferenceChoiceIndex);
+            var row = -1;
+            var slot = -1;
+            var moving = movingId is null ? null : FindOnField(opponent, movingId, out row, out slot);
+            var destination = moving is null || opponent.Field[1 - row][slot] is not null
+                || State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1
+                ? null : $"{1 - row}:{slot}";
+            step.ValidChoices.Clear();
+            if (destination is not null) step.ValidChoices.Add(destination);
+            if (destination is null)
+            {
+                RejectPendingActivation(activation, "伪造密令的公开位移位置已失效；效果未入栈");
+                return;
+            }
+            activation.DeclaredTargets.Add(destination);
+            if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+                activation.DeclaredValues[step.DeclarationKey] = [destination];
+            activation.CurrentStep++;
+            CreateActivationStepPrompt(activation);
+            return;
+        }
         else if (step.Kind == "public-move-slot")
         {
             var player = State.Players[activation.Controller];

@@ -64,42 +64,62 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
-            case "防御部署":
+            case "defense-deployment-set":
             {
-                var availableSlots = Enumerable.Range(0, 3).Count(slot => player.Field[1][slot] is null);
-                var choices = player.Hand.Where(candidate => IsCounterTactic(candidate.CardId))
-                    .Select(candidate => candidate.InstanceId).ToArray();
-                var maximum = Math.Min(2, Math.Min(availableSlots, choices.Length));
-                if (maximum == 0)
+                var cards = CompositeDeclared(item, "entryCards");
+                for (var index = 0; index < cards.Length; index++)
                 {
-                    DrawAfterDefenseDeployment(item, card);
-                    return true;
+                    var slotText = CompositeDeclared(item, $"entrySlot{index + 1}").SingleOrDefault();
+                    if (slotText?.Split(':') is not ["1", var slotValue]
+                        || !int.TryParse(slotValue, out var slot) || slot is < 0 or > 2
+                        || player.Field[1][slot] is not null) continue;
+                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cards[index]
+                        && IsCounterTactic(candidate.CardId));
+                    if (counter is null) continue;
+                    player.Hand.Remove(counter);
+                    counter.Hidden = true;
+                    counter.SetRound = State.Round;
+                    counter.SummonRound = State.Round;
+                    player.Field[1][slot] = counter;
+                    AddEvent("counter-set", item.Controller, $"{player.Name}因〈防御部署〉在后排{slot + 1}号位覆盖1张反击战术");
                 }
-                CreatePrompt(item.Controller, "hand-cards", "防御部署：选择手牌中最多2张反击战术置入后排",
-                    choices, 0, maximum, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-defense-deployment" });
+                FinishStackItem(item);
                 return true;
             }
-            case "黑色莲花":
-                CreatePrompt(item.Controller, "option", "黑色莲花：将天灾值增加或减少最多1点",
-                    ["-1", "0", "1"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-black-lotus-disaster",
-                        ["-1"] = "天灾值-1", ["0"] = "不改变", ["1"] = "天灾值+1",
-                    });
+            case "defense-deployment-draw":
+                DrawAfterDefenseDeployment(item, card);
                 return true;
-            case "纷乱箭":
+            case "black-lotus-disaster":
             {
-                var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && target.BaseTroops <= 2000)
-                    .Select(target => target!.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "targets", "纷乱箭：选择对方最多 3 张原本兵力不高于 2000 的军团并击杀",
-                    choices, 1, Math.Min(3, choices.Length), "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-chaotic-arrows" });
+                var delta = int.TryParse(CompositeDeclared(item, "disasterMode").SingleOrDefault(), out var parsed)
+                    ? Math.Clamp(parsed, -1, 1) : 0;
+                AdjustDisasterValue(delta);
+                AddEvent("disaster-value", item.Controller, $"黑色莲花将天灾值调整为 {State.DisasterValue}", card);
+                FinishStackItem(item);
                 return true;
             }
+            case "black-lotus-morale":
+                if (player.Resolving.Remove(card))
+                {
+                    player.Morale.Add(new L12MoraleCard
+                    {
+                        InstanceId = card.InstanceId,
+                        CardId = card.CardId,
+                        Tapped = true,
+                    });
+                    AddEvent("morale", item.Controller, "〈黑色莲花〉休整置入士气区，视为1张士气", card);
+                }
+                FinishStackItem(item);
+                return true;
+            case "chaotic-arrows-effect":
+                foreach (var targetId in CompositeDeclared(item, "killTargets"))
+                    if (DeclaredEnemyTarget(item.Controller, targetId, target => target.BaseTroops <= 2000) is not null)
+                        KillTarget(item, targetId, "被〈纷乱箭〉击杀");
+                FinishStackItem(item);
+                return true;
+            case "holy-lock-effect":
+                ResolveDeclaredHolyLock(item, CompositeDeclared(item, "artifactTarget").SingleOrDefault());
+                return true;
             case "祷告仪式":
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "祷告仪式：是否同意公开下1张天灾卡？",
                     ["agree", "refuse"], 1, 1, "card-effect", item.StackItemId, isPrivate: false,
@@ -109,18 +129,6 @@ public sealed partial class L12GameEngine
                         ["agree"] = "同意公开", ["refuse"] = "不同意公开",
                     });
                 return true;
-            case "神圣伽锁":
-            {
-                var opponent = State.Players[1 - item.Controller];
-                var choices = new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
-                    .Where(candidate => candidate is not null)
-                    .Select(candidate => candidate!.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "artifact-target", "神圣伽锁：选择对方圣物区的1张【圣物】叠放",
-                    choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-holy-lock-attach" });
-                return true;
-            }
             case "qianyang-kill":
             {
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
@@ -271,46 +279,6 @@ public sealed partial class L12GameEngine
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
-            case "s2-holy-lock-attach":
-            {
-                var owner = State.Players[item.Controller];
-                var source = FindSource(item);
-                var target = FindPublicCard(chosen[0], out var targetOwner);
-                if (source is not null && target is not null && targetOwner == 1 - item.Controller
-                    && target.CardType == "artifact" && owner.Resolving.Remove(source))
-                {
-                    source.OwnerIndex = item.Controller;
-                    target.AttachedCards.Add(source);
-                    if (target.Abilities.All(view => view.Id != "discardHolyLock"))
-                        target.Abilities.Add(new L12AbilityView("discardHolyLock", "消耗3士气：弃置叠放的〈神圣伽锁〉"));
-                    AddEvent("attach", item.Controller, $"〈神圣伽锁〉叠放至{target.Name}，该圣物无法使用", source, target);
-                }
-                FinishStackItem(item);
-                break;
-            }
-            case "s2-black-lotus-disaster":
-            {
-                var delta = int.TryParse(chosen[0], out var parsed) ? Math.Clamp(parsed, -1, 1) : 0;
-                AdjustDisasterValue(delta);
-                AddEvent("disaster-value", item.Controller, $"黑色莲花将天灾值调整为 {State.DisasterValue}", FindSource(item) is { } lotus ? [lotus] : []);
-                if (ActiveResourceCount(State.Players[item.Controller]) < 3)
-                {
-                    FinishStackItem(item);
-                    break;
-                }
-                CreatePrompt(item.Controller, "optional", "是否消耗3士气，将〈黑色莲花〉休整置入士气区？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-black-lotus-morale", ["choiceMode"] = "instant",
-                        ["yes"] = "消耗3士气并置入士气区", ["no"] = "置入墓地",
-                    });
-                break;
-            }
-            case "s2-black-lotus-morale":
-                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 3, "s2-black-lotus-morale");
-                else FinishStackItem(item);
-                break;
             case "s2-ring-start":
                 if (chosen[0] == "no")
                 {
@@ -346,26 +314,6 @@ public sealed partial class L12GameEngine
                 }
                 ShuffleLibrary(player, "万物统御之戒检索结算");
                 FinishStackItem(item);
-                break;
-            }
-            case "s2-defense-deployment":
-            {
-                var player = State.Players[item.Controller];
-                var slots = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).ToArray();
-                var selected = chosen.Take(Math.Min(2, slots.Length)).ToArray();
-                for (var index = 0; index < selected.Length; index++)
-                {
-                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == selected[index]
-                        && IsCounterTactic(candidate.CardId));
-                    if (counter is null) continue;
-                    player.Hand.Remove(counter);
-                    counter.Hidden = true;
-                    counter.SetRound = State.Round;
-                    counter.SummonRound = State.Round;
-                    player.Field[1][slots[index]] = counter;
-                    AddEvent("counter-set", item.Controller, $"{player.Name}因〈防御部署〉在后排覆盖1张反击战术");
-                }
-                DrawAfterDefenseDeployment(item, FindSource(item));
                 break;
             }
             case "s2-prayer-consent":
@@ -404,10 +352,6 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item);
                 break;
-            case "s2-chaotic-arrows":
-                foreach (var targetId in chosen) KillTarget(item, targetId, "被〈纷乱箭〉击杀");
-                FinishStackItem(item);
-                break;
             case "s2-alice-ready":
                 if (chosen[0] == "yes")
                 {
@@ -422,6 +366,23 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 break;
         }
+    }
+
+    private void ResolveDeclaredHolyLock(L12StackItem item, string? targetId)
+    {
+        var owner = State.Players[item.Controller];
+        var source = FindSource(item);
+        var target = FindPublicCard(targetId, out var targetOwner);
+        if (source is not null && target is not null && targetOwner == 1 - item.Controller
+            && target.CardType == "artifact" && owner.Resolving.Remove(source))
+        {
+            source.OwnerIndex = item.Controller;
+            target.AttachedCards.Add(source);
+            if (target.Abilities.All(view => view.Id != "discardHolyLock"))
+                target.Abilities.Add(new L12AbilityView("discardHolyLock", "消耗3士气：弃置叠放的〈神圣伽锁〉"));
+            AddEvent("attach", item.Controller, $"〈神圣伽锁〉叠放至{target.Name}，该圣物无法使用", source, target);
+        }
+        FinishStackItem(item);
     }
 
     private void DrawAfterDefenseDeployment(L12StackItem item, L12CardInstance? source)

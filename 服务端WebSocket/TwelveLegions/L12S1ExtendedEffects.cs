@@ -206,15 +206,67 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1ExtendedTactic(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
+        var enemy = State.Players[1 - item.Controller];
         switch (AtomicFlowKey(item, card))
         {
-            case "万箭齐发":
-                CreatePrompt(item.Controller, "option", "万箭齐发：选择效果", ["front", "back", "single"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "volley-mode" });
+            case "volley-effect":
+            {
+                var mode = CompositeDeclared(item, "volleyMode").SingleOrDefault();
+                if (mode is "mode:front" or "mode:back")
+                {
+                    var row = mode == "mode:front" ? 0 : 1;
+                    foreach (var target in enemy.Field[row].Where(target => target is not null).Cast<L12CardInstance>())
+                        AddTimedModifier(target, -2000, 0, State.TurnSerial, card.Name);
+                }
+                else
+                {
+                    var target = FindOnField(enemy, CompositeDeclared(item, "singleTarget").SingleOrDefault(), out _, out _);
+                    if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, card.Name);
+                }
+                FinishStackItem(item);
                 return true;
-            case "邪恶仪式":
-                PromptDiscard(item, item.Controller, 1, "邪恶仪式：弃置1张手牌", "evil-ritual-discard");
+            }
+            case "evil-ritual-effect":
+                DamageMasterNonLethal(1 - item.Controller, 1, card.Name);
+                FinishStackItem(item);
                 return true;
+            case "strategic-transfer-effect":
+            {
+                var returnTarget = FindOnField(player, CompositeDeclared(item, "returnTarget").SingleOrDefault(), out _, out _);
+                if (returnTarget is not null) MoveFieldCardToZone(player, returnTarget, "hand", "因战略转移返回手牌");
+                var buffTarget = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
+                if (buffTarget is not null) AddTimedModifier(buffTarget, 2000, 0, State.TurnSerial, card.Name);
+                FinishStackItem(item);
+                return true;
+            }
+            case "forged-orders-effect":
+            {
+                var targets = CompositeDeclared(item, "moveTargets");
+                for (var index = 0; index < targets.Length; index++)
+                {
+                    var target = FindOnField(enemy, targets[index], out var row, out var slot);
+                    var destination = CompositeDeclared(item, $"moveSlot{index + 1}").SingleOrDefault();
+                    if (target is null || destination?.Split(':') is not [var rowText, var slotText]
+                        || !int.TryParse(rowText, out var nextRow) || !int.TryParse(slotText, out var nextSlot)
+                        || nextRow != 1 - row || nextSlot != slot || enemy.Field[nextRow][nextSlot] is not null
+                        || State.ActiveDisaster?.CardId == "S01-DS03" && nextRow == 1) continue;
+                    enemy.Field[row][slot] = null;
+                    enemy.Field[nextRow][nextSlot] = target;
+                    RecordLegionMovement(1 - item.Controller, target, row, nextRow);
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "plague-effect":
+            {
+                var targetId = CompositeDeclared(item, "lockTarget").SingleOrDefault();
+                var legion = FindOnField(enemy, targetId, out _, out _);
+                if (legion is not null) legion.CannotUntapUntilRound = State.Round + 1;
+                var morale = enemy.Morale.FirstOrDefault(candidate => candidate.InstanceId == targetId);
+                if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
+                FinishStackItem(item);
+                return true;
+            }
             case "野外扎营":
             {
                 var top = player.Library.Take(3).ToArray();
@@ -239,35 +291,8 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, "兵临城下：对方前排军团本回合兵力-1000，后排军团无法支援", card);
                 FinishStackItem(item);
                 return true;
-            case "战略转移":
-            {
-                var choices = PublicLegions(player).Select(target => target.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", "战略转移：选择我方1张军团回到手牌", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "strategic-return" });
-                return true;
-            }
-            case "伪造密令":
-            {
-                var choices = PublicLegions(State.Players[1 - item.Controller]).Select(target => target.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return true; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-targets", "伪造密令：选择对方最多2张军团进行前后1格位移", choices, 1, Math.Min(2, choices.Count - 1),
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "orders-pick" });
-                return true;
-            }
-            case "瘟疫感染":
-            {
-                var enemy = State.Players[1 - item.Controller];
-                var choices = PublicLegions(enemy).Select(target => target.InstanceId).Concat(enemy.Morale.Select(target => target.InstanceId)).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", "瘟疫感染：选择对方1张军团或士气，使其下个重置阶段不能转为活跃", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "plague-lock" });
-                return true;
-            }
             case "前线侦查":
             {
-                var enemy = State.Players[1 - item.Controller];
                 AddEvent("reveal", item.Controller, $"前线侦查查看对方全部{enemy.Hand.Count}张手牌", enemy.Hand.ToArray());
                 if (ActiveResourceCount(player) < 1 || enemy.Hand.Count == 0) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "前线侦查：是否消耗1士气，令对方选择1张手牌洗回牌库？", ["yes", "no"], 1, 1,
@@ -522,23 +547,6 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); return true;
             }
-            case "volley-mode":
-                if (chosen[0] is "front" or "back")
-                {
-                    var row = chosen[0] == "front" ? 0 : 1;
-                    foreach (var target in enemy.Field[row].Where(target => target is not null).Cast<L12CardInstance>())
-                        AddTimedModifier(target, -2000, 0, State.TurnSerial, "万箭齐发");
-                    FinishStackItem(item);
-                }
-                else PromptEnemyLegion(item, "volley-single", "万箭齐发：选择对方1张军团，本回合兵力-4000", _ => true, false);
-                return true;
-            case "volley-single":
-            {
-                var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, "万箭齐发");
-                FinishStackItem(item); return true;
-            }
-            case "evil-ritual-discard":
-                MoveHandToGrave(player, chosen[0], causedByEffect: false); DamageMasterNonLethal(1 - item.Controller, 1, "邪恶仪式"); FinishStackItem(item); return true;
             case "camp-pick":
                 CompleteCampPick(item, chosen[0]); return true;
             case "camp-order":
@@ -546,32 +554,6 @@ public sealed partial class L12GameEngine
             case "camp-morale":
                 if (chosen[0] is "heal" or "draw") BeginEffectMoralePayment(item, 1, "camp-mode", new Dictionary<string, string> { ["mode"] = chosen[0] });
                 else FinishStackItem(item); return true;
-            case "strategic-return":
-            {
-                var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) MoveFieldCardToZone(player, target, "hand", "因战略转移返回手牌");
-                var remaining = PublicLegions(player).Select(candidate => candidate.InstanceId).ToArray();
-                if (remaining.Length == 0) FinishStackItem(item);
-                else CreatePrompt(item.Controller, "target", "战略转移：选择我方1张军团，本回合兵力+2000", remaining, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "strategic-buff" });
-                return true;
-            }
-            case "strategic-buff":
-            {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "战略转移");
-                FinishStackItem(item); return true;
-            }
-            case "orders-pick":
-                item.Data["orders-units"] = string.Join('|', chosen.Where(id => id != "skip")); item.Data["orders-index"] = "0"; ContinueOrdersMove(item); return true;
-            case "orders-row": CompleteOrdersMove(item, chosen[0]); return true;
-            case "plague-lock":
-            {
-                var legion = FindOnField(enemy, chosen[0], out _, out _);
-                if (legion is not null) legion.CannotUntapUntilRound = State.Round + 1;
-                var morale = enemy.Morale.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]);
-                if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
-                FinishStackItem(item); return true;
-            }
             case "scout-shuffle":
             {
                 var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
@@ -831,38 +813,6 @@ public sealed partial class L12GameEngine
         card.Troops += troops; card.CostModifier += cost;
     }
 
-    private void ContinueOrdersMove(L12StackItem item)
-    {
-        var ids = item.Data["orders-units"].Split('|', StringSplitOptions.RemoveEmptyEntries);
-        var index = int.Parse(item.Data["orders-index"]);
-        if (index >= ids.Length) { FinishStackItem(item); return; }
-        var enemy = State.Players[1 - item.Controller];
-        var target = FindOnField(enemy, ids[index], out var row, out var slot);
-        if (target is null) { item.Data["orders-index"] = (index + 1).ToString(); ContinueOrdersMove(item); return; }
-        var choices = new List<string>();
-        if (enemy.Field[1 - row][slot] is null && !(State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1)) choices.Add($"{1 - row}:{slot}");
-        if (choices.Count == 0) { item.Data["orders-index"] = (index + 1).ToString(); ContinueOrdersMove(item); return; }
-        item.Data["orders-current"] = target.InstanceId;
-        CreatePrompt(item.Controller, "slot", $"伪造密令：选择{target.Name}位移的位置", choices, 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string>
-            {
-                ["action"] = "orders-row",
-                ["targetPlayerIndex"] = (1 - item.Controller).ToString(),
-            });
-    }
-
-    private void CompleteOrdersMove(L12StackItem item, string slotChoice)
-    {
-        var enemy = State.Players[1 - item.Controller];
-        var target = FindOnField(enemy, item.Data["orders-current"], out var row, out var slot);
-        if (target is not null)
-        {
-            var (nextRow, nextSlot) = ParseSlot(slotChoice); enemy.Field[row][slot] = null; enemy.Field[nextRow][nextSlot] = target;
-            RecordLegionMovement(1 - item.Controller, target, row, nextRow);
-        }
-        item.Data["orders-index"] = (int.Parse(item.Data["orders-index"]) + 1).ToString(); ContinueOrdersMove(item);
-    }
-
     private void CompleteCampPick(L12StackItem item, string choice)
     {
         var player = State.Players[item.Controller];
@@ -1081,12 +1031,17 @@ public sealed partial class L12GameEngine
                 if (order is not [var handId, var bottomId]) { FinishStackItem(item); return; }
                 var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == handId);
                 var bottomCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == bottomId);
-                if (handCard is null || bottomCard is null) { FinishStackItem(item); return; }
-                player.Graveyard.Remove(handCard);
-                AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌");
-                player.Graveyard.Remove(bottomCard);
-                player.Library.Add(bottomCard);
-                AddEvent("return", item.Controller, $"〈{bottomCard.Name}〉从墓地置于牌库底部", bottomCard);
+                if (handCard is not null)
+                {
+                    player.Graveyard.Remove(handCard);
+                    AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌");
+                }
+                if (bottomCard is not null)
+                {
+                    player.Graveyard.Remove(bottomCard);
+                    player.Library.Add(bottomCard);
+                    AddEvent("return", item.Controller, $"〈{bottomCard.Name}〉从墓地置于牌库底部", bottomCard);
+                }
                 FinishStackItem(item);
                 return;
             }

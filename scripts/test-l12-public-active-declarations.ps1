@@ -46,7 +46,7 @@ foreach ($cardId in @('S02-0307', 'S02-0206', 'S02-0406')) {
 }
 Assert-Contains $composite 'TryCommitCompositePreStackCosts' 'Composite hand-play costs must have a shared pre-stack commit hook.'
 Assert-Contains $composite 'L12LibraryOps.Mill(player, 1)' 'Hela must discard the library top as a pre-stack colon cost.'
-Assert-Contains $actions 'TryCommitCompositePreStackCosts(playerIndex, card)' 'Normal hand play must commit colon costs before entering the stack.'
+Assert-Contains $actions 'TryCommitCompositePreStackCosts(playerIndex, card, compositeDeclaration)' 'Normal hand play must commit colon costs before entering the stack.'
 
 foreach ($legacy in @(
     'case "palace-kill":', 'case "palace-revive":',

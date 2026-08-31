@@ -171,18 +171,6 @@ public sealed partial class L12GameEngine
                 else if (data.GetValueOrDefault("mode") == "draw") Draw(player, 1);
                 FinishStackItem(item); break;
             case "s2-prayer-private": BeginPrayerPrivatePreview(item); break;
-            case "s2-black-lotus-morale":
-                if (source is not null && player.Resolving.Remove(source))
-                {
-                    player.Morale.Add(new L12MoraleCard
-                    {
-                        InstanceId = source.InstanceId,
-                        CardId = source.CardId,
-                        Tapped = true,
-                    });
-                    AddEvent("morale", item.Controller, "〈黑色莲花〉休整置入士气区，视为1张士气", source);
-                }
-                FinishStackItem(item); break;
             case "s2-bors-strong":
                 if (source is not null)
                 {

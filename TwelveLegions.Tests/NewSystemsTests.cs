@@ -1115,21 +1115,24 @@ public sealed class NewSystemsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(owner, new L12Command("playCard", march.InstanceId)).Accepted);
-        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
-            Assert.True(game.Handle(response.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:kill")).Accepted);
         var buff = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("march-buff", buff.Data["action"]);
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: buff.PromptId,
             Choice: friendly.InstanceId)).Accepted);
-
-        while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
-            Assert.True(game.Handle(response.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        var cost = Assert.Single(game.State.PendingPrompts);
+        var returnedMorale = cost.ValidChoices.Where(choice => choice != "skip").Take(2).ToList();
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: cost.PromptId,
+            CardInstanceIds: returnedMorale)).Accepted);
         var kill = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("march-kill", kill.Data["action"]);
         Assert.Contains(target.InstanceId, kill.ValidChoices);
-        Assert.Equal("神妙行军-击杀", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: kill.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        Assert.DoesNotContain(returnedMorale, id => player.Morale.Any(resource => resource.InstanceId == id));
+        Assert.Equal(friendly.BaseTroops + 2000, friendly.Troops);
+        Assert.Contains(target, enemy.Graveyard);
         Assert.Contains(game.State.Events, gameEvent => gameEvent.Type == "stack-deferred"
             && gameEvent.Text.Contains("神妙行军", StringComparison.Ordinal));
     }

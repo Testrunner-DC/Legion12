@@ -204,8 +204,8 @@ public sealed partial class L12GameEngine
             if (mistletoeRunes > 0) L12S2ZoneOps.SpendRunes(player, mistletoeRunes);
             player.Hand.Remove(card);
             player.Resolving.Add(card);
-            if (!TryCommitCompositePreStackCosts(playerIndex, card))
-                return CommandResult.Reject("海拉需要弃置牌库顶部1张牌作为发动费用");
+            if (!TryCommitCompositePreStackCosts(playerIndex, card, compositeDeclaration))
+                return CommandResult.Reject("复合战术的发动费用已失效；未发生部分支付");
         }
 
         ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: true);
@@ -247,7 +247,9 @@ public sealed partial class L12GameEngine
                         ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
                         : null;
                 QueueOrPushTriggeredEffect(playerIndex, card, trigger,
-                    trigger == "enter" ? "【登场时】效果" : "战术效果", data: declaredData);
+                    trigger == "enter" ? "【登场时】效果" : "战术效果",
+                    targets: compositeDeclaration is null ? null : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration),
+                    data: declaredData);
             }
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
         }

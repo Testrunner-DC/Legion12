@@ -53,18 +53,6 @@ public sealed partial class L12GameEngine
                 }
                 else AddEvent("effect", prompt.PlayerIndex, "对方不同意议和谈判，双方不额外抽牌");
                 FinishStackItem(item); break;
-            case "march-buff":
-            {
-                var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, item.SourceName);
-                item.Targets.Clear(); item.Targets.Add(chosen[0]);
-                if (source is not null) QueueMarchKillSegment(item, source);
-                FinishStackItem(item);
-                break;
-            }
-            case "march-kill":
-                if (chosen[0] != "skip") BeginEffectMoraleReturn(item, 2, "march-kill", new() { ["target"] = chosen[0] });
-                else FinishStackItem(item); break;
             case "hanxin-attack":
                 if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "hanxin-attack");
                 else FinishStackItem(item); break;

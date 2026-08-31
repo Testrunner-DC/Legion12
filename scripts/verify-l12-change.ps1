@@ -127,10 +127,20 @@ try {
         '(^|/)L12S1ExtendedEffects\.cs$',
         '(^|/)L12S2CounterTactics\.cs$'
     )
-    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes)'))
+    $publicHandPlayChanged = Test-AnyPath @(
+        '^scripts/test-l12-hand-play-declarations\.ps1$',
+        '(^|/)L12Actions\.cs$',
+        '(^|/)L12CompositeEffectPlans\.cs$',
+        '(^|/)L12PromptsAndSetup\.cs$',
+        '(^|/)L12RuleKernelIntegration\.cs$',
+        '(^|/)L12S1ExtendedEffects\.cs$',
+        '(^|/)L12S1FactionEffects\.cs$',
+        '(^|/)L12S2UniversalEffects\.cs$'
+    )
+    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes)'))
     $platformChanged = Test-AnyPath @('^service-tests-never-match$')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
-    $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
+    $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
     $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/verify-l12-github-workflow\.ps1$')
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
 
@@ -158,6 +168,8 @@ try {
             (Join-Path $repoRoot "scripts\test-l12-public-trigger-declarations.ps1")
         Invoke-CheckedPowerShellScript "Public response predeclaration and independent-segment guard" `
             (Join-Path $repoRoot "scripts\test-l12-public-response-declarations.ps1")
+        Invoke-CheckedPowerShellScript "Public hand-play predeclaration and independent-segment guard" `
+            (Join-Path $repoRoot "scripts\test-l12-hand-play-declarations.ps1")
     }
 
     if ($configChanged) {

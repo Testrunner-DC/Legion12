@@ -131,14 +131,12 @@ public sealed partial class L12GameEngine
         switch (afterReturn)
         {
             case "lubu-kill":
-            case "march-kill":
             case "jingke-kill":
                 if (data.GetValueOrDefault("target") is { Length: > 0 } killTarget)
                 {
                     var reason = afterReturn switch
                     {
                         "jingke-kill" => "被荆轲击杀",
-                        "march-kill" => "被神妙行军击杀",
                         _ => "被吕布效果击杀",
                     };
                     KillTarget(item, killTarget, reason);

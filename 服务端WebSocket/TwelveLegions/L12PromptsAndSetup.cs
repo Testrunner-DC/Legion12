@@ -172,6 +172,11 @@ public sealed partial class L12GameEngine
             ["mode:normal"] = "按通常方式发动", ["mode:strong"] = "发动强化效果",
             ["mode:second"] = "追加第二段效果", ["mode:use"] = "发动追加效果",
             ["mode:all"] = "对全部目标生效",
+            ["mode:front"] = "选择前排",
+            ["mode:back"] = "选择后排",
+            ["mode:single"] = "选择1张军团",
+            ["mode:kill"] = "击杀目标军团",
+            ["mode:morale"] = "追加休整士气",
             ["mode:discard"] = "盲选并弃置对方1张手牌",
             ["mode:suppress"] = "令目标效果无效并削弱目标军团",
             ["mode:row-cost"] = "选择对方1排并降低费用",
@@ -1387,7 +1392,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Remove(item);
         var owner = State.Players[item.Controller];
         var resolving = owner.Resolving.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId);
-        if (resolving is not null && !IsPendingCombatDeath(resolving.InstanceId)
+        if (resolving is not null && !queuedCompositeContinuation && !IsPendingCombatDeath(resolving.InstanceId)
             && State.EffectStack.All(other => other.SourceInstanceId != resolving.InstanceId))
         {
             owner.Resolving.Remove(resolving);

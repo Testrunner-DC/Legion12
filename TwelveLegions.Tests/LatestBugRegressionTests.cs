@@ -202,6 +202,8 @@ public sealed class LatestBugRegressionTests
         Assert.Empty(player.Resolving);
 
         player.Graveyard.Add(Card("S01-0002", "hunting-cost-3"));
+        var target = Card("S01-0103", "hunting-target");
+        game.State.Players[1].Field[0][0] = target;
         var legalSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var legalCard = Assert.Single(legalSnapshot.GetProperty("players")[0]
@@ -209,13 +211,19 @@ public sealed class LatestBugRegressionTests
         Assert.Equal(JsonValueKind.Null, legalCard.GetProperty("playBlockedReason").ValueKind);
 
         Assert.True(game.Handle(0, new L12Command("playCard", huntingMoment.InstanceId)).Accepted);
-        PassResponses(game);
         var costOrder = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("hunt-return", costOrder.Data["action"]);
+        Assert.Equal("pending-activation", costOrder.Continuation);
         Assert.Equal(4, costOrder.MinChoose);
         Assert.Equal(4, costOrder.MaxChoose);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: costOrder.PromptId,
+            CardInstanceIds: costOrder.ValidChoices.Where(choice => choice != "skip").ToList())).Accepted);
+        var killTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        PassResponses(game);
         Assert.DoesNotContain(huntingMoment, player.Hand);
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
+        Assert.Same(target, game.State.Players[1].Graveyard.Last());
     }
 
     [Fact]
@@ -295,10 +303,13 @@ public sealed class LatestBugRegressionTests
         returnGame.State.Phase = L12Phase.Main;
 
         Assert.True(returnGame.Handle(1, new L12Command("playCard", transfer.InstanceId)).Accepted);
-        PassResponses(returnGame);
-        var target = Assert.Single(returnGame.State.PendingPrompts, prompt => prompt.Continuation == "card-effect");
+        var target = Assert.Single(returnGame.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
         Assert.True(returnGame.Handle(1, new L12Command("resolvePrompt", PromptId: target.PromptId,
             Choice: returnedInfiltrator.InstanceId)).Accepted);
+        var buff = Assert.Single(returnGame.State.PendingPrompts);
+        Assert.True(returnGame.Handle(1, new L12Command("resolvePrompt", PromptId: buff.PromptId,
+            Choice: returnedInfiltrator.InstanceId)).Accepted);
+        PassResponses(returnGame);
 
         Assert.Contains(returnedInfiltrator, returnOwner.Hand);
         Assert.DoesNotContain(returnedInfiltrator, returnController.Hand);
@@ -577,15 +588,10 @@ public sealed class LatestBugRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", orders.InstanceId)).Accepted);
-        PassResponses(game);
-        var pick = Assert.Single(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "orders-pick");
+        var pick = Assert.Single(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pick.PromptId,
             CardInstanceIds: [target.InstanceId])).Accepted);
-
-        var destination = Assert.Single(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "orders-row");
-        Assert.Equal("1", destination.Data["targetPlayerIndex"]);
-        Assert.Equal(["0:0"], destination.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: destination.PromptId, Choice: "0:0")).Accepted);
+        PassResponses(game);
 
         Assert.Same(target, enemy.Field[0][0]);
         Assert.Null(enemy.Field[1][0]);
@@ -1865,19 +1871,22 @@ public sealed class LatestBugRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
-        PassResponses(game);
         var returnPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("strategic-return", returnPrompt.Data["action"]);
+        Assert.Equal("pending-activation", returnPrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
             Choice: promoted.InstanceId)).Accepted);
+        var buffPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", buffPrompt.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: buffPrompt.PromptId,
+            Choice: buffTarget.InstanceId)).Accepted);
+        PassResponses(game);
 
         Assert.Contains(promoted, player.Hand);
         Assert.Contains(foundation, player.Hand);
         Assert.Empty(promoted.AttachedCards);
         Assert.DoesNotContain(promoted, player.Graveyard);
         Assert.DoesNotContain(foundation, player.Graveyard);
-        var buffPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("strategic-buff", buffPrompt.Data["action"]);
+        Assert.Equal(buffTarget.BaseTroops + 2000, buffTarget.Troops);
     }
 
     [Fact]

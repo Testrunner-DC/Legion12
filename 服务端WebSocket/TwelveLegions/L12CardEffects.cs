@@ -172,43 +172,27 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
+            case "march-buff-effect":
+            {
+                var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
+                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, card.Name);
+                FinishStackItem(item);
+                return;
+            }
+            case "march-kill-effect":
+            {
+                var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
+                    KillTarget(item, targetId!, "被神妙行军击杀");
+                FinishStackItem(item);
+                return;
+            }
             case "议和谈判":
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "议和谈判抽牌时牌库为空"); FinishStackItem(item); return; }
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "是否同意〈议和谈判〉？", ["agree", "refuse"], 1, 1,
                     "card-effect", item.StackItemId, isPrivate: false,
                     data: new Dictionary<string, string> { ["action"] = "peace-talk" });
                 return;
-            case "神妙行军":
-            {
-                var front = player.Field[0].Where(target => target is not null && IsFieldLegion(target))
-                    .Select(target => target!.InstanceId).ToArray();
-                if (front.Length == 0)
-                {
-                    QueueMarchKillSegment(item, card);
-                    FinishStackItem(item);
-                    return;
-                }
-                CreatePrompt(item.Controller, "target", "选择我方前排 1 张军团，本回合兵力 +2000", front, 1, 1,
-                    "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "march-buff" });
-                return;
-            }
-            case "神妙行军-击杀":
-            {
-                var enemyChoices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(target => target is not null && IsFieldLegion(target) && target.Troops <= 6000)
-                    .Select(target => target!.InstanceId).ToList();
-                if (!CanReturnMorale(player, 2) || enemyChoices.Count == 0)
-                {
-                    FinishStackItem(item);
-                    return;
-                }
-                enemyChoices.Add("skip");
-                CreatePrompt(item.Controller, "optional-target", "可返还 2 张士气：击杀对方 1 张兵力不高于 6000 的军团",
-                    enemyChoices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "march-kill" });
-                return;
-            }
             case "草薙剑":
                 CreatePrompt(item.Controller, "optional", "是否将离场的〈草薙剑〉放回牌库顶部？", ["yes", "no"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kusanagi-return-top" });
@@ -224,14 +208,6 @@ public sealed partial class L12GameEngine
                 return;
         }
     }
-
-    private void QueueMarchKillSegment(L12StackItem item, L12CardInstance source)
-        => PushEffect(item.Controller, source, "play", "可返还2士气：击杀对方1张兵力不高于6000的军团",
-            data: new Dictionary<string, string>
-            {
-                ["atomicFlow"] = "神妙行军-击杀",
-                ["atomicContinuation"] = "true",
-            });
 
     private void ResolveAttackEffect(L12StackItem item)
     {
