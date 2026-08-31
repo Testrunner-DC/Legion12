@@ -428,6 +428,12 @@ public sealed class L12ActivationSelectionStep
     public int MaxChoose { get; init; } = 1;
     /// <summary>复合效果预声明中的稳定字段名；为空时保持旧的扁平声明协议。</summary>
     public string? DeclarationKey { get; init; }
+    /// <summary>动态声明步读取哪一个已声明字段作为公开对象来源。</summary>
+    public string? ReferenceDeclarationKey { get; init; }
+    /// <summary>引用字段为 mode:none 时跳过本步；用于可选登场对象之后的战场/位置声明。</summary>
+    public bool SkipWhenReferenceIsNone { get; init; }
+    /// <summary>动态费用目标筛选阈值；只承载规则数值，不承载卡牌实例。</summary>
+    public int? CostThreshold { get; init; }
     /// <summary>仅用于界面呈现；规则判断始终使用稳定的 ValidChoices 标识。</summary>
     public Dictionary<string, string> ChoiceLabels { get; init; } = [];
     /// <summary>

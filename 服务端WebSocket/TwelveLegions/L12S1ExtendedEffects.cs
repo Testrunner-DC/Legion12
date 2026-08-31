@@ -708,7 +708,8 @@ public sealed partial class L12GameEngine
                 if (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1) return CommandResult.Reject("该效果只能在后排发动");
                 var paid = source.CardId == "S01-0003" ? ConsumeMorale(2) : returnMoralePrepaid || ReturnMorale(player, 1);
                 if (!paid) return CommandResult.Reject(source.CardId == "S01-0003" ? "需要消耗2张活跃士气" : "需要返还1张士气");
-                player.UsedAbilities.Add(onceKey); break;
+                if (source.CardId == "S01-0003") player.UsedAbilities.Add(onceKey);
+                break;
             }
             case "xishiExchange" when source.CardId == "S01-0116":
             {

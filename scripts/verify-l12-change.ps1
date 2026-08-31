@@ -32,6 +32,27 @@ function Invoke-Checked {
     finally { Pop-Location }
 }
 
+function Invoke-CheckedPowerShellScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [hashtable]$NamedArguments = @{},
+        [string]$WorkingDirectory = $repoRoot
+    )
+    $renderedArguments = @($NamedArguments.GetEnumerator() | Sort-Object Key | ForEach-Object {
+        "-$($_.Key) $($_.Value)"
+    }) -join ' '
+    Write-Host "[L12 $Level] $Label"
+    Write-Host "  & $ScriptPath $renderedArguments"
+    if ($DryRun) { return }
+    Push-Location $WorkingDirectory
+    try {
+        & $ScriptPath @NamedArguments
+        if (-not $?) { throw "$Label failed" }
+    }
+    finally { Pop-Location }
+}
+
 function Test-AnyPath {
     param([string[]]$Patterns)
     foreach ($path in $script:paths) {
@@ -77,10 +98,19 @@ try {
     $script:paths | ForEach-Object { Write-Host "  $_" }
 
     $configChanged = Test-AnyPath @('^\.codex/', '(^|/)AGENTS\.md$', '^scripts/verify-l12-change\.ps1$', '^scripts/verify-l12-codex-routing\.ps1$', '^docs/(TASK-LEDGER|CHANGE-BATCH-WORKFLOW|REGRESSION-FIXTURES)\.md$')
-    $backendChanged = Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes)')
+    $runtimeEvidenceChanged = Test-AnyPath @('^scripts/lib/l12-card-runtime-evidence\.ps1$', '^scripts/test-l12-card-runtime-evidence\.ps1$', '^scripts/export-l12-card-effect-review-matrix\.ps1$')
+    $publicActiveChanged = Test-AnyPath @(
+        '^scripts/test-l12-public-active-declarations\.ps1$',
+        '(^|/)L12PublicActiveEffectPlans\.cs$',
+        '(^|/)L12CompositeEffectPlans\.cs$',
+        '(^|/)L12RuleKernelIntegration\.cs$',
+        '(^|/)L12S1FactionEffects\.cs$',
+        '(^|/)L12S2RemainingEffects\.cs$'
+    )
+    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes)'))
     $platformChanged = Test-AnyPath @('^service-tests-never-match$')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
-    $cardEffectChanged = Test-AnyPath @('^TwelveLegions\.Tests/')
+    $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
     $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/verify-l12-github-workflow\.ps1$')
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
 
@@ -99,25 +129,26 @@ try {
 
     Invoke-Checked "Git whitespace and conflict-marker check" "git" @("diff", "--check")
 
+    if ($cardEffectChanged) {
+        Invoke-CheckedPowerShellScript "Card runtime semantic evidence mapping" `
+            (Join-Path $repoRoot "scripts\test-l12-card-runtime-evidence.ps1")
+        Invoke-CheckedPowerShellScript "Public active predeclaration guard" `
+            (Join-Path $repoRoot "scripts\test-l12-public-active-declarations.ps1")
+    }
+
     if ($configChanged) {
-        Invoke-Checked "Codex TOML and routing validation" "powershell" @(
-            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        Invoke-CheckedPowerShellScript "Codex TOML and routing validation" `
             (Join-Path $repoRoot "scripts\verify-l12-codex-routing.ps1")
-        )
     }
 
     if ($workflowChanged) {
-        Invoke-Checked "GitHub verification/release workflow contract" "powershell" @(
-            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        Invoke-CheckedPowerShellScript "GitHub verification/release workflow contract" `
             (Join-Path $repoRoot "scripts\verify-l12-github-workflow.ps1")
-        )
     }
 
     if ($storageChanged) {
-        Invoke-Checked "D-drive storage budget and layout" "powershell" @(
-            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1"), "-Strict"
-        )
+        Invoke-CheckedPowerShellScript "D-drive storage budget and layout" `
+            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1") @{ Strict = $true }
     }
 
     if ($Level -eq "Focused") {
@@ -142,14 +173,19 @@ try {
         Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
     }
     if ($cardEffectChanged) {
-        Invoke-Checked "Atomic runtime zero-legacy audit" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\scripts\audit-l12-atomic-effects.ps1", "-RequireZero")
+        Invoke-CheckedPowerShellScript "Atomic runtime zero-legacy audit" `
+            (Join-Path $repoRoot "scripts\audit-l12-atomic-effects.ps1") @{ RequireZero = $true }
     }
     if ($frontendChanged) {
         Invoke-Checked "Frontend production build" "npm.cmd" @("run", "build") (Join-Path $repoRoot "opcgpro-vue")
     }
 
     if ($Level -eq "Release") {
-        Invoke-Checked "Commit-level release verification (no deployment)" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\ops\windows\verify-l12.ps1", "-CacheRoot", $env:L12_WORK_CACHE)
+        $releaseArguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\ops\windows\verify-l12.ps1")
+        if (-not [string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
+            $releaseArguments += @("-CacheRoot", $env:L12_WORK_CACHE)
+        }
+        Invoke-Checked "Commit-level release verification (no deployment)" "powershell" $releaseArguments
     }
 }
 finally { Set-Location $originalLocation }

@@ -548,14 +548,6 @@ public sealed partial class L12GameEngine
             case "summon-asgard": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
             case "oddr-tap": if (chosen[0] != "skip") { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.Tapped = true; } FinishStackItem(item); return true;
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
-            case "palace-kill":
-            {
-                var target = FindOnField(enemy, chosen[0], out _, out _); if (target is null) { FinishStackItem(item); return true; }
-                var paid = target.CurrentCost;
-                BeginEffectMoraleReturn(item, paid, "palace-kill", new() { ["target"] = target.InstanceId, ["paid"] = paid.ToString() });
-                return true;
-            }
-            case "palace-revive": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
             case "mengpo-silence": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
             case "mengpo-discard": MoveHandToGrave(player, chosen[0], causedByEffect: false); AddMorale(player, 1, true); FinishStackItem(item); return true;
@@ -584,14 +576,6 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add("trigger:medjedDamageResponse");
                 BeginQueuedSummons(item, [chosen[0]], tapped: false, "梅杰德：选择〈陵墓守卫〉活跃登场的位置");
                 return true;
-            case "yomi-kill3": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被黄泉之门击杀"); PromptEnemyLegion(item, "yomi-kill1", "黄泉之门：可击杀对方1张费用不高于1的军团", target => target.CurrentCost <= 1, true); return true;
-            case "yomi-kill1": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被黄泉之门击杀"); FinishStackItem(item); return true;
-            case "amaterasu-debuff":
-            {
-                var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.CostModifier--;
-                PromptEnemyLegion(item, "amaterasu-kill", "天照大神：击杀对方1张费用为0的军团", card => card.CurrentCost == 0, true); return true;
-            }
-            case "amaterasu-kill": if (chosen[0] != "skip") KillTarget(item, chosen[0], "被天照大神击杀"); FinishStackItem(item); return true;
             case "amaterasu-discard":
                 MoveHandToGrave(player, chosen[0], causedByEffect: false); if (source is not null) foreach (var morale in player.Morale.Where(card => card.Tapped).Take(2).ToArray()) ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
                 foreach (var legion in player.Field[0].Where(card => card?.Faction == "gaotianyuan").Cast<L12CardInstance>())
@@ -606,6 +590,8 @@ public sealed partial class L12GameEngine
         if (!GetS1FactionAbilities(source.CardId).Any(entry => entry.Id == ability)) return null;
         var player = State.Players[playerIndex];
         var enemy = State.Players[1 - playerIndex];
+        if (TryBeginPublicActiveDeclaration(playerIndex, source, ability) is { } publicDeclaration)
+            return publicDeclaration;
         string[] choices;
         switch (ability)
         {
@@ -614,9 +600,6 @@ public sealed partial class L12GameEngine
             case "olgaDebuff":
                 choices = enemy.Field[0].Where(card => card is not null && IsFieldLegion(card) && !card.Hidden).Select(card => card!.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "奥尔加：选择对方前排 1 张军团");
-            case "palaceExchange":
-                choices = PublicLegions(enemy).Where(card => player.Morale.Count >= card.CurrentCost).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "凌霄宝殿：选择要击杀并按费用返还士气的军团");
             case "mengpoSilence":
                 choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
                 return BeginPendingActivation(playerIndex, source, ability, choices,
@@ -756,12 +739,53 @@ public sealed partial class L12GameEngine
         };
         switch (ability)
         {
-            case "cleopatraGuard" when source.CardId == "S01-0214": if (source.Tapped || !ConsumeMorale(1)) return CommandResult.Reject("需要活跃的克利奥帕特拉七世与1张活跃士气"); source.Tapped = true; break;
-            case "sunGuard" when source.CardId == "S01-02C1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            case "cleopatraGuard" when source.CardId == "S01-0214":
+            {
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var guard = declared.Length == 3
+                    ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardId == "S01-0212")
+                    : null;
+                var battlefield = declared.Length == 3 ? ParseEffectEntryBattlefieldChoice(declared[1]) : null;
+                var (row, slot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
+                if (source.Tapped || guard is null || battlefield != playerIndex
+                    || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
+                    return CommandResult.Reject("需要活跃的克利奥帕特拉七世及完整、合法的陵墓守卫登场声明");
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
+                source.Tapped = true;
+                break;
+            }
+            case "sunGuard" when source.CardId == "S01-02C1":
+            {
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var guard = declared.Length == 3
+                    ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardId == "S01-0212")
+                    : null;
+                var battlefield = declared.Length == 3 ? ParseEffectEntryBattlefieldChoice(declared[1]) : null;
+                var (row, slot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
+                if (guard is null || battlefield != playerIndex || row is < 0 or > 1 || slot is < 0 or > 2
+                    || player.Field[row][slot] is not null)
+                    return CommandResult.Reject("不朽之礼的陵墓守卫或登场位置已失效");
+                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "asgardDraw" when source.CardId == "S01-03C1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
-            case "alvidaSummon" when source.CardId == "S01-0307": RemoveFromField(player, source, true, "被主动效果弃置",
-                leaveKind: L12FieldLeaveKind.Discard); break;
+            case "alvidaSummon" when source.CardId == "S01-0307":
+            {
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var legion = declared.Length == 3
+                    ? player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]
+                        && card.CardType == "legion" && card.DisasterLevel == 2)
+                    : null;
+                var battlefield = declared.Length == 3 ? ParseEffectEntryBattlefieldChoice(declared[1]) : null;
+                var (row, slot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
+                if (legion is null || battlefield != playerIndex || row is < 0 or > 1 || slot is < 0 or > 2
+                    || player.Field[row][slot] is not null)
+                    return CommandResult.Reject("阿尔维达声明的军团或登场位置已失效");
+                RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard);
+                break;
+            }
             case "olgaDebuff" when source.CardId == "S01-0314":
                 if (!IsEnemyTargetLegal(playerIndex, target, card => FindOnField(State.Players[1 - playerIndex], card.InstanceId, out var row, out _) is not null && row == 0)) return CommandResult.Reject("目标不再合法");
                 RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard); break;
@@ -769,9 +793,26 @@ public sealed partial class L12GameEngine
             case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); player.UsedAbilities.Add(onceKey); break;
             case "palaceExchange" when source.CardId == "S01-01D1":
             {
-                var declared = DeclaredEnemyTarget(playerIndex, target); if (source.Tapped || declared is null) return CommandResult.Reject("凌霄宝殿必须为活跃状态且目标合法");
-                var paid = declared.CurrentCost; if (!returnMoralePrepaid && !ReturnMorale(player, paid)) return CommandResult.Reject("士气不足以支付所选目标费用");
-                source.Tapped = true; player.MasterTapped = true; target = declared.InstanceId; break;
+                var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var enemyId = PublicDeclaredEnemyId(target);
+                var declared = DeclaredEnemyTarget(playerIndex, enemyId);
+                var noRevive = values.Length == 2 && values[0] == "mode:none";
+                var revive = values.Length == 4
+                    ? player.Graveyard.FirstOrDefault(card => card.InstanceId == values[0]
+                        && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                    : null;
+                var battlefield = revive is not null ? ParseEffectEntryBattlefieldChoice(values[1]) : null;
+                var (row, slot) = revive is not null ? ParseSlot(values[2]) : (-1, -1);
+                if (source.Tapped || declared is null || !noRevive && (revive is null
+                        || revive.CurrentCost > declared.CurrentCost || battlefield != playerIndex
+                        || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null))
+                    return CommandResult.Reject("凌霄宝殿的敌方目标或登场声明已失效");
+                var paid = declared.CurrentCost;
+                if (!returnMoralePrepaid && !ReturnMorale(player, paid))
+                    return CommandResult.Reject("士气不足以支付所选目标费用");
+                source.Tapped = true;
+                player.MasterTapped = true;
+                break;
             }
             case "mengpoSilence" when source.CardId == "S01-01M2":
                 if (!string.IsNullOrWhiteSpace(target) && DeclaredEnemyTarget(playerIndex, target) is null)
@@ -877,21 +918,74 @@ public sealed partial class L12GameEngine
             case "lokiCycle" when source.CardId == "S01-03M2":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "lokiHeal" when source.CardId == "S01-03M2":
-                if (player.Graveyard.Count(CanEnterHandOrLibrary) < 2) return CommandResult.Reject("墓地需要至少2张可返回牌库的卡牌");
-                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            {
+                var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (ids.Length != 2 || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
+                    || ids.Any(id => !player.Graveyard.Any(card => card.InstanceId == id && CanEnterHandOrLibrary(card))))
+                    return CommandResult.Reject("洛基声明的2张墓地卡牌已失效");
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             case "yomiDiscount" when source.CardId == "S01-04D1": player.UsedAbilities.Add(onceKey); break;
-            case "yomiSweep" when source.CardId == "S01-04D1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
-            case "yomiRecover" when source.CardId == "S01-04D1": if (source.Tapped) return CommandResult.Reject("黄泉之门必须为活跃状态"); source.Tapped = true; player.MasterTapped = true; break;
+            case "yomiSweep" when source.CardId == "S01-04D1":
+            {
+                var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                bool ValidTarget(string id, int maximum) => id == "mode:none"
+                    || DeclaredEnemyTarget(playerIndex, id, card => card.CurrentCost - 1 <= maximum) is not null;
+                if (ids.Length != 2 || !ValidTarget(ids[0], 3) || !ValidTarget(ids[1], 1)
+                    || ids[0] != "mode:none" && ids[0].Equals(ids[1], StringComparison.OrdinalIgnoreCase))
+                    return CommandResult.Reject("黄泉之门的公开击杀目标声明已失效");
+                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
+            case "yomiRecover" when source.CardId == "S01-04D1":
+                if (source.Tapped || string.IsNullOrWhiteSpace(target)
+                    || !player.Graveyard.Any(card => card.InstanceId == target && card.Faction == "gaotianyuan"))
+                    return CommandResult.Reject("黄泉之门必须为活跃状态且墓地目标需保持合法");
+                source.Tapped = true;
+                player.MasterTapped = true;
+                break;
             case "amaterasuKill" when source.CardId == "S01-04M1":
-                if (DeclaredEnemyTarget(playerIndex, target) is null) return CommandResult.Reject("目标不再合法");
+            {
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var debuff = declared.Length == 2 ? DeclaredEnemyTarget(playerIndex, declared[0]) : null;
+                var kill = declared.Length == 2 && declared[1] != "mode:none"
+                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => card.CurrentCost
+                        - (card.InstanceId == debuff?.InstanceId ? 1 : 0) == 0)
+                    : null;
+                if (debuff is null || declared[1] != "mode:none" && kill is null)
+                    return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            }
             case "amaterasuReady" when source.CardId == "S01-04M1": if (player.Hand.Count == 0) return CommandResult.Reject("需要弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
             default: return null;
         }
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
-        if (ability == "palaceExchange" && DeclaredEnemyTarget(playerIndex, target) is { } palaceTarget)
+        if (ability == "palaceExchange" && DeclaredEnemyTarget(playerIndex, PublicDeclaredEnemyId(target)) is { } palaceTarget)
+        {
+            var values = target!.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            data["target"] = palaceTarget.InstanceId;
             data["paid"] = palaceTarget.CurrentCost.ToString();
+            if (values.Length == 4)
+            {
+                data["entryCard"] = values[0];
+                data["entryBattlefield"] = values[1];
+                data["entrySlot"] = values[2];
+            }
+        }
+        if (ability == "yomiSweep" && target is not null)
+        {
+            var values = target.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            data["compositePlan"] = "active:S01-04D1:yomiSweep";
+            data["compositeSegment"] = "0";
+            data["atomicFlow"] = "yomi-draw";
+            data["atomicContinuation"] = "true";
+            data["declared:kill3Target"] = values[0];
+            data["declared:kill1Target"] = values[1];
+        }
         PushEffect(playerIndex, source, "active", "主动效果", data: data); return CommandResult.Ok();
     }
 
@@ -900,9 +994,24 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (ability)
         {
-            case "cleopatraGuard": case "sunGuard":
-                BeginQueuedSummons(item, player.Graveyard.Where(card => card.CardId == "S01-0212").Take(1).Select(card => card.InstanceId), false,
-                    "选择陵墓守卫活跃登场的位置"); return true;
+            case "cleopatraGuard":
+            {
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
+                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                FinishStackItem(item);
+                return true;
+            }
+            case "sunGuard":
+            {
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
+                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                FinishStackItem(item);
+                return true;
+            }
             case "sunDraw": Draw(player, 1); FinishStackItem(item); return true;
             case "asgardDraw":
                 Draw(player, 1);
@@ -913,10 +1022,13 @@ public sealed partial class L12GameEngine
                 return true;
             case "alvidaSummon":
             {
-                var choices = player.Hand.Where(card => card.CardType == "legion" && card.DisasterLevel == 2).Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                DamageMaster(item.Controller, 1, "阿尔维达主动效果"); CreatePrompt(item.Controller, "card", "选择手牌1张天灾等级2的军团活跃登场", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "summon-asgard" }); return true;
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                DamageMaster(item.Controller, 1, "阿尔维达主动效果");
+                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
+                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                FinishStackItem(item);
+                return true;
             }
             case "olgaDebuff": ApplyDeclaredTroopsDelta(item, -2000); FinishStackItem(item); return true;
             case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃"); FinishStackItem(item); return true;
@@ -990,26 +1102,75 @@ public sealed partial class L12GameEngine
             case "lokiCycle": Draw(player, 1); PromptDiscard(item, item.Controller, 1, "洛基：弃置1张手牌", "death-cycle-discard"); return true;
             case "lokiHeal":
             {
-                var choices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToArray();
-                if (choices.Length < 2) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "cards", "洛基：选择墓地2张卡牌返回牌库底部", choices, 2, 2,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "loki-heal-return", ["sourceZone"] = "graveyard", ["layout"] = "single-row",
-                    });
+                var ids = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                        && CanEnterHandOrLibrary(card)))
+                    .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
+                if (cards.Length == 2)
+                {
+                    MoveGraveToLibraryBottom(player, cards);
+                    HealMaster(item.Controller, 1, "洛基主宰效果");
+                }
+                FinishStackItem(item);
                 return true;
             }
             case "yomiDiscount": player.NextFactionLegionDiscount = 2; FinishStackItem(item); return true;
-            case "yomiSweep": Draw(player, 1); foreach (var target in PublicLegions(State.Players[1 - item.Controller])) target.CostModifier--; PromptEnemyLegion(item, "yomi-kill3", "黄泉之门：可击杀对方1张费用不高于3的军团", target => target.CurrentCost <= 3, true); return true;
+            case "yomiSweep":
+            {
+                switch (item.Data.GetValueOrDefault("atomicFlow"))
+                {
+                    case "yomi-draw":
+                        Draw(player, 1);
+                        break;
+                    case "yomi-cost-debuff":
+                        foreach (var enemyTarget in PublicLegions(State.Players[1 - item.Controller]))
+                            enemyTarget.CostModifier--;
+                        break;
+                    case "yomi-kill3":
+                    {
+                        var targetId = CompositeDeclared(item, "kill3Target").SingleOrDefault();
+                        if (targetId != "mode:none"
+                            && DeclaredEnemyTarget(item.Controller, targetId, card => card.CurrentCost <= 3) is not null)
+                            KillTarget(item, targetId!, "被黄泉之门击杀");
+                        break;
+                    }
+                    case "yomi-kill1":
+                    {
+                        var targetId = CompositeDeclared(item, "kill1Target").SingleOrDefault();
+                        if (targetId != "mode:none"
+                            && DeclaredEnemyTarget(item.Controller, targetId, card => card.CurrentCost <= 1) is not null)
+                            KillTarget(item, targetId!, "被黄泉之门击杀");
+                        break;
+                    }
+                }
+                FinishStackItem(item);
+                return true;
+            }
             case "yomiRecover":
             {
-                var choices = player.Graveyard.Where(card => card.Faction == "gaotianyuan").Select(card => card.InstanceId).ToArray(); if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "card", "黄泉之门：选择墓地1张【高天原】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" }); return true;
+                var targetId = item.Data.GetValueOrDefault("target");
+                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
+                    && card.Faction == "gaotianyuan");
+                if (recover is not null)
+                {
+                    player.Graveyard.Remove(recover);
+                    AddCardToHandByEffect(player, recover, "graveyard", "黄泉之门回收高天原卡牌");
+                }
+                FinishStackItem(item);
+                return true;
             }
             case "amaterasuKill":
             {
-                var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target")); if (target is not null) target.CostModifier--;
-                PromptEnemyLegion(item, "amaterasu-kill", "天照大神：击杀对方1张费用为0的军团", card => card.CurrentCost == 0, true); return true;
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var debuff = declared.Length == 2 ? DeclaredEnemyTarget(item.Controller, declared[0]) : null;
+                if (debuff is not null) debuff.CostModifier--;
+                if (declared.Length == 2 && declared[1] != "mode:none"
+                    && DeclaredEnemyTarget(item.Controller, declared[1], card => card.CurrentCost == 0) is not null)
+                    KillTarget(item, declared[1], "被天照大神击杀");
+                FinishStackItem(item);
+                return true;
             }
             case "amaterasuReady": PromptDiscard(item, item.Controller, 1, "天照大神：弃置1张手牌", "amaterasu-discard"); return true;
             default: return false;

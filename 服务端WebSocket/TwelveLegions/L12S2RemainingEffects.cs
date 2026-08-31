@@ -23,6 +23,7 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep { Kind = "grave-card", Text = "雷神之锤：依次选择返回牌库底部的3张其他墓地卡牌", ValidChoices = otherGraveCards, MinChoose = 3, MaxChoose = 3 },
+                    new L12ActivationSelectionStep { Kind = "slot", Text = "雷神之锤：预先选择活跃登场的位置", ValidChoices = slots },
                 ]);
             }
             case "wukongTransform" when source.CardId == "S02-01M1":
@@ -41,12 +42,11 @@ public sealed partial class L12GameEngine
                 return CommitActiveAbility(playerIndex, source, ability, null);
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
                 if (!player.Morale.Any(card => !card.IsGodPower)) return CommandResult.Reject("没有可翻转的士气");
-                return CommitActiveAbility(playerIndex, source, ability, null);
-            case "divinityPower" when source.CardId == "S02-05D1":
-                if (player.Morale.Count(card => card.IsGodPower && !card.Tapped) < 2)
-                    return CommandResult.Reject("需要2张活跃的神力");
                 return BeginPendingActivation(playerIndex, source, ability,
-                    ["mode:recover", "mode:damage"], "诸神巅：选择一项效果");
+                    player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId).ToArray(),
+                    "诸神巅：预先选择要翻转的1张士气");
+            case "divinityPower" when source.CardId == "S02-05D1":
+                return TryBeginPublicActiveDeclaration(playerIndex, source, ability);
             case "divinityFreePromotion" when source.CardId == "S02-05D1":
                 if (player.MasterTapped) return CommandResult.Reject("诸神巅必须为活跃状态");
                 return CommitActiveAbility(playerIndex, source, ability, null);
@@ -95,17 +95,17 @@ public sealed partial class L12GameEngine
             {
                 var declared = SplitDeclared(target);
                 if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source)
-                    || declared.Length != 3 || declared.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
-                    || declared.Any(id => id == source.InstanceId) || !EmptySlots(player).Any())
+                    || declared.Length != 4 || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
+                    || declared.Take(3).Any(id => id == source.InstanceId) || !EmptySlots(player).Contains(declared[3]))
                     return CommandResult.Reject("墓地卡牌或可用战场位置已失效");
-                var costs = declared
+                var costs = declared.Take(3)
                     .Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card)))
                     .ToArray();
                 if (costs.Any(card => card is null)) return CommandResult.Reject("选择的墓地卡牌已失效");
                 MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>());
                 player.UsedAbilities.Add(onceKey);
                 PushEffect(playerIndex, source, "active", "主动效果",
-                    data: new Dictionary<string, string> { ["ability"] = ability });
+                    data: new Dictionary<string, string> { ["ability"] = ability, ["slot"] = declared[3] });
                 return CommandResult.Ok();
             }
             case "wukongTransform" when source.CardId == "S02-01M1":
@@ -132,14 +132,53 @@ public sealed partial class L12GameEngine
                 return CommandResult.Ok();
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
                 player.UsedAbilities.Add(onceKey);
-                PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string> { ["ability"] = ability });
+                PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string>
+                {
+                    ["ability"] = ability, ["target"] = target!,
+                });
                 return CommandResult.Ok();
             case "divinityPower" when source.CardId == "S02-05D1":
-                if (target is not ("mode:recover" or "mode:damage") || !L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2))
-                    return CommandResult.Reject("选项无效或需要2张活跃的神力");
+            {
+                var declared = SplitDeclared(target);
+                if (declared.Length == 0 || declared[0] is not ("mode:recover" or "mode:damage"))
+                    return CommandResult.Reject("诸神巅的效果声明不完整");
+                var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = declared[0] };
+                if (declared[0] == "mode:damage")
+                {
+                    if (declared.Length != 7 || declared.Skip(1).Any(id => id != "mode:none"
+                            && DeclaredEnemyTarget(playerIndex, id) is null)
+                        || PublicLegions(State.Players[1 - playerIndex]).Any() && declared.Skip(1).Any(id => id == "mode:none"))
+                        return CommandResult.Reject("诸神巅的伤害目标声明已失效");
+                    data["targets"] = string.Join('|', declared.Skip(1));
+                }
+                else
+                {
+                    var recover = declared.Length >= 3
+                        ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "olympus")
+                        : null;
+                    var noEntry = declared.Length == 3 && declared[2] == "mode:none";
+                    var entry = declared.Length == 5
+                        ? player.Hand.Concat(player.Graveyard).FirstOrDefault(card => card.InstanceId == declared[2]
+                            && card.Faction == "olympus" && card.CardType == "legion" && card.CurrentCost <= 4)
+                        : null;
+                    var battlefield = entry is null ? null : ParseEffectEntryBattlefieldChoice(declared[3]);
+                    var (row, slot) = entry is null ? (-1, -1) : ParseSlot(declared[4]);
+                    if (recover is null || !noEntry && (entry is null || battlefield != playerIndex
+                            || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null))
+                        return CommandResult.Reject("诸神巅的回收卡牌或登场声明已失效");
+                    data["recover"] = recover.InstanceId;
+                    if (entry is not null)
+                    {
+                        data["entry"] = entry.InstanceId;
+                        data["slot"] = declared[4];
+                    }
+                }
+                if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2))
+                    return CommandResult.Reject("需要2张活跃的神力");
                 player.UsedAbilities.Add(onceKey);
-                PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string> { ["ability"] = ability, ["mode"] = target });
+                PushEffect(playerIndex, source, "active", "主神效果", data: data);
                 return CommandResult.Ok();
+            }
             case "divinityFreePromotion" when source.CardId == "S02-05D1":
                 if (player.MasterTapped) return CommandResult.Reject("诸神巅必须为活跃状态");
                 player.MasterTapped = true;
@@ -196,21 +235,9 @@ public sealed partial class L12GameEngine
         {
             case "thorHammerRevive" when source?.CardId == "S02-0301":
             {
-                var slots = EmptySlots(player).ToArray();
-                if (!player.Graveyard.Contains(source) || slots.Length == 0)
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                var data = new Dictionary<string, string>
-                {
-                    ["action"] = "s2-thor-hammer-slot",
-                    ["previewCardId"] = source.InstanceId,
-                    ["targetPlayerIndex"] = item.Controller.ToString(),
-                };
-                AddPromptCardData(data, source);
-                CreatePrompt(item.Controller, "slot", "选择〈雷神之锤〉活跃登场的位置", slots, 1, 1,
-                    "card-effect", item.StackItemId, data: data);
+                if (player.Graveyard.Contains(source) && EmptySlots(player).Contains(item.Data.GetValueOrDefault("slot")))
+                    SummonFromAnyPrivateZone(player, source.InstanceId, item.Data["slot"], tapped: false);
+                FinishStackItem(item);
                 return true;
             }
             case "wukongTransform" when source?.CardId == "S02-01M1":
@@ -231,14 +258,48 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, "本回合我方【阿斯加德】军团登场时获得冲锋；主宰本局无法因效果增加血量", source);
                 FinishStackItem(item); return true;
             case "divinityFlipMorale" when source?.CardId == "S02-05D1":
-                return PromptS2FlipMorale(item, source);
+            {
+                var target = player.Morale.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target")
+                    && !card.IsGodPower);
+                if (target is not null)
+                {
+                    L12S2ZoneOps.FlipMoraleFace(player, target.InstanceId, toGodPower: true);
+                    AddEvent("morale", item.Controller, "翻转1张士气", source);
+                }
+                FinishStackItem(item);
+                return true;
+            }
             case "divinityFreePromotion" when source?.CardId == "S02-05D1":
                 player.NextS2PromotionGodPowerDiscount = Math.Max(player.NextS2PromotionGodPowerDiscount, 99);
                 AddEvent("effect", item.Controller, "本回合我方下一张【奥林匹斯】军团晋升登场无需消耗并翻转神力", source);
                 FinishStackItem(item); return true;
             case "divinityPower" when source?.CardId == "S02-05D1":
-                if (item.Data["mode"] == "mode:damage") return PromptNextDivinityDamage(item);
-                return PromptDivinityRecover(item);
+            {
+                if (item.Data["mode"] == "mode:damage")
+                {
+                    foreach (var id in item.Data.GetValueOrDefault("targets", string.Empty)
+                        .Split('|', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var target = DeclaredEnemyTarget(item.Controller, id);
+                        if (target is not null)
+                            AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "诸神巅");
+                    }
+                    FinishStackItem(item);
+                    return true;
+                }
+                var recovered = player.Graveyard.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("recover")
+                    && card.Faction == "olympus");
+                if (recovered is not null)
+                {
+                    player.Graveyard.Remove(recovered);
+                    AddCardToHandByEffect(player, recovered, "grave", $"诸神巅将〈{recovered.Name}〉从墓地加入手牌");
+                }
+                if (item.Data.GetValueOrDefault("entry") is { Length: > 0 } entry
+                    && EmptySlots(player).Contains(item.Data.GetValueOrDefault("slot")))
+                    SummonFromAnyPrivateZone(player, entry, item.Data["slot"], tapped: false);
+                FinishStackItem(item);
+                return true;
+            }
             case "artemisBuff" when source?.CardId == "S02-05M1":
             {
                 var legion = FindOnField(player, item.Data["target"], out _, out _);
@@ -307,16 +368,6 @@ public sealed partial class L12GameEngine
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
-            case "s2-thor-hammer-slot":
-            {
-                var player = State.Players[item.Controller];
-                var source = player.Graveyard.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId
-                    && card.CardId == "S02-0301");
-                if (source is not null && EmptySlots(player).Contains(chosen[0]))
-                    SummonFromAnyPrivateZone(player, source.InstanceId, chosen[0], tapped: false);
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-trojan-confirm":
             {
                 if (chosen[0] != "yes") { FinishStackItem(item); return true; }
@@ -347,41 +398,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "s2-divinity-damage":
-            {
-                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
-                if (target is not null) AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "诸神巅");
-                var allocated = int.Parse(item.Data.GetValueOrDefault("allocated") ?? "0") + 1;
-                item.Data["allocated"] = allocated.ToString();
-                if (allocated < 6 && PublicLegions(State.Players[1 - item.Controller]).Any()) PromptNextDivinityDamage(item);
-                else FinishStackItem(item);
-                return true;
-            }
-            case "s2-divinity-recover":
-            {
-                var player = State.Players[item.Controller];
-                var recovered = player.Graveyard.FirstOrDefault(card => card.InstanceId == chosen[0] && card.Faction == "olympus");
-                if (recovered is null) { FinishStackItem(item); return true; }
-                player.Graveyard.Remove(recovered);
-                AddCardToHandByEffect(player, recovered, "grave", $"诸神巅将〈{recovered.Name}〉从墓地加入手牌");
-                var legions = player.Hand.Concat(player.Graveyard)
-                    .Where(card => card.Faction == "olympus" && card.CardType == "legion" && card.CurrentCost <= 4)
-                    .DistinctBy(card => card.InstanceId).ToList();
-                if (legions.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
-                var choices = legions.Select(card => card.InstanceId).Append("skip").ToList();
-                CreatePrompt(item.Controller, "optional-card", "随后可将手牌或墓地1张费用不高于4的军团活跃登场", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-divinity-hand", ["skip"] = "不登场" });
-                return true;
-            }
-            case "s2-divinity-hand":
-                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
-                item.Data["hand"] = chosen[0];
-                CreatePrompt(item.Controller, "slot", "选择该军团活跃登场的位置", EmptySlots(State.Players[item.Controller]), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-divinity-hand-slot" });
-                return true;
-            case "s2-divinity-hand-slot":
-                SummonFromAnyPrivateZone(State.Players[item.Controller], item.Data["hand"], chosen[0], tapped: false);
-                FinishStackItem(item); return true;
             case "s2-angus-trial":
                 if (chosen[0] == "yes") AdvanceTrial(item.Controller, 1, CreateCard("S02-06M2", $"master-{item.Controller}"));
                 FinishStackItem(item); return true;
@@ -462,25 +478,6 @@ public sealed partial class L12GameEngine
     private static bool IsTrojanHorse(L12CardInstance? card) => card is { CardId: "S02-0523" };
 
     private static bool IsSetTrojanHorse(L12CardInstance? card) => IsTrojanHorse(card) && card!.Hidden;
-
-    private bool PromptNextDivinityDamage(L12StackItem item)
-    {
-        var targets = PublicLegions(State.Players[1 - item.Controller]).Select(card => card.InstanceId).ToList();
-        if (targets.Count == 0) { FinishStackItem(item); return true; }
-        CreatePrompt(item.Controller, "enemy-legion", $"诸神巅：分配第{int.Parse(item.Data.GetValueOrDefault("allocated") ?? "0") + 1}点1000兵力伤害",
-            targets, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-divinity-damage" });
-        return true;
-    }
-
-    private bool PromptDivinityRecover(L12StackItem item)
-    {
-        var player = State.Players[item.Controller];
-        var choices = player.Graveyard.Where(card => card.Faction == "olympus").Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0) { FinishStackItem(item); return true; }
-        CreatePrompt(item.Controller, "grave-card", "诸神巅：选择墓地1张【奥林匹斯】卡牌加入手牌", choices, 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-divinity-recover" });
-        return true;
-    }
 
     private static string[] SplitDeclared(string? target)
         => (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);

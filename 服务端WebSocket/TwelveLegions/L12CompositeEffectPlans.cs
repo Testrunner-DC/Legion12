@@ -56,6 +56,18 @@ internal static class L12CompositeEffectPlans
             ],
         };
 
+    private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> ActivePlans =
+        new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["active:S01-04D1:yomiSweep"] =
+            [
+                new("yomi-draw", "黄泉之门：抽取1张牌"),
+                new("yomi-cost-debuff", "黄泉之门：对方所有军团本回合费用-1"),
+                new("yomi-kill3", "黄泉之门：结算已声明的费用不高于3击杀目标"),
+                new("yomi-kill1", "黄泉之门：结算已声明的费用不高于1击杀目标"),
+            ],
+        };
+
     public static bool RequiresHandPlayDeclaration(string cardId) => HandPlayPlans.ContainsKey(cardId);
 
     public static bool RequiresTriggerDeclaration(string cardId, string trigger)
@@ -63,7 +75,8 @@ internal static class L12CompositeEffectPlans
             && trigger.Equals("attack", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<L12CompositeEffectSegmentSpec> Segments(string cardId)
-        => HandPlayPlans.GetValueOrDefault(cardId, []);
+        => HandPlayPlans.TryGetValue(cardId, out var handPlay) ? handPlay
+            : ActivePlans.GetValueOrDefault(cardId, []);
 }
 
 public sealed partial class L12GameEngine
@@ -383,31 +396,33 @@ public sealed partial class L12GameEngine
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
         var segments = L12CompositeEffectPlans.Segments(planId);
-        var nextIndex = current + 1;
-        if (nextIndex >= segments.Count) return false;
-        var next = segments[nextIndex];
         var mode = CompositeDeclared(item, "mode").SingleOrDefault();
-        if (next.RequiredMode is not null && mode != next.RequiredMode) return false;
-        if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
+        for (var nextIndex = current + 1; nextIndex < segments.Count; nextIndex++)
         {
-            AddEvent("effect-cancelled", item.Controller,
-                $"〈{source.Name}〉的“{next.Text}”因公开目标已失效而取消；未支付该段费用", source);
-            return false;
+            var next = segments[nextIndex];
+            if (next.RequiredMode is not null && mode != next.RequiredMode) continue;
+            if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
+            {
+                AddEvent("effect-cancelled", item.Controller,
+                    $"〈{source.Name}〉的“{next.Text}”因公开目标已失效而取消；其余独立段继续", source);
+                continue;
+            }
+            if (!TryPayCompositeSegmentCost(item.Controller, source, next, item))
+            {
+                AddEvent("effect-cancelled", item.Controller,
+                    $"〈{source.Name}〉的“{next.Text}”因费用对象或公开目标失效而取消；未发生部分支付，其余独立段继续", source);
+                continue;
+            }
+            var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
+            {
+                ["compositeSegment"] = nextIndex.ToString(),
+                ["atomicFlow"] = next.Flow,
+                ["atomicContinuation"] = "true",
+            };
+            PushEffect(item.Controller, source, item.Trigger, next.Text, data: data);
+            return true;
         }
-        if (!TryPayCompositeSegmentCost(item.Controller, source, next, item))
-        {
-            AddEvent("effect-cancelled", item.Controller,
-                $"〈{source.Name}〉的“{next.Text}”因费用对象或公开目标失效而取消；未发生部分支付", source);
-            return false;
-        }
-        var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
-        {
-            ["compositeSegment"] = nextIndex.ToString(),
-            ["atomicFlow"] = next.Flow,
-            ["atomicContinuation"] = "true",
-        };
-        PushEffect(item.Controller, source, item.Trigger, next.Text, data: data);
-        return true;
+        return false;
     }
 
     private bool ValidateCompositeSegmentTargets(int controller, string flow, L12StackItem item)
@@ -418,6 +433,10 @@ public sealed partial class L12GameEngine
             "round-table-buff" => FindOnField(State.Players[controller],
                     CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _) is { } target
                 && target.HasTrait("圆桌骑士"),
+            "yomi-kill3" => CompositeDeclared(item, "kill3Target").SingleOrDefault() is { } kill3
+                && (kill3 == "mode:none" || DeclaredEnemyTarget(controller, kill3, card => card.CurrentCost <= 3) is not null),
+            "yomi-kill1" => CompositeDeclared(item, "kill1Target").SingleOrDefault() is { } kill1
+                && (kill1 == "mode:none" || DeclaredEnemyTarget(controller, kill1, card => card.CurrentCost <= 1) is not null),
             _ => true,
         };
 

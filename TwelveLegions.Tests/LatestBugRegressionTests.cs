@@ -116,6 +116,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:extendedRange")]
     public void SiegeCatapultExtendedRangeKeepsEnemyBackLineAndMasterTogether()
     {
         var game = Create(6415);
@@ -140,6 +141,35 @@ public sealed class LatestBugRegressionTests
         var after = game.SnapshotFor(0).LegalAttackTargets[catapult.InstanceId];
         Assert.Contains(backTarget.InstanceId, after);
         Assert.Contains("master", after);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:extendedRange")]
+    public void YangYoujiExtendedRangeMayBeActivatedMoreThanOnceInTheSameTurn()
+    {
+        var game = Create(64151);
+        var player = game.State.Players[0];
+        var yangYouji = Card("S01-0113", "yang-youji-repeat");
+        player.Morale.Clear();
+        player.Field[1][1] = yangYouji;
+        AddReadyMorale(player, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 3;
+        game.State.Phase = L12Phase.Main;
+
+        var first = game.Handle(0, new L12Command("activateAbility", yangYouji.InstanceId,
+            Ability: "extendedRange"));
+        Assert.True(first.Accepted, first.Error);
+        PassResponses(game);
+        Assert.DoesNotContain($"active:{yangYouji.InstanceId}:extendedRange", player.UsedAbilities);
+
+        var second = game.Handle(0, new L12Command("activateAbility", yangYouji.InstanceId,
+            Ability: "extendedRange"));
+        Assert.True(second.Accepted, second.Error);
+        PassResponses(game);
+        Assert.DoesNotContain($"active:{yangYouji.InstanceId}:extendedRange", player.UsedAbilities);
+        Assert.Empty(player.Morale);
     }
 
     [Fact]

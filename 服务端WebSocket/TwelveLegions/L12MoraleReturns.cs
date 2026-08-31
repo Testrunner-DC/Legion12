@@ -31,7 +31,7 @@ public sealed partial class L12GameEngine
             "mengpoSilence" when source.CardId == "S01-01M2" => 1,
             "shennongReset" when source.CardId == "S02-0104" => 1,
             "palaceExchange" when source.CardId == "S01-01D1"
-                => DeclaredEnemyTarget(player.PlayerIndex, target)?.CurrentCost ?? 0,
+                => DeclaredEnemyTarget(player.PlayerIndex, PublicDeclaredEnemyId(target))?.CurrentCost ?? 0,
             _ => 0,
         };
 
@@ -54,7 +54,8 @@ public sealed partial class L12GameEngine
                 => "声明的手牌目标、战场或位置不再合法",
             "palaceExchange" when source.CardId == "S01-01D1" && source.Tapped
                 => "凌霄宝殿必须为活跃状态",
-            "palaceExchange" when source.CardId == "S01-01D1" && DeclaredEnemyTarget(playerIndex, target) is null
+            "palaceExchange" when source.CardId == "S01-01D1"
+                && DeclaredEnemyTarget(playerIndex, PublicDeclaredEnemyId(target)) is null
                 => "目标不再合法",
             "mengpoSilence" when source.CardId == "S01-01M2" && !string.IsNullOrWhiteSpace(target)
                 && DeclaredEnemyTarget(playerIndex, target) is null
@@ -230,14 +231,6 @@ public sealed partial class L12GameEngine
                 item.Data["summon"] = summon;
                 CreatePrompt(item.Controller, "slot", "选择活跃登场位置", EmptySlots(player), 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "liubei-slot" });
-                break;
-            }
-            case "palace-kill":
-            {
-                if (data.GetValueOrDefault("target") is not { Length: > 0 } palaceTarget) { FinishStackItem(item); break; }
-                item.Data["target"] = palaceTarget;
-                item.Data["paid"] = data.GetValueOrDefault("paid") ?? "0";
-                ResolveDeclaredPalaceExchange(item);
                 break;
             }
             case "lubu-ready":

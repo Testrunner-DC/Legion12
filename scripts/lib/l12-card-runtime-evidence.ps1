@@ -24,6 +24,38 @@
         $testTexts[$file.FullName] = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
     }
 
+    # Tests may declare stable semantic coverage without repeating a card id.
+    # Supported xUnit traits: ability:<protocol id>, type:<cardType>, entry:<shared entry>.
+    $semanticTestFiles = @{}
+    foreach ($file in $testFiles) {
+        $matches = [regex]::Matches($testTexts[$file.FullName],
+            '\[\s*Trait\(\s*"L12Evidence"\s*,\s*"(?<selector>(?:ability|type|entry):[^"]+)"\s*\)\s*\]')
+        foreach ($match in $matches) {
+            $selector = $match.Groups['selector'].Value
+            if (-not $semanticTestFiles.ContainsKey($selector)) {
+                $semanticTestFiles[$selector] = New-Object System.Collections.Generic.List[string]
+            }
+            if (-not $semanticTestFiles[$selector].Contains($file.Name)) {
+                $semanticTestFiles[$selector].Add($file.Name)
+            }
+        }
+    }
+
+    $entrySelectorByCategory = @{
+        '主动注册' = 'active'
+        '时机集合' = 'timing'
+        '响应池/Prompt' = 'response'
+        '静态/派生规则' = 'structured-rule'
+        '行动/状态入口' = 'action'
+        '特殊牌堆/区域' = 'special-deck'
+        '权威效果处理' = 'effect-handler'
+        '主宰入口' = 'master'
+        '阵营/士气入口' = 'rune'
+        '特殊区入口' = 'divinity'
+        '试炼/特殊区入口' = 'trial'
+        'Token/特殊区入口' = 'token'
+    }
+
     $result = @{}
     foreach ($card in $Cards) {
         $id = [string]$card.id
@@ -60,6 +92,43 @@
         $tests = New-Object System.Collections.Generic.List[string]
         foreach ($file in $testFiles) {
             if ($testTexts[$file.FullName].Contains($needle)) { $tests.Add($file.Name) }
+        }
+
+        $semanticSelectors = New-Object System.Collections.Generic.List[string]
+        $semanticSelectors.Add("type:$([string]$card.cardType)")
+        foreach ($category in $categories) {
+            if ($entrySelectorByCategory.ContainsKey($category)) {
+                $semanticSelectors.Add("entry:$($entrySelectorByCategory[$category])")
+            }
+        }
+
+        $abilityIds = New-Object System.Collections.Generic.List[string]
+        foreach ($file in $runtimeFiles) {
+            $text = $runtimeTexts[$file.FullName]
+            foreach ($line in ($text -split "`r?`n")) {
+                if (-not $line.Contains($needle)) { continue }
+                foreach ($token in [regex]::Matches($line, '"(?<value>[a-z][A-Za-z0-9_-]+)"')) {
+                    $abilityId = $token.Groups['value'].Value
+                    if (-not $abilityIds.Contains($abilityId)) { $abilityIds.Add($abilityId) }
+                }
+            }
+            $armPattern = [regex]::Escape($needle) + '\s*=>\s*\[(?<body>.*?)\](?:\s*,|\s*\r?\n)'
+            foreach ($arm in [regex]::Matches($text, $armPattern,
+                [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
+                foreach ($ability in [regex]::Matches($arm.Groups['body'].Value,
+                    'new\(\s*"(?<ability>[a-z][A-Za-z0-9_-]+)"')) {
+                    $abilityId = $ability.Groups['ability'].Value
+                    if (-not $abilityIds.Contains($abilityId)) { $abilityIds.Add($abilityId) }
+                }
+            }
+        }
+        foreach ($abilityId in $abilityIds) { $semanticSelectors.Add("ability:$abilityId") }
+
+        foreach ($selector in ($semanticSelectors | Sort-Object -Unique)) {
+            if (-not $semanticTestFiles.ContainsKey($selector)) { continue }
+            foreach ($fileName in $semanticTestFiles[$selector]) {
+                if (-not $tests.Contains($fileName)) { $tests.Add($fileName) }
+            }
         }
         $result[$id] = [pscustomobject]@{
             Categories = @($categories | Sort-Object -Unique)

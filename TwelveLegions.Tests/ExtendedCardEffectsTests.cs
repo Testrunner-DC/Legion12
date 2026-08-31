@@ -503,6 +503,15 @@ public sealed class ExtendedCardEffectsTests
         var hpBeforeActivation = player.Hp;
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", alvida.InstanceId, Ability: "alvidaSummon")).Accepted);
+        var summonDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", summonDeclaration.Continuation);
+        var selectedSummon = player.Hand.First(card => summonDeclaration.ValidChoices.Contains(card.InstanceId));
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: summonDeclaration.PromptId,
+            Choice: selectedSummon.InstanceId)).Accepted);
+        var slotDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", slotDeclaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotDeclaration.PromptId,
+            Choice: "0:1")).Accepted);
         Assert.Contains(alvida, player.Graveyard);
         Assert.Equal(0, alvida.ImmortalUses);
         Assert.Equal(-1, alvida.ImmortalUntilTurn);
@@ -510,16 +519,6 @@ public sealed class ExtendedCardEffectsTests
         Assert.DoesNotContain(game.State.EffectStack,
             item => item.SourceInstanceId == alvida.InstanceId && item.Trigger == "death");
         PassResponses(game);
-        var summonPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("summon-asgard", summonPrompt.Data["action"]);
-        var selectedSummon = player.Hand.First(card => summonPrompt.ValidChoices.Contains(card.InstanceId));
-        var summonResult = game.Handle(0, new L12Command("resolvePrompt", PromptId: summonPrompt.PromptId,
-            CardInstanceIds: [selectedSummon.InstanceId]));
-        Assert.True(summonResult.Accepted, summonResult.Error);
-        var slotPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("faction-summon-slot", slotPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
-            Choice: "0:1", CardInstanceIds: ["0:1"])).Accepted);
 
         Assert.Same(selectedSummon, player.Field[0][1]);
         Assert.Equal(hpBeforeActivation - 1, player.Hp);
@@ -552,6 +551,7 @@ public sealed class ExtendedCardEffectsTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:lokiHeal")]
     public void LokiHealReturnsTheTwoGraveCardsChosenByThePlayer()
     {
         var game = Create(3, 2, 9016);
@@ -565,13 +565,15 @@ public sealed class ExtendedCardEffectsTests
         player.Hp--;
         var hpBefore = player.Hp;
 
+        var activeMoraleBefore = player.Morale.Count(card => !card.Tapped);
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiHeal")).Accepted);
-        PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("loki-heal-return", prompt.Data["action"]);
-        Assert.Equal(20, prompt.ValidChoices.Count);
+        Assert.Equal("pending-activation", prompt.Continuation);
+        Assert.Equal(20, prompt.ValidChoices.Count(choice => choice != "skip"));
+        Assert.Equal(activeMoraleBefore, player.Morale.Count(card => !card.Tapped));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             CardInstanceIds: [cards[^1].InstanceId, cards[^2].InstanceId])).Accepted);
+        PassResponses(game);
 
         Assert.Equal(cards.Take(18), player.Graveyard);
         Assert.DoesNotContain(cards[^2], player.Graveyard);
@@ -588,6 +590,7 @@ public sealed class ExtendedCardEffectsTests
         => game.State.Players[playerIndex].Hand;
 
     [Fact]
+    [Trait("L12Evidence", "type:rune")]
     public void BothOlympusMoraleFacesUseMoraleClassification()
     {
         Assert.Equal("rune", Catalog.Cards["S02-05C1"].CardType);

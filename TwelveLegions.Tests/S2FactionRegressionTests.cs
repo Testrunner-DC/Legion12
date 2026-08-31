@@ -1464,17 +1464,18 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: costPrompt.PromptId,
             CardInstanceIds: [second.InstanceId, first.InstanceId, third.InstanceId])).Accepted);
-        Assert.Equal(new[] { second.InstanceId, first.InstanceId, third.InstanceId },
-            player.Library.TakeLast(3).Select(card => card.InstanceId).ToArray());
-        Assert.Contains(hammer, player.Graveyard);
-        PassResponses(game);
         var slotPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("slot", slotPrompt.Kind);
-        Assert.Equal("s2-thor-hammer-slot", slotPrompt.Data["action"]);
-        Assert.Equal(hammer.InstanceId, slotPrompt.Data["previewCardId"]);
+        Assert.Equal("pending-activation", slotPrompt.Continuation);
+        Assert.Contains(hammer, player.Graveyard);
+        Assert.Equal([hammer, first, second, third], player.Graveyard);
+        Assert.Empty(game.State.EffectStack);
         var slot = slotPrompt.ValidChoices[0];
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
             Choice: slot)).Accepted);
+        Assert.Equal(new[] { second.InstanceId, first.InstanceId, third.InstanceId },
+            player.Library.TakeLast(3).Select(card => card.InstanceId).ToArray());
+        PassResponses(game);
 
         Assert.DoesNotContain(hammer, player.Graveyard);
         Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == hammer.InstanceId && !card.Tapped);
@@ -2380,11 +2381,13 @@ public sealed class S2FactionRegressionTests
         var activation = game.Handle(playerIndex, new L12Command("activateAbility", $"faction-{playerIndex}",
             Ability: "olympusMoraleFlip"));
         Assert.True(activation.Accepted, activation.Error);
-        PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
+        Assert.Contains("olympus-morale-rested", prompt.ValidChoices);
+        Assert.False(player.Morale.Single(card => card.InstanceId == "olympus-morale-active").Tapped);
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: "olympus-morale-rested")).Accepted);
+        PassResponses(game);
 
         var flipped = player.Morale.Single(card => card.InstanceId == "olympus-morale-rested");
         Assert.True(flipped.Tapped);
@@ -2935,6 +2938,10 @@ public sealed class S2FactionRegressionTests
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
             Choice: "amaterasu-independent-target")).Accepted);
+        var killTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
+            Choice: killTarget.ValidChoices.Contains("amaterasu-independent-target")
+                ? "amaterasu-independent-target" : "mode:none")).Accepted);
         Assert.Equal(1, player.Morale.Count(morale => morale.Tapped));
     }
 
@@ -3909,20 +3916,21 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "divinityPower")).Accepted);
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:recover")).Accepted);
-        PassResponses(game);
-        var recover = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-divinity-recover");
+        var recover = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", recover.Continuation);
         Assert.Contains(recoveredTactic.InstanceId, recover.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recover.PromptId,
             Choice: recoveredTactic.InstanceId)).Accepted);
-        var summon = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-divinity-hand");
+        var summon = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", summon.Continuation);
         Assert.Contains(summonedLegion.InstanceId, summon.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: summon.PromptId,
             Choice: summonedLegion.InstanceId)).Accepted);
-        var slot = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-divinity-hand-slot");
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", slot.Continuation);
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "0:0")).Accepted);
+        PassResponses(game);
 
         Assert.Contains(recoveredTactic, player.Hand);
         Assert.Same(summonedLegion, player.Field[0][0]);

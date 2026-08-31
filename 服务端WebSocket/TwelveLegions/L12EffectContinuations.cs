@@ -198,17 +198,6 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); break;
             }
-            case "loki-heal-return":
-            {
-                var cards = chosen.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
-                    .Where(card => card is not null && CanEnterHandOrLibrary(card)).Cast<L12CardInstance>().ToArray();
-                if (cards.Length == 2)
-                {
-                    MoveGraveToLibraryBottom(player, cards);
-                    HealMaster(item.Controller, 1, "洛基主宰效果");
-                }
-                FinishStackItem(item); break;
-            }
             default:
                 if (!TryContinueS1Extended(item, prompt, chosen, command)
                     && !TryContinueS2Faction(item, prompt, chosen, command)) FinishStackItem(item);

@@ -131,6 +131,9 @@ public sealed partial class L12GameEngine
         if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
             return freeResult;
         if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+        if (ability is "olympusMoraleFlip" or "divinityFlipMorale"
+            && !player.Morale.Any(card => card.InstanceId == target && !card.IsGodPower))
+            return CommandResult.Reject("声明的士气已失效或已是神力面");
         var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
         var moraleCost = GetActiveAbilityMoraleCost(source, ability) + disasterMasterSurcharge;
         var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);

@@ -223,6 +223,7 @@ public sealed class Bq20260830_02RegressionTests
 
     [Theory]
     [MemberData(nameof(TrialLegionIds))]
+    [Trait("L12Evidence", "entry:trial")]
     public void EveryTrialLegionPublishesAnIndependentTrialAbility(string cardId)
     {
         var game = Create(68206);

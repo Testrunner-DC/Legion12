@@ -58,6 +58,9 @@ public sealed partial class L12GameEngine
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
             DeclarationKey = step.DeclarationKey,
+            ReferenceDeclarationKey = step.ReferenceDeclarationKey,
+            SkipWhenReferenceIsNone = step.SkipWhenReferenceIsNone,
+            CostThreshold = step.CostThreshold,
         }).ToList();
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
                 && step.RequiredDeclaredChoice is null))
@@ -90,10 +93,25 @@ public sealed partial class L12GameEngine
 
     private void CreateActivationStepPrompt(L12PendingActivation activation)
     {
-        while (activation.CurrentStep < activation.SelectionSteps.Count
-            && activation.SelectionSteps[activation.CurrentStep].RequiredDeclaredChoice is { } requiredChoice
-            && !activation.DeclaredTargets.Contains(requiredChoice, StringComparer.OrdinalIgnoreCase))
-            activation.CurrentStep++;
+        while (activation.CurrentStep < activation.SelectionSteps.Count)
+        {
+            var pendingStep = activation.SelectionSteps[activation.CurrentStep];
+            if (pendingStep.RequiredDeclaredChoice is { } requiredChoice
+                && !activation.DeclaredTargets.Contains(requiredChoice, StringComparer.OrdinalIgnoreCase))
+            {
+                activation.CurrentStep++;
+                continue;
+            }
+            if (pendingStep.SkipWhenReferenceIsNone
+                && pendingStep.ReferenceDeclarationKey is { } referenceKey
+                && activation.DeclaredValues.GetValueOrDefault(referenceKey, [])
+                    .SingleOrDefault()?.Equals("mode:none", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                activation.CurrentStep++;
+                continue;
+            }
+            break;
+        }
         if (activation.CurrentStep >= activation.SelectionSteps.Count)
         {
             CompleteResolvedPendingActivation(activation);
@@ -152,9 +170,10 @@ public sealed partial class L12GameEngine
         }
         else if (step.Kind == "effect-entry-battlefield")
         {
-            var card = activation.DeclaredTargets.Count == 0
-                ? null
-                : FindPromptCard(activation.Controller, activation.DeclaredTargets[0]);
+            var reference = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
+                : activation.DeclaredTargets.FirstOrDefault();
+            var card = reference is null ? null : FindPromptCard(activation.Controller, reference);
             var choices = card is null
                 ? []
                 : EffectEntryBattlefieldChoices(activation.Controller, card)
@@ -175,6 +194,8 @@ public sealed partial class L12GameEngine
             if (choices.Count == 1)
             {
                 activation.DeclaredTargets.Add(choices[0]);
+                if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+                    activation.DeclaredValues[step.DeclarationKey] = [choices[0]];
                 activation.CurrentStep++;
                 CreateActivationStepPrompt(activation);
                 return;
@@ -305,6 +326,53 @@ public sealed partial class L12GameEngine
             promptKind = "slot";
             targetPlayerIndex = activation.Controller;
         }
+        else if (step.Kind == "public-palace-enemy")
+        {
+            var player = State.Players[activation.Controller];
+            var referenceId = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
+                : null;
+            var minimumCost = referenceId == "mode:none" ? 0
+                : player.Graveyard.FirstOrDefault(card => card.InstanceId == referenceId)?.CurrentCost ?? int.MaxValue;
+            var choices = PublicLegions(State.Players[1 - activation.Controller])
+                .Where(card => card.CurrentCost >= minimumCost && player.Morale.Count >= card.CurrentCost)
+                .Select(card => card.InstanceId).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count == 0)
+            {
+                RejectPendingActivation(activation, "没有可覆盖已声明登场军团费用的合法敌方目标，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "active-target";
+        }
+        else if (step.Kind == "public-enemy-after-cost-debuff")
+        {
+            var threshold = step.CostThreshold ?? 0;
+            var choices = PublicLegions(State.Players[1 - activation.Controller])
+                .Where(card => card.CurrentCost - 1 <= threshold
+                    && !activation.DeclaredTargets.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
+                .Select(card => card.InstanceId).ToList();
+            choices.Insert(0, "mode:none");
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            step.ChoiceLabels["mode:none"] = "本段不选择击杀目标";
+            promptKind = "active-target";
+        }
+        else if (step.Kind == "public-enemy-after-declared-cost-debuff")
+        {
+            var debuffTarget = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
+                : null;
+            var choices = PublicLegions(State.Players[1 - activation.Controller])
+                .Where(card => card.CurrentCost - (card.InstanceId == debuffTarget ? 1 : 0) == 0)
+                .Select(card => card.InstanceId).ToList();
+            choices.Insert(0, "mode:none");
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            step.ChoiceLabels["mode:none"] = "不选择可击杀目标";
+            promptKind = "active-target";
+        }
         var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
@@ -430,6 +498,7 @@ public sealed partial class L12GameEngine
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == activation.SourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId)
+            ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId)
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == activation.SourceInstanceId
                 && IsLegalGraveyardActiveAbilitySource(player, card, activation.Ability))
             ?? (activation.SourceCardId == player.MasterId ? CreateActiveMasterSource(player, activation.SourceInstanceId) : null)
@@ -496,9 +565,14 @@ public sealed partial class L12GameEngine
             return runeIndex >= 1 && runeIndex <= State.Players[controller].SpecialZones.Runes;
         if (choice.StartsWith("battlefield:", StringComparison.OrdinalIgnoreCase))
         {
-            var card = activation?.DeclaredTargets.Count > 0
-                ? FindPromptCard(controller, activation.DeclaredTargets[0])
-                : null;
+            var entryStep = activation?.SelectionSteps.FirstOrDefault(step => step.Kind == "effect-entry-battlefield"
+                && step.DeclarationKey is not null
+                && activation.DeclaredValues.GetValueOrDefault(step.DeclarationKey, [])
+                    .Contains(choice, StringComparer.OrdinalIgnoreCase));
+            var reference = entryStep?.ReferenceDeclarationKey is { } referenceKey
+                ? activation!.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
+                : activation?.DeclaredTargets.FirstOrDefault();
+            var card = reference is null ? null : FindPromptCard(controller, reference);
             var battlefield = ParseEffectEntryBattlefieldChoice(choice);
             return card is not null && battlefield is not null
                 && EffectEntryBattlefieldChoices(controller, card).Contains(battlefield.Value);
@@ -552,13 +626,18 @@ public sealed partial class L12GameEngine
         if (target is null) { FinishStackItem(item); return; }
         var paid = int.TryParse(item.Data.GetValueOrDefault("paid"), out var parsed) ? parsed : target.CurrentCost;
         KillTarget(item, target.InstanceId, "被凌霄宝殿击杀");
-        var choices = player.Graveyard.Where(card => card.CardType == "legion"
-            && L12StructuredCardRules.HasFaction(player, card, "tianting") && card.CurrentCost <= paid)
-            .Select(card => card.InstanceId).ToList();
-        choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "选择墓地1张费用不高于返还士气数量的【天廷】军团活跃登场",
-            choices, 1, 1, "card-effect", item.StackItemId,
-            data: new Dictionary<string, string> { ["action"] = "palace-revive" });
+        var reviveId = item.Data.GetValueOrDefault("entryCard");
+        var battlefield = ParseEffectEntryBattlefieldChoice(item.Data.GetValueOrDefault("entryBattlefield"));
+        var slotChoice = item.Data.GetValueOrDefault("entrySlot");
+        var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == reviveId
+            && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "tianting")
+            && card.CurrentCost <= paid);
+        if (revive is not null && battlefield == item.Controller && slotChoice is not null
+            && slotChoice.Split(':') is [var rowText, var slotText]
+            && int.TryParse(rowText, out var row) && int.TryParse(slotText, out var slot)
+            && row is >= 0 and <= 1 && slot is >= 0 and <= 2 && player.Field[row][slot] is null)
+            SummonFromAnyPrivateZone(player, revive.InstanceId, slotChoice, tapped: false);
+        FinishStackItem(item);
     }
 
     private void QueueSimultaneousDeathTriggers(
