@@ -707,10 +707,12 @@ public sealed class NewSystemsTests
                 .Any(card => card.CardId == "S01-0105"));
         var opponent = 1 - owner;
         var legion = TakeCard(game, owner, "S01-0105");
+        var guanYu = TakeCard(game, owner, "S01-0106");
         var negate = TakeCard(game, owner, "S01-0018");
         var unusedNegate = TakeCard(game, owner, "S01-0018");
         var player = game.State.Players[owner];
         player.Hand.Add(legion);
+        player.Hand.Add(guanYu);
         AddAllMorale(player);
         negate.Hidden = true;
         negate.SetRound = 0;
@@ -727,6 +729,21 @@ public sealed class NewSystemsTests
         Assert.Same(legion, player.Field[0][0]);
         Assert.Equal(disasterBefore + legion.DisasterLevel, game.State.DisasterValue);
 
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var morale = Assert.Single(game.State.PendingPrompts);
+        var returnedMorale = morale.ValidChoices.First(choice => choice != "skip");
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: morale.PromptId,
+            Choice: returnedMorale)).Accepted);
+        var brother = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: brother.PromptId,
+            Choice: guanYu.InstanceId)).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices.First(choice => choice != "skip"))).Accepted);
+
         var response = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(opponent, response.PlayerIndex);
         Assert.Contains(negate.InstanceId, response.ValidChoices);
@@ -738,6 +755,8 @@ public sealed class NewSystemsTests
         Assert.Equal(disasterBefore + legion.DisasterLevel, game.State.DisasterValue);
         Assert.Contains(game.State.Events, item => item.Type == "effect-negated");
         Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(player.Morale, card => card.InstanceId == returnedMorale);
+        Assert.Contains(guanYu, player.Hand);
         Assert.Same(unusedNegate, game.State.Players[opponent].Field[1][1]);
     }
 
@@ -1136,14 +1155,34 @@ public sealed class NewSystemsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(owner, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var returnedMorale = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: returnedMorale.PromptId,
+            Choice: returnedMorale.ValidChoices[0])).Accepted);
+        var card = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(guanYu.InstanceId, card.ValidChoices);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: card.PromptId,
+            Choice: guanYu.InstanceId)).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices[0])).Accepted);
+
         var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
         player.Field[0][0] = null;
         player.Graveyard.Add(legion);
-        Assert.True(game.Handle(opponent,
-            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
 
         Assert.Contains(legion, player.Graveyard);
-        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "liubei-card");
+        Assert.Contains(player.Field.SelectMany(row => row), fieldCard => fieldCard?.InstanceId == guanYu.InstanceId);
     }
 
     [Fact]

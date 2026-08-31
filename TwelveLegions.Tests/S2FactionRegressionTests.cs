@@ -166,12 +166,18 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.HandleGm(new L12GmCommand("placeCard", 0, "S02-0205")).Accepted);
         PassResponses(game);
 
+        var chooseCard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", chooseCard.Continuation);
+        Assert.Contains(beetle.InstanceId, chooseCard.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: chooseCard.PromptId,
+            Choice: beetle.InstanceId)).Accepted);
         var chooseSlot = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-scarab-enter-slot", chooseSlot.Data["action"]);
+        Assert.Equal("pending-activation", chooseSlot.Continuation);
         Assert.Equal(beetle.InstanceId, chooseSlot.Data["previewCardId"]);
         var destination = Assert.Single(chooseSlot.ValidChoices.Take(1));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: chooseSlot.PromptId,
             Choice: destination)).Accepted);
+        PassResponses(game);
 
         Assert.DoesNotContain(beetle, player.Graveyard);
         Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == beetle.InstanceId && !card.Tapped);
@@ -3258,11 +3264,15 @@ public sealed class S2FactionRegressionTests
             PassResponses(game);
             trigger = Assert.Single(game.State.PendingPrompts);
         }
-        Assert.Equal("s2-nephthys-own-death", trigger.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: trigger.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal("pending-activation", trigger.Continuation);
+        Assert.Contains(scarab.InstanceId, trigger.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: trigger.PromptId,
+            Choice: scarab.InstanceId)).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-nephthys-scarab-slot", slot.Data["action"]);
+        Assert.Equal("pending-activation", slot.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:2")).Accepted);
+        Assert.Contains($"s2-nephthys-scarab:{game.State.TurnSerial}", player.UsedAbilities);
+        PassResponses(game);
 
         Assert.Same(scarab, player.Field[1][2]);
         Assert.False(scarab.Tapped);
@@ -3382,15 +3392,16 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         var prompt = Assert.Single(game.State.PendingPrompts,
-            candidate => candidate.Data.GetValueOrDefault("action") == "s2-xiaotian-morale");
-        Assert.Equal("s2-xiaotian-morale", prompt.Data["action"]);
+            candidate => candidate.Continuation == "pending-activation");
+        Assert.Contains("mode:use", prompt.ValidChoices);
         Assert.Equal("false", prompt.Data[$"{prompt.Data["previewCardId"]}:hasPrintedCost"]);
         Assert.DoesNotContain($"{prompt.Data["previewCardId"]}:cost", prompt.Data.Keys);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts,
-            candidate => candidate.Data.GetValueOrDefault("action") == "s2-xiaotian-slot");
-        Assert.Equal("s2-xiaotian-slot", slot.Data["action"]);
+            candidate => candidate.Continuation == "pending-activation");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "0:1")).Accepted);
+        Assert.Contains($"trigger:xiaotian-morale:{game.State.TurnSerial}", player.UsedAbilities);
+        PassResponses(game);
 
         var xiaotian = Assert.IsType<L12CardInstance>(player.Field[0][1]);
         Assert.Equal("S02-01S1", xiaotian.CardId);
@@ -3732,11 +3743,13 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
         PassResponses(game);
         var confirm = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-confirm");
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId, Choice: "yes")).Accepted);
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId,
+            Choice: "mode:use")).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-slot");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:1")).Accepted);
+        PassResponses(game);
         Assert.Same(horse, attackerPlayer.Field[1][1]);
         Assert.False(horse.Hidden);
 
@@ -3782,11 +3795,13 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         var confirm = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-confirm");
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId, Choice: "yes")).Accepted);
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId,
+            Choice: "mode:use")).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-trojan-slot");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:1")).Accepted);
+        PassResponses(game);
 
         Assert.Null(defender.Field[1][1]);
         Assert.Same(horse, attackerPlayer.Field[1][1]);
@@ -3848,7 +3863,7 @@ public sealed class S2FactionRegressionTests
             Assert.True(movement.Accepted, movement.Error);
             PassResponses(game);
             var ready = Assert.Single(game.State.PendingPrompts,
-                prompt => prompt.Data.GetValueOrDefault("action") == "s2-tsukuyomi-ready");
+                prompt => prompt.Continuation == "pending-activation");
             Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ready.PromptId,
                 Choice: player.Morale[0].InstanceId)).Accepted);
             PassResponses(game);
@@ -4284,8 +4299,12 @@ public sealed class S2FactionRegressionTests
         while (game.State.PendingPrompts.Count > 0)
         {
             var prompt = game.State.PendingPrompts[0];
+            var choice = prompt.ValidChoices.Contains("no", StringComparer.OrdinalIgnoreCase) ? "no"
+                : prompt.ValidChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase) ? "mode:none"
+                : prompt.ValidChoices.Contains("skip", StringComparer.OrdinalIgnoreCase) ? "skip"
+                : prompt.ValidChoices[0];
             Assert.True(game.Handle(prompt.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
             PassResponses(game);
         }
 

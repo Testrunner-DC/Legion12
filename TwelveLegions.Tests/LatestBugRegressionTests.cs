@@ -1732,6 +1732,9 @@ public sealed class LatestBugRegressionTests
         player.Morale.Clear();
         player.Hand.Add(ryoma);
         player.Field[0][0] = first;
+        player.Field[0][2] = Card("S01-0403", "ryoma-blocker-front");
+        player.Field[1][0] = Card("S01-0404", "ryoma-blocker-back-left");
+        player.Field[1][1] = Card("S01-0405", "ryoma-blocker-back-middle");
         player.Field[1][2] = second;
         AddReadyMorale(player, ryoma.Cost);
         game.State.ActivePlayer = 0;
@@ -1740,16 +1743,27 @@ public sealed class LatestBugRegressionTests
 
         var played = game.Handle(0, new L12Command("playCard", ryoma.InstanceId, Row: 0, Slot: 1));
         Assert.True(played.Accepted, played.Error);
+        Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card is null);
         PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
         var choose = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("ryoma-pick", choose.Data["action"]);
+        Assert.Equal("pending-activation", choose.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choose.PromptId,
             CardInstanceIds: [first.InstanceId, second.InstanceId])).Accepted);
 
-        var slot = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("ryoma-slot", slot.Data["action"]);
-        Assert.Contains("1:2", slot.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:2")).Accepted);
+        var firstSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", firstSlot.Continuation);
+        Assert.Contains("1:2", firstSlot.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstSlot.PromptId,
+            Choice: "1:2")).Accepted);
+        var secondSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["0:0"], secondSlot.ValidChoices.Where(choice => choice != "skip"));
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: secondSlot.PromptId,
+            Choice: "0:0")).Accepted);
+        PassResponses(game);
         Assert.Same(second, player.Field[0][0]);
         Assert.Same(first, player.Field[1][2]);
     }

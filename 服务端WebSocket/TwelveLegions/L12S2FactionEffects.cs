@@ -140,7 +140,8 @@ public sealed partial class L12GameEngine
             candidates.Add(CreateTriggerCandidate(playerIndex, xiaotian, "master-morale-return", "【主宰效果返还士气时】效果",
                 new Dictionary<string, string>
                 {
-                    ["mode"] = "xiaotian", ["onceKey"] = $"trigger:xiaotian-morale:{State.TurnSerial}",
+                    ["mode"] = "xiaotian", ["ability"] = "xiaotianEntry",
+                    ["onceKey"] = $"trigger:xiaotian-morale:{State.TurnSerial}",
                     ["returned"] = returned.ToString(),
                 }));
         }
@@ -151,7 +152,8 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var onceKey = item.Data.GetValueOrDefault("onceKey") ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(onceKey) || player.UsedAbilities.Contains(onceKey))
+        if (string.IsNullOrWhiteSpace(onceKey)
+            || item.Data.GetValueOrDefault("mode") != "xiaotian" && player.UsedAbilities.Contains(onceKey))
         {
             FinishStackItem(item);
             return;
@@ -178,17 +180,26 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
+        var destination = PublicTriggerDeclared(item, "slot");
+        if (!player.UsedAbilities.Contains(onceKey)
+            || !Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null)
+                .Select(slot => $"0:{slot}").Contains(destination, StringComparer.OrdinalIgnoreCase))
+        {
+            AddEvent("effect-cancelled", item.Controller, "哮天犬·稚声明的前排登场位置已失效；本段取消");
+            FinishStackItem(item);
+            return;
+        }
         var xiaotian = player.Graveyard.LastOrDefault(card => card.CardId == "S02-01S1")
             ?? player.Removed.LastOrDefault(card => card.CardId == "S02-01S1")
             ?? CreateCard("S02-01S1", $"p{item.Controller}-xiaotian");
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "s2-xiaotian-morale", ["onceKey"] = onceKey, ["previewCardId"] = xiaotian.InstanceId,
-            ["yes"] = "使〈哮天犬·稚〉在前排活跃登场", ["no"] = "不发动", ["choiceMode"] = "instant",
-        };
-        AddPromptCardData(data, xiaotian);
-        CreatePrompt(item.Controller, "optional", "杨戬专属：是否使〈哮天犬·稚〉在前排活跃登场？",
-            ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: data);
+        var (row, slot) = ParseSlot(destination);
+        player.Graveyard.Remove(xiaotian);
+        player.Removed.Remove(xiaotian);
+        xiaotian.Tapped = false;
+        xiaotian.SummonRound = State.Round;
+        player.Field[row][slot] = xiaotian;
+        AddEvent("enter", item.Controller, "〈哮天犬·稚〉在前排活跃登场", xiaotian);
+        FinishStackItem(item);
     }
 
     private static bool IsTrialLegion(L12CardInstance card)
@@ -457,14 +468,13 @@ public sealed partial class L12GameEngine
             case "哈特谢普苏特":
             case "黄金圣甲虫":
             {
-                var scarab = player.Graveyard.FirstOrDefault(candidate => candidate.CardId == "S02-0201");
-                if (scarab is null || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
-                item.Data["scarab"] = scarab.InstanceId;
-                var data = new Dictionary<string, string> { ["action"] = "s2-scarab-enter-slot", ["previewCardId"] = scarab.InstanceId };
-                AddPromptCardData(data, scarab);
-                CreatePrompt(item.Controller, "slot", $"{card.Name}：选择〈增殖的甲虫〉活跃登场的位置", EmptySlots(player), 1, 1,
-                    "card-effect", item.StackItemId, data: data);
-                return true;
+                var declaredScarab = PublicTriggerDeclared(item, "entryCard");
+                if (!string.IsNullOrWhiteSpace(declaredScarab))
+                {
+                    SummonFromAnyPrivateZone(player, declaredScarab, PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             }
             case "伊姆何泰普":
             {
@@ -946,11 +956,13 @@ public sealed partial class L12GameEngine
                 return PromptOptionalS2DeathDraw(item, card, discardAfterDraw: true);
             case "陵墓圣武士":
             {
-                var guard = player.Graveyard.FirstOrDefault(candidate => candidate.CardId == "S01-0212");
-                if (guard is not null && EmptySlots(player).Any())
-                    BeginQueuedSummons(item, [guard.InstanceId], tapped: false, "陵墓圣武士：选择〈陵墓守卫〉活跃登场的位置");
-                else FinishStackItem(item);
-                return true;
+                var declaredGuard = PublicTriggerDeclared(item, "entryCard");
+                if (!string.IsNullOrWhiteSpace(declaredGuard))
+                {
+                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             }
             default:
                 return false;
@@ -1260,7 +1272,11 @@ public sealed partial class L12GameEngine
             return null;
         var master = CreateCard(player.MasterId, $"master-{defeatedController}");
         return CreateTriggerCandidate(defeatedController, master, "nephthys-own-death", "【我方军团阵亡时】效果",
-            new Dictionary<string, string> { ["defeated"] = defeated.InstanceId });
+            new Dictionary<string, string>
+            {
+                ["ability"] = "nephthysScarabEntry", ["defeated"] = defeated.InstanceId,
+                ["onceKey"] = onceKey,
+            });
     }
 
     private void ResolveS2MorriganEnemyDeath(L12StackItem item)
@@ -1284,21 +1300,26 @@ public sealed partial class L12GameEngine
     private void ResolveS2NephthysOwnDeath(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        var onceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
+        var onceKey = item.Data.GetValueOrDefault("onceKey") ?? $"s2-nephthys-scarab:{State.TurnSerial}";
         if (State.ActivePlayer == item.Controller || player.MasterId != "S02-02M1"
-            || player.UsedAbilities.Contains(onceKey) || !player.Graveyard.Any(card => card.CardId == "S02-0201")
+            || !player.UsedAbilities.Contains(onceKey) || !player.Graveyard.Any(card => card.CardId == "S02-0201")
             || !EmptySlots(player).Any())
         {
             FinishStackItem(item);
             return;
         }
-        CreatePrompt(item.Controller, "optional", "奈芙蒂斯：我方费用不低于2的【太阳城】军团阵亡，是否将墓地1张〈增殖的甲虫〉活跃登场？",
-            ["yes", "no"], 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string>
-            {
-                ["action"] = "s2-nephthys-own-death",
-                ["yes"] = "将〈增殖的甲虫〉活跃登场",
-                ["no"] = "不发动",
-            });
+        var scarabId = PublicTriggerDeclared(item, "entryCard");
+        var destination = PublicTriggerDeclared(item, "entrySlot");
+        if (!player.UsedAbilities.Contains(onceKey)
+            || !player.Graveyard.Any(card => card.InstanceId == scarabId && card.CardId == "S02-0201")
+            || !EmptySlots(player).Contains(destination, StringComparer.OrdinalIgnoreCase))
+        {
+            AddEvent("effect-cancelled", item.Controller, "奈芙蒂斯声明的增殖甲虫或登场位置已失效；本段取消");
+            FinishStackItem(item);
+            return;
+        }
+        SummonFromAnyPrivateZone(player, scarabId, destination, tapped: false);
+        FinishStackItem(item);
     }
 
     private CommandResult? TryCommitS2FactionActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target, string onceKey, bool? useTombGuards,
@@ -2037,38 +2058,6 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item);
                 return true;
-            case "s2-xiaotian-morale":
-                if (chosen[0] != "yes")
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                player.UsedAbilities.Add(prompt.Data.GetValueOrDefault("onceKey") ?? string.Empty);
-                CreatePrompt(item.Controller, "slot", "哮天犬·稚：请直接点击前排高亮空位",
-                    Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null).Select(slot => $"0:{slot}"),
-                    1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-xiaotian-slot" });
-                return true;
-            case "s2-xiaotian-slot":
-            {
-                var (row, slot) = ParseSlot(chosen[0]);
-                if (row != 0 || player.Field[0][slot] is not null)
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                var xiaotian = player.Graveyard.LastOrDefault(card => card.CardId == "S02-01S1")
-                    ?? player.Removed.LastOrDefault(card => card.CardId == "S02-01S1")
-                    ?? CreateCard("S02-01S1", $"p{item.Controller}-xiaotian");
-                player.Graveyard.Remove(xiaotian);
-                player.Removed.Remove(xiaotian);
-                xiaotian.Tapped = false;
-                xiaotian.SummonRound = State.Round;
-                player.Field[0][slot] = xiaotian;
-                AddEvent("enter", item.Controller, "〈哮天犬·稚〉在前排活跃登场", xiaotian);
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-xiaotian-death":
                 if (chosen[0] == "yes")
                 {
@@ -2220,37 +2209,6 @@ public sealed partial class L12GameEngine
                         else AddEvent("runes", item.Controller, "莫瑞甘使我方获得1符文", source);
                     }
                 }
-                FinishStackItem(item);
-                return true;
-            case "s2-nephthys-own-death":
-                if (chosen[0] != "yes")
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                var nephthysOnceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
-                var scarab = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0201");
-                if (State.ActivePlayer == item.Controller || player.MasterId != "S02-02M1"
-                    || player.UsedAbilities.Contains(nephthysOnceKey) || scarab is null || !EmptySlots(player).Any())
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                player.UsedAbilities.Add(nephthysOnceKey);
-                item.Data["nephthys-scarab"] = scarab.InstanceId;
-                var nephthysPromptData = new Dictionary<string, string>
-                {
-                    ["action"] = "s2-nephthys-scarab-slot",
-                    ["previewCardId"] = scarab.InstanceId,
-                };
-                AddPromptCardData(nephthysPromptData, scarab);
-                CreatePrompt(item.Controller, "slot", "奈芙蒂斯：选择〈增殖的甲虫〉活跃登场的位置",
-                    EmptySlots(player), 1, 1, "card-effect", item.StackItemId, data: nephthysPromptData);
-                return true;
-            case "s2-nephthys-scarab-slot":
-                var nephthysScarabId = item.Data.GetValueOrDefault("nephthys-scarab");
-                if (!string.IsNullOrWhiteSpace(nephthysScarabId))
-                    SummonFromAnyPrivateZone(player, nephthysScarabId, chosen[0], tapped: false);
                 FinishStackItem(item);
                 return true;
             case "s2-amakine-top-place":
@@ -2824,10 +2782,6 @@ public sealed partial class L12GameEngine
                 ResolveAuthorityEvent(item);
                 return true;
             }
-            case "s2-scarab-enter-slot":
-                SummonFromAnyPrivateZone(player, item.Data["scarab"], chosen[0], tapped: false);
-                FinishStackItem(item);
-                return true;
             case "s2-imhotep-recover":
                 if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]);
                 FinishStackItem(item);
@@ -3353,7 +3307,7 @@ public sealed partial class L12GameEngine
             ResolveOnPlayContinuousEffects(item.Controller, card);
             RecalculateContinuousTroops();
             if (HasImmediateEffect(card, "enter"))
-                PushEffect(item.Controller, card, "enter", "【登场时】效果");
+                QueueOrPushTriggeredEffect(item.Controller, card, "enter", "【登场时】效果");
         }
         else if (card.CardType == "tactic")
         {
@@ -3398,7 +3352,7 @@ public sealed partial class L12GameEngine
             .Select(candidate => candidate.InstanceId).ToArray();
         if (choices.Length == 0)
         {
-            PushEffect(playerIndex, source, "enter", "【登场时】效果",
+            QueueOrPushTriggeredEffect(playerIndex, source, "enter", "【登场时】效果",
                 data: new Dictionary<string, string> { ["entryCostUnavailable"] = "true" });
             return;
         }
@@ -3428,7 +3382,7 @@ public sealed partial class L12GameEngine
         player.Hand.Remove(discard);
         player.Graveyard.Add(discard);
         AddEvent("cost", prompt.PlayerIndex, $"始皇帝 嬴政弃置〈{discard.Name}〉作为登场时效果费用", discard);
-        PushEffect(prompt.PlayerIndex, source, "enter", "【登场时】效果",
+        QueueOrPushTriggeredEffect(prompt.PlayerIndex, source, "enter", "【登场时】效果",
             data: new Dictionary<string, string> { ["entryCostPaid"] = "true" });
         return CommandResult.Ok();
     }

@@ -158,12 +158,30 @@ public sealed partial class L12GameEngine
                 return true;
             case "坂本龙马":
             {
-                var choices = PublicLegions(player).Select(target => target.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return true; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-targets", "坂本龙马：选择我方最多2张军团进行任意位移", choices, 1, Math.Min(2, choices.Count - 1),
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ryoma-pick" });
-                return true;
+                var declaredTargets = PublicTriggerDeclared(item, "moveTargets")
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (declaredTargets.Length > 0)
+                {
+                    var destinations = new[] { PublicTriggerDeclared(item, "moveSlot1"), PublicTriggerDeclared(item, "moveSlot2") };
+                    if (declaredTargets.Length == 2
+                        && FindOnField(player, declaredTargets[0], out var firstRow, out var firstSlot) is { Tapped: true } first
+                        && FindOnField(player, declaredTargets[1], out var secondRow, out var secondSlot) is { Tapped: true } second
+                        && destinations[0] == $"{secondRow}:{secondSlot}" && destinations[1] == $"{firstRow}:{firstSlot}")
+                    {
+                        player.Field[firstRow][firstSlot] = second;
+                        player.Field[secondRow][secondSlot] = first;
+                        first.LastMovedTurn = State.TurnSerial;
+                        second.LastMovedTurn = State.TurnSerial;
+                        RecordLegionMovement(item.Controller, first, firstRow, secondRow);
+                        RecordLegionMovement(item.Controller, second, secondRow, firstRow);
+                        AddEvent("move", item.Controller, $"坂本龙马使{first.Name}与{second.Name}互换阵地", first, second);
+                        FinishStackItem(item); return true;
+                    }
+                    for (var index = 0; index < declaredTargets.Length; index++)
+                        MoveOwnCardToSlot(player, declaredTargets[index], destinations[index]);
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             }
             case "高杉晋作":
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "高杉晋作效果抽牌时牌库为空"); FinishStackItem(item); return true; }
@@ -485,13 +503,6 @@ public sealed partial class L12GameEngine
                 if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller);
                 FinishStackItem(item); return true;
             }
-            case "ryoma-pick":
-                item.Data["ryoma-units"] = string.Join('|', chosen.Where(id => id != "skip"));
-                item.Data["ryoma-index"] = "0";
-                ContinueRyomaMove(item);
-                return true;
-            case "ryoma-slot":
-                CompleteRyomaMove(item, chosen[0]); return true;
             case "ryoma-summon-card":
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
                 item.Data["ryoma-summon"] = chosen[0];
@@ -604,32 +615,10 @@ public sealed partial class L12GameEngine
                 if (target is not null) AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 FinishStackItem(item); return true;
             }
-            case "regency-card":
-                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
-                item.Data["regency-card"] = chosen[0];
-                var regencyCard = player.Hand.FirstOrDefault(card => card.InstanceId == chosen[0]);
-                if (regencyCard is null) { FinishStackItem(item); return true; }
-                PromptEffectEntryDestination(item, regencyCard, "regency-slot", "摄政皇权：选择活跃登场的位置");
-                return true;
-            case "regency-slot":
-                SummonFromHand(player, item.Data["regency-card"], chosen[0], tapped: false,
-                    EffectEntryTargetPlayer(item, player.PlayerIndex));
-                FinishStackItem(item); return true;
             case "blood-eagle-pick":
             {
                 var handCard = player.Graveyard.First(card => card.InstanceId == chosen[0]); var bottomCard = player.Graveyard.First(card => card.InstanceId == chosen[1]);
                 player.Graveyard.Remove(handCard); AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌"); player.Graveyard.Remove(bottomCard); player.Library.Add(bottomCard);
-                FinishStackItem(item); return true;
-            }
-            case "kaba-summon":
-                if (chosen[0] == "no" || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
-                item.Data["kaba-card"] = item.SourceInstanceId;
-                CreatePrompt(item.Controller, "slot", "锡瓦的卡巴：选择活跃登场的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "kaba-slot" }); return true;
-            case "kaba-slot":
-            {
-                SummonFromHand(player, item.Data["kaba-card"], chosen[0], false);
-                var morale = player.Morale.FirstOrDefault(card => card.Tapped); if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
                 FinishStackItem(item); return true;
             }
             case "wisdom-discard":
@@ -843,55 +832,6 @@ public sealed partial class L12GameEngine
         card.Troops += troops; card.CostModifier += cost;
     }
 
-    private void ContinueRyomaMove(L12StackItem item)
-    {
-        var ids = item.Data["ryoma-units"].Split('|', StringSplitOptions.RemoveEmptyEntries);
-        var index = int.Parse(item.Data["ryoma-index"]);
-        if (index >= ids.Length) { FinishStackItem(item); return; }
-        var player = State.Players[item.Controller];
-        var target = FindOnField(player, ids[index], out _, out _);
-        if (target is null) { item.Data["ryoma-index"] = (index + 1).ToString(); ContinueRyomaMove(item); return; }
-        item.Data["ryoma-current"] = target.InstanceId;
-        var choices = EmptySlots(player).ToList();
-        // FAQ：两张被选择的休整军团可以直接互换位置。把另一张已选休整军团所在阵地
-        // 作为合法目标；提交时原子交换，避免先后移动造成中间态位置冲突。
-        foreach (var otherId in ids.Where(id => id != target.InstanceId))
-        {
-            var other = FindOnField(player, otherId, out var otherRow, out var otherSlot);
-            if (target.Tapped && other is { Tapped: true }) choices.Add($"{otherRow}:{otherSlot}");
-        }
-        CreatePrompt(item.Controller, "slot", $"坂本龙马：选择{target.Name}任意位移后的阵地", choices.Distinct(), 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ryoma-slot" });
-    }
-
-    private void CompleteRyomaMove(L12StackItem item, string slotChoice)
-    {
-        var player = State.Players[item.Controller];
-        var target = FindOnField(player, item.Data["ryoma-current"], out var row, out var slot);
-        if (target is not null)
-        {
-            var (nextRow, nextSlot) = ParseSlot(slotChoice);
-            var occupant = player.Field[nextRow][nextSlot];
-            var selected = item.Data["ryoma-units"].Split('|', StringSplitOptions.RemoveEmptyEntries)
-                .Contains(occupant?.InstanceId, StringComparer.Ordinal);
-            if (occupant is not null && selected && target.Tapped && occupant.Tapped)
-            {
-                player.Field[row][slot] = occupant;
-                player.Field[nextRow][nextSlot] = target;
-                target.LastMovedTurn = State.TurnSerial;
-                occupant.LastMovedTurn = State.TurnSerial;
-                RecordLegionMovement(item.Controller, target, row, nextRow);
-                RecordLegionMovement(item.Controller, occupant, nextRow, row);
-                AddEvent("move", item.Controller, $"坂本龙马使{target.Name}与{occupant.Name}互换阵地", target, occupant);
-                FinishStackItem(item);
-                return;
-            }
-            player.Field[row][slot] = null; player.Field[nextRow][nextSlot] = target; target.LastMovedTurn = State.TurnSerial;
-            RecordLegionMovement(item.Controller, target, row, nextRow);
-        }
-        item.Data["ryoma-index"] = (int.Parse(item.Data["ryoma-index"]) + 1).ToString(); ContinueRyomaMove(item);
-    }
-
     private void ContinueOrdersMove(L12StackItem item)
     {
         var ids = item.Data["orders-units"].Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -983,63 +923,6 @@ public sealed partial class L12GameEngine
                 ? playerIndex
                 : null;
 
-    private void PromptEffectEntryDestination(L12StackItem item, L12CardInstance card, string nextAction, string text)
-    {
-        var battlefields = EffectEntryBattlefieldChoices(item.Controller, card).ToArray();
-        if (battlefields.Length == 0) { FinishStackItem(item); return; }
-        if (battlefields.Length == 1)
-        {
-            item.Data["effect-entry-target-player"] = battlefields[0].ToString();
-            CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[battlefields[0]]), 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                {
-                    ["action"] = nextAction,
-                    ["targetPlayerIndex"] = battlefields[0].ToString(),
-                });
-            return;
-        }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "effect-entry-battlefield",
-            ["nextAction"] = nextAction,
-            ["entryText"] = text,
-        };
-        foreach (var battlefield in battlefields)
-            data[EffectEntryBattlefieldChoice(battlefield)] = $"{State.Players[battlefield].Name}的战场";
-        CreatePrompt(item.Controller, "option", $"{card.Name}：选择登场的战场",
-            battlefields.Select(EffectEntryBattlefieldChoice), 1, 1, "card-effect", item.StackItemId, data: data);
-    }
-
-    private void ContinueEffectEntryBattlefield(L12StackItem item, L12Prompt prompt, string choice)
-    {
-        var targetPlayer = ParseEffectEntryBattlefieldChoice(choice);
-        var card = item.Data.TryGetValue("regency-card", out var regencyCard)
-            ? State.Players[item.Controller].Hand.FirstOrDefault(candidate => candidate.InstanceId == regencyCard)
-            : null;
-        if (targetPlayer is null || card is null
-            || !EffectEntryBattlefieldChoices(item.Controller, card).Contains(targetPlayer.Value))
-        {
-            FinishStackItem(item);
-            return;
-        }
-        item.Data["effect-entry-target-player"] = targetPlayer.Value.ToString();
-        var nextAction = prompt.Data.GetValueOrDefault("nextAction") ?? string.Empty;
-        if (string.IsNullOrEmpty(nextAction)) { FinishStackItem(item); return; }
-        CreatePrompt(item.Controller, "slot", prompt.Data.GetValueOrDefault("entryText") ?? "选择登场的位置",
-            EmptySlots(State.Players[targetPlayer.Value]), 1, 1, "card-effect", item.StackItemId,
-            data: new Dictionary<string, string>
-            {
-                ["action"] = nextAction,
-                ["targetPlayerIndex"] = targetPlayer.Value.ToString(),
-            });
-    }
-
-    private static int EffectEntryTargetPlayer(L12StackItem item, int fallback)
-        => item.Data.TryGetValue("effect-entry-target-player", out var text)
-            && int.TryParse(text, out var playerIndex) && playerIndex is >= 0 and <= 1
-                ? playerIndex
-                : fallback;
-
     private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped, int? targetPlayerIndex = null)
     {
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId); if (card is null) return;
@@ -1051,7 +934,8 @@ public sealed partial class L12GameEngine
         State.Players[battlefield].Field[row][slot] = card;
         AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         ApplyDisasterLevelOnEntry(battlefield, card, deferTriggerUntilStackSettles: true);
-        if (HasImmediateEffect(card, "enter")) PushEffect(battlefield, card, "enter", "【登场时】效果");
+        if (HasImmediateEffect(card, "enter"))
+            QueueOrPushTriggeredEffect(battlefield, card, "enter", "【登场时】效果");
         QueueS2GrailRoundTableEntry(battlefield, card);
     }
 
@@ -1154,13 +1038,15 @@ public sealed partial class L12GameEngine
                 return;
             case "摄政皇权":
             {
-                var choices = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 3
-                    && EffectEntryBattlefieldChoices(item.Controller, card).Any()).Select(card => card.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "摄政皇权：可将手牌1张费用不高于3的军团活跃登场", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "regency-card" });
-                return;
+                var declaredCard = PublicTriggerDeclared(item, "entryCard");
+                if (!string.IsNullOrWhiteSpace(declaredCard))
+                {
+                    var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
+                        ?? item.Controller;
+                    SummonFromHand(player, declaredCard, PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield);
+                    FinishStackItem(item); return;
+                }
+                FinishStackItem(item); return;
             }
             case "复仇血鹰":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
@@ -1174,15 +1060,26 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "cards", "复仇血鹰：选择墓地2张【阿斯加德】卡牌", asgard, 2, 2, "card-effect", item.StackItemId,
                     data: new Dictionary<string, string> { ["action"] = "blood-eagle-pick" }); return;
             case "锡瓦的卡巴":
-                CreatePrompt(item.Controller, "optional", "锡瓦的卡巴：是否从手牌无需费用活跃登场？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kaba-summon" }); return;
+                if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entrySlot")))
+                {
+                    SummonFromHand(player, item.SourceInstanceId, PublicTriggerDeclared(item, "entrySlot"), false);
+                    var lockedMorale = player.Morale.FirstOrDefault(card => card.Tapped);
+                    if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
+                    FinishStackItem(item); return;
+                }
+                FinishStackItem(item); return;
             case "不朽之礼":
                 if (!Draw(player, 1)) { FinishStackItem(item); return; }
-                var guard = player.Graveyard.FirstOrDefault(card => card.CardId == "S01-0212");
-                if (guard is not null && EmptySlots(player).Any())
-                    BeginQueuedSummons(item, [guard.InstanceId], false, "不朽之礼：选择陵墓守卫活跃登场的位置");
-                else FinishStackItem(item);
-                return;
+                var declaredGuard = PublicTriggerDeclared(item, "entryCard");
+                if (!string.IsNullOrWhiteSpace(declaredGuard) && declaredGuard != "mode:none"
+                    && player.Graveyard.Any(card => card.InstanceId == declaredGuard && card.CardId == "S01-0212")
+                    && EmptySlots(player).Contains(PublicTriggerDeclared(item, "entrySlot"), StringComparer.OrdinalIgnoreCase))
+                {
+                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"), false);
+                    FinishStackItem(item); return;
+                }
+                if (item.Data.ContainsKey("declared:entryCard")) { FinishStackItem(item); return; }
+                FinishStackItem(item); return;
             case "智慧法典 卷一":
             {
                 var opponent = State.Players[1 - item.Controller];

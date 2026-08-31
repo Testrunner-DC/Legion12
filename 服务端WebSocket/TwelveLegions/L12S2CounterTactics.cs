@@ -139,13 +139,13 @@ public sealed partial class L12GameEngine
         }
         var data = new Dictionary<string, string>
         {
-            ["action"] = "s2-cosmos-yin-target",
             ["bonusTroops"] = revealed.Troops.ToString(),
             ["bonusCost"] = revealed.CurrentCost.ToString(),
         };
         foreach (var card in PublicLegions(player)) AddPromptCardData(data, card);
-        CreatePrompt(item.Controller, "field-legion", "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
-            choices, 1, 1, "card-effect", item.StackItemId, isPrivate: true, data: data);
+        CreateDelayedPublicResolutionPrompt(item, "field-legion",
+            "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
+            choices, "s2-cosmos-yin-target", data);
     }
 
     private L12StackItem? TargetAuthorityStackItem(L12StackItem response)

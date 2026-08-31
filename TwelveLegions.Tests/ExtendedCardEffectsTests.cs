@@ -423,13 +423,15 @@ public sealed class ExtendedCardEffectsTests
         PassResponses(game);
 
         var guardPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("medjed-damage-response", guardPrompt.Data["action"]);
-        var guardId = guardPrompt.ValidChoices.First(id => id != "skip");
+        Assert.Equal("pending-activation", guardPrompt.Continuation);
+        var guardId = guardPrompt.ValidChoices.First(id => id is not ("skip" or "mode:none"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId, Choice: guardId)).Accepted);
         var slotPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("slot", slotPrompt.Kind);
+        Assert.Equal("pending-activation", slotPrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
             Choice: slotPrompt.ValidChoices[0])).Accepted);
+        PassResponses(game);
         Assert.Contains(defender.Field.SelectMany(row => row), card => card?.InstanceId == guardId && !card.Tapped);
     }
 
@@ -651,11 +653,20 @@ public sealed class ExtendedCardEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", ay.InstanceId, Row: 0, Slot: 0)).Accepted);
         PassResponses(game);
+        var guard = player.Graveyard.First(card => card.CardId == "S01-0212");
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Contains(guard.InstanceId, declaration.ValidChoices);
+        Assert.Empty(game.State.EffectStack);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: guard.InstanceId)).Accepted);
+
         var placement = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("queued-summon-slot", placement.Data["action"]);
+        Assert.Equal("pending-activation", placement.Continuation);
         Assert.Contains("阿伊", placement.Text);
-        var chosenSlot = placement.ValidChoices.Last();
+        var chosenSlot = placement.ValidChoices.Last(choice => choice != "skip");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: placement.PromptId, Choice: chosenSlot)).Accepted);
+        PassResponses(game);
 
         var parts = chosenSlot.Split(':');
         var row = int.Parse(parts[0]);

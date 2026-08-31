@@ -332,16 +332,38 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-ring-draw", ["yes"] = "抽取1张牌", ["no"] = "不发动" });
                 return true;
             case "tsukuyomiFollowMove" when item.SourceCardId == "S02-04M1":
-                CreatePrompt(item.Controller, "optional", "月读：是否消耗1士气，使另一张活跃军团进行1格位移？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-tsukuyomi-pay", ["yes"] = "消耗1士气并位移另一张军团", ["no"] = "不发动" });
+            {
+                var targetId = PublicTriggerDeclared(item, "target");
+                var destination = PublicTriggerDeclared(item, "slot");
+                var legion = FindOnField(player, targetId, out var oldRow, out var oldSlot);
+                if (legion is not null && !legion.Tapped
+                    && legion.InstanceId != item.Data.GetValueOrDefault("moved")
+                    && AdjacentEmptySlots(player, oldRow, oldSlot).Contains(destination, StringComparer.OrdinalIgnoreCase))
+                {
+                    var (newRow, newSlot) = ParseSlot(destination);
+                    player.Field[oldRow][oldSlot] = null;
+                    player.Field[newRow][newSlot] = legion;
+                    legion.LastMovedTurn = State.TurnSerial;
+                    AddTimedModifier(legion, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读");
+                    AddEvent("move", item.Controller, $"月读使〈{legion.Name}〉位移1格", legion);
+                    RecordLegionMovement(item.Controller, legion, oldRow, newRow);
+                }
+                else
+                    AddEvent("effect-cancelled", item.Controller, "月读的公开位移目标或位置已失效；已支付费用不回滚");
+                FinishStackItem(item);
                 return true;
+            }
             case "tsukuyomiReadyMorale" when item.SourceCardId == "S02-04M1":
             {
-                var choices = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target-morale", "月读：选择1张休整士气转为活跃", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-tsukuyomi-ready" });
+                var morale = player.Morale.FirstOrDefault(card => card.InstanceId == PublicTriggerDeclared(item, "morale") && card.Tapped);
+                if (morale is not null)
+                {
+                    morale.Tapped = false;
+                    AddEvent("morale", item.Controller, "月读使选择的休整士气转为活跃");
+                }
+                else
+                    AddEvent("effect-cancelled", item.Controller, "月读声明的休整士气已失效；本段取消");
+                FinishStackItem(item);
                 return true;
             }
             default:
@@ -356,48 +378,31 @@ public sealed partial class L12GameEngine
         var host = int.TryParse(item.Data.GetValueOrDefault("attacker"), out var attacker) && attacker is >= 0 and <= 1
             ? State.Players[attacker]
             : State.Players[1 - item.Controller];
-        if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Any()) { FinishStackItem(item); return; }
-        CreatePrompt(item.Controller, "optional", "特洛伊木马：是否置入对方战场任意空位？", ["yes", "no"], 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string>
-            {
-                ["action"] = "s2-trojan-confirm", ["yes"] = "置入对方战场", ["no"] = "不发动",
-            });
+        var destination = PublicTriggerDeclared(item, "slot");
+        if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
+        {
+            AddEvent("effect-cancelled", item.Controller, "特洛伊木马声明的来源或置入位置已失效；本段取消");
+            FinishStackItem(item);
+            return;
+        }
+        var resolvedHorse = horse!;
+        _ = FindOnField(owner, resolvedHorse.InstanceId, out var sourceRow, out var sourceSlot);
+        var (row, slot) = ParseSlot(destination);
+        owner.Field[sourceRow][sourceSlot] = null;
+        resolvedHorse.OwnerIndex = item.Controller;
+        resolvedHorse.Hidden = false;
+        resolvedHorse.SetRound = State.Round;
+        resolvedHorse.DiscardAtEndOfTurnUntilTurn = ExpiryAtNextOwnEnd(item.Controller);
+        host.Field[row][slot] = resolvedHorse;
+        AddEvent("put", item.Controller, $"{resolvedHorse.Name}置入{host.Name}战场，直到下个我方回合结束", resolvedHorse);
+        RecalculateContinuousTroops();
+        FinishStackItem(item);
     }
 
     private bool TryContinueS2RemainingEffect(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
-            case "s2-trojan-confirm":
-            {
-                if (chosen[0] != "yes") { FinishStackItem(item); return true; }
-                var host = State.Players[1 - item.Controller];
-                CreatePrompt(item.Controller, "enemy-slot", "特洛伊木马：选择置入对方战场的空位", EmptySlots(host), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-trojan-slot" });
-                return true;
-            }
-            case "s2-trojan-slot":
-            {
-                var owner = State.Players[item.Controller];
-                var host = State.Players[1 - item.Controller];
-                var horse = FindOnField(owner, item.SourceInstanceId, out var sourceRow, out var sourceSlot);
-                if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Contains(chosen[0]))
-                {
-                    FinishStackItem(item); return true;
-                }
-                var resolvedHorse = horse!;
-                var (row, slot) = ParseSlot(chosen[0]);
-                owner.Field[sourceRow][sourceSlot] = null;
-                resolvedHorse.OwnerIndex = item.Controller;
-                resolvedHorse.Hidden = false;
-                resolvedHorse.SetRound = State.Round;
-                resolvedHorse.DiscardAtEndOfTurnUntilTurn = ExpiryAtNextOwnEnd(item.Controller);
-                host.Field[row][slot] = resolvedHorse;
-                AddEvent("put", item.Controller, $"{resolvedHorse.Name}置入{host.Name}战场，直到下个我方回合结束", resolvedHorse);
-                RecalculateContinuousTroops();
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-angus-trial":
                 if (chosen[0] == "yes") AdvanceTrial(item.Controller, 1, CreateCard("S02-06M2", $"master-{item.Controller}"));
                 FinishStackItem(item); return true;
@@ -418,58 +423,6 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "yes" && !Draw(State.Players[item.Controller], 1))
                     SetWinner(1 - item.Controller, "〈安德华拉诺特〉效果抽牌时牌库为空");
                 FinishStackItem(item); return true;
-            case "s2-tsukuyomi-pay":
-            {
-                var player = State.Players[item.Controller];
-                if (chosen[0] != "yes" || !TryConsumeMorale(player, 1)) { FinishStackItem(item); return true; }
-                player.UsedAbilities.Add($"active:master-{item.Controller}:tsukuyomiFollowMove");
-                var targets = PublicLegions(player).Where(card => !card.Tapped && card.InstanceId != item.Data.GetValueOrDefault("moved")
-                    && FindOnField(player, card.InstanceId, out var row, out var slot) is not null && AdjacentEmptySlots(player, row, slot).Any())
-                    .Select(card => card.InstanceId).ToList();
-                if (targets.Count == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "field-legion", "月读：选择另一张活跃军团进行1格位移", targets, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-tsukuyomi-target" });
-                return true;
-            }
-            case "s2-tsukuyomi-target":
-            {
-                var player = State.Players[item.Controller];
-                var legion = FindOnField(player, chosen[0], out var row, out var slot);
-                if (legion is null) { FinishStackItem(item); return true; }
-                item.Data["follow"] = legion.InstanceId;
-                CreatePrompt(item.Controller, "slot", "月读：选择该军团位移后的相邻空位", AdjacentEmptySlots(player, row, slot), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-tsukuyomi-slot" });
-                return true;
-            }
-            case "s2-tsukuyomi-slot":
-            {
-                var player = State.Players[item.Controller];
-                var legion = FindOnField(player, item.Data["follow"], out var oldRow, out var oldSlot);
-                if (legion is not null)
-                {
-                    var (newRow, newSlot) = ParseSlot(chosen[0]);
-                    if (AdjacentEmptySlots(player, oldRow, oldSlot).Contains(chosen[0]))
-                    {
-                        player.Field[oldRow][oldSlot] = null; player.Field[newRow][newSlot] = legion;
-                        legion.LastMovedTurn = State.TurnSerial;
-                        AddTimedModifier(legion, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读");
-                        AddEvent("move", item.Controller, $"月读使〈{legion.Name}〉位移1格", legion);
-                        RecordLegionMovement(item.Controller, legion, oldRow, newRow);
-                    }
-                }
-                FinishStackItem(item); return true;
-            }
-            case "s2-tsukuyomi-ready":
-            {
-                var morale = State.Players[item.Controller].Morale.FirstOrDefault(card => card.InstanceId == chosen[0] && card.Tapped);
-                if (morale is not null)
-                {
-                    morale.Tapped = false;
-                    AddEvent("morale", item.Controller, "月读使选择的休整士气转为活跃");
-                }
-                FinishStackItem(item);
-                return true;
-            }
             default:
                 return false;
         }

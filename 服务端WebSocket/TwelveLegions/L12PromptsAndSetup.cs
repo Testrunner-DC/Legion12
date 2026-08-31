@@ -1019,7 +1019,7 @@ public sealed partial class L12GameEngine
             CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!);
             return;
         }
-        if (response.CardId is "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018")
+        if (response.CardId is "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106")
         {
             CommitS2CounterResponse(playerIndex, response, prompt.StackItemId!);
             return;
@@ -1225,7 +1225,7 @@ public sealed partial class L12GameEngine
         State.PendingDefense.Target = new L12AttackTarget("legion", card.InstanceId);
         AddEvent("enter", item.Controller, $"{card.Name} 从手牌休整登场于前排，并成为本次进攻目标", card);
         if (HasImmediateEffect(card, "enter"))
-            PushEffect(item.Controller, card, "enter", "【登场时】效果");
+            QueueOrPushTriggeredEffect(item.Controller, card, "enter", "【登场时】效果");
         QueueS2GrailRoundTableEntry(item.Controller, card);
         FinishStackItem(item);
     }

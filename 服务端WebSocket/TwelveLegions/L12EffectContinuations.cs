@@ -28,7 +28,6 @@ public sealed partial class L12GameEngine
         }
         switch (action)
         {
-            case "effect-entry-battlefield": ContinueEffectEntryBattlefield(item, prompt, chosen[0]); break;
             case "effect-morale-payment": ContinueEffectMoralePayment(item, prompt, chosen); break;
             case "effect-morale-return": ContinueEffectMoraleReturn(item, prompt, chosen); break;
             case "lubu-kill":
@@ -124,8 +123,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); break;
             case "lijing-choice": ContinueLiJingChoice(item, chosen[0]); break;
             case "lijing-slot": CompleteLiJingRecruit(item, chosen[0]); break;
-            case "liubei-card": ContinueLiuBeiCard(item, chosen[0]); break;
-            case "liubei-slot": CompleteLiuBeiEnter(item, chosen[0]); break;
             case "reorder-order":
                 if (command.TopCardInstanceIds is not null || command.BottomCardInstanceIds is not null)
                     CompleteTopDeckReorderDirect(item, command.TopCardInstanceIds ?? [], command.BottomCardInstanceIds ?? []);
@@ -244,31 +241,15 @@ public sealed partial class L12GameEngine
     private void BeginLiuBeiEnter(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        var choices = player.Hand.Where(card => card.CardId is "S01-0106" or "S01-0107")
-            .Select(card => card.InstanceId).ToList();
-        if (!CanReturnMorale(player, 1) || choices.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return; }
-        choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "可返还 1 张士气：选择手牌中 1 张〈关羽〉或〈张飞〉活跃登场", choices, 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "liubei-card" });
-    }
-
-    private void ContinueLiuBeiCard(L12StackItem item, string choice)
-    {
-        if (choice == "skip") { FinishStackItem(item); return; }
-        BeginEffectMoraleReturn(item, 1, "liubei-summon", new() { ["card"] = choice });
-    }
-
-    private void CompleteLiuBeiEnter(L12StackItem item, string slotChoice)
-    {
-        var player = State.Players[item.Controller];
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.Data["summon"]);
-        if (card is null) { FinishStackItem(item); return; }
-        var (row, slot) = ParseSlot(slotChoice);
-        player.Hand.Remove(card); card.SummonRound = State.Round; player.Field[row][slot] = card;
-        AddEvent("put", item.Controller, $"刘备使 {card.Name} 活跃登场", card);
-        ApplyDisasterLevelOnEntry(item.Controller, card, deferTriggerUntilStackSettles: true);
-        if (HasImmediateEffect(card, "enter")) PushEffect(item.Controller, card, "enter", "【登场时】效果");
-        QueueS2GrailRoundTableEntry(item.Controller, card);
+        if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entryCard")))
+        {
+            var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
+                ?? item.Controller;
+            SummonFromHand(player, PublicTriggerDeclared(item, "entryCard"),
+                PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield);
+            FinishStackItem(item);
+            return;
+        }
         FinishStackItem(item);
     }
 

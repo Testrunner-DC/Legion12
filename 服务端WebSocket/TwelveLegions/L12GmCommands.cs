@@ -195,7 +195,8 @@ public sealed partial class L12GameEngine
         {
             var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
             if (HasImmediateEffect(card, trigger))
-                PushEffect(command.TargetPlayer, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果");
+                QueueOrPushTriggeredEffect(command.TargetPlayer, card, trigger,
+                    trigger == "enter" ? "【登场时】效果" : "战术效果");
             else if (player.Resolving.Remove(card))
             {
                 ResetCardAfterLeavingField(card);

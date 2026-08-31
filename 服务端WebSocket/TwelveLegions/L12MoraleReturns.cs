@@ -225,14 +225,6 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: promptData);
                 break;
             }
-            case "liubei-summon":
-            {
-                if (data.GetValueOrDefault("card") is not { Length: > 0 } summon) { FinishStackItem(item); break; }
-                item.Data["summon"] = summon;
-                CreatePrompt(item.Controller, "slot", "选择活跃登场位置", EmptySlots(player), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "liubei-slot" });
-                break;
-            }
             case "lubu-ready":
                 if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃");
                 FinishStackItem(item);

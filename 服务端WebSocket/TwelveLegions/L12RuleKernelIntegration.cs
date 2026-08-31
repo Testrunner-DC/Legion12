@@ -60,6 +60,8 @@ public sealed partial class L12GameEngine
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
             DeclarationKey = step.DeclarationKey,
             ReferenceDeclarationKey = step.ReferenceDeclarationKey,
+            MinimumReferenceCount = step.MinimumReferenceCount,
+            ReferenceChoiceIndex = step.ReferenceChoiceIndex,
             SkipWhenReferenceIsNone = step.SkipWhenReferenceIsNone,
             CostThreshold = step.CostThreshold,
         }).ToList();
@@ -107,6 +109,13 @@ public sealed partial class L12GameEngine
                 && pendingStep.ReferenceDeclarationKey is { } referenceKey
                 && activation.DeclaredValues.GetValueOrDefault(referenceKey, [])
                     .SingleOrDefault()?.Equals("mode:none", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                activation.CurrentStep++;
+                continue;
+            }
+            if (pendingStep.MinimumReferenceCount > 0
+                && pendingStep.ReferenceDeclarationKey is { } countedReference
+                && activation.DeclaredValues.GetValueOrDefault(countedReference, []).Count < pendingStep.MinimumReferenceCount)
             {
                 activation.CurrentStep++;
                 continue;
@@ -176,6 +185,42 @@ public sealed partial class L12GameEngine
             if (step.ValidChoices.Count < step.MinChoose)
             {
                 RejectPendingActivation(activation, "可用战场位置不足，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
+        else if (step.Kind == "public-move-slot")
+        {
+            var player = State.Players[activation.Controller];
+            var movingIds = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []) : [];
+            var choices = EmptySlots(player).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (step.ReferenceChoiceIndex == 0 && movingIds.Count == 2
+                && FindOnField(player, movingIds[0], out _, out _) is { Tapped: true }
+                && FindOnField(player, movingIds[1], out var swapRow, out var swapSlot) is { Tapped: true })
+                choices.Add($"{swapRow}:{swapSlot}");
+            if (step.ReferenceChoiceIndex == 1 && movingIds.Count == 2
+                && FindOnField(player, movingIds[0], out var firstRow, out var firstSlot) is { Tapped: true }
+                && FindOnField(player, movingIds[1], out var secondRow, out var secondSlot) is { Tapped: true }
+                && activation.DeclaredValues.GetValueOrDefault("moveSlot1", []).SingleOrDefault() == $"{secondRow}:{secondSlot}")
+            {
+                choices.Clear();
+                choices.Add($"{firstRow}:{firstSlot}");
+            }
+            for (var index = 0; index < step.ReferenceChoiceIndex && index < movingIds.Count; index++)
+            {
+                if (FindOnField(player, movingIds[index], out var originRow, out var originSlot) is not null)
+                    choices.Add($"{originRow}:{originSlot}");
+                var priorDestination = activation.DeclaredValues.GetValueOrDefault($"moveSlot{index + 1}", [])
+                    .SingleOrDefault();
+                if (priorDestination is not null
+                    && !(step.ReferenceChoiceIndex == 1 && choices.Count == 1)) choices.Remove(priorDestination);
+            }
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "公开位移没有足够的合法位置；效果未入栈");
                 return;
             }
             promptKind = "slot";
@@ -391,6 +436,20 @@ public sealed partial class L12GameEngine
             ["activationId"] = activation.ActivationId,
             ["activationStep"] = activation.CurrentStep.ToString(),
         };
+        if (activation.Ability == "public-trigger-declaration")
+        {
+            var triggerSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
+                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+            var referencedCardId = step.ReferenceDeclarationKey is { } previewReferenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(previewReferenceKey, []).FirstOrDefault()
+                : null;
+            var previewCard = referencedCardId is null
+                || referencedCardId.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)
+                ? triggerSource
+                : FindPromptCard(activation.Controller, referencedCardId) ?? triggerSource;
+            promptData["previewCardId"] = previewCard.InstanceId;
+            AddPromptCardData(promptData, previewCard);
+        }
         if (targetPlayerIndex is not null) promptData["targetPlayerIndex"] = targetPlayerIndex.Value.ToString();
         CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
@@ -945,6 +1004,7 @@ public sealed partial class L12GameEngine
         var opponent = State.Players[1 - candidate.Controller];
         var source = FindPromptCard(candidate.Controller, candidate.SourceInstanceId)
             ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        if (TryBeginPublicTriggerDeclaration(candidate, source)) return true;
         var steps = new List<L12ActivationSelectionStep>();
         if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
         {
@@ -1133,6 +1193,7 @@ public sealed partial class L12GameEngine
     {
         var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
         if (candidate is null) { AdvanceTriggerBatches(); return; }
+        if (TryCompletePublicTriggerDeclaration(candidate, activation)) return;
         var declared = activation.DeclaredTargets.ToList();
         if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
         {

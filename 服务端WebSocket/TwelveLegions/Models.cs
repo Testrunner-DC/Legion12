@@ -435,6 +435,10 @@ public sealed class L12ActivationSelectionStep
     public string? DeclarationKey { get; init; }
     /// <summary>动态声明步读取哪一个已声明字段作为公开对象来源。</summary>
     public string? ReferenceDeclarationKey { get; init; }
+    /// <summary>引用列表至少达到此数量才执行本步；用于“最多选择多张对象”后逐个声明位置。</summary>
+    public int MinimumReferenceCount { get; init; }
+    /// <summary>本步对应引用列表中的第几个对象；用于公共多对象位移的逐一位置声明。</summary>
+    public int ReferenceChoiceIndex { get; init; }
     /// <summary>引用字段为 mode:none 时跳过本步；用于可选登场对象之后的战场/位置声明。</summary>
     public bool SkipWhenReferenceIsNone { get; init; }
     /// <summary>动态费用目标筛选阈值；只承载规则数值，不承载卡牌实例。</summary>

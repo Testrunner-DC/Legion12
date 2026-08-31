@@ -124,7 +124,7 @@ public sealed partial class L12GameEngine
                 {
                     if (L12StructuredCardRules.RequiresPreStackEnterCost(card))
                         BeginYingzhengEnterActivation(authorityEvent.ActorPlayer, card);
-                    else PushEffect(authorityEvent.ActorPlayer, card, "enter", "【登场时】效果");
+                    else QueueOrPushTriggeredEffect(authorityEvent.ActorPlayer, card, "enter", "【登场时】效果");
                 }
                 break;
             }

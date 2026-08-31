@@ -115,12 +115,26 @@ public sealed partial class L12GameEngine
             case "图坦卡蒙":
             {
                 if (PublicLegions(player).Count() >= PublicLegions(State.Players[1 - item.Controller]).Count()) { FinishStackItem(item); return true; }
-                var guards = player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").Select(candidate => candidate.InstanceId).Take(2).ToArray();
-                BeginQueuedSummons(item, guards, tapped: false, "图坦卡蒙：选择陵墓守卫活跃登场的位置"); return true;
+                var declaredGuards = PublicTriggerDeclared(item, "entryCards")
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (declaredGuards.Length > 0)
+                {
+                    var slots = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
+                    for (var index = 0; index < declaredGuards.Length; index++)
+                        if (EmptySlots(player).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
+                            SummonFromAnyPrivateZone(player, declaredGuards[index], slots[index], tapped: false);
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             }
             case "阿伊":
-                BeginQueuedSummons(item, player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").Take(1).Select(candidate => candidate.InstanceId), tapped: true,
-                    "阿伊：选择陵墓守卫休整登场的位置"); return true;
+                if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entryCard")))
+                {
+                    SummonFromAnyPrivateZone(player, PublicTriggerDeclared(item, "entryCard"),
+                        PublicTriggerDeclared(item, "entrySlot"), tapped: true);
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             case "纳芙蒂蒂":
                 if (State.Players[1 - item.Controller].Hand.Count >= 6)
                     PromptDiscard(item, 1 - item.Controller, 1, "纳芙蒂蒂：对方弃置1张手牌", "nefertiti-discard");
@@ -166,11 +180,13 @@ public sealed partial class L12GameEngine
                 Mill(player, 2, "贝奥武夫"); FinishStackItem(item); return true;
             case "布伦希尔德":
             {
-                var choices = player.Hand.Concat(player.Graveyard).Where(candidate => candidate.CardId == "S01-0310").Select(candidate => candidate.InstanceId).ToList();
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "布伦希尔德：可令主宰受到1点伤害，将手牌或墓地1张齐格鲁德活跃登场", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "brynhild-sigurd" });
-                return true;
+                if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entryCard")))
+                {
+                    SummonFromAnyPrivateZone(player, PublicTriggerDeclared(item, "entryCard"),
+                        PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             }
             case "神箭奥德尔":
                 CreatePrompt(item.Controller, "optional", "神箭奥德尔：是否令我方主宰受到1点伤害并抽1张牌？", ["yes", "no"], 1, 1,
@@ -232,7 +248,13 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-target", "美尼斯：可弃置我方战场1张军团，自身兵力+2000并获得强攻", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "menes-sacrifice" }); return true;
             }
-            case "萨拉丁": PromptOwnLegion(item, "saladin-move", "萨拉丁：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
+            case "萨拉丁":
+                if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "moveTarget")))
+                {
+                    MoveOwnCardToSlot(player, PublicTriggerDeclared(item, "moveTarget"), PublicTriggerDeclared(item, "moveSlot"));
+                    FinishStackItem(item); return true;
+                }
+                FinishStackItem(item); return true;
             case "阿伊":
                 if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional", "阿伊：是否消耗1士气，使我方前排1张低兵力军团本回合兵力+2000？", ["yes", "no"], 1, 1,
@@ -281,7 +303,7 @@ public sealed partial class L12GameEngine
                     if (selected.Length == 2) MoveOwnCardToSlot(player, selected[0], selected[1]);
                     FinishStackItem(item); return true;
                 }
-                PromptOwnLegion(item, "saladin-move", "萨拉丁阵亡：可选择我方1张陵墓守卫位移", target => target.CardId == "S01-0212", true); return true;
+                FinishStackItem(item); return true;
             case "图坦卡蒙":
             {
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
@@ -411,7 +433,7 @@ public sealed partial class L12GameEngine
                 {
                     var target = FindOnField(player, id, out _, out _);
                     if (target is null || !HasImmediateEffect(target, "enter")) continue;
-                    PushEffect(item.Controller, target, "enter", "拉美西斯二世再次发动的【登场时】效果",
+                    QueueOrPushTriggeredEffect(item.Controller, target, "enter", "拉美西斯二世再次发动的【登场时】效果",
                         data: inheritsCounterProtection
                             ? new Dictionary<string, string>
                             {
@@ -454,9 +476,6 @@ public sealed partial class L12GameEngine
             case "canopic-four":
                 foreach (var id in chosen.Where(id => id != "skip")) { var target = FindOnField(player, id, out _, out _); if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
-            case "brynhild-sigurd":
-                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
-                DamageMaster(item.Controller, 1, "布伦希尔德登场效果"); item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择齐格鲁德活跃登场的位置"); return true;
             case "oddr-draw": if (chosen[0] == "yes") { DamageMaster(item.Controller, 1, "神箭奥德尔登场效果"); Draw(player, 1); } FinishStackItem(item); return true;
             case "egil-pay":
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
@@ -486,8 +505,6 @@ public sealed partial class L12GameEngine
                     GrantStrongAttack(source);
                 }
                 FinishStackItem(item); return true;
-            case "saladin-move": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["saladin-unit"] = chosen[0]; CreatePrompt(item.Controller, "slot", "选择陵墓守卫位移后的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "saladin-slot" }); } return true;
-            case "saladin-slot": MoveOwnCardToSlot(player, item.Data["saladin-unit"], chosen[0]); FinishStackItem(item); return true;
             case "ay-buff": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "阿伊"); FinishStackItem(item); return true; }
             case "ay-pay":
                 if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "ay-buff"); else FinishStackItem(item); return true;
@@ -551,12 +568,6 @@ public sealed partial class L12GameEngine
             case "mengpo-silence": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
             case "sun-bottom": ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]); FinishStackItem(item); return true;
             case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); FinishStackItem(item); return true; }
-            case "medjed-damage-response":
-                player.UsedAbilities.Remove("pending:medjedDamageResponse");
-                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
-                player.UsedAbilities.Add("trigger:medjedDamageResponse");
-                BeginQueuedSummons(item, [chosen[0]], tapped: false, "梅杰德：选择〈陵墓守卫〉活跃登场的位置");
-                return true;
             default: return false;
         }
     }
@@ -1285,22 +1296,19 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         player.UsedAbilities.Remove("pending:medjedDamageResponse");
-        if (player.MasterId != "S01-02M3" || player.UsedAbilities.Contains("trigger:medjedDamageResponse"))
+        var guardId = PublicTriggerDeclared(item, "entryCard");
+        var destination = PublicTriggerDeclared(item, "entrySlot");
+        if (player.MasterId != "S01-02M3"
+            || !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
+            || !player.Graveyard.Any(card => card.InstanceId == guardId && card.CardId == "S01-0212")
+            || !EmptySlots(player).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
+            AddEvent("effect-cancelled", item.Controller, "梅杰德声明的陵墓守卫或登场位置已失效；本段取消");
             FinishStackItem(item);
             return;
         }
-        var choices = player.Graveyard.Where(card => card.CardId == "S01-0212")
-            .Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0 || !EmptySlots(player).Any())
-        {
-            FinishStackItem(item);
-            return;
-        }
-        choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "梅杰德：可将墓地1张〈陵墓守卫〉活跃登场",
-            choices, 1, 1, "card-effect", item.StackItemId, isPrivate: true,
-            data: new Dictionary<string, string> { ["action"] = "medjed-damage-response", ["choiceMode"] = "card-row" });
+        SummonFromAnyPrivateZone(player, guardId, destination, tapped: false);
+        FinishStackItem(item);
     }
 
     private void PromptNextQueuedSummon(L12StackItem item)
@@ -1550,7 +1558,8 @@ public sealed partial class L12GameEngine
         ApplyDisasterLevelOnEntry(player.PlayerIndex, card, deferTriggerUntilStackSettles: true);
         if (fromHand)
         {
-            if (HasImmediateEffect(card, "enter")) PushEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
+            if (HasImmediateEffect(card, "enter"))
+                QueueOrPushTriggeredEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
             QueueS2GrailRoundTableEntry(player.PlayerIndex, card);
         }
         else QueueNonHandEntry(player.PlayerIndex, card, fromLibrary ? "library" : "graveyard");

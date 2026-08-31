@@ -246,7 +246,8 @@ public sealed partial class L12GameEngine
                         && command.Target is { Type: "legion" }
                         ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
                         : null;
-                PushEffect(playerIndex, card, trigger, trigger == "enter" ? "【登场时】效果" : "战术效果", data: declaredData);
+                QueueOrPushTriggeredEffect(playerIndex, card, trigger,
+                    trigger == "enter" ? "【登场时】效果" : "战术效果", data: declaredData);
             }
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
         }
@@ -609,7 +610,7 @@ public sealed partial class L12GameEngine
                     CreateTriggerCandidate(playerIndex, attacker, "attack", "进攻方【进攻时】效果")
                 ]);
             else
-                PushEffect(playerIndex, attacker, "attack", "进攻方【进攻时】效果");
+                QueueOrPushTriggeredEffect(playerIndex, attacker, "attack", "进攻方【进攻时】效果");
         }
         else
             AdvanceCombatTimelineIfIdle();
