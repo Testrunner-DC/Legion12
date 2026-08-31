@@ -559,17 +559,56 @@ public sealed partial class L12GameEngine
             BeginS2FortuneSearch(item);
             return true;
         }
-        if (card.CardId == "S02-0406")
+        if (AtomicFlowKey(item, card) == "tenka-effect")
         {
-            CreatePrompt(item.Controller, "option", "天下布武：选择1项效果",
-                ["row-cost", "front-attack", "free-move"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-tenka-mode",
-                    ["row-cost"] = "选择对方1排所有军团，本回合费用-2",
-                    ["front-attack"] = "本回合我方前排所有【高天原】军团进攻时兵力+1000",
-                    ["free-move"] = "本回合我方所有活跃的【高天原】军团可免费进行1格位移",
-                });
+            var mode = CompositeDeclared(item, "mode").SingleOrDefault();
+            if (mode == "mode:row-cost")
+            {
+                var tenkaRow = CompositeDeclared(item, "row").SingleOrDefault() == "row:1" ? 1 : 0;
+                foreach (var target in State.Players[1 - item.Controller].Field[tenkaRow]
+                             .Where(target => target is not null && IsFieldLegion(target)).Cast<L12CardInstance>())
+                    AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "天下布武");
+                AddEvent("effect", item.Controller, $"天下布武：对方{(tenkaRow == 0 ? "前排" : "后排")}所有军团本回合费用-2", card);
+            }
+            else if (mode == "mode:front-attack")
+            {
+                player.UsedAbilities.Add($"s2-tenka-front-attack:{State.TurnSerial}");
+                AddEvent("effect", item.Controller, "天下布武：本回合我方前排【高天原】军团进攻时兵力+1000", card);
+            }
+            else
+            {
+                foreach (var legion in PublicLegions(player).Where(target => target.Faction == "gaotianyuan" && !target.Tapped))
+                    player.UsedAbilities.Add($"s2-tenka-free-move:{legion.InstanceId}:{State.TurnSerial}");
+                AddEvent("effect", item.Controller, "天下布武：本回合我方当前所有活跃【高天原】军团各可免费进行1格位移", card);
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (AtomicFlowKey(item, card) == "hela-curse")
+        {
+            var target = DeclaredEnemyTarget(item.Controller, CompositeDeclared(item, "curseTarget").SingleOrDefault());
+            if (target is null)
+                AddEvent("effect-cancelled", item.Controller, "海拉声明的军团目标已失效", card);
+            else
+                AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+            FinishStackItem(item);
+            return true;
+        }
+        if (AtomicFlowKey(item, card) == "fearless-assassination")
+        {
+            var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out var fearlessRow, out _);
+            if (target is null || fearlessRow != 0 || target.Faction != "taiyangcheng")
+                AddEvent("effect-cancelled", item.Controller, "无畏的刺杀声明的前排【太阳城】军团已失效", card);
+            else
+            {
+                var expiry = ExpiryAtNextOwnEnd(item.Controller);
+                AddTimedModifier(target, 3000, 0, expiry, "无畏的刺杀");
+                target.SureHitAgainstLegionsUntilTurn = Math.Max(target.SureHitAgainstLegionsUntilTurn, expiry);
+                target.CannotReadyByEffectUntilTurn = Math.Max(target.CannotReadyByEffectUntilTurn, expiry);
+                target.DiscardAtEndOfTurnUntilTurn = Math.Max(target.DiscardAtEndOfTurnUntilTurn, expiry);
+                AddEvent("effect", item.Controller, $"〈无畏的刺杀〉使{target.Name}本回合兵力+3000、获得必中", target);
+            }
+            FinishStackItem(item);
             return true;
         }
         if (AtomicFlowKey(item, card) == "nyx-primary")
@@ -650,23 +689,6 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, $"〈圆桌领域〉使{target.Name}本回合兵力+2000", card, target);
             }
             FinishStackItem(item);
-            return true;
-        }
-        if (card.CardId == "S02-0307")
-        {
-            if (player.Library.Count == 0) { FinishStackItem(item); return true; }
-            Mill(player, 1, card.Name);
-            PromptEnemyLegion(item, "s2-asgard-curse", "选择对方1张军团，本回合兵力-3000", _ => true, false);
-            return true;
-        }
-        if (card.CardId == "S02-0206")
-        {
-            var targets = player.Field[0].Where(candidate => candidate is not null && IsFieldLegion(candidate)
-                    && candidate.Faction == "taiyangcheng" && !candidate.Hidden)
-                .Select(candidate => candidate!.InstanceId).ToArray();
-            if (targets.Length == 0) { FinishStackItem(item); return true; }
-            CreatePrompt(item.Controller, "target", "无畏的刺杀：选择我方前排1张【太阳城】军团", targets, 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-fearless-assassination" });
             return true;
         }
         if (AtomicFlowKey(item, card) != "desert-transaction") return false;
@@ -2126,43 +2148,6 @@ public sealed partial class L12GameEngine
                     });
                 return true;
             }
-            case "s2-tenka-mode":
-            {
-                if (chosen[0] == "row-cost")
-                {
-                    CreatePrompt(item.Controller, "option", "天下布武：选择对方前排或后排",
-                        ["row:0", "row:1"], 1, 1, "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string>
-                        {
-                            ["action"] = "s2-tenka-row",
-                            ["row:0"] = "对方前排所有军团本回合费用-2",
-                            ["row:1"] = "对方后排所有军团本回合费用-2",
-                        });
-                    return true;
-                }
-                if (chosen[0] == "front-attack")
-                {
-                    player.UsedAbilities.Add($"s2-tenka-front-attack:{State.TurnSerial}");
-                    AddEvent("effect", item.Controller, "天下布武：本回合我方前排【高天原】军团进攻时兵力+1000", FindSource(item) is { } source ? [source] : []);
-                }
-                else
-                {
-                    foreach (var legion in PublicLegions(player).Where(card => card.Faction == "gaotianyuan" && !card.Tapped))
-                        player.UsedAbilities.Add($"s2-tenka-free-move:{legion.InstanceId}:{State.TurnSerial}");
-                    AddEvent("effect", item.Controller, "天下布武：本回合我方当前所有活跃【高天原】军团各可免费进行1格位移", FindSource(item) is { } source ? [source] : []);
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-tenka-row":
-            {
-                var row = chosen[0] == "row:1" ? 1 : 0;
-                foreach (var target in State.Players[1 - item.Controller].Field[row].Where(card => card is not null).Cast<L12CardInstance>())
-                    AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "天下布武");
-                AddEvent("effect", item.Controller, $"天下布武：对方{(row == 0 ? "前排" : "后排")}所有军团本回合费用-2", FindSource(item) is { } source ? [source] : []);
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-takeda-search":
             {
                 if (chosen[0] != "skip")
@@ -2731,14 +2716,6 @@ public sealed partial class L12GameEngine
                 MoveHandToGrave(player, chosen[0], causedByEffect: true);
                 FinishStackItem(item);
                 return true;
-            case "s2-asgard-curse":
-                if (chosen[0] != "skip")
-                {
-                    var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
-                    if (target is not null) AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "阿斯加德诅咒");
-                }
-                FinishStackItem(item);
-                return true;
             case "s2-mistletoe-debuff":
                 if (chosen[0] != "skip")
                 {
@@ -2855,20 +2832,6 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]);
                 FinishStackItem(item);
                 return true;
-            case "s2-fearless-assassination":
-            {
-                var target = FindOnField(player, chosen[0], out var row, out _);
-                if (target is not null && row == 0 && target.Faction == "taiyangcheng")
-                {
-                    AddTimedModifier(target, 3000, 0, ExpiryAtNextOwnEnd(item.Controller), "无畏的刺杀");
-                    target.SureHitAgainstLegionsUntilTurn = Math.Max(target.SureHitAgainstLegionsUntilTurn, ExpiryAtNextOwnEnd(item.Controller));
-                    target.CannotReadyByEffectUntilTurn = Math.Max(target.CannotReadyByEffectUntilTurn, ExpiryAtNextOwnEnd(item.Controller));
-                    target.DiscardAtEndOfTurnUntilTurn = Math.Max(target.DiscardAtEndOfTurnUntilTurn, ExpiryAtNextOwnEnd(item.Controller));
-                    AddEvent("effect", item.Controller, $"〈无畏的刺杀〉使{target.Name}本回合兵力+3000、获得必中", target);
-                }
-                FinishStackItem(item);
-                return true;
-            }
             default:
                 return TryContinueS2RemainingEffect(item, prompt, chosen);
         }

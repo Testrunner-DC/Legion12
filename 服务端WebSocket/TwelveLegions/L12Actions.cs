@@ -204,6 +204,8 @@ public sealed partial class L12GameEngine
             if (mistletoeRunes > 0) L12S2ZoneOps.SpendRunes(player, mistletoeRunes);
             player.Hand.Remove(card);
             player.Resolving.Add(card);
+            if (!TryCommitCompositePreStackCosts(playerIndex, card))
+                return CommandResult.Reject("海拉需要弃置牌库顶部1张牌作为发动费用");
         }
 
         ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: true);

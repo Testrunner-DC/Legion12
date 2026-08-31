@@ -12,6 +12,83 @@ public sealed partial class L12GameEngine
         var enemy = State.Players[1 - playerIndex];
         switch ((source.CardId, ability))
         {
+            case ("S01-03C1", "asgardDraw"):
+            {
+                var modes = new List<string> { "mode:none" };
+                if (player.Hp <= 5 && ActiveResourceCount(player) >= 3) modes.Add("mode:heal");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    PublicActiveStep("option", "mode",
+                        "阿斯加德阵营效果：预先声明是否额外消耗1士气并增加1点血量", modes),
+                ]);
+            }
+            case ("S01-04C1", "factionDrawMove"):
+            {
+                var movers = PublicLegions(player)
+                    .Where(card => !card.Tapped
+                        && FindOnField(player, card.InstanceId, out var row, out var slot) is not null
+                        && AdjacentEmptySlots(player, row, slot).Any())
+                    .Select(card => card.InstanceId).ToList();
+                var modes = movers.Count == 0
+                    ? new List<string> { "mode:none" }
+                    : ["mode:none", "mode:move"];
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    PublicActiveStep("option", "mode", "高天原阵营效果：预先声明抽牌后是否位移军团", modes),
+                    PublicActiveStep("active-target", "moveTarget",
+                        "高天原阵营效果：预先选择要位移的活跃军团", movers,
+                        requiredChoice: "mode:move"),
+                    PublicActiveStep("adjacent-slot", "moveSlot",
+                        "高天原阵营效果：预先选择军团位移后的相邻空位", ["dynamic"],
+                        referenceKey: "moveTarget", requiredChoice: "mode:move"),
+                ]);
+            }
+            case ("S01-02D1", "sunTopThree"):
+            {
+                var grave = player.Graveyard.Where(card => card.Faction == "taiyangcheng" && CanEnterHandOrLibrary(card))
+                    .Select(card => card.InstanceId).Prepend("mode:none").ToList();
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    PublicActiveStep("optional-card", "graveCard",
+                        "众神之乡：预先声明牌顶处理后加入手牌的墓地【太阳城】卡牌，或不选择", grave),
+                ]);
+            }
+            case ("S01-02M1", "isisCanopic"):
+            {
+                var guards = PublicLegions(player).Where(card => card.CardId == "S01-0212")
+                    .Select(card => card.InstanceId).ToList();
+                if (guards.Count < 3) return CommandResult.Reject("战场需要3张陵墓守卫");
+                var completedIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var canopics = player.Graveyard.Where(card => card.Name.Contains("卡诺匹斯", StringComparison.Ordinal)
+                        && card.CardType == "artifact" && !completedIds.Contains(card.CardId))
+                    .Select(card => card.InstanceId).ToList();
+                if (canopics.Count == 0) return CommandResult.Reject("墓地没有可置入圣物区的卡诺匹斯圣物");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    PublicActiveStep("field-legion", "guardCosts", "伊西斯：预先选择弃置的3张陵墓守卫",
+                        guards, min: 3, max: 3, autoSelectWhenExact: true),
+                    PublicActiveStep("grave-card", "canopicTarget", "伊西斯：预先选择墓地1张卡诺匹斯圣物",
+                        canopics),
+                    PublicActiveStep("option", "rewardMode", "伊西斯：预先声明完成操作后的奖励",
+                        ["mode:draw", "mode:heal"]),
+                ]);
+            }
+            case ("S01-01M2", "mengpoMorale"):
+            {
+                if (player.Morale.Count >= enemy.Morale.Count || player.Hand.Count == 0)
+                    return CommandResult.Reject("士气需少于对方，且需弃置1张手牌");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [PublicActiveStep("hand-card", "discardCost", "孟婆：预先选择弃置的1张手牌",
+                    player.Hand.Select(card => card.InstanceId))]);
+            }
+            case ("S01-04M1", "amaterasuReady"):
+            {
+                if (player.Hand.Count == 0) return CommandResult.Reject("需要弃置1张手牌");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [PublicActiveStep("hand-card", "discardCost", "天照大神：预先选择弃置的1张手牌",
+                    player.Hand.Select(card => card.InstanceId))]);
+            }
             case ("S01-0214", "cleopatraGuard"):
             {
                 var guards = player.Graveyard.Where(card => card.CardId == "S01-0212")
@@ -172,7 +249,8 @@ public sealed partial class L12GameEngine
 
     private static L12ActivationSelectionStep PublicActiveStep(string kind, string key, string text,
         IEnumerable<string> choices, int min = 1, int max = 1, string? referenceKey = null,
-        bool skipWhenReferenceIsNone = false, int? costThreshold = null, string? requiredChoice = null)
+        bool skipWhenReferenceIsNone = false, int? costThreshold = null, string? requiredChoice = null,
+        bool autoSelectWhenExact = false)
         => new()
         {
             Kind = kind,
@@ -181,6 +259,7 @@ public sealed partial class L12GameEngine
             ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = min,
             MaxChoose = max,
+            AutoSelectWhenExact = autoSelectWhenExact,
             ReferenceDeclarationKey = referenceKey,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,
             CostThreshold = costThreshold,

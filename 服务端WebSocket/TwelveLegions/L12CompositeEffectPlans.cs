@@ -54,6 +54,18 @@ internal static class L12CompositeEffectPlans
             [
                 new("desert-transaction", "弃置最多3张军团并将等量天灾等级的【太阳城】军团活跃登场"),
             ],
+            ["S02-0307"] =
+            [
+                new("hela-curse", "海拉：使已声明的对方军团本回合兵力-3000"),
+            ],
+            ["S02-0206"] =
+            [
+                new("fearless-assassination", "无畏的刺杀：强化已声明的我方前排【太阳城】军团"),
+            ],
+            ["S02-0406"] =
+            [
+                new("tenka-effect", "天下布武：执行已声明的模式"),
+            ],
         };
 
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> ActivePlans =
@@ -169,6 +181,31 @@ public sealed partial class L12GameEngine
                 steps.Add(CompositeStep("composite-desert-slot", "summonSlot", "沙漠君临：预先选择活跃登场的位置",
                     ["dynamic"], 1));
                 break;
+
+            case "S02-0307":
+                steps.Add(CompositeStep("enemy-legion", "curseTarget", "海拉：预先选择兵力-3000的对方军团",
+                    PublicLegions(opponent).Where(card => !card.Hidden).Select(card => card.InstanceId), 1));
+                break;
+
+            case "S02-0206":
+                steps.Add(CompositeStep("field-legion", "buffTarget", "无畏的刺杀：预先选择我方前排1张【太阳城】军团",
+                    player.Field[0].Where(card => card is not null && IsFieldLegion(card)
+                            && card.Faction == "taiyangcheng" && !card.Hidden)
+                        .Select(card => card!.InstanceId), 1));
+                break;
+
+            case "S02-0406":
+                steps.Add(CompositeStep("option", "mode", "天下布武：预先声明本次效果模式",
+                    ["mode:row-cost", "mode:front-attack", "mode:free-move"], 1, 1,
+                    new()
+                    {
+                        ["mode:row-cost"] = "选择对方1排所有军团，本回合费用-2",
+                        ["mode:front-attack"] = "本回合我方前排所有【高天原】军团进攻时兵力+1000",
+                        ["mode:free-move"] = "本回合我方所有活跃的【高天原】军团可免费进行1格位移",
+                    }));
+                steps.Add(CompositeStep("option", "row", "天下布武：预先选择对方前排或后排",
+                    ["row:0", "row:1"], 1, 1, requiredChoice: "mode:row-cost"));
+                break;
         }
 
         if (steps.Count == 0) return CommandResult.Reject("该卡牌没有复合效果声明计划");
@@ -224,6 +261,11 @@ public sealed partial class L12GameEngine
                 activation.DeclaredValues, out error))
         {
             AbortCommittedCompositeEffectDeclaration(activation, error);
+            return;
+        }
+        if (!TryCommitCompositePreStackCosts(activation.Controller, source))
+        {
+            AbortCommittedCompositeEffectDeclaration(activation, "海拉的牌库顶部弃置费用已失效");
             return;
         }
         PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",
@@ -327,9 +369,26 @@ public sealed partial class L12GameEngine
             "S02-0621" => mode is "mode:none" or "mode:buff"
                 && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士")) && OrdinaryCost("buffCost")),
             "S02-0207" => ValidateDesertDeclaration(player, card, declared),
+            "S02-0307" => player.Library.Count >= 1 && Enemy("curseTarget"),
+            "S02-0206" => Own("buffTarget", target => target.Faction == "taiyangcheng"
+                && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
+            "S02-0406" => mode is "mode:row-cost" or "mode:front-attack" or "mode:free-move"
+                && (mode != "mode:row-cost" || declared.GetValueOrDefault("row", []).SingleOrDefault() is "row:0" or "row:1"),
             _ => false,
         };
         return valid;
+    }
+
+    private bool TryCommitCompositePreStackCosts(int controller, L12CardInstance source)
+    {
+        if (source.CardId != "S02-0307") return true;
+        var player = State.Players[controller];
+        var result = L12LibraryOps.Mill(player, 1);
+        if (!result.Success) return false;
+        var discarded = result.Cards[0];
+        AddEvent("cost", controller, $"〈{source.Name}〉弃置牌库顶部1张牌作为发动费用", source, discarded);
+        NotifyCardDiscarded(player, discarded, "library", causedByEffect: false);
+        return true;
     }
 
     private static bool ValidateGloryPlannedCost(L12PlayerState player,

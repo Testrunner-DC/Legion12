@@ -426,6 +426,11 @@ public sealed class L12ActivationSelectionStep
     public required List<string> ValidChoices { get; init; }
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
+    /// <summary>
+    /// 合法候选数量恰好等于固定选择数量时，服务端直接记录整个集合而不弹出无意义选择。
+    /// 仅用于“必须选择全部现有公开对象”的声明步；候选更多时仍由玩家明确选择。
+    /// </summary>
+    public bool AutoSelectWhenExact { get; init; }
     /// <summary>复合效果预声明中的稳定字段名；为空时保持旧的扁平声明协议。</summary>
     public string? DeclarationKey { get; init; }
     /// <summary>动态声明步读取哪一个已声明字段作为公开对象来源。</summary>

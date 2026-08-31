@@ -1637,6 +1637,7 @@ public sealed class NewSystemsTests
         {
             var prompt = game.State.PendingPrompts[0];
             var choice = prompt.ValidChoices.Contains("pass") ? "pass"
+                : prompt.ValidChoices.Contains("mode:move") ? "mode:move"
                 : prompt.ValidChoices.Contains(legion.InstanceId) ? legion.InstanceId
                 : prompt.ValidChoices.Contains("0:1") ? "0:1"
                 : prompt.ValidChoices[0];
@@ -1690,6 +1691,8 @@ public sealed class NewSystemsTests
         player.Field[0][0] = legion;
 
         Assert.True(game.Handle(1, new L12Command("activateAbility", "faction-1", Ability: "factionDrawMove")).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:move")).Accepted);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: target.PromptId, Choice: legion.InstanceId)).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts);

@@ -166,7 +166,6 @@ public sealed partial class L12GameEngine
             case "ay-buff":
                 PromptOwnLegion(item, "ay-buff", "阿伊：选择我方前排1张兵力不高于2000的军团，本回合兵力+2000",
                     target => target.Troops <= 2000 && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0, false); break;
-            case "asgard-heal": HealMaster(item.Controller, 1, "阿斯加德阵营效果"); FinishStackItem(item); break;
             case "camp-mode":
                 if (data.GetValueOrDefault("mode") == "heal") HealMaster(item.Controller, 1, "野外扎营");
                 else if (data.GetValueOrDefault("mode") == "draw") Draw(player, 1);

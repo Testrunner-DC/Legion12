@@ -357,6 +357,7 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "type:token")]
     public void S2RuneAndGodPowerCostsAreAtomic()
     {
         var player = Player();

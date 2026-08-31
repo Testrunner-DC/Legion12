@@ -441,7 +441,6 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "ankh-ready-target": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
-            case "asgard-draw-heal": if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "asgard-heal"); else FinishStackItem(item); return true;
             case "canopic-search":
             {
                 var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]); player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"{selected.Name}因效果加入手牌"); ShuffleLibrary(player, "卡诺匹斯箱检索结算");
@@ -550,25 +549,7 @@ public sealed partial class L12GameEngine
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
             case "mengpo-silence": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
-            case "mengpo-discard": MoveHandToGrave(player, chosen[0], causedByEffect: false); AddMorale(player, 1, true); FinishStackItem(item); return true;
             case "sun-bottom": ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]); FinishStackItem(item); return true;
-            case "isis-canopic":
-            {
-                var relic = player.Graveyard.First(card => card.InstanceId == chosen[0]); player.Graveyard.Remove(relic);
-                ResetCardAfterLeavingField(relic);
-                player.SpecialZones.CanopicProgress.Add(relic);
-                CreatePrompt(item.Controller, "option", "伊西斯：选择抽取1张牌或主宰增加1点血量",
-                    ["draw", "heal"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "isis-canopic-reward", ["choiceMode"] = "instant",
-                        ["draw"] = "抽取1张牌", ["heal"] = "主宰增加1点血量",
-                    });
-                return true;
-            }
-            case "isis-canopic-reward":
-                if (chosen[0] == "draw") Draw(player, 1); else HealMaster(item.Controller, 1, "伊西斯");
-                FinishStackItem(item); return true;
             case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); FinishStackItem(item); return true; }
             case "medjed-damage-response":
                 player.UsedAbilities.Remove("pending:medjedDamageResponse");
@@ -576,11 +557,6 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add("trigger:medjedDamageResponse");
                 BeginQueuedSummons(item, [chosen[0]], tapped: false, "梅杰德：选择〈陵墓守卫〉活跃登场的位置");
                 return true;
-            case "amaterasu-discard":
-                MoveHandToGrave(player, chosen[0], causedByEffect: false); if (source is not null) foreach (var morale in player.Morale.Where(card => card.Tapped).Take(2).ToArray()) ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
-                foreach (var legion in player.Field[0].Where(card => card?.Faction == "gaotianyuan").Cast<L12CardInstance>())
-                    AddTimedModifier(legion, 1000, 0, State.TurnSerial, "天照大神");
-                FinishStackItem(item); return true;
             default: return false;
         }
     }
@@ -770,7 +746,15 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
-            case "asgardDraw" when source.CardId == "S01-03C1": if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            case "asgardDraw" when source.CardId == "S01-03C1":
+            {
+                var mode = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).SingleOrDefault();
+                var cost = mode == "mode:heal" ? 3 : 2;
+                if (mode is not ("mode:none" or "mode:heal") || !ConsumeMorale(cost))
+                    return CommandResult.Reject($"需要完整声明模式并消耗{cost}张活跃士气");
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             case "alvidaSummon" when source.CardId == "S01-0307":
             {
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -818,8 +802,20 @@ public sealed partial class L12GameEngine
                 if (!string.IsNullOrWhiteSpace(target) && DeclaredEnemyTarget(playerIndex, target) is null)
                     return CommandResult.Reject("目标不再合法");
                 if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
-            case "mengpoMorale" when source.CardId == "S01-01M2": if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || player.Hand.Count == 0) return CommandResult.Reject("士气需少于对方，且需弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
+            case "mengpoMorale" when source.CardId == "S01-01M2":
+            {
+                var discard = player.Hand.FirstOrDefault(card => card.InstanceId == target);
+                if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || discard is null)
+                    return CommandResult.Reject("士气需少于对方，且声明的弃牌费用必须保持合法");
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
+                if (ability == "sunTopThree" && target != "mode:none"
+                    && !player.Graveyard.Any(card => card.InstanceId == target && card.Faction == "taiyangcheng"
+                        && CanEnterHandOrLibrary(card)))
+                    return CommandResult.Reject("众神之乡声明的墓地回收目标已失效");
                 if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target,
                         card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is null)
                     return CommandResult.Reject("目标不再合法");
@@ -854,10 +850,18 @@ public sealed partial class L12GameEngine
             }
             case "isisCanopic" when source.CardId == "S01-02M1":
             {
-                var guards = PublicLegions(player).Where(card => card.CardId == "S01-0212").Take(3).ToArray();
-                if (guards.Length < 3) return CommandResult.Reject("战场需要3张陵墓守卫");
+                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var guards = declared.Take(3).Select(id => PublicLegions(player)
+                    .FirstOrDefault(card => card.InstanceId == id && card.CardId == "S01-0212")).ToArray();
+                var canopic = declared.Length == 5 ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[3]
+                    && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
+                    && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId)) : null;
+                if (declared.Length != 5 || guards.Length != 3 || guards.Any(card => card is null)
+                    || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3 || canopic is null
+                    || declared[4] is not ("mode:draw" or "mode:heal"))
+                    return CommandResult.Reject("伊西斯声明的陵墓守卫、卡诺匹斯圣物或奖励模式已失效");
                 foreach (var guard in guards)
-                    RemoveFromField(player, guard, true, "作为伊西斯主宰效果的发动费用弃置",
+                    RemoveFromField(player, guard!, true, "作为伊西斯主宰效果的发动费用弃置",
                         leaveKind: L12FieldLeaveKind.Discard);
                 break;
             }
@@ -959,7 +963,14 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             }
-            case "amaterasuReady" when source.CardId == "S01-04M1": if (player.Hand.Count == 0) return CommandResult.Reject("需要弃置1张手牌"); player.UsedAbilities.Add(onceKey); break;
+            case "amaterasuReady" when source.CardId == "S01-04M1":
+            {
+                var discard = player.Hand.FirstOrDefault(card => card.InstanceId == target);
+                if (discard is null) return CommandResult.Reject("声明的弃牌费用已失效");
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
+                player.UsedAbilities.Add(onceKey);
+                break;
+            }
             default: return null;
         }
         var data = new Dictionary<string, string> { ["ability"] = ability };
@@ -1015,10 +1026,8 @@ public sealed partial class L12GameEngine
             case "sunDraw": Draw(player, 1); FinishStackItem(item); return true;
             case "asgardDraw":
                 Draw(player, 1);
-                if (player.Hp <= 5 && ActiveResourceCount(player) > 0)
-                    CreatePrompt(item.Controller, "optional", "是否额外消耗1张活跃士气，使我方主宰增加1点血量？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "asgard-draw-heal", ["choiceMode"] = "instant" });
-                else FinishStackItem(item);
+                if (item.Data.GetValueOrDefault("target") == "mode:heal") HealMaster(item.Controller, 1, "阿斯加德阵营效果");
+                FinishStackItem(item);
                 return true;
             case "alvidaSummon":
             {
@@ -1040,7 +1049,7 @@ public sealed partial class L12GameEngine
                 if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial;
                 if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true;
             }
-            case "mengpoMorale": PromptDiscard(item, item.Controller, 1, "孟婆：弃置1张手牌", "mengpo-discard"); return true;
+            case "mengpoMorale": AddMorale(player, 1, true); FinishStackItem(item); return true;
             case "sunTopThree": BeginFactionTopSearch(item, 3, "taiyangcheng", string.Empty, "sun-divinity"); return true;
             case "sunBottomEnemy": ReturnEnemyFieldToLibraryBottom(item.Controller, item.Data.GetValueOrDefault("target") ?? string.Empty); FinishStackItem(item); return true;
             case "ankhReady":
@@ -1055,11 +1064,24 @@ public sealed partial class L12GameEngine
             case "gramDamage": DamageMasterNonLethal(1 - item.Controller, 1, "神剑格拉墨"); FinishStackItem(item); return true;
             case "isisCanopic":
             {
-                var completedIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var choices = player.Graveyard.Where(card => card.Name.Contains("卡诺匹斯", StringComparison.Ordinal)
-                    && card.CardType == "artifact" && !completedIds.Contains(card.CardId)).Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "card", "伊西斯：选择墓地1张卡诺匹斯圣物置入圣物区", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "isis-canopic" }); return true;
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var canopic = declared.Length == 5 ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[3]
+                    && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
+                    && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId)) : null;
+                if (canopic is null)
+                {
+                    AddEvent("effect-cancelled", item.Controller, "伊西斯声明的卡诺匹斯圣物已失效");
+                    FinishStackItem(item);
+                    return true;
+                }
+                player.Graveyard.Remove(canopic);
+                ResetCardAfterLeavingField(canopic);
+                player.SpecialZones.CanopicProgress.Add(canopic);
+                if (declared[4] == "mode:draw") Draw(player, 1);
+                else HealMaster(item.Controller, 1, "伊西斯");
+                FinishStackItem(item);
+                return true;
             }
             case "medjedDebuff":
             {
@@ -1172,7 +1194,14 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "amaterasuReady": PromptDiscard(item, item.Controller, 1, "天照大神：弃置1张手牌", "amaterasu-discard"); return true;
+            case "amaterasuReady":
+                if (source is not null)
+                    foreach (var morale in player.Morale.Where(card => card.Tapped).Take(2).ToArray())
+                        ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
+                foreach (var legion in player.Field[0].Where(card => card?.Faction == "gaotianyuan").Cast<L12CardInstance>())
+                    AddTimedModifier(legion, 1000, 0, State.TurnSerial, "天照大神");
+                FinishStackItem(item);
+                return true;
             default: return false;
         }
     }
@@ -1463,7 +1492,31 @@ public sealed partial class L12GameEngine
 
     private void CompleteFactionSearchOrder(L12StackItem item, List<string> order)
     {
-        var player = State.Players[item.Controller]; foreach (var id in order) { var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id); if (card is null) continue; player.Library.Remove(card); player.Library.Add(card); } FinishStackItem(item);
+        var player = State.Players[item.Controller];
+        foreach (var id in order)
+        {
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
+            if (card is null) continue;
+            player.Library.Remove(card);
+            player.Library.Add(card);
+        }
+        if (item.Data.GetValueOrDefault("ability") == "sunTopThree")
+        {
+            var targetId = item.Data.GetValueOrDefault("target");
+            if (targetId != "mode:none")
+            {
+                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
+                    && card.Faction == "taiyangcheng" && CanEnterHandOrLibrary(card));
+                if (recover is null)
+                    AddEvent("effect-cancelled", item.Controller, "众神之乡声明的墓地回收目标已失效");
+                else
+                {
+                    player.Graveyard.Remove(recover);
+                    AddCardToHandByEffect(player, recover, "graveyard", "众神之乡回收太阳城卡牌");
+                }
+            }
+        }
+        FinishStackItem(item);
     }
 
     private void RecoverSunCard(L12StackItem item, string excluded)

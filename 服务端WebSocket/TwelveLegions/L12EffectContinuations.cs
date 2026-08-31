@@ -165,39 +165,6 @@ public sealed partial class L12GameEngine
             case "disaster-main-choice":
                 player.UsedAbilities.Add(chosen[0] == "free-tactic" ? "ds01-free-tactic" : "ds01-back-master");
                 FinishStackItem(item); break;
-            case "faction-move-card":
-            {
-                if (chosen[0] == "skip") { FinishStackItem(item); break; }
-                var legion = FindOnField(player, chosen[0], out var row, out var slot);
-                if (legion is null || !IsFieldLegion(legion) || legion.Tapped) { FinishStackItem(item); break; }
-                var slots = new[] { (row - 1, slot), (row + 1, slot), (row, slot - 1), (row, slot + 1) }
-                    .Where(position => position.Item1 is >= 0 and < 2 && position.Item2 is >= 0 and < 3
-                        && !(State.ActiveDisaster?.CardId == "S01-DS03" && position.Item1 == 1)
-                        && player.Field[position.Item1][position.Item2] is null)
-                    .Select(position => $"{position.Item1}:{position.Item2}").ToArray();
-                if (slots.Length == 0) { FinishStackItem(item); break; }
-                item.Data["faction-move-source"] = legion.InstanceId;
-                CreatePrompt(item.Controller, "slot", "选择该军团位移 1 格后的阵地", slots, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "faction-move-slot" });
-                break;
-            }
-            case "faction-move-slot":
-            {
-                var legion = FindOnField(player, item.Data.GetValueOrDefault("faction-move-source"), out var row, out var slot);
-                if (legion is not null && !legion.Tapped)
-                {
-                    var (targetRow, targetSlot) = ParseSlot(chosen[0]);
-                    if (Math.Abs(row - targetRow) + Math.Abs(slot - targetSlot) == 1 && player.Field[targetRow][targetSlot] is null)
-                    {
-                        player.Field[row][slot] = null;
-                        player.Field[targetRow][targetSlot] = legion;
-                        legion.LastMovedTurn = State.TurnSerial;
-                        AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
-                        RecordLegionMovement(item.Controller, legion, row, targetRow);
-                    }
-                }
-                FinishStackItem(item); break;
-            }
             default:
                 if (!TryContinueS1Extended(item, prompt, chosen, command)
                     && !TryContinueS2Faction(item, prompt, chosen, command)) FinishStackItem(item);

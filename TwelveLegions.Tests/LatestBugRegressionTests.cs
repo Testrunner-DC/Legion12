@@ -1007,6 +1007,12 @@ public sealed class LatestBugRegressionTests
         var result = game.Handle(0, new L12Command("activateAbility", "S01-02M1", Ability: "isisCanopic"));
 
         Assert.True(result.Accepted, result.Error);
+        var canopic = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: canopic.PromptId,
+            Choice: "isis-canopic-source")).Accepted);
+        var reward = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: reward.PromptId,
+            Choice: "mode:heal")).Accepted);
         Assert.All(player.Field[0], card => Assert.Null(card));
         Assert.Equal(3, player.Graveyard.Count(card => card.CardId == "S01-0212"));
         Assert.Equal(3, SnapshotGraveyard(game, 0).Count(card => card.CardId == "S01-0212"));

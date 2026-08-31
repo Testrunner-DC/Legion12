@@ -54,6 +54,7 @@ public sealed partial class L12GameEngine
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
             MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
+            AutoSelectWhenExact = step.AutoSelectWhenExact,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
@@ -110,6 +111,16 @@ public sealed partial class L12GameEngine
                 activation.CurrentStep++;
                 continue;
             }
+            if (pendingStep.AutoSelectWhenExact
+                && pendingStep.MinChoose == pendingStep.MaxChoose
+                && pendingStep.ValidChoices.Count == pendingStep.MinChoose)
+            {
+                activation.DeclaredTargets.AddRange(pendingStep.ValidChoices);
+                if (!string.IsNullOrWhiteSpace(pendingStep.DeclarationKey))
+                    activation.DeclaredValues[pendingStep.DeclarationKey] = pendingStep.ValidChoices.ToList();
+                activation.CurrentStep++;
+                continue;
+            }
             break;
         }
         if (activation.CurrentStep >= activation.SelectionSteps.Count)
@@ -125,9 +136,10 @@ public sealed partial class L12GameEngine
             var player = State.Players[activation.Controller];
             var row = -1;
             var slot = -1;
-            var moving = activation.DeclaredTargets.Count == 0
-                ? null
-                : FindOnField(player, activation.DeclaredTargets[0], out row, out slot);
+            var movingId = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
+                : activation.DeclaredTargets.FirstOrDefault();
+            var moving = movingId is null ? null : FindOnField(player, movingId, out row, out slot);
             List<string> choices = moving is null ? [] : AdjacentEmptySlots(player, row, slot).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);

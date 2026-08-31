@@ -77,7 +77,8 @@ public sealed partial class L12GameEngine
                     .Select(card => card!.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团，本回合获得强攻");
             default:
-                return TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
+                return TryBeginPublicActiveDeclaration(playerIndex, source, ability)
+                    ?? TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability)
                     ?? CommitActiveAbility(playerIndex, source, ability, command.CardInstanceIds?.FirstOrDefault());
@@ -117,9 +118,59 @@ public sealed partial class L12GameEngine
             return declared.Length == 3 && declared[0] == "mode:strong" ? [declared[1]] : [];
         }
         if (reserveInternalCosts && L12StructuredCardSemantics.IsIsis(source.CardId) && ability == "isisCanopic")
-            return PublicLegions(player).Where(card => card.CardId == "S01-0212")
-                .Take(3).Select(card => card.InstanceId).ToArray();
+            return (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).Take(3).ToArray();
         return [];
+    }
+
+    private string? ValidatePublicActiveDeclarationBeforePayment(int playerIndex, L12CardInstance source, string ability, string? target)
+    {
+        var player = State.Players[playerIndex];
+        var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+        switch ((source.CardId, ability))
+        {
+            case ("S01-03C1", "asgardDraw"):
+                if (declared.Length != 1 || declared[0] is not ("mode:none" or "mode:heal"))
+                    return "阿斯加德阵营效果必须预先声明是否治疗";
+                if (declared[0] == "mode:heal" && player.Hp > 5)
+                    return "主宰血量高于5，不能声明额外治疗";
+                break;
+            case ("S01-04C1", "factionDrawMove"):
+                if (declared.Length == 1 && declared[0] == "mode:none") break;
+                if (declared.Length != 3 || declared[0] != "mode:move")
+                    return "高天原阵营效果必须完整声明位移模式、军团和位置";
+                var mover = FindOnField(player, declared[1], out var row, out var slot);
+                if (mover is null || !IsFieldLegion(mover) || mover.Tapped || mover.Hidden
+                    || !AdjacentEmptySlots(player, row, slot).Contains(declared[2], StringComparer.OrdinalIgnoreCase))
+                    return "高天原阵营效果声明的军团或相邻空位已失效";
+                break;
+            case ("S01-01M2", "mengpoMorale"):
+                if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count
+                    || declared.Length != 1 || !player.Hand.Any(card => card.InstanceId == declared[0]))
+                    return "孟婆的士气条件或弃牌费用已失效";
+                break;
+            case ("S01-02D1", "sunTopThree"):
+                if (declared.Length != 1 || declared[0] != "mode:none"
+                    && !player.Graveyard.Any(card => card.InstanceId == declared[0]
+                        && card.Faction == "taiyangcheng" && CanEnterHandOrLibrary(card)))
+                    return "众神之乡声明的墓地回收目标已失效";
+                break;
+            case ("S01-02M1", "isisCanopic"):
+            {
+                if (declared.Length != 5 || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
+                    || declared.Take(3).Any(id => !PublicLegions(player).Any(card => card.InstanceId == id && card.CardId == "S01-0212"))
+                    || !player.Graveyard.Any(card => card.InstanceId == declared[3]
+                        && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
+                        && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId))
+                    || declared[4] is not ("mode:draw" or "mode:heal"))
+                    return "伊西斯声明的陵墓守卫、卡诺匹斯圣物或奖励模式已失效";
+                break;
+            }
+            case ("S01-04M1", "amaterasuReady"):
+                if (declared.Length != 1 || !player.Hand.Any(card => card.InstanceId == declared[0]))
+                    return "天照大神声明的弃牌费用已失效";
+                break;
+        }
+        return null;
     }
 
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
@@ -134,8 +185,10 @@ public sealed partial class L12GameEngine
         if (ability is "olympusMoraleFlip" or "divinityFlipMorale"
             && !player.Morale.Any(card => card.InstanceId == target && !card.IsGodPower))
             return CommandResult.Reject("声明的士气已失效或已是神力面");
+        if (ValidatePublicActiveDeclarationBeforePayment(playerIndex, source, ability, target) is { } declarationError)
+            return CommandResult.Reject(declarationError);
         var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
-        var moraleCost = GetActiveAbilityMoraleCost(source, ability) + disasterMasterSurcharge;
+        var moraleCost = GetActiveAbilityMoraleCost(source, ability, target) + disasterMasterSurcharge;
         var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);
         var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
         var reservedResourceIds = ActiveAbilityReservedResourceIds(player, source, ability, target,
@@ -334,10 +387,12 @@ public sealed partial class L12GameEngine
             && free.Ability.Equals(ability, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static int GetActiveAbilityMoraleCost(L12CardInstance source, string ability) => ability switch
+    private static int GetActiveAbilityMoraleCost(L12CardInstance source, string ability, string? target = null) => ability switch
     {
         "drawCycle" or "frontBuff" or "kusanagiDebuff" or "kusanagiStrong" or "cleopatraGuard" or "sunDraw"
             or "medjedDebuff" or "valkyrieRecover" or "lokiCycle" or "lokiHeal" or "amaterasuKill" => 1,
+        "asgardDraw" when (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .Contains("mode:heal", StringComparer.OrdinalIgnoreCase) => 3,
         "kusanagi" or "factionAddActive" or "factionDrawMove" or "destroyInfiltrator" or "sunGuard" or "asgardDraw"
             or "gramReady" or "sunTopThree" or "sunBottomEnemy" or "valhallaRecover" or "yomiSweep" => 2,
         "extendedRange" when source.CardId == "S01-0003" => 2,
@@ -443,13 +498,35 @@ public sealed partial class L12GameEngine
             case "factionDrawMove":
             {
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "高天原阵营效果抽牌时牌库为空"); FinishStackItem(item); return; }
-                var choices = player.Field.SelectMany(row => row)
-                    .Where(card => card is not null && IsFieldLegion(card) && !card.Tapped && !card.Hidden)
-                    .Select(card => card!.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-target", "可选择我方 1 张活跃军团进行 1 格位移", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "faction-move-card", ["choiceMode"] = "board-target" });
+                var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (declared.Length == 1 && declared[0] == "mode:none")
+                {
+                    FinishStackItem(item);
+                    return;
+                }
+                var row = -1;
+                var slot = -1;
+                var legion = declared.Length == 3
+                    ? FindOnField(player, declared[1], out row, out slot)
+                    : null;
+                var (targetRow, targetSlot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
+                if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden
+                    || targetRow is < 0 or > 1 || targetSlot is < 0 or > 2
+                    || Math.Abs(row - targetRow) + Math.Abs(slot - targetSlot) != 1
+                    || State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
+                    || player.Field[targetRow][targetSlot] is not null)
+                {
+                    AddEvent("effect-cancelled", item.Controller, "高天原阵营效果声明的位移目标或位置已失效");
+                    FinishStackItem(item);
+                    return;
+                }
+                player.Field[row][slot] = null;
+                player.Field[targetRow][targetSlot] = legion;
+                legion.LastMovedTurn = State.TurnSerial;
+                AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
+                RecordLegionMovement(item.Controller, legion, row, targetRow);
+                FinishStackItem(item);
                 return;
             }
             default:
