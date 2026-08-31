@@ -580,6 +580,8 @@ public sealed partial class L12GameEngine
             AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+{tsukuyomiBonus}", attacker);
         }
         var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
+        if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
+            damage += attacker.GawainMasterDamageBonus;
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
         var hasAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
         State.PendingDefense = new L12PendingDefense

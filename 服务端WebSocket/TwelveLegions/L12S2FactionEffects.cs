@@ -741,41 +741,6 @@ public sealed partial class L12GameEngine
             BeginS2OkitaAttack(item);
             return true;
         }
-        if (card.CardId == "S02-0509")
-        {
-            var tactics = player.Hand.Where(candidate => candidate.CardType == "tactic")
-                .Select(candidate => candidate.InstanceId).ToList();
-            if (tactics.Count == 0) { FinishStackItem(item); return true; }
-            tactics.Add("skip");
-            CreatePrompt(item.Controller, "optional-card", "奥德修斯：可展示手牌中1张战术，使此军团本回合兵力+1000",
-                tactics, 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-odysseus-show-tactic", ["skip"] = "不发动",
-                    ["layout"] = "single-row", ["displayCardIds"] = string.Join('|', tactics.Where(id => id != "skip")),
-                });
-            return true;
-        }
-        if (card.CardId == "S02-0511")
-        {
-            if (State.PendingDefense?.Target.Type != "legion"
-                || !player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped))
-            {
-                FinishStackItem(item);
-                return true;
-            }
-            CreatePrompt(item.Controller, "optional", "珀洛特埃：是否消耗并翻转1神力，使此军团本回合兵力+1000并获得震击？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-parrot-god-power" });
-            return true;
-        }
-        if (card.CardId == "S02-0519")
-        {
-            if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped)) { FinishStackItem(item); return true; }
-            CreatePrompt(item.Controller, "optional", $"{card.Name}：是否消耗并翻转1神力，使此军团本回合兵力+2000？",
-                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string> { ["action"] = "s2-achilles-god-power", ["yes"] = "消耗并翻转1神力：兵力+2000", ["no"] = "不发动" });
-            return true;
-        }
         if (card.CardId == "S02-0516")
         {
             if (item.Data.GetValueOrDefault("declaredMode") == "mode:use")
@@ -788,88 +753,7 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
-        if (card.CardId == "S02-0517")
-        {
-            if (!player.Morale.Any(morale => morale.IsGodPower && !morale.Tapped))
-            {
-                FinishStackItem(item);
-                return true;
-            }
-            CreatePrompt(item.Controller, "optional", "彭忒西勒亚：是否消耗并翻转1神力，使此军团本回合兵力+2000？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-penthesilea-god-power" });
-            return true;
-        }
-        if (card.CardId == "S02-0605")
-        {
-            if (!player.Morale.Any(morale => !morale.Tapped)) { FinishStackItem(item); return true; }
-            CreatePrompt(item.Controller, "optional", "鲍斯：是否消耗1士气，使此军团本回合获得强攻？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-bors-strong" });
-            return true;
-        }
-        if (card.CardId == "S02-0606")
-        {
-            var choices = player.Hand.Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");
-            CreatePrompt(item.Controller, "optional-card", "帕西瓦尔：可弃置1张手牌，使此军团本回合兵力+2000", choices, 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-percival-attack-discard" });
-            return true;
-        }
-        if (card.CardId == "S02-0607")
-        {
-            var choices = Enumerable.Range(1, player.SpecialZones.Runes).Select(index => $"rune:{index}").ToArray();
-            CreatePrompt(item.Controller, "resource-payment", "高文：请直接点击本次进攻要消耗的符文", choices, 0, player.SpecialZones.Runes,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-gawain-runes", ["choiceMode"] = "resource-payment", ["resourceKind"] = "rune",
-                });
-            return true;
-        }
-        if (card.CardId == "S02-0608")
-        {
-            var squires = card.AttachedCards.Where(attached => attached.CardId == "S02-0609")
-                .Select(attached => attached.InstanceId).ToList();
-            if (squires.Count == 0) { FinishStackItem(item); return true; }
-            squires.Add("skip");
-            CreatePrompt(item.Controller, "optional-cards", "狮心王理查一世：可弃置下方任意数量〈侍从骑士〉，每张使本回合兵力+1000",
-                squires, 1, squires.Count - 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-richard-attack-squires", ["choiceMode"] = "multi-card", ["skip"] = "不弃置",
-                    ["layout"] = "single-row", ["displayCardIds"] = string.Join('|', squires.Where(id => id != "skip")),
-                });
-            return true;
-        }
-        if (card.CardId == "S02-0612")
-        {
-            if (player.SpecialZones.Runes <= 0) { FinishStackItem(item); return true; }
-            CreatePrompt(item.Controller, "optional", "斯卡哈：是否消耗1符文，使此军团本回合进攻无损且兵力+2000？", ["yes", "no"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-scathach-rune" });
-            return true;
-        }
-        if (card.CardId == "S02-0617")
-        {
-            L12S2ZoneOps.GainRunes(player, 1);
-            if (PublicLegions(player).Any(candidate => candidate.CardId == "S02-0608")) Draw(player, 1);
-            FinishStackItem(item);
-            return true;
-        }
-        if (card.CardId != "S02-0103") return false;
-        var top = player.Library.FirstOrDefault();
-        if (top is not null)
-        {
-            AddEvent("reveal", item.Controller, $"平阳昭公主展示牌库顶部的〈{top.Name}〉", top);
-            if (top.Faction == "tianting" && top.CurrentCost <= 5)
-            {
-                AddTimedModifier(card, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "平阳昭公主");
-                AddEvent("effect", item.Controller, "平阳昭公主本回合兵力 +2000", card);
-            }
-            else
-            {
-                player.Library.Remove(top);
-                player.Library.Add(top);
-            }
-        }
-        FinishStackItem(item);
-        return true;
+        return false;
     }
 
     private bool TryResolveS2FactionAfterAttack(L12StackItem item, L12CardInstance card)
@@ -2036,14 +1920,6 @@ public sealed partial class L12GameEngine
                 SummonFromAnyPrivateZone(player, item.Data["arthur-summon"], chosen[0], tapped: false);
                 FinishStackItem(item);
                 return true;
-            case "s2-achilles-god-power":
-            {
-                var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
-                    AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "阿喀琉斯");
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-lamorak-death":
                 if (chosen[0] == "heal") HealMaster(item.Controller, 1, "勇士兰马洛克阵亡时效果", legionEffect: true);
                 else if (!Draw(player, 1)) SetWinner(1 - item.Controller, "勇士兰马洛克效果抽牌时牌库为空");
@@ -2436,50 +2312,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "s2-bors-strong":
-            {
-                var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null)
-                    BeginEffectMoralePayment(item, 1, "s2-bors-strong");
-                else
-                    FinishStackItem(item);
-                return true;
-            }
-            case "s2-percival-attack-discard":
-            {
-                var source = FindSource(item);
-                if (chosen[0] != "skip" && source is not null && player.Hand.Any(card => card.InstanceId == chosen[0]))
-                {
-                    MoveHandToGrave(player, chosen[0], causedByEffect: false);
-                    AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "帕西瓦尔");
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-gawain-runes":
-            {
-                var source = FindSource(item);
-                var count = chosen.Count;
-                if (source is not null && count > 0 && player.SpecialZones.Runes >= count && L12S2ZoneOps.SpendRunes(player, count))
-                {
-                    AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "高文");
-                    if (State.PendingDefense is { Target.Type: "master" } pending)
-                        pending.MasterDamage += count;
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-scathach-rune":
-            {
-                var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.SpendRunes(player, 1))
-                {
-                    AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "斯卡哈");
-                    source.AttackNoLossUntilTurn = Math.Max(source.AttackNoLossUntilTurn, ExpiryAtNextOwnEnd(item.Controller));
-                }
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-faith-zealot":
             {
                 var ability = chosen[0];
@@ -2590,39 +2422,6 @@ public sealed partial class L12GameEngine
                     QueueTriggerCandidates(triggers);
                     AddEvent("effect", item.Controller, $"卡纽特大帝触发了{triggers.Length}张军团的阵亡时效果", FindSource(item) is { } source ? [source] : []);
                 }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-odysseus-show-tactic":
-            {
-                var source = FindSource(item);
-                var shown = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
-                    && candidate.CardType == "tactic");
-                if (chosen[0] != "skip" && shown is not null && source is not null)
-                {
-                    AddEvent("reveal", item.Controller, $"{source.Name}展示手牌中的〈{shown.Name}〉", shown);
-                    AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "奥德修斯");
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-parrot-god-power":
-            {
-                var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
-                {
-                    AddTimedModifier(source, 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "珀洛特埃");
-                    source.HasShock = true;
-                    if (item.Data.GetValueOrDefault("shockApplied") != "true") ApplyS2Shock(item, source);
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-penthesilea-god-power":
-            {
-                var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
-                    AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "彭忒西勒亚");
                 FinishStackItem(item);
                 return true;
             }
@@ -2740,32 +2539,6 @@ public sealed partial class L12GameEngine
                         }
                     if (attached.Count > 0)
                         AddEvent("attach", item.Controller, $"〈狮心王理查一世〉下方叠放{attached.Count}张〈侍从骑士〉", [source, .. attached]);
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-richard-attack-squires":
-            {
-                var source = FindSource(item);
-                if (source is not null)
-                {
-                    var discarded = new List<L12CardInstance>();
-                    foreach (var id in chosen.Where(id => id != "skip"))
-                    {
-                        var squire = source.AttachedCards.FirstOrDefault(card => card.InstanceId == id && card.CardId == "S02-0609");
-                        if (squire is null) continue;
-                        source.AttachedCards.Remove(squire);
-                        ResetCardAfterLeavingField(squire);
-                        player.Graveyard.Add(squire);
-                        discarded.Add(squire);
-                    }
-                    if (discarded.Count > 0)
-                    {
-                        AddTimedModifier(source, discarded.Count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "狮心王理查一世");
-                        AddEvent("effect", item.Controller,
-                            $"〈狮心王理查一世〉弃置{discarded.Count}张叠放的〈侍从骑士〉，本回合兵力+{discarded.Count * 1000}",
-                            [source, .. discarded]);
-                    }
                 }
                 FinishStackItem(item);
                 return true;

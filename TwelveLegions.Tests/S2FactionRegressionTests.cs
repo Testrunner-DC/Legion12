@@ -652,11 +652,11 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("attack", gawain.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
         var runePrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-gawain-runes", runePrompt.Data["action"]);
-        Assert.Equal("resource-payment", runePrompt.Kind);
-        Assert.Equal(["rune:1", "rune:2", "rune:3"], runePrompt.ValidChoices);
+        Assert.Equal("pending-activation", runePrompt.Continuation);
+        Assert.Equal(["rune-count:1", "rune-count:2", "rune-count:3", "skip"], runePrompt.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
-            CardInstanceIds: ["rune:1", "rune:2"])).Accepted);
+            Choice: "rune-count:2")).Accepted);
+        PassResponses(game);
 
         Assert.Equal(1, player.SpecialZones.Runes);
         Assert.Equal(gawain.BaseTroops + 2000, gawain.Troops);
@@ -1082,9 +1082,11 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", odysseus.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
-        PassResponses(game);
+        var activate = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", activate.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: activate.PromptId,
+            Choice: "mode:use")).Accepted);
         var show = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-odysseus-show-tactic", show.Data["action"]);
         Assert.Contains(tactic.InstanceId, show.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: show.PromptId,
             Choice: tactic.InstanceId)).Accepted);
@@ -2055,11 +2057,20 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", richard.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
-        PassResponses(game);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        var defenseCandidate = order.ValidChoices.Single(id => order.Data[id].Contains("抵挡", StringComparison.Ordinal));
+        var squireCandidate = order.ValidChoices.Single(id => id != defenseCandidate);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [defenseCandidate, squireCandidate])).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
         var attackEffect = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-richard-attack-squires", attackEffect.Data["action"]);
+        Assert.Equal("pending-activation", attackEffect.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackEffect.PromptId,
             CardInstanceIds: [firstSquire.InstanceId, secondSquire.InstanceId])).Accepted);
+        PassResponses(game);
         Assert.Equal(richard.BaseTroops + 2000, richard.Troops);
         Assert.Empty(richard.AttachedCards);
         Assert.Contains(firstSquire, attackerPlayer.Graveyard);
@@ -2443,16 +2454,16 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", bors.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
-        PassResponses(game);
         var activate = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-bors-strong", activate.Data["action"]);
+        Assert.Equal("pending-activation", activate.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: activate.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "mode:use")).Accepted);
 
         var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("resource-payment", payment.Kind);
+        Assert.Equal("pending-activation", payment.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
             CardInstanceIds: [godPower.InstanceId])).Accepted);
+        PassResponses(game);
 
         Assert.True(bors.HasStrongAttack);
         Assert.False(ordinary.Tapped);

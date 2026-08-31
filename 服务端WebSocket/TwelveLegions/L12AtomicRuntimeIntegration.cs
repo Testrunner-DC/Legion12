@@ -31,6 +31,8 @@ public sealed partial class L12GameEngine
                     }
                     break;
                 case L12AtomKinds.Optional:
+                    if (PublicTriggerDeclared(item, "mode") == "mode:use")
+                        break;
                     CreatePrompt(item.Controller, "optional", atom.Parameters.GetValueOrDefault("prompt") ?? atom.Label,
                         ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
                         data: new Dictionary<string, string>

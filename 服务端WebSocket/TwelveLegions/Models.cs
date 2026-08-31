@@ -157,6 +157,9 @@ public sealed class L12CardInstance
     /// <summary>月读：本回合该军团由后排位移至前排的累计次数。</summary>
     public int TsukuyomiFrontMoveBonusCount { get; set; }
     public int TsukuyomiFrontMoveBonusTurn { get; set; } = -1;
+    /// <summary>高文已结算的本回合后续进攻主宰伤害增量。</summary>
+    public int GawainMasterDamageBonus { get; set; }
+    public int GawainMasterDamageBonusUntilTurn { get; set; } = -1;
     public int CannotUntapUntilRound { get; set; }
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
@@ -315,6 +318,8 @@ public sealed class L12PendingDefense
     public bool AttackNoLoss { get; init; }
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
+    /// <summary>理查的独立抵挡费用段成功结算后，才对本次进攻生效。</summary>
+    public bool RichardDefenseTaxActive { get; set; }
     public int TemporaryAttackerTroopsBonus { get; set; }
     /// <summary>贯穿等规则生成的进攻仍进入通常响应/抵挡流程，但不会建立【进攻时】卡效。</summary>
     public bool SuppressAttackTriggers { get; set; }

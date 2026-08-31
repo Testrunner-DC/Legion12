@@ -151,33 +151,15 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller]; var enemy = State.Players[1 - item.Controller]; var source = FindSource(item);
         switch (afterPayment)
         {
-            case "nobunaga-debuff":
-                foreach (var target in PublicLegions(enemy)) target.CostModifier--;
-                AddEvent("effect", item.Controller, "织田信长：对方所有军团本回合费用-1", source is null ? [] : [source]);
-                FinishStackItem(item); break;
-            case "hijikata-kill":
-                PromptEnemyLegion(item, "hijikata-attack-kill", "土方岁三：击杀对方1张费用不高于1的军团", target => target.CurrentCost <= 1, true); break;
-            case "takasugi-debuff":
-                PromptEnemyLegion(item, "takasugi-debuff", "高杉晋作：选择对方1张军团，本回合费用-2", _ => true, false); break;
             case "scout-shuffle":
                 if (enemy.Hand.Count == 0) { FinishStackItem(item); break; }
                 CreatePrompt(1 - item.Controller, "card", "前线侦查：选择1张手牌洗回牌库", enemy.Hand.Select(card => card.InstanceId), 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "scout-shuffle" }); break;
-            case "ay-buff":
-                PromptOwnLegion(item, "ay-buff", "阿伊：选择我方前排1张兵力不高于2000的军团，本回合兵力+2000",
-                    target => target.Troops <= 2000 && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0, false); break;
             case "camp-mode":
                 if (data.GetValueOrDefault("mode") == "heal") HealMaster(item.Controller, 1, "野外扎营");
                 else if (data.GetValueOrDefault("mode") == "draw") Draw(player, 1);
                 FinishStackItem(item); break;
             case "s2-prayer-private": BeginPrayerPrivatePreview(item); break;
-            case "s2-bors-strong":
-                if (source is not null)
-                {
-                    GrantStrongAttack(source);
-                    AddEvent("effect", item.Controller, $"〈{source.Name}〉获得强攻", source);
-                }
-                FinishStackItem(item); break;
             default: FinishStackItem(item); break;
         }
     }

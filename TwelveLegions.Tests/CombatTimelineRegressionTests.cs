@@ -93,11 +93,12 @@ public sealed class CombatTimelineRegressionTests
 
         var attackerPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(0, attackerPrompt.PlayerIndex);
-        Assert.Equal("card-effect", attackerPrompt.Continuation);
+        Assert.Equal("pending-activation", attackerPrompt.Continuation);
         Assert.Equal(L12CombatStage.AttackerAttackTiming, game.State.PendingDefense?.Stage);
         Assert.DoesNotContain(ambush.InstanceId, attackerPrompt.ValidChoices);
 
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerPrompt.PromptId, Choice: "no")).Accepted);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerPrompt.PromptId,
+            Choice: "mode:none")).Accepted);
 
         var defenderPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, defenderPrompt.PlayerIndex);
@@ -162,7 +163,8 @@ public sealed class CombatTimelineRegressionTests
         game.State.Players[0].Field[0][0] = null;
         game.State.Players[0].Graveyard.Add(attacker);
 
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "mode:none")).Accepted);
 
         Assert.Null(game.State.PendingDefense);
         Assert.Equal(L12Phase.Main, game.State.Phase);
@@ -192,7 +194,8 @@ public sealed class CombatTimelineRegressionTests
         game.State.Players[1].Field[0][0] = null;
         game.State.Players[1].Hand.Add(target);
 
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "mode:none")).Accepted);
 
         Assert.Null(game.State.PendingDefense);
         Assert.Equal(L12Phase.Main, game.State.Phase);

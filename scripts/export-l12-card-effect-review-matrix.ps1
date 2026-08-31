@@ -32,6 +32,12 @@ foreach ($fileName in @('cards.s1.json', 'cards.s2.json')) {
     foreach ($card in $decoded) { $cards.Add($card) }
 }
 $runtimeEvidence = Get-L12CardRuntimeEvidence -ProjectRoot $ProjectRoot -Cards $cards
+$batch6HReviewedCardIds = @(
+    'S01-0104', 'S01-0106', 'S01-0203', 'S01-0208', 'S01-0301', 'S01-0306', 'S01-0311',
+    'S01-0402', 'S01-0405', 'S01-0406', 'S01-0408', 'S01-0413', 'S01-0416', 'S02-0103',
+    'S02-0509', 'S02-0511', 'S02-0517', 'S02-0519', 'S02-0605', 'S02-0606', 'S02-0607',
+    'S02-0608', 'S02-0612', 'S02-0617'
+)
 
 $rows = foreach ($card in ($cards | Sort-Object id)) {
     $fine = if ($fineByCard.ContainsKey($card.id)) { @($fineByCard[$card.id] | Sort-Object -Unique) } else { @() }
@@ -52,6 +58,9 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
         '未进入原子路由（有实战入口）'
     } else {
         '无实战入口'
+    }
+    if ($batch6HReviewedCardIds -contains $card.id) {
+        $review += '；6H进攻公开声明已验收'
     }
     [pscustomobject]@{
         Id = $card.id

@@ -1058,6 +1058,8 @@ public sealed partial class L12GameEngine
             card.AttacksThisTurn = 0;
             card.TsukuyomiFrontMoveBonusCount = 0;
             card.TsukuyomiFrontMoveBonusTurn = -1;
+            card.GawainMasterDamageBonus = 0;
+            card.GawainMasterDamageBonusUntilTurn = -1;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
             card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
             if (card.ReadyAfterNextKillUntilTurn <= completedTurn)
@@ -1391,6 +1393,8 @@ public sealed partial class L12GameEngine
         card.LastCavalryMoveTurn = -1;
         card.TsukuyomiFrontMoveBonusCount = 0;
         card.TsukuyomiFrontMoveBonusTurn = -1;
+        card.GawainMasterDamageBonus = 0;
+        card.GawainMasterDamageBonusUntilTurn = -1;
         card.CannotUntapUntilRound = 0;
         card.CannotRespondUntilRound = 0;
         card.SetRound = 0;

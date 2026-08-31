@@ -155,23 +155,6 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item);
                 break;
-            case "hanxin-attack":
-                if (source is not null)
-                {
-                    AddTimedModifier(source, 1000, 0, State.TurnSerial, "韩信");
-                    GrantStrongAttack(source);
-                }
-                FinishStackItem(item);
-                break;
-            case "guanyu-attack":
-                if (source is not null)
-                {
-                    AddTimedModifier(source, 1000, 0, State.TurnSerial, "关羽");
-                    source.HasSureHit = true;
-                    if (State.PendingDefense is not null) State.PendingDefense.SureHit = true;
-                }
-                FinishStackItem(item);
-                break;
             case "mozi-immortal":
                 foreach (var id in (data.GetValueOrDefault("targets") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries))
                 {

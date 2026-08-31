@@ -317,21 +317,6 @@ public sealed partial class L12GameEngine
             case "诸葛亮":
                 BeginZhugePeek(item);
                 return true;
-            case "织田信长":
-                if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "织田信长：是否消耗1士气，使对方所有军团本回合费用-1？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "nobunaga-attack-pay" });
-                return true;
-            case "土方岁三":
-                if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "土方岁三：是否消耗1士气，击杀对方1张费用不高于1的军团？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "hijikata-attack-pay" });
-                return true;
-            case "高杉晋作":
-                if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "高杉晋作：是否消耗1士气，使对方1张军团本回合费用-2？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "takasugi-attack-pay" });
-                return true;
             default:
                 return TryResolveS1FactionAttack(item, card);
         }
@@ -497,15 +482,8 @@ public sealed partial class L12GameEngine
                 else FinishStackItem(item); return true;
             case "nobunaga-kill":
             case "kenshin-kill":
-            case "hijikata-attack-kill":
                 if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀");
                 FinishStackItem(item); return true;
-            case "nobunaga-attack-pay":
-                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "nobunaga-debuff"); else FinishStackItem(item); return true;
-            case "hijikata-attack-pay":
-                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "hijikata-kill"); else FinishStackItem(item); return true;
-            case "takasugi-attack-pay":
-                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "takasugi-debuff"); else FinishStackItem(item); return true;
             case "hijikata-enter-kill":
                 if (chosen[0] != "skip") KillTarget(item, chosen[0], "被土方岁三击杀");
                 if (item.Data["hijikata-step"] == "2")

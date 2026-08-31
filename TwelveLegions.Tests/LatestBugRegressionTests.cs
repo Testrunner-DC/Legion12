@@ -425,10 +425,15 @@ public sealed class LatestBugRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", olaf.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
-        var effect = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "olaf-strong");
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var effect = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", effect.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: effect.PromptId,
             CardInstanceIds: [graveCard.InstanceId])).Accepted);
+        PassResponses(game);
 
         Assert.True(olaf.HasStrongAttack);
         Assert.Equal(2, game.State.PendingDefense?.MasterDamage);

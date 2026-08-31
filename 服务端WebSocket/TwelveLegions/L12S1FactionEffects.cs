@@ -264,12 +264,6 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "图特摩斯三世": ApplySunKingAttack(item); return true;
-            case "美尼斯":
-            {
-                var choices = PublicLegions(player).Where(target => target.InstanceId != card.InstanceId).Select(target => target.InstanceId).ToList(); choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-target", "美尼斯：可弃置我方战场1张军团，自身兵力+2000并获得强攻", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "menes-sacrifice" }); return true;
-            }
             case "萨拉丁":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "moveTarget")))
                 {
@@ -277,24 +271,7 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
-            case "阿伊":
-                if (ActiveResourceCount(player) < 1) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "阿伊：是否消耗1士气，使我方前排1张低兵力军团本回合兵力+2000？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ay-pay" }); return true;
-            case "贝奥武夫":
-                CreatePrompt(item.Controller, "optional", "贝奥武夫：是否令我方主宰受到1点伤害，自身兵力+2000？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "beowulf-buff" }); return true;
-            case "奥拉夫二世":
-            {
-                var choices = player.Graveyard.Select(candidate => candidate.InstanceId).ToList(); choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "奥拉夫二世：可将墓地1张牌置入牌库底部，获得强攻", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "olaf-strong" }); return true;
-            }
             case "齐格鲁德": if (player.Relic?.CardId == "S01-0317" || player.ExtraRelics.Any(relic => relic.CardId == "S01-0317")) AddTimedModifier(card, 1000, 0, State.TurnSerial, "齐格鲁德"); FinishStackItem(item); return true;
-            case "古斯塔夫一世":
-                if (player.Graveyard.Count < 2) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "古斯塔夫一世：是否将墓地2张牌返回牌库底部，使自身本回合兵力+2000？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "gustav-attack-choice" }); return true;
             default: return false;
         }
     }
@@ -512,37 +489,6 @@ public sealed partial class L12GameEngine
             case "festival-grave": ContinuePharaohFestivalGrave(item, chosen[0]); return true;
             case "festival-bottom-order": CompletePharaohFestivalOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
             case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
-            case "menes-sacrifice":
-                if (chosen[0] != "skip" && source is not null)
-                {
-                    var target = FindOnField(player, chosen[0], out _, out _);
-                    if (target is not null)
-                        RemoveFromField(player, target, true, "被美尼斯弃置", leaveKind: L12FieldLeaveKind.Discard);
-                    AddTimedModifier(source, 2000, 0, State.TurnSerial, "美尼斯");
-                    GrantStrongAttack(source);
-                }
-                FinishStackItem(item); return true;
-            case "ay-buff": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "阿伊"); FinishStackItem(item); return true; }
-            case "ay-pay":
-                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "ay-buff"); else FinishStackItem(item); return true;
-            case "beowulf-buff": if (chosen[0] == "yes" && source is not null) { DamageMaster(item.Controller, 1, "贝奥武夫进攻效果"); AddTimedModifier(source, 2000, 0, State.TurnSerial, "贝奥武夫"); } FinishStackItem(item); return true;
-            case "olaf-strong":
-                if (chosen[0] != "skip" && source is not null)
-                {
-                    var selected = player.Graveyard.FirstOrDefault(card => card.InstanceId == chosen[0]);
-                    if (selected is not null) { MoveGraveToLibraryBottom(player, [selected]); GrantStrongAttack(source); }
-                }
-                FinishStackItem(item); return true;
-            case "gustav-attack-choice":
-                if (chosen[0] == "yes")
-                    CreatePrompt(item.Controller, "order", "古斯塔夫一世：选择墓地2张牌，依选择顺序返回牌库底部", player.Graveyard.Select(card => card.InstanceId), 2, 2,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "gustav-attack-return" });
-                else FinishStackItem(item);
-                return true;
-            case "gustav-attack-return":
-                MoveGraveToLibraryBottom(player, chosen.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
-                if (source is not null) AddTimedModifier(source, 2000, 0, State.TurnSerial, "古斯塔夫一世");
-                FinishStackItem(item); return true;
             case "gustav-ready-choice":
                 if (chosen[0] == "yes")
                     CreatePrompt(item.Controller, "order", "古斯塔夫一世：选择墓地2张牌，依选择顺序返回牌库底部", player.Graveyard.Select(card => card.InstanceId), 2, 2,

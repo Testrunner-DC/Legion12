@@ -219,48 +219,16 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
+        if (TryResolveAttackPublicTriggerEffect(item, card)) return;
         var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
-            case "韩信":
-                if (CanReturnMorale(player, 1))
-                    CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使韩信本回合兵力 +1000 并获得强攻？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "hanxin-attack" });
-                else FinishStackItem(item);
-                return;
-            case "关羽":
-                if (CanReturnMorale(player, 1))
-                    CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使关羽本回合兵力 +1000 并获得必中？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "guanyu-attack" });
-                else FinishStackItem(item);
-                return;
             case "本多忠胜":
                 foreach (var enemy in State.Players[1 - item.Controller].Field.SelectMany(row => row).Where(target => target is not null))
                     enemy!.CostModifier--;
                 PromptEnemyLegion(item, "honda-kill-zero", "选择对方 1 张当前费用为 0 的军团并击杀",
                     target => target.CurrentCost == 0, optional: false);
                 return;
-            case "源博雅":
-            {
-                var counters = State.Players[1 - item.Controller].Field[1]
-                    .Where(target => target is { CardType: "tactic" }).Select(target => target!.InstanceId).ToArray();
-                if (counters.Length == 0) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "covered-counter", "选择对方后排 1 张覆盖的反击战术，本回合无法发动",
-                    counters, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "hiromasa-disable" });
-                return;
-            }
-            case "稻姬本多小松":
-            {
-                var choices = player.Field[0].Where(target => target is not null
-                        && target.InstanceId != card.InstanceId && target.Faction == "gaotianyuan" && target.Troops <= 5000)
-                    .Select(target => target!.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "target", "选择我方前排 1 张其他兵力不高于 5000 的【高天原】军团，本回合兵力 +1000",
-                    choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "inaihime-buff" });
-                return;
-            }
             default:
                 if (!TryResolveS1ExtendedAttack(item, card) && !TryResolveS2FactionAttack(item, card)) FinishStackItem(item);
                 return;

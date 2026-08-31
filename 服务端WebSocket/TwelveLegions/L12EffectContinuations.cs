@@ -53,22 +53,10 @@ public sealed partial class L12GameEngine
                 }
                 else AddEvent("effect", prompt.PlayerIndex, "对方不同意议和谈判，双方不额外抽牌");
                 FinishStackItem(item); break;
-            case "hanxin-attack":
-                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "hanxin-attack");
-                else FinishStackItem(item); break;
-            case "guanyu-attack":
-                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "guanyu-attack");
-                else FinishStackItem(item); break;
             case "inaihime-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);
                 if (target is not null) AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
-                FinishStackItem(item); break;
-            }
-            case "hiromasa-disable":
-            {
-                var counter = FindOnField(State.Players[1 - item.Controller], chosen[0], out _, out _);
-                if (counter is not null) counter.CannotRespondUntilRound = State.Round;
                 FinishStackItem(item); break;
             }
             case "mulan-lock-morale":

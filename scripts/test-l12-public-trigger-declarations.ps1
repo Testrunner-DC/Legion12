@@ -18,6 +18,7 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
 }
 
 $plans = Read-Source 'L12PublicTriggerEffectPlans.cs'
+$attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $kernel = Read-Source 'L12RuleKernelIntegration.cs'
 $counter = Read-Source 'L12S2CounterTactics.cs'
 $prompts = Read-Source 'L12PromptsAndSetup.cs'
@@ -37,6 +38,29 @@ foreach ($cardId in @(
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
 }
+
+foreach ($cardId in @(
+    'S01-0104', 'S01-0106', 'S01-0203', 'S01-0208', 'S01-0301', 'S01-0306', 'S01-0311',
+    'S01-0402', 'S01-0405', 'S01-0406', 'S01-0408', 'S01-0413', 'S01-0416', 'S02-0103',
+    'S02-0509', 'S02-0511', 'S02-0517', 'S02-0519', 'S02-0605', 'S02-0606', 'S02-0607',
+    'S02-0608', 'S02-0612', 'S02-0617'
+)) {
+    Assert-Contains $attackPlans ('["' + $cardId + '"]') "Attack public trigger plan is missing card $cardId."
+}
+Assert-Contains $attackPlans 'AttackPublicTriggerPlans' 'Attack declarations need a shared data-driven plan table.'
+Assert-Contains $attackPlans 'TryQueueAttackPublicTriggerCandidates' 'Attack triggers must share one candidate entry.'
+Assert-Contains $attackPlans 'CreateTriggerCandidate(controller, source, trigger, candidateText, candidateData, source)' 'Attack candidates must retain a last-known source snapshot.'
+Assert-Contains $attackPlans 'PayAttackPublicCost(candidate, activation, plan, player, source, costIds)' 'Attack colon costs must commit before stack entry.'
+Assert-Contains $attackPlans 'PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required)' 'Menes must be allowed to declare itself as the legion discard cost.'
+Assert-Contains $attackPlans '"discard-own-legion" => PublicLegions(player).Any(),' 'Menes must remain activatable when it is the only friendly legion.'
+if ($attackPlans.IndexOf('sacrifice.InstanceId == candidate.SourceInstanceId', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Menes self-discard cost must not be rejected during declaration commit.'
+}
+Assert-Contains $attackPlans '["attackPlan"] = "gawain-buff"' 'Gawain rune consumption and buff must remain independent stack segments.'
+Assert-Contains $attackPlans 'Candidate("richard-defense"' 'Richard defense tax must be its own same-time candidate.'
+Assert-Contains $attackPlans 'Candidate("richard-squires"' 'Richard squire cost/buff must be its own same-time candidate.'
+Assert-Contains $attackPlans 'Candidate("robin-rune"' 'Robin rune gain must be its own required candidate.'
+Assert-Contains $attackPlans 'Candidate("robin-draw"' 'Robin draw must be its own optional candidate.'
 
 Assert-Contains $plans 'HasPublicTriggerDeclarationPlan' 'Public trigger plans need a shared route predicate.'
 Assert-Contains $plans 'QueueOrPushTriggeredEffect' 'Direct trigger entry points must join the TriggerBatch declaration route.'
@@ -58,7 +82,7 @@ Assert-Contains $prompts 'or "S02-0106")' 'Cosmos Yin responses must route to th
 if ($plans.IndexOf('"S02-0106"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cosmos Yin must not be placed in the pre-reveal public trigger planner.'
 }
-foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403', 'S02-0617')) {
+foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403')) {
     if ($plans.IndexOf('"' + $hiddenCardId + '"', [StringComparison]::Ordinal) -ge 0) {
         throw "Hidden-information effect $hiddenCardId must remain outside the pre-reveal public trigger planner."
     }
@@ -74,6 +98,20 @@ foreach ($legacy in @(
 )) {
     if ($allRuntime.IndexOf($legacy, [StringComparison]::Ordinal) -ge 0) {
         throw "Legacy post-stack public trigger continuation returned: $legacy"
+    }
+}
+
+foreach ($legacyAttackPrompt in @(
+    'hanxin-attack', 'guanyu-attack', 'menes-sacrifice', 'ay-pay', 'ay-buff', 'beowulf-buff',
+    'olaf-strong', 'gustav-attack-choice', 'gustav-attack-return', 'nobunaga-attack-pay',
+    'nobunaga-debuff', 'hijikata-attack-pay', 'hijikata-attack-kill', 'takasugi-attack-pay',
+    'hiromasa-disable', 's2-odysseus-show-tactic', 's2-parrot-god-power',
+    's2-penthesilea-god-power', 's2-achilles-god-power', 's2-bors-strong',
+    's2-percival-attack-discard', 's2-gawain-runes', 's2-richard-attack-squires',
+    's2-scathach-rune'
+)) {
+    if ($allRuntime.IndexOf($legacyAttackPrompt, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack attack declaration continuation returned: $legacyAttackPrompt"
     }
 }
 

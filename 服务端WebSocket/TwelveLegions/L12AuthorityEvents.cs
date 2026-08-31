@@ -143,7 +143,7 @@ public sealed partial class L12GameEngine
     {
         if (item.Data.GetValueOrDefault("richardExtraResolved") == "true"
             || item.Data.GetValueOrDefault("invalid") == "true"
-            || item.SourceCardId != "S02-0608") return false;
+            || State.PendingDefense?.RichardDefenseTaxActive != true) return false;
         var hasDeclaredDefense = item.Data.GetValueOrDefault("action") is "block" or "support"
             && (!string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("blockIds"))
                 || !string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("supportId")));

@@ -22,7 +22,8 @@ public sealed partial class L12GameEngine
 
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
-        => FifthBatchPublicTriggerPlan(cardId, trigger) is not null
+        => HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
+            || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
             || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
         {
             ("S02-04M1", "active", "tsukuyomiFollowMove" or "tsukuyomiReadyMorale", _) => true,
@@ -45,6 +46,8 @@ public sealed partial class L12GameEngine
     private void QueueOrPushTriggeredEffect(int controller, L12CardInstance source, string trigger, string text,
         IEnumerable<string>? targets = null, Dictionary<string, string>? data = null)
     {
+        if (TryQueueAttackPublicTriggerCandidates(controller, source, trigger, text, targets, data))
+            return;
         if (!HasPublicTriggerDeclarationPlan(source.CardId, trigger, data))
         {
             PushEffect(controller, source, trigger, text, targets, data);
@@ -63,6 +66,9 @@ public sealed partial class L12GameEngine
         var opponent = State.Players[1 - candidate.Controller];
         List<L12ActivationSelectionStep>? steps = null;
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
+
+        if (TryBeginAttackPublicTriggerDeclaration(candidate, source))
+            return true;
 
         if (fifthBatchPlan == "blood-eagle")
         {
@@ -389,6 +395,8 @@ public sealed partial class L12GameEngine
 
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
+        if (TryCompleteAttackPublicTriggerDeclaration(candidate, activation))
+            return true;
         var key = (candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability"));
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
         var handled = fifthBatchPlan is not null || key switch
