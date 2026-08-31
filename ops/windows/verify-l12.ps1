@@ -123,6 +123,12 @@ try {
         New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $repoRoot $contractFile.Source) -Destination $targetPath -Force
     }
+    # UI 的玩家文案门禁会全量扫描服务端 Prompt 协议值；隔离构建必须复制全部 C# 定义，
+    # 否则门禁会因为缺文件失败，或只扫描局部文件而产生“缺失标签为 0”的假阳性。
+    $isolatedServerSourceRoot = Join-Path $frontendWorkspaceDirectory "服务端WebSocket\TwelveLegions"
+    New-Item -ItemType Directory -Path $isolatedServerSourceRoot -Force | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\TwelveLegions") -File -Filter "*.cs" |
+        Copy-Item -Destination $isolatedServerSourceRoot -Force
     $frontendCardsLink = Join-Path $frontendBuildDirectory "public\cards"
     New-Item -ItemType Junction -Path $frontendCardsLink -Target (Join-Path $frontendSourceRoot "public\cards") | Out-Null
     Push-Location $frontendBuildDirectory
