@@ -72,7 +72,7 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent) {
   wrapper.className = 'l12-combat-defeat-ghost'
   Object.assign(wrapper.style, {
     position: 'fixed', left: `${captured.rect.left}px`, top: `${captured.rect.top}px`,
-    width: `${captured.rect.width}px`, height: `${captured.rect.height}px`, zIndex: '2147482987',
+    width: `${captured.rect.width}px`, height: `${captured.rect.height}px`, zIndex: '901',
     pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform, opacity',
   })
   Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', pointerEvents: 'none' })

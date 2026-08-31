@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 import { factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets'
@@ -35,6 +35,7 @@ const props = defineProps<{
   paymentChoiceIds?: string[]
   paymentSelectedIds?: string[]
   hiddenRevealCard?: Card | null
+  interactionPromptActive?: boolean
   canActivateOsiris?: boolean
   osirisVictoryDisabledReason?: string
 }>()
@@ -54,6 +55,13 @@ const factionOpen = ref(false)
 const factionMinimized = ref(false)
 const abilityCardOpen = ref<Card | null>(null)
 const abilityCardMinimized = ref(false)
+watch(() => props.interactionPromptActive, active => {
+  if (!active) return
+  factionOpen.value = false
+  factionMinimized.value = false
+  abilityCardOpen.value = null
+  abilityCardMinimized.value = false
+})
 const moraleLimit = computed(() => props.player.morale.length + (props.player.moraleDeck?.length ?? props.player.moraleDeckCount ?? 0))
 const currentMoraleLimit = computed(() => props.player.morale.length)
 const topGraveyard = computed(() => props.player.graveyard?.at(-1) ?? null)
@@ -381,9 +389,9 @@ function beginCardAbility(card: Card) {
         <div>
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
-          <p v-if="!factionActions.length">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
+          <p v-if="!factionActions.length" class="l12-effect-body">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
           <div v-if="factionActions.length" class="faction-effect-actions">
-            <button v-for="entry in factionActions" :key="entry.id"
+            <button v-for="entry in factionActions" :key="entry.id" class="l12-effect-body l12-effect-body--compact"
               :disabled="!controllable || !actionsEnabled || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
               @click="emit('factionAbility', entry.id); factionOpen = false">
@@ -407,9 +415,9 @@ function beginCardAbility(card: Card) {
         <CardImage :card-id="abilityCardOpen.cardId" :legacy-url="abilityCardOpen.imageUrl" :alt="abilityCardOpen.name" intent="detail" eager @mouseenter="emit('focus', abilityCardOpen)" />
         <div>
           <small>卡牌效果</small><h2>{{ abilityCardOpen.name }}</h2>
-          <p v-if="!activeAbilities(abilityCardOpen).length">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
+          <p v-if="!activeAbilities(abilityCardOpen).length" class="l12-effect-body">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
           <div class="faction-effect-actions">
-            <button v-for="entry in activeAbilities(abilityCardOpen)" :key="entry.id"
+            <button v-for="entry in activeAbilities(abilityCardOpen)" :key="entry.id" class="l12-effect-body l12-effect-body--compact"
               :disabled="!actionsEnabled || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
               @click="emit('ability', abilityCardOpen!, entry.id); abilityCardOpen = null">{{ entry.label }}</button>

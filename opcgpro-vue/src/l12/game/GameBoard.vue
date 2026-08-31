@@ -163,6 +163,9 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
 const paymentChoiceIds = computed(() => resourceSelectionPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
   ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
+const passivePresentationPaused = computed(() => Boolean(
+  publicReveal.value || diceReveal.value || hiddenRevealCard.value || activeBoardPromptId.value,
+))
 const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && focusCard.value && (
   graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
   || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
@@ -234,10 +237,12 @@ const boardSlotPreview = computed<Card | null>(() => {
   }
 })
 watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
-watch(() => boardSlotPrompt.value?.promptId, promptId => {
+watch(activeBoardPromptId, promptId => {
   if (!promptId) return
   graveyardPlayer.value = null
   masterPlayerIndex.value = null
+  focusCard.value = null
+  customDisasterSlot.value = null
 })
 watch(() => resourceSelectionPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
 watch(controlledPlayerIndex, () => {
@@ -752,7 +757,7 @@ function statusTexts(card: Card) {
                   <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
                 </div>
                 <div v-if="focusCard.trialValue" class="inspector-card-tags"><span>试炼值 {{ focusCard.trialValue }}</span></div>
-                <p class="inspector-effect">{{ focusCard.effectText || '无效果文字' }}</p>
+                <p class="inspector-effect l12-effect-body l12-effect-body--compact">{{ focusCard.effectText || '无效果文字' }}</p>
                 <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
               </template>
               <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
@@ -774,7 +779,7 @@ function statusTexts(card: Card) {
               :selected-id="selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
-              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard"
+              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'cavalryMove'"
               :selection-mode="selectionModeFor(viewEnemy.playerIndex)" :targetable-ids="targetableIdsFor(viewEnemy.playerIndex)"
@@ -804,22 +809,22 @@ function statusTexts(card: Card) {
             </div>
             <PhasePlayback :events="game.recentEvents ?? []" @phase-change="phasePlaybackPhase = $event" />
             <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
-              :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
+              :paused="passivePresentationPaused" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
-              :viewer-player-index="game.you" :paused="Boolean(publicReveal || diceReveal || hiddenRevealCard)" />
+              :viewer-player-index="game.you" :paused="passivePresentationPaused" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" />
             <Teleport to="body">
               <Transition name="public-reveal">
-                <div v-if="publicReveal" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
+                <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
                   <div class="public-reveal-cards">
                     <CardImage v-for="card in publicReveal.cards" :key="card.instanceId" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="detail" eager
                       :class="{ horizontal: isHorizontalCardType(card.cardType) }" />
                   </div>
-                  <strong>{{ publicReveal.text }}</strong>
+                  <strong class="l12-effect-body l12-effect-body--prominent">{{ publicReveal.text }}</strong>
                 </div>
               </Transition>
               <Transition name="dice-reveal">
-                <div v-if="diceReveal" :key="diceReveal.sequence" class="dice-reveal-animation" :class="{ settled: diceReveal.settled }" data-ui-contract="dice-event-animation">
+                <div v-if="diceReveal && !activeBoardPromptId" :key="diceReveal.sequence" class="dice-reveal-animation" :class="{ settled: diceReveal.settled }" data-ui-contract="dice-event-animation">
                   <div class="dice-reveal-values">
                     <b v-for="(value, index) in diceReveal.animatedValues" :key="index">{{ value }}</b>
                   </div>
@@ -828,7 +833,7 @@ function statusTexts(card: Card) {
               </Transition>
             </Teleport>
             <div v-if="mode === 'attack' && selectedId && !combat" class="board-mode-hint">请选择进攻对象</div>
-            <div v-if="combat" class="combat-presentation">
+            <div v-if="combat && !activeBoardPromptId" class="combat-presentation">
               <i class="combat-trace"/>
               <div class="combat-versus">
                 <span :class="combat.attackerOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.attackerOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.attacker.name }}</span>
@@ -846,7 +851,7 @@ function statusTexts(card: Card) {
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
-              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard"
+              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
               :selected-id="supportId || selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
@@ -982,7 +987,7 @@ function statusTexts(card: Card) {
   transform: translate(-50%,-50%);
 }
 .disaster-value b { font-size: 17px; }
-.board-target-controls{position:fixed;z-index:1050;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:11px}.board-target-controls span{color:#8f9894;font-size:9px}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
+.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:11px}.board-target-controls span{color:#8f9894;font-size:9px}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:8px;font-weight:800;line-height:1.45}
 .inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:8px;font-weight:900}
@@ -990,4 +995,5 @@ function statusTexts(card: Card) {
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(146px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:44px;line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
+.public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
 </style>

@@ -162,6 +162,7 @@ export interface Prompt {
   minChoose: number
   maxChoose: number
   data: Record<string, string>
+  choiceLabels: Record<string, string>
 }
 
 export interface StackItem {

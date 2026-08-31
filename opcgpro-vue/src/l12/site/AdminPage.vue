@@ -321,10 +321,10 @@ onMounted(() => { void initializeAdminPage() })
           <section class="panel effect-detail">
             <template v-if="selectedEffect">
               <header><div><small>{{ selectedEffect.cardId }} · {{ selectedEffect.product }}</small><h2>{{ selectedEffect.name }}</h2><p>{{ selectedEffect.faction }} · {{ selectedEffect.cardType }}</p></div><span class="effect-header-status"><em class="review-pill" :data-review="selectedEffect.reviewStatus">{{ reviewLabel(selectedEffect.reviewStatus) }}</em><span class="status-pill" :data-status="selectedEffect.migrationStatus">{{ statusLabel(selectedEffect.migrationStatus) }}</span></span></header>
-              <div class="original-text"><b>卡面原文</b><p>{{ selectedEffect.effectText || '无效果文本' }}</p></div>
+              <div class="original-text"><b>卡面原文</b><p class="l12-effect-body">{{ selectedEffect.effectText || '无效果文本' }}</p></div>
               <article v-for="ability in selectedEffect.abilities" :key="ability.abilityId" class="ability-card">
                 <header><span><small>ABILITY {{ ability.sequence }}</small><b>{{ ability.trigger }}</b><em class="execution-model">{{ ability.executionModel }}</em></span><span class="effect-header-status"><em class="review-pill" :data-review="ability.reviewStatus">{{ reviewLabel(ability.reviewStatus) }}</em><span class="status-pill" :data-status="ability.migrationStatus">{{ statusLabel(ability.migrationStatus) }}</span></span></header>
-                <p>{{ ability.text }}</p>
+                <p class="l12-effect-body">{{ ability.text }}</p>
                 <div class="atom-flow">
                   <template v-for="(atom, index) in ability.atoms" :key="atom.atomId">
                     <article class="atom-node" :data-category="atomDescriptor(atom.kind)?.category" :class="{ legacy: atom.kind === 'legacy.resolve' }" :title="atomDescriptor(atom.kind)?.description">

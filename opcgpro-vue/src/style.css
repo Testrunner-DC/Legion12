@@ -26,6 +26,11 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 body { background: radial-gradient(90% 70% at 48% 10%,#20241e 0,#0b1114 46%,#070a0c 100%); }
 body::before { content:''; position:fixed; inset:0; pointer-events:none; background:linear-gradient(rgba(216,179,98,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(216,179,98,.025) 1px,transparent 1px); background-size:40px 40px; mask-image:linear-gradient(to bottom,#000,transparent 85%); }
 
+/* Card-effect prose only. Costs, card numbers, stats, tags and other auxiliary metadata stay on their local scales. */
+.l12-effect-body{font-size:14px!important;line-height:1.75!important}
+.l12-effect-body--compact{font-size:12px!important;line-height:1.65!important}
+.l12-effect-body--prominent{font-size:15px!important;line-height:1.65!important}
+
 .grand-panel { position:relative; border:1px solid var(--line); background:linear-gradient(145deg,rgba(24,31,35,.95),rgba(12,17,20,.96)); box-shadow:inset 0 1px rgba(255,255,255,.025),0 12px 36px rgba(0,0,0,.24); }
 .corner { position:absolute; width:10px; height:10px; pointer-events:none; border-color:var(--primary); opacity:.65 }.corner.tl{left:-1px;top:-1px;border-left:2px solid;border-top:2px solid}.corner.tr{right:-1px;top:-1px;border-right:2px solid;border-top:2px solid}.corner.bl{left:-1px;bottom:-1px;border-left:2px solid;border-bottom:2px solid}.corner.br{right:-1px;bottom:-1px;border-right:2px solid;border-bottom:2px solid}
 .kicker { margin:0 0 8px; color:var(--primary); font:700 10px/1.2 monospace; letter-spacing:.22em; }

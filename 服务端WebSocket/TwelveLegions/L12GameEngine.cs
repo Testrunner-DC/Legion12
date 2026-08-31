@@ -187,7 +187,7 @@ public sealed partial class L12GameEngine
             .Select(prompt => (object)new
             {
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
-                prompt.MinChoose, prompt.MaxChoose, prompt.Data,
+                prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels,
             }).ToArray();
         // 对手正在处理任何选择时都给出不泄露私密候选内容的等待状态。
         var waitingPromptSource = revealAllHands

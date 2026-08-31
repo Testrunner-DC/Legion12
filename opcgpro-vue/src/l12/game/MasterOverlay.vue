@@ -38,17 +38,17 @@ const abilities = computed<AbilityEntry[]>(() => {
           <small>{{ mine ? '我方主宰' : '对方主宰' }}</small>
           <h2>{{ player.master.masterName }}</h2>
           <b>血量 {{ player.master.hp }}/{{ player.master.maxHp }}</b>
-          <p v-if="!abilities.length">{{ player.master.effectText || '暂无效果文字' }}</p>
+          <p v-if="!abilities.length" class="l12-effect-body">{{ player.master.effectText || '暂无效果文字' }}</p>
           <article v-if="player.master.masterId === 'S01-01M1'" class="master-related-card">
             <CardImage card-id="S02-01S1" legacy-url="/cards/faces/天廷/哮天犬·稚.png" alt="哮天犬·稚" intent="board" eager />
-            <div><strong>【杨戬专属】哮天犬·稚</strong><p>我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。\n阵亡时 可从士气牌库追加1张休整的士气。</p></div>
+            <div><strong>【杨戬专属】哮天犬·稚</strong><p class="l12-effect-body l12-effect-body--compact">我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。\n阵亡时 可从士气牌库追加1张休整的士气。</p></div>
           </article>
           <div v-if="abilities.length" class="master-abilities">
             <button v-for="entry in abilities" :key="entry.id"
               :disabled="!canActivate || busy || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
               @click="emit('activate', entry.id)">
-              <span>{{ entry.label }}</span>
+              <span class="l12-effect-body l12-effect-body--compact">{{ entry.label }}</span>
             </button>
           </div>
           <span v-if="mine && !canActivate" class="master-hint">仅在我方主要阶段可以发动主宰效果</span>

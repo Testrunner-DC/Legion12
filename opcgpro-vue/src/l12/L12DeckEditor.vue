@@ -396,7 +396,7 @@ onBeforeUnmount(closeDeckImage)
           <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>
           <div><small>{{ selected.number }}</small><h3>{{ selected.nameZh }}</h3>
             <div v-if="selected.traits?.length || selected.profession || selected.trialValue" class="builder-card-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span v-if="selected.profession">{{ selected.profession }}</span><span v-if="selected.trialValue">试炼值 {{ selected.trialValue }}</span></div>
-            <p>{{ selected.effect || '无效果文字' }}</p></div>
+            <p class="l12-effect-body l12-effect-body--compact">{{ selected.effect || '无效果文字' }}</p></div>
         </section>
         <footer :class="{ error: validation }">{{ notice || validation || '牌库合法，可以保存并用于房间对战' }}</footer>
       </aside>

@@ -93,18 +93,6 @@ function sendAction(command: Record<string, unknown>, actingPlayerIndex = prompt
   else gameAction(command)
 }
 
-const choiceLabels: Record<string, string> = {
-  first: '选择先攻', second: '选择后攻', yes: '是', no: '否', agree: '同意', refuse: '不同意',
-  pass: '不响应', skip: '不发动', top: '牌库顶部', bottom: '牌库底部', recruit: '活跃登场',
-  confirm: '确认信息', cancel: '取消', discard: '弃置', suppress: '使其失去效果',
-  front: '前排', back: '后排', single: '选择1张', all: '全部', field: '战场', hand: '手牌',
-  play: '打出', draw: '抽取1张牌', heal: '恢复1点生命', normal: '普通登场', extra: '支付额外费用',
-  rune: '获得1枚符文', trial: '试炼进度+1', 'row-cost': '前后位移无需消耗费用',
-  'front-attack': '本回合可进攻对方军团', 'free-move': '本回合下一次前后位移无需消耗费用',
-  promotion: '晋升登场',
-  'free-tactic': '主动战术无需消耗费用', 'back-master': '后排远程军团可进攻主宰',
-}
-
 function allCards(): Card[] {
   const zoneCards = props.game.players.flatMap(player => [
     ...(player.hand ?? []), ...player.field.flat().filter(Boolean) as Card[], ...(player.graveyard ?? []),
@@ -149,11 +137,24 @@ const disasterHistory = computed(() => [
   },
 ])
 function cardFor(id: string) { return allCards().find(card => card.instanceId === id) }
+function isInternalChoiceValue(value: string) {
+  const normalized = value.trim().toLowerCase()
+  return /^(mode|continuation|action|prompt|activation|stack|effect)(:|[-_])/.test(normalized)
+    || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)
+}
+function safeChoiceFallback(id: string) {
+  const position = prompt.value?.validChoices.indexOf(id) ?? -1
+  return position >= 0 ? `效果选项 ${position + 1}` : '效果选项'
+}
+function naturalChoiceLabel(value: string | undefined, id: string) {
+  const normalized = value?.trim()
+  return normalized && normalized !== id && !isInternalChoiceValue(normalized) ? normalized : null
+}
 function label(id: string) {
-  // 服务端携带的文本是当前卡效的权威描述；通用协议标签只作为兜底。
-  // 例如〈杜阿特之门〉的 kill/recover 必须显示完整效果，而不是内部 choice id。
-  const base = prompt.value?.data?.[id] ?? choiceLabels[id] ?? cardFor(id)?.name ?? id.replace(':', ' 排第 ')
-  const zone = prompt.value?.data?.[`${id}:zone`]
+  const base = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
+    ?? cardFor(id)?.name
+    ?? safeChoiceFallback(id)
+  const zone = naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
   return zone ? `${base} · ${zone}` : base
 }
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }
@@ -483,7 +484,7 @@ function kindLabel() {
             :class="{ selected: selected.includes(choice), unavailable: displayedCardsAreChoices && !prompt.validChoices.includes(choice), 'card-choice': detailFor(choice), 'horizontal-card': isHorizontalCardType(detailFor(choice)?.cardType) }"
             @mouseenter="focusChoice(choice)" @focus="focusChoice(choice)" @click="focusChoice(choice); toggle(choice)">
             <CardImage v-if="imageFor(choice)" :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :alt="label(choice)" :intent="usesDetailCardImages ? 'detail' : 'thumb'" eager/>
-            <span>{{ label(choice) }}</span>
+            <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
             <b v-if="selected.includes(choice) && prompt.maxChoose > 1">{{ selected.indexOf(choice) + 1 }}</b>
           </button>
         </div>
@@ -571,7 +572,7 @@ function kindLabel() {
 
 <style scoped>
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:12px}.initiative-race span{color:#89928e;font-size:9px}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:52px;line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:9px;font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
-.l12-prompt-overlay{position:fixed!important;z-index:1000!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
+.l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
 .prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow:hidden}
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:18px;line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
@@ -588,7 +589,7 @@ function kindLabel() {
 .all-placement-workspace{display:grid;grid-template-columns:62px 1fr 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{display:flex;min-width:0;justify-content:center;gap:7px;overflow-x:auto;padding:5px}.all-placement-row .placement-mini-card{width:84px!important;min-width:84px!important;height:118px!important;flex-basis:84px!important}.all-placement-row .placement-mini-card .l12-card-image{width:78px!important;height:99px!important}.placement-edge{color:#fff;font-size:18px;font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}
 .prompt-card-detail{display:grid;min-height:112px;grid-template-columns:130px 1fr;gap:14px;margin:0 3px 10px;padding:10px;border:1px solid rgba(238,238,228,.32);background:#090d0e}.prompt-card-detail>.l12-card-image{width:130px;height:108px;background:#050708}.prompt-card-detail small{color:#70d7df;font-size:9px;letter-spacing:.12em}.prompt-card-detail h3{margin:3px 0 5px;color:#fff;font-size:16px}.prompt-card-detail dl{display:flex;gap:12px;margin:0}.prompt-card-detail dl div{display:flex;gap:4px}.prompt-card-detail dt{color:#777f7c;font-size:9px}.prompt-card-detail dd{margin:0;color:#fff;font-size:10px;font-weight:900}.prompt-card-detail p{max-height:48px;margin:5px 0 0;overflow:auto;color:#c9cdc7;font-size:10px;font-weight:800;line-height:1.55;white-space:pre-wrap}
 .prompt-panel footer button.primary{border:2px solid #fff!important;background:#f2eee3!important;color:#090c0d!important}.prompt-panel footer button.primary:disabled{border-color:#646966!important;background:#2a2e2d!important;color:#929792!important}.l12-prompt-overlay.waiting{background:rgba(2,4,5,.3)!important;backdrop-filter:blur(2px)}.waiting-panel{position:relative;width:min(430px,calc(100vw - 32px));padding:25px;text-align:center}.waiting-panel>.prompt-minimize{right:10px;top:10px}.waiting-panel small{color:#73d7de;font-size:9px;letter-spacing:.16em}.waiting-panel h2{margin:10px 0;color:#fff;font-size:21px}.waiting-panel p{color:#c0c5bf;font-size:11px}.waiting-panel i{display:inline-block;width:7px;height:7px;margin:10px 4px 0;border-radius:50%;background:#70d7df;animation:waiting-pulse 1.2s infinite}.waiting-panel i:nth-of-type(2){animation-delay:.2s}.waiting-panel i:nth-of-type(3){animation-delay:.4s}@keyframes waiting-pulse{0%,70%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-4px)}}
-.l12-prompt-overlay.minimized{z-index:2000;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:block;pointer-events:auto}.prompt-minimized-bar button{padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-weight:900;box-shadow:0 12px 35px #000}
+.l12-prompt-overlay.minimized{z-index:2147483600;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:block;pointer-events:auto}.prompt-minimized-bar button{padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-weight:900;box-shadow:0 12px 35px #000}
 @media(max-width:760px){.l12-prompt-overlay.minimized{right:10px;bottom:60px}}
 @media(max-width:520px){.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:92px;padding:8px 8px 8px var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 8px);padding:10px}}
 /* 天灾卡是横版；所有天灾准备、公开、触发与详情场景共用同一比例。 */
@@ -609,4 +610,5 @@ function kindLabel() {
 .disaster-preparation-history{grid-template-columns:minmax(260px,.8fr) minmax(420px,1.2fr)}.disaster-preparation-history button small{display:block;width:100%;overflow:hidden;color:#9ca6a1;font-size:7px;font-weight:900;text-align:center;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history .chosen button small{color:#78d1a6}
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
 .initiative-race img{width:58px;height:58px;object-fit:cover;border:2px solid #666;border-radius:2px}
+.l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
 </style>

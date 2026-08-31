@@ -129,6 +129,7 @@ public sealed partial class L12GameEngine
             data.TryAdd("choiceMode", "instant");
         ApplyDirectBoardChoiceMode(validChoices, data);
         EnrichPromptCardData(playerIndex, validChoices, data);
+        var choiceLabels = BuildPlayerChoiceLabels(playerIndex, kind, text, validChoices, data);
         var prompt = new L12Prompt
         {
             PromptId = $"prompt-{++State.PromptSequence}",
@@ -142,10 +143,130 @@ public sealed partial class L12GameEngine
             StackItemId = stackItemId,
             IsPrivate = isPrivate,
             Data = data,
+            ChoiceLabels = choiceLabels,
         };
         State.PendingPrompts.Add(prompt);
         AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{text}");
         return prompt;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> CommonPlayerChoiceLabels
+        = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["first"] = "选择先攻", ["second"] = "选择后攻",
+            ["yes"] = "是", ["no"] = "否", ["agree"] = "同意", ["refuse"] = "不同意",
+            ["pass"] = "不响应", ["skip"] = "不发动", ["confirm"] = "确认信息", ["cancel"] = "取消",
+            ["top"] = "牌库顶部", ["bottom"] = "牌库底部", ["recruit"] = "活跃登场",
+            ["discard"] = "弃置", ["suppress"] = "使其失去效果", ["front"] = "前排", ["back"] = "后排",
+            ["single"] = "选择1张", ["all"] = "全部", ["field"] = "战场", ["hand"] = "手牌",
+            ["draw"] = "抽取1张牌", ["heal"] = "我方主宰增加1点血量",
+            ["normal"] = "普通登场", ["extra"] = "支付额外费用", ["promotion"] = "晋升登场",
+            ["rune"] = "获得1枚符文", ["trial"] = "试炼进度+1", ["kill"] = "击杀军团",
+            ["recover"] = "回收卡牌", ["free-tactic"] = "主动战术无需消耗费用",
+            ["back-master"] = "后排远程军团可进攻主宰",
+            ["mode:none"] = "不发动追加效果", ["mode:draw"] = "抽取1张牌",
+            ["mode:heal"] = "我方主宰增加1点血量", ["mode:move"] = "位移军团",
+            ["mode:search"] = "检索牌库", ["mode:recover"] = "回收卡牌",
+            ["mode:damage"] = "分配兵力伤害", ["mode:debuff"] = "削弱军团",
+            ["mode:buff"] = "强化军团", ["mode:trial"] = "试炼进度+1",
+            ["mode:normal"] = "按通常方式发动", ["mode:strong"] = "发动强化效果",
+            ["mode:second"] = "追加第二段效果", ["mode:use"] = "发动追加效果",
+            ["mode:all"] = "对全部目标生效",
+            ["mode:row-cost"] = "选择对方1排并降低费用",
+            ["mode:front-attack"] = "强化我方前排军团进攻",
+            ["mode:free-move"] = "获得免费前后位移",
+            ["row:0"] = "选择前排", ["row:1"] = "选择后排",
+            ["pay:god-power"] = "支付神力", ["buff:strong"] = "获得强攻", ["buff:shock"] = "获得震击",
+        };
+
+    private Dictionary<string, string> BuildPlayerChoiceLabels(
+        int playerIndex,
+        string promptKind,
+        string promptText,
+        IReadOnlyList<string> choices,
+        IReadOnlyDictionary<string, string> data)
+    {
+        var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < choices.Count; index++)
+        {
+            var choice = choices[index];
+            if (data.TryGetValue(choice, out var supplied) && IsNaturalLanguageChoiceLabel(choice, supplied))
+            {
+                labels[choice] = supplied.Trim();
+                continue;
+            }
+            if (CommonPlayerChoiceLabels.TryGetValue(choice, out var common))
+            {
+                labels[choice] = common;
+                continue;
+            }
+            var contextual = ContextualPlayerChoiceLabel(promptKind, promptText, choice);
+            if (contextual is not null)
+            {
+                labels[choice] = contextual;
+                continue;
+            }
+            var card = FindPromptCard(playerIndex, choice);
+            if (card is not null)
+            {
+                labels[choice] = card.Name;
+                continue;
+            }
+            labels[choice] = StructuredPlayerChoiceLabel(playerIndex, choice) ?? $"效果选项 {index + 1}";
+        }
+        return labels;
+    }
+
+    private static string? ContextualPlayerChoiceLabel(string promptKind, string promptText, string choice)
+    {
+        if (choice.Equals("play", StringComparison.OrdinalIgnoreCase))
+            return promptText.Contains("登场", StringComparison.Ordinal) ? "活跃登场" : "打出";
+        if ((promptKind.Equals("option", StringComparison.OrdinalIgnoreCase)
+                || promptKind.Equals("disaster-value", StringComparison.OrdinalIgnoreCase))
+            && promptText.Contains("天灾值", StringComparison.Ordinal)
+            && int.TryParse(choice, out var delta) && delta is >= -2 and <= 2)
+            return delta switch
+            {
+                < 0 => $"天灾值减少{-delta}点",
+                > 0 => $"天灾值增加{delta}点",
+                _ => "天灾值不变",
+            };
+        return null;
+    }
+
+    private string? StructuredPlayerChoiceLabel(int playerIndex, string choice)
+    {
+        if (choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(choice.AsSpan(5), out var runeIndex))
+            return $"第{runeIndex}枚符文";
+        if (choice.StartsWith("battlefield:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(choice.AsSpan("battlefield:".Length), out var battlefield)
+            && battlefield >= 0 && battlefield < State.Players.Length)
+            return $"{State.Players[battlefield].Name}的战场";
+        if (choice.StartsWith("discard:", StringComparison.OrdinalIgnoreCase))
+        {
+            var card = State.Players[playerIndex].Hand
+                .FirstOrDefault(candidate => candidate.InstanceId.Equals(choice["discard:".Length..], StringComparison.OrdinalIgnoreCase));
+            return card is null ? "弃置所选手牌" : $"弃置〈{card.Name}〉";
+        }
+        var slot = choice.Split(':');
+        if (slot.Length == 2 && int.TryParse(slot[0], out var row) && int.TryParse(slot[1], out var column)
+            && row is >= 0 and < 2 && column is >= 0 and < 3)
+            return $"{(row == 0 ? "前排" : "后排")}第{column + 1}格";
+        return null;
+    }
+
+    private static bool IsNaturalLanguageChoiceLabel(string choice, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Equals(choice, StringComparison.OrdinalIgnoreCase)) return false;
+        var token = value.Trim();
+        return token.Any(character => character is >= '\u3400' and <= '\u9fff')
+            && !token.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)
+            && !token.StartsWith("continuation:", StringComparison.OrdinalIgnoreCase)
+            && !token.StartsWith("action:", StringComparison.OrdinalIgnoreCase)
+            && !token.StartsWith("prompt-", StringComparison.OrdinalIgnoreCase)
+            && !token.StartsWith("activation-", StringComparison.OrdinalIgnoreCase)
+            && !token.StartsWith("stack-", StringComparison.OrdinalIgnoreCase);
     }
 
     private L12Prompt CreateAnonymousHandChoicePrompt(

@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Text.Json;
 using Xunit;
 
 namespace TwelveLegions.Tests;
@@ -229,6 +230,17 @@ public sealed class AtomicReviewBatch3RegressionTests
         ResolveSinglePrompt(game, canopic.InstanceId);
         var reward = Assert.Single(game.State.PendingPrompts);
         Assert.Contains("mode:draw", reward.ValidChoices);
+        var rewardSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0))
+            .GetProperty("Prompts")[0];
+        var rewardLabels = rewardSnapshot.GetProperty("ChoiceLabels");
+        Assert.False(rewardSnapshot.TryGetProperty("Continuation", out _));
+        Assert.False(rewardSnapshot.TryGetProperty("StackItemId", out _));
+        Assert.Equal("抽取1张牌", rewardLabels.GetProperty("mode:draw").GetString());
+        Assert.Equal("我方主宰增加1点血量", rewardLabels.GetProperty("mode:heal").GetString());
+        Assert.All(reward.ValidChoices, choice =>
+            Assert.True(rewardLabels.TryGetProperty(choice, out _), $"缺少玩家可见标签：{choice}"));
+        Assert.DoesNotContain(rewardLabels.EnumerateObject(), entry =>
+            entry.Value.GetString()?.Contains("mode:", StringComparison.OrdinalIgnoreCase) == true);
         Assert.All(guards, guard => Assert.DoesNotContain(guard, player.Graveyard));
         ResolveSinglePrompt(game, "mode:draw");
 

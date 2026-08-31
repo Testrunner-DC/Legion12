@@ -175,7 +175,7 @@ function showNext() {
     wrapper.className = 'l12-zone-flight-ghost'
     Object.assign(wrapper.style, {
       position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
-      width: `${source.width}px`, height: `${source.height}px`, zIndex: '2147482988', pointerEvents: 'none',
+      width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
       transformOrigin: 'left top', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
     })
     const ghost = active.value.sourceGhost
@@ -206,7 +206,7 @@ function showNext() {
   timer = setTimeout(finish, 460)
 }
 
-function reset() {
+function cancelActiveMovement() {
   if (timer) clearTimeout(timer)
   timer = null
   activeGhostAnimation?.cancel()
@@ -215,6 +215,10 @@ function reset() {
   activeGhostWrapper = null
   revealTarget()
   active.value = null
+}
+
+function reset() {
+  cancelActiveMovement()
   queue.length = 0
   initialized = false
   lastSequence = 0
@@ -256,6 +260,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
   showNext()
 }, { immediate: true })
 watch(() => props.paused, paused => {
+  if (paused && active.value) cancelActiveMovement()
   if (!paused) showNext()
 })
 onBeforeUnmount(reset)
@@ -280,4 +285,5 @@ onBeforeUnmount(reset)
 @keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:8px}}
 @media(prefers-reduced-motion:reduce){.moving-card{animation-duration:.1s}}
+.zone-card-movement{z-index:902}
 </style>

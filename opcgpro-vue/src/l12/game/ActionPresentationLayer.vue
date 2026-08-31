@@ -115,4 +115,5 @@ onBeforeUnmount(() => {
 @keyframes l12-action-flare{from{transform:translateX(-40%) skewX(-18deg)}to{transform:translateX(260%) skewX(-18deg)}}
 @media(max-width:700px){.l12-action-presentation{top:10%;max-width:calc(100vw - 16px);padding:6px 9px}.action-copy strong{max-width:72vw;font-size:10px}.action-symbol{width:37px;height:37px;flex-basis:37px;font-size:16px}}
 @media(prefers-reduced-motion:reduce){.l12-action-presentation-enter-active,.action-flare{animation:none}.l12-action-presentation-leave-active{transition:opacity .01s linear}}
+.l12-action-presentation{z-index:900}
 </style>

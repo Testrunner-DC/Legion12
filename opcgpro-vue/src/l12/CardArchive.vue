@@ -208,7 +208,7 @@ function resetFilters() {
           <template v-if="selected.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ selected.disasterLevel }}</dd></template>
           <template v-if="selected.trialValue !== undefined"><dt>试炼值</dt><dd>{{ selected.trialValue }}</dd></template>
         </dl>
-        <section class="archive-effect"><b>效果</b><p>{{ selected.effect || '无效果文字' }}</p></section>
+        <section class="archive-effect"><b>效果</b><p class="l12-effect-body">{{ selected.effect || '无效果文字' }}</p></section>
         <section v-if="selectedDecks.length" class="archive-decks"><b>收录预组</b><p v-for="deck in selectedDecks" :key="deck.name">{{ deck.name }} × {{ deck.copies }}</p></section>
       </aside>
     </div>
