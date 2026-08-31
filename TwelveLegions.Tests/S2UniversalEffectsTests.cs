@@ -390,6 +390,8 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0016")]
+    [Trait("L12Evidence", "entry:public-response-mode-declaration")]
     public void RuinedRitualSuppressesADeckSummonedLegionsEnterEffectAndReducesTroops()
     {
         var game = new L12GameEngine(Catalog, "s2-ruin", "S2RUIN", 6221, ["甲", "乙"], [0, 4], skipPreparation: true);
@@ -420,8 +422,11 @@ public sealed class S2UniversalEffectsTests
         Assert.Contains(counter.InstanceId, response.ValidChoices);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: counter.InstanceId)).Accepted);
         var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-ruin-mode", mode.Data["action"]);
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "suppress")).Accepted);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Assert.DoesNotContain(counter, game.State.Players[1].Resolving);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:suppress")).Accepted);
+        PassResponses(game);
 
         Assert.Null(game.State.Players[0].Field[0][1]);
         Assert.Contains(summoned, game.State.Players[0].Graveyard);
@@ -430,6 +435,8 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0017")]
+    [Trait("L12Evidence", "entry:anonymous-opponent-hand-response-declaration")]
     public void SupplyPlunderReturnsAnOpposingHandCardToTopAndDraws()
     {
         var game = Create(seed: 6222);
@@ -452,11 +459,12 @@ public sealed class S2UniversalEffectsTests
         Assert.Contains(counter.InstanceId, response.ValidChoices);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: counter.InstanceId)).Accepted);
         var select = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-plunder-return", select.Data["action"]);
+        Assert.Equal("pending-activation", select.Continuation);
         var trueHandIds = game.State.Players[0].Hand.Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
         Assert.All(select.ValidChoices, choice => Assert.DoesNotContain(choice, trueHandIds));
-        Assert.Equal(select.ValidChoices.Count, select.HiddenChoiceMap.Count);
-        Assert.All(select.ValidChoices, choice =>
+        var anonymousChoices = select.ValidChoices.Where(choice => choice != "skip").ToArray();
+        Assert.Equal(anonymousChoices.Length, select.HiddenChoiceMap.Count);
+        Assert.All(anonymousChoices, choice =>
         {
             Assert.StartsWith("对方手牌 ", select.Data[choice]);
             Assert.Equal("/assets/l12/card-back-official.png", select.Data[$"{choice}:image"]);
@@ -466,9 +474,10 @@ public sealed class S2UniversalEffectsTests
         var visibleSnapshot = JsonSerializer.Serialize(game.SnapshotFor(1));
         Assert.DoesNotContain(game.State.Players[0].Hand.Select(card => card.InstanceId), visibleSnapshot.Contains);
         Assert.DoesNotContain(game.State.Players[0].Hand.Select(card => card.Name), visibleSnapshot.Contains);
-        var anonymousSlot = select.ValidChoices[0];
+        var anonymousSlot = anonymousChoices[0];
         var returnedId = select.HiddenChoiceMap[anonymousSlot];
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: select.PromptId, Choice: anonymousSlot)).Accepted);
+        PassResponses(game);
 
         Assert.Equal(returnedId, game.State.Players[0].Library[0].InstanceId);
         Assert.Equal(enemyHandBefore + 1, game.State.Players[1].Hand.Count);
@@ -477,6 +486,8 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0018")]
+    [Trait("L12Evidence", "entry:independent-response-segments")]
     public void PoisonActivationNegatesAnEffectReadyAndForcesDiscard()
     {
         var game = new L12GameEngine(Catalog, "s2-poison", "S2POISON", 6223, ["甲", "乙"], [0, 4], skipPreparation: true);

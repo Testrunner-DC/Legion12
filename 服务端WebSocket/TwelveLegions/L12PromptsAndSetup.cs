@@ -172,6 +172,8 @@ public sealed partial class L12GameEngine
             ["mode:normal"] = "按通常方式发动", ["mode:strong"] = "发动强化效果",
             ["mode:second"] = "追加第二段效果", ["mode:use"] = "发动追加效果",
             ["mode:all"] = "对全部目标生效",
+            ["mode:discard"] = "盲选并弃置对方1张手牌",
+            ["mode:suppress"] = "令目标效果无效并削弱目标军团",
             ["mode:row-cost"] = "选择对方1排并降低费用",
             ["mode:front-attack"] = "强化我方前排军团进攻",
             ["mode:free-move"] = "获得免费前后位移",
@@ -1135,14 +1137,20 @@ public sealed partial class L12GameEngine
                 "伏击：预先选择我方1张军团，本回合兵力+2000");
             return;
         }
-        if (response.CardId is "S01-0020" or "S01-0120" or "S01-0224")
+        if (TryBeginPublicResponseDeclaration(playerIndex, response, prompt.StackItemId!))
+            return;
+        if (response.CardId is "S01-0020" or "S01-0224")
         {
-            CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!);
+            var target = State.EffectStack.First(item => item.StackItemId == prompt.StackItemId);
+            var data = response.CardId == "S01-0020" ? DirectPublicResponseData(response, target) : null;
+            CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!, data: data);
             return;
         }
-        if (response.CardId is "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106")
+        if (response.CardId is "S02-0015" or "S02-0018" or "S02-0106")
         {
-            CommitS2CounterResponse(playerIndex, response, prompt.StackItemId!);
+            var target = State.EffectStack.First(item => item.StackItemId == prompt.StackItemId);
+            var data = response.CardId == "S02-0018" ? DirectPublicResponseData(response, target) : null;
+            CommitS2CounterResponse(playerIndex, response, prompt.StackItemId!, data);
             return;
         }
         CommitNegateResponse(playerIndex, response, prompt.StackItemId!);
@@ -1363,7 +1371,8 @@ public sealed partial class L12GameEngine
                 var wisdom = State.Players[controller].Graveyard.LastOrDefault(card => card.InstanceId == parts[1])
                     ?? State.Players[controller].Resolving.LastOrDefault(card => card.InstanceId == parts[1]);
                 if (wisdom is not null)
-                    PushEffect(controller, wisdom, "wisdom-reward", "对方效果成功发动后的效果");
+                    QueueTriggerCandidates([CreateTriggerCandidate(controller, wisdom,
+                        "wisdom-reward", "对方效果成功完成结算后的效果")]);
             }
         }
         if (item.Trigger == "authority-event" && FindAuthorityEvent(item) is { } authorityEvent)

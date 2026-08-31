@@ -430,7 +430,6 @@ public sealed partial class L12GameEngine
             step.ChoiceLabels["mode:none"] = "不选择可击杀目标";
             promptKind = "active-target";
         }
-        var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
             ["activationId"] = activation.ActivationId,
@@ -451,6 +450,24 @@ public sealed partial class L12GameEngine
             AddPromptCardData(promptData, previewCard);
         }
         if (targetPlayerIndex is not null) promptData["targetPlayerIndex"] = targetPlayerIndex.Value.ToString();
+        if (step.Kind == "opponent-hand-anonymous")
+        {
+            var hiddenCards = State.Players[1 - activation.Controller].Hand
+                .Where(card => step.ValidChoices.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            if (hiddenCards.Length < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "对方手牌已失效，响应未揭示且未进入堆叠");
+                return;
+            }
+            var anonymousPrompt = CreateAnonymousHandChoicePrompt(activation.Controller, hiddenCards,
+                "opponent-hand-card", step.Text, step.MinChoose, step.MaxChoose,
+                "pending-activation", data: promptData);
+            anonymousPrompt.ValidChoices.Add("skip");
+            anonymousPrompt.Data["skip"] = "取消发动";
+            return;
+        }
+        var promptChoices = step.ValidChoices.Append("skip").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
@@ -488,6 +505,8 @@ public sealed partial class L12GameEngine
             return;
         }
         var step = activation.SelectionSteps[activation.CurrentStep];
+        if (step.Kind == "opponent-hand-anonymous")
+            chosen = chosen.Select(choice => ResolveHiddenPromptChoice(prompt, choice)).ToList();
         if (chosen.Count < step.MinChoose || chosen.Count > step.MaxChoose
             || chosen.Any(id => !step.ValidChoices.Contains(id, StringComparer.OrdinalIgnoreCase)))
         {
@@ -550,6 +569,11 @@ public sealed partial class L12GameEngine
 
         if (activation.ResponseTargetStackItemId is not null)
         {
+            if (activation.Ability == "public-response-declaration")
+            {
+                CompletePublicResponseDeclaration(activation);
+                return;
+            }
             var responsePlayer = State.Players[activation.Controller];
             var response = FindOnField(responsePlayer, activation.SourceInstanceId, out _, out _);
             var declaredTarget = activation.DeclaredTargets.SingleOrDefault();

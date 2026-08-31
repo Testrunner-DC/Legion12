@@ -1942,6 +1942,8 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0224")]
+    [Trait("L12Evidence", "entry:successful-resolution-reward")]
     public void WisdomCodexRewardsOnlyAfterTheOpponentDiscardsAndArtifactEntrySucceeds()
     {
         var game = Create(6436);
@@ -1979,14 +1981,21 @@ public sealed class LatestBugRegressionTests
             Choice: discard.InstanceId)).Accepted);
         PassResponses(game);
 
-        var recoveryPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("wisdom-recover", recoveryPrompt.Data["action"]);
-        Assert.Contains(recovery.InstanceId, recoveryPrompt.ValidChoices);
-        Assert.Contains(draw, codexOwner.Hand);
+        var rewardMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", rewardMode.Continuation);
+        Assert.Contains("mode:recover", rewardMode.ValidChoices);
+        Assert.DoesNotContain(draw, codexOwner.Hand);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: rewardMode.PromptId,
+            Choice: "mode:recover")).Accepted);
+        var recoveryTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(recovery.InstanceId, recoveryTarget.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoveryTarget.PromptId,
+            Choice: recovery.InstanceId)).Accepted);
+        PassResponses(game);
         Assert.Contains(discard, opponent.Graveyard);
         Assert.Equal(2, opponent.TemporaryMorale);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoveryPrompt.PromptId,
-            Choice: recovery.InstanceId)).Accepted);
+        Assert.Contains(draw, codexOwner.Hand);
+        PassResponses(game);
         Assert.Contains(recovery, codexOwner.Hand);
     }
 

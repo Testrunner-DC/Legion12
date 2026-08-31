@@ -586,6 +586,12 @@ public sealed partial class L12GameEngine
                 var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
                 FinishStackItem(item); return true;
             }
+            case "battle-until-dawn-draw":
+                if (chosen[0] == "yes") Draw(player, 1);
+                FinishStackItem(item); return true;
+            case "empty-city-draw":
+                if (chosen[0] == "yes") Draw(player, 1);
+                FinishStackItem(item); return true;
             case "empty-city-block":
                 if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "empty-city-block");
                 else FinishStackItem(item); return true;
@@ -615,12 +621,6 @@ public sealed partial class L12GameEngine
                 if (target is not null) AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 FinishStackItem(item); return true;
             }
-            case "blood-eagle-pick":
-            {
-                var handCard = player.Graveyard.First(card => card.InstanceId == chosen[0]); var bottomCard = player.Graveyard.First(card => card.InstanceId == chosen[1]);
-                player.Graveyard.Remove(handCard); AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌"); player.Graveyard.Remove(bottomCard); player.Library.Add(bottomCard);
-                FinishStackItem(item); return true;
-            }
             case "wisdom-discard":
             {
                 var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
@@ -642,7 +642,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "wisdom-recover": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]); FinishStackItem(item); return true;
             default:
                 return TryContinueS1Faction(item, prompt, chosen, command);
         }
@@ -949,6 +948,7 @@ public sealed partial class L12GameEngine
         if (top.Controller == playerIndex) return false;
         var timing = ResponseTimingContext(top);
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
+        if (RequiresMoraleResponseCost(cardId) && !CanReturnMorale(State.Players[playerIndex], 1)) return false;
         if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId))
             return PublicLegions(State.Players[playerIndex]).Any()
                 && (timing.Trigger == "opponent-attack"
@@ -963,7 +963,7 @@ public sealed partial class L12GameEngine
     }
 
     private void CommitS1ReactionResponse(int playerIndex, L12CardInstance response, string targetStackId,
-        string? declaredTarget = null)
+        string? declaredTarget = null, IReadOnlyDictionary<string, string>? data = null)
     {
         var player = State.Players[playerIndex];
         if (FindOnField(player, response.InstanceId, out var row, out var slot) is not null) player.Field[row][slot] = null;
@@ -977,6 +977,8 @@ public sealed partial class L12GameEngine
         };
         item.Targets.Add(targetStackId);
         if (!string.IsNullOrWhiteSpace(declaredTarget)) item.Data["target"] = declaredTarget;
+        if (data is not null)
+            foreach (var pair in data) item.Data[pair.Key] = pair.Value;
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
@@ -1004,13 +1006,32 @@ public sealed partial class L12GameEngine
                 return;
             }
             case "战斗至黎明":
+            case "battle-until-dawn-buff":
                 foreach (var target in PublicLegions(player)) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
-                if (player.Library.Count >= 5) Draw(player, 1);
                 FinishStackItem(item); return;
+            case "battle-until-dawn-draw":
+                if (player.Graveyard.Count < 5) { FinishStackItem(item); return; }
+                CreatePrompt(item.Controller, "optional", "战斗至黎明：墓地卡牌不少于5张，是否抽取1张牌？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "battle-until-dawn-draw" });
+                return;
             case "空城计":
-                if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "optional", "空城计：是否返还1士气，抵挡本次进攻？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "empty-city-block" });
+            case "empty-city-block":
+            {
+                var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
+                if (targetStack is not null) targetStack.Negated = true;
+                FinishStackItem(item);
+                return;
+            }
+            case "empty-city-draw":
+                if (player.Field[0].Any(card => card is not null && IsFieldLegion(card)))
+                {
+                    FinishStackItem(item);
+                    return;
+                }
+                CreatePrompt(item.Controller, "optional", "空城计：结算确认我方前排没有军团，是否抽取1张牌？",
+                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "empty-city-draw" });
                 return;
             case "拼死反抗":
             {
@@ -1049,16 +1070,26 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
             }
             case "复仇血鹰":
+            case "blood-eagle-debuff":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
                     AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "复仇血鹰");
-                var asgard = player.Graveyard
-                    .Where(card => card.InstanceId != item.SourceInstanceId
-                        && CanEnterHandOrLibrary(card)
-                        && L12StructuredCardRules.HasFaction(player, card, "asgard"))
-                    .Select(card => card.InstanceId).ToArray();
-                if (asgard.Length < 2) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "cards", "复仇血鹰：选择墓地2张【阿斯加德】卡牌", asgard, 2, 2, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "blood-eagle-pick" }); return;
+                FinishStackItem(item);
+                return;
+            case "blood-eagle-recover":
+            {
+                var order = CompositeDeclared(item, "graveOrder");
+                if (order is not [var handId, var bottomId]) { FinishStackItem(item); return; }
+                var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == handId);
+                var bottomCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == bottomId);
+                if (handCard is null || bottomCard is null) { FinishStackItem(item); return; }
+                player.Graveyard.Remove(handCard);
+                AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌");
+                player.Graveyard.Remove(bottomCard);
+                player.Library.Add(bottomCard);
+                AddEvent("return", item.Controller, $"〈{bottomCard.Name}〉从墓地置于牌库底部", bottomCard);
+                FinishStackItem(item);
+                return;
+            }
             case "锡瓦的卡巴":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entrySlot")))
                 {
@@ -1101,14 +1132,22 @@ public sealed partial class L12GameEngine
     private void ResolveWisdomCodexReward(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        Draw(player, 1);
-        var choices = player.Graveyard.Where(card => card.CardId != "S01-0224" && card.CurrentCost <= 3
-                && card.CardType is "tactic" or "artifact")
-            .Select(card => card.InstanceId).ToList();
-        choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card",
-            "智慧法典：可选择墓地1张费用不高于3的其他战术或圣物回到手牌", choices, 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "wisdom-recover" });
+        switch (AtomicFlowKey(item))
+        {
+            case "wisdom-draw":
+                Draw(player, 1);
+                FinishStackItem(item);
+                return;
+            case "wisdom-recover":
+                var target = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
+                if (target is not null) MoveGraveToHand(player, target);
+                FinishStackItem(item);
+                return;
+            default:
+                Draw(player, 1);
+                FinishStackItem(item);
+                return;
+        }
     }
 
     private void QueueS1PostAttackReactions(int attackerPlayer)

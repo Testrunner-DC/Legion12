@@ -20,7 +20,8 @@ public sealed partial class L12GameEngine
         };
     }
 
-    private void CommitS2CounterResponse(int playerIndex, L12CardInstance response, string targetStackId)
+    private void CommitS2CounterResponse(int playerIndex, L12CardInstance response, string targetStackId,
+        IReadOnlyDictionary<string, string>? data = null)
     {
         var player = State.Players[playerIndex];
         if (FindOnField(player, response.InstanceId, out var row, out var slot) is not null) player.Field[row][slot] = null;
@@ -37,6 +38,8 @@ public sealed partial class L12GameEngine
             Text = "反击战术效果",
         };
         item.Targets.Add(targetStackId);
+        if (data is not null)
+            foreach (var pair in data) item.Data[pair.Key] = pair.Value;
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
@@ -52,14 +55,16 @@ public sealed partial class L12GameEngine
             return;
         }
         var target = TargetAuthorityStackItem(item);
-        if (target is null) { FinishStackItem(item); return; }
-        var affectedPlayer = target.Controller;
+        var affectedPlayer = int.TryParse(item.Data.GetValueOrDefault("affectedPlayer"), out var declaredAffected)
+            && declaredAffected is >= 0 and <= 1 ? declaredAffected : target?.Controller ?? -1;
+        if (affectedPlayer < 0) { FinishStackItem(item); return; }
         var affected = State.Players[affectedPlayer];
 
         switch (AtomicFlowKey(item))
         {
             case "地主的胁迫":
             {
+                if (target is null) { FinishStackItem(item); return; }
                 var excluded = target.Data.GetValueOrDefault("blockIds", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var choices = affected.Hand.Where(card => !excluded.Contains(card.InstanceId))
@@ -75,27 +80,50 @@ public sealed partial class L12GameEngine
                 return;
             }
             case "破败仪式":
+            case "ruined-ritual":
             {
-                var modes = new List<string>();
-                if (affected.Hand.Count > 0) modes.Add("discard");
-                if (FindOnField(affected, target.SourceInstanceId, out _, out _) is not null) modes.Add("suppress");
-                if (modes.Count == 0) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "option", "破败仪式：选择一项",
-                    modes, 1, 1, "card-effect", item.StackItemId, isPrivate: true,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-ruin-mode", ["targetStackId"] = target.StackItemId,
-                        ["choiceMode"] = "instant", ["discard"] = "弃置对方1张手牌",
-                        ["suppress"] = "使该军团本回合登场效果无效，且兵力-3000",
-                    });
+                var mode = CompositeDeclared(item, "mode").SingleOrDefault();
+                if (mode == "mode:discard")
+                {
+                    var selected = CompositeDeclared(item, "handTarget").SingleOrDefault();
+                    if (selected is not null && affected.Hand.Any(card => card.InstanceId == selected))
+                        MoveHandToGrave(affected, selected, causedByEffect: true);
+                    FinishStackItem(item);
+                    return;
+                }
+                if (mode == "mode:suppress" && target is not null)
+                {
+                    target.Data["suppressEnter"] = "true";
+                    var entered = FindOnField(affected, target.SourceInstanceId, out _, out _);
+                    if (entered is not null) AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
+                }
+                FinishStackItem(item);
                 return;
             }
             case "粮草掠夺":
-                PromptS2OpponentHandChoice(item, target, "s2-plunder-return",
-                    "粮草掠夺：选择对方1张手牌返回其牌库顶部，随后我方抽取1张牌");
+            case "supply-plunder-return":
+            {
+                var selectedId = CompositeDeclared(item, "handTarget").SingleOrDefault();
+                var selected = affected.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
+                if (selected is not null)
+                {
+                    affected.Hand.Remove(selected);
+                    affected.Library.Insert(0, selected);
+                    AddEvent("return", item.Controller, "〈粮草掠夺〉将盲选的1张对方手牌返回所有者牌库顶部");
+                }
+                FinishStackItem(item);
+                return;
+            }
+            case "supply-plunder-draw":
+                if (!Draw(State.Players[item.Controller], 1)) SetWinner(1 - item.Controller, "〈粮草掠夺〉抽牌时牌库为空");
+                FinishStackItem(item);
                 return;
             case "毒药发作":
-                NegateEffectReadyBatch(target);
+            case "poison-negate":
+                if (target is not null) NegateEffectReadyBatch(target);
+                FinishStackItem(item);
+                return;
+            case "poison-discard":
                 if (affected.Hand.Count == 0) { FinishStackItem(item); return; }
                 CreatePrompt(affectedPlayer, "hand-card", "毒药发作：弃置1张手牌",
                     affected.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId, isPrivate: true,
@@ -156,15 +184,6 @@ public sealed partial class L12GameEngine
         return timing.Trigger == "authority-event" ? timing : null;
     }
 
-    private void PromptS2OpponentHandChoice(L12StackItem item, L12StackItem target, string action, string text)
-    {
-        var opponent = State.Players[target.Controller];
-        if (opponent.Hand.Count == 0) { FinishStackItem(item); return; }
-        var data = new Dictionary<string, string> { ["action"] = action, ["targetStackId"] = target.StackItemId };
-        CreateAnonymousHandChoicePrompt(item.Controller, opponent.Hand, "opponent-hand-card", text,
-            1, 1, "card-effect", item.StackItemId, data);
-    }
-
     private void NegateEffectReadyBatch(L12StackItem target)
     {
         target.Negated = true;
@@ -205,39 +224,6 @@ public sealed partial class L12GameEngine
                     if (target is not null) target.Data["invalid"] = "true";
                 }
                 else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
-                FinishStackItem(item);
-                return true;
-            case "s2-ruin-mode":
-                if (target is null) { FinishStackItem(item); return true; }
-                if (chosen[0] == "discard")
-                {
-                    PromptS2OpponentHandChoice(item, target, "s2-ruin-discard", "破败仪式：选择对方1张手牌弃置");
-                    return true;
-                }
-                target.Data["suppressEnter"] = "true";
-                var entered = FindOnField(State.Players[target.Controller], target.SourceInstanceId, out _, out _);
-                if (entered is not null) AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
-                FinishStackItem(item);
-                return true;
-            case "s2-ruin-discard":
-                if (target is not null)
-                    MoveHandToGrave(State.Players[target.Controller], ResolveHiddenPromptChoice(prompt, chosen[0]), causedByEffect: true);
-                FinishStackItem(item);
-                return true;
-            case "s2-plunder-return":
-                if (target is not null)
-                {
-                    var opponent = State.Players[target.Controller];
-                    var selectedId = ResolveHiddenPromptChoice(prompt, chosen[0]);
-                    var selected = opponent.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
-                    if (selected is not null)
-                    {
-                        opponent.Hand.Remove(selected);
-                        opponent.Library.Insert(0, selected);
-                        AddEvent("return", item.Controller, "〈粮草掠夺〉将所选的1张对方手牌返回所有者牌库顶部");
-                    }
-                }
-                if (!Draw(State.Players[item.Controller], 1)) SetWinner(1 - item.Controller, "〈粮草掠夺〉抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
             case "s2-poison-discard":

@@ -33,9 +33,9 @@ $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -Fi
 foreach ($cardId in @(
     'S02-04M1', 'S02-0523', 'S01-02M3', 'S02-02M1', 'S02-01S1',
     'S01-0105', 'S01-0207', 'S01-0208', 'S01-0309', 'S01-0021', 'S01-0213',
-    'S01-0223', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407'
+    'S01-0223', 'S01-0320', 'S01-0224', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407'
 )) {
-    Assert-Contains $plans ('"' + $cardId + '"') "Public trigger declaration plan is missing card $cardId."
+    Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
 }
 
 Assert-Contains $plans 'HasPublicTriggerDeclarationPlan' 'Public trigger plans need a shared route predicate.'

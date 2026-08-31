@@ -80,6 +80,45 @@ internal static class L12CompositeEffectPlans
             ],
         };
 
+    private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> ResponseAndTriggerPlans =
+        new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["response:S01-0020"] =
+            [
+                new("battle-until-dawn-buff", "我方所有军团本回合兵力+1000"),
+                new("battle-until-dawn-draw", "若墓地卡牌数量不低于5，可抽取1张牌"),
+            ],
+            ["response:S01-0120"] =
+            [
+                new("empty-city-block", "返还1士气：抵挡本次进攻"),
+                new("empty-city-draw", "若我方前排没有军团，可抽取1张牌"),
+            ],
+            ["wisdom-reward:S01-0224"] =
+            [
+                new("wisdom-draw", "抽取1张牌"),
+                new("wisdom-recover", "可令墓地1张费用不高于3的其他战术或圣物回到手牌", "mode:recover"),
+            ],
+            ["trigger:S01-0320"] =
+            [
+                new("blood-eagle-debuff", "对方所有军团直到下个我方回合结束前兵力-1000"),
+                new("blood-eagle-recover", "墓地2张【阿斯加德】卡牌分别回到手牌与牌库底部", "mode:recover"),
+            ],
+            ["response:S02-0016"] =
+            [
+                new("ruined-ritual", "执行已声明的弃置手牌或登场效果无效模式"),
+            ],
+            ["response:S02-0017"] =
+            [
+                new("supply-plunder-return", "将所选的1张对方手牌返回牌库顶部"),
+                new("supply-plunder-draw", "随后我方抽取1张牌"),
+            ],
+            ["response:S02-0018"] =
+            [
+                new("poison-negate", "令本次因效果转为活跃无效"),
+                new("poison-discard", "随后受影响玩家弃置1张手牌"),
+            ],
+        };
+
     public static bool RequiresHandPlayDeclaration(string cardId) => HandPlayPlans.ContainsKey(cardId);
 
     public static bool RequiresTriggerDeclaration(string cardId, string trigger)
@@ -88,7 +127,8 @@ internal static class L12CompositeEffectPlans
 
     public static IReadOnlyList<L12CompositeEffectSegmentSpec> Segments(string cardId)
         => HandPlayPlans.TryGetValue(cardId, out var handPlay) ? handPlay
-            : ActivePlans.GetValueOrDefault(cardId, []);
+            : ActivePlans.TryGetValue(cardId, out var active) ? active
+            : ResponseAndTriggerPlans.GetValueOrDefault(cardId, []);
 }
 
 public sealed partial class L12GameEngine
@@ -496,6 +536,16 @@ public sealed partial class L12GameEngine
                 && (kill3 == "mode:none" || DeclaredEnemyTarget(controller, kill3, card => card.CurrentCost <= 3) is not null),
             "yomi-kill1" => CompositeDeclared(item, "kill1Target").SingleOrDefault() is { } kill1
                 && (kill1 == "mode:none" || DeclaredEnemyTarget(controller, kill1, card => card.CurrentCost <= 1) is not null),
+            "wisdom-recover" => CompositeDeclared(item, "recoverTarget").SingleOrDefault() is { } wisdom
+                && State.Players[controller].Graveyard.Any(card => card.InstanceId == wisdom
+                    && card.InstanceId != item.SourceInstanceId && card.CurrentCost <= 3
+                    && card.CardType is "tactic" or "artifact"),
+            "blood-eagle-recover" => CompositeDeclared(item, "graveOrder") is [var handCard, var bottomCard]
+                && !handCard.Equals(bottomCard, StringComparison.OrdinalIgnoreCase)
+                && new[] { handCard, bottomCard }.All(id => State.Players[controller].Graveyard.Any(card =>
+                    card.InstanceId == id && card.InstanceId != item.SourceInstanceId
+                    && CanEnterHandOrLibrary(card)
+                    && L12StructuredCardRules.HasFaction(State.Players[controller], card, "asgard"))),
             _ => true,
         };
 

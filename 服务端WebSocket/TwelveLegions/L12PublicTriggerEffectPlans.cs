@@ -10,10 +10,20 @@ public sealed partial class L12GameEngine
     private const string PublicTriggerTombGuardCard = "S01-0212";
     private const string PublicTriggerSigurdCard = "S01-0310";
     private const string PublicTriggerScarabCard = "S02-0201";
+    private static readonly IReadOnlyDictionary<string, string> FifthBatchPublicTriggerPlans =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-0320|reaction"] = "blood-eagle",
+            ["S01-0224|wisdom-reward"] = "wisdom-reward",
+        };
+
+    private static string? FifthBatchPublicTriggerPlan(string cardId, string trigger)
+        => FifthBatchPublicTriggerPlans.GetValueOrDefault($"{cardId}|{trigger}");
 
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
-        => (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
+        => FifthBatchPublicTriggerPlan(cardId, trigger) is not null
+            || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
         {
             ("S02-04M1", "active", "tsukuyomiFollowMove" or "tsukuyomiReadyMorale", _) => true,
             ("S02-0523", "trojan-after-attack", _, _) => true,
@@ -52,8 +62,53 @@ public sealed partial class L12GameEngine
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         List<L12ActivationSelectionStep>? steps = null;
+        var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
 
-        switch ((candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability")))
+        if (fifthBatchPlan == "blood-eagle")
+        {
+            var asgard = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
+                    && CanEnterHandOrLibrary(card)
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard"))
+                .Select(card => card.InstanceId).ToList();
+            if (asgard.Count < 2)
+            {
+                var direct = CompositeFirstSegmentData("trigger:S01-0320",
+                    new Dictionary<string, List<string>> { ["mode"] = ["mode:none"] });
+                foreach (var pair in direct) candidate.Data[pair.Key] = pair.Value;
+                candidate.Data["declaration-complete"] = "true";
+                return false;
+            }
+            steps =
+            [
+                PublicTriggerStep("order", "graveOrder",
+                    "复仇血鹰：预先选择并排序墓地2张【阿斯加德】卡牌；第1张加入手牌，第2张置于牌库底部",
+                    asgard, min: 2, max: 2),
+            ];
+        }
+        else if (fifthBatchPlan == "wisdom-reward")
+        {
+            candidate.Data["preserveIndependentStack"] = "true";
+            var recover = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
+                    && card.CurrentCost <= 3 && card.CardType is "tactic" or "artifact")
+                .Select(card => card.InstanceId).ToList();
+            if (recover.Count == 0)
+            {
+                var direct = CompositeFirstSegmentData("wisdom-reward:S01-0224",
+                    new Dictionary<string, List<string>> { ["mode"] = ["mode:none"] });
+                foreach (var pair in direct) candidate.Data[pair.Key] = pair.Value;
+                candidate.Data["declaration-complete"] = "true";
+                return false;
+            }
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "智慧法典：预先声明是否发动独立的墓地回收段",
+                    ["mode:none", "mode:recover"]),
+                PublicTriggerStep("grave-card", "recoverTarget",
+                    "智慧法典：预先选择墓地1张费用不高于3的其他战术或圣物",
+                    recover, requiredChoice: "mode:recover"),
+            ];
+        }
+        else switch ((candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability")))
         {
             case ("S02-04M1", "active", "tsukuyomiFollowMove"):
             {
@@ -335,7 +390,8 @@ public sealed partial class L12GameEngine
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
         var key = (candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability"));
-        var handled = key switch
+        var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
+        var handled = fifthBatchPlan is not null || key switch
         {
             ("S02-04M1", "active", "tsukuyomiFollowMove") => true,
             ("S02-04M1", "active", "tsukuyomiReadyMorale") => true,
@@ -519,6 +575,37 @@ public sealed partial class L12GameEngine
                 error = null;
             }
         }
+        else if (fifthBatchPlan == "blood-eagle")
+        {
+            var order = activation.DeclaredValues.GetValueOrDefault("graveOrder", []);
+            if (order.Count != 2 || order.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
+                || order.Any(id => !player.Graveyard.Any(card => card.InstanceId == id
+                    && card.InstanceId != candidate.SourceInstanceId && CanEnterHandOrLibrary(card)
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard"))))
+                error = "复仇血鹰声明的墓地顺序已失效；第一段仍会独立进入堆叠";
+            if (error is not null)
+            {
+                activation.DeclaredValues.Clear();
+                activation.DeclaredValues["mode"] = ["mode:none"];
+                AddEvent("effect-cancelled", candidate.Controller, error);
+                error = null;
+            }
+            else
+                activation.DeclaredValues["mode"] = ["mode:recover"];
+        }
+        else if (fifthBatchPlan == "wisdom-reward")
+        {
+            var recovery = activation.DeclaredValues.GetValueOrDefault("recoverTarget", []).SingleOrDefault();
+            if (mode == "mode:recover" && (recovery is null || !player.Graveyard.Any(card =>
+                    card.InstanceId == recovery && card.InstanceId != candidate.SourceInstanceId && card.CurrentCost <= 3
+                    && card.CardType is "tactic" or "artifact")))
+            {
+                activation.DeclaredValues["mode"] = ["mode:none"];
+                activation.DeclaredValues.Remove("recoverTarget");
+                AddEvent("effect-cancelled", candidate.Controller,
+                    "智慧法典声明的墓地目标已失效；抽牌段仍会独立结算");
+            }
+        }
         else if (key.Item1 is "S02-0203" or "S02-0205")
         {
             if (entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
@@ -551,6 +638,16 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (fifthBatchPlan == "blood-eagle")
+        {
+            var composite = CompositeFirstSegmentData("trigger:S01-0320", activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+        }
+        else if (fifthBatchPlan == "wisdom-reward")
+        {
+            var composite = CompositeFirstSegmentData("wisdom-reward:S01-0224", activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+        }
         candidate.Data["declaration-complete"] = "true";
         CleanupPublicTriggerReservation(candidate);
         AdvanceTriggerBatches();

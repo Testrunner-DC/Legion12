@@ -238,7 +238,7 @@
     "faction": "universal",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/10919267048823769754/EA20851047E94CF5AFFF4D3A092F4D8AE980CC87/",
     "cost": 2,
-    "effect": "对方进攻时：我方所有军团本回合兵力+1000。若基地卡牌数量不低于5，可抽取1张牌。"
+    "effect": "对方进攻时：我方所有军团本回合兵力+1000。若墓地卡牌数量不低于5，可抽取1张牌。"
   },
   {
     "id": "S01-0021",

@@ -720,6 +720,8 @@ public sealed class ExtendedCardEffectsTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0320")]
+    [Trait("L12Evidence", "entry:public-trigger-ordered-declaration")]
     public void BloodEagleOffersEveryOtherLegalAsgardCardFromTheGraveyard()
     {
         var game = Create(3, 2);
@@ -753,7 +755,8 @@ public sealed class ExtendedCardEffectsTests
         }
 
         var prompt = Assert.Single(game.State.PendingPrompts,
-            candidate => candidate.Data.GetValueOrDefault("action") == "blood-eagle-pick");
+            candidate => candidate.Continuation == "pending-activation");
+        Assert.Equal("order", prompt.Kind);
         Assert.DoesNotContain(bloodEagle.InstanceId, prompt.ValidChoices);
         Assert.Contains(graveA.InstanceId, prompt.ValidChoices);
         Assert.Contains(graveB.InstanceId, prompt.ValidChoices);
