@@ -97,15 +97,21 @@ public sealed class AtomicReviewBatch5RegressionTests
         Assert.Same(counter, game.State.Players[1].Field[1][0]);
         Resolve(game, morale.InstanceId);
 
+        var drawMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", drawMode.Continuation);
+        Assert.Contains("mode:none", drawMode.ValidChoices);
+        Assert.Contains("mode:draw", drawMode.ValidChoices);
+        Assert.Contains(morale, game.State.Players[1].Morale);
+        Resolve(game, "mode:none");
+
         Assert.DoesNotContain(morale, game.State.Players[1].Morale);
         Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == counter.InstanceId);
         Assert.Contains(counter, game.State.Players[1].Resolving);
 
         PassResponses(game);
-        var draw = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("empty-city-draw", draw.Data["action"]);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "empty-city-draw");
         Assert.DoesNotContain(game.State.EffectStack, item => item.Trigger == "opponent-attack" && !item.Negated);
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: draw.PromptId, Choice: "no")).Accepted);
     }
 
     [Fact]
@@ -141,7 +147,7 @@ public sealed class AtomicReviewBatch5RegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0020")]
     [Trait("L12Evidence", "entry:independent-response-segments")]
-    public void BattleUntilDawnUsesGraveyardAndAsksBeforeItsIndependentDrawSegment()
+    public void BattleUntilDawnUsesGraveyardAndDeclaresItsIndependentDrawSegmentBeforeStacking()
     {
         var game = Create(7105);
         var attacker = Card("S01-0002", "atomic5-dawn-attacker", 3000);
@@ -161,16 +167,17 @@ public sealed class AtomicReviewBatch5RegressionTests
             Target: new L12AttackTarget("master"))).Accepted);
         Resolve(game, "pass");
         Resolve(game, counter.InstanceId);
+        var drawMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", drawMode.Continuation);
+        Assert.Contains("mode:draw", drawMode.ValidChoices);
+        Resolve(game, "mode:draw");
         Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == counter.InstanceId
             && item.Data.GetValueOrDefault("atomicFlow") == "battle-until-dawn-buff");
         PassResponses(game);
 
-        var drawPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("battle-until-dawn-draw", drawPrompt.Data["action"]);
         Assert.Equal(defender.BaseTroops + 1000, defender.Troops);
-        Assert.Empty(game.State.Players[1].Hand);
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId,
-            Choice: "yes")).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "battle-until-dawn-draw");
         Assert.Contains(game.State.Players[1].Hand, card => card.InstanceId == "atomic5-dawn-draw");
     }
 

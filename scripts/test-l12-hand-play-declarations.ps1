@@ -27,11 +27,13 @@ $cards = Read-Source 'L12CardEffects.cs'
 $s2 = Read-Source 'L12S2UniversalEffects.cs'
 $s2Faction = Read-Source 'L12S2FactionEffects.cs'
 $continuations = Read-Source 'L12EffectContinuations.cs'
+$effectGeneratedPlay = Read-Source 'L12EffectGeneratedPlay.cs'
 $allRuntime = $s1 + "`n" + $s1Faction + "`n" + $cards + "`n" + $s2 + "`n" + $s2Faction + "`n" + $continuations
 
 foreach ($cardId in @(
     'S01-0005', 'S01-0006', 'S01-0009', 'S01-0010', 'S01-0011', 'S01-0118', 'S01-0221',
     'S01-0318', 'S01-0319', 'S02-0009', 'S02-0010', 'S02-0011', 'S02-0013',
+    'S01-0007', 'S01-0013',
     'S01-0014', 'S01-0015', 'S01-0119', 'S01-0419', 'S02-0306'
 )) {
     Assert-Contains $plans ('["' + $cardId + '"]') "Sixth-batch hand-play declaration plan is missing card $cardId."
@@ -44,6 +46,7 @@ foreach ($flow in @(
     'defense-deployment-draw', 'black-lotus-disaster', 'black-lotus-morale',
     'chaotic-arrows-effect', 'holy-lock-effect',
     'ritual-draw', 'ritual-disaster', 'peace-draw', 'peace-negotiation',
+    'camp-search', 'camp-heal', 'camp-draw', 'scout-reveal', 'scout-shuffle-effect',
     'observing-stars-reorder', 'observing-stars-morale', 'oiran-search',
     'oiran-ready-morale', 'mimir-recover-draw', 'mimir-mill'
 )) {
@@ -51,14 +54,22 @@ foreach ($flow in @(
 }
 
 Assert-Contains $plans 'PreStackCost: true' 'Known sixth-batch colon costs must be marked for pre-stack payment.'
+foreach ($reservedCost in @('campHealCost', 'campDrawCost', 'scoutCost')) {
+    Assert-Contains $plans $reservedCost "Batch 6J-B base play payment must reserve declared follow-up cost: $reservedCost"
+}
 Assert-Contains $plans 'case "discard-hand"' 'Composite hand play must support a shared discard-from-hand colon cost.'
 Assert-Contains $plans 'case "conditional-master-damage"' 'Composite hand play must support conditional master-damage costs.'
 Assert-Contains $plans 'case "grave-bottom"' 'Composite hand play must support ordered grave-to-library-bottom costs.'
 Assert-Contains $plans '!next.PreStackCost && !TryPayCompositeSegmentCost' 'Prepaid costs must not be charged again between independent segments.'
 Assert-Contains $actions 'TryCommitCompositePreStackCosts(playerIndex, card, compositeDeclaration)' 'Ordinary hand play must atomically commit declared colon costs before stack entry.'
 Assert-Contains $actions 'HasHandPlayPlan(card.CardId)' 'Ordinary hand play must route every composite plan through the shared declaration entry.'
-Assert-Contains $s2Faction 'BeginCommittedCompositeEffectDeclaration(item.Controller, card, item, "s2-limu-draw")' 'Free tactic play must enter the same composite declaration planner.'
-Assert-Contains $s2Faction 'HasHandPlayPlan(card.CardId)' 'Free tactic play must recognize every shared composite plan.'
+Assert-Contains $s2Faction 'BeginEffectGeneratedFreePlay(item.Controller, card, item, "library"' 'Every effect-generated free play must enter the shared authority transaction.'
+Assert-Contains $effectGeneratedPlay 'BeginCommittedCompositeEffectDeclaration(activation.Controller, card, parent, "finish-parent")' 'Free composite tactics must enter the same composite declaration planner.'
+Assert-Contains $effectGeneratedPlay 'HasHandPlayPlan(card.CardId)' 'The shared free-play transaction must recognize every composite hand-play plan.'
+Assert-Contains $plans 'ResumeCommittedCompositeParent(activation)' 'Free composite play must resume its parent only through the shared completion path.'
+Assert-Contains $effectGeneratedPlay 'EffectGeneratedFreePlaySlots' 'Effect-generated legion play must share public slot declaration and counter-cover legality.'
+Assert-Contains $effectGeneratedPlay 'TrySummonFromAnyPrivateZone' 'Effect-generated legion play must use the authoritative private-zone entry transaction.'
+Assert-Contains $effectGeneratedPlay '["effectGeneratedPlay"] = "free"' 'Effect-generated tactics must mark the immutable free-play stack transaction.'
 Assert-Contains $kernel 'step.Kind == "composite-defense-slot"' 'Defense Deployment must publicly declare each destination slot.'
 Assert-Contains $kernel 'step.Kind == "composite-opposite-slot"' 'Forged Orders must retain its public destination in declaration data.'
 Assert-Contains $plans 'CompositeFirstSegmentTargets' 'Public targets and locations must be projected onto the first stack item.'
@@ -81,7 +92,9 @@ foreach ($legacy in @(
     's2-chaotic-arrows', 's2-holy-lock-attach',
     '["action"] = "ritual-disaster"', '["action"] = "s2-mimir-mill"',
     '["action"] = "observing-stars-morale"', 'case "oiran-morale":',
-    '是否从士气牌库追加 1 张活跃士气？', '是否将 1 张士气转为活跃？'
+    '是否从士气牌库追加 1 张活跃士气？', '是否将 1 张士气转为活跃？',
+    'case "camp-mode":', 'case "scout-shuffle": BeginEffectMoralePayment',
+    's2-okita-slot', 'PushEffect(item.Controller, card, "play"'
 )) {
     if ($allRuntime.IndexOf($legacy, [StringComparison]::Ordinal) -ge 0) {
         throw "Legacy post-stack hand-play prompt returned: $legacy"

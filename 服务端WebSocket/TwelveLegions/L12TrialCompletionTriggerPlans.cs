@@ -89,7 +89,8 @@ public sealed partial class L12GameEngine
             }
             case "grail-journey":
             {
-                var canUse = player.Library.Any(card => card.Faction == "otherworld" && card.CardType == "legion");
+                // 牌库中是否存在命中牌属于隐藏信息；声明阶段只可依据公开的牌库数量决定是否可查看。
+                var canUse = player.Library.Count > 0;
                 steps.Add(TrialCompletionStep("option", "mode",
                     "寻找圣杯之旅：预先声明是否查看牌库并检索1张【彼界】军团",
                     canUse ? ["mode:none", "mode:use"] : ["mode:none"]));
@@ -302,7 +303,8 @@ public sealed partial class L12GameEngine
 
         if (plan == "grail-journey")
         {
-            var choices = player.Library.Where(card => card.Faction == "otherworld" && card.CardType == "legion")
+            var choices = player.Library.Where(card => card.CardType == "legion"
+                    && L12StructuredCardRules.HasFaction(player, card, "otherworld"))
                 .Select(card => card.InstanceId).Append("skip").ToList();
             if (choices.Count == 1)
             {
@@ -362,7 +364,8 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip")
                 {
                     var selected = player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]
-                        && card.Faction == "otherworld" && card.CardType == "legion");
+                        && card.CardType == "legion"
+                        && L12StructuredCardRules.HasFaction(player, card, "otherworld"));
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);

@@ -187,6 +187,9 @@ public sealed partial class L12GameEngine
             ["mode:free-move"] = "获得免费前后位移",
             ["mode:grave"] = "从墓地选择公开卡牌",
             ["mode:library"] = "结算时查看牌库并选择",
+            ["mode:entry"] = "使军团登场",
+            ["mode:revive"] = "从墓地使军团登场",
+            ["mode:summon"] = "使已声明军团登场",
             ["row:0"] = "选择前排", ["row:1"] = "选择后排",
             ["pay:god-power"] = "支付神力", ["buff:strong"] = "获得强攻", ["buff:shock"] = "获得震击",
         };
@@ -492,18 +495,6 @@ public sealed partial class L12GameEngine
                     FinishOptionalS2Setup();
                 break;
             }
-            case "faction-zero-recovery":
-            {
-                var player = State.Players[playerIndex];
-                player.UsedAbilities.Remove("pending:factionZeroRecovery");
-                player.UsedAbilities.Add("trigger:factionZeroRecovery");
-                if (chosen[0] == "yes")
-                {
-                    AddMorale(player, 2, tapped: true);
-                    AddEvent("faction-effect", playerIndex, "天廷阵营效果：追加 2 张休整士气");
-                }
-                break;
-            }
             case "s2-ring-end-discard":
             {
                 var player = State.Players[playerIndex];
@@ -512,16 +503,6 @@ public sealed partial class L12GameEngine
                 AddEvent("phase", playerIndex, "执行结束阶段");
                 if (DisastersEnabled) ResolveEndPhaseDisasterEffect(playerIndex);
                 if (State.PendingPrompts.Count == 0 && State.EffectStack.Count == 0) CompleteEndTurn(playerIndex);
-                break;
-            }
-            case "s2-wukong-return-morale":
-            {
-                if (chosen[0] == "yes")
-                {
-                    var added = AddMorale(State.Players[playerIndex], 1, tapped: true);
-                    if (added > 0) AddEvent("morale", playerIndex, "孙悟空返回主宰区后追加1张休整士气");
-                }
-                if (prompt.Data.GetValueOrDefault("resumeEndTurn") == "true") CompleteEndTurn(playerIndex);
                 break;
             }
             case "disaster-trigger-confirm":
@@ -559,20 +540,6 @@ public sealed partial class L12GameEngine
             case "effect-lethal-replacement":
                 ResolveEffectLethalReplacement(playerIndex, prompt, chosen[0]);
                 break;
-            case "graveyard-active-confirm":
-            {
-                if (chosen[0] == "no") break;
-                var player = State.Players[playerIndex];
-                var source = player.Graveyard.FirstOrDefault(card => card.InstanceId == prompt.Data.GetValueOrDefault("sourceId")
-                    && card.CardId == prompt.Data.GetValueOrDefault("sourceCardId")
-                    && IsLegalGraveyardActiveAbilitySource(player, card, prompt.Data.GetValueOrDefault("ability") ?? string.Empty));
-                if (source is null) return CommandResult.Reject("墓地主动效果来源已失效");
-                var result = TryBeginS2RemainingAbility(playerIndex, source,
-                    prompt.Data.GetValueOrDefault("ability") ?? string.Empty, graveyardConfirmed: true)
-                    ?? CommandResult.Reject("该墓地主动效果无法继续发动");
-                if (!result.Accepted) return result;
-                break;
-            }
             case "card-effect":
             case "disaster-effect":
             case "active-ability":
@@ -1149,11 +1116,10 @@ public sealed partial class L12GameEngine
         }
         if (TryBeginPublicResponseDeclaration(playerIndex, response, prompt.StackItemId!))
             return;
-        if (response.CardId is "S01-0020" or "S01-0224")
+        if (response.CardId == "S01-0224")
         {
             var target = State.EffectStack.First(item => item.StackItemId == prompt.StackItemId);
-            var data = response.CardId == "S01-0020" ? DirectPublicResponseData(response, target) : null;
-            CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!, data: data);
+            CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!);
             return;
         }
         if (response.CardId is "S02-0015" or "S02-0018" or "S02-0106")
@@ -1389,12 +1355,15 @@ public sealed partial class L12GameEngine
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);
         var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
+        var queueBatch6JATakeda = !queuedCompositeContinuation
+            && item.Data.GetValueOrDefault("batch6JAFollowup") == "takeda" && completedSource is not null;
         var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction" or "s2-reaction";
         var queueExorcistReturn = !queuedCompositeContinuation && !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";
         State.EffectStack.Remove(item);
+        if (queueBatch6JATakeda) QueueBatch6JATakedaFollowup(item.Controller, completedSource!);
         var owner = State.Players[item.Controller];
         var resolving = owner.Resolving.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId);
         if (resolving is not null && !queuedCompositeContinuation && !IsPendingCombatDeath(resolving.InstanceId)
@@ -1421,10 +1390,14 @@ public sealed partial class L12GameEngine
         }
         if (State.DeferredEffectStack.Count > 0)
         {
-            State.EffectStack.AddRange(State.DeferredEffectStack);
-            State.DeferredEffectStack.Clear();
-            AddEvent("stack-open", null, "当前堆叠关闭，处理结算中产生的额外触发式效果");
-            BeginStackItem(State.EffectStack[^1]);
+            // Deferred siblings were created while another item was resolving. Each is a distinct
+            // StackItem and therefore needs its own response window; bulk-merging them would let only
+            // the last item receive responses and auto-resolve every remaining sibling underneath it.
+            var next = State.DeferredEffectStack[^1];
+            State.DeferredEffectStack.RemoveAt(State.DeferredEffectStack.Count - 1);
+            State.EffectStack.Add(next);
+            AddEvent("stack-open", null, "当前堆叠关闭，处理下一项结算中产生的额外触发式效果");
+            BeginStackItem(next);
             return;
         }
         AfterStackSettled();
@@ -1452,11 +1425,24 @@ public sealed partial class L12GameEngine
         var pendingFactionPlayer = State.Players.FirstOrDefault(player => player.UsedAbilities.Contains("pending:factionZeroRecovery"));
         if (pendingFactionPlayer is not null)
         {
-            if (!State.PendingPrompts.Any(prompt => prompt.Continuation == "faction-zero-recovery"
-                    && prompt.PlayerIndex == pendingFactionPlayer.PlayerIndex))
-                CreatePrompt(pendingFactionPlayer.PlayerIndex, "option", "我方士气为0张，是否发动天廷阵营效果追加2张休整士气？",
-                    ["yes", "no"], 1, 1, "faction-zero-recovery", isPrivate: false,
-                    data: new Dictionary<string, string> { ["choiceMode"] = "instant" });
+            const string queuedFactionKey = "queued:factionZeroRecovery";
+            if (pendingFactionPlayer.UsedAbilities.Contains(queuedFactionKey)) return;
+            var alreadyQueued = State.PendingActivations.Any(activation =>
+                    activation.Controller == pendingFactionPlayer.PlayerIndex
+                    && activation.SourceCardId == "S01-01C1")
+                || State.PendingTriggerStackCandidates.Any(candidate =>
+                    candidate.Controller == pendingFactionPlayer.PlayerIndex
+                    && candidate.SourceCardId == "S01-01C1"
+                    && candidate.Data.GetValueOrDefault("ability") == "factionZeroRecovery");
+            if (alreadyQueued) return;
+            pendingFactionPlayer.UsedAbilities.Remove("pending:factionZeroRecovery");
+            pendingFactionPlayer.UsedAbilities.Add(queuedFactionKey);
+            var faction = CreateCard("S01-01C1", $"faction-{pendingFactionPlayer.PlayerIndex}");
+            QueueTriggerCandidates([
+                CreateTriggerCandidate(pendingFactionPlayer.PlayerIndex, faction, "active",
+                    "我方士气为0张时的天廷阵营效果",
+                    new Dictionary<string, string> { ["ability"] = "factionZeroRecovery" }, faction)
+            ]);
             return;
         }
         if (State.PendingDefense is not null)

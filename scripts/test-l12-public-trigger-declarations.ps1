@@ -18,8 +18,16 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
 }
 
 $plans = Read-Source 'L12PublicTriggerEffectPlans.cs'
+$composite = Read-Source 'L12CompositeEffectPlans.cs'
+$faction = Read-Source 'L12S2FactionEffects.cs'
+$s1Extended = Read-Source 'L12S1ExtendedEffects.cs'
+$s1Faction = Read-Source 'L12S1FactionEffects.cs'
+$s2Universal = Read-Source 'L12S2UniversalEffects.cs'
+$atomicPrograms = Read-Source 'AtomicEffects.cs'
+$atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
+$entryPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
 $kernel = Read-Source 'L12RuleKernelIntegration.cs'
 $counter = Read-Source 'L12S2CounterTactics.cs'
 $prompts = Read-Source 'L12PromptsAndSetup.cs'
@@ -29,11 +37,16 @@ $authority = Read-Source 'L12AuthorityEvents.cs'
 $zones = Read-Source 'L12AuthoritativeCardZones.cs'
 $cardEffects = Read-Source 'L12CardEffects.cs'
 $continuations = Read-Source 'L12EffectContinuations.cs'
+$remaining = Read-Source 'L12S2RemainingEffects.cs'
 $runtimeDirectory = (Get-ChildItem -LiteralPath $ProjectRoot -Filter 'L12PublicTriggerEffectPlans.cs' -Recurse -File |
     Select-Object -First 1).Directory.FullName
 $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -File | ForEach-Object {
     [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
 }) -join "`n")
+$remainingPromptTokenCount = [regex]::Matches($allRuntime, '\bCreatePrompt\(').Count
+if ($remainingPromptTokenCount -gt 135) {
+    throw "Resolution prompt inventory regressed above the Batch 6L-B ratchet: $remainingPromptTokenCount > 135"
+}
 
 foreach ($cardId in @(
     'S02-04M1', 'S02-0523', 'S01-02M3', 'S02-02M1', 'S02-01S1',
@@ -43,6 +56,86 @@ foreach ($cardId in @(
     'S02-0304', 'S02-0305', 'S02-05M1', 'S02-06M1', 'S02-0102', 'S02-06S4'
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
+}
+
+foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012', 'S02-01M1', 'S01-01C1')) {
+    Assert-Contains $plans $cardId "Batch 6J-B public trigger declaration plan is missing card $cardId."
+}
+Assert-Contains $plans 'Batch6JBPublicTriggerPlans' 'Batch 6J-B triggers need one shared data-driven declaration table.'
+Assert-Contains $plans 'PrepareBatch6JBPublicTriggerCandidate' 'Batch 6J-B public conditions and once reservations need one shared candidate filter.'
+Assert-Contains $kernel '.Where(PrepareBatch6JBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6J-B candidates before ordering.'
+Assert-Contains $kernel 'activation.TriggerCandidateId == candidate.CandidateId' 'A trigger candidate with an open declaration must not create duplicate PendingActivations.'
+Assert-Contains $plans 'PublicTriggerStep("target-morale", "returnCost"' 'Lu Bu must declare the exact four-morale cost before stack entry.'
+Assert-Contains $plans 'MoveGraveToLibraryBottom(player, costs.Select' 'Gustav must commit his ordered grave cost before stack entry.'
+Assert-Contains $plans 'PublicTriggerStep("target-morale", "moraleTarget"' 'Mulan must declare the opponent morale target before stack entry.'
+Assert-Contains $plans 'new L12CompositeEffectSegmentSpec("prayer-private"' 'Prayer private preview must reuse the shared ordinary-payment transaction.'
+Assert-Contains $cardEffects 'PublicTriggerDeclared(item, "moraleTarget")' 'Mulan resolution must consume only the immutable declared morale target.'
+Assert-Contains $cardEffects 'PublicTriggerDeclared(item, "mode") == "mode:use"' 'Lu Bu resolution must consume only the immutable declared mode.'
+Assert-Contains $s1Faction 'PublicTriggerDeclared(item, "mode") == "mode:use"' 'Gustav resolution must consume only the immutable declared mode.'
+Assert-Contains $s2Universal 'PublicTriggerDeclared(item, "mode") != "mode:use"' 'Exorcist resolution must consume only the immutable declared mode.'
+Assert-Contains $s2Universal 'CreateTriggerCandidate(item.Controller, prayer, "prayer-private"' 'Prayer refusal must queue its private preview as an independent trigger candidate.'
+Assert-Contains $remaining '["ability"] = "wukongReturnMorale"' 'Wukong return must queue its optional morale trigger through the shared declaration route.'
+Assert-Contains $prompts '["ability"] = "factionZeroRecovery"' 'Tianting zero-morale recovery must queue a public trigger candidate instead of a direct prompt.'
+$ringDeclarationStart = $entryPlans.IndexOf('case "ring":', [StringComparison]::Ordinal)
+$ringDeclarationEnd = $entryPlans.IndexOf('case "arthur":', $ringDeclarationStart, [StringComparison]::Ordinal)
+if ($ringDeclarationStart -lt 0 -or $ringDeclarationEnd -lt 0) {
+    throw 'Ring entry declaration branch is missing.'
+}
+$ringDeclaration = $entryPlans.Substring($ringDeclarationStart, $ringDeclarationEnd - $ringDeclarationStart)
+Assert-Contains $ringDeclaration 'player.Library.Count == 0' 'Ring declaration may only inspect the public library count.'
+if ($ringDeclaration.Contains('player.Library.Any(')) {
+    throw 'Ring declaration must not inspect hidden universal-card match existence.'
+}
+foreach ($legacy6JB in @(
+    's2-prayer-private-cost', 's2-exorcist-return', 'gustav-ready-choice', 'gustav-ready-return',
+    's2-wukong-return-morale', 'Continuation == "faction-zero-recovery"',
+    '["action"] = "lubu-ready"', '["action"] = "mulan-lock-morale"'
+)) {
+    if ($allRuntime.IndexOf($legacy6JB, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack Batch 6J-B public declaration returned: $legacy6JB"
+    }
+}
+foreach ($legacy6JBAction in @(
+    'battle-until-dawn-draw-choice', 'empty-city-draw-choice',
+    'camp-followup-choice', 'camp-followup-pay', 'scout-followup-choice', 'scout-followup-pay'
+)) {
+    if ($allRuntime.IndexOf($legacy6JBAction, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack Batch 6J-B hand/response declaration returned: $legacy6JBAction"
+    }
+}
+
+foreach ($cardId in @(
+    'S01-0001', 'S01-0112', 'S01-0115', 'S01-0207', 'S01-0210', 'S01-0303',
+    'S01-0304', 'S01-0306', 'S01-0313', 'S01-0403', 'S01-0407', 'S02-0002',
+    'S02-01S1', 'S02-0301', 'S02-0508', 'S02-0518', 'S02-0601', 'S02-0615'
+)) {
+    Assert-Contains $plans ('["' + $cardId + '|') "Batch 6I-B public trigger plan is missing card $cardId."
+}
+Assert-Contains $plans 'PrepareBatch6IBPublicTriggerCandidate' 'Batch 6I-B needs one shared pre-batch candidate filter.'
+Assert-Contains $kernel '.Where(PrepareBatch6IBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6I-B candidates before ordering.'
+Assert-Contains $plans 'candidate.Data["return-morale-prepaid"] = "true"' 'Jing Ke must prepay the exact declared morale before stack entry.'
+Assert-Contains $plans 'candidate.Data["cleanupReservation"] = pendingKey' 'Alice must reserve her once-per-turn use while declaration is pending.'
+Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Alice must finalize her once-per-turn use before stack entry.'
+Assert-Contains $s1Extended 'PublicTriggerDeclared(item, "entryCards")' 'Uesugi must resolve only the privately declared counter tactics.'
+Assert-Contains $s1Extended 'PublicTriggerDeclared(item, "entrySlot1")' 'Uesugi must resolve only the publicly declared back-row slots.'
+Assert-Contains $faction 'PublicTriggerDeclared(item, "recoverTarget")' 'Theseus must resolve only the declared promotion target.'
+$gwenEffectText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5qC85rip6I6J5a6J6Zi15Lqh5pe25pWI5p6c'))
+$legacyLamorakName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5YWw6ams5rSb5YWL'))
+Assert-Contains $faction 'AddEvent("reveal", item.Controller' 'Theseus must reveal the declared promotion before adding it to hand.'
+Assert-Contains $faction $gwenEffectText 'Gwen must use her own printed name in the migrated resolver.'
+if ($faction.IndexOf($legacyLamorakName, [StringComparison]::Ordinal) -ge 0) {
+    throw 'The legacy Gwen log must not misname Lamorak.'
+}
+$legacyDeathHandlers = $s1Extended + "`n" + $s1Faction + "`n" + $s2Universal + "`n" + $faction
+foreach ($legacyDeathPrompt in @(
+    'teach-death', 'sunwu-recover', 'jingke-kill', 'kenshin-set-counters',
+    'ryoma-summon-card', 'ryoma-summon-slot', 'tutankhamun-top', 'nitocris-summon',
+    'harald-kill', 'oddr-tap', 's2-alice-ready', 's2-xiaotian-death',
+    's2-optional-death-draw', 's2-lamorak-death', 's2-arthur-summon', 's2-arthur-summon-slot'
+)) {
+    if ($legacyDeathHandlers.IndexOf('["action"] = "' + $legacyDeathPrompt + '"', [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack Batch 6I-B declaration prompt returned: $legacyDeathPrompt"
+    }
 }
 
 foreach ($cardId in @(
@@ -98,6 +191,41 @@ Assert-Contains $plans 'DamageMaster(candidate.Controller, 1,' 'Brynhild must pa
 Assert-Contains $plans 'candidate.Data["preserveIndependentStack"] = "true"' 'Immortal Gift must preserve its independent draw segment when summon declaration is absent.'
 Assert-Contains $plans 'activation.DeclaredValues["entryCard"] = ["mode:none"]' 'Immortal Gift invalid summon segment must cancel independently.'
 Assert-Contains $plans 'Batch6GAPublicTriggerPlan' 'Batch 6G-A triggers need one shared data-driven declaration route.'
+Assert-Contains $plans 'VerifiedAtomicOptionalTriggerPlan' 'Verified atomic Optional atoms need one shared public declaration route.'
+Assert-Contains $plans 'PrepareVerifiedAtomicOptionalCandidate' 'Verified atomic Optional conditions must be checked before candidate admission.'
+Assert-Contains $plans 'TakeWhile(atom => atom.Kind != L12AtomKinds.Optional)' 'Only public conditions before Optional may gate candidate creation.'
+Assert-Contains $plans 'candidate.Data["verifiedAtomicConditionLocked"] = "true"' 'Verified atomic trigger-time conditions must be immutable after candidate creation.'
+Assert-Contains $kernel '.Where(PrepareVerifiedAtomicOptionalCandidate)' 'Every TriggerBatch entry must filter verified Optional candidates through the common condition gate.'
+Assert-Contains $atomicRuntime 'PublicTriggerDeclared(item, "mode") != "mode:use"' 'Verified atomic resolution must consume only the immutable declared mode.'
+Assert-Contains $atomicRuntime 'item.Data.GetValueOrDefault("verifiedAtomicConditionLocked") != "true"' 'Verified atomic resolution must not re-evaluate a trigger-time condition locked before stack entry.'
+foreach ($verifiedOptionalProgram in @(
+    'Program("S01-0413", "enter"', 'Program("S01-0405", "attack"',
+    'Program("S01-0409", "after-attack"', 'Program("S01-0115", "enter"',
+    'Program("S01-0301", "death"', 'Program("S01-0304", "enter"',
+    'Program("S01-0309", "death"', 'Program("S02-0104", "enter"',
+    'Program("S02-0203", "death"', 'Program("S02-0402", "death"',
+    'Program("S02-0512", "death"', 'Program("S02-0507", "enter"',
+    'Program("S02-0507", "promotion-enter"', 'Program("S02-0616", "enter"'
+)) {
+    Assert-Contains $atomicPrograms $verifiedOptionalProgram "Verified atomic Optional inventory is missing: $verifiedOptionalProgram"
+}
+if ($atomicRuntime.IndexOf('CreatePrompt(', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Verified atomic runtime must not create any resolution-time Optional prompt.'
+}
+if ($allRuntime.IndexOf('verified-atomic-optional', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Legacy verified-atomic-optional continuation returned to production runtime.'
+}
+Assert-Contains $plans '("S02-0102", "enter", _, _) => "limu-enter"' 'Li Mu enter must use the public trigger declaration route.'
+Assert-Contains $plans 'PublicTriggerStep("option", "revealMode"' 'Li Mu reveal opt-in must be declared before stack entry.'
+Assert-Contains $plans 'PublicTriggerStep("option", "drawMode"' 'Li Mu independent draw opt-in must be declared before stack entry.'
+Assert-Contains $plans 'CompositeFirstSegmentData("trigger:S02-0102:enter"' 'Li Mu must skip disabled segments before creating its first real stack item.'
+Assert-Contains $composite '["trigger:S02-0102:enter"]' 'Li Mu enter needs one shared composite trigger plan.'
+Assert-Contains $composite 'RequiredDeclarationKey: "revealMode"' 'Li Mu reveal segment must consume its immutable declaration key.'
+Assert-Contains $composite 'RequiredDeclarationKey: "drawMode"' 'Li Mu draw segment must consume its immutable declaration key.'
+Assert-Contains $composite 'First(index => CompositeSegmentEnabled(segments[index], declared))' 'Composite triggers must start at their first declared segment without an empty stack item.'
+Assert-Contains $faction 'private void RevealS2LiMuTop(L12StackItem item)' 'Li Mu hidden reveal must remain in the legal resolution handler.'
+Assert-Contains $faction 'var top = player.Library[0];' 'Li Mu must read the library top only after its reveal segment starts resolving.'
+Assert-Contains $faction '["action"] = "s2-limu-tactic"' 'Li Mu must delay the free-play-or-bottom choice until after the legal reveal.'
 Assert-Contains $plans 'margaretMasterDamage' 'Margaret damage trigger must predeclare and prepay its rest cost.'
 Assert-Contains $allRuntime 'margaret-heal-lock' 'Margaret heal and heal-lock sentences must remain independent stack segments.'
 Assert-Contains $plans 'cleanupReservation' 'Optional once-per-turn triggers must reserve pending state before player declaration.'
@@ -129,9 +257,37 @@ if ($plans.IndexOf('"S02-0106"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cosmos Yin must not be placed in the pre-reveal public trigger planner.'
 }
 foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403')) {
-    if ($plans.IndexOf('"' + $hiddenCardId + '"', [StringComparison]::Ordinal) -ge 0) {
+    if ($hiddenCardId -eq 'S02-0403' -and $plans.IndexOf('"' + $hiddenCardId + '"', [StringComparison]::Ordinal) -ge 0) {
         throw "Hidden-information effect $hiddenCardId must remain outside the pre-reveal public trigger planner."
     }
+}
+
+foreach ($cardId in @(
+    'S01-0101','S01-0102','S01-0103','S01-0108','S01-0110','S01-0111','S01-0112',
+    'S01-0201','S01-0202','S01-0205','S01-0210','S01-0215','S01-0217','S01-0220',
+    'S01-0313','S01-0316','S01-0317','S01-0402','S01-0403','S01-0406','S01-0408',
+    'S01-0411','S01-0412','S01-0416','S01-0417','S02-0003','S02-0008','S02-0204',
+    'S02-0303','S02-0401','S02-0402','S02-0404','S02-0501','S02-0502','S02-0505',
+    'S02-0506','S02-0513','S02-0518','S02-0520','S02-0601','S02-0608','S02-0613',
+    'S02-0617','S02-0619'
+)) {
+    Assert-Contains $entryPlans ('["' + $cardId + '|') "Batch 6J-A entry declaration inventory is missing card $cardId."
+}
+foreach ($contract in @(
+    'PrepareBatch6JAEnterCandidate', 'TryBeginBatch6JAEnterDeclaration',
+    'TryCompleteBatch6JAEnterDeclaration', 'TryResolveBatch6JAEnterEffect',
+    'ReturnSelectedMoraleById', 'L12S2ZoneOps.SpendRunes', 'MoveHandToGrave',
+    'batch6JAFollowup', 'takeda-followup'
+)) {
+    Assert-Contains $entryPlans $contract "Batch 6J-A public entry contract is missing: $contract"
+}
+Assert-Contains $kernel '.Where(PrepareBatch6JAEnterCandidate)' 'Every TriggerBatch entry must filter Batch 6J-A enter candidates.'
+Assert-Contains $cardEffects 'case "enter-followup"' 'Takeda independent follow-up needs an explicit stack dispatch.'
+Assert-Contains $composite '["trigger:S01-0111:enter"]' 'Zhuge reveal and disaster adjustment must remain independent stack segments.'
+Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One target and discard must remain independent stack segments.'
+Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four target and discard must remain independent stack segments.'
+foreach ($legalHiddenPrompt in @('s2-ring-search','s2-magatama-search','s2-takeda-search','s2-robin-summon-squire')) {
+    Assert-Contains $entryPlans $legalHiddenPrompt "Legal post-reveal hidden prompt is missing: $legalHiddenPrompt"
 }
 
 foreach ($legacy in @(
@@ -177,6 +333,12 @@ foreach ($legacyBatch6GAPrompt in @(
 )) {
     if ($allRuntime.IndexOf($legacyBatch6GAPrompt, [StringComparison]::Ordinal) -ge 0) {
         throw "Legacy post-stack Batch 6G-A trigger continuation returned: $legacyBatch6GAPrompt"
+    }
+}
+
+foreach ($legacyBatch6GBPrompt in @('s2-limu-reveal', 's2-limu-draw')) {
+    if ($allRuntime.IndexOf($legacyBatch6GBPrompt, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack Batch 6G-B Li Mu continuation returned: $legacyBatch6GBPrompt"
     }
 }
 

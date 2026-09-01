@@ -51,7 +51,8 @@ public sealed partial class L12GameEngine
     {
         switch (item.Trigger)
         {
-            case "enter": ResolveEnterEffect(item); break;
+            case "enter":
+            case "enter-followup": ResolveEnterEffect(item); break;
             case "promotion-enter": ResolveS2PromotionEnter(item); break;
             case "play": ResolveTacticEffect(item); break;
             case "attack": ResolveAttackEffect(item); break;
@@ -66,6 +67,7 @@ public sealed partial class L12GameEngine
             case "authority-event": ResolveAuthorityEvent(item); break;
             case "disaster": ResolveDisasterEffect(item); break;
             case "s2-after-opponent-tactic": ResolveS2ExorcistReturn(item); break;
+            case "prayer-private": ResolvePrayerPrivatePreview(item); break;
             case "discard-trigger": ResolveS2DiscardTrigger(item); break;
             case "forge-ready-after-kill": ResolveForgeReadyAfterKill(item); break;
             case "morrigan-enemy-death": ResolveS2MorriganEnemyDeath(item); break;
@@ -102,6 +104,7 @@ public sealed partial class L12GameEngine
     {
         var card = FindSource(item);
         if (card is null) { FinishStackItem(item); return; }
+        if (TryResolveBatch6JAEnterEffect(item, card)) return;
         var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
@@ -131,9 +134,10 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
             case "稻姬本多小松":
             {
-                var choices = player.Field[0].Where(target => target is not null
-                        && target.InstanceId != card.InstanceId && target.Faction == "gaotianyuan" && target.Troops <= 5000)
-                    .Select(target => target!.InstanceId).ToArray();
+                var choices = PublicFactionLegions(player, "gaotianyuan").Where(target =>
+                        target.InstanceId != card.InstanceId
+                        && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0
+                        && target.Troops <= 5000).Select(target => target.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "target", "选择我方前排 1 张其他兵力不高于 5000 的【高天原】军团，本回合兵力 +1000",
                     choices, 1, 1, "card-effect", item.StackItemId,
@@ -197,9 +201,16 @@ public sealed partial class L12GameEngine
                 AddEvent("morale", item.Controller, "观星从士气牌库追加1张活跃士气", card);
                 FinishStackItem(item);
                 return;
-            case "天诛":
-                PromptEnemyLegion(item, "divine-punishment-kill", "选择对方 1 张费用不高于 7 的军团并击杀",
-                    target => target.CurrentCost <= 7, optional: false); return;
+            case "divine-punishment-effect":
+            {
+                var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.CurrentCost <= 7) is not null)
+                    KillTarget(item, targetId!, "被天诛击杀");
+                else AddEvent("effect-cancelled", item.Controller,
+                    "天诛已声明的费用不高于7目标失效；效果取消", card);
+                FinishStackItem(item);
+                return;
+            }
             case "oiran-search": BeginOiranGift(item); return;
             case "oiran-ready-morale":
             {
@@ -228,15 +239,8 @@ public sealed partial class L12GameEngine
             return;
         }
         if (TryResolveAttackPublicTriggerEffect(item, card)) return;
-        var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
-            case "本多忠胜":
-                foreach (var enemy in State.Players[1 - item.Controller].Field.SelectMany(row => row).Where(target => target is not null))
-                    enemy!.CostModifier--;
-                PromptEnemyLegion(item, "honda-kill-zero", "选择对方 1 张当前费用为 0 的军团并击杀",
-                    target => target.CurrentCost == 0, optional: false);
-                return;
             default:
                 if (!TryResolveS1ExtendedAttack(item, card) && !TryResolveS2FactionAttack(item, card)) FinishStackItem(item);
                 return;
@@ -252,22 +256,12 @@ public sealed partial class L12GameEngine
             case "花木兰":
             {
                 if (State.ActivePlayer == item.Controller) { FinishStackItem(item); return; }
-                if (item.Data.TryGetValue("declaredTargets", out var declared))
-                {
-                    var morale = State.Players[1 - item.Controller].Morale.FirstOrDefault(card => card.InstanceId == declared);
-                    if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
-                    FinishStackItem(item); return;
-                }
-                var choices = State.Players[1 - item.Controller].Morale.Where(morale => morale.Tapped).Select(morale => morale.InstanceId).ToArray();
-                if (choices.Length == 0) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "target-morale", "选择对方 1 张休整士气，使其下个重置阶段无法转为活跃", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "mulan-lock-morale",
-                        ["targetPlayerIndex"] = (1 - item.Controller).ToString(),
-                        ["choiceMode"] = "resource-selection",
-                    });
-                return;
+                var targetId = PublicTriggerDeclared(item, "moraleTarget");
+                var morale = State.Players[1 - item.Controller].Morale.FirstOrDefault(card => card.InstanceId == targetId);
+                if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
+                else AddEvent("effect-cancelled", item.Controller,
+                    "花木兰已声明的对方士气目标在结算时失效；仅取消该段", card);
+                FinishStackItem(item); return;
             }
             default:
                 if (!TryResolveS1ExtendedDeath(item, card) && !TryResolveS2FactionDeath(item, card)) FinishStackItem(item);
@@ -290,10 +284,13 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "吕布":
-                if (CanReturnMorale(player, 4))
-                    CreatePrompt(item.Controller, "optional", "是否返还 4 张士气，将吕布转为活跃？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "lubu-ready" });
-                else FinishStackItem(item);
+                if (PublicTriggerDeclared(item, "mode") == "mode:use"
+                    && FindOnField(player, item.SourceInstanceId, out _, out _) is { } lubu)
+                    ReadyCardByEffect(item.Controller, lubu, lubu, "吕布因进攻后效果转为活跃");
+                else if (PublicTriggerDeclared(item, "mode") == "mode:use")
+                    AddEvent("effect-cancelled", item.Controller,
+                        "吕布在结算时已不在战场；转为活跃段取消，已返还士气不恢复", card);
+                FinishStackItem(item);
                 return;
             case "桂小五郎":
                 if (PublicTriggerDeclared(item, "mode") == "mode:use"

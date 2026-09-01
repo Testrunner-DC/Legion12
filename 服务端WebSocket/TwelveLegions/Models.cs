@@ -418,6 +418,12 @@ public sealed class L12PendingActivation
     /// </summary>
     public string? CommittedParentStackItemId { get; set; }
     public string? CommittedCompletion { get; set; }
+    /// <summary>
+    /// 由效果生成的免费打出在声明期间保留真实来源区域与公开日志原因。
+    /// 这两个字段只描述已展示卡牌的权威事务，不承载任何尚未揭示的牌库身份。
+    /// </summary>
+    public string? CommittedOriginZone { get; set; }
+    public string? CommittedReason { get; set; }
     /// <summary>非空时表示这是尚未揭示、尚未入栈的响应卡目标声明。</summary>
     public string? ResponseTargetStackItemId { get; init; }
 }
@@ -476,6 +482,8 @@ public sealed class L12ActivationSelectionStep
     /// 用于“先选模式，再仅为强模式声明额外费用对象”的公共预声明流程。
     /// </summary>
     public string? RequiredDeclaredChoice { get; init; }
+    /// <summary>公共多选的跨项约束；由统一 Prompt 校验层在移除 Prompt 前拒绝非法组合。</summary>
+    public string? SelectionConstraint { get; init; }
 }
 
 public sealed class L12TriggerCandidate

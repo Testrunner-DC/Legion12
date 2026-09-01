@@ -15,6 +15,7 @@ public sealed partial class L12GameEngine
     private static readonly IReadOnlyDictionary<string, AttackPublicTriggerPlan> AttackPublicTriggerPlans =
         new Dictionary<string, AttackPublicTriggerPlan>(StringComparer.OrdinalIgnoreCase)
         {
+            ["S01-0401"] = new("honda", TargetKind: "enemy-after-cost-debuff", Optional: false),
             ["S01-0104"] = new("hanxin", "return-morale"),
             ["S01-0106"] = new("guanyu", "return-morale"),
             ["S01-0203"] = new("menes", "discard-own-legion"),
@@ -192,15 +193,20 @@ public sealed partial class L12GameEngine
                     steps.Add(PublicTriggerStep("enemy-legion", "target", "高杉晋作：预先选择对方1张军团",
                         PublicLegions(opponent).Select(card => card.InstanceId), requiredChoice: required));
                     break;
+                case "enemy-after-cost-debuff":
+                    steps.Add(PublicTriggerStep("enemy-legion", "killTarget",
+                        "本多忠胜：预先选择费用-1后将被随后效果击杀的军团",
+                        PublicLegions(opponent).Where(card => card.CurrentCost <= 1).Select(card => card.InstanceId)));
+                    break;
                 case "enemy-covered-counter":
                     steps.Add(PublicTriggerStep("covered-counter", "target", "源博雅：预先选择对方后排1张覆盖的反击战术",
                         opponent.Field[1].Where(card => card is { CardType: "tactic" }).Select(card => card!.InstanceId)));
                     break;
                 case "own-front-gaotianyuan":
                     steps.Add(PublicTriggerStep("field-legion", "target", "稻姬：预先选择我方前排1张其他低兵力【高天原】军团",
-                        player.Field[0].Where(card => card is not null && card.InstanceId != source.InstanceId
-                                && card.Faction == "gaotianyuan" && card.Troops <= 5000)
-                            .Select(card => card!.InstanceId)));
+                        PublicFactionLegions(player, "gaotianyuan").Where(card => card.InstanceId != source.InstanceId
+                                && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
+                                && card.Troops <= 5000).Select(card => card.InstanceId)));
                     break;
             }
         }
@@ -237,10 +243,13 @@ public sealed partial class L12GameEngine
             "own-front-low" => player.Field[0].Any(card => card is not null && IsFieldLegion(card) && card.Troops <= 2000),
             "enemy-cost-one" => PublicLegions(opponent).Any(card => card.CurrentCost <= 1),
             "enemy-legion" => PublicLegions(opponent).Any(),
+            "enemy-after-cost-debuff" => PublicLegions(opponent).Any(card => card.CurrentCost <= 1),
             "attack-legion" => State.PendingDefense?.Target.Type == "legion",
             "enemy-covered-counter" => opponent.Field[1].Any(card => card is { CardType: "tactic" }),
-            "own-front-gaotianyuan" => player.Field[0].Any(card => card is not null
-                && card.InstanceId != source.InstanceId && card.Faction == "gaotianyuan" && card.Troops <= 5000),
+            "own-front-gaotianyuan" => PublicFactionLegions(player, "gaotianyuan").Any(card =>
+                card.InstanceId != source.InstanceId
+                && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
+                && card.Troops <= 5000),
             _ => true,
         };
         var condition = plan.PlanId switch
@@ -273,6 +282,7 @@ public sealed partial class L12GameEngine
         var source = FindOnField(player, candidate.SourceInstanceId, out _, out _);
         var costIds = activation.DeclaredValues.GetValueOrDefault("cost", []);
         var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
+        var hondaTargetId = activation.DeclaredValues.GetValueOrDefault("killTarget", []).SingleOrDefault();
         string? error = null;
 
         if (planId == "richard-squires")
@@ -357,13 +367,17 @@ public sealed partial class L12GameEngine
                         => "土方岁三声明的击杀目标已失效；未支付费用且效果未入栈",
                     "enemy-legion" when targetId is null || FindOnField(opponent, targetId, out _, out _) is null
                         => "高杉晋作声明的目标已失效；未支付费用且效果未入栈",
+                    "enemy-after-cost-debuff" when hondaTargetId is null
+                        || FindOnField(opponent, hondaTargetId, out _, out _) is not { } hondaTarget
+                        || hondaTarget.CurrentCost > 1
+                        => "本多忠胜声明的随后击杀目标已失效；效果未入栈",
                     "enemy-covered-counter" when targetId is null
                         || FindOnField(opponent, targetId, out var row, out _) is not { CardType: "tactic" } || row != 1
                         => "源博雅声明的覆盖反击战术已失效；效果未入栈",
                     "own-front-gaotianyuan" when targetId is null
                         || FindOnField(player, targetId, out var row, out _) is not { } target || row != 0
-                        || target.InstanceId == candidate.SourceInstanceId || target.Faction != "gaotianyuan"
-                        || target.Troops > 5000
+                        || !IsFieldLegion(target) || target.InstanceId == candidate.SourceInstanceId
+                        || !L12StructuredCardRules.HasFaction(player, target, "gaotianyuan") || target.Troops > 5000
                         => "稻姬声明的前排目标已失效；效果未入栈",
                     _ => null,
                 };
@@ -381,6 +395,9 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (planId == "honda")
+            foreach (var pair in CompositeFirstSegmentData("trigger:S01-0401:attack", activation.DeclaredValues))
+                candidate.Data[pair.Key] = pair.Value;
         candidate.Data["declaration-complete"] = "true";
         AdvanceTriggerBatches();
         return true;
@@ -465,6 +482,20 @@ public sealed partial class L12GameEngine
 
         switch (planId)
         {
+            case "honda":
+                if (AtomicFlowKey(item, card) == "honda-debuff")
+                {
+                    foreach (var enemy in PublicLegions(opponent)) enemy.CostModifier--;
+                }
+                else if (AtomicFlowKey(item, card) == "honda-kill")
+                {
+                    var hondaTarget = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                    if (DeclaredEnemyTarget(item.Controller, hondaTarget,
+                            target => target.CurrentCost == 0) is not null)
+                        KillTarget(item, hondaTarget!, "被本多忠胜击杀");
+                    else Cancel("本多忠胜已声明的费用为0目标失效；仅取消随后击杀段");
+                }
+                Finish(); return true;
             case "hanxin":
                 BuffSource(1000, "韩信");
                 if (source is not null) GrantStrongAttack(source);
@@ -518,7 +549,8 @@ public sealed partial class L12GameEngine
                 Finish(); return true;
             case "inahime":
                 if (FindOnField(player, targetId, out var targetRow, out _) is { } inahimeTarget && targetRow == 0
-                    && inahimeTarget.InstanceId != item.SourceInstanceId && inahimeTarget.Faction == "gaotianyuan"
+                    && IsFieldLegion(inahimeTarget) && inahimeTarget.InstanceId != item.SourceInstanceId
+                    && L12StructuredCardRules.HasFaction(player, inahimeTarget, "gaotianyuan")
                     && inahimeTarget.Troops <= 5000)
                     AddTimedModifier(inahimeTarget, 1000, 0, State.TurnSerial, "稻姬本多小松");
                 else Cancel("稻姬声明的目标已失效");
@@ -529,7 +561,7 @@ public sealed partial class L12GameEngine
                 if (top is not null)
                 {
                     AddEvent("reveal", item.Controller, $"平阳昭公主展示牌库顶部的〈{top.Name}〉", top);
-                    if (top.Faction == "tianting" && top.CurrentCost <= 5)
+                    if (L12StructuredCardRules.HasFaction(player, top, "tianting") && top.CurrentCost <= 5)
                     {
                         if (source is not null)
                             AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "平阳昭公主");

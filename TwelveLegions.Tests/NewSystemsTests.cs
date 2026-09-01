@@ -636,6 +636,10 @@ public sealed class NewSystemsTests
         var revealed = player.Library.Take(3).Select(card => card.InstanceId).ToArray();
 
         Assert.True(game.Handle(owner, new L12Command("playCard", camp.InstanceId)).Accepted);
+        var followupDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", followupDeclaration.Continuation);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: followupDeclaration.PromptId,
+            Choice: "mode:none")).Accepted);
         while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
         {
             var response = game.State.PendingPrompts[0];
@@ -652,10 +656,6 @@ public sealed class NewSystemsTests
         var bottom = revealed.Reverse().ToList();
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: order.PromptId,
             TopCardInstanceIds: [], BottomCardInstanceIds: bottom)).Accepted);
-        var option = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(owner,
-            new L12Command("resolvePrompt", PromptId: option.PromptId, Choice: "skip")).Accepted);
-
         Assert.Equal(bottom, player.Library.TakeLast(bottom.Count).Select(card => card.InstanceId));
     }
 
@@ -1652,8 +1652,20 @@ public sealed class NewSystemsTests
         Assert.True(recovery.Handle(0, new L12Command("activateAbility", "master-0", Ability: "nonLethal")).Accepted);
         while (recovery.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
             Assert.True(recovery.Handle(response.PlayerIndex, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
-        var trigger = Assert.Single(recovery.State.PendingPrompts, prompt => prompt.Continuation == "faction-zero-recovery");
-        Assert.True(recovery.Handle(0, new L12Command("resolvePrompt", PromptId: trigger.PromptId, Choice: "yes")).Accepted);
+        var trigger = Assert.Single(recovery.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        Assert.True(recovery.Handle(0, new L12Command("resolvePrompt", PromptId: trigger.PromptId, Choice: "mode:use")).Accepted);
+        while (recovery.State.PendingPrompts.FirstOrDefault()?.Continuation == "pending-activation")
+        {
+            var otherDeclaration = recovery.State.PendingPrompts[0];
+            Assert.True(recovery.Handle(otherDeclaration.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: otherDeclaration.PromptId, Choice: "mode:none")).Accepted);
+        }
+        while (recovery.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var response = recovery.State.PendingPrompts[0];
+            Assert.True(recovery.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
         Assert.Equal(2, recoveryPlayer.Morale.Count);
         Assert.All(recoveryPlayer.Morale, card => Assert.True(card.Tapped));
     }

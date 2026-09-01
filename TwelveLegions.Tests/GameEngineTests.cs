@@ -130,6 +130,9 @@ public sealed class GameEngineTests
         var card = PutCardInHand(game, 0, "S01-0103");
 
         Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         var first = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("response", first.Kind);
         Assert.Equal(["pass"], first.ValidChoices);
@@ -160,6 +163,9 @@ public sealed class GameEngineTests
 
         Assert.True(game.Handle(0,
             new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Equal(1, response.PlayerIndex);
         Assert.Equal(["pass"], response.ValidChoices);
@@ -189,6 +195,9 @@ public sealed class GameEngineTests
 
         Assert.True(game.Handle(0,
             new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Equal(1, response.PlayerIndex);
         Assert.Equal(["pass"], response.ValidChoices);
@@ -211,6 +220,9 @@ public sealed class GameEngineTests
 
         Assert.True(game.Handle(0,
             new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 
@@ -259,6 +271,9 @@ public sealed class GameEngineTests
 
         Assert.True(game.Handle(0,
             new L12Command("playCard", entering.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Equal(1, response.PlayerIndex);
         Assert.Contains(ambush.InstanceId, response.ValidChoices);
@@ -772,9 +787,18 @@ public sealed class GameEngineTests
 
         Assert.True(game.Handle(1, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
         var optional = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("verified-atomic-optional", optional.Data.GetValueOrDefault("action"));
+        Assert.Equal("pending-activation", optional.Continuation);
+        Assert.Contains("mode:use", optional.ValidChoices);
+        Assert.Empty(game.State.EffectStack);
         Assert.Empty(player.Hand);
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "yes")).Accepted);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: optional.PromptId,
+            Choice: "mode:use")).Accepted);
+        for (var safety = 0; safety < 20 && game.State.PendingPrompts.FirstOrDefault()?.Kind == "response"; safety++)
+        {
+            var response = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
         Assert.Single(player.Hand);
         Assert.Contains(game.State.Events, item => item.Type == "effect" && item.Text.Contains("抽取 1 张牌"));
     }

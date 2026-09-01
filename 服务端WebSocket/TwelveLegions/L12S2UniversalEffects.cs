@@ -151,15 +151,21 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2UniversalAfterAttack(L12StackItem item, L12CardInstance card)
     {
         if (card.CardId != "S02-0002") return false;
-        var onceKey = $"alice-ready:{card.InstanceId}:{State.TurnSerial}";
-        if (item.Data.GetValueOrDefault("killed") != "true" || State.Players[item.Controller].UsedAbilities.Contains(onceKey))
+        if (item.Data.GetValueOrDefault("killed") != "true"
+            || PublicTriggerDeclared(item, "mode") != "mode:use")
         {
             FinishStackItem(item);
             return true;
         }
-        item.Data["onceKey"] = onceKey;
-        CreatePrompt(item.Controller, "optional", "疯狂的爱丽丝击杀军团后，是否转为活跃？", ["yes", "no"], 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-alice-ready" });
+        var source = FindSource(item);
+        if (source is not null && FindOnField(State.Players[item.Controller], source.InstanceId, out _, out _) is not null)
+        {
+            ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因击杀转为活跃");
+            AddEvent("effect", item.Controller, "疯狂的爱丽丝因击杀转为活跃", source);
+        }
+        else AddEvent("effect-cancelled", item.Controller,
+            "疯狂的爱丽丝在结算时已不在战场；转为活跃效果取消", card);
+        FinishStackItem(item);
         return true;
     }
 
@@ -177,19 +183,17 @@ public sealed partial class L12GameEngine
     private void ResolveS2ExorcistReturn(L12StackItem item)
     {
         var source = FindSource(item);
-        if (source is null || source.CardId != "S02-0001"
-            || FindOnField(State.Players[item.Controller], source.InstanceId, out _, out _) is null)
+        if (PublicTriggerDeclared(item, "mode") != "mode:use")
         {
             FinishStackItem(item);
             return;
         }
-        CreatePrompt(item.Controller, "optional", "驱魔道士 陆瑛：是否从战场返回手牌？", ["yes", "no"], 1, 1,
-            "card-effect", item.StackItemId,
-            data: new Dictionary<string, string>
-            {
-                ["action"] = "s2-exorcist-return", ["choiceMode"] = "instant",
-                ["yes"] = "返回手牌", ["no"] = "留在战场",
-            });
+        if (source is not null && source.CardId == "S02-0001"
+            && FindOnField(State.Players[item.Controller], source.InstanceId, out _, out _) is not null)
+            MoveFieldCardToZone(State.Players[item.Controller], source, "hand", "因自身效果返回手牌");
+        else AddEvent("effect-cancelled", item.Controller,
+            "驱魔道士 陆瑛在结算时已不在战场；返回手牌效果取消", item.SourceSnapshot is null ? [] : [item.SourceSnapshot]);
+        FinishStackItem(item);
     }
 
     private CommandResult? TryBeginS2UniversalActiveAbility(int playerIndex, L12CardInstance source, string ability)
@@ -318,50 +322,27 @@ public sealed partial class L12GameEngine
             }
             case "s2-prayer-consent":
                 if (chosen[0] == "agree") BeginPrayerPublicPreview(item);
-                else if (CanReturnMorale(State.Players[item.Controller], 1))
-                    CreatePrompt(item.Controller, "optional", "对方不同意公开。是否消耗1士气，仅由我方查看下1张天灾卡？",
-                        ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string>
-                        {
-                            ["action"] = "s2-prayer-private-cost", ["choiceMode"] = "instant",
-                            ["yes"] = "消耗1士气并查看", ["no"] = "不查看",
-                        });
-                else FinishStackItem(item);
-                break;
-            case "s2-prayer-private-cost":
-                if (chosen[0] == "yes") BeginEffectMoralePayment(item, 1, "s2-prayer-private");
-                else FinishStackItem(item);
+                else
+                {
+                    var prayer = FindSource(item) ?? item.SourceSnapshot;
+                    if (prayer is not null && State.DisasterDeck.Count > 0
+                        && ActiveResourceCount(State.Players[item.Controller]) >= 1)
+                        QueueTriggerCandidates([
+                            CreateTriggerCandidate(item.Controller, prayer, "prayer-private",
+                                "对方拒绝公开后的私下查看天灾效果", sourceSnapshot: prayer)
+                        ]);
+                    FinishStackItem(item);
+                }
                 break;
             case "s2-prayer-private-confirm":
                 FinishStackItem(item);
                 break;
-            case "s2-exorcist-return":
-            {
-                var source = FindSource(item);
-                if (chosen[0] == "yes" && source is not null)
-                    MoveFieldCardToZone(State.Players[item.Controller], source, "hand", "因自身效果返回手牌");
-                FinishStackItem(item);
-                break;
-            }
             case "s2-magician-remove-counter":
                 if (chosen[0] != "skip")
                 {
                     var target = FindPublicCard(chosen[0], out var owner);
                     if (target is not null) RemoveFromField(State.Players[owner], target, true, "被宫廷魔术师置入墓地",
                         leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
-                }
-                FinishStackItem(item);
-                break;
-            case "s2-alice-ready":
-                if (chosen[0] == "yes")
-                {
-                    var source = FindSource(item);
-                    if (source is not null)
-                    {
-                        State.Players[item.Controller].UsedAbilities.Add(item.Data["onceKey"]);
-                        ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因击杀转为活跃");
-                        AddEvent("effect", item.Controller, "疯狂的爱丽丝因击杀转为活跃", source);
-                    }
                 }
                 FinishStackItem(item);
                 break;
@@ -425,5 +406,12 @@ public sealed partial class L12GameEngine
         AddPromptCardData(data, disaster);
         CreatePrompt(item.Controller, "information-confirm", $"祷告仪式：查看下1张天灾卡〈{disaster.Name}〉", [], 0, 0,
             "card-effect", item.StackItemId, isPrivate: true, data: data);
+    }
+
+    private void ResolvePrayerPrivatePreview(L12StackItem item)
+    {
+        if (PublicTriggerDeclared(item, "mode") == "mode:use")
+            BeginPrayerPrivatePreview(item);
+        else FinishStackItem(item);
     }
 }

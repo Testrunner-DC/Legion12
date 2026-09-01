@@ -98,9 +98,17 @@ public sealed class AtomicReviewBatch4RegressionTests
         player.Morale.AddRange([movementMorale, morale]);
 
         Assert.True(game.Handle(0, new L12Command("move", moved.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-batch-order", order.Continuation);
+        var followMove = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("军团位移时效果", StringComparison.Ordinal));
+        var attackBuff = Assert.Single(order.ValidChoices, id => id != followMove);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [followMove, attackBuff])).Accepted);
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", mode.Continuation);
-        Assert.Empty(game.State.EffectStack);
+        Assert.Single(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("ability") == "tsukuyomiFrontAttackBuff");
         Resolve(game, "mode:use");
         var cost = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(morale.InstanceId, cost.ValidChoices);
@@ -116,7 +124,7 @@ public sealed class AtomicReviewBatch4RegressionTests
 
         Assert.True(morale.Tapped);
         Assert.Contains("active:master-0:tsukuyomiFollowMove", player.UsedAbilities);
-        Assert.Single(game.State.EffectStack);
+        Assert.Equal(2, game.State.EffectStack.Count);
         player.Field[0][2] = null;
         player.Graveyard.Add(target);
         PassResponses(game);

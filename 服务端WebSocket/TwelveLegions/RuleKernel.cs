@@ -321,21 +321,80 @@ public static class L12S2ZoneOps
             if (player.Field[row][slot]?.InstanceId == foundation.InstanceId) position = (row, slot);
         if (position.Row < 0 || !ConsumeAndFlipGodPower(player, godPowerCost)) return false;
 
-        promoted.Tapped = foundation.Tapped;
-        promoted.HasCharge |= foundation.HasCharge;
-        promoted.HasStrongAttack |= foundation.HasStrongAttack;
-        promoted.HasSureHit |= foundation.HasSureHit;
-        promoted.TauntRequiresFrontRow |= foundation.TauntRequiresFrontRow;
-        promoted.ImmortalUses += foundation.ImmortalUses;
-        promoted.ImmortalUntilTurn = Math.Max(promoted.ImmortalUntilTurn, foundation.ImmortalUntilTurn);
-        promoted.ImmortalRequiresFrontRow |= foundation.ImmortalRequiresFrontRow;
-        if (foundation.ImmortalExpiresAtPlayerTurnStart >= 0)
-            promoted.ImmortalExpiresAtPlayerTurnStart = foundation.ImmortalExpiresAtPlayerTurnStart;
-        promoted.SummonRound = foundation.SummonRound;
-        promoted.AttacksThisTurn = foundation.AttacksThisTurn;
+        InheritPromotionState(foundation, promoted);
         promoted.AttachedCards.Add(foundation);
         player.Hand.Remove(promoted);
         player.Field[position.Row][position.Slot] = promoted;
         return true;
+    }
+
+    /// <summary>
+    /// FAQ 44：晋升者与底座共享场上状态和被赋予词条。底座的印刷文本、基础兵力与
+    /// 持续来源本身不叠加；这里只迁移已经落在实例上的限时层、伤害消耗与状态标记。
+    /// </summary>
+    public static void InheritPromotionState(L12CardInstance foundation, L12CardInstance promoted)
+    {
+        var expectedFoundationTroops = foundation.DisplayBaseTroops
+            + foundation.TimedModifiers.Sum(modifier => modifier.TroopsDelta)
+            + foundation.ContinuousTroopsModifier;
+        var carriedDamage = Math.Max(0, expectedFoundationTroops - foundation.Troops);
+
+        promoted.Tapped = foundation.Tapped;
+        promoted.SetTroopsValue = foundation.SetTroopsValue;
+        promoted.SetTroopsUntilTurn = foundation.SetTroopsUntilTurn;
+        promoted.HasCharge |= foundation.HasCharge;
+        promoted.HasStrongAttack |= foundation.HasStrongAttack;
+        promoted.HasSureHit |= foundation.HasSureHit;
+        promoted.HasShock |= foundation.HasShock;
+        promoted.AttackNoLossUntilTurn = Math.Max(promoted.AttackNoLossUntilTurn, foundation.AttackNoLossUntilTurn);
+        promoted.NextAttackNoLossUses += foundation.NextAttackNoLossUses;
+        promoted.ReadyAfterNextKillUntilTurn = Math.Max(promoted.ReadyAfterNextKillUntilTurn,
+            foundation.ReadyAfterNextKillUntilTurn);
+        promoted.ReadyAfterNextKillSourceName ??= foundation.ReadyAfterNextKillSourceName;
+        promoted.SureHitAgainstLegionsUntilTurn = Math.Max(promoted.SureHitAgainstLegionsUntilTurn,
+            foundation.SureHitAgainstLegionsUntilTurn);
+        promoted.CannotReadyByEffectUntilTurn = Math.Max(promoted.CannotReadyByEffectUntilTurn,
+            foundation.CannotReadyByEffectUntilTurn);
+        promoted.DiscardAtEndOfTurnUntilTurn = Math.Max(promoted.DiscardAtEndOfTurnUntilTurn,
+            foundation.DiscardAtEndOfTurnUntilTurn);
+        promoted.SummonRound = foundation.SummonRound;
+        promoted.LastMovedTurn = foundation.LastMovedTurn;
+        promoted.LastCavalryMoveTurn = foundation.LastCavalryMoveTurn;
+        promoted.CannotUntapUntilRound = Math.Max(promoted.CannotUntapUntilRound, foundation.CannotUntapUntilRound);
+        promoted.CannotRespondUntilRound = Math.Max(promoted.CannotRespondUntilRound, foundation.CannotRespondUntilRound);
+        promoted.SetRound = foundation.SetRound;
+        promoted.AttacksThisTurn = foundation.AttacksThisTurn;
+        promoted.CannotAttack |= foundation.CannotAttack;
+        promoted.CannotSupport |= foundation.CannotSupport;
+        promoted.CanAttackBackAndMasterUntilTurn = Math.Max(promoted.CanAttackBackAndMasterUntilTurn,
+            foundation.CanAttackBackAndMasterUntilTurn);
+        promoted.CanAttackMasterOnSummonUntilTurn = Math.Max(promoted.CanAttackMasterOnSummonUntilTurn,
+            foundation.CanAttackMasterOnSummonUntilTurn);
+        promoted.CanAttackLegionsOnSummonUntilTurn = Math.Max(promoted.CanAttackLegionsOnSummonUntilTurn,
+            foundation.CanAttackLegionsOnSummonUntilTurn);
+        promoted.TauntUntilTurn = Math.Max(promoted.TauntUntilTurn, foundation.TauntUntilTurn);
+        promoted.TauntRequiresFrontRow |= foundation.TauntRequiresFrontRow;
+        promoted.TauntExpiresAtPlayerTurnStart = Math.Max(promoted.TauntExpiresAtPlayerTurnStart,
+            foundation.TauntExpiresAtPlayerTurnStart);
+        promoted.ImmortalUses += foundation.ImmortalUses;
+        promoted.ImmortalUntilTurn = Math.Max(promoted.ImmortalUntilTurn, foundation.ImmortalUntilTurn);
+        promoted.ImmortalRequiresFrontRow |= foundation.ImmortalRequiresFrontRow;
+        promoted.ImmortalExpiresAtPlayerTurnStart = Math.Max(promoted.ImmortalExpiresAtPlayerTurnStart,
+            foundation.ImmortalExpiresAtPlayerTurnStart);
+        promoted.SuppressDeathUntilTurn = Math.Max(promoted.SuppressDeathUntilTurn, foundation.SuppressDeathUntilTurn);
+
+        foreach (var modifier in foundation.TimedModifiers)
+            promoted.TimedModifiers.Add(new L12TimedModifier
+            {
+                TroopsDelta = modifier.TroopsDelta,
+                CostDelta = modifier.CostDelta,
+                ExpiresAfterTurn = modifier.ExpiresAfterTurn,
+                Source = modifier.Source,
+                ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
+            });
+        promoted.CostModifier += foundation.TimedModifiers.Sum(modifier => modifier.CostDelta);
+        promoted.Troops = promoted.DisplayBaseTroops
+            + promoted.TimedModifiers.Sum(modifier => modifier.TroopsDelta)
+            - carriedDamage;
     }
 }

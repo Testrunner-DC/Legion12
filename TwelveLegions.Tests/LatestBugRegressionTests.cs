@@ -397,13 +397,15 @@ public sealed class LatestBugRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", imhotep.InstanceId, Row: 0, Slot: 0)).Accepted);
         PassResponses(game);
-
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("optional-card", prompt.Kind);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.Contains(paladin.InstanceId, prompt.ValidChoices);
-        Assert.Contains("skip", prompt.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             CardInstanceIds: [paladin.InstanceId])).Accepted);
+        PassResponses(game);
         Assert.Contains(paladin, player.Hand);
         Assert.DoesNotContain(paladin, player.Graveyard);
     }
@@ -615,9 +617,13 @@ public sealed class LatestBugRegressionTests
         var selection = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
             CardInstanceIds: [.. returned])).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", slot.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices[0])).Accepted);
         PassResponses(game);
 
-        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "faction-zero-recovery");
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
     }
 
     [Fact]
@@ -1052,7 +1058,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void ResourcePaymentPromptOnlyNamesResourcesThatCanActuallyBeSelected()
+    public void ResourcePaymentPromptIncludesControlledTombGuardRegardlessOfControllerFaction()
     {
         var game = CreateWithFirstMaster("S02-05M2", 6409);
         var player = game.State.Players[0];
@@ -1068,8 +1074,8 @@ public sealed class LatestBugRegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", forge.InstanceId,
             Ability: "forgePromotionDiscount")).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("请选择支付费用的士气、神力", prompt.Text);
-        Assert.DoesNotContain("陵墓守卫", prompt.Text);
+        Assert.Equal("请选择支付费用的士气、神力、陵墓守卫", prompt.Text);
+        Assert.Contains("controlled-tomb-guard", prompt.ValidChoices);
     }
 
     [Fact]
@@ -1513,6 +1519,9 @@ public sealed class LatestBugRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", takeda.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         var trapWindow = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(trap.InstanceId, trapWindow.ValidChoices);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: trapWindow.PromptId,
@@ -1525,6 +1534,7 @@ public sealed class LatestBugRegressionTests
         Assert.Equal("stack-response-discard", discardPrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
             Choice: discard.InstanceId)).Accepted);
+        PassResponses(game);
 
         Assert.Same(takeda, owner.Field[0][0]);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-negated"
@@ -1561,6 +1571,15 @@ public sealed class LatestBugRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", lubu.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var morale = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: morale.PromptId,
+            CardInstanceIds: morale.ValidChoices.Take(2).ToList())).Accepted);
+        var targetDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetDeclaration.PromptId,
+            Choice: enemyTarget.InstanceId)).Accepted);
         var trapWindow = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: trapWindow.PromptId,
             Choice: trap.InstanceId)).Accepted);
@@ -1570,12 +1589,9 @@ public sealed class LatestBugRegressionTests
         var discardPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
             Choice: discard.InstanceId)).Accepted);
-
-        var optional = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Continuation == "card-effect" && prompt.Data.GetValueOrDefault("action") == "lubu-kill");
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId,
-            Choice: enemyTarget.InstanceId)).Accepted);
-        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "faction-zero-recovery");
+        PassResponses(game);
+        Assert.Contains(enemyTarget, opponent.Graveyard);
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
     }
 
     [Fact]
@@ -1602,8 +1618,13 @@ public sealed class LatestBugRegressionTests
         Assert.True(trap.Hidden);
         Assert.DoesNotContain(game.State.PendingPrompts,
             prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(trap.InstanceId));
-        Assert.Contains(game.State.PendingPrompts,
-            prompt => prompt.Continuation == "card-effect" && prompt.StackItemId is not null);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Empty(game.State.EffectStack);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:none")).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(trap.InstanceId));
     }
 
     [Theory]
@@ -1706,15 +1727,18 @@ public sealed class LatestBugRegressionTests
         var played = game.Handle(0, new L12Command("playCard", robin.InstanceId, Row: 0, Slot: 0));
         Assert.True(played.Accepted, played.Error);
         PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "1:2")).Accepted);
+        PassResponses(game);
         var choose = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-robin-summon-squire", choose.Data["action"]);
         Assert.Equal("牌库", choose.Data[$"{squire.InstanceId}:zone"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choose.PromptId,
             Choice: squire.InstanceId)).Accepted);
-
-        var slot = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("queued-summon-slot", slot.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:2")).Accepted);
         Assert.Same(squire, player.Field[1][2]);
         Assert.False(squire.Tapped);
         Assert.DoesNotContain(squire, player.Library);
@@ -2015,6 +2039,9 @@ public sealed class LatestBugRegressionTests
         Assert.Contains(draw, codexOwner.Hand);
         PassResponses(game);
         Assert.Contains(recovery, codexOwner.Hand);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
+            candidate => candidate.Trigger == "wisdom-reward");
     }
 
     [Fact]
@@ -2065,13 +2092,19 @@ public sealed class LatestBugRegressionTests
             Row: 0, Slot: 0)).Accepted);
         PassResponses(triggeredGame);
         var damagePrompt = Assert.Single(triggeredGame.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "oddr-draw");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.True(triggeredGame.Handle(1, new L12Command("resolvePrompt", PromptId: damagePrompt.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "mode:use")).Accepted);
         var ringDeclaration = Assert.Single(triggeredGame.State.PendingPrompts);
         Assert.Equal("pending-activation", ringDeclaration.Continuation);
         Assert.True(triggeredGame.Handle(1, new L12Command("resolvePrompt", PromptId: ringDeclaration.PromptId,
             Choice: "mode:use")).Accepted);
+        while (triggeredGame.State.PendingPrompts.SingleOrDefault()?.Continuation == "pending-activation")
+        {
+            var declaration = Assert.Single(triggeredGame.State.PendingPrompts);
+            Assert.True(triggeredGame.Handle(declaration.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: declaration.PromptId, Choice: "mode:use")).Accepted);
+        }
         var triggeredResponse = Assert.Single(triggeredGame.State.PendingPrompts);
         Assert.Contains(triggeredWisdom.InstanceId, triggeredResponse.ValidChoices);
         Assert.Contains("主宰受到伤害时效果", triggeredGame.State.EffectStack[^1].Text);

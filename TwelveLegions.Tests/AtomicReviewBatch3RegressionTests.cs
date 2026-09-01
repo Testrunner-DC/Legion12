@@ -300,6 +300,9 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.Contains(discard.InstanceId, prompt.ValidChoices);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         ResolveSinglePrompt(game, discard.InstanceId);
+        var moralePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
+            CardInstanceIds: [.. player.Morale.Select(morale => morale.InstanceId)])).Accepted);
 
         Assert.Contains(discard, player.Graveyard);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));

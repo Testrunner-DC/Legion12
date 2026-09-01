@@ -113,7 +113,10 @@ public sealed class ExtendedCardEffectsTests
         player.Hand.Add(canopic);
         Assert.True(game.Handle(0, new L12Command("playCard", canopic.InstanceId)).Accepted);
         Assert.Equal(ankh.InstanceId, player.Relic?.InstanceId);
-        Assert.Contains(player.ExtraRelics, card => card.InstanceId == canopic.InstanceId);
+        Assert.DoesNotContain(player.ExtraRelics, card => card.InstanceId == canopic.InstanceId);
+        Assert.Contains(player.Graveyard, card => card.InstanceId == canopic.InstanceId);
+        Assert.Contains(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Text.Contains("随后弃置此圣物", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -186,11 +189,12 @@ public sealed class ExtendedCardEffectsTests
         }
         PassResponses(game);
         var target = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("card-effect", target.Continuation);
+        Assert.Equal("pending-activation", target.Continuation);
         Assert.Contains("安卡神碑", target.Text);
         Assert.Contains(guard.InstanceId, target.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
             Choice: guard.InstanceId)).Accepted);
+        PassResponses(game);
 
         Assert.Equal(guard.BaseTroops + 2000, guard.Troops);
         var bonus = Assert.Single(guard.TimedModifiers, modifier => modifier.Source == "安卡神碑");
@@ -689,9 +693,13 @@ public sealed class ExtendedCardEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", gram.InstanceId)).Accepted);
         PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("gram-bottom", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: guard.InstanceId)).Accepted);
+        PassResponses(game);
 
         Assert.DoesNotContain(solar.Library, card => card.InstanceId == guard.InstanceId);
         Assert.Contains(solar.Graveyard, card => card.InstanceId == guard.InstanceId);
@@ -713,8 +721,11 @@ public sealed class ExtendedCardEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", gram.InstanceId)).Accepted);
         PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("gram-bottom", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.DoesNotContain(xiaotian.InstanceId, prompt.ValidChoices);
         Assert.Contains(legalTarget.InstanceId, prompt.ValidChoices);
     }

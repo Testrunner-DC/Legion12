@@ -438,6 +438,11 @@ public sealed class RuleKernelTests
         Assert.Equal(0, cardPrompt.MinChoose);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: cardPrompt.PromptId)).Accepted);
 
+        var zeroMorale = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: zeroMorale.PromptId,
+            Choice: "mode:none")).Accepted);
+
         Assert.Empty(game.State.PendingActivations);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
         Assert.Empty(player.Morale);

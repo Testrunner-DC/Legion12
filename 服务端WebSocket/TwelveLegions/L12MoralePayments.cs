@@ -32,7 +32,9 @@ public sealed partial class L12GameEngine
     }
 
     private bool CanUseTombGuardsAsResource(L12PlayerState player)
-        => player.Faction == "taiyangcheng" && State.ActivePlayer == player.PlayerIndex;
+        // 〈陵墓守卫〉的文字只要求“我方回合”且其处于我方战场；跨控制后仍由当前
+        // 控制者使用该公开资源，不能再以控制者阵营作额外限制。
+        => State.ActivePlayer == player.PlayerIndex;
 
     private IEnumerable<L12CardInstance> ActiveTombGuardResources(L12PlayerState player)
         => CanUseTombGuardsAsResource(player)
@@ -148,18 +150,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteEffectMoralePayment(L12StackItem item, string afterPayment, IReadOnlyDictionary<string, string> data)
     {
-        var player = State.Players[item.Controller]; var enemy = State.Players[1 - item.Controller]; var source = FindSource(item);
         switch (afterPayment)
         {
-            case "scout-shuffle":
-                if (enemy.Hand.Count == 0) { FinishStackItem(item); break; }
-                CreatePrompt(1 - item.Controller, "card", "前线侦查：选择1张手牌洗回牌库", enemy.Hand.Select(card => card.InstanceId), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "scout-shuffle" }); break;
-            case "camp-mode":
-                if (data.GetValueOrDefault("mode") == "heal") HealMaster(item.Controller, 1, "野外扎营");
-                else if (data.GetValueOrDefault("mode") == "draw") Draw(player, 1);
-                FinishStackItem(item); break;
-            case "s2-prayer-private": BeginPrayerPrivatePreview(item); break;
             default: FinishStackItem(item); break;
         }
     }

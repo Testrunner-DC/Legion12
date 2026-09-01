@@ -208,6 +208,10 @@ public sealed class GmSandboxTests
 
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: aeneas.InstanceId)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
 
         var animation = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger");
         Assert.Equal("阵亡时 可抽取1张牌。", animation.Text);
@@ -289,6 +293,19 @@ public sealed class GmSandboxTests
         var declaration = Assert.Single(game.State.PendingActivations,
             activation => activation.TriggerCandidateId is not null);
         var prompt = Assert.Single(game.State.PendingPrompts,
+            candidate => candidate.Continuation == "pending-activation");
+        Assert.Contains("mode:use", prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "mode:use")).Accepted);
+
+        prompt = Assert.Single(game.State.PendingPrompts,
+            candidate => candidate.Continuation == "pending-activation");
+        var moraleCost = Assert.Single(game.State.Players[0].Morale);
+        Assert.Contains(moraleCost.InstanceId, prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: moraleCost.InstanceId)).Accepted);
+
+        prompt = Assert.Single(game.State.PendingPrompts,
             candidate => candidate.Continuation == "pending-activation");
         Assert.Contains(target.InstanceId, prompt.ValidChoices);
         Assert.DoesNotContain(buffedPrintedLowTarget.InstanceId, prompt.ValidChoices);

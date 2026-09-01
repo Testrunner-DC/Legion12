@@ -78,9 +78,10 @@ public sealed class Bq20260830RegressionTests
         Assert.Contains(zealot, player.Hand);
         Assert.True(game.Handle(0, new L12Command("playCard", heracles.InstanceId, Row: 0, Slot: slot)).Accepted);
         var optional = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-heracles-draw-discard-choice");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
         var discard = Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-olympus-draw-discard");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
@@ -125,21 +126,24 @@ public sealed class Bq20260830RegressionTests
 
         Assert.True(played.Accepted, played.Error);
         var ramsesPrompt = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "ramses-repeat");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.Contains(delegatedLegion.InstanceId, ramsesPrompt.ValidChoices);
         Assert.DoesNotContain(enteringRamses.InstanceId, ramsesPrompt.ValidChoices);
         Assert.DoesNotContain(otherRamses.InstanceId, ramsesPrompt.ValidChoices);
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ramsesPrompt.PromptId,
             Choice: delegatedLegion.InstanceId)).Accepted);
+        PassResponses(game);
 
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response"
             && (prompt.ValidChoices.Contains(absoluteDefense.InstanceId)
                 || prompt.ValidChoices.Contains(pitfall.InstanceId)));
         var delegatedPrompt = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "thutmose-kill");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.Contains(victim.InstanceId, delegatedPrompt.ValidChoices);
-        Assert.Equal("true", game.State.EffectStack[^1].Data["inheritedCounterTacticProtection"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: delegatedPrompt.PromptId,
+            Choice: victim.InstanceId)).Accepted);
+        Assert.Contains(victim, opponent.Graveyard);
         Assert.Same(absoluteDefense, opponent.Field[1][0]);
         Assert.Same(pitfall, opponent.Field[1][1]);
     }
@@ -224,13 +228,18 @@ public sealed class Bq20260830RegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", secondArthur.InstanceId, Row: 0, Slot: 1)).Accepted);
         var warning = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-arthur-sword");
+            prompt => prompt.Continuation == "pending-activation");
         Assert.Equal("场上已存在〈王者之剑〉。若继续发动，仍会消耗1符文，但不会叠放、生成或转移〈王者之剑〉。", warning.Text);
-        Assert.Equal("继续支付并发动", warning.Data["yes"]);
-        Assert.Equal("取消", warning.Data["no"]);
+        Assert.Contains("mode:use", warning.ValidChoices);
+        Assert.Contains("mode:none", warning.ValidChoices);
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: warning.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "mode:use")).Accepted);
+        var rune = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: rune.PromptId,
+            Choice: "rune-count:1")).Accepted);
+        PassResponses(game);
 
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Same(sword, Assert.Single(firstArthur.AttachedCards));
@@ -259,11 +268,11 @@ public sealed class Bq20260830RegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", secondArthur.InstanceId, Row: 0, Slot: 1)).Accepted);
         var warning = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-arthur-sword");
+            prompt => prompt.Continuation == "pending-activation");
         var resultEventsBefore = game.State.Events.Count(entry => entry.Type is "attach" or "effect-noop");
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: warning.PromptId,
-            Choice: "no")).Accepted);
+            Choice: "mode:none")).Accepted);
 
         Assert.Equal(1, player.SpecialZones.Runes);
         Assert.Same(sword, Assert.Single(firstArthur.AttachedCards));

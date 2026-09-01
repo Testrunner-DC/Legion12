@@ -117,7 +117,8 @@ public sealed class Bq20260830_02RegressionTests
         Assert.DoesNotContain(player.Graveyard, card => card.InstanceId == xiaotian.InstanceId);
         Assert.DoesNotContain(player.Removed, card => card.InstanceId == xiaotian.InstanceId);
         var death = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-xiaotian-death");
+            prompt => prompt.Continuation == "pending-activation"
+                && prompt.Data.GetValueOrDefault("previewCardId") == xiaotian.InstanceId);
         Assert.Equal(0, death.PlayerIndex);
         Assert.Contains(game.State.Events, entry => entry.Type == "derived-vanished"
             && entry.Cards.Any(card => card.InstanceId == xiaotian.InstanceId));

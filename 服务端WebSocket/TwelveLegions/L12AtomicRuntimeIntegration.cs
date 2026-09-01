@@ -24,24 +24,21 @@ public sealed partial class L12GameEngine
                 case L12AtomKinds.Trigger:
                     break;
                 case L12AtomKinds.Condition:
-                    if (!CheckVerifiedAtomicCondition(atom.Parameters.GetValueOrDefault("expression"), item, source, controller, opponent))
+                    if (item.Data.GetValueOrDefault("verifiedAtomicConditionLocked") != "true"
+                        && !CheckVerifiedAtomicCondition(atom.Parameters.GetValueOrDefault("expression"), item.Data,
+                            source, controller, opponent))
                     {
                         FinishStackItem(item);
                         return true;
                     }
                     break;
                 case L12AtomKinds.Optional:
-                    if (PublicTriggerDeclared(item, "mode") == "mode:use")
-                        break;
-                    CreatePrompt(item.Controller, "optional", atom.Parameters.GetValueOrDefault("prompt") ?? atom.Label,
-                        ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                        data: new Dictionary<string, string>
-                        {
-                            ["action"] = "verified-atomic-optional",
-                            ["yes"] = atom.Parameters.GetValueOrDefault("yes") ?? "发动",
-                            ["no"] = atom.Parameters.GetValueOrDefault("no") ?? "不发动",
-                        });
-                    return true;
+                    if (PublicTriggerDeclared(item, "mode") != "mode:use")
+                    {
+                        FinishStackItem(item);
+                        return true;
+                    }
+                    break;
                 case L12AtomKinds.SetState:
                     if (atom.Parameters.GetValueOrDefault("key") == "controller.nextLegionChargeMaxCost")
                         controller.NextLegionChargeMaxCost = AtomicInt(atom, "value");
@@ -132,7 +129,8 @@ public sealed partial class L12GameEngine
         return true;
     }
 
-    private bool CheckVerifiedAtomicCondition(string? expression, L12StackItem item, L12CardInstance source,
+    private bool CheckVerifiedAtomicCondition(string? expression, IReadOnlyDictionary<string, string> data,
+        L12CardInstance source,
         L12PlayerState controller, L12PlayerState opponent)
         => expression switch
         {
@@ -148,19 +146,9 @@ public sealed partial class L12GameEngine
                 || candidate.InstanceId == source.InstanceId || !IsFieldLegion(candidate)),
             "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
             "source.hidden=true" => source.Hidden,
-            "item.killed=true" => item.Data.GetValueOrDefault("killed") == "true",
+            "item.killed=true" => data.GetValueOrDefault("killed") == "true",
             _ => throw new InvalidOperationException($"Unsupported verified atomic condition: {expression}"),
         };
-
-    private void ContinueVerifiedAtomicOptional(L12StackItem item, string choice)
-    {
-        if (!choice.Equals("yes", StringComparison.OrdinalIgnoreCase))
-        {
-            FinishStackItem(item);
-            return;
-        }
-        TryResolveVerifiedAtomicProgram(item);
-    }
 
     private static int AtomicInt(L12EffectAtom atom, string key)
         => int.TryParse(atom.Parameters.GetValueOrDefault(key), out var value)

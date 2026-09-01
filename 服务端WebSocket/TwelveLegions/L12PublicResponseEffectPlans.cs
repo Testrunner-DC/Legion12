@@ -12,6 +12,7 @@ public sealed partial class L12GameEngine
     private static readonly IReadOnlyDictionary<string, string> PublicResponsePlans =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["S01-0020"] = "battle-until-dawn",
             ["S01-0120"] = EmptyCityResponsePlan,
             ["S02-0016"] = RuinedRitualResponsePlan,
             ["S02-0017"] = SupplyPlunderResponsePlan,
@@ -35,11 +36,34 @@ public sealed partial class L12GameEngine
         var steps = new List<L12ActivationSelectionStep>();
         var responsePlan = PublicResponsePlans.GetValueOrDefault(response.CardId);
 
-        if (responsePlan == EmptyCityResponsePlan)
+        if (responsePlan == "battle-until-dawn")
+        {
+            var drawModes = player.Graveyard.Count >= 5
+                ? new[] { "mode:none", "mode:draw" }
+                : ["mode:none"];
+            steps.Add(PublicResponseStep("option", "drawMode",
+                "战斗至黎明：预先声明墓地不少于5张时是否发动独立抽牌段", drawModes,
+                labels: new Dictionary<string, string>
+                {
+                    ["mode:none"] = "不发动随后抽牌段",
+                    ["mode:draw"] = "发动随后抽取1张牌",
+                }));
+        }
+        else if (responsePlan == EmptyCityResponsePlan)
         {
             steps.Add(PublicResponseStep("resource-return", "returnCost",
                 "空城计：预先选择返还的1张士气作为发动费用",
                 player.Morale.Select(card => card.InstanceId)));
+            var drawModes = !player.Field[0].Any(card => card is not null && IsFieldLegion(card))
+                ? new[] { "mode:none", "mode:draw" }
+                : ["mode:none"];
+            steps.Add(PublicResponseStep("option", "drawMode",
+                "空城计：预先声明前排没有军团时是否发动独立抽牌段", drawModes,
+                labels: new Dictionary<string, string>
+                {
+                    ["mode:none"] = "不发动随后抽牌段",
+                    ["mode:draw"] = "发动随后抽取1张牌",
+                }));
         }
         else if (responsePlan == RuinedRitualResponsePlan)
         {
@@ -110,10 +134,21 @@ public sealed partial class L12GameEngine
         var declared = activation.DeclaredValues;
         var responsePlan = PublicResponsePlans.GetValueOrDefault(response.CardId);
         string? error = null;
-        if (responsePlan == EmptyCityResponsePlan)
+        if (responsePlan == "battle-until-dawn")
+        {
+            var drawMode = declared.GetValueOrDefault("drawMode", []).SingleOrDefault();
+            if (drawMode is not ("mode:none" or "mode:draw")
+                || drawMode == "mode:draw" && player.Graveyard.Count < 5)
+                error = "战斗至黎明声明的抽牌模式已失效，响应未进入堆叠";
+        }
+        else if (responsePlan == EmptyCityResponsePlan)
         {
             var cost = declared.GetValueOrDefault("returnCost", []).SingleOrDefault();
-            if (cost is null || !CanReturnSelectedMoraleById(player, [cost], 1))
+            var drawMode = declared.GetValueOrDefault("drawMode", []).SingleOrDefault();
+            if (drawMode is not ("mode:none" or "mode:draw")
+                || drawMode == "mode:draw" && player.Field[0].Any(card => card is not null && IsFieldLegion(card)))
+                error = "空城计声明的抽牌模式已失效，未支付费用且未进入堆叠";
+            else if (cost is null || !CanReturnSelectedMoraleById(player, [cost], 1))
                 error = "空城计声明的士气费用已失效，未支付费用且未进入堆叠";
             else
                 _ = ReturnSelectedMoraleById(player, [cost], 1);

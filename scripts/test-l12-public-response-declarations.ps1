@@ -55,8 +55,10 @@ foreach ($flow in @(
     Assert-Contains $composite ('"' + $flow + '"') "Independent response segment is missing: $flow"
 }
 
-Assert-Contains $s1 'player.Graveyard.Count < 5' `
-    'Battle Until Dawn must check graveyard count, not library/base count.'
+Assert-Contains $plans 'player.Graveyard.Count < 5' `
+    'Battle Until Dawn declaration must check graveyard count, not library/base count.'
+Assert-Contains $s1 'player.Graveyard.Count >= 5' `
+    'Battle Until Dawn independent draw segment must revalidate graveyard count.'
 Assert-Contains $s1 'case "empty-city-draw"' `
     'Empty City must defer its front-row check and optional draw to its own segment.'
 Assert-Contains $prompts 'CreateTriggerCandidate(controller, wisdom' `

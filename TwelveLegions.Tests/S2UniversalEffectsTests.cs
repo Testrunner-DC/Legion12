@@ -107,9 +107,10 @@ public sealed class S2UniversalEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-exorcist-return", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.Equal(1, prompt.PlayerIndex);
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+        PassResponses(game);
 
         Assert.Null(exorcistOwner.Field[0][0]);
         Assert.Contains(exorcist, exorcistOwner.Hand);
@@ -408,6 +409,10 @@ public sealed class S2UniversalEffectsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", liJing.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
         var choice = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("lijing-choice", choice.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: choice.PromptId, Choice: "recruit")).Accepted);
@@ -505,8 +510,11 @@ public sealed class S2UniversalEffectsTests
             Target: new L12AttackTarget("master"))).Accepted);
         Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
         var ready = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("lubu-ready", ready.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ready.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal("pending-activation", ready.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ready.PromptId, Choice: "mode:use")).Accepted);
+        var returnCost = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnCost.PromptId,
+            CardInstanceIds: returnCost.ValidChoices.Take(4).ToList())).Accepted);
         var response = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(poison.InstanceId, response.ValidChoices);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: poison.InstanceId)).Accepted);
@@ -643,14 +651,15 @@ public sealed class S2UniversalEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", ring.InstanceId)).Accepted);
         var optionalPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-ring-start", optionalPrompt.Data["action"]);
+        Assert.Equal("pending-activation", optionalPrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optionalPrompt.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "mode:use")).Accepted);
         var discardPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-ring-discard", discardPrompt.Data["action"]);
+        Assert.Equal("pending-activation", discardPrompt.Continuation);
         var discardedId = discardPrompt.ValidChoices[0];
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
             CardInstanceIds: [discardedId])).Accepted);
+        PassResponses(game);
 
         var searchPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-ring-search", searchPrompt.Data["action"]);
@@ -678,7 +687,7 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(0, new L12Command("playCard", ring.InstanceId)).Accepted);
         var optionalPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optionalPrompt.PromptId,
-            Choice: "no")).Accepted);
+            Choice: "mode:none")).Accepted);
 
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
@@ -842,8 +851,12 @@ public sealed class S2UniversalEffectsTests
         var consent = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: consent.PromptId, Choice: "refuse")).Accepted);
         var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-prayer-private-cost", payment.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal("pending-activation", payment.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId, Choice: "mode:use")).Accepted);
+        var resource = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: resource.PromptId,
+            Choice: resource.ValidChoices[0])).Accepted);
+        PassResponses(game);
 
         var preview = Assert.Single(game.State.PendingPrompts);
         Assert.True(preview.IsPrivate);
@@ -896,7 +909,9 @@ public sealed class S2UniversalEffectsTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", shennong.InstanceId)).Accepted);
         var drawPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId, Choice: "no")).Accepted);
+        Assert.Equal("pending-activation", drawPrompt.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawPrompt.PromptId,
+            Choice: "mode:none")).Accepted);
 
         var usedKey = "active:master-0:drawCycle";
         player.UsedAbilities.Add(usedKey);

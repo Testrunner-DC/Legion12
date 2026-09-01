@@ -791,13 +791,16 @@ public sealed partial class L12GameEngine
         ResolveS2DelayedEndTurnCards(playerIndex);
         if (State.Phase == L12Phase.GameOver) return;
         ReturnWukongMasterLegions(current, "我方回合结束", resumeEndTurn: true);
-        if (State.PendingPrompts.Any(prompt => prompt.Continuation == "s2-wukong-return-morale"
-            && prompt.Data.GetValueOrDefault("resumeEndTurn") == "true")) return;
+        if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
+            || State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0
+            || State.EffectStack.Count > 0 || State.DeferredEffectStack.Count > 0
+            || State.ResponseWindow is not null) return;
         current.NextLegionChargeMaxCost = null;
         current.FreeTacticCount = 0;
         current.TemporaryMorale = 0;
         current.BackRowCannotSupport = false;
         current.ReturnedMoraleThisTurn = 0;
+        current.TombNamedLegionsLeftThisTurn = 0;
         current.NextFactionLegionDiscount = 0;
         current.NextS2SunDisasterLegionDiscount = 0;
         current.NextS2OlympusLegionDiscount = 0;
@@ -857,8 +860,15 @@ public sealed partial class L12GameEngine
         return true;
     }
 
-    private int AddMorale(L12PlayerState player, int count, bool tapped = false)
+    private int AddMorale(L12PlayerState player, int count, bool tapped = false, bool fromFactionEffect = false)
     {
+        if (count > 0 && player.FactionMoraleAdditionForbiddenUntilTurn == State.TurnSerial
+            && !fromFactionEffect)
+        {
+            AddEvent("effect-cancelled", player.PlayerIndex,
+                "始皇帝 嬴政使本回合无法以阵营效果以外的方式追加士气");
+            return 0;
+        }
         var added = 0;
         for (var i = 0; i < count && player.MoraleDeck.Count > 0; i++)
         {
@@ -1186,6 +1196,7 @@ public sealed partial class L12GameEngine
         CaptureLastKnownFieldState(card, row);
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
+        RecordFieldLegionDeparture(player, card);
         if (toGraveyard)
         {
             if (deferGraveyard)
@@ -1322,6 +1333,7 @@ public sealed partial class L12GameEngine
         CaptureLastKnownFieldState(card, row);
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
+        RecordFieldLegionDeparture(player, card);
         var owner = CardOwner(card, player);
         var promotionFoundations = DetachPromotionFoundations(card);
         var finalDestination = destination;
@@ -1368,6 +1380,16 @@ public sealed partial class L12GameEngine
             QueueReturnedToLibraryTopTrigger(player.PlayerIndex, sourceSnapshot);
         RecalculateContinuousTroops();
         return true;
+    }
+
+    private void RecordFieldLegionDeparture(L12PlayerState controller, L12CardInstance card)
+    {
+        if (State.ActivePlayer != controller.PlayerIndex || !IsFieldLegion(card)
+            || !card.Name.Contains("陵墓", StringComparison.Ordinal)) return;
+        controller.TombNamedLegionsLeftThisTurn++;
+        AddEvent("continuous", controller.PlayerIndex,
+            $"本回合已有{controller.TombNamedLegionsLeftThisTurn}张卡名包含〈陵墓〉的我方军团离场；〈陵墓圣武士〉登场费用相应降低",
+            card);
     }
 
     private static void ResetCardAfterLeavingField(L12CardInstance card)

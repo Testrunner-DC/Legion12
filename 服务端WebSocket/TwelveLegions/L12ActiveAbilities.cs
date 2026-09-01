@@ -58,8 +58,7 @@ public sealed partial class L12GameEngine
         switch (ability)
         {
             case "frontBuff" when source.CardId == "S01-04M2":
-                choices = player.Field.SelectMany(row => row).Where(card => card?.Faction == "gaotianyuan")
-                    .Select(card => card!.InstanceId).ToArray();
+                choices = PublicFactionLegions(player, "gaotianyuan").Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团");
             case "kusanagi" when source.CardId == "S01-04M2":
                 if (player.Relic?.CardId != "S01-0417") return CommandResult.Reject("圣物区没有〈草薙剑〉");
@@ -69,12 +68,10 @@ public sealed partial class L12GameEngine
                 choices = player.Hand.Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择弃置的 1 张手牌");
             case "kusanagiDebuff" when source.CardId == "S01-0417":
-                choices = State.Players[1 - playerIndex].Field.SelectMany(row => row).Where(card => card is not null && !card.Hidden)
-                    .Select(card => card!.InstanceId).ToArray();
+                choices = PublicLegions(State.Players[1 - playerIndex]).Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择对方 1 张军团，本回合费用 -1");
             case "kusanagiStrong" when source.CardId == "S01-0417":
-                choices = player.Field.SelectMany(row => row).Where(card => card?.Faction == "gaotianyuan")
-                    .Select(card => card!.InstanceId).ToArray();
+                choices = PublicFactionLegions(player, "gaotianyuan").Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团，本回合获得强攻");
             default:
                 return TryBeginPublicActiveDeclaration(playerIndex, source, ability)
@@ -107,6 +104,8 @@ public sealed partial class L12GameEngine
     private static string ActiveAbilityUsageKey(string sourceInstanceId, string sourceCardId, string ability)
         => sourceCardId == "S01-03M2" && ability is "lokiCycle" or "lokiHeal"
             ? $"active:{sourceInstanceId}:loki"
+            : sourceCardId == "S02-06S6" && ability is "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover"
+                ? $"active:{sourceInstanceId}:crusade-choice"
             : $"active:{sourceInstanceId}:{ability}";
 
     private string[] ActiveAbilityReservedResourceIds(L12PlayerState player, L12CardInstance source, string ability,
@@ -166,8 +165,11 @@ public sealed partial class L12GameEngine
                 break;
             }
             case ("S01-04M1", "amaterasuReady"):
-                if (declared.Length != 1 || !player.Hand.Any(card => card.InstanceId == declared[0]))
-                    return "天照大神声明的弃牌费用已失效";
+                if (declared.Length is < 1 or > 3
+                    || !player.Hand.Any(card => card.InstanceId == declared[0])
+                    || declared.Skip(1).Distinct(StringComparer.OrdinalIgnoreCase).Count() != declared.Length - 1
+                    || declared.Skip(1).Any(id => !player.Morale.Any(card => card.InstanceId == id && card.Tapped)))
+                    return "天照大神声明的弃牌费用或士气目标已失效";
                 break;
         }
         return null;
@@ -308,7 +310,7 @@ public sealed partial class L12GameEngine
                 source.Tapped = true; break;
             case "searchBrothers" when source.CardId == "S01-0105":
                 if (source.Tapped) return CommandResult.Reject("刘备必须为活跃状态");
-                if (!CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还 1 张士气");
+                if (!returnPrepaid && !CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还 1 张士气");
                 source.Tapped = true; if (!ReturnMoraleCost(1)) return CommandResult.Reject("需要返还 1 张士气"); break;
             case "artifactDraw" when source.CardId == "S01-0117":
                 if (source.Tapped) return CommandResult.Reject("山河社稷图必须为活跃状态");
@@ -351,6 +353,16 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
+        var activeCompositePlan = (source.CardId, ability) switch
+        {
+            ("S01-0105", "searchBrothers") => "active:S01-0105:searchBrothers",
+            ("S01-01M1", "drawCycle") => "active:S01-01M1:drawCycle",
+            _ => null,
+        };
+        if (activeCompositePlan is not null)
+            foreach (var pair in CompositeFirstSegmentData(activeCompositePlan,
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
         PushEffect(playerIndex, source, "active", "主动效果", data: data);
         if (moraleReturnedByMasterEffect > 0)
             QueueS2MasterMoraleReturnTriggers(playerIndex, source, moraleReturnedByMasterEffect);
@@ -375,6 +387,10 @@ public sealed partial class L12GameEngine
             ["freeMasterSource"] = free.SourceInstanceId,
         };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
+        if (source.CardId == "S01-01M1" && ability == "drawCycle")
+            foreach (var pair in CompositeFirstSegmentData("active:S01-01M1:drawCycle",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
         PushEffect(playerIndex, source, "active", "由〈信仰狂热者〉无视消耗触发的主宰效果", data: data);
         AddEvent("effect", playerIndex, $"〈信仰狂热者〉无视全部消耗触发〈{source.Name}〉的主宰效果，且不计入使用次数", source);
         return CommandResult.Ok();
@@ -421,14 +437,24 @@ public sealed partial class L12GameEngine
         switch (ability)
         {
             case "drawCycle":
-                if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "杨戬效果抽牌时牌库为空"); FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "card", "选择 1 张手牌放回牌库顶部或底部", player.Hand.Select(card => card.InstanceId), 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "yangjian-return-card",
-                        ["placementMode"] = "single-top-bottom",
-                    });
-                return;
+                if (AtomicFlowKey(item) == "yangjian-draw")
+                {
+                    if (!Draw(player, 1)) SetWinner(1 - item.Controller, "杨戬效果抽牌时牌库为空");
+                    FinishStackItem(item); return;
+                }
+                if (AtomicFlowKey(item) == "yangjian-return")
+                {
+                    if (player.Hand.Count == 0) { FinishStackItem(item); return; }
+                    CreatePrompt(item.Controller, "card", "选择 1 张手牌放回牌库顶部或底部",
+                        player.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                        data: new Dictionary<string, string>
+                        {
+                            ["action"] = "yangjian-return-card",
+                            ["placementMode"] = "single-top-bottom",
+                        });
+                    return;
+                }
+                FinishStackItem(item); return;
             case "nonLethal":
                 DamageMasterNonLethal(1 - item.Controller, 1, "杨戬的主宰效果"); FinishStackItem(item); return;
             case "frontBuff":
@@ -452,8 +478,12 @@ public sealed partial class L12GameEngine
                 AddMorale(player, 1, tapped: true); FinishStackItem(item); return;
             case "searchBrothers":
             {
+                if (AtomicFlowKey(item) == "liubei-shuffle")
+                {
+                    ShuffleLibrary(player, "刘备检索结算"); FinishStackItem(item); return;
+                }
                 var choices = player.Library.Where(card => card.CardId is "S01-0106" or "S01-0107").Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { AddEvent("reveal", item.Controller, "刘备检索未命中，向对手展示牌库"); ShuffleLibrary(player, "刘备检索未命中"); FinishStackItem(item); return; }
+                if (choices.Length == 0) { AddEvent("reveal", item.Controller, "刘备检索未命中，向对手展示牌库"); FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "search", "选择牌库中 1 张〈关羽〉或〈张飞〉加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "liubei-search" });
                 return;
@@ -479,22 +509,24 @@ public sealed partial class L12GameEngine
             }
             case "kusanagiDebuff":
             {
-                var target = FindPublicCard(item.Data["target"], out _);
+                var target = PublicLegions(State.Players[1 - item.Controller])
+                    .FirstOrDefault(card => card.InstanceId == item.Data["target"]);
                 if (target is not null) target.CostModifier--;
                 FinishStackItem(item); return;
             }
             case "kusanagiStrong":
             {
-                var target = FindOnField(player, item.Data["target"], out _, out _);
+                var target = PublicFactionLegions(player, "gaotianyuan")
+                    .FirstOrDefault(card => card.InstanceId == item.Data["target"]);
                 if (target is not null) GrantStrongAttack(target);
                 FinishStackItem(item); return;
             }
             case "factionAddActive":
-                AddMorale(player, 1, tapped: false);
+                AddMorale(player, 1, tapped: false, fromFactionEffect: true);
                 AddEvent("faction-effect", item.Controller, "天廷阵营效果：追加 1 张活跃士气");
                 FinishStackItem(item); return;
             case "factionZeroRecovery":
-                AddMorale(player, 2, tapped: true);
+                AddMorale(player, 2, tapped: true, fromFactionEffect: true);
                 AddEvent("faction-effect", item.Controller, "天廷阵营效果：追加 2 张休整士气");
                 FinishStackItem(item); return;
             case "factionDrawMove":
@@ -577,7 +609,7 @@ public sealed partial class L12GameEngine
         player.Library.Remove(card);
         AddCardToHandByEffect(player, card, "library", $"刘备将{card.Name}加入手牌");
         AddEvent("search", item.Controller, $"刘备将 {card.Name} 加入手牌", card);
-        ShuffleLibrary(player, "刘备检索结算"); FinishStackItem(item);
+        FinishStackItem(item);
     }
 
     private void CompleteShanheSearch(L12StackItem item, string cardId)

@@ -2,8 +2,7 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private CommandResult? TryBeginS2RemainingAbility(int playerIndex, L12CardInstance source, string ability,
-        bool graveyardConfirmed = false)
+    private CommandResult? TryBeginS2RemainingAbility(int playerIndex, L12CardInstance source, string ability)
     {
         var player = State.Players[playerIndex];
         switch (ability)
@@ -17,9 +16,6 @@ public sealed partial class L12GameEngine
                 var slots = EmptySlots(player).ToList();
                 if (otherGraveCards.Count < 3 || slots.Count == 0)
                     return CommandResult.Reject("需要墓地中另有3张卡牌且战场存在空位");
-                if (!graveyardConfirmed)
-                    return BeginOptionalGraveyardActiveAbility(playerIndex, source, ability,
-                        "是否发动墓地中〈雷神之锤〉的效果？确认后需选择3张其他墓地卡牌作为费用");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep { Kind = "grave-card", Text = "雷神之锤：依次选择返回牌库底部的3张其他墓地卡牌", ValidChoices = otherGraveCards, MinChoose = 3, MaxChoose = 3 },
@@ -33,9 +29,28 @@ public sealed partial class L12GameEngine
                 if (!EmptySlots(player).Any(slot => slot.StartsWith("0:", StringComparison.Ordinal)))
                     return CommandResult.Reject("我方前排没有空位");
                 if (player.Morale.Count < 2) return CommandResult.Reject("至少需要返还2张士气");
-                return BeginPendingActivation(playerIndex, source, ability,
-                    player.Morale.Select(card => card.InstanceId).ToArray(),
-                    "孙悟空：选择返还2至8张士气", 2, Math.Min(8, player.Morale.Count));
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "active-target",
+                        DeclarationKey = "returnCost",
+                        Text = "孙悟空：选择返还2至8张士气",
+                        ValidChoices = player.Morale.Select(card => card.InstanceId).ToList(),
+                        MinChoose = 2,
+                        MaxChoose = Math.Min(8, player.Morale.Count),
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "slot",
+                        DeclarationKey = "entrySlot",
+                        Text = "孙悟空：预先选择前排活跃登场位置",
+                        ValidChoices = EmptySlots(player)
+                            .Where(slot => slot.StartsWith("0:", StringComparison.Ordinal)).ToList(),
+                        MinChoose = 1,
+                        MaxChoose = 1,
+                    },
+                ]);
             }
             case "thorCharge" when source.CardId == "S02-03M1":
                 if (player.Hp > 3) return CommandResult.Reject("我方主宰血量需要不高于3");
@@ -52,7 +67,8 @@ public sealed partial class L12GameEngine
                 return CommitActiveAbility(playerIndex, source, ability, null);
             case "artemisBuff" when source.CardId == "S02-05M1":
             {
-                var targets = PublicLegions(player).Where(card => card.Faction == "olympus" && card.CurrentCost is >= 3 and <= 6)
+                var targets = PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
+                        && card.CurrentCost is >= 3 and <= 6)
                     .Select(card => card.InstanceId).ToList();
                 if (targets.Count == 0) return CommandResult.Reject("没有费用3至6的【奥林匹斯】军团");
                 var payment = new List<string>();
@@ -69,7 +85,8 @@ public sealed partial class L12GameEngine
             case "hippolytaRevive" when source.CardId == "S02-0510":
             {
                 if (source.Tapped) return CommandResult.Reject("希波吕忒必须为活跃状态");
-                var grave = player.Graveyard.Where(card => card.Faction == "olympus" && card.CardType == "legion" && card.CurrentCost <= 4)
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
+                        && card.CardType == "legion" && card.CurrentCost <= 4)
                     .Select(card => card.InstanceId).ToList();
                 if (player.Hand.Count == 0 || grave.Count == 0 || !EmptySlots(player).Any())
                     return CommandResult.Reject("需要手牌、墓地中费用不高于4的【奥林匹斯】军团和空战场位置");
@@ -110,12 +127,17 @@ public sealed partial class L12GameEngine
             }
             case "wukongTransform" when source.CardId == "S02-01M1":
             {
-                var ids = SplitDeclared(target);
-                if (ids.Length is < 2 or > 8 || ids.Distinct().Count() != ids.Length) return CommandResult.Reject("需要选择2至8张士气");
+                var declared = SplitDeclared(target);
+                if (declared.Length is < 3 or > 9) return CommandResult.Reject("需要选择2至8张士气和1个前排位置");
+                var slot = declared[^1];
+                var ids = declared[..^1];
+                if (ids.Length is < 2 or > 8 || ids.Distinct().Count() != ids.Length)
+                    return CommandResult.Reject("需要选择2至8张士气");
                 var cards = ids.Select(id => player.Morale.FirstOrDefault(card => card.InstanceId == id)).ToArray();
                 if (cards.Any(card => card is null)) return CommandResult.Reject("选择的士气已失效");
-                var slot = EmptySlots(player).FirstOrDefault(choice => choice.StartsWith("0:", StringComparison.Ordinal));
-                if (slot is null) return CommandResult.Reject("我方前排没有空位");
+                if (!EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase)
+                    || !slot.StartsWith("0:", StringComparison.Ordinal))
+                    return CommandResult.Reject("声明的前排位置已失效");
                 if (!ReturnSelectedMorale(player, cards.Cast<L12MoraleCard>().ToArray()))
                     return CommandResult.Reject("选择的士气已失效");
                 player.UsedAbilities.Add(onceKey);
@@ -154,12 +176,14 @@ public sealed partial class L12GameEngine
                 else
                 {
                     var recover = declared.Length >= 3
-                        ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "olympus")
+                        ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
+                            && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                         : null;
                     var noEntry = declared.Length == 3 && declared[2] == "mode:none";
                     var entry = declared.Length == 5
                         ? player.Hand.Concat(player.Graveyard).FirstOrDefault(card => card.InstanceId == declared[2]
-                            && card.Faction == "olympus" && card.CardType == "legion" && card.CurrentCost <= 4)
+                            && L12StructuredCardRules.HasFaction(player, card, "olympus")
+                            && card.CardType == "legion" && card.CurrentCost <= 4)
                         : null;
                     var battlefield = entry is null ? null : ParseEffectEntryBattlefieldChoice(declared[3]);
                     var (row, slot) = entry is null ? (-1, -1) : ParseSlot(declared[4]);
@@ -172,6 +196,19 @@ public sealed partial class L12GameEngine
                         data["entry"] = entry.InstanceId;
                         data["slot"] = declared[4];
                     }
+                    var compositeDeclaration = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["recoverCard"] = [recover.InstanceId],
+                        ["entryMode"] = [entry is null ? "mode:none" : "mode:entry"],
+                    };
+                    if (entry is not null)
+                    {
+                        compositeDeclaration["entryCard"] = [entry.InstanceId];
+                        compositeDeclaration["entrySlot"] = [declared[4]];
+                    }
+                    data = CompositeFirstSegmentData("active:S02-05D1:divinityRecover", compositeDeclaration);
+                    data["ability"] = ability;
+                    data["mode"] = declared[0];
                 }
                 if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2))
                     return CommandResult.Reject("需要2张活跃的神力");
@@ -190,7 +227,8 @@ public sealed partial class L12GameEngine
                 var declared = SplitDeclared(target);
                 if (declared.Length != 3) return CommandResult.Reject("阿尔忒弥斯的支付、目标和效果选择不完整");
                 var legion = FindOnField(player, declared[1], out _, out _);
-                if (legion is null || legion.Faction != "olympus" || legion.CurrentCost is < 3 or > 6) return CommandResult.Reject("目标已不合法");
+                if (legion is null || !L12StructuredCardRules.HasFaction(player, legion, "olympus")
+                    || legion.CurrentCost is < 3 or > 6) return CommandResult.Reject("目标已不合法");
                 if (declared[0] == "pay:god-power")
                 {
                     if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) return CommandResult.Reject("需要1张活跃神力");
@@ -214,7 +252,9 @@ public sealed partial class L12GameEngine
                 var declared = SplitDeclared(target);
                 if (declared.Length != 3 || source.Tapped || !TryConsumeMorale(player, 3)) return CommandResult.Reject("发动条件或士气不足");
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
-                var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "olympus" && card.CardType == "legion" && card.CurrentCost <= 4);
+                var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
+                    && L12StructuredCardRules.HasFaction(player, card, "olympus")
+                    && card.CardType == "legion" && card.CurrentCost <= 4);
                 if (discard is null || revive is null || !EmptySlots(player).Contains(declared[2])) return CommandResult.Reject("选择的卡牌或位置已失效");
                 source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard); player.UsedAbilities.Add(onceKey);
                 PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
@@ -242,12 +282,20 @@ public sealed partial class L12GameEngine
             }
             case "wukongTransform" when source?.CardId == "S02-01M1":
             {
+                var (row, slot) = ParseSlot(item.Data["slot"]);
+                if (row != 0 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
+                {
+                    AddEvent("effect-cancelled", item.Controller,
+                        "孙悟空声明的前排登场位置已失效；登场取消，已返还士气及回合次数不恢复",
+                        source);
+                    FinishStackItem(item);
+                    return true;
+                }
                 var masterLegion = CreateCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}");
                 masterLegion.OwnerIndex = item.Controller; masterLegion.IsMasterLegion = true; masterLegion.HasCharge = true;
                 masterLegion.SummonRound = State.Round;
                 masterLegion.SetTroopsValue = int.Parse(item.Data["count"]) * 1000;
                 masterLegion.Troops = masterLegion.SetTroopsValue.Value;
-                var (row, slot) = ParseSlot(item.Data["slot"]);
                 player.Field[row][slot] = masterLegion;
                 AddEvent("put", item.Controller, $"孙悟空作为兵力{masterLegion.Troops}的【斗士】军团在前排活跃登场", masterLegion);
                 FinishStackItem(item); return true;
@@ -287,16 +335,35 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                var recovered = player.Graveyard.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("recover")
-                    && card.Faction == "olympus");
-                if (recovered is not null)
+                if (AtomicFlowKey(item, source) == "divinity-recover")
                 {
-                    player.Graveyard.Remove(recovered);
-                    AddCardToHandByEffect(player, recovered, "grave", $"诸神巅将〈{recovered.Name}〉从墓地加入手牌");
+                    var recoveredId = CompositeDeclared(item, "recoverCard").SingleOrDefault();
+                    var recovered = player.Graveyard.FirstOrDefault(card => card.InstanceId == recoveredId
+                        && L12StructuredCardRules.HasFaction(player, card, "olympus"));
+                    if (recovered is not null)
+                    {
+                        player.Graveyard.Remove(recovered);
+                        AddCardToHandByEffect(player, recovered, "grave",
+                            $"诸神巅将〈{recovered.Name}〉从墓地加入手牌");
+                    }
+                    else
+                        AddEvent("effect-cancelled", item.Controller,
+                            "诸神巅声明的墓地回收目标已失效；后续登场段仍独立继续");
+                    FinishStackItem(item);
+                    return true;
                 }
-                if (item.Data.GetValueOrDefault("entry") is { Length: > 0 } entry
-                    && EmptySlots(player).Contains(item.Data.GetValueOrDefault("slot")))
-                    SummonFromAnyPrivateZone(player, entry, item.Data["slot"], tapped: false);
+                if (AtomicFlowKey(item, source) == "divinity-entry")
+                {
+                    var entry = CompositeDeclared(item, "entryCard").SingleOrDefault();
+                    var slot = CompositeDeclared(item, "entrySlot").SingleOrDefault();
+                    if (string.IsNullOrWhiteSpace(entry) || string.IsNullOrWhiteSpace(slot)
+                        || !TrySummonFromAnyPrivateZone(player, item.Controller, entry, slot,
+                            tapped: false))
+                        AddEvent("effect-cancelled", item.Controller,
+                            "诸神巅声明的军团或位置已失效；本段取消，已支付神力不恢复");
+                    FinishStackItem(item);
+                    return true;
+                }
                 FinishStackItem(item);
                 return true;
             }
@@ -339,11 +406,45 @@ public sealed partial class L12GameEngine
                     source is not null ? [source] : []);
                 FinishStackItem(item);
                 return true;
+            case "wukongReturnMorale" when item.SourceCardId == "S02-01M1":
+                if (PublicTriggerDeclared(item, "mode") == "mode:use" && player.MoraleDeck.Count > 0
+                    && player.Morale.Count < State.Players[1 - item.Controller].Morale.Count)
+                {
+                    var added = AddMorale(player, 1, tapped: true);
+                    if (added > 0) AddEvent("morale", item.Controller,
+                        "孙悟空返回主宰区后追加1张休整士气", source is null ? [] : [source]);
+                }
+                else if (PublicTriggerDeclared(item, "mode") == "mode:use")
+                    AddEvent("effect-cancelled", item.Controller,
+                        "孙悟空返回后的士气条件在结算时失效；追加士气效果取消",
+                        source is null ? [] : [source]);
+                FinishStackItem(item);
+                return true;
             case "anderstorpRingDraw" when item.SourceCardId == "S02-0305":
                 if (!Draw(player, 1))
                     SetWinner(1 - item.Controller, "〈安德华拉诺特〉效果抽牌时牌库为空");
                 FinishStackItem(item);
                 return true;
+            case "tsukuyomiFrontAttackBuff" when item.SourceCardId == "S02-04M1":
+            {
+                var legion = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
+                if (legion is not null)
+                {
+                    if (legion.TsukuyomiFrontMoveBonusTurn != State.TurnSerial)
+                    {
+                        legion.TsukuyomiFrontMoveBonusTurn = State.TurnSerial;
+                        legion.TsukuyomiFrontMoveBonusCount = 0;
+                    }
+                    legion.TsukuyomiFrontMoveBonusCount++;
+                    AddEvent("effect", item.Controller,
+                        $"月读使〈{legion.Name}〉本回合每次进攻兵力+1000", legion);
+                }
+                else
+                    AddEvent("effect-cancelled", item.Controller,
+                        "月读后排位移至前排的军团已离场；本次进攻兵力效果取消");
+                FinishStackItem(item);
+                return true;
+            }
             case "tsukuyomiFollowMove" when item.SourceCardId == "S02-04M1":
             {
                 var targetId = PublicTriggerDeclared(item, "target");
@@ -534,14 +635,11 @@ public sealed partial class L12GameEngine
         var master = CreateCard("S02-04M1", $"master-{playerIndex}");
         var candidates = new List<L12TriggerCandidate>();
         if (fromRow == 1 && toRow == 0)
-        {
-            if (moved.TsukuyomiFrontMoveBonusTurn != State.TurnSerial)
-            {
-                moved.TsukuyomiFrontMoveBonusTurn = State.TurnSerial;
-                moved.TsukuyomiFrontMoveBonusCount = 0;
-            }
-            moved.TsukuyomiFrontMoveBonusCount++;
-        }
+            candidates.Add(CreateTriggerCandidate(playerIndex, master, "active",
+                "军团从后排位移至前排时效果", new Dictionary<string, string>
+                {
+                    ["ability"] = "tsukuyomiFrontAttackBuff", ["target"] = moved.InstanceId,
+                }));
         if (fromRow == 0 && toRow == 1 && player.Morale.Any(card => card.Tapped))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
@@ -562,24 +660,27 @@ public sealed partial class L12GameEngine
     private bool ReturnWukongMasterLegions(L12PlayerState player, string timing, bool resumeEndTurn)
     {
         var returnedAny = false;
+        L12CardInstance? returnedSnapshot = null;
         foreach (var masterLegion in PublicLegions(player).Where(card => card.IsMasterLegion && card.CardId == "S02-01M1").ToArray())
         {
             if (FindOnField(player, masterLegion.InstanceId, out var row, out var slot) is null) continue;
+            returnedSnapshot ??= CaptureLastKnownSourceSnapshot(masterLegion);
             player.Field[row][slot] = null;
             ResetCardAfterLeavingField(masterLegion);
             returnedAny = true;
             AddEvent("return", player.PlayerIndex, $"孙悟空在{timing}返回主宰区", masterLegion);
         }
-        if (returnedAny && player.Morale.Count < State.Players[1 - player.PlayerIndex].Morale.Count)
-        {
-            CreatePrompt(player.PlayerIndex, "optional", "孙悟空返回主宰区：我方士气少于对方，是否追加1张休整士气？",
-                ["yes", "no"], 1, 1, "s2-wukong-return-morale", isPrivate: true,
-                data: new Dictionary<string, string>
-                {
-                    ["yes"] = "追加1张休整士气", ["no"] = "不发动",
-                    ["resumeEndTurn"] = resumeEndTurn ? "true" : "false",
-                });
-        }
+        if (returnedSnapshot is not null && player.Morale.Count < State.Players[1 - player.PlayerIndex].Morale.Count
+            && player.MoraleDeck.Count > 0)
+            QueueTriggerCandidates([
+                CreateTriggerCandidate(player.PlayerIndex, returnedSnapshot, "active",
+                    "孙悟空返回主宰区后的可选士气效果",
+                    new Dictionary<string, string>
+                    {
+                        ["ability"] = "wukongReturnMorale",
+                        ["resumeEndTurn"] = resumeEndTurn ? "true" : "false",
+                    }, returnedSnapshot)
+            ]);
         RecalculateContinuousTroops();
         return returnedAny;
     }

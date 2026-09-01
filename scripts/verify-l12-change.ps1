@@ -131,8 +131,10 @@ try {
     )
     $publicHandPlayChanged = Test-AnyPath @(
         '^scripts/test-l12-hand-play-declarations\.ps1$',
+        '^scripts/test-l12-effect-generated-play-transactions\.ps1$',
         '(^|/)L12Actions\.cs$',
         '(^|/)L12CompositeEffectPlans\.cs$',
+        '(^|/)L12EffectGeneratedPlay\.cs$',
         '(^|/)L12PromptsAndSetup\.cs$',
         '(^|/)L12RuleKernelIntegration\.cs$',
         '(^|/)L12S1ExtendedEffects\.cs$',
@@ -172,6 +174,22 @@ try {
             (Join-Path $repoRoot "scripts\test-l12-public-response-declarations.ps1")
         Invoke-CheckedPowerShellScript "Public hand-play predeclaration and independent-segment guard" `
             (Join-Path $repoRoot "scripts\test-l12-hand-play-declarations.ps1")
+        Invoke-CheckedPowerShellScript "Effect-generated play and private-zone transaction guard" `
+            (Join-Path $repoRoot "scripts\test-l12-effect-generated-play-transactions.ps1")
+        Invoke-CheckedPowerShellScript "S01 universal and Heaven per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s01-universal-heaven-audit.ps1")
+        Invoke-CheckedPowerShellScript "S01 Sun City and Asgard per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s01-sun-city-asgard-audit.ps1")
+        Invoke-CheckedPowerShellScript "S01 Takamagahara per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s01-takamagahara-audit.ps1")
+        Invoke-CheckedPowerShellScript "S02 universal and Heaven per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s02-universal-heaven-audit.ps1")
+        Invoke-CheckedPowerShellScript "S02 Sun City and Asgard per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s02-sun-city-asgard-audit.ps1")
+        Invoke-CheckedPowerShellScript "S02 Takamagahara and Olympus per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s02-takamagahara-olympus-audit.ps1")
+        Invoke-CheckedPowerShellScript "S02 Otherworld and disaster per-ability audit guard" `
+            (Join-Path $repoRoot "scripts\test-l12-s02-otherworld-disaster-audit.ps1")
         Invoke-CheckedPowerShellScript "Trial completion TriggerBatch and declaration guard" `
             (Join-Path $repoRoot "scripts\test-l12-trial-completion-declarations.ps1")
         Invoke-CheckedPowerShellScript "Private-zone summon resolution transaction guard" `

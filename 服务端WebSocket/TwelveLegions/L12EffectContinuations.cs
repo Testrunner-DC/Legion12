@@ -14,11 +14,6 @@ public sealed partial class L12GameEngine
         var action = prompt.Data.GetValueOrDefault("action") ?? string.Empty;
         var source = FindSource(item);
         var player = State.Players[item.Controller];
-        if (action == "verified-atomic-optional")
-        {
-            ContinueVerifiedAtomicOptional(item, chosen[0]);
-            return;
-        }
         if (action.StartsWith("s2-", StringComparison.Ordinal))
         {
             if (ContinueS2CounterEffect(item, prompt, chosen)) return;
@@ -40,8 +35,6 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "mulan-charge");
                 else FinishStackItem(item); break;
             case "kusanagi-enter-kill":
-            case "divine-punishment-kill":
-            case "honda-kill-zero":
                 KillTarget(item, chosen[0], $"被{item.SourceName}击杀");
                 FinishStackItem(item); break;
             case "peace-talk":
@@ -55,19 +48,13 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); break;
             case "inaihime-buff":
             {
-                var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
+                var target = FindOnField(player, chosen[0], out var row, out _);
+                if (target is not null && row == 0 && IsFieldLegion(target)
+                    && target.InstanceId != item.SourceInstanceId && target.Troops <= 5000
+                    && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan"))
+                    AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
                 FinishStackItem(item); break;
             }
-            case "mulan-lock-morale":
-            {
-                var morale = State.Players[1 - item.Controller].Morale.FirstOrDefault(card => card.InstanceId == chosen[0]);
-                if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
-                FinishStackItem(item); break;
-            }
-            case "lubu-ready":
-                if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 4, "lubu-ready");
-                else FinishStackItem(item); break;
             case "lijing-choice": ContinueLiJingChoice(item, chosen[0]); break;
             case "lijing-slot": CompleteLiJingRecruit(item, chosen[0]); break;
             case "reorder-order":
@@ -291,7 +278,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var top = player.Library.Take(3).ToArray();
         item.Data["oiran-cards"] = string.Join('|', top.Select(card => card.InstanceId));
-        var choices = top.Where(card => card.CardId != "S01-0419" && card.Faction == "gaotianyuan")
+        var choices = top.Where(card => card.CardId != "S01-0419"
+                && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
             .Select(card => card.InstanceId).ToList();
         choices.Add("skip");
         var data = new Dictionary<string, string>

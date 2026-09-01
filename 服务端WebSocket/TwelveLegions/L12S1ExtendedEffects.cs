@@ -106,7 +106,13 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "黑胡子蒂奇":
+            case "teach-enter-discard":
                 BeginBlackbeardSimultaneousDiscard(item);
+                return true;
+            case "teach-enter-draw":
+                Draw(player, 2);
+                Draw(State.Players[1 - item.Controller], 1);
+                FinishStackItem(item);
                 return true;
             case "无名的渗透者":
                 card.Tapped = true;
@@ -268,6 +274,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "野外扎营":
+            case "camp-search":
             {
                 var top = player.Library.Take(3).ToArray();
                 item.Data["camp-top"] = string.Join('|', top.Select(candidate => candidate.InstanceId));
@@ -292,13 +299,28 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "前线侦查":
+            case "scout-reveal":
             {
                 AddEvent("reveal", item.Controller, $"前线侦查查看对方全部{enemy.Hand.Count}张手牌", enemy.Hand.ToArray());
-                if (ActiveResourceCount(player) < 1 || enemy.Hand.Count == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "前线侦查：是否消耗1士气，令对方选择1张手牌洗回牌库？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "scout-pay" });
+                FinishStackItem(item);
                 return true;
             }
+            case "scout-shuffle-effect":
+            {
+                if (enemy.Hand.Count == 0) { FinishStackItem(item); return true; }
+                CreatePrompt(1 - item.Controller, "card", "前线侦查：选择1张手牌洗回牌库",
+                    enemy.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: new Dictionary<string, string> { ["action"] = "scout-shuffle" });
+                return true;
+            }
+            case "camp-heal":
+                HealMaster(item.Controller, 1, "野外扎营");
+                FinishStackItem(item);
+                return true;
+            case "camp-draw":
+                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "野外扎营抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
             case "ritual-draw":
                 if (!Draw(player, 1)) SetWinner(1 - item.Controller, "祭天仪式抽牌时牌库为空");
                 FinishStackItem(item);
@@ -332,8 +354,9 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "黑胡子蒂奇":
-                CreatePrompt(item.Controller, "optional", "黑胡子蒂奇阵亡：是否抽取2张牌并弃置1张手牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "teach-death" });
+                if (PublicTriggerDeclared(item, "mode") != "mode:use") { FinishStackItem(item); return true; }
+                Draw(player, 2);
+                PromptDiscard(item, item.Controller, 1, "黑胡子蒂奇：抽牌后弃置1张手牌", "teach-death-discard");
                 return true;
             case "无名的渗透者":
             {
@@ -351,65 +374,53 @@ public sealed partial class L12GameEngine
                 return true;
             case "孙武":
             {
-                if (item.Data.TryGetValue("declaredTargets", out var declared))
-                {
-                    if (!string.IsNullOrWhiteSpace(declared)) MoveGraveToHand(player, declared);
-                    FinishStackItem(item); return true;
-                }
-                var choices = player.Graveyard.Where(candidate => candidate.CardType == "tactic" && candidate.CurrentCost <= 4)
-                    .Select(candidate => candidate.InstanceId).ToList();
-                if (State.DisasterValue > 4 || choices.Count == 0) { FinishStackItem(item); return true; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "孙武阵亡：可选择墓地1张费用不高于4的战术卡回到手牌", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "sunwu-recover" });
-                return true;
+                var target = PublicTriggerDeclared(item, "recoverTarget");
+                if (State.DisasterValue <= 4 && player.Graveyard.Any(candidate => candidate.InstanceId == target
+                        && candidate.CardType == "tactic" && candidate.CurrentCost <= 4))
+                    MoveGraveToHand(player, target);
+                FinishStackItem(item); return true;
             }
             case "荆轲":
-                if (item.Data.TryGetValue("declaredTargets", out var jingkeTarget))
-                {
-                    if (!string.IsNullOrWhiteSpace(jingkeTarget)) KillTarget(item, jingkeTarget, "被荆轲阵亡效果击杀");
-                    FinishStackItem(item); return true;
-                }
-                if (!CanReturnMorale(player, 1)) { FinishStackItem(item); return true; }
-                PromptEnemyLegion(item, "jingke-kill", "荆轲阵亡：可返还1士气，击杀对方最多1张兵力不高于2000的军团", target => target.Troops <= 2000, true);
-                return true;
+            {
+                var target = PublicTriggerDeclared(item, "killTarget");
+                if (!string.IsNullOrWhiteSpace(target)
+                    && DeclaredEnemyTarget(item.Controller, target, legion => legion.Troops <= 2000) is not null)
+                    KillTarget(item, target, "被荆轲阵亡效果击杀");
+                FinishStackItem(item); return true;
+            }
             case "上杉谦信":
             {
-                if (item.Data.TryGetValue("declaredTargets", out var declared))
+                var selected = PublicTriggerDeclared(item, "entryCards")
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var destinations = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
+                for (var index = 0; index < Math.Min(selected.Length, destinations.Length); index++)
                 {
-                    var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    var slots = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).ToArray();
-                    for (var index = 0; index < Math.Min(selected.Length, slots.Length); index++)
+                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == selected[index]
+                        && IsCounterTactic(candidate.CardId));
+                    var (row, slot) = ParseSlot(destinations[index]);
+                    if (counter is null || row != 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
                     {
-                        var counter = player.Hand.FirstOrDefault(card => card.InstanceId == selected[index]);
-                        if (counter is null || !IsCounterTactic(counter.CardId)) continue;
-                        player.Hand.Remove(counter); counter.Hidden = true; counter.SetRound = State.Round;
-                        player.Field[1][slots[index]] = counter;
+                        AddEvent("effect-cancelled", item.Controller,
+                            "上杉谦信已声明的反击战术或后排位置失效；仅取消该对象", card);
+                        continue;
                     }
-                    FinishStackItem(item); return true;
+                    player.Hand.Remove(counter); counter.Hidden = true; counter.SetRound = State.Round;
+                    player.Field[row][slot] = counter;
                 }
-                var choices = player.Hand.Where(candidate => IsCounterTactic(candidate.CardId)).Select(candidate => candidate.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return true; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-cards", "上杉谦信阵亡：将手牌中最多2张反击战术置入后排", choices, 1, Math.Min(2, choices.Count - 1),
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kenshin-set-counters" });
-                return true;
+                FinishStackItem(item); return true;
             }
             case "坂本龙马":
             {
-                if (item.Data.TryGetValue("declaredTargets", out var declared))
-                {
-                    var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    if (selected.Length == 2) SummonFromHand(player, selected[0], selected[1], tapped: true);
-                    FinishStackItem(item); return true;
-                }
-                var choices = player.Hand.Where(candidate => candidate.CardType == "legion" && candidate.Faction == "gaotianyuan" && candidate.CurrentCost <= 3)
-                    .Select(candidate => candidate.InstanceId).ToList();
-                if (choices.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
-                choices.Add("skip");
-                CreatePrompt(item.Controller, "optional-card", "坂本龙马阵亡：可将手牌1张费用不高于3的【高天原】军团休整登场", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "ryoma-summon-card" });
-                return true;
+                var entry = PublicTriggerDeclared(item, "entryCard");
+                var slot = PublicTriggerDeclared(item, "entrySlot");
+                if (player.Hand.Any(candidate => candidate.InstanceId == entry && candidate.CardType == "legion"
+                        && L12StructuredCardRules.HasFaction(player, candidate, "gaotianyuan")
+                        && candidate.CurrentCost <= 3)
+                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    SummonFromHand(player, entry, slot, tapped: true);
+                else AddEvent("effect-cancelled", item.Controller,
+                    "坂本龙马已声明的手牌军团或登场位置失效；效果取消", card);
+                FinishStackItem(item); return true;
             }
             case "立花誾千代":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
@@ -444,14 +455,9 @@ public sealed partial class L12GameEngine
                         .Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
                     foreach (var id in selected) MoveHandToGrave(chooser, id, causedByEffect: true);
                 }
-                Draw(player, 2); Draw(enemy, 1); FinishStackItem(item);
+                FinishStackItem(item);
                 return true;
             }
-            case "teach-death":
-                if (chosen[0] == "no") { FinishStackItem(item); return true; }
-                Draw(player, 2);
-                PromptDiscard(item, item.Controller, 1, "黑胡子蒂奇：弃置1张手牌", "teach-death-discard");
-                return true;
             case "teach-death-discard":
                 MoveHandToGrave(player, chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "mozi-immortal":
@@ -477,12 +483,6 @@ public sealed partial class L12GameEngine
             }
             case "sunwu-free-tactic":
                 if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "free-tactic");
-                else FinishStackItem(item); return true;
-            case "sunwu-recover":
-                if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]);
-                FinishStackItem(item); return true;
-            case "jingke-kill":
-                if (chosen[0] != "skip") BeginEffectMoraleReturn(item, 1, "jingke-kill", new() { ["target"] = chosen[0] });
                 else FinishStackItem(item); return true;
             case "nobunaga-kill":
             case "kenshin-kill":
@@ -510,50 +510,20 @@ public sealed partial class L12GameEngine
                 if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller);
                 FinishStackItem(item); return true;
             }
-            case "ryoma-summon-card":
-                if (chosen[0] == "skip") { FinishStackItem(item); return true; }
-                item.Data["ryoma-summon"] = chosen[0];
-                CreatePrompt(item.Controller, "slot", "选择休整登场的位置", EmptySlots(player), 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "ryoma-summon-slot" });
-                return true;
-            case "ryoma-summon-slot":
-                SummonFromHand(player, item.Data["ryoma-summon"], chosen[0], tapped: true); FinishStackItem(item); return true;
-            case "kenshin-set-counters":
-            {
-                var slots = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).ToArray();
-                var cards = chosen.Where(id => id != "skip").Take(slots.Length).ToArray();
-                for (var i = 0; i < cards.Length; i++)
-                {
-                    var counter = player.Hand.First(candidate => candidate.InstanceId == cards[i]);
-                    player.Hand.Remove(counter); counter.Hidden = true; counter.SetRound = State.Round; player.Field[1][slots[i]] = counter;
-                }
-                FinishStackItem(item); return true;
-            }
             case "camp-pick":
                 CompleteCampPick(item, chosen[0]); return true;
             case "camp-order":
                 CompleteCampOrder(item, chosen); return true;
-            case "camp-morale":
-                if (chosen[0] is "heal" or "draw") BeginEffectMoralePayment(item, 1, "camp-mode", new Dictionary<string, string> { ["mode"] = chosen[0] });
-                else FinishStackItem(item); return true;
             case "scout-shuffle":
             {
                 var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
                 FinishStackItem(item); return true;
             }
-            case "scout-pay":
-                if (chosen[0] == "yes" && enemy.Hand.Count > 0) BeginEffectMoralePayment(item, 1, "scout-shuffle"); else FinishStackItem(item); return true;
             case "ambush-buff":
             {
                 var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
                 FinishStackItem(item); return true;
             }
-            case "battle-until-dawn-draw":
-                if (chosen[0] == "yes") Draw(player, 1);
-                FinishStackItem(item); return true;
-            case "empty-city-draw":
-                if (chosen[0] == "yes") Draw(player, 1);
-                FinishStackItem(item); return true;
             case "empty-city-block":
                 if (chosen[0] == "yes") BeginEffectMoraleReturn(item, 1, "empty-city-block");
                 else FinishStackItem(item); return true;
@@ -691,6 +661,22 @@ public sealed partial class L12GameEngine
         }
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
+        if (ability == "xishiExchange")
+        {
+            var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["summonMode"] = [values.Length == 3 ? "mode:summon" : "mode:none"],
+            };
+            if (values.Length == 3)
+            {
+                declared["entryCard"] = [values[0]];
+                declared["entryBattlefield"] = [values[1]];
+                declared["entrySlot"] = [values[2]];
+            }
+            foreach (var pair in CompositeFirstSegmentData("active:S01-0116:xishiExchange", declared))
+                data[pair.Key] = pair.Value;
+        }
         PushEffect(playerIndex, source, "active", "主动效果", data: data);
         return CommandResult.Ok();
     }
@@ -705,10 +691,21 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             case "xishiExchange":
             {
-                var declared = item.Data.GetValueOrDefault("target", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) is { } battlefield)
-                    SummonFromHand(player, declared[0], declared[2], tapped: false, battlefield);
-                Draw(player, 1); FinishStackItem(item); return true;
+                switch (AtomicFlowKey(item))
+                {
+                    case "xishi-summon":
+                    {
+                        var declared = item.Data.GetValueOrDefault("target", string.Empty)
+                            .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                        if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) is { } battlefield)
+                            SummonFromHand(player, declared[0], declared[2], tapped: false, battlefield);
+                        FinishStackItem(item); return true;
+                    }
+                    case "xishi-draw":
+                        Draw(player, 1); FinishStackItem(item); return true;
+                    default:
+                        FinishStackItem(item); return true;
+                }
             }
             case "destroyInfiltrator" when source is not null:
                 if (FindPublicCard(source.InstanceId, out var battlefieldController) is not null)
@@ -729,6 +726,9 @@ public sealed partial class L12GameEngine
     private static IEnumerable<L12CardInstance> PublicLegions(L12PlayerState player)
         => player.Field.SelectMany(row => row).Where(card => card is not null && !card.Hidden && IsFieldLegion(card)).Cast<L12CardInstance>();
 
+    private static IEnumerable<L12CardInstance> PublicFactionLegions(L12PlayerState player, string faction)
+        => PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, faction));
+
     private void BeginBlackbeardSimultaneousDiscard(L12StackItem item)
     {
         var prompted = 0;
@@ -748,8 +748,6 @@ public sealed partial class L12GameEngine
             prompted++;
         }
         if (prompted > 0) return;
-        Draw(State.Players[item.Controller], 2);
-        Draw(State.Players[1 - item.Controller], 1);
         FinishStackItem(item);
     }
 
@@ -831,10 +829,7 @@ public sealed partial class L12GameEngine
             var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id); if (card is null) continue;
             player.Library.Remove(card); player.Library.Add(card);
         }
-        if (ActiveResourceCount(player) >= 1)
-            CreatePrompt(item.Controller, "option", "野外扎营：可消耗1士气选择一项，或不发动", ["heal", "draw", "skip"], 1, 1,
-                "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "camp-morale", ["choiceMode"] = "instant", ["heal"] = "消耗1士气：主宰增加1点血量", ["draw"] = "消耗1士气：抽取1张牌", ["skip"] = "不发动" });
-        else FinishStackItem(item);
+        FinishStackItem(item);
     }
 
     private IEnumerable<int> EffectEntryBattlefieldChoices(int ownerIndex, L12CardInstance card)
@@ -940,11 +935,8 @@ public sealed partial class L12GameEngine
                 foreach (var target in PublicLegions(player)) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
                 FinishStackItem(item); return;
             case "battle-until-dawn-draw":
-                if (player.Graveyard.Count < 5) { FinishStackItem(item); return; }
-                CreatePrompt(item.Controller, "optional", "战斗至黎明：墓地卡牌不少于5张，是否抽取1张牌？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "battle-until-dawn-draw" });
-                return;
+                if (player.Graveyard.Count >= 5) Draw(player, 1);
+                FinishStackItem(item); return;
             case "空城计":
             case "empty-city-block":
             {
@@ -954,15 +946,8 @@ public sealed partial class L12GameEngine
                 return;
             }
             case "empty-city-draw":
-                if (player.Field[0].Any(card => card is not null && IsFieldLegion(card)))
-                {
-                    FinishStackItem(item);
-                    return;
-                }
-                CreatePrompt(item.Controller, "optional", "空城计：结算确认我方前排没有军团，是否抽取1张牌？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "empty-city-draw" });
-                return;
+                if (!player.Field[0].Any(card => card is not null && IsFieldLegion(card))) Draw(player, 1);
+                FinishStackItem(item); return;
             case "拼死反抗":
             {
                 var declared = item.Data.GetValueOrDefault("declaredTargets");

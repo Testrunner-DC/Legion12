@@ -206,10 +206,6 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: promptData);
                 break;
             }
-            case "lubu-ready":
-                if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃");
-                FinishStackItem(item);
-                break;
             case "free-tactic":
                 player.FreeTacticCount++;
                 FinishStackItem(item);

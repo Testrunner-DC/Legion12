@@ -229,7 +229,8 @@ public sealed partial class L12GameEngine
             player.NextFactionLegionDiscount = 0;
         if (card.CardType == "legion" && card.Faction == "taiyangcheng" && card.DisasterLevel > 0)
             player.NextS2SunDisasterLegionDiscount = 0;
-        if (card.CardType == "legion" && card.Faction == "olympus" && player.NextS2OlympusLegionDiscount > 0)
+        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus")
+            && player.NextS2OlympusLegionDiscount > 0)
             player.NextS2OlympusLegionDiscount = 0;
         if (card.CardType == "tactic" && player.FreeTacticCount > 0)
             player.FreeTacticCount--;
@@ -444,7 +445,8 @@ public sealed partial class L12GameEngine
         if (card.CardId is "S01-0305" or "S01-0306" && player.Hp <= 6) modifier--;
         if (card.CardId == "S02-0202") modifier -= player.TombNamedLegionsLeftThisTurn;
         if (card.CardId == "S02-0203" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier--;
-        if (card.CardId == "S02-0605") modifier -= PublicLegions(player).Count(target => target.Faction == "otherworld");
+        if (card.CardId == "S02-0605") modifier -= PublicLegions(player)
+            .Count(target => L12StructuredCardRules.HasFaction(player, target, "otherworld"));
         if (card.CardId == "S02-0611" && PublicLegions(player).Any(target => target.CardId == "S02-0612")) modifier -= 2;
         if (card.CardId == "S02-0612" && PublicLegions(player).Any(target => target.CardId == "S02-0611")) modifier -= 2;
         modifier += L12StructuredCardRules.HandPlayCostModifier(player, card);
@@ -455,7 +457,7 @@ public sealed partial class L12GameEngine
             modifier -= player.NextFactionLegionDiscount;
         if (card.CardType == "legion" && card.Faction == "taiyangcheng" && card.DisasterLevel > 0)
             modifier -= player.NextS2SunDisasterLegionDiscount;
-        if (card.CardType == "legion" && card.Faction == "olympus")
+        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus"))
             modifier -= player.NextS2OlympusLegionDiscount;
         if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S02-DS06")
             modifier++;
@@ -562,7 +564,7 @@ public sealed partial class L12GameEngine
         }
         temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
-        if (row == 0 && attacker.Faction == "gaotianyuan"
+        if (row == 0 && L12StructuredCardRules.HasFaction(State.Players[playerIndex], attacker, "gaotianyuan")
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
         {
             temporaryAttackerTroopsBonus += 1000;

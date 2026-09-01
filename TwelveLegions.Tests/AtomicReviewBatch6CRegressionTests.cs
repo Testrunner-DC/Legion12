@@ -285,11 +285,13 @@ public sealed class AtomicReviewBatch6CRegressionTests
             });
 
         Assert.True(game.Handle(0, new L12Command("playCard", liMu.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var revealMode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: revealMode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var drawMode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: drawMode.PromptId,
+            Choice: "mode:none")).Accepted);
         PassResponses(game);
-        var reveal = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-limu-reveal", reveal.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: reveal.PromptId,
-            Choice: "yes")).Accepted);
         var freePlay = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-limu-tactic", freePlay.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: freePlay.PromptId,
@@ -297,16 +299,10 @@ public sealed class AtomicReviewBatch6CRegressionTests
 
         Assert.Empty(game.State.PendingActivations);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
-        var deferredDraw = Assert.Single(game.State.DeferredEffectStack, item =>
-            item.SourceInstanceId == peace.InstanceId && item.Data.GetValueOrDefault("atomicFlow") == "peace-draw");
-        Assert.Equal("0", deferredDraw.Data["compositeSegment"]);
-
-        var liMuDraw = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-limu-draw");
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: liMuDraw.PromptId,
-            Choice: "no")).Accepted);
         var draw = Assert.Single(game.State.EffectStack, item =>
             item.SourceInstanceId == peace.InstanceId && item.Data.GetValueOrDefault("atomicFlow") == "peace-draw");
+        Assert.Equal("0", draw.Data["compositeSegment"]);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
 
         while (game.State.PendingPrompts.FirstOrDefault(prompt => prompt.Kind == "response") is { } response)
             Assert.True(game.Handle(response.PlayerIndex,

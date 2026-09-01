@@ -45,12 +45,24 @@ public sealed partial class L12GameEngine
             }
             case ("S01-02D1", "sunTopThree"):
             {
-                var grave = player.Graveyard.Where(card => card.Faction == "taiyangcheng" && CanEnterHandOrLibrary(card))
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
+                        && CanEnterHandOrLibrary(card))
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     PublicActiveStep("optional-card", "graveCard",
                         "众神之乡：预先声明牌顶处理后加入手牌的墓地【太阳城】卡牌，或不选择", grave),
+                ]);
+            }
+            case ("S01-03D1", "valhallaRecover"):
+            {
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+                        && CanEnterHandOrLibrary(card))
+                    .Select(card => card.InstanceId).Prepend("mode:none").ToList();
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    PublicActiveStep("optional-card", "graveCard",
+                        "英灵殿：预先声明弃置牌库顶2张后加入手牌的墓地【阿斯加德】卡牌，或不选择", grave),
                 ]);
             }
             case ("S01-02M1", "isisCanopic"):
@@ -86,8 +98,12 @@ public sealed partial class L12GameEngine
             {
                 if (player.Hand.Count == 0) return CommandResult.Reject("需要弃置1张手牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
-                [PublicActiveStep("hand-card", "discardCost", "天照大神：预先选择弃置的1张手牌",
-                    player.Hand.Select(card => card.InstanceId))]);
+                [
+                    PublicActiveStep("hand-card", "discardCost", "天照大神：预先选择弃置的1张手牌",
+                        player.Hand.Select(card => card.InstanceId)),
+                    PublicActiveStep("target-morale", "moraleTargets", "天照大神：预先选择转为活跃的最多2张休整士气",
+                        player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId), min: 0, max: 2),
+                ]);
             }
             case ("S01-0214", "cleopatraGuard"):
             {
@@ -184,7 +200,7 @@ public sealed partial class L12GameEngine
             case ("S01-04D1", "yomiRecover"):
             {
                 if (source.Tapped) return CommandResult.Reject("黄泉之门必须为活跃状态");
-                var grave = player.Graveyard.Where(card => card.Faction == "gaotianyuan")
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
                     .Select(card => card.InstanceId).ToList();
                 if (grave.Count == 0) return CommandResult.Reject("墓地没有可回收的【高天原】卡牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
@@ -210,10 +226,11 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("需要2张活跃的神力");
                 var enemies = PublicLegions(enemy).Select(card => card.InstanceId).ToList();
                 var damageChoices = enemies.Count == 0 ? new List<string> { "mode:none" } : enemies;
-                var grave = player.Graveyard.Where(card => card.Faction == "olympus")
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToList();
                 var entry = player.Hand.Concat(player.Graveyard)
-                    .Where(card => card.Faction == "olympus" && card.CardType == "legion" && card.CurrentCost <= 4)
+                    .Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
+                        && card.CardType == "legion" && card.CurrentCost <= 4)
                     .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Prepend("mode:none").ToList();
                 var steps = new List<L12ActivationSelectionStep>
                 {

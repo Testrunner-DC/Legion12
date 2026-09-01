@@ -345,12 +345,13 @@ public sealed class CombatTimelineRegressionTests
         Assert.DoesNotContain(defender, game.State.Players[1].Graveyard);
         var killPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(killPrompt.PlayerIndex,
-            new L12Command("resolvePrompt", PromptId: killPrompt.PromptId, Choice: "no")).Accepted);
+            new L12Command("resolvePrompt", PromptId: killPrompt.PromptId, Choice: "mode:none")).Accepted);
 
-        var triggerEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
-        var killIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
-        var deathIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId));
-        Assert.True(killIndex >= 0 && deathIndex > killIndex);
+        var declinedKillIndex = game.State.Events.FindIndex(entry => entry.Type == "ability-cancelled"
+            && entry.Text.Contains(attacker.Name, StringComparison.Ordinal));
+        var deathIndex = game.State.Events.FindIndex(entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == defender.InstanceId));
+        Assert.True(declinedKillIndex >= 0 && deathIndex > declinedKillIndex);
         Assert.Contains(defender, game.State.Players[1].Graveyard);
         Assert.DoesNotContain(defender, game.State.Players[1].Resolving);
     }
@@ -403,7 +404,7 @@ public sealed class CombatTimelineRegressionTests
         var attackerKill = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(0, attackerKill.PlayerIndex);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerKill.PromptId,
-            Choice: "no")).Accepted);
+            Choice: "mode:none")).Accepted);
 
         Assert.Equal(L12CombatStage.DefenderKillTriggers, game.State.PendingDefense?.Stage);
         Assert.Contains(attacker, game.State.Players[0].Resolving);
@@ -414,10 +415,10 @@ public sealed class CombatTimelineRegressionTests
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: defenderKill.PromptId,
             Choice: "mode:rune")).Accepted);
 
-        var triggerEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
-        var attackerKillIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId)
-            && entry.Text.Contains("击杀时", StringComparison.Ordinal));
-        var defenderKillIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
+        var attackerKillIndex = game.State.Events.FindIndex(entry => entry.Type == "ability-cancelled"
+            && entry.Text.Contains(attacker.Name, StringComparison.Ordinal));
+        var defenderKillIndex = game.State.Events.FindIndex(entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
             && entry.Text.Contains("击杀时", StringComparison.Ordinal));
         Assert.True(attackerKillIndex >= 0 && defenderKillIndex > attackerKillIndex);
         Assert.Equal(runesBefore + 1, game.State.Players[1].SpecialZones.Runes);
@@ -598,7 +599,7 @@ public sealed class CombatTimelineRegressionTests
         Assert.Equal(L12CombatStage.AttackerAfterAttack, game.State.PendingDefense?.Stage);
         Assert.Equal(L12Phase.Defense, game.State.Phase);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerAfterPrompt.PromptId,
-            Choice: "no")).Accepted);
+            Choice: "mode:none")).Accepted);
 
         var defenderAfterPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, defenderAfterPrompt.PlayerIndex);
@@ -628,7 +629,8 @@ public sealed class CombatTimelineRegressionTests
         var stages = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
         var attackerAfterIndex = stages.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId));
         var defenderAfterIndex = stages.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == defenderAfter.InstanceId));
-        Assert.True(attackerAfterIndex >= 0 && defenderAfterIndex > attackerAfterIndex);
+        Assert.Equal(-1, attackerAfterIndex);
+        Assert.True(defenderAfterIndex >= 0);
     }
 
     [Fact]
@@ -656,7 +658,7 @@ public sealed class CombatTimelineRegressionTests
             Target: new L12AttackTarget("legion", victim.InstanceId))).Accepted);
         var attackerAfter = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackerAfter.PromptId,
-            Choice: "no")).Accepted);
+            Choice: "mode:none")).Accepted);
 
         var declaration = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", declaration.Continuation);
