@@ -491,10 +491,10 @@ public sealed class LatestBugRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", bors.InstanceId, Row: 0, Slot: 0)).Accepted);
-        PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-grail-round-table-rune", prompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+        Assert.Equal("pending-activation", prompt.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+        PassResponses(game);
         Assert.Equal(1, player.SpecialZones.Runes);
         Assert.Contains($"trigger:grail-round-table:{game.State.TurnSerial}", player.UsedAbilities);
     }
@@ -525,9 +525,9 @@ public sealed class LatestBugRegressionTests
         Assert.Null(game.State.ActiveDisaster);
         Assert.True(game.State.CheckDisasterAfterStack);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-grail-round-table-rune", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
 
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "no")).Accepted);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:none")).Accepted);
         PassResponses(game);
 
         Assert.Equal("S01-DS08", game.State.ActiveDisaster?.CardId);
@@ -2068,6 +2068,10 @@ public sealed class LatestBugRegressionTests
             prompt => prompt.Data.GetValueOrDefault("action") == "oddr-draw");
         Assert.True(triggeredGame.Handle(1, new L12Command("resolvePrompt", PromptId: damagePrompt.PromptId,
             Choice: "yes")).Accepted);
+        var ringDeclaration = Assert.Single(triggeredGame.State.PendingPrompts);
+        Assert.Equal("pending-activation", ringDeclaration.Continuation);
+        Assert.True(triggeredGame.Handle(1, new L12Command("resolvePrompt", PromptId: ringDeclaration.PromptId,
+            Choice: "mode:use")).Accepted);
         var triggeredResponse = Assert.Single(triggeredGame.State.PendingPrompts);
         Assert.Contains(triggeredWisdom.InstanceId, triggeredResponse.ValidChoices);
         Assert.Contains("主宰受到伤害时效果", triggeredGame.State.EffectStack[^1].Text);

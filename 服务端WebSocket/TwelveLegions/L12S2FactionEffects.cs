@@ -127,9 +127,14 @@ public sealed partial class L12GameEngine
         foreach (var liMu in PublicLegions(player).Where(card => card.CardId == "S02-0102"))
         {
             var onceKey = $"trigger:limu-morale:{liMu.InstanceId}:{State.TurnSerial}";
-            if (player.UsedAbilities.Contains(onceKey)) continue;
+            var pendingKey = $"{onceKey}:pending";
+            if (player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Add(pendingKey)) continue;
             candidates.Add(CreateTriggerCandidate(playerIndex, liMu, "master-morale-return", "【主宰效果返还士气时】效果",
-                new Dictionary<string, string> { ["mode"] = "limu", ["onceKey"] = onceKey, ["returned"] = returned.ToString() }));
+                new Dictionary<string, string>
+                {
+                    ["mode"] = "limu", ["onceKey"] = onceKey, ["returned"] = returned.ToString(),
+                    ["cleanupReservation"] = pendingKey,
+                }));
         }
         if (master.CardId == "S01-01M1"
             && !player.UsedAbilities.Contains($"trigger:xiaotian-morale:{State.TurnSerial}")
@@ -152,27 +157,22 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var onceKey = item.Data.GetValueOrDefault("onceKey") ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(onceKey)
-            || item.Data.GetValueOrDefault("mode") != "xiaotian" && player.UsedAbilities.Contains(onceKey))
+        if (string.IsNullOrWhiteSpace(onceKey) || !player.UsedAbilities.Contains(onceKey))
         {
             FinishStackItem(item);
             return;
         }
         if (item.Data.GetValueOrDefault("mode") == "limu")
         {
-            var source = FindOnField(player, item.SourceInstanceId, out _, out _);
-            if (source?.CardId != "S02-0102" || player.MoraleDeck.Count == 0)
+            if (player.MoraleDeck.Count > 0)
             {
-                FinishStackItem(item);
-                return;
+                AddMorale(player, 1, tapped: true);
+                AddEvent("morale", item.Controller, "李牧从士气牌库追加1张休整士气",
+                    FindSource(item) is { } liMu ? [liMu] : []);
             }
-            CreatePrompt(item.Controller, "optional", "李牧：我方士气因主宰效果返还4张及以上，是否追加1张休整士气？",
-                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-limu-morale", ["onceKey"] = onceKey, ["choiceMode"] = "instant",
-                    ["yes"] = "追加1张休整士气", ["no"] = "不发动",
-                });
+            else
+                AddEvent("effect-cancelled", item.Controller, "李牧结算时士气牌库已空；本段取消，回合次数不恢复");
+            FinishStackItem(item);
             return;
         }
         if (item.Data.GetValueOrDefault("mode") != "xiaotian" || player.Field[0].All(card => card is not null))
@@ -382,12 +382,9 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "玛格丽特一世":
-                CreatePrompt(item.Controller, "optional", "玛格丽特一世：是否弃置我方牌库顶部1张牌？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-margaret-entry-mill", ["yes"] = "弃置牌库顶部1张牌", ["no"] = "不发动",
-                    });
+                if (PublicTriggerDeclared(item, "mode") == "mode:use")
+                    Mill(player, 1, "玛格丽特一世登场时效果");
+                FinishStackItem(item);
                 return true;
             case "珀尔修斯":
             {
@@ -1102,10 +1099,16 @@ public sealed partial class L12GameEngine
         var controller = 1 - defeatedController;
         var player = State.Players[controller];
         var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
+        var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer != controller || player.MasterId != "S02-06M1" || player.UsedAbilities.Contains(onceKey))
             return null;
+        if (!player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard(player.MasterId, $"master-{controller}");
-        return CreateTriggerCandidate(controller, master, "morrigan-enemy-death", "【对方军团阵亡时】效果");
+        return CreateTriggerCandidate(controller, master, "morrigan-enemy-death", "【对方军团阵亡时】效果",
+            new Dictionary<string, string>
+            {
+                ["onceKey"] = onceKey, ["cleanupReservation"] = pendingKey,
+            });
     }
 
     private L12TriggerCandidate? BuildNephthysOwnDeathCandidate(int defeatedController, L12CardInstance defeated)
@@ -1129,19 +1132,10 @@ public sealed partial class L12GameEngine
     private void ResolveS2MorriganEnemyDeath(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
-        if (State.ActivePlayer != item.Controller || player.MasterId != "S02-06M1" || player.UsedAbilities.Contains(onceKey))
-        {
-            FinishStackItem(item);
-            return;
-        }
-        CreatePrompt(item.Controller, "optional", "莫瑞甘：对方军团阵亡，是否获得1符文？", ["yes", "no"], 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string>
-            {
-                ["action"] = "s2-morrigan-enemy-death",
-                ["yes"] = "获得1符文",
-                ["no"] = "不发动",
-            });
+        L12S2ZoneOps.GainRunes(player, 1);
+        AddEvent("runes", item.Controller, "莫瑞甘因对方军团阵亡使我方获得1符文",
+            FindSource(item) is { } source ? [source] : []);
+        FinishStackItem(item);
     }
 
     private void ResolveS2NephthysOwnDeath(L12StackItem item)
@@ -1441,17 +1435,19 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (ability == "margaretMasterDamage" && source?.CardId == "S02-0304")
         {
-            if (source.Tapped || State.ActivePlayer != item.Controller)
+            switch (item.Data.GetValueOrDefault("atomicFlow"))
             {
-                FinishStackItem(item);
-                return true;
+                case "margaret-heal":
+                    HealMaster(item.Controller, 1, "玛格丽特一世效果", legionEffect: true);
+                    AddEvent("effect", item.Controller, "玛格丽特一世使我方主宰增加1点血量", source);
+                    break;
+                case "margaret-heal-lock":
+                    player.LegionEffectHealForbiddenUntilTurn = State.TurnSerial;
+                    AddEvent("effect", item.Controller,
+                        "玛格丽特一世：本回合我方主宰无法再因军团效果增加血量", source);
+                    break;
             }
-            CreatePrompt(item.Controller, "optional", "玛格丽特一世：是否将此军团转为休整，使我方主宰增加1点血量？",
-                ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-margaret-master-damage", ["yes"] = "休整此军团并增加1点血量", ["no"] = "不发动",
-                });
+            FinishStackItem(item);
             return true;
         }
         if (ability == "nephthysSacrifice" && source?.CardId == "S02-02M1")
@@ -1746,25 +1742,6 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (prompt.Data.GetValueOrDefault("action"))
         {
-            case "s2-margaret-entry-mill":
-                if (chosen[0] == "yes") Mill(player, 1, "玛格丽特一世登场时效果");
-                FinishStackItem(item);
-                return true;
-            case "s2-margaret-master-damage":
-            {
-                var margaret = FindSource(item);
-                if (chosen[0] == "yes" && margaret is { CardId: "S02-0304", Tapped: false }
-                    && State.ActivePlayer == item.Controller)
-                {
-                    margaret.Tapped = true;
-                    HealMaster(item.Controller, 1, "玛格丽特一世效果", legionEffect: true);
-                    player.LegionEffectHealForbiddenUntilTurn = State.TurnSerial;
-                    AddEvent("effect", item.Controller,
-                        "玛格丽特一世转为休整；本回合我方主宰无法再因军团效果增加血量", margaret);
-                }
-                FinishStackItem(item);
-                return true;
-            }
             case "s2-arthur-sword":
             {
                 var arthur = FindSource(item);
@@ -1803,15 +1780,6 @@ public sealed partial class L12GameEngine
             case "s2-lamorak-death":
                 if (chosen[0] == "heal") HealMaster(item.Controller, 1, "勇士兰马洛克阵亡时效果", legionEffect: true);
                 else if (!Draw(player, 1)) SetWinner(1 - item.Controller, "勇士兰马洛克效果抽牌时牌库为空");
-                FinishStackItem(item);
-                return true;
-            case "s2-limu-morale":
-                if (chosen[0] == "yes")
-                {
-                    player.UsedAbilities.Add(prompt.Data.GetValueOrDefault("onceKey") ?? string.Empty);
-                    AddMorale(player, 1, tapped: true);
-                    AddEvent("morale", item.Controller, "李牧从士气牌库追加1张休整士气", FindSource(item) is { } liMu ? [liMu] : []);
-                }
                 FinishStackItem(item);
                 return true;
             case "s2-xiaotian-death":
@@ -1948,21 +1916,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "s2-morrigan-enemy-death":
-                if (chosen[0] == "yes")
-                {
-                    var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
-                    if (State.ActivePlayer == item.Controller && player.MasterId == "S02-06M1"
-                        && player.UsedAbilities.Add(onceKey))
-                    {
-                        L12S2ZoneOps.GainRunes(player, 1);
-                        var source = FindSource(item);
-                        if (source is null) AddEvent("runes", item.Controller, "莫瑞甘使我方获得1符文");
-                        else AddEvent("runes", item.Controller, "莫瑞甘使我方获得1符文", source);
-                    }
-                }
-                FinishStackItem(item);
-                return true;
             case "s2-amakine-top-place":
             {
                 var top = player.Library.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("amakine-top"));

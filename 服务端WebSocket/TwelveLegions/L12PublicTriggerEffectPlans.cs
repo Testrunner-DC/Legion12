@@ -33,11 +33,26 @@ public sealed partial class L12GameEngine
     private static string? FifthBatchPublicTriggerPlan(string cardId, string trigger)
         => FifthBatchPublicTriggerPlans.GetValueOrDefault($"{cardId}|{trigger}");
 
+    private static string? Batch6GAPublicTriggerPlan(string cardId, string trigger,
+        IReadOnlyDictionary<string, string>? data)
+        => (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
+        {
+            ("S02-0304", "enter", _, _) => "margaret-entry-mill",
+            ("S02-0304", "active", "margaretMasterDamage", _) => "margaret-master-damage",
+            ("S02-0305", "active", "anderstorpRingDraw", _) => "anderstorp-draw",
+            ("S02-05M1", "active", "artemisDeathFlip", _) => "artemis-death-flip",
+            ("S02-06M1", "morrigan-enemy-death", _, _) => "morrigan-rune",
+            ("S02-0102", "master-morale-return", _, "limu") => "limu-morale",
+            ("S02-06S4", "active", "grailRoundTableRune", _) => "grail-round-table-rune",
+            _ => null,
+        };
+
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
         => HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)
             || HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
             || HasTrialCompletionTriggerDeclarationPlan(cardId, trigger, data)
+            || Batch6GAPublicTriggerPlan(cardId, trigger, data) is not null
             || Batch6DPublicTriggerPlan(cardId, trigger) is not null
             || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
             || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
@@ -83,6 +98,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         List<L12ActivationSelectionStep>? steps = null;
+        var batch6GAPlan = Batch6GAPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger, candidate.Data);
         var batch6DPlan = Batch6DPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
 
@@ -91,7 +107,53 @@ public sealed partial class L12GameEngine
         if (TryBeginAttackPublicTriggerDeclaration(candidate, source))
             return true;
 
-        if (batch6DPlan == "after-attack-katsura")
+        if (batch6GAPlan == "margaret-entry-mill")
+        {
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "玛格丽特一世：预先声明是否弃置我方牌库顶部1张牌",
+                    player.Library.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
+            ];
+        }
+        else if (batch6GAPlan == "margaret-master-damage")
+        {
+            var canUse = State.ActivePlayer == candidate.Controller
+                && FindOnField(player, candidate.SourceInstanceId, out _, out _) is { CardId: "S02-0304", Tapped: false };
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "玛格丽特一世：预先声明是否将此军团转为休整，使我方主宰增加1点血量",
+                    canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
+            ];
+        }
+        else if (batch6GAPlan == "artemis-death-flip")
+        {
+            var morale = player.Morale.Where(card => card.Tapped && !card.IsGodPower)
+                .Select(card => card.InstanceId).ToList();
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "阿尔忒弥斯：预先声明是否翻转1张休整士气",
+                    morale.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
+                PublicTriggerStep("target-morale", "moraleTarget", "阿尔忒弥斯：预先选择要翻转的1张休整士气",
+                    morale, requiredChoice: "mode:use"),
+            ];
+        }
+        else if (batch6GAPlan == "limu-morale")
+        {
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "李牧：预先声明是否追加1张休整士气",
+                    player.MoraleDeck.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
+            ];
+        }
+        else if (batch6GAPlan is "anderstorp-draw" or "morrigan-rune" or "grail-round-table-rune")
+        {
+            steps =
+            [
+                PublicTriggerStep("option", "mode", $"{source.Name}：预先声明是否发动本回合1次的可选触发效果",
+                    ["mode:none", "mode:use"]),
+            ];
+        }
+        else if (batch6DPlan == "after-attack-katsura")
         {
             steps =
             [
@@ -483,9 +545,10 @@ public sealed partial class L12GameEngine
         if (TryCompleteAttackPublicTriggerDeclaration(candidate, activation))
             return true;
         var key = (candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability"));
+        var batch6GAPlan = Batch6GAPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger, candidate.Data);
         var batch6DPlan = Batch6DPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
-        var handled = batch6DPlan is not null || fifthBatchPlan is not null || key switch
+        var handled = batch6GAPlan is not null || batch6DPlan is not null || fifthBatchPlan is not null || key switch
         {
             ("S02-04M1", "active", "tsukuyomiFollowMove") => true,
             ("S02-04M1", "active", "tsukuyomiReadyMorale") => true,
@@ -525,7 +588,33 @@ public sealed partial class L12GameEngine
         }
 
         string? error = null;
-        if (batch6DPlan == "tomb-construct")
+        if (batch6GAPlan == "margaret-entry-mill")
+        {
+            if (mode == "mode:use" && player.Library.Count == 0)
+                error = "玛格丽特一世的牌库顶已失效；效果未入栈";
+        }
+        else if (batch6GAPlan == "margaret-master-damage")
+        {
+            var margaret = FindOnField(player, candidate.SourceInstanceId, out _, out _);
+            if (mode == "mode:use" && (State.ActivePlayer != candidate.Controller
+                || margaret is not { CardId: "S02-0304", Tapped: false }))
+                error = "玛格丽特一世的公开休整费用已失效；未支付费用且效果未入栈";
+            else if (mode == "mode:use")
+            {
+                margaret!.Tapped = true;
+                AddEvent("cost", candidate.Controller, "玛格丽特一世入栈前转为休整", margaret);
+            }
+        }
+        else if (batch6GAPlan == "artemis-death-flip")
+        {
+            var moraleId = activation.DeclaredValues.GetValueOrDefault("moraleTarget", []).SingleOrDefault();
+            if (mode == "mode:use" && !player.Morale.Any(card => card.InstanceId == moraleId
+                    && card.Tapped && !card.IsGodPower))
+                error = "阿尔忒弥斯声明的休整士气目标已失效；效果未入栈";
+        }
+        else if (batch6GAPlan == "limu-morale" && mode == "mode:use" && player.MoraleDeck.Count == 0)
+            error = "李牧的士气牌库已空；效果未入栈";
+        else if (batch6DPlan == "tomb-construct")
         {
             var guardIds = candidate.Data.GetValueOrDefault("tombGuardIds", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -762,6 +851,19 @@ public sealed partial class L12GameEngine
                 error = "坂本龙马声明的军团或位移位置已失效；效果未入栈";
         }
 
+        if (error is null && mode == "mode:use"
+            && batch6GAPlan is "anderstorp-draw" or "artemis-death-flip" or "morrigan-rune"
+                or "limu-morale" or "grail-round-table-rune")
+        {
+            var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
+            var pendingKey = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(onceKey) || string.IsNullOrWhiteSpace(pendingKey)
+                || player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Contains(pendingKey))
+                error = $"{candidate.SourceName}的回合次数保留已失效；效果未入栈";
+            else
+                player.UsedAbilities.Add(onceKey);
+        }
+
         if (error is not null)
         {
             RemoveUnstackedTriggerCandidate(candidate, error);
@@ -770,6 +872,12 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (batch6GAPlan == "margaret-master-damage")
+        {
+            var composite = CompositeFirstSegmentData("trigger:S02-0304:margaretMasterDamage",
+                activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+        }
         if (batch6DPlan == "tomb-construct")
         {
             var guardIds = candidate.Data.GetValueOrDefault("tombGuardIds", string.Empty)

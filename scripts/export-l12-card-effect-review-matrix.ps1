@@ -49,6 +49,9 @@ $batch6FReviewedCardIds = @(
     'S02-0602', 'S02-0604', 'S02-0606', 'S02-0609', 'S02-0610',
     'S02-0613', 'S02-0614', 'S02-0617', 'S02-0618', 'S02-06M2', 'S02-06D1'
 )
+$batch6GAReviewedCardIds = @(
+    'S02-0102', 'S02-0304', 'S02-0305', 'S02-05M1', 'S02-06M1', 'S02-06S4'
+)
 
 $rows = foreach ($card in ($cards | Sort-Object id)) {
     $fine = if ($fineByCard.ContainsKey($card.id)) { @($fineByCard[$card.id] | Sort-Object -Unique) } else { @() }
@@ -87,6 +90,9 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
     }
     if ($batch6FReviewedCardIds -contains $card.id) {
         $review += '；6F试炼推进公开事件与费用预付已验收'
+    }
+    if ($batch6GAReviewedCardIds -contains $card.id) {
+        $review += '；6G-A可选触发声明、次数预留与独立段已验收'
     }
     [pscustomobject]@{
         Id = $card.id

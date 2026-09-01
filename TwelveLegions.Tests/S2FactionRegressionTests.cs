@@ -3042,12 +3042,11 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", firstTarget.InstanceId))).Accepted);
-        PassResponses(game);
-
         var gainRune = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-morrigan-enemy-death", gainRune.Data["action"]);
+        Assert.Equal("pending-activation", gainRune.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: gainRune.PromptId,
-            Choice: "yes")).Accepted);
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
         Assert.Equal(1, player.SpecialZones.Runes);
 
         player.SpecialZones.Runes = 2;
@@ -3391,9 +3390,13 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         var prompt = Assert.Single(game.State.PendingPrompts,
-            candidate => candidate.Data.GetValueOrDefault("action") == "s2-limu-morale");
-        Assert.Equal("s2-limu-morale", prompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
+            candidate => candidate.Continuation == "pending-activation");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+        var factionRecovery = game.State.PendingPrompts.SingleOrDefault(candidate =>
+            candidate.Continuation == "faction-zero-recovery");
+        if (factionRecovery is not null)
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: factionRecovery.PromptId, Choice: "no")).Accepted);
+        PassResponses(game);
 
         var morale = Assert.Single(player.Morale);
         Assert.True(morale.Tapped);
@@ -3726,12 +3729,16 @@ public sealed class S2FactionRegressionTests
             Target: new L12AttackTarget("legion", ranged.InstanceId))).Accepted);
         PassResponses(game);
 
-        var flip = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-flip-morale");
-        Assert.Contains(defender.Morale[0].InstanceId, flip.ValidChoices);
-        Assert.Contains("skip", flip.ValidChoices);
+        var flip = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", flip.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: flip.PromptId,
+            Choice: "mode:use")).Accepted);
+        var moraleTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", moraleTarget.Continuation);
+        Assert.Contains(defender.Morale[0].InstanceId, moraleTarget.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moraleTarget.PromptId,
             Choice: defender.Morale[0].InstanceId)).Accepted);
+        PassResponses(game);
         Assert.True(defender.Morale[0].IsGodPower);
         Assert.True(defender.Morale[0].Tapped);
     }
@@ -4178,12 +4185,11 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(declineGame.Handle(0,
             new L12Command("playCard", declineMargaret.InstanceId, Row: 0, Slot: 0)).Accepted);
-        PassResponses(declineGame);
-        var decline = Assert.Single(declineGame.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-margaret-entry-mill");
+        var decline = Assert.Single(declineGame.State.PendingPrompts);
+        Assert.Equal("pending-activation", decline.Continuation);
         Assert.Equal(declineLibrary, declinePlayer.Library.Count);
         Assert.True(declineGame.Handle(0,
-            new L12Command("resolvePrompt", PromptId: decline.PromptId, Choice: "no")).Accepted);
+            new L12Command("resolvePrompt", PromptId: decline.PromptId, Choice: "mode:none")).Accepted);
         Assert.Equal(declineLibrary, declinePlayer.Library.Count);
 
         var acceptGame = Create(6345);
@@ -4197,11 +4203,11 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(acceptGame.Handle(0,
             new L12Command("playCard", acceptMargaret.InstanceId, Row: 0, Slot: 0)).Accepted);
-        PassResponses(acceptGame);
-        var accept = Assert.Single(acceptGame.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-margaret-entry-mill");
+        var accept = Assert.Single(acceptGame.State.PendingPrompts);
+        Assert.Equal("pending-activation", accept.Continuation);
         Assert.True(acceptGame.Handle(0,
-            new L12Command("resolvePrompt", PromptId: accept.PromptId, Choice: "yes")).Accepted);
+            new L12Command("resolvePrompt", PromptId: accept.PromptId, Choice: "mode:use")).Accepted);
+        PassResponses(acceptGame);
         Assert.Equal(acceptLibrary - 1, acceptPlayer.Library.Count);
         Assert.Contains(acceptPlayer.Graveyard, card => card.Name != acceptMargaret.Name);
     }
@@ -4230,10 +4236,11 @@ public sealed class S2FactionRegressionTests
             new L12Command("resolvePrompt", PromptId: oddrDamage.PromptId, Choice: "yes")).Accepted);
         PassResponses(game);
 
-        var reaction = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-margaret-master-damage");
+        var reaction = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", reaction.Continuation);
         Assert.True(game.Handle(0,
-            new L12Command("resolvePrompt", PromptId: reaction.PromptId, Choice: "yes")).Accepted);
+            new L12Command("resolvePrompt", PromptId: reaction.PromptId, Choice: "mode:use")).Accepted);
+        PassResponses(game);
         Assert.True(margaret.Tapped);
         Assert.Equal(player.MaxHp - 2, player.Hp);
         Assert.Equal(game.State.TurnSerial, player.LegionEffectHealForbiddenUntilTurn);

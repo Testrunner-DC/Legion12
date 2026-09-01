@@ -1452,9 +1452,11 @@ public sealed partial class L12GameEngine
         var pendingFactionPlayer = State.Players.FirstOrDefault(player => player.UsedAbilities.Contains("pending:factionZeroRecovery"));
         if (pendingFactionPlayer is not null)
         {
-            CreatePrompt(pendingFactionPlayer.PlayerIndex, "option", "我方士气为0张，是否发动天廷阵营效果追加2张休整士气？",
-                ["yes", "no"], 1, 1, "faction-zero-recovery", isPrivate: false,
-                data: new Dictionary<string, string> { ["choiceMode"] = "instant" });
+            if (!State.PendingPrompts.Any(prompt => prompt.Continuation == "faction-zero-recovery"
+                    && prompt.PlayerIndex == pendingFactionPlayer.PlayerIndex))
+                CreatePrompt(pendingFactionPlayer.PlayerIndex, "option", "我方士气为0张，是否发动天廷阵营效果追加2张休整士气？",
+                    ["yes", "no"], 1, 1, "faction-zero-recovery", isPrivate: false,
+                    data: new Dictionary<string, string> { ["choiceMode"] = "instant" });
             return;
         }
         if (State.PendingDefense is not null)

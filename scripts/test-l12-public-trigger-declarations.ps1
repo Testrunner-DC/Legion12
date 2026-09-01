@@ -39,7 +39,8 @@ foreach ($cardId in @(
     'S02-04M1', 'S02-0523', 'S01-02M3', 'S02-02M1', 'S02-01S1',
     'S01-0105', 'S01-0207', 'S01-0208', 'S01-0309', 'S01-0021', 'S01-0213',
     'S01-0223', 'S01-0320', 'S01-0224', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407',
-    'S01-0204', 'S01-0414', 'S01-0417'
+    'S01-0204', 'S01-0414', 'S01-0417',
+    'S02-0304', 'S02-0305', 'S02-05M1', 'S02-06M1', 'S02-0102', 'S02-06S4'
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
 }
@@ -96,6 +97,12 @@ Assert-Contains $plans 'ReturnSelectedMoraleById(player, [costId], 1)' 'Liu Bei 
 Assert-Contains $plans 'DamageMaster(candidate.Controller, 1,' 'Brynhild must pay the known master-damage cost before stack entry.'
 Assert-Contains $plans 'candidate.Data["preserveIndependentStack"] = "true"' 'Immortal Gift must preserve its independent draw segment when summon declaration is absent.'
 Assert-Contains $plans 'activation.DeclaredValues["entryCard"] = ["mode:none"]' 'Immortal Gift invalid summon segment must cancel independently.'
+Assert-Contains $plans 'Batch6GAPublicTriggerPlan' 'Batch 6G-A triggers need one shared data-driven declaration route.'
+Assert-Contains $plans 'margaretMasterDamage' 'Margaret damage trigger must predeclare and prepay its rest cost.'
+Assert-Contains $allRuntime 'margaret-heal-lock' 'Margaret heal and heal-lock sentences must remain independent stack segments.'
+Assert-Contains $plans 'cleanupReservation' 'Optional once-per-turn triggers must reserve pending state before player declaration.'
+Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Committed optional triggers must consume their once before stack entry.'
+Assert-Contains $plans 'card.Tapped && !card.IsGodPower' 'Artemis must declare an exact rested ordinary morale target.'
 Assert-Contains $kernel 'SourceSnapshot = CaptureLastKnownSourceSnapshot(sourceSnapshot ?? card)' 'Every generated trigger candidate must carry a last-known source snapshot.'
 Assert-Contains $kernel 'FindAuthoritativeCard(candidate.SourceInstanceId)' 'Trigger declarations must resolve sources through the internal authoritative lookup.'
 Assert-Contains $plans 'owner-unused-slot' 'Tomb Construct must declare owner battlefield slots before stack entry.'
@@ -161,6 +168,15 @@ foreach ($legacyTrialPrompt in @(
 )) {
     if ($allRuntime.IndexOf($legacyTrialPrompt, [StringComparison]::Ordinal) -ge 0) {
         throw "Legacy post-stack trial declaration continuation returned: $legacyTrialPrompt"
+    }
+}
+
+foreach ($legacyBatch6GAPrompt in @(
+    's2-margaret-entry-mill', 's2-margaret-master-damage', 's2-ring-draw',
+    's2-morrigan-enemy-death', 's2-limu-morale', 's2-grail-round-table-rune'
+)) {
+    if ($allRuntime.IndexOf($legacyBatch6GAPrompt, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack Batch 6G-A trigger continuation returned: $legacyBatch6GAPrompt"
     }
 }
 

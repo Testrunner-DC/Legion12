@@ -2416,3 +2416,12 @@
 - 规则边界：推进与6B“完成试炼”是两套事件。`AdvanceTrial` 达到8只更新进度，不设 `TrialCompleted`、不发布 `trial-complete`；玩家仍须另行发动完成试炼。来源或效果失效不返还已支付费用；兰斯洛特击杀的全局推进/得符文声明在来源离场后仍结算；安格斯mandatory once在被无效后仍消费；阿瓦隆推进与得符文保持卡面同一句的单一效果段。
 - 红绿、兼容与门禁：新增 `AtomicReviewBatch6FRegressionTests` 首轮1/20绿、19/20红，唯一绿项是推进到8不自动完成控制组；最终专项20/20、与6B合并28/28、6B/Latest/S2兼容230/230。Focused、Batch、Release规则均723/723，Release平台60/60；公共触发门禁已锁定6张卡、通常推进提交/结算、芬恩/Avalon续接、费用预付与旧Prompt清零；原子248/248、legacy/text inference均0、`cardConditional=198`、无运行时入口0，UI契约171/171、卡图19项/248张、优化卡图248/248、Vue TypeScript/Vite生产构建及提交级无部署发布包全部通过。首次Release准确拦截`mode:rune`缺公共自然语言标签，补齐后完整复验通过；仅有既有NU1900离线漏洞元数据警告，不影响还原、编译与测试。
 - 修改与发布边界：新增试炼推进公共计划与6F回归；修改主动提交、触发计划、回合开始恢复、GM阶段推进、S2旧结算分支、兼容测试、静态门禁、矩阵导出与文档。严格不混6G；无新增裁定项；执行代理不提交、不推送、不部署，完成完整验证后交主代理复核。
+
+### ATOMIC-20260901-182 第六批6G-A可选触发公开声明、次数预留与独立效果段
+
+- 现象与根因：`S02-0304`〈玛格丽特一世〉两项、`S02-0305`〈安德华拉诺特〉、`S02-05M1`〈阿尔忒弥斯〉、`S02-06M1`〈莫瑞甘〉、`S02-0102`〈李牧〉及完成`S02-06S4`〈寻找圣杯之旅〉后的圆桌骑士触发，仍在堆叠结算期首次询问是否发动或选择公开士气；可选回合一次缺少候选期保留，可重复生成；玛格丽特回血与随后封锁回血串行结算。全量历史回归还暴露：拒绝最后一个可选触发后不进入空闲收尾，天灾检查被永久挂起；天廷士气归零提示可能重复创建；阿尔忒弥斯翻面错误把休整士气变为活跃神力。
+- 公共修复：在 `L12PublicTriggerEffectPlans` 增加6G-A数据路由，七项触发全部经TriggerBatch与同一`PendingActivation`完成公开模式、玛格丽特休整费用和阿尔忒弥斯确切休整普通士气目标声明。安德华拉诺特、阿尔忒弥斯、莫瑞甘、李牧与圣杯触发使用pending→final次数预留：候选建立先占位，拒绝释放，合法提交在入栈前转为final；之后即使被无效、来源离场或结算目标失效也不恢复。结算器只读取不可变`declared:*`，不再创建旧yes/no Prompt。
+- 独立段与公共收尾：玛格丽特冒号前休整费用在入栈前支付且不返还，回血与本回合“军团效果无法增加主宰血量”分别作为两个可响应、可无效的复合段。`AdvanceTriggerBatches`在没有堆叠时复用`TrySettleScheduledDisasterIfIdle`，确保拒绝/失效最后触发后恢复天灾及堆叠收尾；天廷归零提示按玩家和continuation去重。阿尔忒弥斯改用统一`FlipMoraleFace`，翻面不改变活跃/休整状态。
+- 全池扫描与防回滚：扫描所有`HasPublicTriggerDeclarationPlan`、可选once候选、玛格丽特/主宰伤害批次、士气翻面、完成圣杯圆桌触发、天灾延迟标记及旧continuation。扩展`test-l12-public-trigger-declarations.ps1`锁定六张来源卡、pending/final、玛格丽特独立段、阿尔忒弥斯休整普通士气及`s2-margaret-entry-mill/s2-margaret-master-damage/s2-ring-draw/s2-morrigan-enemy-death/s2-limu-morale/s2-grail-round-table-rune`不得回流；自动矩阵标注六张卡的6G-A验收证据。
+- 红绿与验证：新增`AtomicReviewBatch6GARegressionTests`红基线0/14，修复后14/14；旧圣杯/天灾、智慧法典响应圣物触发、莫瑞甘、李牧、阿尔忒弥斯与玛格丽特兼容8/8。Focused、Batch、Release规则均737/737，Release平台60/60；原子审计248/248、legacy case 0、`effectTextInference=0`、`cardConditional=196`、无运行时入口0；公共声明与矩阵门禁、Codex路由、UI契约171项、卡图19项/248张、优化卡图248/248、Vue TypeScript/Vite生产构建、服务端发布包、提交级无部署验证及`git diff --check`全部通过。
+- 修改与发布边界：新增6G-A回归；修改公共触发声明、复合段、S2触发/结算、堆叠空闲收尾、历史回归、静态门禁、矩阵导出与三份状态台账。严格不混入李牧登场隐藏牌库6G-B或6I/6J；按用户长期授权完成最终验证后同步GitHub，本批不部署。

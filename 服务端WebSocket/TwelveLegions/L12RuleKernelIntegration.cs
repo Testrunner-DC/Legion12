@@ -1070,6 +1070,8 @@ public sealed partial class L12GameEngine
         }
         if (!State.IsResolvingStack && State.EffectStack.Count > 0 && State.ResponseWindow is null)
             BeginResponseWindow(State.EffectStack[^1]);
+        else if (State.EffectStack.Count == 0)
+            TrySettleScheduledDisasterIfIdle();
     }
 
     private void ResolveTriggerBatchOrder(L12Prompt prompt, List<string> chosen)

@@ -201,6 +201,11 @@ internal static class L12CompositeEffectPlans
                 new("blood-eagle-debuff", "对方所有军团直到下个我方回合结束前兵力-1000"),
                 new("blood-eagle-recover", "墓地2张【阿斯加德】卡牌分别回到手牌与牌库底部", "mode:recover"),
             ],
+            ["trigger:S02-0304:margaretMasterDamage"] =
+            [
+                new("margaret-heal", "玛格丽特一世：我方主宰增加1点血量"),
+                new("margaret-heal-lock", "玛格丽特一世：随后本回合我方主宰血量无法因军团效果增加"),
+            ],
             ["response:S02-0016"] =
             [
                 new("ruined-ritual", "执行已声明的弃置手牌或登场效果无效模式"),

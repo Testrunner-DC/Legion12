@@ -312,7 +312,21 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             }
             case "artemisDeathFlip" when item.SourceCardId == "S02-05M1":
-                return PromptS2FlipMorale(item, source ?? CreateCard("S02-05M1", item.SourceInstanceId), optional: true, onlyTapped: true);
+            {
+                var morale = player.Morale.FirstOrDefault(card => card.InstanceId == PublicTriggerDeclared(item, "moraleTarget")
+                    && card.Tapped && !card.IsGodPower);
+                if (morale is not null)
+                {
+                    L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true);
+                    AddEvent("morale", item.Controller, "阿尔忒弥斯将声明的休整士气翻转为神力",
+                        source is not null ? [source] : []);
+                }
+                else
+                    AddEvent("effect-cancelled", item.Controller,
+                        "阿尔忒弥斯声明的士气目标已失效；本段取消，已登记的回合次数不恢复");
+                FinishStackItem(item);
+                return true;
+            }
             case "hippolytaRevive" when source?.CardId == "S02-0510":
                 SummonFromAnyPrivateZone(player, item.Data["revive"], item.Data["slot"], tapped: false);
                 FinishStackItem(item); return true;
@@ -320,14 +334,15 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "grailRoundTableRune" when item.SourceCardId == "S02-06S4":
-                CreatePrompt(item.Controller, "optional", "寻找圣杯之旅：我方【圆桌骑士】登场，是否获得1符文？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-grail-round-table-rune", ["yes"] = "获得1符文", ["no"] = "不发动" });
+                L12S2ZoneOps.GainRunes(player, 1);
+                AddEvent("runes", item.Controller, "〈寻找圣杯之旅〉使我方获得1符文",
+                    source is not null ? [source] : []);
+                FinishStackItem(item);
                 return true;
             case "anderstorpRingDraw" when item.SourceCardId == "S02-0305":
-                CreatePrompt(item.Controller, "optional", "安德华拉诺特：我方主宰受到伤害，是否抽取1张牌？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-ring-draw", ["yes"] = "抽取1张牌", ["no"] = "不发动" });
+                if (!Draw(player, 1))
+                    SetWinner(1 - item.Controller, "〈安德华拉诺特〉效果抽牌时牌库为空");
+                FinishStackItem(item);
                 return true;
             case "tsukuyomiFollowMove" when item.SourceCardId == "S02-04M1":
             {
@@ -401,23 +416,6 @@ public sealed partial class L12GameEngine
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
-            case "s2-grail-round-table-rune":
-            {
-                var player = State.Players[item.Controller];
-                var key = $"trigger:grail-round-table:{State.TurnSerial}";
-                var pendingKey = $"{key}:pending";
-                player.UsedAbilities.Remove(pendingKey);
-                if (chosen[0] == "yes" && player.UsedAbilities.Add(key))
-                {
-                    L12S2ZoneOps.GainRunes(player, 1);
-                    AddEvent("runes", item.Controller, "〈寻找圣杯之旅〉使我方获得1符文", FindSource(item) is { } trial ? [trial] : []);
-                }
-                FinishStackItem(item); return true;
-            }
-            case "s2-ring-draw":
-                if (chosen[0] == "yes" && !Draw(State.Players[item.Controller], 1))
-                    SetWinner(1 - item.Controller, "〈安德华拉诺特〉效果抽牌时牌库为空");
-                FinishStackItem(item); return true;
             default:
                 return false;
         }
@@ -451,7 +449,11 @@ public sealed partial class L12GameEngine
         if (State.ActivePlayer != playerIndex || legion.CardType != "legion" || !legion.HasTrait("圆桌骑士")
             || trial is null || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
         return CreateTriggerCandidate(playerIndex, trial, "active", "我方【圆桌骑士】登场时效果",
-            new Dictionary<string, string> { ["ability"] = "grailRoundTableRune", ["entered"] = legion.InstanceId });
+            new Dictionary<string, string>
+            {
+                ["ability"] = "grailRoundTableRune", ["entered"] = legion.InstanceId,
+                ["onceKey"] = key, ["cleanupReservation"] = pendingKey,
+            });
     }
 
     private void QueueS2GrailRoundTableEntry(int playerIndex, L12CardInstance legion)
@@ -464,11 +466,17 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[owner];
         var key = $"trigger:artemis-ranged-death:{State.TurnSerial}";
+        var pendingKey = $"{key}:pending";
         if (player.MasterId != "S02-05M1" || !defeated.LastKnownWasRanged
-            || !player.Morale.Any(card => card.Tapped && !card.IsGodPower) || !player.UsedAbilities.Add(key)) return null;
+            || !player.Morale.Any(card => card.Tapped && !card.IsGodPower)
+            || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard("S02-05M1", $"master-{owner}");
         return CreateTriggerCandidate(owner, master, "active", "我方远程军团阵亡时效果",
-            new Dictionary<string, string> { ["ability"] = "artemisDeathFlip", ["defeated"] = defeated.CardId });
+            new Dictionary<string, string>
+            {
+                ["ability"] = "artemisDeathFlip", ["defeated"] = defeated.CardId,
+                ["onceKey"] = key, ["cleanupReservation"] = pendingKey,
+            });
     }
 
     private void ResolveS2DelayedEndTurnCards(int endingPlayer)
@@ -506,10 +514,16 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         var key = $"trigger:anderstorp-draw:{State.TurnSerial}";
-        if (State.ActivePlayer != playerIndex || player.Relic?.CardId != "S02-0305" || !player.UsedAbilities.Add(key))
+        var pendingKey = $"{key}:pending";
+        if (State.ActivePlayer != playerIndex || player.Relic?.CardId != "S02-0305"
+            || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey))
             return null;
         return CreateTriggerCandidate(playerIndex, player.Relic, "active", "主宰受到伤害时效果",
-            new Dictionary<string, string> { ["ability"] = "anderstorpRingDraw" });
+            new Dictionary<string, string>
+            {
+                ["ability"] = "anderstorpRingDraw",
+                ["onceKey"] = key, ["cleanupReservation"] = pendingKey,
+            });
     }
 
     private void RecordLegionMovement(int playerIndex, L12CardInstance moved, int fromRow, int toRow)
