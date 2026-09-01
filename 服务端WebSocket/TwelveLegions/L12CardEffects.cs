@@ -39,6 +39,7 @@ public sealed partial class L12GameEngine
 
     private void ResolveCardEffect(L12StackItem item)
     {
+        if (TryResolveTrialAdvanceEffect(item)) return;
         // 复合能力拆出的后续独立段已经由前一段指定 atomicFlow；若再次从卡牌根程序
         // 开始执行，会把该 flow 覆盖回第一段并重复提示。后续段直接进入结构化复合路由。
         if (item.Data.GetValueOrDefault("atomicContinuation") != "true"

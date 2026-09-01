@@ -18,6 +18,7 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
 }
 
 $plans = Read-Source 'L12PublicTriggerEffectPlans.cs'
+$trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $kernel = Read-Source 'L12RuleKernelIntegration.cs'
 $counter = Read-Source 'L12S2CounterTactics.cs'
@@ -73,6 +74,23 @@ Assert-Contains $gm 'QueueOrPushTriggeredEffect' 'GM effect entry must not bypas
 Assert-Contains $authority 'QueueOrPushTriggeredEffect' 'Non-hand effect entry must not bypass public declarations.'
 Assert-Contains $kernel 'TryBeginPublicTriggerDeclaration(candidate, source)' 'Trigger candidates must enter the public declaration planner.'
 Assert-Contains $kernel 'TryCompletePublicTriggerDeclaration(candidate, activation)' 'Trigger declarations need a shared atomic completion hook.'
+Assert-Contains $plans 'HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)' 'Trial advances must enter the shared public trigger route.'
+Assert-Contains $plans 'TryBeginTrialAdvanceTriggerDeclaration(candidate, source)' 'Trial trigger choices must be declared before stack entry.'
+Assert-Contains $plans 'TryCompleteTrialAdvanceTriggerDeclaration(candidate, activation)' 'Trial trigger costs must commit before stack entry.'
+foreach ($cardId in @('S02-0602', 'S02-0604', 'S02-0610', 'S02-0614', 'S02-06M2', 'S02-06D1')) {
+    Assert-Contains $trialAdvancePlans $cardId "Trial advance event plan is missing card $cardId."
+}
+foreach ($contract in @(
+    'BeginTrialAdvanceActivation', 'TryCommitTrialAdvanceActivation', 'TryResolveTrialAdvanceEffect',
+    '["trialAdvanceEvent"] = "true"', 'QueueFinnReadyAfterTrial', 'QueueAvalonTurnStart',
+    'player.SpecialZones.Runes--', 'source.Tapped = true', 'FinishStackItem(item)'
+)) {
+    Assert-Contains $trialAdvancePlans $contract "Trial advance event contract is missing: $contract"
+}
+if ($trialAdvancePlans.IndexOf('TrialCompleted = true', [StringComparison]::Ordinal) -ge 0 -or
+    $trialAdvancePlans.IndexOf('QueueCompletedTrialTriggerBatch', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Advancing a trial to 8 must not automatically complete it or publish the Batch 6B completion event.'
+}
 Assert-Contains $plans 'TryConsumeSelectedResources(player, 1' 'Tsukuyomi must commit its declared resource before stack entry.'
 Assert-Contains $plans 'ReturnSelectedMoraleById(player, [costId], 1)' 'Liu Bei must return the declared morale before stack entry.'
 Assert-Contains $plans 'DamageMaster(candidate.Controller, 1,' 'Brynhild must pay the known master-damage cost before stack entry.'
@@ -134,6 +152,15 @@ foreach ($legacyAttackPrompt in @(
 )) {
     if ($allRuntime.IndexOf($legacyAttackPrompt, [StringComparison]::Ordinal) -ge 0) {
         throw "Legacy post-stack attack declaration continuation returned: $legacyAttackPrompt"
+    }
+}
+
+foreach ($legacyTrialPrompt in @(
+    's2-lancelot-entry-charge', 's2-lancelot-kill', 's2-galahad-entry-trial',
+    's2-finn-entry-trial', 's2-finn-entry-ready', 's2-constance-entry', 's2-angus-trial'
+)) {
+    if ($allRuntime.IndexOf($legacyTrialPrompt, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy post-stack trial declaration continuation returned: $legacyTrialPrompt"
     }
 }
 

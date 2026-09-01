@@ -178,6 +178,8 @@ public sealed partial class L12GameEngine
         IReadOnlyCollection<string>? selectedReturnIds = null)
     {
         var player = State.Players[playerIndex];
+        if (TryCommitTrialAdvanceActivation(playerIndex, source, ability) is { } trialAdvanceResult)
+            return trialAdvanceResult;
         var onceKey = ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability);
         if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
             return freeResult;

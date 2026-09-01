@@ -412,7 +412,7 @@ public sealed class CombatTimelineRegressionTests
         Assert.Equal(1, defenderKill.PlayerIndex);
         var runesBefore = game.State.Players[1].SpecialZones.Runes;
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: defenderKill.PromptId,
-            Choice: "rune")).Accepted);
+            Choice: "mode:rune")).Accepted);
 
         var triggerEvents = game.State.Events.Where(entry => entry.Type == "effect-trigger").ToList();
         var attackerKillIndex = triggerEvents.FindIndex(entry => entry.Cards.Any(card => card.InstanceId == attacker.InstanceId)

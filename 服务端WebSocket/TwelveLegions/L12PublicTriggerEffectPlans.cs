@@ -35,7 +35,8 @@ public sealed partial class L12GameEngine
 
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
-        => HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
+        => HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)
+            || HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
             || HasTrialCompletionTriggerDeclarationPlan(cardId, trigger, data)
             || Batch6DPublicTriggerPlan(cardId, trigger) is not null
             || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
@@ -77,6 +78,8 @@ public sealed partial class L12GameEngine
 
     private bool TryBeginPublicTriggerDeclaration(L12TriggerCandidate candidate, L12CardInstance source)
     {
+        if (TryBeginTrialAdvanceTriggerDeclaration(candidate, source))
+            return true;
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         List<L12ActivationSelectionStep>? steps = null;
@@ -473,6 +476,8 @@ public sealed partial class L12GameEngine
 
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
+        if (TryCompleteTrialAdvanceTriggerDeclaration(candidate, activation))
+            return true;
         if (TryCompleteTrialCompletionTriggerDeclaration(candidate, activation))
             return true;
         if (TryCompleteAttackPublicTriggerDeclaration(candidate, activation))

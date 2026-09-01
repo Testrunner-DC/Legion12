@@ -1828,9 +1828,15 @@ public sealed class S2FactionRegressionTests
             Row: 0, Slot: 0)).Accepted);
         PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-constance-entry", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
-            Choice: choice)).Accepted);
+            Choice: choice switch
+            {
+                "rune" => "mode:rune",
+                "trial" => "mode:trial",
+                _ => "mode:none",
+            })).Accepted);
+        PassResponses(game);
 
         Assert.Equal(expectedRunes, player.SpecialZones.Runes);
         Assert.Equal(expectedTapped, constance.Tapped);

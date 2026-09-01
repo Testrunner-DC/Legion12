@@ -546,15 +546,19 @@ public sealed partial class L12GameEngine
         {
             case L12Phase.Disaster:
                 State.Phase = L12Phase.Reset;
-                if (player.MasterId == "S02-06D1")
+                var avalonTurnStartKey = $"trigger:avalon-turn-start:{State.TurnSerial}";
+                if (player.MasterId == "S02-06D1" && player.UsedAbilities.Add(avalonTurnStartKey))
                 {
-                    AdvanceTrial(playerIndex, 1, CreateCard(player.MasterId, $"master-{playerIndex}"));
-                    L12S2ZoneOps.GainRunes(player, 1);
-                    AddEvent("runes", playerIndex, "彼界 阿瓦隆在回合开始时获得1符文");
+                    State.ResumeGmResetAfterStack = true;
+                    QueueAvalonTurnStart(playerIndex);
+                    if (State.ResumeGmResetAfterStack
+                        && (State.EffectStack.Count > 0 || State.PendingPrompts.Count > 0
+                            || State.PendingActivations.Count > 0 || State.PendingTriggerStackCandidates.Count > 0))
+                        return CommandResult.Ok();
+                    if (!State.ResumeGmResetAfterStack) return CommandResult.Ok();
+                    State.ResumeGmResetAfterStack = false;
                 }
-                AddEvent("phase", playerIndex, "执行重置阶段");
-                Untap(player);
-                AddEvent("phase-detail", playerIndex, "将本回合玩家所有可以重置的士气、军团与圣物转为活跃");
+                CompleteGmResetPhase(playerIndex);
                 break;
             case L12Phase.Reset:
                 State.Phase = L12Phase.Draw;
@@ -594,6 +598,15 @@ public sealed partial class L12GameEngine
 
         AddEvent("gm", playerIndex, $"[GM] 推进至{GmPhaseLabel(State.Phase)}");
         return CommandResult.Ok();
+    }
+
+    private void CompleteGmResetPhase(int playerIndex)
+    {
+        var player = State.Players[playerIndex];
+        State.Phase = L12Phase.Reset;
+        AddEvent("phase", playerIndex, "执行重置阶段");
+        Untap(player);
+        AddEvent("phase-detail", playerIndex, "将本回合玩家所有可以重置的士气、军团与圣物转为活跃");
     }
 
     private bool TryCreateGmCard(L12GmCommand command, out L12CardInstance card, out string error)

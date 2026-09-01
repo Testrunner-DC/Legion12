@@ -2408,3 +2408,11 @@
 - 同类扫描与防回滚：扫描全部 `SummonFromAnyPrivateZone`、`SummonFromHand`、`MoveOwnCardToSlot`、直接 `Field[row][slot]=...`、TriggerBatch同槽声明及战场/圣物/试炼/额外区落位。静态门禁锁定先验证后移除/赋格、唯一实例、渗透者跨场边界、9卡测试证据、比约恩预付标记及旧裸覆盖不得恢复。
 - 红绿与验证：新增专项首轮1/14绿、13/14红，修复后14/14；S1/S2与6D/6E兼容191/191。Focused、Batch、Release规则均703/703，Release平台60/60；新私区登场门禁、原子248/248、legacy/text inference为0、`cardConditional=198`、`cardSwitchArm=67`、无实战入口0，UI契约171/171、卡图19项/248张、优化卡图248/248、Vue TypeScript/Vite生产构建及提交级无部署发布包全部通过。仅有NuGet漏洞元数据因网络不可访问的既有NU1900警告，不影响还原、编译和测试。
 - 文件与发布边界：新增6E回归和私区登场门禁；修改公共私区召唤、S1/S2结算、TriggerCandidate提交、验证入口、矩阵导出、原子基线与状态/样例/台账。本批无规则裁定项，严格不混6F+；执行代理不提交、推送或部署，交主代理复核，本批没有部署授权。
+
+### ATOMIC-20260901-181 第六批6F试炼推进公共事件、公开声明与费用原子化
+
+- 现象与根因：8张具有 TrialValue 的军团通过通常行动发动试炼时，旧入口直接休整并修改进度，没有堆叠或响应；兰斯洛特、加拉哈德、芬恩与康斯坦丝的登场/击杀效果在原触发结算后才询问公开模式并支付休整/符文费用。芬恩推进后的转活跃仍是同一旧 continuation；安格斯战术成功后错误询问是否推进；阿瓦隆在普通与GM回合开始流程中均直接推进并获得符文。
+- 公共修复：新增 `L12TrialAdvanceEffectPlans`，把通常推进、四张登场/击杀、芬恩后续、安格斯与阿瓦隆统一为带 `trialAdvanceEvent` 的可响应堆叠事件。触发模式通过 `L12PublicTriggerEffectPlans`/TriggerBatch/PendingActivation 声明；休整与符文费用在入栈前原子支付，结算只消费不可变模式和数值。芬恩转活跃成为独立 `trial-advance-followup` 候选并重验真实来源；阿瓦隆的普通/GM阶段流只在该段结算后恢复重置。旧7种结算期 Prompt/continuation 已从运行时清零。
+- 规则边界：推进与6B“完成试炼”是两套事件。`AdvanceTrial` 达到8只更新进度，不设 `TrialCompleted`、不发布 `trial-complete`；玩家仍须另行发动完成试炼。来源或效果失效不返还已支付费用；兰斯洛特击杀的全局推进/得符文声明在来源离场后仍结算；安格斯mandatory once在被无效后仍消费；阿瓦隆推进与得符文保持卡面同一句的单一效果段。
+- 红绿、兼容与门禁：新增 `AtomicReviewBatch6FRegressionTests` 首轮1/20绿、19/20红，唯一绿项是推进到8不自动完成控制组；最终专项20/20、与6B合并28/28、6B/Latest/S2兼容230/230。Focused、Batch、Release规则均723/723，Release平台60/60；公共触发门禁已锁定6张卡、通常推进提交/结算、芬恩/Avalon续接、费用预付与旧Prompt清零；原子248/248、legacy/text inference均0、`cardConditional=198`、无运行时入口0，UI契约171/171、卡图19项/248张、优化卡图248/248、Vue TypeScript/Vite生产构建及提交级无部署发布包全部通过。首次Release准确拦截`mode:rune`缺公共自然语言标签，补齐后完整复验通过；仅有既有NU1900离线漏洞元数据警告，不影响还原、编译与测试。
+- 修改与发布边界：新增试炼推进公共计划与6F回归；修改主动提交、触发计划、回合开始恢复、GM阶段推进、S2旧结算分支、兼容测试、静态门禁、矩阵导出与文档。严格不混6G；无新增裁定项；执行代理不提交、不推送、不部署，完成完整验证后交主代理复核。

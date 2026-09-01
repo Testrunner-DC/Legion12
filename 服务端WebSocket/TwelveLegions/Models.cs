@@ -575,6 +575,7 @@ public sealed class L12GameState
     public L12ResponseWindow? ResponseWindow { get; set; }
     public bool IsResolvingStack { get; set; }
     public bool ResumeTurnStartAfterStack { get; set; }
+    public bool ResumeGmResetAfterStack { get; set; }
     /// <summary>防止同一回合开始流程因同步结算重入而重复执行同一张天灾的回合开始效果。</summary>
     public int LastTurnStartDisasterEffectTurn { get; set; } = -1;
     public string? LastTurnStartDisasterEffectInstanceId { get; set; }

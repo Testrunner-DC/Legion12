@@ -725,11 +725,16 @@ public sealed partial class L12GameEngine
         if (State.Phase == L12Phase.GameOver) return;
 
         State.Phase = L12Phase.Reset;
-        if (player.MasterId == "S02-06D1")
+        var avalonTurnStartKey = $"trigger:avalon-turn-start:{State.TurnSerial}";
+        if (player.MasterId == "S02-06D1" && player.UsedAbilities.Add(avalonTurnStartKey))
         {
-            AdvanceTrial(playerIndex, 1, CreateCard(player.MasterId, $"master-{playerIndex}"));
-            L12S2ZoneOps.GainRunes(player, 1);
-            AddEvent("runes", playerIndex, "彼界 阿瓦隆在回合开始时获得1符文");
+            State.ResumeTurnStartAfterStack = true;
+            QueueAvalonTurnStart(playerIndex);
+            if (!State.ResumeTurnStartAfterStack) return;
+            if (State.EffectStack.Count > 0 || State.PendingPrompts.Count > 0
+                || State.PendingActivations.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+                return;
+            State.ResumeTurnStartAfterStack = false;
         }
         AddEvent("phase", playerIndex, "执行重置阶段");
         Untap(player);

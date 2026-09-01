@@ -213,15 +213,16 @@ public sealed partial class L12GameEngine
         => EmptySlots(battlefield).Where(choice => State.ActiveDisaster?.CardId != "S01-DS03"
             || !choice.StartsWith("1:", StringComparison.Ordinal));
 
-    private void AdvanceTrial(int playerIndex, int count, L12CardInstance? source = null)
+    private bool AdvanceTrial(int playerIndex, int count, L12CardInstance? source = null)
     {
         var player = State.Players[playerIndex];
         var trial = player.SpecialZones.Trials.FirstOrDefault(card => !card.TrialCompleted);
-        if (trial is null || count <= 0) return;
+        if (trial is null || count <= 0) return false;
         var before = trial.TrialProgress;
         trial.TrialProgress = Math.Min(8, trial.TrialProgress + count);
         player.SpecialZones.TrialLevel = trial.TrialProgress;
         AddEvent("trial", playerIndex, $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}", source ?? trial);
+        return trial.TrialProgress > before;
     }
 
     private bool SourceIsFieldCard(int playerIndex, string? instanceId, out L12CardInstance card)
@@ -295,35 +296,10 @@ public sealed partial class L12GameEngine
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-joan-master-guard" });
                 return true;
             }
-            case "加拉哈德":
-                CreatePrompt(item.Controller, "optional", "加拉哈德：是否休整并发动试炼（试炼值2）？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-galahad-entry-trial", ["yes"] = "发动试炼", ["no"] = "不发动",
-                    });
-                return true;
-            case "兰斯洛特":
-                if (player.SpecialZones.Runes < 1) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "兰斯洛特：是否消耗1符文获得冲锋？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-lancelot-entry-charge", ["yes"] = "消耗1符文并获得冲锋", ["no"] = "不发动",
-                    });
-                return true;
-            case "芬恩":
-                CreatePrompt(item.Controller, "optional", "芬恩：是否休整并发动试炼（试炼值1）？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-finn-entry-trial", ["yes"] = "发动试炼", ["no"] = "不发动",
-                    });
-                return true;
-            case "康斯坦丝":
-                CreatePrompt(item.Controller, "option", "康斯坦丝：选择登场时效果", ["rune", "trial", "skip"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-constance-entry", ["rune"] = "获得1符文",
-                        ["trial"] = "休整并发动试炼（试炼值1）", ["skip"] = "不发动",
-                    });
+            // Batch 6F：四张牌的公开模式与冒号前休整/符文费用均已在触发候选阶段声明。
+            // 合法 StackItem 会先由 TryResolveTrialAdvanceEffect 消费；这里仅关闭无声明的旧旁路。
+            case "加拉哈德" or "兰斯洛特" or "芬恩" or "康斯坦丝":
+                FinishStackItem(item);
                 return true;
             case "罗宾汉":
             {
@@ -781,11 +757,8 @@ public sealed partial class L12GameEngine
             return true;
         }
         if (card.CardId != "S02-0602" || item.Data.GetValueOrDefault("killed") != "true") return false;
-        CreatePrompt(item.Controller, "option", "兰斯洛特击杀军团：可选择试炼+1或获得1符文", ["trial", "rune", "skip"], 1, 1,
-            "card-effect", item.StackItemId, data: new Dictionary<string, string>
-            {
-                ["action"] = "s2-lancelot-kill", ["trial"] = "试炼+1", ["rune"] = "获得1符文", ["skip"] = "不发动",
-            });
+        // Batch 6F：合法击杀候选已携带不可变公开模式并由统一推进事件结算。
+        FinishStackItem(item);
         return true;
     }
 
@@ -912,19 +885,7 @@ public sealed partial class L12GameEngine
                 "选择我方1张【晋升者】以外的【奥林匹斯】军团");
         }
         if (ability == "trialAdvance" && source.TrialValue > 0)
-        {
-            if (source.Tapped) return CommandResult.Reject("该军团必须为活跃状态");
-            if (source.SummonRound >= State.Round) return CommandResult.Reject("登场回合不能通过通常行动发动试炼");
-            if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
-            // 规则书“阵营机制—试炼”没有通用的回合一次限制。军团被其他效果重新转为活跃后可再次试炼；
-            // 仅〈芬恩〉自己的卡面会在消耗符文转为活跃时明确写入本回合禁止再次试炼。
-            if (player.UsedAbilities.Contains($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}"))
-                return CommandResult.Reject("该军团因卡牌效果本回合无法再次发动试炼");
-            source.Tapped = true;
-            AdvanceTrial(playerIndex, source.TrialValue, source);
-            AddEvent("trial-action", playerIndex, $"{source.Name}发动试炼（试炼值{source.TrialValue}）", source);
-            return CommandResult.Ok();
-        }
+            return BeginTrialAdvanceActivation(playerIndex, source);
         if (ability == "godPowerDraw" && source.CardId == "S02-05C1")
         {
             if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("该效果本回合已经发动");
@@ -2024,27 +1985,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "s2-lancelot-entry-charge":
-                if (chosen[0] == "yes" && player.SpecialZones.Runes >= 1
-                    && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var lancelot))
-                {
-                    L12S2ZoneOps.SpendRunes(player, 1);
-                    lancelot.HasCharge = true;
-                    AddEvent("effect", item.Controller, "兰斯洛特消耗1符文获得冲锋", lancelot);
-                }
-                FinishStackItem(item);
-                return true;
-            case "s2-lancelot-kill":
-                if (chosen[0] == "trial") AdvanceTrial(item.Controller, 1, FindSource(item));
-                else if (chosen[0] == "rune")
-                {
-                    L12S2ZoneOps.GainRunes(player, 1);
-                    var killSource = FindSource(item);
-                    if (killSource is null) AddEvent("runes", item.Controller, "兰斯洛特击杀后获得1符文");
-                    else AddEvent("runes", item.Controller, "兰斯洛特击杀后获得1符文", killSource);
-                }
-                FinishStackItem(item);
-                return true;
             case "s2-robin-summon-squire":
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
                 BeginQueuedSummons(item, [chosen[0]], tapped: false, "罗宾汉：选择〈侍从骑士〉活跃登场的位置");
@@ -2058,59 +1998,6 @@ public sealed partial class L12GameEngine
                         AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "克劳迪娅");
                         AddEvent("effect", item.Controller, $"克劳迪娅使{target.Name}本回合兵力-2000", target);
                     }
-                }
-                FinishStackItem(item);
-                return true;
-            case "s2-galahad-entry-trial":
-                if (chosen[0] == "yes" && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var galahad))
-                {
-                    galahad.Tapped = true;
-                    AdvanceTrial(item.Controller, galahad.TrialValue, galahad);
-                }
-                FinishStackItem(item);
-                return true;
-            case "s2-finn-entry-trial":
-                if (chosen[0] != "yes" || !SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var finn))
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                finn.Tapped = true;
-                AdvanceTrial(item.Controller, finn.TrialValue, finn);
-                if (player.SpecialZones.Runes < 1)
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                CreatePrompt(item.Controller, "optional", "芬恩发动试炼后：是否消耗1符文将其转为活跃？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-finn-entry-ready", ["yes"] = "消耗1符文并转为活跃", ["no"] = "保持休整",
-                    });
-                return true;
-            case "s2-finn-entry-ready":
-                if (chosen[0] == "yes" && player.SpecialZones.Runes >= 1
-                    && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var readyFinn))
-                {
-                    L12S2ZoneOps.SpendRunes(player, 1);
-                    readyFinn.Tapped = false;
-                    player.UsedAbilities.Add($"trial-card-lock:{readyFinn.InstanceId}:{State.TurnSerial}");
-                    AddEvent("effect", item.Controller, "芬恩消耗1符文转为活跃，本回合无法再次发动试炼", readyFinn);
-                }
-                FinishStackItem(item);
-                return true;
-            case "s2-constance-entry":
-                if (chosen[0] == "rune")
-                {
-                    L12S2ZoneOps.GainRunes(player, 1);
-                    var source = FindSource(item);
-                    if (source is null) AddEvent("runes", item.Controller, "康斯坦丝使我方获得1符文");
-                    else AddEvent("runes", item.Controller, "康斯坦丝使我方获得1符文", source);
-                }
-                else if (chosen[0] == "trial" && SourceIsFieldCard(item.Controller, item.SourceInstanceId, out var constance))
-                {
-                    constance.Tapped = true;
-                    AdvanceTrial(item.Controller, constance.TrialValue, constance);
                 }
                 FinishStackItem(item);
                 return true;

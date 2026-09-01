@@ -111,6 +111,7 @@ try {
         '^scripts/test-l12-public-trigger-declarations\.ps1$',
         '^scripts/test-l12-private-zone-summon-transactions\.ps1$',
         '(^|/)L12PublicTriggerEffectPlans\.cs$',
+        '(^|/)L12TrialAdvanceEffectPlans\.cs$',
         '(^|/)L12RuleKernelIntegration\.cs$',
         '(^|/)L12S1FactionEffects\.cs$',
         '(^|/)L12S1ExtendedEffects\.cs$',

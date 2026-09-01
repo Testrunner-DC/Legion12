@@ -317,9 +317,7 @@ public sealed partial class L12GameEngine
                 SummonFromAnyPrivateZone(player, item.Data["revive"], item.Data["slot"], tapped: false);
                 FinishStackItem(item); return true;
             case "angusTacticTrial" when item.SourceCardId == "S02-06M2":
-                CreatePrompt(item.Controller, "optional", "安格斯·麦·奥格：我方战术效果结算成功，是否使试炼+1？",
-                    ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-angus-trial", ["yes"] = "试炼+1", ["no"] = "不发动" });
+                FinishStackItem(item);
                 return true;
             case "grailRoundTableRune" when item.SourceCardId == "S02-06S4":
                 CreatePrompt(item.Controller, "optional", "寻找圣杯之旅：我方【圆桌骑士】登场，是否获得1符文？",
@@ -403,9 +401,6 @@ public sealed partial class L12GameEngine
     {
         switch (prompt.Data.GetValueOrDefault("action"))
         {
-            case "s2-angus-trial":
-                if (chosen[0] == "yes") AdvanceTrial(item.Controller, 1, CreateCard("S02-06M2", $"master-{item.Controller}"));
-                FinishStackItem(item); return true;
             case "s2-grail-round-table-rune":
             {
                 var player = State.Players[item.Controller];

@@ -570,11 +570,9 @@ public sealed class LatestBugRegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ambushTarget.PromptId,
             Choice: buffTarget.InstanceId)).Accepted);
         PassResponses(game);
-        var angusPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-angus-trial", angusPrompt.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: angusPrompt.PromptId,
-            Choice: "yes")).Accepted);
         Assert.Equal(1, trial.TrialProgress);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-angus-trial");
     }
 
     [Fact]
