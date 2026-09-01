@@ -471,7 +471,8 @@ public sealed partial class L12GameEngine
                 var declaredScarab = PublicTriggerDeclared(item, "entryCard");
                 if (!string.IsNullOrWhiteSpace(declaredScarab))
                 {
-                    SummonFromAnyPrivateZone(player, declaredScarab, PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, declaredScarab,
+                        PublicTriggerDeclared(item, "entrySlot"), tapped: false);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -798,7 +799,8 @@ public sealed partial class L12GameEngine
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
                     var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    if (selected.Length == 2) SummonFromAnyPrivateZone(player, selected[0], selected[1], tapped: false);
+                    if (selected.Length == 2)
+                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1], tapped: false);
                     FinishStackItem(item); return true;
                 }
                 var choices = player.Hand.Where(candidate => candidate.CardType == "legion" && candidate.HasTrait("圆桌骑士") && candidate.CurrentCost <= 4)
@@ -842,7 +844,8 @@ public sealed partial class L12GameEngine
                 var declaredGuard = PublicTriggerDeclared(item, "entryCard");
                 if (!string.IsNullOrWhiteSpace(declaredGuard))
                 {
-                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, declaredGuard,
+                        PublicTriggerDeclared(item, "entrySlot"), tapped: false);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -1651,8 +1654,12 @@ public sealed partial class L12GameEngine
         if (ability == "scarabSummon" && source?.CardId == "S02-0205")
         {
             var scarab = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0201");
-            if (scarab is not null && EmptySlots(player).Contains(item.Data.GetValueOrDefault("target") ?? string.Empty))
-                SummonFromAnyPrivateZone(player, scarab.InstanceId, item.Data["target"], tapped: false);
+            if (scarab is null)
+                AddEvent("effect-cancelled", item.Controller,
+                    "黄金圣甲虫声明的增殖甲虫已失效；已休整且本回合次数不返还");
+            else
+                _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, scarab.InstanceId,
+                    item.Data.GetValueOrDefault("target") ?? string.Empty, tapped: false);
             FinishStackItem(item);
             return true;
         }

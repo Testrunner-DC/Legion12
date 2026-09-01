@@ -130,8 +130,9 @@ public sealed partial class L12GameEngine
             case "阿伊":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entryCard")))
                 {
-                    SummonFromAnyPrivateZone(player, PublicTriggerDeclared(item, "entryCard"),
-                        PublicTriggerDeclared(item, "entrySlot"), tapped: true);
+                    _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
+                        PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
+                        tapped: true);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -182,8 +183,9 @@ public sealed partial class L12GameEngine
             {
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entryCard")))
                 {
-                    SummonFromAnyPrivateZone(player, PublicTriggerDeclared(item, "entryCard"),
-                        PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
+                        PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
+                        tapped: false);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -334,7 +336,8 @@ public sealed partial class L12GameEngine
                 if (item.Data.TryGetValue("declaredTargets", out var declared))
                 {
                     var selected = declared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    if (selected.Length == 2) SummonFromAnyPrivateZone(player, selected[0], selected[1], tapped: false);
+                    if (selected.Length == 2)
+                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1], tapped: false);
                     FinishStackItem(item); return true;
                 }
                 var choices = player.Graveyard.Where(candidate => candidate.CardType == "legion" && candidate.Faction == "taiyangcheng" && candidate.CurrentCost <= 2)
@@ -354,14 +357,22 @@ public sealed partial class L12GameEngine
                 if (item.Data.TryGetValue("declaredGraveOrder", out var declaredGraveOrder)
                     && item.Data.TryGetValue("declaredSlot", out var declaredBjornSlot))
                 {
-                    var ordered = declaredGraveOrder.Split('|', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
-                        .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
-                    if (ordered.Length == 4)
+                    var costsPaid = item.Data.GetValueOrDefault("bjornCostsPrepaid") == "true";
+                    if (!costsPaid)
                     {
-                        MoveGraveToLibraryBottom(player, ordered);
-                        SummonFromAnyPrivateZone(player, card.InstanceId, declaredBjornSlot, tapped: true);
+                        var ordered = declaredGraveOrder.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(id => player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == id
+                                && CanEnterHandOrLibrary(candidate)))
+                            .Where(candidate => candidate is not null).Cast<L12CardInstance>().ToArray();
+                        if (ordered.Length == 4)
+                        {
+                            MoveGraveToLibraryBottom(player, ordered);
+                            costsPaid = true;
+                        }
                     }
+                    if (costsPaid)
+                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
+                            declaredBjornSlot, tapped: true);
                     FinishStackItem(item); return true;
                 }
                 if (player.Graveyard.Count < 4 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
@@ -379,7 +390,8 @@ public sealed partial class L12GameEngine
                 if (item.Data.TryGetValue("declaredTargets", out var erikDeclared))
                 {
                     var selected = erikDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    if (selected.Length == 2) SummonFromAnyPrivateZone(player, selected[0], selected[1], tapped: false);
+                    if (selected.Length == 2)
+                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1], tapped: false);
                     FinishStackItem(item); return true;
                 }
                 SummonAsgardFromGrave(item, 3); return true;
@@ -1512,26 +1524,67 @@ public sealed partial class L12GameEngine
     private void PromptFirstEmptySlot(L12StackItem item, string action, string text)
         => CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[item.Controller]), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
 
-    private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice, bool tapped)
+    private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
+        string instanceId, string slotChoice, bool tapped)
     {
-        var fromHand = player.Hand.Any(candidate => candidate.InstanceId == instanceId);
-        var fromLibrary = player.Library.Any(candidate => candidate.InstanceId == instanceId);
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId)
-            ?? player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId)
-            ?? player.Library.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
-        if (card is null) return;
-        player.Hand.Remove(card); player.Graveyard.Remove(card); player.Library.Remove(card); card.OwnerIndex ??= player.PlayerIndex;
-        var (row, slot) = ParseSlot(slotChoice); card.Tapped = tapped; card.SummonRound = State.Round; player.Field[row][slot] = card;
-        AddEvent("put", player.PlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
-        ApplyDisasterLevelOnEntry(player.PlayerIndex, card, deferTriggerUntilStackSettles: true);
+        if (destinationPlayerIndex < 0 || destinationPlayerIndex >= State.Players.Length)
+        {
+            AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场战场已失效；仅取消本次登场");
+            return false;
+        }
+
+        var destination = State.Players[destinationPlayerIndex];
+        if (!EmptySlots(destination).Contains(slotChoice, StringComparer.OrdinalIgnoreCase))
+        {
+            AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场位置已失效；不覆盖、不改选，仅取消本次登场");
+            return false;
+        }
+
+        var matches = sourceOwner.Hand.Concat(sourceOwner.Graveyard).Concat(sourceOwner.Library)
+            .Where(candidate => candidate.InstanceId == instanceId).ToArray();
+        if (matches.Length != 1 || !IsFieldLegion(matches[0]))
+        {
+            AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场卡牌真实实例已失效；仅取消本次登场");
+            return false;
+        }
+
+        var card = matches[0];
+        if (!EffectEntryBattlefieldChoices(sourceOwner.PlayerIndex, card).Contains(destinationPlayerIndex))
+        {
+            AddEvent("effect-cancelled", sourceOwner.PlayerIndex,
+                "该军团不能在其他玩家战场登场；仅取消本次登场");
+            return false;
+        }
+        var fromHand = sourceOwner.Hand.Contains(card);
+        var fromLibrary = sourceOwner.Library.Contains(card);
+        var (row, slot) = ParseSlot(slotChoice);
+        if (destination.Field[row][slot] is not null)
+        {
+            AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场位置已失效；不覆盖、不改选，仅取消本次登场");
+            return false;
+        }
+
+        sourceOwner.Hand.Remove(card);
+        sourceOwner.Graveyard.Remove(card);
+        sourceOwner.Library.Remove(card);
+        card.OwnerIndex ??= sourceOwner.PlayerIndex;
+        card.Tapped = tapped;
+        card.SummonRound = State.Round;
+        destination.Field[row][slot] = card;
+        AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        ApplyDisasterLevelOnEntry(destinationPlayerIndex, card, deferTriggerUntilStackSettles: true);
         if (fromHand)
         {
             if (HasImmediateEffect(card, "enter"))
-                QueueOrPushTriggeredEffect(player.PlayerIndex, card, "enter", "【登场时】效果");
-            QueueS2GrailRoundTableEntry(player.PlayerIndex, card);
+                QueueOrPushTriggeredEffect(destinationPlayerIndex, card, "enter", "【登场时】效果");
+            QueueS2GrailRoundTableEntry(destinationPlayerIndex, card);
         }
-        else QueueNonHandEntry(player.PlayerIndex, card, fromLibrary ? "library" : "graveyard");
+        else QueueNonHandEntry(destinationPlayerIndex, card, fromLibrary ? "library" : "graveyard");
+        return true;
     }
+
+    private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice, bool tapped)
+        => _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice, tapped);
 
     private void MoveOwnCardToSlot(L12PlayerState player, string instanceId, string slotChoice)
     {

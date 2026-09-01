@@ -109,6 +109,7 @@ try {
     )
     $publicTriggerChanged = Test-AnyPath @(
         '^scripts/test-l12-public-trigger-declarations\.ps1$',
+        '^scripts/test-l12-private-zone-summon-transactions\.ps1$',
         '(^|/)L12PublicTriggerEffectPlans\.cs$',
         '(^|/)L12RuleKernelIntegration\.cs$',
         '(^|/)L12S1FactionEffects\.cs$',
@@ -172,6 +173,8 @@ try {
             (Join-Path $repoRoot "scripts\test-l12-hand-play-declarations.ps1")
         Invoke-CheckedPowerShellScript "Trial completion TriggerBatch and declaration guard" `
             (Join-Path $repoRoot "scripts\test-l12-trial-completion-declarations.ps1")
+        Invoke-CheckedPowerShellScript "Private-zone summon resolution transaction guard" `
+            (Join-Path $repoRoot "scripts\test-l12-private-zone-summon-transactions.ps1")
     }
 
     if ($configChanged) {

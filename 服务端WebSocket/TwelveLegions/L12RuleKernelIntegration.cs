@@ -1239,8 +1239,8 @@ public sealed partial class L12GameEngine
         }
         else if (candidate.SourceCardId == "S01-0305")
         {
-            var graveCards = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId)
-                .Select(card => card.InstanceId).ToList();
+            var graveCards = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
+                    && CanEnterHandOrLibrary(card)).Select(card => card.InstanceId).ToList();
             steps.Add(TriggerStep("order", "勇士比约恩：选择墓地4张牌并决定返回牌库底部的顺序；完成声明后主宰受到1点伤害",
                 graveCards, 4, 4));
             steps.Add(new L12ActivationSelectionStep
@@ -1360,9 +1360,29 @@ public sealed partial class L12GameEngine
         }
         else if (candidate.SourceCardId == "S01-0305" && declared.Count == 5)
         {
+            var player = State.Players[candidate.Controller];
+            var costIds = declared.Take(4).ToArray();
+            var costs = costIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                    && card.InstanceId != candidate.SourceInstanceId && CanEnterHandOrLibrary(card)))
+                .ToArray();
+            var slot = declared[4];
+            if (costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 4
+                || costs.Any(card => card is null)
+                || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+            {
+                State.PendingTriggerStackCandidates.Remove(candidate);
+                AddEvent("ability-rejected", candidate.Controller,
+                    "勇士比约恩声明的墓地费用或登场位置已失效；未支付费用且效果未进入堆叠");
+                AdvanceTriggerBatches();
+                return;
+            }
             DamageMaster(candidate.Controller, 1, "勇士比约恩阵亡效果");
-            candidate.Data["declaredGraveOrder"] = string.Join('|', declared.Take(4));
-            candidate.Data["declaredSlot"] = declared[4];
+            MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>());
+            candidate.Data["declaredGraveOrder"] = string.Join('|', costIds);
+            candidate.Data["declaredSlot"] = slot;
+            candidate.Data["bjornCostsPrepaid"] = "true";
+            AddEvent("cost", candidate.Controller,
+                "勇士比约恩对主宰造成1点伤害，并将墓地4张牌依声明顺序置于牌库底部作为阵亡效果费用");
             declared.Clear();
         }
         candidate.Data["declaredTargets"] = string.Join('|', declared);
