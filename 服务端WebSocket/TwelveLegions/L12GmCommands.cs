@@ -251,6 +251,7 @@ public sealed partial class L12GameEngine
             var inRelicZone = controller.Relic?.InstanceId == card.InstanceId
                 || controller.ExtraRelics.Any(candidate => candidate.InstanceId == card.InstanceId);
             if (!inRelicZone) return CommandResult.Reject("目标卡牌不在可返回手牌的场上区域");
+            var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
 
             if (controller.Relic?.InstanceId == card.InstanceId) controller.Relic = null;
             else controller.ExtraRelics.Remove(card);
@@ -269,7 +270,7 @@ public sealed partial class L12GameEngine
                 owner.Hand.Add(card);
                 AddEvent("leave", controllerIndex, $"{card.Name}被 GM 返回所有者手牌", card);
             }
-            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(controllerIndex, card));
+            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(controllerIndex, sourceSnapshot));
             RecalculateContinuousTroops();
         }
 

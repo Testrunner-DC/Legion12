@@ -40,6 +40,7 @@ $batch6HReviewedCardIds = @(
 )
 $batch6BReviewedCardIds = @('S02-06M2', 'S02-06S3', 'S02-06S4', 'S02-06S5')
 $batch6CReviewedCardIds = @('S01-0014', 'S01-0015', 'S01-0119', 'S01-0419', 'S02-0306')
+$batch6DReviewedCardIds = @('S01-0204', 'S01-0414', 'S01-0417')
 
 $rows = foreach ($card in ($cards | Sort-Object id)) {
     $fine = if ($fineByCard.ContainsKey($card.id)) { @($fineByCard[$card.id] | Sort-Object -Unique) } else { @() }
@@ -69,6 +70,9 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
     }
     if ($batch6CReviewedCardIds -contains $card.id) {
         $review += '；6C复合手牌战术独立段已验收'
+    }
+    if ($batch6DReviewedCardIds -contains $card.id) {
+        $review += '；6D最后已知来源与权威区域事务已验收'
     }
     [pscustomobject]@{
         Id = $card.id

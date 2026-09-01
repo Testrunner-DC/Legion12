@@ -17,6 +17,19 @@ public sealed partial class L12GameEngine
             ["S01-0224|wisdom-reward"] = "wisdom-reward",
         };
 
+    private static readonly IReadOnlyDictionary<string, string> Batch6DPublicTriggerPlans =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-0204|death"] = "tomb-construct",
+            ["S01-0204|leave"] = "tomb-construct",
+            ["S01-0414|after-attack"] = "after-attack-katsura",
+            ["S01-0414|return-library-top"] = "returned-top-katsura",
+            ["S01-0417|play"] = "owner-top-kusanagi",
+        };
+
+    private static string? Batch6DPublicTriggerPlan(string cardId, string trigger)
+        => Batch6DPublicTriggerPlans.GetValueOrDefault($"{cardId}|{trigger}");
+
     private static string? FifthBatchPublicTriggerPlan(string cardId, string trigger)
         => FifthBatchPublicTriggerPlans.GetValueOrDefault($"{cardId}|{trigger}");
 
@@ -24,6 +37,7 @@ public sealed partial class L12GameEngine
         IReadOnlyDictionary<string, string>? data = null)
         => HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
             || HasTrialCompletionTriggerDeclarationPlan(cardId, trigger, data)
+            || Batch6DPublicTriggerPlan(cardId, trigger) is not null
             || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
             || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
         {
@@ -66,6 +80,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         List<L12ActivationSelectionStep>? steps = null;
+        var batch6DPlan = Batch6DPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
 
         if (TryBeginTrialCompletionTriggerDeclaration(candidate, source))
@@ -73,7 +88,42 @@ public sealed partial class L12GameEngine
         if (TryBeginAttackPublicTriggerDeclaration(candidate, source))
             return true;
 
-        if (fifthBatchPlan == "blood-eagle")
+        if (batch6DPlan == "after-attack-katsura")
+        {
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "桂小五郎：预先声明是否返回所有者牌库顶部",
+                    ["mode:none", "mode:use"]),
+            ];
+        }
+        else if (batch6DPlan == "returned-top-katsura")
+        {
+            var morale = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToList();
+            steps = morale.Count == 0 ? [] :
+            [
+                PublicTriggerStep("target-morale", "moraleTargets",
+                    "桂小五郎：预先选择我方最多2张休整士气转为活跃",
+                    morale, min: 0, max: Math.Min(2, morale.Count)),
+            ];
+        }
+        else if (batch6DPlan == "owner-top-kusanagi")
+        {
+            steps =
+            [
+                PublicTriggerStep("option", "mode", "草薙剑：预先声明是否返回所有者牌库顶部",
+                    ["mode:none", "mode:use"]),
+            ];
+        }
+        else if (batch6DPlan == "tomb-construct")
+        {
+            var guards = TombConstructGuardPlans(source);
+            candidate.Data["tombGuardIds"] = string.Join('|', guards.Select(entry => entry.Guard.InstanceId));
+            candidate.Data["tombGuardOwners"] = string.Join('|', guards.Select(entry => entry.Owner));
+            steps = guards.Select((entry, index) => PublicTriggerStep("owner-unused-slot", $"tombSlot{index}",
+                $"陵墓构造体：选择第{index + 1}张〈陵墓守卫〉在所有者战场休整登场的位置",
+                EmptySlots(State.Players[entry.Owner]), targetPlayerIndex: entry.Owner)).ToList();
+        }
+        else if (fifthBatchPlan == "blood-eagle")
         {
             var asgard = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
                     && CanEnterHandOrLibrary(card)
@@ -364,6 +414,11 @@ public sealed partial class L12GameEngine
         }
 
         if (steps is null) return false;
+        if (steps.Count == 0)
+        {
+            candidate.Data["declaration-complete"] = "true";
+            return false;
+        }
         var result = BeginPendingActivationSequence(candidate.Controller, source, "public-trigger-declaration",
             steps, candidate.CandidateId);
         if (result.Accepted) return true;
@@ -375,7 +430,7 @@ public sealed partial class L12GameEngine
     private static L12ActivationSelectionStep PublicTriggerStep(string kind, string key, string text,
         IEnumerable<string> choices, int min = 1, int max = 1, string? referenceKey = null,
         bool skipWhenReferenceIsNone = false, string? requiredChoice = null,
-        int minReferenceCount = 0, int referenceChoiceIndex = 0)
+        int minReferenceCount = 0, int referenceChoiceIndex = 0, int? targetPlayerIndex = null)
         => new()
         {
             Kind = kind,
@@ -389,12 +444,32 @@ public sealed partial class L12GameEngine
             RequiredDeclaredChoice = requiredChoice,
             MinimumReferenceCount = minReferenceCount,
             ReferenceChoiceIndex = referenceChoiceIndex,
+            TargetPlayerIndex = targetPlayerIndex,
             ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mode:none"] = "不发动",
                 ["mode:use"] = "发动",
             },
         };
+
+    private List<(L12CardInstance Guard, int Owner)> TombConstructGuardPlans(L12CardInstance source)
+    {
+        var plans = new List<(L12CardInstance Guard, int Owner)>();
+        var usedByOwner = new Dictionary<int, int>();
+        foreach (var instanceId in source.LastKnownAttachedCardIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var guard = FindAuthoritativeCard(instanceId);
+            if (guard?.CardId != PublicTriggerTombGuardCard) continue;
+            var owner = Enumerable.Range(0, State.Players.Length)
+                .FirstOrDefault(index => State.Players[index].Graveyard.Contains(guard), -1);
+            if (owner < 0) continue;
+            var used = usedByOwner.GetValueOrDefault(owner);
+            if (used >= EmptySlots(State.Players[owner]).Count()) continue;
+            plans.Add((guard, owner));
+            usedByOwner[owner] = used + 1;
+        }
+        return plans;
+    }
 
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
@@ -403,8 +478,9 @@ public sealed partial class L12GameEngine
         if (TryCompleteAttackPublicTriggerDeclaration(candidate, activation))
             return true;
         var key = (candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability"));
+        var batch6DPlan = Batch6DPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
         var fifthBatchPlan = FifthBatchPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
-        var handled = fifthBatchPlan is not null || key switch
+        var handled = batch6DPlan is not null || fifthBatchPlan is not null || key switch
         {
             ("S02-04M1", "active", "tsukuyomiFollowMove") => true,
             ("S02-04M1", "active", "tsukuyomiReadyMorale") => true,
@@ -444,7 +520,45 @@ public sealed partial class L12GameEngine
         }
 
         string? error = null;
-        if (key == ("S02-04M1", "active", "tsukuyomiFollowMove"))
+        if (batch6DPlan == "tomb-construct")
+        {
+            var guardIds = candidate.Data.GetValueOrDefault("tombGuardIds", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var ownerTexts = candidate.Data.GetValueOrDefault("tombGuardOwners", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var slots = Enumerable.Range(0, guardIds.Length)
+                .Select(index => activation.DeclaredValues.GetValueOrDefault($"tombSlot{index}", []).SingleOrDefault())
+                .ToArray();
+            if (ownerTexts.Length != guardIds.Length || slots.Length != guardIds.Length
+                || ownerTexts.Select(text => int.TryParse(text, out var owner) ? owner : -1)
+                    .Any(owner => owner is < 0 or > 1))
+                error = "陵墓构造体的所有者区域声明不完整；效果未入栈";
+            else
+            {
+                var owners = ownerTexts.Select(int.Parse).ToArray();
+                for (var index = 0; index < guardIds.Length && error is null; index++)
+                {
+                    var owner = State.Players[owners[index]];
+                    if (!owner.Graveyard.Any(card => card.InstanceId == guardIds[index]
+                            && card.CardId == PublicTriggerTombGuardCard)
+                        || slots[index] is null
+                        || !EmptySlots(owner).Contains(slots[index]!, StringComparer.OrdinalIgnoreCase))
+                        error = "陵墓构造体声明的守卫或所有者位置已失效；效果未入栈";
+                    else if (Enumerable.Range(0, index).Any(prior => owners[prior] == owners[index]
+                        && string.Equals(slots[prior], slots[index], StringComparison.OrdinalIgnoreCase)))
+                        error = "陵墓构造体不能为同一所有者的多张守卫声明重复位置；效果未入栈";
+                }
+            }
+        }
+        else if (batch6DPlan == "returned-top-katsura")
+        {
+            var moraleTargets = activation.DeclaredValues.GetValueOrDefault("moraleTargets", []);
+            if (moraleTargets.Count > 2
+                || moraleTargets.Distinct(StringComparer.OrdinalIgnoreCase).Count() != moraleTargets.Count
+                || moraleTargets.Any(id => !player.Morale.Any(card => card.InstanceId == id && card.Tapped)))
+                error = "桂小五郎声明的休整士气目标已失效；效果未入栈";
+        }
+        else if (key == ("S02-04M1", "active", "tsukuyomiFollowMove"))
         {
             var cost = activation.DeclaredValues.GetValueOrDefault("cost", []);
             var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
@@ -651,6 +765,15 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (batch6DPlan == "tomb-construct")
+        {
+            var guardIds = candidate.Data.GetValueOrDefault("tombGuardIds", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries);
+            candidate.Data["declaredCardIds"] = string.Join('|', guardIds);
+            candidate.Data["declaredGuardOwners"] = candidate.Data.GetValueOrDefault("tombGuardOwners", string.Empty);
+            candidate.Data["declaredTargets"] = string.Join('|', Enumerable.Range(0, guardIds.Length)
+                .Select(index => activation.DeclaredValues[$"tombSlot{index}"].Single()));
+        }
         if (fifthBatchPlan == "blood-eagle")
         {
             var composite = CompositeFirstSegmentData("trigger:S01-0320", activation.DeclaredValues);

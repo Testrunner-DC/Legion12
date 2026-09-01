@@ -73,6 +73,7 @@ public sealed partial class L12GameEngine
             case "medjed-master-damage": ResolveMedjedMasterDamageReaction(item); break;
             case "trojan-after-attack": ResolveS2TrojanHorseAfterAttack(item); break;
             case "trial-complete": ResolveTrialCompletionTriggerEffect(item); break;
+            case "return-library-top": ResolveReturnToLibraryTopEffect(item); break;
             default: FinishStackItem(item); break;
         }
     }
@@ -90,28 +91,10 @@ public sealed partial class L12GameEngine
             return CreateCard(player.MasterId, item.SourceInstanceId);
         if (item.SourceInstanceId == $"faction-{item.Controller}" && !string.IsNullOrWhiteSpace(item.SourceCardId))
             return CreateCard(item.SourceCardId, item.SourceInstanceId);
-        var source = FindOnField(player, item.SourceInstanceId, out _, out _)
-            ?? (player.Relic?.InstanceId == item.SourceInstanceId ? player.Relic : null)
-            ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? (player.Morale.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId) is { } morale
-                ? CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId)
-                : null)
-            ?? player.Resolving.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? player.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? player.Graveyard.LastOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? (State.ActiveDisaster?.InstanceId == item.SourceInstanceId ? State.ActiveDisaster : null);
-        if (source is not null) return source;
-        return State.Players.Where(candidate => candidate.PlayerIndex != item.Controller)
-            .SelectMany(candidate => candidate.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>()
-                .Concat(candidate.ExtraRelics)
-                .Concat(candidate.Resolving)
-                .Concat(candidate.Hand)
-                .Concat(candidate.Graveyard)
-                .Concat(candidate.Removed)
-                .Concat(candidate.Relic is null ? [] : [candidate.Relic]))
-            .FirstOrDefault(card => card.InstanceId == item.SourceInstanceId)
-            ?? item.SourceSnapshot;
+        foreach (var candidate in State.Players)
+            if (candidate.Morale.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId) is { } morale)
+                return CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId);
+        return FindAuthoritativeCard(item.SourceInstanceId) ?? item.SourceSnapshot;
     }
 
     private void ResolveEnterEffect(L12StackItem item)
@@ -198,8 +181,14 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "peace-talk" });
                 return;
             case "草薙剑":
-                CreatePrompt(item.Controller, "optional", "是否将离场的〈草薙剑〉放回牌库顶部？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "kusanagi-return-top" });
+                if (PublicTriggerDeclared(item, "mode") == "mode:use"
+                    && !TryMoveAuthoritativeCardToOwnerLibraryTop(item.Controller, item.SourceInstanceId,
+                        "因离场效果返回牌库顶部", out _, out var kusanagiError))
+                {
+                    AddEvent("effect-cancelled", item.Controller,
+                        $"草薙剑声明的返回牌库顶部效果取消：{kusanagiError}", item.SourceSnapshot ?? card);
+                }
+                FinishStackItem(item);
                 return;
             case "observing-stars-reorder": BeginTopDeckReorder(item, 5, "observing-stars"); return;
             case "observing-stars-morale":
@@ -306,14 +295,45 @@ public sealed partial class L12GameEngine
                 else FinishStackItem(item);
                 return;
             case "桂小五郎":
-                CreatePrompt(item.Controller, "optional", "是否将桂小五郎返回牌库顶部？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "katsura-return" });
+                if (PublicTriggerDeclared(item, "mode") == "mode:use"
+                    && !TryMoveAuthoritativeCardToOwnerLibraryTop(item.Controller, item.SourceInstanceId,
+                        "因进攻后效果返回牌库顶部", out _, out var katsuraError))
+                {
+                    AddEvent("effect-cancelled", item.Controller,
+                        $"桂小五郎声明的返回牌库顶部效果取消：{katsuraError}", item.SourceSnapshot ?? card);
+                }
+                FinishStackItem(item);
                 return;
             default:
                 if (!TryResolveS1ExtendedAfterAttack(item, card) && !TryResolveS2UniversalAfterAttack(item, card)
                     && !TryResolveS2FactionAfterAttack(item, card)) FinishStackItem(item);
                 return;
         }
+    }
+
+    private void ResolveReturnToLibraryTopEffect(L12StackItem item)
+    {
+        var source = FindSource(item) ?? item.SourceSnapshot;
+        var player = State.Players[item.Controller];
+        foreach (var targetId in PublicTriggerDeclared(item, "moraleTargets")
+                     .Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var morale = player.Morale.FirstOrDefault(candidate =>
+                candidate.InstanceId == targetId && candidate.Tapped);
+            if (morale is null)
+            {
+                if (source is null)
+                    AddEvent("effect-cancelled", item.Controller,
+                        "桂小五郎已声明的休整士气目标失效；仅取消该目标");
+                else
+                    AddEvent("effect-cancelled", item.Controller,
+                        "桂小五郎已声明的休整士气目标失效；仅取消该目标", source);
+                continue;
+            }
+            if (source is not null)
+                ReadyMoraleByEffect(item.Controller, source, morale, "士气因桂小五郎返回牌库顶部而转为活跃");
+        }
+        FinishStackItem(item);
     }
 
     private void ResolveForgeReadyAfterKill(L12StackItem item)

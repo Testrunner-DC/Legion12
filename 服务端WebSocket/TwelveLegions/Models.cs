@@ -460,6 +460,8 @@ public sealed class L12ActivationSelectionStep
     public int ReferenceChoiceIndex { get; init; }
     /// <summary>引用字段为 mode:none 时跳过本步；用于可选登场对象之后的战场/位置声明。</summary>
     public bool SkipWhenReferenceIsNone { get; init; }
+    /// <summary>公开位置属于哪位玩家的战场；为空时沿用能力控制者。</summary>
+    public int? TargetPlayerIndex { get; init; }
     /// <summary>动态费用目标筛选阈值；只承载规则数值，不承载卡牌实例。</summary>
     public int? CostThreshold { get; init; }
     /// <summary>仅用于界面呈现；规则判断始终使用稳定的 ValidChoices 标识。</summary>

@@ -25,6 +25,9 @@ $prompts = Read-Source 'L12PromptsAndSetup.cs'
 $actions = Read-Source 'L12Actions.cs'
 $gm = Read-Source 'L12GmCommands.cs'
 $authority = Read-Source 'L12AuthorityEvents.cs'
+$zones = Read-Source 'L12AuthoritativeCardZones.cs'
+$cardEffects = Read-Source 'L12CardEffects.cs'
+$continuations = Read-Source 'L12EffectContinuations.cs'
 $runtimeDirectory = (Get-ChildItem -LiteralPath $ProjectRoot -Filter 'L12PublicTriggerEffectPlans.cs' -Recurse -File |
     Select-Object -First 1).Directory.FullName
 $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -File | ForEach-Object {
@@ -34,7 +37,8 @@ $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -Fi
 foreach ($cardId in @(
     'S02-04M1', 'S02-0523', 'S01-02M3', 'S02-02M1', 'S02-01S1',
     'S01-0105', 'S01-0207', 'S01-0208', 'S01-0309', 'S01-0021', 'S01-0213',
-    'S01-0223', 'S01-0320', 'S01-0224', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407'
+    'S01-0223', 'S01-0320', 'S01-0224', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407',
+    'S01-0204', 'S01-0414', 'S01-0417'
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
 }
@@ -74,6 +78,23 @@ Assert-Contains $plans 'ReturnSelectedMoraleById(player, [costId], 1)' 'Liu Bei 
 Assert-Contains $plans 'DamageMaster(candidate.Controller, 1,' 'Brynhild must pay the known master-damage cost before stack entry.'
 Assert-Contains $plans 'candidate.Data["preserveIndependentStack"] = "true"' 'Immortal Gift must preserve its independent draw segment when summon declaration is absent.'
 Assert-Contains $plans 'activation.DeclaredValues["entryCard"] = ["mode:none"]' 'Immortal Gift invalid summon segment must cancel independently.'
+Assert-Contains $kernel 'SourceSnapshot = CaptureLastKnownSourceSnapshot(sourceSnapshot ?? card)' 'Every generated trigger candidate must carry a last-known source snapshot.'
+Assert-Contains $kernel 'FindAuthoritativeCard(candidate.SourceInstanceId)' 'Trigger declarations must resolve sources through the internal authoritative lookup.'
+Assert-Contains $plans 'owner-unused-slot' 'Tomb Construct must declare owner battlefield slots before stack entry.'
+Assert-Contains $plans 'declaredGuardOwners' 'Tomb Construct must retain each attached guard owner with its declared slot.'
+Assert-Contains $zones 'TryMoveAuthoritativeCardToOwnerLibraryTop' 'Return-to-library effects need one owner-and-instance zone transaction.'
+foreach ($zoneName in @('field', 'relic', 'extra', 'god-power', 'trial', 'canopic', 'resolving', 'hand', 'library', 'graveyard', 'removed')) {
+    Assert-Contains $zones ('"' + $zoneName + '"') "Authoritative source lookup is missing zone $zoneName."
+}
+Assert-Contains $zones 'locations.Count != 1' 'Authority-zone transfer must reject missing or duplicate real instances.'
+Assert-Contains $zones 'QueueReturnedToLibraryTopTrigger' 'Returning Katsura must create an independent trigger candidate.'
+Assert-Contains $cardEffects 'case "return-library-top"' 'Returned-to-library trigger needs its own stack dispatch.'
+if ($prompts.IndexOf('FindAuthoritativeCard', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Client prompt lookup must not expose the internal authoritative source query.'
+}
+if ($zones.IndexOf('Library.Insert(0, sourceSnapshot)', [StringComparison]::Ordinal) -ge 0) {
+    throw 'A last-known snapshot must never be inserted as a real zone card.'
+}
 
 Assert-Contains $counter 'var revealed = player.Library[0];' 'Cosmos Yin must inspect the hidden library top only during legal resolution.'
 Assert-Contains $counter 'CreateDelayedPublicResolutionPrompt(item' 'Cosmos Yin must declare its public target only after the hidden reveal.'
@@ -94,7 +115,8 @@ foreach ($legacy in @(
     's2-nephthys-own-death', 's2-nephthys-scarab-slot',
     's2-xiaotian-morale', 's2-xiaotian-slot', 'liubei-card', 'liubei-summon', 'liubei-slot',
     'brynhild-sigurd', 'regency-card', 'regency-slot', 'kaba-summon', 'kaba-slot',
-    'saladin-move', 'saladin-slot', 'ryoma-pick', 'ryoma-slot', 's2-scarab-enter-slot'
+    'saladin-move', 'saladin-slot', 'ryoma-pick', 'ryoma-slot', 's2-scarab-enter-slot',
+    'katsura-return', 'katsura-ready-morale', 'kusanagi-return-top'
 )) {
     if ($allRuntime.IndexOf($legacy, [StringComparison]::Ordinal) -ge 0) {
         throw "Legacy post-stack public trigger continuation returned: $legacy"

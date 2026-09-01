@@ -66,6 +66,7 @@ public sealed partial class L12GameEngine
             ReferenceNumericChoicePrefix = step.ReferenceNumericChoicePrefix,
             ReferenceChoiceIndex = step.ReferenceChoiceIndex,
             SkipWhenReferenceIsNone = step.SkipWhenReferenceIsNone,
+            TargetPlayerIndex = step.TargetPlayerIndex,
             CostThreshold = step.CostThreshold,
         }).ToList();
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
@@ -196,6 +197,26 @@ public sealed partial class L12GameEngine
             if (step.ValidChoices.Count < step.MinChoose)
             {
                 RejectPendingActivation(activation, "可用战场位置不足，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
+        else if (step.Kind == "owner-unused-slot")
+        {
+            targetPlayerIndex = step.TargetPlayerIndex ?? activation.Controller;
+            var used = activation.SelectionSteps
+                .Where(candidate => candidate.Kind == "owner-unused-slot"
+                    && candidate.TargetPlayerIndex == targetPlayerIndex
+                    && !string.IsNullOrWhiteSpace(candidate.DeclarationKey))
+                .SelectMany(candidate => activation.DeclaredValues.GetValueOrDefault(candidate.DeclarationKey!, []))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var choices = EmptySlots(State.Players[targetPlayerIndex.Value])
+                .Where(choice => !used.Contains(choice)).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "所有者战场没有足够的合法位置，效果未入栈");
                 return;
             }
             promptKind = "slot";
@@ -745,6 +766,18 @@ public sealed partial class L12GameEngine
             && int.TryParse(rowText, out var row) && int.TryParse(slotText, out var slot)
             && row is >= 0 and < 2 && slot is >= 0 and < 3)
         {
+            var currentStep = activation is not null && activation.CurrentStep < activation.SelectionSteps.Count
+                ? activation.SelectionSteps[activation.CurrentStep] : null;
+            if (currentStep?.Kind == "owner-unused-slot")
+            {
+                var target = currentStep.TargetPlayerIndex ?? controller;
+                var used = activation!.SelectionSteps
+                    .Where(step => step.Kind == "owner-unused-slot" && step.TargetPlayerIndex == target
+                        && !string.IsNullOrWhiteSpace(step.DeclarationKey))
+                    .SelectMany(step => activation.DeclaredValues.GetValueOrDefault(step.DeclarationKey!, []));
+                return State.Players[target].Field[row][slot] is null
+                    && !used.Contains(choice, StringComparer.OrdinalIgnoreCase);
+            }
             var effectEntryBattlefield = activation?.DeclaredTargets
                 .Select(ParseEffectEntryBattlefieldChoice)
                 .FirstOrDefault(index => index is not null);
@@ -851,7 +884,7 @@ public sealed partial class L12GameEngine
         {
             CandidateId = $"trigger-{++State.TriggerBatchSequence}", Controller = controller,
             SourceInstanceId = card.InstanceId, SourceCardId = card.CardId, SourceName = card.Name,
-            Trigger = trigger, Text = text, SourceSnapshot = sourceSnapshot?.Clone(),
+            Trigger = trigger, Text = text, SourceSnapshot = CaptureLastKnownSourceSnapshot(sourceSnapshot ?? card),
         };
         if (data is not null)
             foreach (var pair in data) candidate.Data[pair.Key] = pair.Value;
@@ -1079,7 +1112,7 @@ public sealed partial class L12GameEngine
         foreach (var pair in candidate.Data) item.Data[pair.Key] = pair.Value;
         if (State.IsResolvingStack) State.DeferredEffectStack.Add(item);
         else State.EffectStack.Add(item);
-        var source = FindSource(item) ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        var source = FindSource(item) ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         AddEvent("effect-trigger", candidate.Controller,
             candidate.Data.GetValueOrDefault("triggerEffectText", candidate.Text),
             source);
@@ -1091,8 +1124,8 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
-        var source = FindPromptCard(candidate.Controller, candidate.SourceInstanceId)
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        var source = FindAuthoritativeCard(candidate.SourceInstanceId)
+            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         if (TryBeginPublicTriggerDeclaration(candidate, source)) return true;
         var steps = new List<L12ActivationSelectionStep>();
         if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
@@ -1177,17 +1210,6 @@ public sealed partial class L12GameEngine
             steps.Add(TriggerStep("grave-card", "图坦卡蒙：可将墓地1张费用不高于4的其他【太阳城】卡牌放回牌库顶部",
                 player.Graveyard.Where(card => CanEnterHandOrLibrary(card) && card.CardId != "S01-0207"
                     && card.Faction == "taiyangcheng" && card.CurrentCost <= 4).Select(card => card.InstanceId), 0));
-        }
-        else if (candidate.SourceCardId == "S01-0204")
-        {
-            var attachedIds = source.LastKnownAttachedCardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var guards = player.Graveyard
-                .Where(card => card.CardId == "S01-0212" && attachedIds.Contains(card.InstanceId))
-                .Take(EmptySlots(player).Count()).Select(card => card.InstanceId).ToList();
-            candidate.Data["declaredCardIds"] = string.Join('|', guards);
-            for (var index = 0; index < guards.Count; index++)
-                steps.Add(TriggerStep("unused-slot", $"陵墓构造体：选择第{index + 1}张〈陵墓守卫〉休整登场的位置",
-                    EmptySlots(player), 1));
         }
         else if (candidate.SourceCardId == "S01-0206")
         {

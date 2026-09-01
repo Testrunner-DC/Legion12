@@ -1179,7 +1179,7 @@ public sealed partial class L12GameEngine
             AddEvent("effect", player.PlayerIndex, $"{card.Name} 在持续兵力修正重算后兵力仍不高于 0", card);
         }
         CaptureLastKnownFieldState(card, row);
-        var sourceSnapshot = card.Clone();
+        var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
         if (toGraveyard)
         {
@@ -1315,6 +1315,7 @@ public sealed partial class L12GameEngine
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         CaptureLastKnownFieldState(card, row);
+        var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
         var owner = CardOwner(card, player);
         var promotionFoundations = DetachPromotionFoundations(card);
@@ -1357,7 +1358,9 @@ public sealed partial class L12GameEngine
             DiscardAttachedCards(card, $"{card.Name}离场");
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueLeaveTrigger)
-            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, card));
+            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot));
+        if (finalDestination == "library-top")
+            QueueReturnedToLibraryTopTrigger(player.PlayerIndex, sourceSnapshot);
         RecalculateContinuousTroops();
         return true;
     }
@@ -1466,7 +1469,7 @@ public sealed partial class L12GameEngine
             {
                 FindOnField(State.Players[entry.Controller], entry.Card.InstanceId, out var row, out _);
                 CaptureLastKnownFieldState(entry.Card, row);
-                var sourceSnapshot = entry.Card.Clone();
+                var sourceSnapshot = CaptureLastKnownSourceSnapshot(entry.Card);
                 if (RemoveFromField(State.Players[entry.Controller], entry.Card, true, "因兵力不高于0阵亡", queueDeathTrigger: false))
                     removed.Add((entry.Controller, entry.Card, sourceSnapshot));
             }

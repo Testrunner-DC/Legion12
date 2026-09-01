@@ -2778,10 +2778,12 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: sword.InstanceId)).Accepted);
         PassResponses(game);
-        var returnTop = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("kusanagi-return-top", returnTop.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnTop.PromptId,
-            Choice: "yes")).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Contains("mode:use", declaration.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
 
         Assert.Same(sword, player.Library[0]);
         Assert.DoesNotContain(sword, player.Graveyard);

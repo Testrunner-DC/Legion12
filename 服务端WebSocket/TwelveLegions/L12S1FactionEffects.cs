@@ -288,8 +288,21 @@ public sealed partial class L12GameEngine
                 {
                     var guardIds = declaredGuards.Split('|', StringSplitOptions.RemoveEmptyEntries);
                     var slots = declaredGuardSlots.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    var ownerTexts = item.Data.GetValueOrDefault("declaredGuardOwners", string.Empty)
+                        .Split('|', StringSplitOptions.RemoveEmptyEntries);
                     for (var index = 0; index < Math.Min(guardIds.Length, slots.Length); index++)
-                        SummonFromAnyPrivateZone(player, guardIds[index], slots[index], tapped: true);
+                    {
+                        var ownerIndex = index < ownerTexts.Length && int.TryParse(ownerTexts[index], out var parsedOwner)
+                            && parsedOwner is >= 0 and <= 1 ? parsedOwner : item.Controller;
+                        var owner = State.Players[ownerIndex];
+                        if (owner.Graveyard.Any(candidate => candidate.InstanceId == guardIds[index]
+                                && candidate.CardId == "S01-0212")
+                            && EmptySlots(owner).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
+                            SummonFromAnyPrivateZone(owner, guardIds[index], slots[index], tapped: true);
+                        else
+                            AddEvent("effect-cancelled", item.Controller,
+                                "陵墓构造体已声明的守卫或所有者位置失效；仅取消该对象", card);
+                    }
                     FinishStackItem(item); return true;
                 }
                 var attachedIds = card.LastKnownAttachedCardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1298,6 +1311,7 @@ public sealed partial class L12GameEngine
 
     private void DiscardRelic(L12PlayerState player, L12CardInstance relic)
     {
+        var sourceSnapshot = CaptureLastKnownSourceSnapshot(relic);
         if (player.Relic?.InstanceId == relic.InstanceId) player.Relic = null; else player.ExtraRelics.Remove(relic);
         DiscardAttachedCards(relic, "被叠放的圣物离开圣物区");
         var owner = CardOwner(relic, player);
@@ -1307,7 +1321,7 @@ public sealed partial class L12GameEngine
                 $"衍生卡〈{relic.Name}〉离开圣物区时消灭，不进入其他区域", relic);
         else if (!owner.Graveyard.Contains(relic))
             owner.Graveyard.Add(relic);
-        QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, relic));
+        QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot));
     }
 
     private void Mill(L12PlayerState player, int count, string source)

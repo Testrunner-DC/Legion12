@@ -68,35 +68,6 @@ public sealed partial class L12GameEngine
             case "lubu-ready":
                 if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 4, "lubu-ready");
                 else FinishStackItem(item); break;
-            case "katsura-return":
-                if (chosen[0] == "yes" && source is not null)
-                {
-                    ReturnFieldCardToLibraryTop(item.Controller, source);
-                    var active = player.Morale.Where(morale => morale.Tapped).Select(morale => morale.InstanceId).ToArray();
-                    if (active.Length > 0)
-                    {
-                        CreatePrompt(item.Controller, "morale", "将我方最多 2 张休整士气转为活跃", active, 0, Math.Min(2, active.Length),
-                            "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "katsura-ready-morale" });
-                        break;
-                    }
-                }
-                FinishStackItem(item); break;
-            case "katsura-ready-morale":
-                foreach (var id in chosen)
-                {
-                    var morale = player.Morale.FirstOrDefault(card => card.InstanceId == id);
-                    if (morale is not null && source is not null)
-                        ReadyMoraleByEffect(item.Controller, source, morale, "士气因效果转为活跃");
-                }
-                FinishStackItem(item); break;
-            case "kusanagi-return-top":
-                if (chosen[0] == "yes" && source is not null)
-                {
-                    player.Graveyard.Remove(source);
-                    player.Library.Insert(0, source);
-                    AddEvent("return", item.Controller, "草薙剑返回牌库顶部", source);
-                }
-                FinishStackItem(item); break;
             case "lijing-choice": ContinueLiJingChoice(item, chosen[0]); break;
             case "lijing-slot": CompleteLiJingRecruit(item, chosen[0]); break;
             case "reorder-order":
