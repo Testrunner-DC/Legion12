@@ -153,8 +153,10 @@ public sealed partial class L12GameEngine
             {
                 var previousId = player.LastActiveTacticCardId;
                 if (string.IsNullOrEmpty(previousId) || !_catalog.Cards.ContainsKey(previousId)) { FinishStackItem(item); return true; }
-                var copy = CreateCard(previousId, $"repeat-{++State.StackSequence}"); player.Resolving.Add(copy);
-                FinishStackItem(item); PushEffect(item.Controller, copy, "play", "托勒密十三世再次发动的主动战术效果"); return true;
+                item.Data["postResolutionGenerated"] = "ptolemy-repeat";
+                item.Data["repeatCardId"] = previousId;
+                FinishStackItem(item);
+                return true;
             }
             case "安卡神碑":
                 PromptOwnLegion(item, "ankh-enter", "安卡神碑：选择我方1张陵墓守卫，本回合兵力+2000", target => target.CardId == "S01-0212", false); return true;
@@ -1310,20 +1312,6 @@ public sealed partial class L12GameEngine
                 return true;
             default: return false;
         }
-    }
-
-    private bool TryPreventS1FactionDeath(L12PlayerState player, L12CardInstance card)
-    {
-        if (card.CardId != "S01-0205") return false;
-        var guard = PublicLegions(player).FirstOrDefault(target => target.CardId == "S01-0212" && target.InstanceId != card.InstanceId);
-        if (guard is null) return false;
-        if (FindOnField(player, guard.InstanceId, out var row, out var slot) is not null)
-        {
-            player.Field[row][slot] = null;
-            ResetCardAfterLeavingField(guard);
-            player.Graveyard.Add(guard);
-        }
-        card.Troops = 1000; AddEvent("effect", player.PlayerIndex, "霍列姆赫布弃置陵墓守卫代替阵亡", card, guard); return true;
     }
 
     private static bool HasS1Taunt(L12CardInstance card, int row)

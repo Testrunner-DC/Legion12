@@ -325,6 +325,12 @@ public sealed class L12PendingDefense
     public bool SuppressAttackTriggers { get; set; }
     /// <summary>同一次交战内“即将阵亡”替代效果的决定；true=代替，false=不代替。</summary>
     public Dictionary<string, bool> LethalReplacementDecisions { get; } = new(StringComparer.Ordinal);
+    /// <summary>
+    /// 由另一张卡承接致命结果时，记录“受保护实例 → 代替实例”。
+    /// 决定与实例分开保存，使阿喀琉斯/王者之剑的自我替代继续只使用 bool，
+    /// 而霍列姆赫布/海伦可在战斗伤害真正落地时重验代替牌所在区域。
+    /// </summary>
+    public Dictionary<string, string> LethalReplacementSubstitutes { get; } = new(StringComparer.Ordinal);
     public List<string> DeclaredBlockIds { get; } = [];
     public string? DeclaredSupportId { get; set; }
     public bool ForceInvalidDefense { get; set; }

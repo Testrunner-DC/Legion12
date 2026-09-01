@@ -120,11 +120,11 @@ $matrixFixedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String
 $fullPassedCount = @($allAuditRows | Where-Object Status -eq $passedStatus).Count
 $fullFixedCount = @($allAuditRows | Where-Object Status -eq $fixedStatus).Count
 $fullQuestionRows = @($allAuditRows | Where-Object { $_.Status.StartsWith($questionStatus, [StringComparison]::Ordinal) })
-if ($fullPassedCount -ne 188 -or $fullFixedCount -ne 54 -or $fullQuestionRows.Count -ne 6) {
+if ($fullPassedCount -ne 194 -or $fullFixedCount -ne 54 -or $fullQuestionRows.Count -ne 0) {
     throw "Full-pool audit status totals drifted (passed=$fullPassedCount, fixed=$fullFixedCount, questionCards=$($fullQuestionRows.Count))."
 }
-$expectedQuestionCards = @('S01-0103','S01-0205','S01-0211','S01-DS04','S02-0006','S02-0515')
-$actualQuestionCards = @($fullQuestionRows.Id | Sort-Object)
+$expectedQuestionCards = @()
+$actualQuestionCards = @($fullQuestionRows | ForEach-Object { $_.Id } | Sort-Object)
 if (($actualQuestionCards -join ',') -ne (($expectedQuestionCards | Sort-Object) -join ',')) {
     throw "Full-pool audit question-card set drifted (actual=$($actualQuestionCards -join ','))."
 }
@@ -150,11 +150,8 @@ foreach ($row in $allAuditRows) {
     }
 }
 
-$openQuestionIds = @('S01-0205','S02-0515','S01-0211','S02-0006','S01-0103','S01-DS04')
-foreach ($id in $openQuestionIds) {
-    Assert-Contains $openQuestions $id "OPEN-QUESTIONS must retain the isolated ruling item for $id."
-}
+Assert-Contains $openQuestions '当前无待裁定项' 'OPEN-QUESTIONS must record that the current queue is empty.'
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
-if ($openHeadings -ne 5) { throw "OPEN-QUESTIONS must retain exactly five numbered ruling items (actual=$openHeadings)." }
+if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 
-Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 83 abilities; full pool 248 cards / 552 abilities; 188 passed / 54 fixed / 6 question cards in 5 OPEN items).'
+Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 83 abilities; full pool 248 cards / 552 abilities; 194 passed / 54 fixed / 0 question cards).'

@@ -23,6 +23,8 @@ $active = Read-Source 'L12ActiveAbilities.cs'
 $publicTrigger = Read-Source 'L12PublicTriggerEffectPlans.cs'
 $enterPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
+$postResolution = Read-Source 'L12PostResolutionGeneratedEffects.cs'
+$rulingTests = Read-Source 'RulingClosureRegressionTests.cs'
 $tests = Read-Source 'AtomicReviewBatch6LARegressionTests.cs'
 $audit = Read-Source 'S02-UNIVERSAL-HEAVEN-ABILITY-AUDIT.md'
 $open = Read-Source 'OPEN-QUESTIONS.md'
@@ -62,7 +64,10 @@ if ($remaining -like '*var slot = EmptySlots(player).FirstOrDefault(choice => ch
 Assert-Contains $game 'bool fromFactionEffect = false' 'Shared morale-add restriction provenance is missing.'
 Assert-Contains $game 'player.FactionMoraleAdditionForbiddenUntilTurn == State.TurnSerial' 'Yingzheng morale-add restriction is not consumed by the shared entry point.'
 Assert-Contains $active 'fromFactionEffect: true' 'Tianting faction morale effects must explicitly identify their allowed provenance.'
-Assert-Contains $open 'S02-0006' 'Faith Zealot declaration-layer question must remain explicitly isolated.'
+Assert-Contains $open '当前无待裁定项' 'Resolved ruling questions must leave no current open item.'
+Assert-Contains $postResolution 'BeginFaithZealotMasterChoice(completed)' 'Faith Zealot master choice must begin only after its parent effect completes.'
+Assert-Contains $postResolution '"faith-zealot-post-resolution"' 'Faith Zealot must create a post-resolution interaction.'
+Assert-Contains $rulingTests 'FaithZealotMasterChoiceAppearsOnlyAfterZealotLeavesTheStack' 'Faith Zealot post-resolution regression is missing.'
 
 $rawFactionFilter = '\.Faction\s*(?:==|!=)\s*"(?:tianting|taiyangcheng|asgard|gaotianyuan|olympus|otherworld)"'
 foreach ($source in @($composite, $publicTrigger, $enterPlans, $attackPlans)) {
@@ -77,7 +82,7 @@ $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YC
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus) + ' \|').Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
-if ($fixedCount -ne 3 -or $questionCount -ne 1 -or $passedCount -ne 22) {
+if ($fixedCount -ne 3 -or $questionCount -ne 0 -or $passedCount -ne 23) {
     throw "Batch 6L-A status totals drifted (passed=$passedCount, fixed=$fixedCount, questions=$questionCount)."
 }
 Write-Host 'S02 universal + Heaven per-ability audit guard passed (26 cards / 51 abilities).'

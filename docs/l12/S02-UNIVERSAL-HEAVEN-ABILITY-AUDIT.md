@@ -1,12 +1,12 @@
 # S02 通用与天廷逐卡独立语义审计（Batch 6L-A）
 
-更新日期：2026-09-01
+更新日期：2026-09-02
 
 ## 范围与结论
 
 - 固定范围为 `cards.s2.json` 全部 18 张 `universal` 通用卡与 8 张 `tianting` 天廷卡，含反击战术、主宰、士气/阵营关联与特殊军团，共 26 张、51 项能力。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。每行独立核对时点、声明与费用、区域/所有者、数值层、隐藏信息、AuthorityEvent、空目标、来源 LKI、多实例次数与响应无效。
-- 唯一结论：22 张通过、3 张明确错误并修复、1 张有疑点，缺少测试 0、未实现 0。疑点仅为既有 `OPEN-QUESTIONS.md` 中〈信仰狂热者〉的声明层级，不猜测；6M 最终交叉审阅补获〈万物统御之戒〉声明期隐藏命中存在性泄露并完成红绿修复。
+- 唯一结论：23 张通过、3 张明确错误并修复、有疑点 0，缺少测试 0、未实现 0。信仰狂热者已按 2026-09-02 玩家裁定闭环；6M 最终交叉审阅补获〈万物统御之戒〉声明期隐藏命中存在性泄露并完成红绿修复。
 
 ## 逐卡逐能力结论
 
@@ -17,7 +17,7 @@
 | S02-0003 宫廷魔术师 | 3 | 远程静态正确；登场公开反击目标先声明；主动休整后直到下个己方回合开始前阻止全场反击战术发动。 | `L12EnterPublicTriggerPlans`、`L12S2UniversalEffects` | `AtomicReviewBatch6JARegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S02-0004 路易芒德兰 | 2 | 前排时获得挑衅；仅对方回合获得+1000持续兵力层，不污染基础兵力。 | `L12RuleKernelIntegration`、`L12StructuredCardRules.S02HumanAssisted` | `AtomicReviewBatch3RegressionTests`、`S2UniversalEffectsTests` | 通过 |
 | S02-0005 戏法师的傀儡 | 2 | 无法进攻；对方进攻主宰时从私密手牌声明公开前排位置，效果成功才休整登场并改目标，被无效仍留手，位置失效不覆盖。 | `L12PromptsAndSetup`、`L12GameEngine` | `Bq20260830RegressionTests`、`S2UniversalEffectsTests` | 通过 |
-| S02-0006 信仰狂热者 | 2 | 牌库弃置或效果弃手的条件、每回合1次和免费主宰能力已实现；触发时应先声明“发动狂热者”还是直接声明所选主宰能力仍待用户裁定。 | `L12S2FactionEffects`、`L12ActiveAbilities` | `Bq20260830RegressionTests`、`S2FactionRegressionTests` | 有疑点 |
+| S02-0006 信仰狂热者 | 2 | 牌库弃置或效果弃手的条件与每回合1次保持；狂热者本身完整离栈后才选择主宰效果，并生成独立可响应栈项；免费且不计主宰能力使用次数。 | `L12S2FactionEffects`、`L12PostResolutionGeneratedEffects`、`L12ActiveAbilities` | `Bq20260830RegressionTests`、`S2FactionRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S02-0007 重装士兵 | 3 | 无法进攻且无法被远程进攻；前排挑衅及对方回合+1000均由结构化战斗规则派生。 | `L12GameEngine`、`L12RuleKernelIntegration` | `RuleKernelTests`、`S2UniversalEffectsTests` | 通过 |
 | S02-0008 万物统御之戒 | 2 | 圣物区内通用卡在所有权威区域按控制者主宰阵营判定；登场声明只看公开牌库数量，弃手费用私密预付，牌库检索身份与是否命中只在合法结算期读取并展示加入，随后重洗。 | `L12StructuredCardRules`、`L12EnterPublicTriggerPlans`、`L12EffectGeneratedPlay` | `AtomicReviewBatch6JARegressionTests`（含6M隐藏命中存在性回归）、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
 | S02-0009 防御部署 | 1 | 最多2张私密反击身份与各自公开后排位置提交后才入栈；位置逐张重验不覆盖；手牌不高于4的抽牌是独立后段。 | `L12CompositeEffectPlans`、`L12S2UniversalEffects` | `AtomicReviewBatch6ARegressionTests`、`S2UniversalEffectsTests` | 通过 |
@@ -45,4 +45,4 @@
 - 始皇帝沿用 `Composite/PendingCompositeSegments`，击杀与“随后返还全部士气并限制追加”各自获得响应窗口。第一段无效仍进入第二段；第二段无效不回滚第一段或已付手牌费用。
 - `AddMorale` 统一消费始皇帝的回合限制。普通卡效/主宰/军团/试炼追加被拒绝，只有 `S01-01C1` 天廷阵营效果显式标记为阵营来源；阶段追加发生在其他回合，不受本回合字段影响。
 - 全池反击战术复核确认 S02-0015 至 S02-0018 均基于 AuthorityEvent，防御/非手牌登场/效果入手/效果转活跃四类窗口互不串线；同回合覆盖的反击仍可发动。
-- 合法结算期 Prompt 保留：祷告仪式的对手同意/拒绝、乾坤·阴展示后才可知的目标、毒药发作由受影响方弃牌。信仰狂热者声明层级继续隔离在 `OPEN-QUESTIONS.md`。
+- 合法结算期 Prompt 保留：祷告仪式的对手同意/拒绝、乾坤·阴展示后才可知的目标、毒药发作由受影响方弃牌。信仰狂热者改为父效果离栈后的独立生成效果。

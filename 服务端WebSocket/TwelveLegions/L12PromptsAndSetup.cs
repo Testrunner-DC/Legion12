@@ -540,6 +540,9 @@ public sealed partial class L12GameEngine
             case "effect-lethal-replacement":
                 ResolveEffectLethalReplacement(playerIndex, prompt, chosen[0]);
                 break;
+            case "faith-zealot-post-resolution":
+                ResolveFaithZealotPostResolutionChoice(prompt, chosen[0]);
+                break;
             case "card-effect":
             case "disaster-effect":
             case "active-ability":
@@ -892,6 +895,12 @@ public sealed partial class L12GameEngine
             SourceName = source.Name,
             Trigger = trigger,
             Text = text,
+            // Repeated effect-only copies deliberately have no authoritative zone card.
+            // Preserve their last-known data without exposing the internal zone lookup
+            // through this prompt/stack boundary or moving a virtual card into a zone.
+            SourceSnapshot = data?.GetValueOrDefault("repeatedEffectOnly") == "true"
+                ? CaptureLastKnownSourceSnapshot(source)
+                : null,
         };
         if (targets is not null) item.Targets.AddRange(targets);
         if (data is not null)
@@ -1372,6 +1381,11 @@ public sealed partial class L12GameEngine
             owner.Resolving.Remove(resolving);
             ResetCardAfterLeavingField(resolving);
             owner.Graveyard.Add(resolving);
+        }
+        if (!queuedCompositeContinuation && item.Data.ContainsKey("postResolutionGenerated"))
+        {
+            State.IsResolvingStack = false;
+            if (TryBeginPostResolutionGeneratedInteraction(item)) return;
         }
         if (queueExorcistReturn) QueueS2ExorcistReturns(item.Controller, completedSource!);
         if (queueAngusTrial) QueueS2AngusTacticTrial(item.Controller, completedSource!);

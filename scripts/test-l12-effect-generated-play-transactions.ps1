@@ -49,10 +49,10 @@ if ($s2Faction.IndexOf('PushEffect(item.Controller, card, "play"', [StringCompar
 
 $directPlayPushes = @($runtimeFiles | Select-String -SimpleMatch 'PushEffect(' |
     Where-Object { $_.Line.IndexOf('"play"', [StringComparison]::Ordinal) -ge 0 })
-if ($directPlayPushes.Count -gt 3) {
-    throw "Effect-generated play direct-PushEffect ratchet increased: $($directPlayPushes.Count) > 3."
+if ($directPlayPushes.Count -gt 4) {
+    throw "Effect-generated play direct-PushEffect ratchet increased: $($directPlayPushes.Count) > 4."
 }
-$allowedPlayPushFiles = @('L12CompositeEffectPlans.cs', 'L12EffectGeneratedPlay.cs', 'L12S1FactionEffects.cs')
+$allowedPlayPushFiles = @('L12CompositeEffectPlans.cs', 'L12EffectGeneratedPlay.cs', 'L12PostResolutionGeneratedEffects.cs')
 foreach ($match in $directPlayPushes) {
     if ($allowedPlayPushFiles -notcontains $match.Path.Substring($match.Path.LastIndexOf([IO.Path]::DirectorySeparatorChar) + 1)) {
         throw "Unclassified direct play PushEffect: $($match.Path):$($match.LineNumber)"

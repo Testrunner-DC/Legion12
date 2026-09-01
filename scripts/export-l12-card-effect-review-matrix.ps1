@@ -89,7 +89,7 @@ $batch6KAReviewedCardIds = @(
 $batch6KAFixedCardIds = @(
     'S01-0001', 'S01-0020', 'S01-0021', 'S01-0105', 'S01-0116', 'S01-0120', 'S01-01D1', 'S01-01M1'
 )
-$batch6KAQuestionCardIds = @('S01-0103', 'S01-DS04')
+$batch6KAQuestionCardIds = @()
 $batch6KBReviewedCardIds = @(
     'S01-0201','S01-0202','S01-0203','S01-0204','S01-0205','S01-0206','S01-0207',
     'S01-0208','S01-0209','S01-0210','S01-0211','S01-0212','S01-0213','S01-0214',
@@ -101,7 +101,7 @@ $batch6KBReviewedCardIds = @(
     'S01-03C1','S01-03D1','S01-03M1','S01-03M2'
 )
 $batch6KBFixedCardIds = @('S01-0201','S01-0216','S01-0218','S01-0219','S01-0224','S01-02D1','S01-0315','S01-03D1')
-$batch6KBQuestionCardIds = @('S01-0205','S01-0211')
+$batch6KBQuestionCardIds = @()
 $batch6KCReviewedCardIds = @(
     'S01-0401','S01-0402','S01-0403','S01-0404','S01-0405','S01-0406','S01-0407',
     'S01-0408','S01-0409','S01-0410','S01-0411','S01-0412','S01-0413','S01-0414',
@@ -116,7 +116,7 @@ $batch6LAReviewedCardIds = @(
     'S02-0104','S02-0105','S02-0106','S02-01M1','S02-01S1'
 )
 $batch6LAFixedCardIds = @('S02-0101','S02-01M1')
-$batch6LAQuestionCardIds = @('S02-0006')
+$batch6LAQuestionCardIds = @()
 $batch6LBReviewedCardIds = @(
     'S02-0201','S02-0202','S02-0203','S02-0204','S02-0205','S02-0206','S02-0207','S02-02M1',
     'S02-0301','S02-0302','S02-0303','S02-0304','S02-0305','S02-0306','S02-0307','S02-03M1'
@@ -133,7 +133,7 @@ $batch6LCFixedCardIds = @(
     'S02-0405','S02-04M1','S02-0501','S02-0503','S02-0505','S02-0507','S02-0510',
     'S02-0513','S02-0514','S02-0520','S02-0521','S02-05M1','S02-05M2','S02-05D1'
 )
-$batch6LCQuestionCardIds = @('S02-0515')
+$batch6LCQuestionCardIds = @()
 $batch6LDReviewedCardIds = @(
     'S02-0601','S02-0602','S02-0603','S02-0604','S02-0605','S02-0606','S02-0607','S02-0608',
     'S02-0609','S02-0610','S02-0611','S02-0612','S02-0613','S02-0614','S02-0615','S02-0616',

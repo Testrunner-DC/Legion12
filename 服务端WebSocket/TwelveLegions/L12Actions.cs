@@ -922,6 +922,28 @@ public sealed partial class L12GameEngine
 
         var targetReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(target.InstanceId);
         var attackerReplaced = pending.LethalReplacementDecisions.GetValueOrDefault(attacker.InstanceId);
+        string? substituteDefenderDeath = null;
+        string? substituteAttackerDeath = null;
+        if (targetReplaced && pending.LethalReplacementSubstitutes.GetValueOrDefault(target.InstanceId) is { } targetSubstitute)
+        {
+            var kind = CardLethalSubstitutionKind(defender, target);
+            if (!TryApplyCardLethalSubstitution(defender, target, kind, targetSubstitute,
+                    "本次致命进攻", deferFieldDeath: true, out substituteDefenderDeath))
+            {
+                targetReplaced = false;
+                pending.LethalReplacementDecisions[target.InstanceId] = false;
+            }
+        }
+        if (attackerReplaced && pending.LethalReplacementSubstitutes.GetValueOrDefault(attacker.InstanceId) is { } attackerSubstitute)
+        {
+            var kind = CardLethalSubstitutionKind(attackerPlayer, attacker);
+            if (!TryApplyCardLethalSubstitution(attackerPlayer, attacker, kind, attackerSubstitute,
+                    "本次致命进攻", deferFieldDeath: true, out substituteAttackerDeath))
+            {
+                attackerReplaced = false;
+                pending.LethalReplacementDecisions[attacker.InstanceId] = false;
+            }
+        }
         if (!targetReplaced) L12DerivedStats.ApplyTroopsDamage(target, defenderDamage);
         if (attackerTakesDamage && !attackerReplaced)
             pending.TemporaryAttackerTroopsBonus = L12DerivedStats.ApplyTroopsDamage(attacker, targetTroops,
@@ -933,7 +955,11 @@ public sealed partial class L12GameEngine
             "阵亡（等待触发完成后进入墓地）", queueDeathTrigger: false,
             bypassLethalReplacement: true, deferGraveyard: true);
         if (defenderDefeated) pending.DefeatedDefenderInstanceId = target.InstanceId;
+        else if (substituteDefenderDeath is not null) pending.DefeatedDefenderInstanceId = substituteDefenderDeath;
         if (attackerDefeated) pending.DefeatedAttackerInstanceId = attacker.InstanceId;
+        else if (substituteAttackerDeath is not null) pending.DefeatedAttackerInstanceId = substituteAttackerDeath;
+        defenderDefeated |= substituteDefenderDeath is not null;
+        attackerDefeated |= substituteAttackerDeath is not null;
         pending.Stage = defenderDefeated
             ? L12CombatStage.KillTriggers
             : attackerDefeated
@@ -955,6 +981,8 @@ public sealed partial class L12GameEngine
             pending.LethalReplacementDecisions[card.InstanceId] = true;
             return false;
         }
+        if (TryOfferCardLethalSubstitution(controller, card, "combat-lethal-replacement", "本次致命进攻"))
+            return true;
         if (!CanUseAchillesLethalReplacement(controller, card)) return false;
         if (pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)) return false;
         CreatePrompt(controller.PlayerIndex, "optional",
@@ -979,6 +1007,14 @@ public sealed partial class L12GameEngine
         var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
         var card = FindOnField(player, cardId, out _, out _);
         if (card is null) return;
+        if (prompt.Data.ContainsKey("replacementKind"))
+        {
+            var appliedSubstitution = ResolveCombatCardLethalSubstitution(player, card, pending, prompt, choice);
+            pending.LethalReplacementDecisions[card.InstanceId] = appliedSubstitution;
+            ResolveDefenseCore(1 - pending.AttackerPlayer, pending.DeclaredBlockIds,
+                pending.DeclaredSupportId, pending.ForceInvalidDefense);
+            return;
+        }
         var applied = choice == "yes" && CanUseAchillesLethalReplacement(player, card)
             && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1);
         pending.LethalReplacementDecisions[card.InstanceId] = applied;

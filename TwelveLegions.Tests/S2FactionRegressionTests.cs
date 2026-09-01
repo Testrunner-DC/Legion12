@@ -615,7 +615,7 @@ public sealed class S2FactionRegressionTests
             PassResponses(game);
             var prompt = Assert.Single(game.State.PendingPrompts,
                 candidate => candidate.Data.GetValueOrDefault("action") == "s2-faith-zealot");
-            triggeredInstances.Add(game.State.EffectStack[^1].SourceInstanceId);
+            triggeredInstances.Add(prompt.Data["sourceInstanceId"]);
             Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
                 Choice: "skip")).Accepted);
         }

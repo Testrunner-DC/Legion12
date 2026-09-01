@@ -403,7 +403,7 @@ public sealed partial class L12GameEngine
     private const string CompositePlanChoicePrefix = "composite-plan:";
 
     private CommandResult BeginCompositeHandPlayDeclaration(int playerIndex, L12CardInstance source)
-        => BeginCompositeDeclaration(playerIndex, source, "composite-play");
+        => BeginCompositeDeclaration(playerIndex, source, "composite-play", effectOnlyRepeat: false);
 
     private CommandResult BeginCommittedCompositeEffectDeclaration(int playerIndex, L12CardInstance source,
         L12StackItem parent, string completion)
@@ -426,7 +426,7 @@ public sealed partial class L12GameEngine
             CompleteCommittedCompositeEffectDeclaration(direct);
             return CommandResult.Ok();
         }
-        var result = BeginCompositeDeclaration(playerIndex, source, "composite-committed-play");
+        var result = BeginCompositeDeclaration(playerIndex, source, "composite-committed-play", effectOnlyRepeat: false);
         if (!result.Accepted) return result;
         var activation = State.PendingActivations.Last(candidate => candidate.Controller == playerIndex
             && candidate.SourceInstanceId == source.InstanceId
@@ -436,7 +436,11 @@ public sealed partial class L12GameEngine
         return result;
     }
 
-    private CommandResult BeginCompositeDeclaration(int playerIndex, L12CardInstance source, string ability)
+    private CommandResult BeginRepeatedCompositeEffectDeclaration(int playerIndex, L12CardInstance source)
+        => BeginCompositeDeclaration(playerIndex, source, "composite-repeated-effect", effectOnlyRepeat: true);
+
+    private CommandResult BeginCompositeDeclaration(int playerIndex, L12CardInstance source, string ability,
+        bool effectOnlyRepeat)
     {
         var player = State.Players[playerIndex];
         var opponent = State.Players[1 - playerIndex];
@@ -769,7 +773,60 @@ public sealed partial class L12GameEngine
                 break;
         }
 
-        if (steps.Count == 0) return CommandResult.Reject("该卡牌没有复合效果声明计划");
+        if (effectOnlyRepeat)
+        {
+            if (source.CardId == "S02-0207")
+            {
+                // The discarded legions are the colon cost, so an effect-only
+                // repeat declares only the cost-dependent count. No battlefield
+                // card is selected or moved as payment a second time.
+                steps.RemoveAll(step => step.DeclarationKey == "discardTargets");
+                steps.Insert(0, CompositeStep("option", "desertRepeatCount",
+                    "沙漠君临：声明不再支付的原费用数量",
+                    ["count:0", "count:1", "count:2", "count:3"], 1, 1,
+                    new()
+                    {
+                        ["count:0"] = "不再弃置，按数量0处理",
+                        ["count:1"] = "不再弃置，按数量1处理",
+                        ["count:2"] = "不再弃置，按数量2处理",
+                        ["count:3"] = "不再弃置，按数量3处理",
+                    }));
+            }
+            var costKeys = L12CompositeEffectPlans.Segments(source.CardId)
+                .Where(segment => segment.CostKey is not null)
+                .Select(segment => segment.CostKey!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            steps.RemoveAll(step => step.DeclarationKey is not null && costKeys.Contains(step.DeclarationKey));
+            foreach (var segment in L12CompositeEffectPlans.Segments(source.CardId)
+                         .Where(segment => segment.RequiredMode is not null))
+            {
+                var declarationKey = segment.RequiredDeclarationKey ?? "mode";
+                var modeStep = steps.FirstOrDefault(step => declarationKey.Equals(step.DeclarationKey,
+                    StringComparison.OrdinalIgnoreCase));
+                if (modeStep is null || modeStep.ValidChoices.Contains(segment.RequiredMode!,
+                        StringComparer.OrdinalIgnoreCase)) continue;
+                modeStep.ValidChoices.Add(segment.RequiredMode!);
+                modeStep.ChoiceLabels.TryAdd(segment.RequiredMode!, segment.Text.Replace("消耗并翻转", "无需再次支付：")
+                    .Replace("消耗", "无需再次支付：").Replace("返还", "无需再次支付："));
+            }
+        }
+
+        if (steps.Count == 0)
+        {
+            if (!effectOnlyRepeat) return CommandResult.Reject("该卡牌没有复合效果声明计划");
+            CompleteRepeatedCompositeEffectDeclaration(new L12PendingActivation
+            {
+                ActivationId = $"activation-{++State.ActivationSequence}",
+                Controller = playerIndex,
+                SourceInstanceId = source.InstanceId,
+                SourceCardId = source.CardId,
+                Ability = ability,
+                Text = $"自动提交〈{source.Name}〉的重复效果",
+                ValidChoices = [],
+                PlayCardInstanceId = source.InstanceId,
+            });
+            return CommandResult.Ok();
+        }
         return BeginPendingActivationSequence(playerIndex, source, ability, steps,
             triggerCandidateId: null, playCardInstanceId: source.InstanceId, responseTargetStackItemId: null);
     }
@@ -843,6 +900,24 @@ public sealed partial class L12GameEngine
         ResumeCommittedCompositeParent(activation);
     }
 
+    private void CompleteRepeatedCompositeEffectDeclaration(L12PendingActivation activation)
+    {
+        var source = CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        if (!ValidateCompositeHandPlayDeclaration(activation.Controller, source,
+                activation.DeclaredValues, out var error, effectOnlyRepeat: true))
+        {
+            AddEvent("effect-cancelled", activation.Controller,
+                $"〈{source.Name}〉的重复效果声明失效：{error}", source);
+            ResumeAfterPostResolutionGeneratedInteraction();
+            return;
+        }
+        var data = CompositeFirstSegmentData(source.CardId, activation.DeclaredValues)
+            ?? new Dictionary<string, string>();
+        data["repeatedEffectOnly"] = "true";
+        PushEffect(activation.Controller, source, "play", $"托勒密十三世再次发动的〈{source.Name}〉效果",
+            CompositeFirstSegmentTargets(source.CardId, activation.DeclaredValues), data);
+    }
+
     private void AbortCommittedCompositeEffectDeclaration(L12PendingActivation activation, string reason)
     {
         var player = State.Players[activation.Controller];
@@ -888,7 +963,7 @@ public sealed partial class L12GameEngine
     }
 
     private bool ValidateCompositeHandPlayDeclaration(int controller, L12CardInstance card,
-        IReadOnlyDictionary<string, List<string>> declared, out string error)
+        IReadOnlyDictionary<string, List<string>> declared, out string error, bool effectOnlyRepeat = false)
     {
         error = "复合效果的模式、目标或费用对象已失效";
         var player = State.Players[controller];
@@ -952,27 +1027,27 @@ public sealed partial class L12GameEngine
             "S01-0005" => declared.GetValueOrDefault("volleyMode", []).SingleOrDefault() is { } volleyMode
                 && volleyMode is "mode:front" or "mode:back" or "mode:single"
                 && (volleyMode != "mode:single" || Enemy("singleTarget")),
-            "S01-0006" => declared.GetValueOrDefault("discardCost", []) is [var discardId]
+            "S01-0006" => effectOnlyRepeat || declared.GetValueOrDefault("discardCost", []) is [var discardId]
                 && discardId != card.InstanceId && player.Hand.Any(candidate => candidate.InstanceId == discardId),
             "S01-0007" => declared.GetValueOrDefault("campMode", []).SingleOrDefault() is { } campMode
                 && campMode is "mode:none" or "mode:heal" or "mode:draw"
-                && (campMode != "mode:heal" || OrdinaryCost("campHealCost"))
-                && (campMode != "mode:draw" || OrdinaryCost("campDrawCost")),
+                && (effectOnlyRepeat || campMode != "mode:heal" || OrdinaryCost("campHealCost"))
+                && (effectOnlyRepeat || campMode != "mode:draw" || OrdinaryCost("campDrawCost")),
             "S01-0009" => Own("returnTarget") && Own("buffTarget"),
             "S01-0010" => ValidateForgedOrdersDeclaration(opponent, declared),
             "S01-0011" => declared.GetValueOrDefault("lockTarget", []).SingleOrDefault() is { } lockTarget
                 && (PublicLegions(opponent).Any(target => target.InstanceId == lockTarget && !target.Hidden)
                     || opponent.Morale.Any(target => target.InstanceId == lockTarget)),
             "S01-0013" => mode is "mode:none" or "mode:use"
-                && (mode != "mode:use" || opponent.Hand.Count > 0 && OrdinaryCost("scoutCost")),
+                && (mode != "mode:use" || opponent.Hand.Count > 0 && (effectOnlyRepeat || OrdinaryCost("scoutCost"))),
             "S01-0014" => declared.GetValueOrDefault("disasterValue", []).SingleOrDefault()
                 is "-2" or "-1" or "0" or "1" or "2",
             "S01-0015" => declared.Count == 0,
             "S01-0118" => (mode is "mode:none" or "mode:kill") && Own("buffTarget", target =>
                     FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0)
-                && (mode == "mode:none" || declared.GetValueOrDefault("marchCost", []) is { Count: 2 } marchCost
+                && (mode == "mode:none" || (effectOnlyRepeat || declared.GetValueOrDefault("marchCost", []) is { Count: 2 } marchCost
                     && marchCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 2
-                    && marchCost.All(id => player.Morale.Any(resource => resource.InstanceId == id))
+                    && marchCost.All(id => player.Morale.Any(resource => resource.InstanceId == id)))
                     && Enemy("killTarget", target => target.Troops <= 6000)),
             "S01-0119" => mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || player.MoraleDeck.Count > 0),
@@ -982,12 +1057,12 @@ public sealed partial class L12GameEngine
                 && (duatMode != "mode:recover" || declared.GetValueOrDefault("recoverTarget", []).SingleOrDefault() is { } recover
                     && (recover == "mode:none" || Grave("recoverTarget", target => target.CardId != card.CardId
                         && L12StructuredCardRules.HasFaction(player, target, "taiyangcheng") && CanEnterHandOrLibrary(target)))),
-            "S01-0318" => declared.GetValueOrDefault("masterDamageCost", []).SingleOrDefault() == "cost:master-damage"
+            "S01-0318" => (effectOnlyRepeat || declared.GetValueOrDefault("masterDamageCost", []).SingleOrDefault() == "cost:master-damage")
                 && Grave("entryCard", target => target.CardType == "legion" && target.CurrentCost <= 5
                     && L12StructuredCardRules.HasFaction(player, target, "asgard")) && OwnSlot("entrySlot"),
-            "S01-0319" => declared.GetValueOrDefault("graveCost", []) is { Count: 4 } graveCost
+            "S01-0319" => (effectOnlyRepeat || declared.GetValueOrDefault("graveCost", []) is { Count: 4 } graveCost
                 && graveCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 4
-                && graveCost.All(id => player.Graveyard.Any(target => target.InstanceId == id && CanEnterHandOrLibrary(target)))
+                && graveCost.All(id => player.Graveyard.Any(target => target.InstanceId == id && CanEnterHandOrLibrary(target))))
                 && Enemy("killTarget", target => target.Troops <= 6000),
             "S01-0419" => mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || declared.GetValueOrDefault("moraleTarget", []).SingleOrDefault() is { } moraleTarget
@@ -996,33 +1071,34 @@ public sealed partial class L12GameEngine
             "S02-0009" => ValidateDefenseDeploymentDeclaration(player, card, declared),
             "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1"
                 && (mode is "mode:none" or "mode:morale")
-                && (mode == "mode:none" || OrdinaryCosts("lotusCost", 3)),
+                && (effectOnlyRepeat || mode == "mode:none" || OrdinaryCosts("lotusCost", 3)),
             "S02-0011" => EnemyMany("killTargets", 3, target => target.BaseTroops <= 2000),
             "S02-0013" => declared.GetValueOrDefault("artifactTarget", []).SingleOrDefault() is { } artifactId
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
-            "S02-0306" => player.MasterDamageTakenThisTurn >= 2
-                && !player.UsedAbilities.Contains("s2-mimir-used")
+            "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenThisTurn >= 2
+                && !player.UsedAbilities.Contains("s2-mimir-used"))
                 && mode is "mode:none" or "mode:mill",
             "S02-0522" => mode is "mode:none" or "mode:second"
                 && Enemy("primaryTarget")
-                && (mode == "mode:none" || GodPowerCost("secondCost", 1) && Enemy("secondaryTarget")),
+                && (mode == "mode:none" || (effectOnlyRepeat || GodPowerCost("secondCost", 1)) && Enemy("secondaryTarget")),
             "S02-0105" => mode is "mode:none" or "mode:draw"
                 && Enemy("killTarget", target => target.BaseTroops <= 3000)
-                && (mode == "mode:none" || declared.GetValueOrDefault("drawCost", []).SingleOrDefault() is { } moraleId
+                && (mode == "mode:none" || effectOnlyRepeat || declared.GetValueOrDefault("drawCost", []).SingleOrDefault() is { } moraleId
                     && player.Morale.Any(resource => resource.InstanceId == moraleId)),
             "S02-0521" => mode is "mode:none" or "mode:search"
                 && declared.GetValueOrDefault("flipTargets", []).Count <= 3
                 && declared.GetValueOrDefault("flipTargets", []).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                     == declared.GetValueOrDefault("flipTargets", []).Count
                 && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.IsGodPower))
-                && (mode == "mode:none" || ValidateGloryPlannedCost(player, declared)),
+                && (effectOnlyRepeat || mode == "mode:none" || ValidateGloryPlannedCost(player, declared)),
             "S02-0620" => mode is "mode:none" or "mode:search"
-                && (mode == "mode:none" || OrdinaryCost("searchCost")),
+                && (effectOnlyRepeat || mode == "mode:none" || OrdinaryCost("searchCost")),
             "S02-0621" => mode is "mode:none" or "mode:buff"
-                && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士")) && OrdinaryCost("buffCost")),
-            "S02-0207" => ValidateDesertDeclaration(player, card, declared),
-            "S02-0307" => player.Library.Count >= 1 && Enemy("curseTarget"),
+                && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士"))
+                    && (effectOnlyRepeat || OrdinaryCost("buffCost"))),
+            "S02-0207" => ValidateDesertDeclaration(player, card, declared, effectOnlyRepeat),
+            "S02-0307" => (effectOnlyRepeat || player.Library.Count >= 1) && Enemy("curseTarget"),
             "S02-0206" => Own("buffTarget", target => L12StructuredCardRules.HasFaction(player, target, "taiyangcheng")
                 && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
             "S02-0406" => mode is "mode:row-cost" or "mode:front-attack" or "mode:free-move"
@@ -1116,22 +1192,33 @@ public sealed partial class L12GameEngine
     }
 
     private bool ValidateDesertDeclaration(L12PlayerState player, L12CardInstance source,
-        IReadOnlyDictionary<string, List<string>> declared)
+        IReadOnlyDictionary<string, List<string>> declared, bool effectOnlyRepeat)
     {
         var discards = declared.GetValueOrDefault("discardTargets", []);
-        if (discards.Count > 3 || discards.Distinct(StringComparer.OrdinalIgnoreCase).Count() != discards.Count
+        var discardCount = discards.Count;
+        if (effectOnlyRepeat)
+        {
+            var countText = declared.GetValueOrDefault("desertRepeatCount", []).SingleOrDefault();
+            if (countText?.Split(':') is not ["count", var countValue]
+                || !int.TryParse(countValue, out discardCount) || discardCount is < 0 or > 3) return false;
+        }
+        else if (discards.Count > 3
+            || discards.Distinct(StringComparer.OrdinalIgnoreCase).Count() != discards.Count
             || discards.Any(id => FindOnField(player, id, out _, out _) is not { } card || !IsFieldLegion(card)))
+        {
             return false;
+        }
         var summonId = declared.GetValueOrDefault("summonTarget", []).SingleOrDefault();
         var summon = player.Hand.FirstOrDefault(card => card.InstanceId == summonId && card.InstanceId != source.InstanceId
             && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-            && card.DisasterLevel == discards.Count);
+            && card.DisasterLevel == discardCount);
         var slotText = declared.GetValueOrDefault("summonSlot", []).SingleOrDefault();
         if (summon is null || slotText?.Split(':') is not [var rowText, var slotValue]
             || !int.TryParse(rowText, out var row) || !int.TryParse(slotValue, out var slot)
             || row is < 0 or > 1 || slot is < 0 or > 2) return false;
         var occupant = player.Field[row][slot];
-        return occupant is null || discards.Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase);
+        return occupant is null || !effectOnlyRepeat
+            && discards.Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase);
     }
 
     private Dictionary<string, string> CompositeFirstSegmentData(string cardId,
@@ -1207,7 +1294,8 @@ public sealed partial class L12GameEngine
                     $"〈{source.Name}〉的“{next.Text}”因公开目标已失效而取消；其余独立段继续", source);
                 continue;
             }
-            if (!next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
+            if (item.Data.GetValueOrDefault("repeatedEffectOnly") != "true"
+                && !next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
             {
                 AddEvent("effect-cancelled", item.Controller,
                     $"〈{source.Name}〉的“{next.Text}”因费用对象或公开目标失效而取消；未发生部分支付，其余独立段继续", source);

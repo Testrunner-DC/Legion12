@@ -252,26 +252,80 @@ public sealed partial class L12GameEngine
 
     private void BeginThunderWrath(L12StackItem item)
     {
-        int first;
-        int second;
-        do { first = _random.Next(1, 7); second = _random.Next(1, 7); } while (first == second);
-        var loser = first < second ? 0 : 1;
-        AddEvent("dice", null, $"〈雷霆天怒〉掷骰：{State.Players[0].Name} {first}，{State.Players[1].Name} {second}");
-        var choices = State.Players[loser].Field.SelectMany(row => row).Where(card => card is not null).Select(card => card!.InstanceId).ToArray();
-        if (choices.Length == 0) { FinishStackItem(item); return; }
-        CreatePrompt(loser, "target", "选择我方 1 张军团返回手牌", choices, 1, 1,
-            "disaster-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "disaster-return-field" });
+        var first = _random.Next(1, 7);
+        var second = _random.Next(1, 7);
+        ResolveThunderWrathRolls(item, first, second);
     }
 
-    private void CompleteDisasterReturnField(L12StackItem item, string cardId)
+    private void ResolveThunderWrathRolls(L12StackItem item, int first, int second)
     {
-        for (var owner = 0; owner < 2; owner++)
+        if (first == second)
         {
-            var card = FindOnField(State.Players[owner], cardId, out var row, out var slot);
-            if (card is null) continue;
-            MoveFieldCardToZone(State.Players[owner], card, "hand", "因雷霆天怒返回手牌", queueLeaveTrigger: false); break;
+            var other = 1 - State.ActivePlayer;
+            item.Data["thunderLosers"] = $"{State.ActivePlayer}|{other}";
+            AddEvent("dice", null,
+                $"〈雷霆天怒〉掷骰：{State.Players[0].Name} {first}，{State.Players[1].Name} {second}；平点，双方均为最低玩家，当前回合玩家{State.Players[State.ActivePlayer].Name}先处理，再由{State.Players[other].Name}处理");
+        }
+        else
+        {
+            var loser = first < second ? 0 : 1;
+            item.Data["thunderLosers"] = loser.ToString();
+            AddEvent("dice", null,
+                $"〈雷霆天怒〉掷骰：{State.Players[0].Name} {first}，{State.Players[1].Name} {second}；最低玩家为{State.Players[loser].Name}");
+        }
+        ContinueThunderWrathReturnSequence(item);
+    }
+
+    private void ContinueThunderWrathReturnSequence(L12StackItem item)
+    {
+        var remaining = item.Data.GetValueOrDefault("thunderLosers", string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
+        while (remaining.Count > 0)
+        {
+            var currentText = remaining[0];
+            remaining.RemoveAt(0);
+            item.Data["thunderLosers"] = string.Join('|', remaining);
+            if (!int.TryParse(currentText, out var current) || current is < 0 or > 1) continue;
+            var choices = PublicLegions(State.Players[current]).Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0)
+            {
+                AddEvent("effect-skip", current,
+                    $"〈雷霆天怒〉处理{State.Players[current].Name}时没有军团可返回，跳过该玩家");
+                continue;
+            }
+            AddEvent("effect-order", current,
+                $"〈雷霆天怒〉轮到{State.Players[current].Name}选择自己的军团返回手牌");
+            CreatePrompt(current, "target", "雷霆天怒：选择我方1张军团返回手牌", choices, 1, 1,
+                "disaster-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "disaster-return-field",
+                    ["thunderPlayer"] = current.ToString(),
+                });
+            return;
         }
         FinishStackItem(item);
+    }
+
+    private void CompleteDisasterReturnField(L12StackItem item, L12Prompt prompt, string cardId)
+    {
+        var playerIndex = int.TryParse(prompt.Data.GetValueOrDefault("thunderPlayer"), out var parsed)
+            ? parsed : prompt.PlayerIndex;
+        if (playerIndex != prompt.PlayerIndex)
+        {
+            AddEvent("effect-cancelled", prompt.PlayerIndex,
+                "〈雷霆天怒〉选择者与当前处理玩家不一致；本次对象取消");
+            ContinueThunderWrathReturnSequence(item);
+            return;
+        }
+        var player = State.Players[playerIndex];
+        var card = FindOnField(player, cardId, out _, out _);
+        if (card is not null && IsFieldLegion(card))
+            MoveFieldCardToZone(player, card, "hand", "因雷霆天怒返回手牌", queueLeaveTrigger: false);
+        else
+            AddEvent("effect-cancelled", playerIndex,
+                "〈雷霆天怒〉已选择的我方军团失效；不改选其他军团");
+        ContinueThunderWrathReturnSequence(item);
     }
 
     private void BeginDragonDescent(L12StackItem item)

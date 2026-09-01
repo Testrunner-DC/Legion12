@@ -1,12 +1,12 @@
 # S01 太阳城与阿斯加德逐卡独立语义审计（Batch 6K-B）
 
-更新日期：2026-09-01
+更新日期：2026-09-02
 
 ## 范围与结论
 
 - 固定范围为 `cards.s1.json` 的 29 张 `taiyangcheng` 卡与 24 张 `asgard` 卡（含主宰、士气、阵营、Token/特殊牌），共 53 张、124 项能力；不重复 S01 通用、天廷或天灾。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。每行均独立核对时点、费用/目标声明、区域、数值层、公开与私密信息、目标失效、来源 LKI、多实例次数与响应无效。
-- 唯一结论：43 张通过、8 张明确错误并修复、2 张有疑点；缺少测试 0、未实现 0。霍列姆赫布与托勒密十三世只维持既有待裁定登记，本批没有猜测语义。
+- 唯一结论：45 张通过、8 张明确错误并修复、有疑点 0；缺少测试 0、未实现 0。霍列姆赫布与托勒密十三世已按 2026-09-02 玩家裁定闭环。
 
 ## 太阳城（29 张 / 69 项能力）
 
@@ -16,13 +16,13 @@
 | S01-0202 拉美西斯二世 | 3 | 登场保护与无守卫减费按公开场面；最多3张其他同阵营军团及顺序先声明，各委托登场效果保持自己的声明/响应。 | `L12EnterPublicTriggerPlans`、`L12S1FactionEffects` | `Bq20260830RegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S01-0203 美尼斯 | 2 | 对方回合持续兵力层按守卫存在重算；进攻可弃自身在内的己方军团作为冒号费用，预付后不恢复且来源离场不获得自身强化。 | `L12AttackPublicTriggerPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6HRegressionTests` | 通过 |
 | S01-0204 陵墓构造体 | 5 | 前排挑衅、叠放与每守卫+1000分层；阵亡/离场各自生成候选，按最后已知附属、所有者墓地与公开空格原子登场。 | `L12PublicTriggerEffectPlans`、`L12AuthoritativeCardZones` | `AtomicReviewBatch6DRegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
-| S01-0205 霍列姆赫布 | 2 | 登场弃守卫费用在入栈前声明支付；即将阵亡替代的守卫目的区及是否产生阵亡/离场事件仍待裁定，未改现行行为。 | `L12EnterPublicTriggerPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6JARegressionTests`、`LatestBugRegressionTests` | 有疑点（OPEN #1） |
+| S01-0205 霍列姆赫布 | 2 | 登场弃守卫费用在入栈前声明支付；即将阵亡时选择并重验受控战场陵墓守卫，代替者承接原致命动作的真实目的区、所有者解析及离场/阵亡事件。 | `L12EnterPublicTriggerPlans`、`L12LethalReplacements` | `AtomicReviewBatch6JARegressionTests`、`LatestBugRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S01-0206 萨拉丁 | 4 | 位移回合1次；相邻攻击加成仅本次进攻；进攻/阵亡可选守卫与公开位置先声明，结算重验不覆盖。 | `L12PublicTriggerEffectPlans`、`L12S1FactionEffects` | `GameEngineTests`、`AtomicReviewBatch6HRegressionTests` | 通过 |
 | S01-0207 图坦卡蒙 | 2 | 登场最多2守卫及各位置前置；阵亡公开墓地目标前置并放牌库顶，目标失效不改来源离场。 | `L12PublicTriggerEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6IBRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S01-0208 阿伊 | 3 | 远程静态；登场守卫与位置前置；进攻士气费用及前排低兵力目标入栈前声明支付，失效不退款。 | `L12AttackPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
 | S01-0209 纳芙蒂蒂 | 3 | 远程静态；登场条件锁定后由受影响对手在结算私密弃牌；阵亡按当时手牌数同时伤害/治疗。 | `L12S1FactionEffects`、`L12RuleKernelIntegration` | `AtomicReviewBatch6KBRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S01-0210 尼托克丽丝 | 3 | 远程静态；登场公开守卫目标前置；阵亡墓地军团与公开位置前置并以 Try 登场事务重验。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
-| S01-0211 托勒密十三世 | 2 | 远程静态；再次发动上1张主动战术是否重新支付该战术冒号前费用仍待裁定，严格隔离现行重复入口。 | `L12S1FactionEffects`、`L12EffectGeneratedPlay` | `Bq20260830RegressionTests`、`AtomicReviewBatch6JCRegressionTests` | 有疑点（OPEN #2） |
+| S01-0211 托勒密十三世 | 2 | 远程静态；父效果完整离栈后只复制上一张主动战术的效果，重新声明该效果所需模式/目标，不重付打出或冒号前费用，不制造虚拟区域移动。 | `L12PostResolutionGeneratedEffects`、`L12CompositeEffectPlans` | `Bq20260830RegressionTests`、`AtomicReviewBatch6JCRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S01-0212 陵墓守卫 | 3 | 构筑外置且不能入手/牌库；任何离场回所有者墓地；战场资源、对方回合费用与前排兵力均按当前控制区/位置计算。 | `L12SpecialDeckRules`、`L12MoralePayments`、`L12AuthoritativeCardZones` | `DeckValidatorTests`、`ExtendedCardEffectsTests`、`AtomicReviewBatch6DRegressionTests` | 通过 |
 | S01-0213 锡瓦的卡巴 | 2 | 前排远程静态；对方进攻后私密来源与公开空格先声明，免费活跃登场后锁定的休整士气按当时合法公开对象处理。 | `L12PublicTriggerEffectPlans`、`L12CombatTimeline` | `AtomicReviewBatch6KBRegressionTests`、`CombatTimelineRegressionTests` | 通过 |
 | S01-0214 克利奥帕特拉七世 | 2 | 远程静态；主动休整与1资源预付，墓地守卫及公开位置在入栈前声明，结算位置失效不退款。 | `L12PublicActiveEffectPlans`、`L12S1FactionEffects` | `ExtendedCardEffectsTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
@@ -76,4 +76,4 @@
 - 全池扫描 `CreatePrompt`、`QueueOrPushTriggeredEffect`、`PushEffect`、`FinishStackItem`、`CompositeFirstSegmentData`、墓地/牌库移动和直接落位；本批确定性根因只迁移上表 8 张卡的 9 个时点，其中智慧法典修复的是独立后段不得继承已完成StackItem的一次性奖励标记。
 - 纳芙蒂蒂、血斧艾瑞克等由受影响玩家在结算选择自己的隐藏手牌是合法结算期 Prompt；拉格纳、奥拉夫、洛基的“抽后弃牌”也必须延迟，未迁到公开声明。
 - 卡诺匹斯罐一/四已由 6J-A 分段，本批补齐箱、罐二、罐三；陵墓构造体所有者/LKI 与位置事务沿用 6D/6E；雷神之锤墓地登场属于 S02 交叉控制组，未混入本批。
-- `OPEN-QUESTIONS.md` 既有霍列姆赫布、托勒密十三世两项保持原文；没有新增裁定项。
+- 霍列姆赫布与托勒密十三世已按玩家裁定收口；全池致命替代与重复效果路径已扫描，未改动无关卡牌语义。

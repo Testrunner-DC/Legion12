@@ -412,8 +412,13 @@ public sealed partial class L12GameEngine
         else if (step.Kind == "composite-desert-hand")
         {
             var player = State.Players[activation.Controller];
-            var discardCount = activation.DeclaredValues.GetValueOrDefault("discardTargets", [])
-                .Count(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase));
+            var repeatCountText = activation.DeclaredValues.GetValueOrDefault("desertRepeatCount", [])
+                .SingleOrDefault();
+            var discardCount = repeatCountText?.Split(':') is ["count", var countValue]
+                && int.TryParse(countValue, out var parsedCount)
+                    ? parsedCount
+                    : activation.DeclaredValues.GetValueOrDefault("discardTargets", [])
+                        .Count(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase));
             var choices = player.Hand.Where(card => card.CardType == "legion" && card.Faction == "taiyangcheng"
                     && card.DisasterLevel == discardCount && card.InstanceId != activation.SourceInstanceId)
                 .Select(card => card.InstanceId).ToList();
@@ -573,6 +578,11 @@ public sealed partial class L12GameEngine
                 AbortCommittedCompositeEffectDeclaration(activation, "已打出的复合战术取消声明，卡牌结算至墓地");
                 return;
             }
+            if (activation.Ability is "composite-repeated-effect" or "repeated-tactic-effect")
+            {
+                ResumeAfterPostResolutionGeneratedInteraction();
+                return;
+            }
             if (activation.TriggerCandidateId is not null)
             {
                 var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item =>
@@ -631,6 +641,16 @@ public sealed partial class L12GameEngine
             if (activation.Ability == "composite-committed-play")
             {
                 CompleteCommittedCompositeEffectDeclaration(activation);
+                return;
+            }
+            if (activation.Ability == "composite-repeated-effect")
+            {
+                CompleteRepeatedCompositeEffectDeclaration(activation);
+                return;
+            }
+            if (activation.Ability == "repeated-tactic-effect")
+            {
+                CompleteRepeatedSimpleTacticEffect(activation);
                 return;
             }
             if (activation.Ability == "composite-play")
@@ -706,6 +726,12 @@ public sealed partial class L12GameEngine
         if (activation.Ability == "composite-committed-play")
         {
             AbortCommittedCompositeEffectDeclaration(activation, reason);
+            return;
+        }
+        if (activation.Ability is "composite-repeated-effect" or "repeated-tactic-effect")
+        {
+            AddEvent("effect-cancelled", activation.Controller, reason);
+            ResumeAfterPostResolutionGeneratedInteraction();
             return;
         }
         AddEvent("ability-rejected", activation.Controller, reason);

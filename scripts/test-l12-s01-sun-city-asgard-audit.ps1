@@ -17,6 +17,9 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
 $composite = Read-Source 'L12CompositeEffectPlans.cs'
 $triggers = Read-Source 'L12PublicTriggerEffectPlans.cs'
 $faction = Read-Source 'L12S1FactionEffects.cs'
+$lethal = Read-Source 'L12LethalReplacements.cs'
+$postResolution = Read-Source 'L12PostResolutionGeneratedEffects.cs'
+$rulingTests = Read-Source 'RulingClosureRegressionTests.cs'
 $tests = Read-Source 'AtomicReviewBatch6KBRegressionTests.cs'
 $audit = Read-Source 'S01-SUN-CITY-ASGARD-ABILITY-AUDIT.md'
 
@@ -62,6 +65,11 @@ if ($faction.Contains('HealMaster(item.Controller, 1, "卡诺匹斯箱"); if (so
 if ($faction.Contains('case "valhallaRecover": Mill(player, 2, "英灵殿"); RecoverAsgard')) {
     throw 'Valhalla mill and subsequent public recovery must remain separate StackItems.'
 }
+Assert-Contains $lethal 'TryOfferCardLethalSubstitution' 'Shared lethal-substitution framework is missing.'
+Assert-Contains $lethal 'pending.LethalReplacementSubstitutes[protectedCard.InstanceId] = choice' 'Combat lethal substitution must preserve the selected real battlefield substitute.'
+Assert-Contains $postResolution 'BeginPtolemyRepeatedTacticEffect' 'Ptolemy post-resolution effect repeat is missing.'
+Assert-Contains $postResolution '["repeatedEffectOnly"] = "true"' 'Ptolemy repeat must be marked effect-only.'
+Assert-Contains $rulingTests 'PtolemyDeclaresRepeatedModesAndTargetsBeforeTheRepeatedEffectStackItem' 'Ptolemy declaration ruling regression is missing.'
 
 $fixedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5piO56Gu6ZSZ6K+v4oaS5bey5L+u5aSN'))
 $questionStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5pyJ55aR54K5'))
@@ -69,7 +77,7 @@ $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YC
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus)).Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
-if ($fixedCount -ne 8 -or $questionCount -ne 2 -or $passedCount -ne 43) {
+if ($fixedCount -ne 8 -or $questionCount -ne 0 -or $passedCount -ne 45) {
     throw "Batch 6K-B status totals drifted (passed=$passedCount, fixed=$fixedCount, questions=$questionCount)."
 }
 Write-Host 'S01 Sun City + Asgard per-ability audit guard passed (53 cards / 124 abilities).'

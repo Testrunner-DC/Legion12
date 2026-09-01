@@ -1181,8 +1181,11 @@ public sealed partial class L12GameEngine
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
         if (isDefeat && !bypassLethalReplacement && TryApplyLakeLadySwordReplacement(player, card, reason)) return false;
-        if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason)) return false;
-        if (isDefeat && TryPreventS1FactionDeath(player, card)) return false;
+        if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason))
+        {
+            AttachPendingStateBasedKillSourcesToCardLethalSubstitution(card);
+            return false;
+        }
         if (isDefeat && HasActiveImmortal(card, row))
         {
             card.ImmortalUses--;
@@ -1286,6 +1289,8 @@ public sealed partial class L12GameEngine
         // 天灾结算拥有最高优先级，不建立通常的替代/阵亡/离场响应窗口。
         if (State.Phase == L12Phase.Disaster
             || State.EffectStack.Any(item => item.Trigger == "disaster")) return false;
+        if (TryOfferCardLethalSubstitution(controller, card, "effect-lethal-replacement", reason))
+            return true;
         if (!CanUseAchillesLethalReplacement(controller, card))
             return controller.UsedAbilities.Contains($"pending:{AchillesReplacementKey(card)}");
         controller.UsedAbilities.Add($"pending:{AchillesReplacementKey(card)}");
@@ -1310,6 +1315,13 @@ public sealed partial class L12GameEngine
         var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
         var card = FindOnField(player, cardId, out _, out _);
         if (card is null) return;
+        if (prompt.Data.ContainsKey("replacementKind"))
+        {
+            if (ResolveEffectCardLethalSubstitution(player, card, prompt, choice)) return;
+            RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
+                bypassLethalReplacement: true);
+            return;
+        }
         player.UsedAbilities.Remove($"pending:{AchillesReplacementKey(card)}");
         var applied = choice == "yes" && CanUseAchillesLethalReplacement(player, card)
             && L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1);

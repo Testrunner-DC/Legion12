@@ -22,6 +22,8 @@ $responses = Read-Source 'L12PublicResponseEffectPlans.cs'
 $triggers = Read-Source 'L12PublicTriggerEffectPlans.cs'
 $kernel = Read-Source 'L12RuleKernelIntegration.cs'
 $extended = Read-Source 'L12S1ExtendedEffects.cs'
+$disasters = Read-Source 'L12Disasters.cs'
+$rulingTests = Read-Source 'RulingClosureRegressionTests.cs'
 $tests = Read-Source 'AtomicReviewBatch6KARegressionTests.cs'
 $audit = Read-Source 'S01-UNIVERSAL-HEAVEN-ABILITY-AUDIT.md'
 
@@ -54,6 +56,10 @@ foreach ($responseCard in @('S01-0020', 'S01-0120')) {
     Assert-Contains $responses ('["' + $responseCard + '"]') "Batch 6K-A response declaration plan is missing: $responseCard"
 }
 Assert-Contains $kernel 'RevealSetReactionSourceWhenStacked(candidate)' 'A set reaction source must reveal and move before the response window opens.'
+Assert-Contains $disasters 'item.Data["thunderLosers"] = $"{State.ActivePlayer}|{other}"' 'Thunder Wrath ties must queue the active player before the other player.'
+Assert-Contains $rulingTests 'NegatedLiJingRevealDoesNotReadOrProcessTheHiddenTopCard' 'Li Jing negation/hidden-information ruling regression is missing.'
+Assert-Contains $rulingTests 'ThunderWrathTieProcessesActivePlayerThenOtherPlayerAndRecordsTheSequence' 'Thunder Wrath active-player-first tie regression is missing.'
+Assert-Contains $rulingTests 'ThunderWrathTieSkipsAPlayerWithoutLegionsAndStillProcessesTheOther' 'Thunder Wrath no-legion skip regression is missing.'
 
 $regencyStart = $triggers.IndexOf('case ("S01-0021", "reaction", _):', [StringComparison]::Ordinal)
 $regencyEnd = $triggers.IndexOf('case ("S01-0213", "reaction", _):', [StringComparison]::Ordinal)
@@ -77,7 +83,7 @@ $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YC
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus)).Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
-if ($fixedCount -ne 8 -or $questionCount -ne 2 -or $passedCount -ne 46) {
+if ($fixedCount -ne 8 -or $questionCount -ne 0 -or $passedCount -ne 48) {
     throw "Batch 6K-A status totals drifted (passed=$passedCount, fixed=$fixedCount, questions=$questionCount)."
 }
 Write-Host 'S01 universal + Heaven per-ability audit guard passed (56 cards / 94 abilities).'

@@ -1,13 +1,13 @@
 # S01 通用与天廷逐卡独立语义审计（Batch 6K-A）
 
-更新日期：2026-09-01
+更新日期：2026-09-02
 
 ## 范围与结论口径
 
 - 固定范围为 `cards.s1.json` 的 22 张 `universal` 基础卡、24 张 `tianting` 卡（含士气、主宰、阵营与专属衍生文本），以及 10 张 S01 通用天灾，共 56 张、94 项能力。
 - 权威顺序为：玩家裁定 > `FAQ-RULINGS.md`/FAQ 材料 > 规则书与关键词 > 印刷卡面。代码和旧测试只作实现证据，不反推规则。
 - 每行的“最短规则断言”同时核对时点、入栈前声明/费用、区域与数值层、公开/私密信息，以及空目标、来源离区、目标失效、响应无效等边界。`通过` 表示该卡全部列出的能力均找到运行时和行为测试证据；`明确错误→已修复` 表示本批先红后绿；`有疑点` 表示只登记待裁定而未改语义。
-- 总结：46 张通过、8 张明确错误并修复、2 张有疑点；未实现 0、仍缺测试 0。
+- 总结：48 张通过、8 张明确错误并修复、有疑点 0；未实现 0、仍缺测试 0。原有李靖与雷霆天怒问题已按 2026-09-02 玩家裁定闭环。
 
 ## 通用基础卡（22 张 / 27 项能力）
 
@@ -42,7 +42,7 @@
 |---|---:|---|---|---|---|
 | S01-0101 吕布 | 3 | 进攻无损/不可被远攻为静态；进攻后返4转活跃、登场返2击杀均先声明费用/公开目标，目标失效不退款。 | `L12StructuredCardRules`、`L12PublicTriggerEffectPlans`、`L12CombatTimeline` | `AtomicReviewBatch6JARegressionTests`、`CombatTimelineRegressionTests` | 通过 |
 | S01-0102 武则天 | 2 | 登场返1后可锁最多2张公开休整军团；阵亡抽1与回血同一不可分句，来源离场用LKI。 | `L12CardEffects`、`L12RuleKernelIntegration` | `AtomicEffectsTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
-| S01-0103 李靖 | 1 | 展示模式先公开声明，牌库顶身份与顶/底/代替登场选择延迟到合法展示后；依赖“随后”是否另开响应待裁定。 | `L12EnterPublicTriggerPlans`、`L12EffectContinuations` | `AtomicReviewBatch6JARegressionTests`、`GameEngineTests` | 有疑点（OPEN #4） |
+| S01-0103 李靖 | 1 | 展示与依赖处理属于同一隐藏信息事务，不另开响应；展示被无效时不读取牌库顶，也不执行置顶/置底或代替登场。 | `L12EnterPublicTriggerPlans`、`L12EffectContinuations` | `AtomicReviewBatch6JARegressionTests`、`GameEngineTests`、`RulingClosureRegressionTests` | 通过 |
 | S01-0104 韩信 | 2 | 登场费用减免按支付时士气比较；进攻返1、增兵/强攻模式在触发入栈前锁定并预付。 | `L12Actions`、`L12AttackPublicTriggerPlans` | `AtomicReviewBatch6HRegressionTests` | 通过 |
 | S01-0105 刘备 | 2 | 登场返1+公开手牌/位置预声明；主动检索身份只在结算读取，检索与随后洗牌分别响应，前段无效仍洗牌。 | `L12PublicTriggerEffectPlans`、`L12ActiveAbilities`、`L12CompositeEffectPlans` | `AtomicReviewBatch6KARegressionTests`、`AtomicReviewBatch6JARegressionTests` | 明确错误→已修复 |
 | S01-0106 关羽 | 2 | 位移按回合1次；进攻返1、增兵/必中在触发前声明支付，仅影响本次已建立的进攻。 | `L12AttackPublicTriggerPlans`、`L12ActiveAbilities` | `AtomicReviewBatch6HRegressionTests`、`NewSystemsTests` | 通过 |
@@ -74,7 +74,7 @@
 | S01-DS01 黯陨晨星 | 1 | 主要阶段开始公开掷骰；双数休整己方活跃士气，单数由回合玩家公开选本回合模式。 | `L12Disasters`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6JBRegressionTests`、`S2UniversalEffectsTests` | 通过 |
 | S01-DS02 百鬼夜行 | 3 | 触发非致命伤害；持续只给带天灾等级军团的主宰伤害+1；回合末手牌按所有者自选顺序压至5。 | `L12Disasters`、`L12Actions`、`L12StructuredCardRules` | `ExtendedCardEffectsTests`、`NewSystemsTests` | 通过 |
 | S01-DS03 腐秽大地 | 3 | 触发将后排军团送所有者墓地；持续禁止普通后排落位；反击战术费用为0但仍走正常响应合法性。 | `L12Disasters`、`L12Actions`、`L12EffectGeneratedPlay` | `ImmortalityRegressionTests`、`NewSystemsTests` | 通过 |
-| S01-DS04 雷霆天怒 | 2 | 进攻掷骰1~2时休整并结束该次进攻；触发最低点返回己方军团，但最低点并列无权威规则。 | `L12Disasters`、`L12Actions`、`L12StructuredCardRules` | `NewSystemsTests` | 有疑点（OPEN #5） |
+| S01-DS04 雷霆天怒 | 2 | 进攻掷骰1~2时休整并结束该次进攻；触发时所有最低点并列者均输，当前回合玩家先处理、另一方随后处理，各自选择自己的军团回手，无军团则跳过，并记录骰点与并列顺序。 | `L12Disasters`、`L12Actions`、`L12StructuredCardRules` | `NewSystemsTests`、`RulingClosureRegressionTests` | 通过 |
 | S01-DS05 魔龙降世 | 1 | 掷骰决定公开列并按所有者入墓；随后各玩家对自己墓地4张公开有序选择回牌库底，天灾不可响应。 | `L12Disasters`、`L12AuthoritativeCardZones` | `NewSystemsTests` | 通过 |
 | S01-DS06 神之天平 | 1 | 先统一血量并按是否变化抽牌，再各自弃1抽1；私密弃牌由各受影响玩家选择。 | `L12Disasters`、`L12StructuredCardRules` | `NewSystemsTests` | 通过 |
 | S01-DS07 天启默示录 | 1 | 各玩家选择战场保留至2，其他军团进入所有者墓地；手牌自选顺序回底后抽4，身份仅本人可见。 | `L12Disasters`、`L12AuthoritativeCardZones` | `NewSystemsTests` | 通过 |
@@ -87,4 +87,4 @@
 - 扫描 `cards.s1.json` / `cards.s2.json` 的“随后”、冒号费用、最多、牌库顶部/查看/展示/检索、回合1次；运行时扫描 `CreatePrompt`、`PushEffect`、`QueueOrPushTriggeredEffect`、`CompositeFirstSegmentData`、`PendingActivation`、`FinishStackItem`、`FindSource`、直接战场赋值与手牌/牌库/墓地移动。
 - 本批根因只命中上述 8 张 S01 范围卡；同一公共框架上的 S01-0014/0015/0118/0119、S02 李牧、玛格丽特、血鹰、卡诺匹斯等既有迁移作为控制组，未重复改写。
 - 天灾不可响应，故 S01-DS05/06/07/09 的“随后”保留一次天灾结算中的顺序处理；这不是多段响应遗漏。
-- 李靖与雷霆天怒仅登记 `OPEN-QUESTIONS.md`，没有按实现偏好改卡效。
+- 李靖与雷霆天怒已按玩家裁定收口；全池隐藏信息依赖事务与骰点并列处理扫描未发现其他需要同步修改的路径。

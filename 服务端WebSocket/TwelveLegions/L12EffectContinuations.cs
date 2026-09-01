@@ -74,7 +74,7 @@ public sealed partial class L12GameEngine
             case "yangjian-return-place": CompleteYangJianReturn(item, chosen[0]); break;
             case "liubei-search": CompleteLiuBeiSearch(item, chosen[0]); break;
             case "shanhe-search-pick": CompleteShanheSearch(item, chosen[0]); break;
-            case "disaster-return-field": CompleteDisasterReturnField(item, chosen[0]); break;
+            case "disaster-return-field": CompleteDisasterReturnField(item, prompt, chosen[0]); break;
             case "disaster-grave-bottom": ContinueDisasterGraveBottom(item, prompt, chosen); break;
             case "disaster-discard": CompleteDisasterDiscard(item, prompt, chosen); break;
             case "disaster-keep-field": CompleteDisasterKeepField(item, prompt, chosen); break;
@@ -99,9 +99,8 @@ public sealed partial class L12GameEngine
             var target = FindOnField(State.Players[owner], instanceId, out _, out _);
             if (target is null) continue;
             var source = FindSource(sourceItem);
-            if (!RemoveFromField(State.Players[owner], target, true, reason)) return;
             if (source is null) return;
-            ResolveTypedKillSourceEvent(new L12KillSourceEvent(
+            var killEvent = new L12KillSourceEvent(
                 $"effect-kill:{sourceItem.StackItemId}:{source.InstanceId}",
                 L12KillSourceKind.CardEffect,
                 sourceItem.Controller,
@@ -109,7 +108,13 @@ public sealed partial class L12GameEngine
                 source.CardId,
                 TriggersPrintedKillTiming: false,
                 CausedBySourceCard: true,
-                [target.InstanceId]));
+                [target.InstanceId]);
+            if (!RemoveFromField(State.Players[owner], target, true, reason))
+            {
+                AttachCardLethalKillSource(target, killEvent);
+                return;
+            }
+            ResolveTypedKillSourceEvent(killEvent);
             return;
         }
     }

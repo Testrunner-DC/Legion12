@@ -1,12 +1,12 @@
 # S02 高天原与奥林匹斯逐卡独立语义审计（Batch 6L-C）
 
-更新日期：2026-09-01
+更新日期：2026-09-02
 
 ## 范围与结论
 
 - 固定范围为 `cards.s2.json` 的 7 张 `gaotianyuan` 高天原卡与 28 张 `olympus` 奥林匹斯卡，含主宰、主神、士气/神力、晋升者与特殊牌，共 35 张、101 项原子目录能力；S02 天灾留后批。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。逐项核对时点、费用预付、独立段、区域/所有者、四状态资源、晋升叠放、数值、隐藏信息、来源 LKI 与响应无效。
-- 唯一结论：20 张通过、14 张明确错误并修复、1 张沿用既有疑点、缺少测试 0、未实现 0。海伦的致命替代仍只引用既有 `OPEN-QUESTIONS.md`，本批未猜测裁定。
+- 唯一结论：21 张通过、14 张明确错误并修复、有疑点 0、缺少测试 0、未实现 0。海伦已按 2026-09-02 玩家裁定闭环。
 
 ## 逐卡逐能力结论
 
@@ -33,7 +33,7 @@
 | S02-0512 埃涅阿斯 | 4 | 0神力减费；前排挑衅实时；阵亡抽牌模式候选期声明，拒绝不造空栈。 | `L12StructuredCardRules`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IARegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0513 亚里士多德 | 3 | 远程常驻；登场翻士气目标前置；主动休整的下一张奥林匹斯军团-1必须识别戒指通用军团并由该军团消费。 | `L12Actions`、`L12EnterPublicTriggerPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-0514 柏拉图 | 2 | 远程常驻；牌库顶身份只在登场段合法开始后展示，戒指使通用卡成为合法奥林匹斯命中，其余有序回底。 | `L12S1FactionEffects`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`AtomicEffectsTests` | 明确错误→已修复 |
-| S02-0515 海伦 | 3 | 远程常驻与神力条件登场弃牌已实现；前排致命替代的声明层级沿用既有待裁定项，本批不猜。 | `L12StructuredCardRules`、`L12GameEngine` | `S2FactionRegressionTests`、`OPEN-QUESTIONS.md` | 有疑点 |
+| S02-0515 海伦 | 3 | 远程常驻与神力条件登场弃牌已实现；前排即将阵亡时弃置另一张手牌军团进入其所有者墓地，只产生弃牌及其触发，不伪造战场离场/阵亡。 | `L12StructuredCardRules`、`L12LethalReplacements` | `S2FactionRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S02-0516 汉尼拔 | 3 | 活跃不可被攻与相邻+1000实时；进攻先支付1神力并同时声明双方公开军团目标，目标分别失效不互吞。 | `L12AttackPublicTriggerPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6HRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0517 彭忒西勒亚 | 3 | 前排远程常驻；登场本回合可攻军团；进攻消耗并翻转1神力在入栈前支付，+2000本回合有效且无效不退款。 | `L12AttackPublicTriggerPlans`、`L12EnterPublicTriggerPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S02-0518 忒修斯 | 3 | 0神力减费；登场翻休整士气目标前置；阵亡墓地晋升者目标先声明并以展示加入手牌公共事件移动。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
@@ -54,7 +54,7 @@
 - `HandPlay Composite` 为〈武运在天 铠甲在前〉建立隐藏检索段与确定性上杉增益段；诸神巅回收模式复用 Active Composite 建立回收/随后登场两段。任一前段被无效不吞后段，已支付费用和已完成区域移动不回滚。
 - `L12S2ZoneOps.InheritPromotionState` 统一迁移休整、限时修正及其已吸收伤害、被赋予关键词、挑衅/免死到期、禁转活跃、移动/进攻次数与临时进攻许可；不启用底座印刷文本/兵力，离场仍由整组所有者区域事务处理。
 - 所有写明【奥林匹斯】的运行时筛选与提交重验统一调用 `L12StructuredCardRules.HasFaction`。仅晋升卡身份/同名底座配对、阵营开局与叠放拆组保留印刷 `Faction == "olympus"` 判断；牌库顶/检索身份仍到合法效果开始后才读取。
-- 海伦致命替代沿用既有待裁定项；本批没有新增裁定。天灾不在 6L-C 范围。
+- 海伦手牌弃置替代已按玩家裁定收口；同类全池扫描确认它不复用战场代替者的阵亡/离场事务。天灾不在 6L-C 范围。
 
 ## 红绿与验证证据
 

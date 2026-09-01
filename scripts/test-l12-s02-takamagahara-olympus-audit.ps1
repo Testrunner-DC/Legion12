@@ -21,6 +21,8 @@ $remaining = Read-Source 'L12S2RemainingEffects.cs'
 $faction = Read-Source 'L12S2FactionEffects.cs'
 $publicActive = Read-Source 'L12PublicActiveEffectPlans.cs'
 $kernel = Read-Source 'RuleKernel.cs'
+$lethal = Read-Source 'L12LethalReplacements.cs'
+$rulingTests = Read-Source 'RulingClosureRegressionTests.cs'
 $tests = Read-Source 'AtomicReviewBatch6LCRegressionTests.cs'
 $audit = Read-Source 'S02-TAKAMAGAHARA-OLYMPUS-ABILITY-AUDIT.md'
 
@@ -64,6 +66,9 @@ foreach ($source in @($remaining, $faction, $publicActive)) {
 }
 Assert-Contains $actions 'L12StructuredCardRules.HasFaction(player, card, "olympus")' 'Olympus next-legion discount must use effective faction.'
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, card, "olympus")' 'Olympus hidden searches must use effective faction.'
+Assert-Contains $lethal 'NotifyCardDiscarded(controller, substitute, "hand", causedByEffect: true)' 'Helen lethal replacement must use the real effect-discard transaction.'
+Assert-Contains $rulingTests 'HelenUsesARealEffectDiscardRatherThanAFieldDeathTransaction' 'Helen discard/event ruling regression is missing.'
+Assert-Contains $rulingTests 'HelenSubstituteIsRevalidatedAndInvalidSelectionDoesNotProtectHer' 'Helen invalid-destination revalidation regression is missing.'
 
 $fixedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5piO56Gu6ZSZ6K+v4oaS5bey5L+u5aSN'))
 $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YCa6L+H'))
@@ -71,7 +76,7 @@ $questionStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus) + ' \|').Count
-if ($fixedCount -ne 14 -or $passedCount -ne 20 -or $questionCount -ne 1) {
+if ($fixedCount -ne 14 -or $passedCount -ne 21 -or $questionCount -ne 0) {
     throw "Batch 6L-C status totals drifted (passed=$passedCount, fixed=$fixedCount, question=$questionCount)."
 }
 Write-Host 'S02 Takamagahara + Olympus per-ability audit guard passed (35 cards / 101 abilities).'

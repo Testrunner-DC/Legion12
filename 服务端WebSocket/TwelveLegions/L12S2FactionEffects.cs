@@ -100,23 +100,8 @@ public sealed partial class L12GameEngine
     private void ResolveS2DiscardTrigger(L12StackItem item)
     {
         if (item.SourceCardId != "S02-0006") { FinishStackItem(item); return; }
-        var player = State.Players[item.Controller];
-        var master = CreateCard(player.MasterId, $"master-{item.Controller}");
-        var abilities = GetAbilities(player.MasterId)
-            .Where(view => GetActiveAbilityMoraleCost(master, view.Id) > 0)
-            .ToArray();
-        if (abilities.Length == 0) { FinishStackItem(item); return; }
-
-        var choices = abilities.Select(view => view.Id).Append("skip").ToArray();
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "s2-faith-zealot",
-            ["choiceMode"] = "instant",
-            ["skip"] = "不发动",
-        };
-        foreach (var ability in abilities) data[ability.Id] = ability.Label;
-        CreatePrompt(item.Controller, "option", "信仰狂热者：选择1个需要消耗士气的主宰效果，无视全部消耗发动且不计入使用次数",
-            choices, 1, 1, "card-effect", item.StackItemId, data: data);
+        item.Data["postResolutionGenerated"] = "faith-zealot-master";
+        FinishStackItem(item);
     }
 
     private void QueueS2MasterMoraleReturnTriggers(int playerIndex, L12CardInstance master, int returned)
@@ -706,11 +691,17 @@ public sealed partial class L12GameEngine
         }
         if (AtomicFlowKey(item, card) != "desert-transaction") return false;
         var discardIds = CompositeDeclared(item, "discardTargets");
+        var repeatCountText = CompositeDeclared(item, "desertRepeatCount").SingleOrDefault();
+        var discardCount = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true"
+            && repeatCountText?.Split(':') is ["count", var countValue]
+            && int.TryParse(countValue, out var parsedCount)
+                ? parsedCount
+                : discardIds.Length;
         var summonId = CompositeDeclared(item, "summonTarget").SingleOrDefault();
         var slotChoice = CompositeDeclared(item, "summonSlot").SingleOrDefault();
         var summon = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == summonId
             && candidate.CardType == "legion" && candidate.Faction == "taiyangcheng"
-            && candidate.DisasterLevel == discardIds.Length);
+            && candidate.DisasterLevel == discardCount);
         if (discardIds.Length > 3 || summon is null || slotChoice is null
             || !TrySummonFromAnyPrivateZone(player, item.Controller, summon.InstanceId, slotChoice, tapped: false))
         {
@@ -2037,37 +2028,6 @@ public sealed partial class L12GameEngine
                 {
                     var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                     if (target is { Tapped: true }) target.CannotUntapUntilRound = Math.Max(target.CannotUntapUntilRound, State.Round + 1);
-                }
-                FinishStackItem(item);
-                return true;
-            }
-            case "s2-faith-zealot":
-            {
-                var ability = chosen[0];
-                if (ability == "skip")
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                var master = CreateCard(player.MasterId, $"master-{item.Controller}");
-                if (!GetAbilities(player.MasterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase))
-                    || GetActiveAbilityMoraleCost(master, ability) <= 0)
-                {
-                    FinishStackItem(item);
-                    return true;
-                }
-                item.Data["selected"] = ability;
-                State.FreeMasterActivation = new L12FreeMasterActivation
-                {
-                    Controller = item.Controller,
-                    Ability = ability,
-                    SourceInstanceId = item.SourceInstanceId,
-                };
-                var result = BeginActiveAbility(item.Controller, new L12Command("activateAbility", CardInstanceId: master.InstanceId, Ability: ability));
-                if (!result.Accepted)
-                {
-                    State.FreeMasterActivation = null;
-                    AddEvent("effect-failed", item.Controller, $"〈信仰狂热者〉无法发动所选主宰效果：{result.Error}");
                 }
                 FinishStackItem(item);
                 return true;

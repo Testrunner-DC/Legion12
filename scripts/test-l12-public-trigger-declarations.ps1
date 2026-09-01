@@ -44,8 +44,8 @@ $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -Fi
     [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
 }) -join "`n")
 $remainingPromptTokenCount = [regex]::Matches($allRuntime, '\bCreatePrompt\(').Count
-if ($remainingPromptTokenCount -gt 135) {
-    throw "Resolution prompt inventory regressed above the Batch 6L-B ratchet: $remainingPromptTokenCount > 135"
+if ($remainingPromptTokenCount -gt 136) {
+    throw "Resolution prompt inventory regressed above the ruling-closure ratchet: $remainingPromptTokenCount > 136"
 }
 
 foreach ($cardId in @(
