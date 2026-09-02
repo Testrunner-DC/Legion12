@@ -209,6 +209,10 @@ public static class L12EffectAtomRegistry
 /// </summary>
 public sealed class L12AtomicEffectCatalog
 {
+    private static readonly Regex AbilityBoundaryPattern = new(
+        @"登场时|阵亡时|离场时|进攻时|进攻后|击杀时|受到伤害时|造成伤害时|回合开始时|回合结束时|天灾触发时|主动休整|主动翻回正面|主动\s|盖伏|反击",
+        RegexOptions.CultureInvariant);
+
     private static readonly string[] TimingTokens =
     [
         "登场时", "阵亡时", "离场时", "进攻时", "进攻后", "受到伤害时", "造成伤害时", "回合开始时",
@@ -373,8 +377,7 @@ public sealed class L12AtomicEffectCatalog
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
         var normalized = text.Replace("\r", string.Empty).Replace("\n", "。").Trim();
-        var boundary = new Regex(@"登场时|阵亡时|离场时|进攻时|进攻后|击杀时|受到伤害时|造成伤害时|回合开始时|回合结束时|天灾触发时|主动休整|主动翻回正面|主动\s|盖伏|反击", RegexOptions.Compiled);
-        var starts = boundary.Matches(normalized).Select(match => match.Index).Where(index => index > 0).Distinct().Order().ToArray();
+        var starts = AbilityBoundaryPattern.Matches(normalized).Select(match => match.Index).Where(index => index > 0).Distinct().Order().ToArray();
         var segments = new List<string>();
         var cursor = 0;
         foreach (var start in starts)

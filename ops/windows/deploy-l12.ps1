@@ -127,7 +127,10 @@ try {
     if ([string]::IsNullOrWhiteSpace($ArtifactManifest)) {
         $arguments = @("-ExecutionPolicy", "Bypass", "-File", $verifyScript, "-CacheRoot", $resolvedCacheRoot)
         if ($ForceVerification) { $arguments += "-Force" }
-        $verificationOutput = & powershell @arguments
+        $verificationHost = Get-Command "pwsh" -ErrorAction SilentlyContinue
+        if (-not $verificationHost) { $verificationHost = Get-Command "powershell" -ErrorAction Stop }
+        Write-Host "[L12 部署] 使用验证宿主：$($verificationHost.Source)"
+        $verificationOutput = & $verificationHost.Source @arguments
         if ($LASTEXITCODE -ne 0) { throw "本地完整验证或发布包生成失败" }
         $ArtifactManifest = [string]($verificationOutput | Select-Object -Last 1)
     }
