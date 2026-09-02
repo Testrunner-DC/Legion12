@@ -9,6 +9,28 @@ const roundCardAssets: Record<string, string> = {
   'S02-06S1': 'Round_S02-06S1-符文.png',
 }
 
+const disasterRoundAssets: Record<string, string> = {
+  'S01-DS01': 'S01-DS01.png',
+  'S01-DS02': 'S01-DS02.png',
+  'S01-DS03': 'S01-DS03.png',
+  'S01-DS04': 'S01-DS04.png',
+  'S01-DS05': 'S01-DS05.png',
+  'S01-DS06': 'S01-DS06.png',
+  'S01-DS07': 'S01-DS07.png',
+  'S01-DS08': 'S01-DS08.png',
+  'S01-DS09': 'S01-DS09.png',
+  'S01-DS10': 'S01-DS10.png',
+  'S02-DS01': 'S02-DS01.png',
+  'S02-DS02': 'S02-DS02.png',
+  'S02-DS03': 'S02-DS03.png',
+  'S02-DS04': 'S02-DS04.png',
+  'S02-DS05': 'S02-DS05.png',
+  'S02-DS06': 'S02-DS06.png',
+  'ST-DS01': 'ST-DS01.png',
+  'ST-DS02': 'ST-DS02.png',
+  'ST-DS03': 'ST-DS03.png',
+}
+
 export const factionLogoUrls: Record<string, string> = {
   tianting: `${assetRoot}/logo/tianting.png`,
   taiyangcheng: `${assetRoot}/logo/taiyangcheng.png`,
@@ -28,6 +50,11 @@ export function masterProfileUrl(masterId?: string, fallback?: string) {
 
 export function roundCardUrl(cardId?: string, fallback?: string) {
   const asset = cardId ? roundCardAssets[cardId] : undefined
+  return asset ? `${assetRoot}/round/${asset}` : fallback
+}
+
+export function disasterRoundUrl(cardId?: string, fallback?: string) {
+  const asset = cardId ? disasterRoundAssets[cardId] : undefined
   return asset ? `${assetRoot}/round/${asset}` : fallback
 }
 

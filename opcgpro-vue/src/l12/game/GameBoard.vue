@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
-import { destructionRoundBackUrl } from '../specialAssets'
+import { destructionRoundBackUrl, disasterRoundUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
@@ -741,7 +741,7 @@ function statusTexts(card: Card) {
                 :class="{ hidden: !card || card.hidden, inactive: card && !card.hidden && card.instanceId !== game.activeDisaster?.instanceId, replaceable: game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 }" :disabled="!card || card.hidden" :title="card && !card.hidden ? (game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 ? `${card.name} · 点击更换` : card.name) : '未揭示天灾'"
                 @click="card && focusSessionDisaster(card, index)" @mouseenter="card && isVisibleDisasterCard(card) && (focusCard = card)">
                 <img v-if="!card || card.hidden" :src="destructionRoundBackUrl" alt="未揭示天灾"/>
-                <CardImage v-else :card-id="card.cardId || ''" :legacy-url="card.imageUrl" :alt="card.name || '天灾'" intent="thumb" eager/>
+                <img v-else :src="disasterRoundUrl(card.cardId, card.imageUrl)" :alt="card.name || '天灾'"/>
               </button>
             </div>
           </section>

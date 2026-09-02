@@ -13,6 +13,8 @@ const ids = new Set(cards.map(card => card.id))
 const cardAssets = read('../src/l12/cardAssets.ts')
 const cardImage = read('../src/l12/CardImage.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
+const specialAssets = read('../src/l12/specialAssets.ts')
+const gameBoard = read('../src/l12/game/GameBoard.vue')
 const serviceWorker = read('../public/sw.js')
 const generator = read('./build-l12-card-cdn.mjs')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
@@ -46,6 +48,13 @@ const styledCardImageConsumers = [
   '../src/l12/site/AdminPage.vue',
   '../src/l12/site/DeckLibraryPage.vue',
 ]
+const disasterRoundIds = [
+  'S01-DS01', 'S01-DS02', 'S01-DS03', 'S01-DS04', 'S01-DS05',
+  'S01-DS06', 'S01-DS07', 'S01-DS08', 'S01-DS09', 'S01-DS10',
+  'S02-DS01', 'S02-DS02', 'S02-DS03', 'S02-DS04', 'S02-DS05', 'S02-DS06',
+  'ST-DS01', 'ST-DS02', 'ST-DS03',
+]
+const starterMasterProfileIds = ['ST01-M1', 'ST02-M1', 'ST03-M1', 'ST04-M1', 'ST05-M1', 'ST06-M1']
 
 const contracts = [
   [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
@@ -61,7 +70,10 @@ const contracts = [
   [consumers.every(path => read(path).includes('CardImage')), '全部 L12 卡图消费入口必须迁移到公共 CardImage'],
   [styledCardImageConsumers.every(path => read(path).includes('.l12-card-image')), '迁移后的 scoped/global 尺寸、横卡旋转与状态滤镜必须命中 CardImage 根节点'],
   [!read('../src/l12/L12DeckEditor.vue').includes('<span v-else>XII</span>'), '牌库编辑器迁移 CardImage 后不得残留失去相邻 v-if 的旧图片兜底分支'],
-  [remainingDirectImages.every(tag => tag.includes('masterProfileUrl') || tag.includes('roundCardUrl')), '普通卡面不得绕过 CardImage；仅允许官方方形头像与圆形裁切专用资源保留原始 img'],
+  [remainingDirectImages.every(tag => tag.includes('masterProfileUrl') || tag.includes('roundCardUrl') || tag.includes('disasterRoundUrl')), '普通卡面不得绕过 CardImage；仅允许官方方形头像与圆形裁切专用资源保留原始 img'],
+  [disasterRoundIds.every(id => specialAssets.includes(`'${id}': '${id}.png'`) && existsSync(new URL(`../public/assets/l12/special/round/${id}.png`, import.meta.url))), '全19张S01/S02/ST天灾圆形卡图必须有独立映射与本地资源'],
+  [starterMasterProfileIds.every(id => existsSync(new URL(`../public/assets/l12/special/master/${id}.png`, import.meta.url))), '六张ST初始主宰必须接入共用Profile资源目录'],
+  [gameBoard.includes('disasterRoundUrl(card.cardId, card.imageUrl)') && gameBoard.includes('destructionRoundBackUrl') && gameBoard.includes('intent="detail"'), '本局天灾圆形序列必须使用专用圆图，未知卡使用圆形卡背，详情仍使用高清完整卡面'],
   [read('../src/l12/site/deckShare.ts').includes('resolveCardAssetUrls') && read('../src/l12/site/deckShare.ts').includes('for (const url of candidates)'), 'Canvas 牌库图必须逐个尝试 resolver 候选且单图失败可回落'],
   [serviceWorker.includes("caches.delete('l12-images-v1')") && !serviceWorker.includes("request.destination !== 'image'"), '旧广域图片 Service Worker 必须退役并只清理自身缓存'],
   [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedCardCount = 324'), '生成器必须默认同源内容寻址路径并拒绝非 324 张目录'],
