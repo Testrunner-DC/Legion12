@@ -168,7 +168,7 @@ public sealed partial class L12GameEngine
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
-                player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+                player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
             : new
             {
@@ -179,7 +179,7 @@ public sealed partial class L12GameEngine
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, player.Morale,
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
-                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
         var prompts = State.PendingPrompts
@@ -796,6 +796,7 @@ public sealed partial class L12GameEngine
             || State.EffectStack.Count > 0 || State.DeferredEffectStack.Count > 0
             || State.ResponseWindow is not null) return;
         current.NextLegionChargeMaxCost = null;
+        current.NextLegionEntryDiscount = 0;
         current.FreeTacticCount = 0;
         current.TemporaryMorale = 0;
         current.BackRowCannotSupport = false;

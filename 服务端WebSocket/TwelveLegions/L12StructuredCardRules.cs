@@ -182,6 +182,8 @@ public static partial class L12StructuredCardRules
         if (expression.Contains("controller.god-power=0", StringComparison.Ordinal) && godPowerCount != 0) return false;
         if (expression.Contains("controller.god-power>=5", StringComparison.Ordinal) && godPowerCount < 5) return false;
 
+        if (expression.Contains("controller.hp<=7", StringComparison.Ordinal) && controller.Hp > 7) return false;
+
         const string fieldCardPrefix = "controller.field.card-id=";
         var fieldCardId = expression.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(term => term.StartsWith(fieldCardPrefix, StringComparison.Ordinal))?[fieldCardPrefix.Length..];
@@ -359,6 +361,7 @@ public static partial class L12StructuredCardRules
         if (TryGetStarterBatch1Abilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2BAbilities(cardId, out abilities)) return true;
+        if (TryGetStarterBatch3AAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {

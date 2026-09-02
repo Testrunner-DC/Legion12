@@ -232,6 +232,8 @@ public sealed partial class L12GameEngine
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus")
             && player.NextS2OlympusLegionDiscount > 0)
             player.NextS2OlympusLegionDiscount = 0;
+        if (card.CardType == "legion" && player.NextLegionEntryDiscount > 0)
+            player.NextLegionEntryDiscount = 0;
         if (card.CardType == "tactic" && player.FreeTacticCount > 0)
             player.FreeTacticCount--;
         else if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
@@ -455,6 +457,7 @@ public sealed partial class L12GameEngine
         if (useSelfDamageDiscount && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1) modifier--;
         if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
             modifier -= player.NextFactionLegionDiscount;
+        if (card.CardType == "legion") modifier -= player.NextLegionEntryDiscount;
         if (card.CardType == "legion" && card.Faction == "taiyangcheng" && card.DisasterLevel > 0)
             modifier -= player.NextS2SunDisasterLegionDiscount;
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus"))

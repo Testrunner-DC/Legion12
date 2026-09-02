@@ -270,6 +270,8 @@ public sealed class L12PlayerState
     public L12S2SpecialZones SpecialZones { get; } = new();
     public HashSet<string> UsedAbilities { get; } = new(StringComparer.OrdinalIgnoreCase);
     public int? NextLegionChargeMaxCost { get; set; }
+    /// <summary>本回合下一张军团的通用登场减费总量；成功打出军团后一次性消费。</summary>
+    public int NextLegionEntryDiscount { get; set; }
     public int FreeTacticCount { get; set; }
     public int TemporaryMorale { get; set; }
     public bool BackRowCannotSupport { get; set; }

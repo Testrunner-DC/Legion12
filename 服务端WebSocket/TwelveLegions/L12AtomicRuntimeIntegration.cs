@@ -42,6 +42,9 @@ public sealed partial class L12GameEngine
                 case L12AtomKinds.SetState:
                     if (atom.Parameters.GetValueOrDefault("key") == "controller.nextLegionChargeMaxCost")
                         controller.NextLegionChargeMaxCost = AtomicInt(atom, "value");
+                    else if (atom.Parameters.GetValueOrDefault("key") == "controller.next-legion-entry-discount"
+                        && atom.Parameters.GetValueOrDefault("operation") == "increment")
+                        controller.NextLegionEntryDiscount += AtomicInt(atom, "value");
                     else if (atom.Parameters.GetValueOrDefault("key") == "opponent.nextActiveTacticSurcharge"
                         && atom.Parameters.GetValueOrDefault("operation") == "increment")
                         opponent.NextActiveTacticSurcharge += AtomicInt(atom, "value");
