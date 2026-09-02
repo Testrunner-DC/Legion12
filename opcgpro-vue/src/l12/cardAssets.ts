@@ -173,15 +173,19 @@ export async function resolveCardAsset(cardId: string, legacyUrl: string | undef
   }
   if (!manifest || !entry) return fallbackCardAsset(cardId, legacyUrl, intent)
 
-  const cdnBaseUrl = configuredCdnBase() || manifest.cdnBaseUrl?.replace(/\/$/, '') || ''
+  const explicitCdnBaseUrl = configuredCdnBase()
+  const manifestCdnBaseUrl = manifest.cdnBaseUrl?.replace(/\/$/, '') || ''
   const sameOrigin = manifest.basePath || SAME_ORIGIN_ROOT
   return {
     cardId,
     intent,
     orientation: entry.orientation,
     sources: uniqueSources([
-      cdnBaseUrl ? sourceFor('cdn', cdnBaseUrl, entry.variants, intent) : null,
+      explicitCdnBaseUrl ? sourceFor('cdn', explicitCdnBaseUrl, entry.variants, intent) : null,
       sourceFor('sameOrigin', sameOrigin, entry.variants, intent),
+      !explicitCdnBaseUrl && manifestCdnBaseUrl
+        ? sourceFor('cdn', manifestCdnBaseUrl, entry.variants, intent)
+        : null,
       legacyUrl ? { kind: 'legacy', lowWebp: legacyUrl, webp: legacyUrl } : null,
       { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER },
     ]),

@@ -69,7 +69,23 @@ function onLoad() {
   }
 }
 
-function onError() {
+function absoluteSourceUrl(value: string | undefined) {
+  if (!value) return ''
+  try {
+    return new URL(value, window.location.href).href
+  } catch {
+    return value
+  }
+}
+
+function onError(event: Event) {
+  const image = event.currentTarget as HTMLImageElement | null
+  const failedUrl = absoluteSourceUrl(image?.currentSrc || image?.src)
+  const activeUrls = [avifUrl.value, imageUrl.value].map(absoluteSourceUrl).filter(Boolean)
+  // A replaced <img> can finish reporting the previous source after the next
+  // fallback has already been selected. Ignore that stale event so one failed
+  // CDN request cannot skip the valid same-origin source.
+  if (failedUrl && !activeUrls.includes(failedUrl)) return
   if (avifUrl.value) {
     avifDisabled.value = true
     renderKey.value += 1
@@ -97,7 +113,6 @@ onMounted(refresh)
     @focusin="requestHighResolution"
   >
     <source v-if="avifUrl" :key="`avif-${renderKey}`" type="image/avif" :srcset="avifUrl" />
-    <source :key="`webp-${renderKey}`" type="image/webp" :srcset="imageUrl" />
     <img
       :key="`img-${renderKey}`"
       class="l12-card-image__img"

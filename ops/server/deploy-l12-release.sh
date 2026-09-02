@@ -387,18 +387,22 @@ log "验证公网 WebSocket 建连与无状态部署协议"
 timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}/ws"
 
 if [[ "$card_assets_hash" != "-" ]]; then
-  public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>process.stdout.write(JSON.parse(body).assetVersion || ''))")"
+  public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>{const manifest=JSON.parse(body);if(manifest.schemaVersion!==2||manifest.cardCount!==324||!manifest.cards?.['ST01-01'])process.exit(2);process.stdout.write(manifest.assetVersion||'')})")"
   [[ "$public_asset_version" == "$card_assets_hash" ]] || fail "公网优化卡图 manifest 版本不匹配"
   sample_asset_path="$(node - "${card_assets_target}/card-assets.manifest.json" <<'NODE'
 const manifest = require(process.argv[2])
-const first = Object.values(manifest.cards)[0]
-process.stdout.write(first.variants.thumbWebp)
+const starter = manifest.cards['ST01-01']
+if (!starter?.variants?.thumbWebp) process.exit(2)
+process.stdout.write(starter.variants.thumbWebp)
 NODE
 )"
   manifest_headers="$(curl -fsSI "${public_base}/card-assets/card-assets.manifest.json")"
   grep -Eiq '^cache-control:.*max-age=300.*must-revalidate' <<<"$manifest_headers" || fail "公网优化卡图 manifest 缓存头错误"
+  grep -Eiq '^content-type:.*application/json' <<<"$manifest_headers" || fail "公网优化卡图 manifest 类型错误"
+  curl -fsS "${public_base}/card-assets/${sample_asset_path}" -o /dev/null
   asset_headers="$(curl -fsSI "${public_base}/card-assets/${sample_asset_path}")"
   grep -Eiq '^cache-control:.*max-age=31536000.*immutable' <<<"$asset_headers" || fail "公网内容寻址卡图缓存头错误"
+  grep -Eiq '^content-type:.*image/webp' <<<"$asset_headers" || fail "公网 ST 卡图响应类型错误"
 fi
 
 cat > "${deployment_dir}/deployment-info.txt" <<EOF
