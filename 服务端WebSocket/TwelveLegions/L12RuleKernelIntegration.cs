@@ -500,6 +500,14 @@ public sealed partial class L12GameEngine
             ["activationId"] = activation.ActivationId,
             ["activationStep"] = activation.CurrentStep.ToString(),
         };
+        if (step.Kind == "controller-private-card")
+        {
+            promptKind = "card";
+            var controller = State.Players[activation.Controller];
+            foreach (var card in controller.Hand.Concat(controller.Library)
+                .Where(card => step.ValidChoices.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase)))
+                AddPromptCardData(promptData, card);
+        }
         var addCancellationChoice = ShouldAddActivationCancellationChoice(step);
         if (step.CancellationPolicy == L12ActivationCancellationPolicy.SeparateChoice)
             promptData["skip"] = "取消整次发动";

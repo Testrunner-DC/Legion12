@@ -75,7 +75,7 @@ public static partial class L12StructuredCardRules
     // 响应窗口只查询这一处结构化规则，禁止再从 EffectText.Contains 推断。
     private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards = new(StringComparer.Ordinal)
     {
-        "S01-0201", "S01-0202",
+        "S01-0201", "S01-0202", "ST02-01",
     };
 
     // 冒号前存在“先选择并支付登场时效果费用”的卡，必须在效果入栈前完成预声明。
@@ -348,6 +348,7 @@ public static partial class L12StructuredCardRules
     public static bool TryGetStructuredAbilities(string cardId, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
     {
         if (TryGetStarterBatch1Abilities(cardId, out abilities)) return true;
+        if (TryGetStarterTargetedBatch2AAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {

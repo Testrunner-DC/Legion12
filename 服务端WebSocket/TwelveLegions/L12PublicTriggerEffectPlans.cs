@@ -230,7 +230,8 @@ public sealed partial class L12GameEngine
 
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
-        => HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)
+        => HasStarterTargetedTriggerDeclarationPlan(cardId, trigger)
+            || HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)
             || Batch6JAEnterPlan(cardId, trigger) is not null
             || HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
             || HasTrialCompletionTriggerDeclarationPlan(cardId, trigger, data)
@@ -286,6 +287,8 @@ public sealed partial class L12GameEngine
 
     private bool TryBeginPublicTriggerDeclaration(L12TriggerCandidate candidate, L12CardInstance source)
     {
+        if (TryBeginStarterTargetedTriggerDeclaration(candidate, source))
+            return true;
         if (TryBeginTrialAdvanceTriggerDeclaration(candidate, source))
             return true;
         if (TryBeginBatch6JAEnterDeclaration(candidate, source))
@@ -969,6 +972,8 @@ public sealed partial class L12GameEngine
 
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
+        if (TryCompleteStarterTargetedTriggerDeclaration(candidate, activation))
+            return true;
         if (TryCompleteTrialAdvanceTriggerDeclaration(candidate, activation))
             return true;
         if (TryCompleteBatch6JAEnterDeclaration(candidate, activation))

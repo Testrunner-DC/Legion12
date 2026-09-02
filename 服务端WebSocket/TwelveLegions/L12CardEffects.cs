@@ -49,6 +49,7 @@ public sealed partial class L12GameEngine
 
     private void ResolveStructuredCompositeFlow(L12StackItem item)
     {
+        if (TryResolveStarterTargetedEffect(item)) return;
         switch (item.Trigger)
         {
             case "enter":

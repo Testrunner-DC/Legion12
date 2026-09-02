@@ -695,6 +695,12 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Optional, "可获得 1 符文",
                     ("prompt", "阿麦金：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            StarterTargetedProgram("ST01-03", "enter", "xiaohe-summon"),
+            StarterTargetedProgram("ST02-01", "continuous", "khufu-counter-protection"),
+            StarterTargetedProgram("ST02-01", "enter", "khufu-debuff"),
+            StarterTargetedProgram("ST02-03", "enter", "snake-charmer-summon"),
+            StarterTargetedProgram("ST02-06", "enter", "george-debuff"),
+            StarterTargetedProgram("ST03-03", "enter", "freydis-recover"),
             Program("ST01-02", "after-attack",
                 Atom(L12AtomKinds.Condition, "本次进攻击杀对象", ("expression", "item.killed=true")),
                 Atom(L12AtomKinds.Optional, "可追加 1 张休整士气",
@@ -772,6 +778,10 @@ public static class L12VerifiedAtomicPrograms
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signature)))[..12].ToLowerInvariant();
         return new L12VerifiedAtomicProgram(cardId, trigger, normalizedAtoms, $"{cardId}:{trigger}:{hash}");
     }
+
+    private static L12VerifiedAtomicProgram StarterTargetedProgram(string cardId, string trigger, string flow)
+        => Program(cardId, trigger,
+            Atom(L12AtomKinds.CompositeFlow, "执行 ST 带目标军团效果", ("flow", flow)));
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
     {
