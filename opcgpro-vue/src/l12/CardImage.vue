@@ -41,6 +41,7 @@ const activeSource = computed(() => resolved.value.sources[sourceIndex.value]
 const useHigh = computed(() => props.intent === 'detail' && highRequested.value)
 const imageUrl = computed(() => useHigh.value ? activeSource.value.webp : activeSource.value.lowWebp)
 const avifUrl = computed(() => useHigh.value && !avifDisabled.value ? activeSource.value.avif : undefined)
+const landscapeThumbnail = computed(() => props.intent === 'thumb' && resolved.value.orientation === 'landscape')
 
 async function refresh() {
   const expected = `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`
@@ -89,7 +90,9 @@ onMounted(refresh)
 <template>
   <picture
     class="l12-card-image"
+    :class="{ 'landscape-thumbnail-image': landscapeThumbnail }"
     :data-source="activeSource.kind"
+    :data-orientation="resolved.orientation || 'unknown'"
     @mouseenter="requestHighResolution"
     @focusin="requestHighResolution"
   >
@@ -113,4 +116,5 @@ onMounted(refresh)
 <style scoped>
 .l12-card-image{display:block;width:100%;height:100%;overflow:hidden;background:#090d0e;line-height:0}
 .l12-card-image__img{display:block;width:100%;height:100%;background:#090d0e}
+.l12-card-image.landscape-thumbnail-image{position:relative;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
 </style>

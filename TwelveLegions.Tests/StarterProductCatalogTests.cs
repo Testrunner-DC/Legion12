@@ -42,6 +42,21 @@ public sealed class StarterProductCatalogTests
     }
 
     [Fact]
+    public void StarterDatabasePreservesAuthoritativeEffectLineBreaks()
+    {
+        var starterEffects = Catalog.Cards.Values
+            .Where(card => card.Id.StartsWith("ST", StringComparison.Ordinal) && !string.IsNullOrEmpty(card.Effect))
+            .Select(card => card.Effect!)
+            .ToArray();
+
+        Assert.All(starterEffects, effect => Assert.DoesNotContain('\r', effect));
+        Assert.True(starterEffects.Count(effect => effect.Contains('\n')) >= 20);
+        Assert.Equal(
+            "我方 回合1次 可进行1次位移。\n登场时 可返还1士气：获得冲锋。（可在登场回合进攻）\n击杀时 可返还1士气：本回合获得贯穿。（以剩余兵力进攻主宰）",
+            Catalog.Cards["ST01-01"].Effect);
+    }
+
+    [Fact]
     public void DatabaseAtomicReferenceDefinesAbilityBoundariesWithoutInventingNoEffectAbilities()
     {
         Assert.Equal(5, Catalog.AtomicEffects.Find("ST01-01")?.Abilities.Count);

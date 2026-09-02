@@ -12,6 +12,7 @@ const cards = [...s1, ...s2, ...st]
 const ids = new Set(cards.map(card => card.id))
 const cardAssets = read('../src/l12/cardAssets.ts')
 const cardImage = read('../src/l12/CardImage.vue')
+const cardPresentation = read('../src/l12/cardPresentation.ts')
 const serviceWorker = read('../public/sw.js')
 const generator = read('./build-l12-card-cdn.mjs')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
@@ -49,8 +50,11 @@ const styledCardImageConsumers = [
 const contracts = [
   [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
   [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && cardAssets.includes('legacyUrl'), '必须提供按逻辑卡号解析且保留旧 imageUrl 的统一资源解析器'],
+  [cardAssets.includes('missingEntryRefreshAfter') && cardAssets.includes('loadCardAssetManifest(true)') && cardAssets.includes("cache: force ? 'reload' : 'no-cache'") && cardAssets.includes('if (manifestPromise)'), '已加载旧清单但缺少新卡号时必须共享一次强制刷新，避免旧页面永久显示占位图或并发重复请求'],
   [cardAssets.includes('cdnBaseUrl') && cardAssets.includes('sameOrigin') && cardAssets.includes('placeholder'), '资源候选必须按 CDN、同源优化资源、旧 imageUrl、占位单向降级'],
   [cardImage.includes('<picture') && cardAssets.includes('detailAvif') && cardAssets.includes('thumbWebp') && cardAssets.includes('boardWebp'), '公共卡图组件必须支持 240/480/960 WebP 与详情 AVIF'],
+  [cardImage.includes("props.intent === 'thumb' && resolved.value.orientation === 'landscape'") && cardImage.includes("'landscape-thumbnail-image': landscapeThumbnail") && cardImage.includes(":data-orientation=\"resolved.orientation || 'unknown'\"") && cardImage.includes('rotate(90deg)'), '横版资源必须由公共卡图组件按清单方向仅在缩略图顺时针旋转，详情保持原始横向'],
+  [[['ST06-S1', 'trial'], ['ST-DS01', 'destruction'], ['ST-DS02', 'destruction'], ['ST-DS03', 'destruction']].every(([id, type]) => st.some(card => card.id === id && card.cardType === type)) && cardPresentation.includes("'destruction'") && cardPresentation.includes("'trial'"), '四张 ST 横版卡必须进入统一横卡类型规则'],
   [cardImage.includes(":loading=\"eager ? 'eager' : 'lazy'\"") && cardImage.includes('decoding="async"') && cardImage.includes('@error'), '公共卡图组件必须懒加载、异步解码并处理失败降级'],
   [cardImage.includes('fallbackCardAsset(props.cardId, props.legacyUrl, props.intent)'), 'manifest 返回前必须立即使用旧 imageUrl，避免首屏占位闪烁'],
   [consumers.every(path => read(path).includes('CardImage')), '全部 L12 卡图消费入口必须迁移到公共 CardImage'],

@@ -27,7 +27,7 @@ body { background: radial-gradient(90% 70% at 48% 10%,#20241e 0,#0b1114 46%,#070
 body::before { content:''; position:fixed; inset:0; pointer-events:none; background:linear-gradient(rgba(216,179,98,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(216,179,98,.025) 1px,transparent 1px); background-size:40px 40px; mask-image:linear-gradient(to bottom,#000,transparent 85%); }
 
 /* Card-effect prose only. Costs, card numbers, stats, tags and other auxiliary metadata stay on their local scales. */
-.l12-effect-body{font-size:14px!important;line-height:1.75!important}
+.l12-effect-body{font-size:14px!important;line-height:1.75!important;white-space:pre-wrap}
 .l12-effect-body--compact{font-size:12px!important;line-height:1.65!important}
 .l12-effect-body--prominent{font-size:15px!important;line-height:1.65!important}
 
@@ -205,7 +205,7 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 .l12-actions button:disabled,.card-context-actions button:disabled,.board-target-controls button:disabled,.prompt-panel button:disabled{background:#292e2d!important;color:#9fa5a1!important;border-color:#555c59!important;opacity:.75}
 
 /* 横版天灾卡：图鉴、棋盘选中详情统一使用 8:5，避免套用竖版 5:7 外框。 */
-.archive-card.landscape-thumbnail .archive-card-image>.l12-card-image{position:absolute;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
+.archive-card.landscape-thumbnail .archive-card-image>.l12-card-image:not(.landscape-thumbnail-image){position:absolute;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
 .archive-detail-image.horizontal{width:250px;aspect-ratio:8/5}
 .card-tile.horizontal-card{height:auto;aspect-ratio:8/5}
 .card-inspector>.card-tile.horizontal-card{width:100%;max-width:238px;height:auto;flex:0 0 auto;aspect-ratio:8/5}

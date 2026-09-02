@@ -36,6 +36,7 @@ export interface CardAssetSource {
 export interface ResolvedCardAsset {
   cardId: string
   intent: CardImageIntent
+  orientation?: CardAssetManifestEntry['orientation']
   sources: CardAssetSource[]
 }
 
@@ -55,6 +56,7 @@ export const CARD_IMAGE_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encode
 let manifestPromise: Promise<CardAssetManifest | null> | null = null
 let manifestValue: CardAssetManifest | null = null
 let retryAfter = 0
+let missingEntryRefreshAfter = 0
 
 function configuredManifestUrl() {
   return import.meta.env.VITE_L12_CARD_ASSET_MANIFEST || MANIFEST_PATH
@@ -75,12 +77,21 @@ function isManifest(value: unknown): value is CardAssetManifest {
     && typeof candidate.cards === 'object'
 }
 
-export async function loadCardAssetManifest(): Promise<CardAssetManifest | null> {
-  if (manifestValue) return manifestValue
-  if (manifestPromise) return manifestPromise
-  if (Date.now() < retryAfter) return null
+function manifestUrl(force: boolean) {
+  const url = configuredManifestUrl()
+  if (!force) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}refresh=${Date.now()}`
+}
 
-  manifestPromise = fetch(configuredManifestUrl(), { cache: 'no-cache', credentials: 'same-origin' })
+export async function loadCardAssetManifest(force = false): Promise<CardAssetManifest | null> {
+  if (!force && manifestValue) return manifestValue
+  if (manifestPromise) return manifestPromise
+  if (!force && Date.now() < retryAfter) return manifestValue
+
+  const previousManifest = manifestValue
+
+  manifestPromise = fetch(manifestUrl(force), { cache: force ? 'reload' : 'no-cache', credentials: 'same-origin' })
     .then(async response => {
       if (!response.ok) throw new Error(`卡图清单加载失败（${response.status}）`)
       const value: unknown = await response.json()
@@ -90,7 +101,7 @@ export async function loadCardAssetManifest(): Promise<CardAssetManifest | null>
     })
     .catch(() => {
       retryAfter = Date.now() + RETRY_COOLDOWN_MS
-      return null
+      return previousManifest
     })
     .finally(() => { manifestPromise = null })
 
@@ -149,8 +160,17 @@ export function fallbackCardAsset(cardId: string, legacyUrl: string | undefined,
 }
 
 export async function resolveCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): Promise<ResolvedCardAsset> {
-  const manifest = await loadCardAssetManifest()
-  const entry = manifest?.cards[cardId]
+  let manifest = await loadCardAssetManifest()
+  let entry = manifest?.cards[cardId]
+  if (manifest && !entry) {
+    if (manifestPromise) {
+      manifest = await manifestPromise
+    } else if (Date.now() >= missingEntryRefreshAfter) {
+      missingEntryRefreshAfter = Date.now() + RETRY_COOLDOWN_MS
+      manifest = await loadCardAssetManifest(true)
+    }
+    entry = manifest?.cards[cardId]
+  }
   if (!manifest || !entry) return fallbackCardAsset(cardId, legacyUrl, intent)
 
   const cdnBaseUrl = configuredCdnBase() || manifest.cdnBaseUrl?.replace(/\/$/, '') || ''
@@ -158,6 +178,7 @@ export async function resolveCardAsset(cardId: string, legacyUrl: string | undef
   return {
     cardId,
     intent,
+    orientation: entry.orientation,
     sources: uniqueSources([
       cdnBaseUrl ? sourceFor('cdn', cdnBaseUrl, entry.variants, intent) : null,
       sourceFor('sameOrigin', sameOrigin, entry.variants, intent),
