@@ -45,9 +45,10 @@ foreach ($contract in @(
 
 Assert-Contains $s2 'QueueCompletedTrialTriggerBatch(item.Controller, source)' 'completeTrial must publish a shared completion event instead of resolving printed effects inline.'
 Assert-Contains $models 'MinimumReferenceNumericValue' 'Variable rune declarations must drive a generic number of public target steps.'
-Assert-Contains $models 'AllowCancel' 'A declaration with mandatory later segments must be able to reject whole-flow cancellation.'
+Assert-Contains $models 'L12ActivationCancellationPolicy' 'A declaration must carry an explicit whole-flow cancellation policy.'
 Assert-Contains $kernel 'DeclaredNumericValueAtLeast' 'Pending activation must honor numeric conditional declaration steps.'
-Assert-Contains $kernel 'step.AllowCancel ? step.ValidChoices.Append("skip") : step.ValidChoices' 'Mandatory later segments must not expose a whole-flow skip control.'
+Assert-Contains $kernel 'ShouldAddActivationCancellationChoice(step)' 'Pending activation must apply the explicit cancellation policy before exposing a whole-flow skip control.'
+Assert-Contains $kernel 'L12ActivationCancellationPolicy.NotAllowed => false' 'Mandatory later segments must not expose a whole-flow skip control.'
 Assert-Contains $prompts 'QueueNextTrialCompletionSegment(item)' 'Independent trial-completion segments must continue after resolution or negation.'
 Assert-Contains $prompts '["mode:grave"]' 'The public graveyard mode needs a player-facing label.'
 Assert-Contains $prompts '["mode:library"]' 'The delayed library mode needs a player-facing label.'

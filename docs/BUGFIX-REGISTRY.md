@@ -2589,3 +2589,11 @@
 - 验证：卡图架构契约24/24、Nginx配置检查与热重载通过；ST01-01公网响应为200、`image/webp`、`public, max-age=31536000, immutable`。release `00edf6b`通过HTTP、WebSocket、324张manifest与ST真实GET门禁，正式站浏览器ST01全12张可见。
 - 防回滚：新增产品前缀时必须同步内容寻址路径契约；不得用放宽缓存头门禁代替修复Nginx路由。
 - 发布：Nginx旧片段备份为`/root/legion12-nginx-backups/card-assets-before-00edf6b.conf`；提交`00edf6b`已推送并部署，部署前运行数据快照为`runtime-before-00edf6b11c6b-20260902T094224Z.tar.gz`。
+
+### BUG-20260902-195 效果选择重复“不发动”与内部工程术语泄露
+
+- 现象与根因：公共 `PendingActivation` 步骤已显式提供 `mode:none / mode:use` 时，框架仍因默认 `AllowCancel=true` 自动追加 `skip`，而 `mode:none` 与 `skip` 均显示为“不发动”，形成“不发动 / 发动 / 不发动”。同时声明层把“预先声明、公开区域、私密选择、独立段、结算模式”等内部建模文本直接作为玩家 Prompt 与拒绝消息。
+- 同类型扫描：扫描登场、进攻时、公共触发、公共响应、主动效果、试炼推进与试炼完成全部 `L12ActivationSelectionStep`；代表覆盖吕布、韩信、寻找圣杯之旅、安格斯与湖中仙女。复合效果中“跳过当前可选段”和“取消整次发动”确有不同语义的入口保留两个协议动作，但分别显示自然且唯一的文案。
+- 公共修复：以 `L12ActivationCancellationPolicy` 取代含混布尔值；有显式 `mode:none/no` 时不再追加同义 `skip`，强制后续段使用 `NotAllowed`，真实双语义使用 `SeparateChoice` 并显示“取消整次发动”。普通与匿名手牌选择共用该策略。玩家可见边界统一净化内部术语，协议值、声明元数据、回放结构和开发注释不受影响。
+- 回滚守卫：新增 Prompt 语义测试，锁定协议值与显示标签唯一、显式拒绝不追加 `skip`、双语义标签不同、后续费用/目标取消不支付也不入栈、强制后段不会被跳过；玩家 Prompt、选择标签与拒绝消息不得出现精确内部术语。
+- 验证：相关回归147/147；Release完整规则1055/1055、平台60/60、原子324张且旧卡号分支/文本推断均为0、公开声明与试炼声明门禁、UI契约172、卡图契约24/324、Vue TypeScript、Vite生产构建及提交级发布包全部通过。

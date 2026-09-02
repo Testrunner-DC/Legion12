@@ -446,6 +446,21 @@ public sealed class L12FreeMasterActivation
     public required string SourceInstanceId { get; init; }
 }
 
+public enum L12ActivationCancellationPolicy
+{
+    /// <summary>
+    /// 仅当本步骤没有显式拒绝选项（mode:none/no）时，提供“取消发动”。
+    /// 显式拒绝已经完整表达不发动语义时，不再追加同义协议值。
+    /// </summary>
+    WhenNoExplicitDecline,
+    /// <summary>本步骤不可取消整次发动；常用于仍有强制后续效果的声明。</summary>
+    NotAllowed,
+    /// <summary>
+    /// 同时保留“跳过本段”和“取消整次发动”；调用方必须为两者提供不同的自然语言标签。
+    /// </summary>
+    SeparateChoice,
+}
+
 public sealed class L12ActivationSelectionStep
 {
     public required string Kind { get; init; }
@@ -454,10 +469,11 @@ public sealed class L12ActivationSelectionStep
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
     /// <summary>
-    /// 是否允许取消整次声明。包含后续强制独立段的触发会关闭此项，并以显式 mode:none
-    /// 仅跳过可选段，避免把同一张卡的强制后段一并吞掉。
+    /// 本步骤的取消语义。包含后续强制效果的触发应使用 NotAllowed，并以显式 mode:none
+    /// 仅跳过可选效果，避免把同一张卡的强制后续效果一并吞掉。
     /// </summary>
-    public bool AllowCancel { get; init; } = true;
+    public L12ActivationCancellationPolicy CancellationPolicy { get; set; }
+        = L12ActivationCancellationPolicy.WhenNoExplicitDecline;
     /// <summary>
     /// 合法候选数量恰好等于固定选择数量时，服务端直接记录整个集合而不弹出无意义选择。
     /// 仅用于“必须选择全部现有公开对象”的声明步；候选更多时仍由玩家明确选择。
@@ -689,8 +705,39 @@ public sealed record L12SandboxRequest(
     L12CustomDeckSubmission? OpponentDeck = null,
     string DisasterMode = "none");
 
+public static class L12PlayerFacingText
+{
+    private static readonly (string Internal, string Natural)[] DirectReplacements =
+    [
+        ("预先声明", "选择"),
+        ("预先选择", "选择"),
+        ("私密选择", "选择"),
+        ("公开登场位置", "登场位置"),
+        ("公开目标", "目标"),
+        ("公开区域", "场上"),
+        ("私密区域", "原区域"),
+        ("公开资源", "支付资源"),
+        ("结算模式", "效果"),
+        ("独立段", "随后效果"),
+    ];
+
+    /// <summary>
+    /// 将仅供规则实现使用的术语从 Prompt、选择标签与拒绝消息中移除。
+    /// 协议值、Continuation、Data 和日志结构仍保留原始元数据。
+    /// </summary>
+    public static string Naturalize(string text)
+    {
+        var natural = text;
+        foreach (var (internalText, naturalText) in DirectReplacements)
+            natural = natural.Replace(internalText, naturalText, StringComparison.Ordinal);
+        natural = natural.Replace("独立的随后", "随后", StringComparison.Ordinal);
+        natural = System.Text.RegularExpressions.Regex.Replace(natural, "独立的(.+?)段", "随后的$1效果");
+        return natural.Replace("独立的", "随后的", StringComparison.Ordinal);
+    }
+}
+
 public sealed record CommandResult(bool Accepted, string? Error = null)
 {
     public static CommandResult Ok() => new(true);
-    public static CommandResult Reject(string error) => new(false, error);
+    public static CommandResult Reject(string error) => new(false, L12PlayerFacingText.Naturalize(error));
 }

@@ -52,7 +52,7 @@ public sealed partial class L12GameEngine
                     ValidChoices = choices.ToList(),
                     MinChoose = 1,
                     MaxChoose = 1,
-                    AllowCancel = false,
+                    CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 },
             ], triggerCandidateId: null, playCardInstanceId: card.InstanceId, responseTargetStackItemId: null);
             if (!result.Accepted)

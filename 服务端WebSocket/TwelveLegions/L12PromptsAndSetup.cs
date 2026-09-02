@@ -123,19 +123,20 @@ public sealed partial class L12GameEngine
         bool isPrivate = true,
         Dictionary<string, string>? data = null)
     {
-        var validChoices = choices.Distinct().ToList();
+        var playerText = L12PlayerFacingText.Naturalize(text);
+        var validChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         data ??= [];
         if (validChoices.Count == 2 && validChoices.Contains("yes") && validChoices.Contains("no"))
             data.TryAdd("choiceMode", "instant");
         ApplyDirectBoardChoiceMode(validChoices, data);
         EnrichPromptCardData(playerIndex, validChoices, data);
-        var choiceLabels = BuildPlayerChoiceLabels(playerIndex, kind, text, validChoices, data);
+        var choiceLabels = BuildPlayerChoiceLabels(playerIndex, kind, playerText, validChoices, data);
         var prompt = new L12Prompt
         {
             PromptId = $"prompt-{++State.PromptSequence}",
             PlayerIndex = playerIndex,
             Kind = kind,
-            Text = text,
+            Text = playerText,
             ValidChoices = validChoices,
             MinChoose = min,
             MaxChoose = max,
@@ -146,7 +147,7 @@ public sealed partial class L12GameEngine
             ChoiceLabels = choiceLabels,
         };
         State.PendingPrompts.Add(prompt);
-        AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{text}");
+        AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
     }
 
@@ -207,27 +208,28 @@ public sealed partial class L12GameEngine
             var choice = choices[index];
             if (data.TryGetValue(choice, out var supplied) && IsNaturalLanguageChoiceLabel(choice, supplied))
             {
-                labels[choice] = supplied.Trim();
+                labels[choice] = L12PlayerFacingText.Naturalize(supplied.Trim());
                 continue;
             }
             if (CommonPlayerChoiceLabels.TryGetValue(choice, out var common))
             {
-                labels[choice] = common;
+                labels[choice] = L12PlayerFacingText.Naturalize(common);
                 continue;
             }
             var contextual = ContextualPlayerChoiceLabel(promptKind, promptText, choice);
             if (contextual is not null)
             {
-                labels[choice] = contextual;
+                labels[choice] = L12PlayerFacingText.Naturalize(contextual);
                 continue;
             }
             var card = FindPromptCard(playerIndex, choice);
             if (card is not null)
             {
-                labels[choice] = card.Name;
+                labels[choice] = L12PlayerFacingText.Naturalize(card.Name);
                 continue;
             }
-            labels[choice] = StructuredPlayerChoiceLabel(playerIndex, choice) ?? $"效果选项 {index + 1}";
+            labels[choice] = L12PlayerFacingText.Naturalize(
+                StructuredPlayerChoiceLabel(playerIndex, choice) ?? $"效果选项 {index + 1}");
         }
         return labels;
     }

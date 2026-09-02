@@ -773,6 +773,14 @@ public sealed partial class L12GameEngine
                 break;
         }
 
+        // Composite mode:none means “skip this optional segment and continue the remaining
+        // printed effect”. Cancelling the declaration is a different action (for a hand play,
+        // it also leaves the card and its printed cost untouched), so expose both only through
+        // the explicit separate-choice policy and let the shared prompt layer label them apart.
+        foreach (var modeStep in steps.Where(step => step.Kind == "option"
+                     && step.ValidChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase)))
+            modeStep.CancellationPolicy = L12ActivationCancellationPolicy.SeparateChoice;
+
         if (effectOnlyRepeat)
         {
             if (source.CardId == "S02-0207")

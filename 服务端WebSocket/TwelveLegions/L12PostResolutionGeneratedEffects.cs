@@ -60,7 +60,7 @@ public sealed partial class L12GameEngine
                     Text = $"托勒密十三世：为再次发动的〈{source.Name}〉效果声明目标",
                     ValidChoices = targets.ToList(),
                     DeclarationKey = "target",
-                    AllowCancel = false,
+                    CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 }
             ], triggerCandidateId: null, playCardInstanceId: source.InstanceId,
                 responseTargetStackItemId: null);

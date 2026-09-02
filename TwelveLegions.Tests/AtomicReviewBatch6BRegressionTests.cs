@@ -122,6 +122,9 @@ public sealed class AtomicReviewBatch6BRegressionTests
         Assert.Equal("pending-activation", mode.Continuation);
         Assert.Contains("mode:none", mode.ValidChoices);
         Assert.Contains("mode:use", mode.ValidChoices);
+        Assert.DoesNotContain("skip", mode.ValidChoices);
+        Assert.Equal(mode.ValidChoices.Count,
+            mode.ValidChoices.Select(choice => mode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
         Assert.DoesNotContain(otherworld.InstanceId, mode.ValidChoices);
         Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains(otherworld.InstanceId, StringComparison.Ordinal));
         Resolve(game, "mode:use");
@@ -151,6 +154,9 @@ public sealed class AtomicReviewBatch6BRegressionTests
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Contains("mode:none", mode.ValidChoices);
         Assert.Contains("mode:grave", mode.ValidChoices);
+        Assert.DoesNotContain("skip", mode.ValidChoices);
+        Assert.Equal(mode.ValidChoices.Count,
+            mode.ValidChoices.Select(choice => mode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
         Resolve(game, "mode:none");
 
         var mandatoryShuffle = Assert.Single(game.State.EffectStack);
@@ -283,9 +289,17 @@ public sealed class AtomicReviewBatch6BRegressionTests
         var trial = order.ValidChoices.Single(id => id != angus);
         ResolveMany(game, trial, angus);
 
+        var trialMode = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("skip", trialMode.ValidChoices);
+        Assert.Equal(trialMode.ValidChoices.Count,
+            trialMode.ValidChoices.Select(choice => trialMode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
         Resolve(game, "mode:use");
         Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
         Assert.Single(game.State.EffectStack);
+        var angusMode = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("skip", angusMode.ValidChoices);
+        Assert.Equal(angusMode.ValidChoices.Count,
+            angusMode.ValidChoices.Select(choice => angusMode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
         Resolve(game, "mode:none");
         PassResponses(game);
         Assert.Equal(1, game.State.Players[0].SpecialZones.Runes);

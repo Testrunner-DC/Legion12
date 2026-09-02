@@ -931,7 +931,9 @@ public sealed partial class L12GameEngine
             ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = min,
             MaxChoose = max,
-            AllowCancel = allowCancel,
+            CancellationPolicy = allowCancel
+                ? L12ActivationCancellationPolicy.WhenNoExplicitDecline
+                : L12ActivationCancellationPolicy.NotAllowed,
             ReferenceDeclarationKey = referenceKey,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,
             RequiredDeclaredChoice = requiredChoice,

@@ -171,6 +171,10 @@ public sealed class AtomicReviewBatch6HRegressionTests
 
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", mode.Continuation);
+        Assert.Equal(["mode:none", "mode:use"], mode.ValidChoices);
+        Assert.DoesNotContain("skip", mode.ValidChoices);
+        Assert.Equal(mode.ValidChoices.Count,
+            mode.ValidChoices.Select(choice => mode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
         Assert.Empty(game.State.EffectStack);
         Resolve(game, "mode:use");
         var cost = Assert.Single(game.State.PendingPrompts);
@@ -179,6 +183,29 @@ public sealed class AtomicReviewBatch6HRegressionTests
 
         Assert.DoesNotContain(morale, player.Morale);
         Assert.Single(game.State.EffectStack);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0104")]
+    [Trait("L12Evidence", "entry:attack-later-cost-cancel-no-payment-no-stack")]
+    public void HanXinCancellingTheLaterCostChoicePaysNothingAndCreatesNoStackItem()
+    {
+        var game = Create(76011);
+        var player = game.State.Players[0];
+        var hanXin = Card("S01-0104", "batch6h-hanxin-cancel-cost");
+        var morale = Morale("batch6h-hanxin-cancel-cost-morale");
+        player.Morale.Add(morale);
+
+        AttackMaster(game, hanXin);
+        Resolve(game, "mode:use");
+        var cost = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("skip", cost.ValidChoices);
+        Resolve(game, "skip");
+
+        Assert.Contains(morale, player.Morale);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("attackPlan") == "hanxin");
+        Assert.Empty(game.State.PendingActivations);
     }
 
     [Fact]

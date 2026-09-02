@@ -836,7 +836,7 @@ public sealed class GameEngineTests
         Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0)).Accepted);
         var optional = game.State.PendingPrompts.FirstOrDefault();
         if (optional is not null)
-            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "skip")).Accepted);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId, Choice: "mode:none")).Accepted);
 
         Assert.True(legion.HasCharge);
         Assert.Null(game.State.Players[0].NextLegionChargeMaxCost);

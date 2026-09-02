@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
             MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
-            AllowCancel = step.AllowCancel,
+            CancellationPolicy = step.CancellationPolicy,
             AutoSelectWhenExact = step.AutoSelectWhenExact,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
@@ -500,6 +500,9 @@ public sealed partial class L12GameEngine
             ["activationId"] = activation.ActivationId,
             ["activationStep"] = activation.CurrentStep.ToString(),
         };
+        var addCancellationChoice = ShouldAddActivationCancellationChoice(step);
+        if (step.CancellationPolicy == L12ActivationCancellationPolicy.SeparateChoice)
+            promptData["skip"] = "取消整次发动";
         if (!string.IsNullOrWhiteSpace(step.SelectionConstraint))
             promptData["selectionConstraint"] = step.SelectionConstraint;
         if (activation.Ability == "public-trigger-declaration")
@@ -530,17 +533,33 @@ public sealed partial class L12GameEngine
             var anonymousPrompt = CreateAnonymousHandChoicePrompt(activation.Controller, hiddenCards,
                 "opponent-hand-card", step.Text, step.MinChoose, step.MaxChoose,
                 "pending-activation", data: promptData);
-            anonymousPrompt.ValidChoices.Add("skip");
-            anonymousPrompt.Data["skip"] = "取消发动";
+            if (addCancellationChoice)
+            {
+                anonymousPrompt.ValidChoices.Add("skip");
+                var cancellationLabel = step.CancellationPolicy == L12ActivationCancellationPolicy.SeparateChoice
+                    ? "取消整次发动" : "不发动";
+                anonymousPrompt.Data["skip"] = cancellationLabel;
+                anonymousPrompt.ChoiceLabels["skip"] = cancellationLabel;
+            }
             return;
         }
-        var promptChoices = (step.AllowCancel ? step.ValidChoices.Append("skip") : step.ValidChoices)
+        var promptChoices = (addCancellationChoice ? step.ValidChoices.Append("skip") : step.ValidChoices)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
             data: promptData);
     }
+
+    private static bool ShouldAddActivationCancellationChoice(L12ActivationSelectionStep step)
+        => step.CancellationPolicy switch
+        {
+            L12ActivationCancellationPolicy.NotAllowed => false,
+            L12ActivationCancellationPolicy.SeparateChoice => true,
+            _ => !step.ValidChoices.Any(choice => choice.Equals("mode:none", StringComparison.OrdinalIgnoreCase)
+                || choice.Equals("no", StringComparison.OrdinalIgnoreCase)
+                || choice.Equals("skip", StringComparison.OrdinalIgnoreCase)),
+        };
 
     private IEnumerable<string> AdjacentEmptySlots(L12PlayerState player, int row, int slot)
         => new[] { (row - 1, slot), (row + 1, slot), (row, slot - 1), (row, slot + 1) }

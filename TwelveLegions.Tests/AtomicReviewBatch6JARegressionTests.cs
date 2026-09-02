@@ -202,6 +202,29 @@ public sealed class AtomicReviewBatch6JARegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0101")]
+    [Trait("L12Evidence", "entry:enter-later-target-cancel-no-payment-no-stack")]
+    public void LuBuCancellingTheLaterTargetChoiceReturnsNoMoraleAndCreatesNoStackItem()
+    {
+        var fixture = Arrange("S01-0101", "enter", 99701);
+        var player = fixture.Game.State.Players[0];
+        var originalMorale = player.Morale.Select(card => card.InstanceId).ToArray();
+
+        var mode = OnlyPrompt(fixture.Game);
+        Assert.Equal(["mode:none", "mode:use"], mode.ValidChoices);
+        Assert.DoesNotContain("skip", mode.ValidChoices);
+        Resolve(fixture.Game, "mode:use");
+        ResolveMany(fixture.Game, originalMorale.Take(2).ToArray());
+        var target = OnlyPrompt(fixture.Game);
+        Assert.Contains("skip", target.ValidChoices);
+        Resolve(fixture.Game, "skip");
+
+        Assert.Equal(originalMorale.Order(), player.Morale.Select(card => card.InstanceId).Order());
+        Assert.Empty(fixture.Game.State.EffectStack);
+        Assert.Empty(fixture.Game.State.PendingActivations);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "entry:batch6ja-zhuge-independent-followup")]
     public void ZhugeRevealAndDisasterAdjustmentAreIndependentStackItems()
     {
@@ -332,6 +355,14 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var prompt = OnlyPrompt(game);
         Assert.True(game.Handle(prompt.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+    }
+
+    private static void ResolveMany(L12GameEngine game, params string[] choices)
+    {
+        var prompt = OnlyPrompt(game);
+        Assert.True(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                CardInstanceIds: choices.ToList())).Accepted);
     }
 
     private static void PassResponses(L12GameEngine game)

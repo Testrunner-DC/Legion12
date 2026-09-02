@@ -293,6 +293,11 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Invoke(game, "QueueOrPushTriggeredEffect", 0, lubu, "after-attack", "吕布进攻后", null,
             new Dictionary<string, string>());
+        var mode = OnlyPrompt(game);
+        Assert.Equal(["mode:none", "mode:use"], mode.ValidChoices);
+        Assert.DoesNotContain("skip", mode.ValidChoices);
+        Assert.Equal(mode.ValidChoices.Count,
+            mode.ValidChoices.Select(choice => mode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
         Resolve(game, "mode:use");
         Resolve(game, choices: returned);
 
