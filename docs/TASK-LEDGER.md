@@ -110,6 +110,7 @@
 
 | BUG-20260902-192 | ST卡图死CDN与失败降级跨级 | 关键档 | 已完成待发布 | 清单CDN尚不可用却被无条件首选；picture重复WebP事件跳过同源图 | 卡图23/23；UI172/172；Vue TypeScript、Vite生产构建通过；线上滚动复现ST全落占位，同源ST01-01直连200 | 未显式配置CDN时同源优先；发布门禁必须真实GET ST图；待按本批授权同步并部署 |
 | OPS-20260902-193 | 原子目录Regex并行加载崩溃 | 关键档 | 已完成 | 每卡新建Compiled Regex触发.NET 10并行崩溃；Windows PowerShell 5误读无BOM UTF-8审计脚本 | 两次默认Release发布测稳定复现崩溃；修复后默认并行Release 1049/1049，37秒；PowerShell 7下审计脚本通过 | 静态非动态编译匹配器；部署优先PowerShell 7；不改卡效语义 |
+| BUG-20260902-194 | ST卡图内容寻址缓存路径 | 关键档 | 处理中 | Nginx只匹配Sxx，STxx落入no-store兜底 | ST01-01本体与manifest正常；正则扩展为Sxx/STxx并新增架构契约 | 待重新发布及浏览器验收 |
 
 ## 排队任务
 
