@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { connect, createRoom, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
+import { cancelMatchmaking, connect, createRoom, joinMatchmaking, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from '@/l12/decks'
 import DeckProfile from '@/l12/DeckProfile.vue'
-import { getEffectiveOperationsPolicy, platformState, type EffectiveOperationsPolicy } from '@/l12/platform'
+import { getEffectiveOperationsPolicy, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
+import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
 
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('friendly')
@@ -17,6 +18,8 @@ const customDecks = ref(loadSavedDecks())
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const currentDeck = computed(() => Object.values(customDecks.value)[0])
+const ranked = ref<RankedOverview | null>(null)
+const selectedMatchMode = ref<'ranked' | 'casual'>('ranked')
 const roomCodeCopied = ref(false)
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 const isRoomHost = computed(() => l12State.room?.yourPlayerIndex === 0)
@@ -31,7 +34,7 @@ function visibleDeckLabel(index: number) {
 const optionLabels = {
   spectating: { public: '公开观战', friends: '仅好友观战', disabled: '禁止观战' },
   handVisibility: { request: '查看手牌需申请', public: '观战者可看手牌' },
-  disasterMode: { all: '全部天灾', random: '随机天灾', custom: '自定天灾（沙盒）', none: '不使用天灾' },
+  disasterMode: { all: '全部天灾', random: '随机天灾', season: '赛季天灾', custom: '自定天灾（沙盒）', none: '不使用天灾' },
 } as const
 
 watch(() => l12State.room?.options, options => {
@@ -40,7 +43,7 @@ watch(() => l12State.room?.options, options => {
     matchModeId: 'friendly',
     spectating: options.spectating,
     handVisibility: options.handVisibility,
-    disasterMode: options.disasterMode === 'custom' ? 'all' : options.disasterMode,
+    disasterMode: options.disasterMode === 'custom' || options.disasterMode === 'season' ? 'all' : options.disasterMode,
     useCardRestrictions: options.useCardRestrictions === true,
   }
 }, { immediate: true, deep: true })
@@ -59,11 +62,24 @@ onMounted(async () => {
         ? policy.defaultRoomConfig.disasterMode as RoomOptions['disasterMode'] : 'all',
       useCardRestrictions: false,
     }
+    ranked.value = await rankedApi.overview()
   } catch (error) { policyError.value = error instanceof Error ? error.message : '运营规则加载失败' }
   if (platformState.account && platformState.token && l12State.status === 'offline') {
     try { await connect() } catch { /* 页面保留离线提示，创建/加入时仍可重试。 */ }
   }
 })
+
+async function chooseFaction(faction: 'order' | 'chaos' | 'fate') {
+  try { await rankedApi.selectFaction(faction); ranked.value = await rankedApi.overview() }
+  catch (error) { l12State.notice = error instanceof Error ? error.message : '派系选择失败' }
+}
+async function onMatch() {
+  try {
+    if (!operationsAllowed() || !(await ensureConnected()) || !currentDeck.value) return
+    if (selectedMatchMode.value === 'ranked' && !ranked.value?.profile.faction) { l12State.notice = '请先选择本赛季派系'; return }
+    joinMatchmaking(selectedMatchMode.value, currentDeck.value)
+  } catch {}
+}
 
 async function ensureConnected() {
   if (!platformState.account || !platformState.token) { l12State.notice = '请先登录账号'; return false }
@@ -101,6 +117,7 @@ async function copyRoomCode() {
 
 <template>
   <div class="battle-hub">
+    <RankedBroadcastTicker />
     <header class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
     <section v-if="maintenanceActive" class="maintenance-banner"><b>服务器维护中</b><span>{{ operationsPolicy?.maintenance.message || '暂时停止创建和加入新对局，已开始对局与重连不受影响。' }}</span></section>
       <section v-else-if="policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
@@ -124,7 +141,13 @@ async function copyRoomCode() {
       <section class="current-deck panel"><DeckProfile v-if="currentDeck" :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" context="当前牌库" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><DeckProfile v-else context="当前牌库" meta="前往牌库页面建立或选择牌库"/><router-link to="/decks?from=%2Fbattle%2Flobby">更换 →</router-link></section>
       <div class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'sandbox' }" @click="tab = 'sandbox'">单人</button></div>
 
-      <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位与休闲匹配的数据服务尚未接入。页面结构已预留，不会用测试数据伪造排行榜或匹配结果。</p><div class="match-options"><button disabled>排位匹配</button><button disabled>休闲匹配</button></div><button class="primary" disabled>匹配服务待接入</button></section>
+      <section v-if="tab === 'match'" class="mode-panel panel"><small>PUBLIC MATCH</small><h2>公开匹配</h2><p>排位使用赛季天灾与禁限卡；休闲使用全部天灾且不启用禁限卡。</p>
+        <div v-if="ranked" class="faction-totals"><article v-for="faction in ranked.config.factions" :key="faction.id" :style="{ '--accent': faction.color }"><b>{{ faction.name }}</b><span>七曜值 {{ (ranked.factionTotals[faction.name] || 0).toLocaleString() }}</span></article></div>
+        <div v-if="ranked && !ranked.profile.faction" class="faction-select"><b>选择本赛季派系</b><span>赛季中可改选；改选后七曜值、定级和本赛季战绩重新开始。</span><div><button v-for="faction in ranked.config.factions" :key="faction.id" @click="chooseFaction(faction.id)">{{ faction.name }}</button></div></div>
+        <div v-else-if="ranked" class="ranked-profile"><b>{{ ranked.profile.faction }} · {{ ranked.profile.placed ? ranked.profile.tier : `定级 ${ranked.profile.placementPlayed}/${ranked.config.placementMatches}` }}</b><span>{{ ranked.profile.displayValue }}<template v-if="ranked.profile.title"> · {{ ranked.profile.title }}</template></span><button @click="ranked.profile.faction = undefined">改选派系</button></div>
+        <div class="match-options"><button :class="{ active: selectedMatchMode === 'ranked' }" @click="selectedMatchMode = 'ranked'">排位匹配</button><button :class="{ active: selectedMatchMode === 'casual' }" @click="selectedMatchMode = 'casual'">休闲匹配</button></div>
+        <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="!currentDeck || maintenanceActive" @click="onMatch">开始{{ selectedMatchMode === 'ranked' ? '排位' : '休闲' }}匹配</button>
+      </section>
 
       <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
@@ -149,4 +172,5 @@ async function copyRoomCode() {
 .current-deck{grid-template-columns:minmax(0,1fr) auto}.current-deck :deep(.deck-profile){border:0;background:transparent;padding:0}.room-decks button{display:block;padding:0}.room-decks button :deep(.deck-profile){width:100%;border:0;background:transparent}.room-decks button.active :deep(.deck-profile){background:#202017}
 .room-rule-editor{margin:0 0 18px;padding:14px;border:1px solid #695b36;background:#11140f}.room-rule-editor>header{display:flex;align-items:center;justify-content:space-between}.room-rule-editor>header span{color:#877d62;font-size:9px}.room-rule-editor>.room-settings{margin-top:12px}.room-rule-editor>button{display:block;margin:12px 0 0 auto;padding:9px 18px;border:1px solid #d7bb69;background:#d7bb69;color:#111;font-weight:900}
 @media(max-width:700px){.current-deck{grid-template-columns:1fr}.current-deck a{grid-column:auto}}
+.match-options button.active{border-color:#d8ba65;background:#2a2414;color:#f4db90}.faction-totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}.faction-totals article{padding:12px;border:1px solid var(--accent);background:#0a1117}.faction-totals b,.faction-totals span{display:block}.faction-totals span{margin-top:5px;color:#d8c77f;font-size:11px}.faction-select,.ranked-profile{margin:14px 0;padding:14px;border:1px solid #45535c;background:#0a1117}.faction-select>b,.faction-select>span,.ranked-profile>b,.ranked-profile>span{display:block}.faction-select>span,.ranked-profile>span{margin:5px 0;color:#89969b;font-size:10px}.faction-select>div{display:flex;gap:8px;margin-top:10px}.faction-select button,.ranked-profile button,.cancel-match{padding:9px 14px;border:1px solid #887239;background:#211d10;color:#f0d582}.ranked-profile{display:grid;grid-template-columns:1fr auto;align-items:center}.ranked-profile span{grid-column:1}.ranked-profile button{grid-row:1/3;grid-column:2}.cancel-match{min-width:220px;margin-top:22px}
 </style>

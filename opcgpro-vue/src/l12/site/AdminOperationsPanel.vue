@@ -5,10 +5,13 @@ import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
 import DisasterPoolPicker from './DisasterPoolPicker.vue'
 import {
   adminApi,
+  rankedApi,
   type OperationsConfigPayload,
   type OperationsConfigPreview,
   type OperationsConfigVersion,
   type RuntimeStatus,
+  type RankedConfig,
+  type RankedBroadcast,
 } from '@/l12/platform'
 
 const emit = defineEmits<{ notice: [message: string] }>()
@@ -24,11 +27,12 @@ const reason = ref('')
 const catalog = ref<DeckCard[]>([])
 const presetDecks = ref('')
 const featureFlags = ref('')
-type OperationsSection = 'season' | 'construction' | 'room' | 'features' | 'maintenance' | 'versions'
+type OperationsSection = 'season' | 'ranked' | 'construction' | 'room' | 'features' | 'maintenance' | 'versions'
 const activeSection = ref<OperationsSection>('season')
 const loadError = ref('')
 const sections: Array<{ id: OperationsSection; title: string; summary: string }> = [
   { id: 'season', title: '赛季与天灾', summary: '赛季周期、赛季天灾池与堙灭锁定' },
+  { id: 'ranked', title: '排位与七曜', summary: '派系、五段位、七曜结算、称号与广播' },
   { id: 'construction', title: '构筑规则', summary: '禁限卡与新账号默认预组' },
   { id: 'room', title: '对战与房间', summary: '模式开关与默认房间规则' },
   { id: 'features', title: '功能开关', summary: '大厅、沙盒、观战、赛事等模块' },
@@ -46,6 +50,9 @@ const form = reactive<OperationsConfigPayload>({
   featureFlags: {},
   maintenance: { enabled: false, message: '' },
 })
+const rankedConfig = ref<RankedConfig | null>(null)
+const rankedBroadcasts = ref<RankedBroadcast[]>([])
+const rankedReason = ref('')
 
 const observedAt = computed(() => runtime.value ? new Date(runtime.value.observedAt).toLocaleString() : '未加载')
 
@@ -108,8 +115,9 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [current, versions, status, cards] = await Promise.all([
+    const [current, versions, status, cards, ranked, broadcasts] = await Promise.all([
       adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(), loadDeckCatalog(),
+      adminApi.rankedConfig(), rankedApi.broadcasts(30),
     ])
     version.value = current.version
     versionId.value = current.versionId
@@ -118,6 +126,8 @@ async function load() {
     history.value = versions
     runtime.value = status
     catalog.value = cards
+    rankedConfig.value = ranked
+    rankedBroadcasts.value = broadcasts
     hydrate(current.config)
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '运营配置加载失败'
@@ -157,6 +167,12 @@ async function rollback(target: OperationsConfigVersion) {
     await load()
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置回滚失败') }
 }
+async function saveRanked() {
+  if (!rankedConfig.value || !rankedReason.value.trim()) { emit('notice', '保存排位配置前请填写变更理由'); return }
+  try { rankedConfig.value = await adminApi.saveRankedConfig(rankedConfig.value, rankedReason.value.trim()); rankedReason.value = ''; emit('notice', '排位与七曜配置已保存并写入审计') }
+  catch (error) { emit('notice', error instanceof Error ? error.message : '排位配置保存失败') }
+}
+async function deleteBroadcast(id: string) { try { await adminApi.deleteRankedBroadcast(id); rankedBroadcasts.value = rankedBroadcasts.value.filter(item => item.id !== id) } catch (error) { emit('notice', error instanceof Error ? error.message : '广播删除失败') } }
 
 onMounted(load)
 </script>
@@ -175,7 +191,12 @@ onMounted(load)
     <section v-if="activeSection !== 'versions'" class="panel config-panel">
       <header><div><h2>{{ currentSection.title }}</h2><p>{{ currentSection.summary }}</p></div><span class="version-badge">配置 v{{ version }}</span></header>
       <div class="config-grid section-grid">
-        <template v-if="activeSection === 'season'">
+        <template v-if="activeSection === 'ranked' && rankedConfig">
+          <fieldset><legend>定级与广播</legend><label>定级场次<input v-model.number="rankedConfig.placementMatches" type="number" min="1" max="20"/></label><label>定级七曜上限<input v-model.number="rankedConfig.placementMaximum" type="number" min="0" max="29999"/></label><label class="toggle-row wide"><span><b>启用排位快讯</b><small>五连胜、终结连胜、最高段位与派系称号变更。</small></span><input v-model="rankedConfig.broadcastEnabled" type="checkbox"/></label></fieldset>
+          <fieldset v-for="faction in rankedConfig.factions" :key="faction.id" class="wide"><legend>{{ faction.name }}派系</legend><label>显示名称<input v-model="faction.name"/></label><label>主题色<input v-model="faction.color" type="color"/></label><label>第一名称号<input v-model="faction.firstTitle"/></label><label>第二至五名称号<input v-model="faction.topFiveTitle"/></label><div class="wide ranked-tier-grid"><article v-for="tier in faction.tiers" :key="tier.minimum"><b>{{ tier.minimum.toLocaleString() }}+</b><input v-model="tier.name" aria-label="段位名"/><label>基础胜负<input v-model.number="tier.baseDelta" type="number"/></label><label>连胜上限<input v-model.number="tier.winStreakCap" type="number"/></label><label>连败保护<input v-model.number="tier.lossProtectionCap" type="number"/></label><label>差值修正<input v-model.number="tier.ratingGapCap" type="number"/></label></article></div></fieldset>
+          <fieldset class="wide"><legend>近期排位快讯</legend><article v-for="item in rankedBroadcasts" :key="item.id" class="broadcast-row"><span>{{ item.message }}<small>{{ new Date(item.createdAt).toLocaleString() }}</small></span><button @click="deleteBroadcast(item.id)">删除</button></article><span v-if="!rankedBroadcasts.length">暂无排位快讯</span></fieldset>
+        </template>
+        <template v-else-if="activeSection === 'season'">
           <fieldset><legend>当前赛季</legend><label>赛季 ID<input v-model="form.season.id"/></label><label>名称<input v-model="form.season.name"/></label><label>状态<select v-model="form.season.status"><option value="upcoming">待开始</option><option value="active">进行中</option><option value="archived">已归档</option></select></label><label>开始时间<input v-model="form.season.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.season.endsAt" type="datetime-local" :disabled="!form.season.endsAt"/></label><label class="toggle-row wide"><span><b>不设置结束时间</b><small>赛季持续有效，直到管理员归档或设置结束时间。</small></span><input type="checkbox" :checked="!form.season.endsAt" @change="toggleSeasonEnd"/></label></fieldset>
           <fieldset><legend>赛季天灾池</legend><DisasterPoolPicker v-model="form.disasterPool.cardIds" class="wide" :cards="catalog" locked-id="S01-DS10"/><span class="locked-note wide">堙灭固定公开并锁定在最后一张。</span></fieldset>
         </template>
@@ -190,7 +211,8 @@ onMounted(load)
         <fieldset v-else-if="activeSection === 'features'" class="wide"><legend>模块功能开关</legend><p class="field-help">格式：key=true/false。关闭后前端入口会灰置，服务端仍进行权威校验。</p><label class="wide"><textarea v-model="featureFlags" rows="16"/></label></fieldset>
         <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>维护状态与玩家公告</legend><label class="toggle-row"><span><b>启用维护</b><small>阻止创建、加入及开始新对局；已开始对局与重连继续。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">维护提示<textarea v-model="form.maintenance.message" rows="5"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.maintenance.endsAt" type="datetime-local"/></label></fieldset>
       </div>
-      <footer class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>
+      <footer v-if="activeSection === 'ranked'" class="config-actions"><input v-model="rankedReason" placeholder="排位配置变更理由（必填）"/><button class="confirm" @click="saveRanked">保存排位配置</button></footer>
+      <footer v-else class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>
       <div v-if="preview" class="preview-box"><b>{{ preview.valid ? '预览通过' : '预览未通过' }} · v{{ preview.currentVersion }} → v{{ preview.nextVersion }}</b><ul><li v-for="item in preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in preview.warnings" :key="item">警告：{{ item }}</p></div>
     </section>
 
@@ -211,4 +233,5 @@ onMounted(load)
 <style scoped>
 .operations-workbench{display:grid;grid-template-columns:1fr;gap:14px}.operations-header{display:flex;align-items:flex-end;justify-content:space-between;border:1px solid #4a4030;background:linear-gradient(110deg,#14130f,#171b1f);padding:20px}.operations-header h2{margin:3px 0;font-size:24px}.operations-header p{margin:0;color:#8d989e;font-size:11px}.operations-header>div>small{color:#c8a84f;letter-spacing:.16em}.operations-version{display:grid;grid-template-columns:auto auto;gap:3px 10px;align-items:center;text-align:right}.operations-version span,.operations-version small{color:#89959a;font-size:10px}.operations-version b{color:#efd16f;font-size:20px}.operations-version button{grid-column:1/-1}.load-error{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin:0;border:1px solid #9c3e47;background:#2a1014;padding:12px;color:#ffc8ce}.load-error span{font-size:11px}.operations-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.operations-nav button{display:flex;min-height:66px;flex-direction:column;gap:5px;align-items:flex-start;border:1px solid #354249;background:#0c1318;padding:12px;color:#d8e0e2;text-align:left}.operations-nav button small{color:#77858b;font-size:9px}.operations-nav button.active{border-color:#c29c3d;background:linear-gradient(120deg,#2c2512,#13191d);color:#f5d775}.panel{border:1px solid #35424a;background:#101821;padding:20px}.panel>header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #36434a;padding-bottom:13px}.panel h2{margin:0}.panel p,.panel span{color:#87949a;font-size:11px}.panel button,.panel select,.panel input,.panel textarea,.operations-header button,.load-error button{box-sizing:border-box;border:1px solid #4c5961;background:#080e13;color:#fff;font:700 11px 'Microsoft YaHei';padding:9px}.runtime-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:14px}.runtime-grid article{display:flex;flex-direction:column;gap:5px;padding:13px;border:1px solid #34424a;background:#0b1218}.runtime-grid small{color:#8c999f}.runtime-grid b{font-size:18px}.version-badge{padding:6px 9px;border:1px solid #b7953f;color:#e6ca77!important}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.config-grid fieldset{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;border:1px solid #334049;padding:14px}.config-grid legend{padding:0 6px;color:#e0c36e;font-weight:900}.config-grid label{display:flex;flex-direction:column;gap:6px;color:#b5bfc3;font-size:10px}.config-grid .wide{grid-column:1/-1}.locked-note{color:#e3c76e!important}.field-help,.contract-note{margin:0;color:#8f9da3!important}.toggle-row{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;padding:8px;border:1px solid #2f3b42}.toggle-row span{display:flex;flex-direction:column}.toggle-row input{width:auto}.config-actions{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:14px}.confirm{border-color:#b9953f!important;background:#2c2411!important;color:#f0d582!important}.preview-box{margin-top:12px;padding:12px;border:1px solid #866f35;background:#1f1a0d}.preview-box li,.preview-box p{font-size:10px}.history-panel>article{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 0;border-bottom:1px solid #303c43}.history-panel>article span{display:flex;flex-direction:column}.history-panel>article p{grid-column:1/-1;margin:0}.history-panel button{grid-row:1;grid-column:2}.history-panel small{color:#748087}.panel button:disabled{cursor:not-allowed;opacity:.45}
 @media(max-width:1100px){.operations-nav,.config-grid{grid-template-columns:1fr 1fr}.runtime-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.operations-header{align-items:flex-start;flex-direction:column;gap:12px}.operations-version{text-align:left}.operations-nav,.runtime-grid,.config-grid,.config-grid fieldset,.config-actions{grid-template-columns:1fr}.config-grid .wide{grid-column:auto}.load-error{grid-template-columns:1fr}.operations-nav button{min-height:56px}}
+.ranked-tier-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.ranked-tier-grid article{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #303c43;background:#0a1117}.ranked-tier-grid article>b{color:#e1c36d}.broadcast-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #303c43}.broadcast-row span,.broadcast-row small{display:block}.broadcast-row small{margin-top:4px;color:#69777d}@media(max-width:1000px){.ranked-tier-grid{grid-template-columns:1fr 1fr}}
 </style>

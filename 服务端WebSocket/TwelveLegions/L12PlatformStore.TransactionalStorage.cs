@@ -569,6 +569,10 @@ public sealed partial class L12PlatformStore
         data.AuthActionThrottles ??= [];
         data.Security ??= new SecurityStateRow();
         NormalizeSecurityState(data.Security);
+        data.RankedProfiles ??= [];
+        data.RankedProfileHistory ??= [];
+        data.RankedSettlements ??= [];
+        data.RankedBroadcasts ??= [];
         data.BusinessVersion ??= data.Version;
         return data;
     }
@@ -618,6 +622,15 @@ public sealed partial class L12PlatformStore
             || data.ReleaseRuns.GroupBy(row => row.Id)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("发布环境或发布记录 ID 无效/重复");
+        if (data.RankedProfiles.GroupBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedProfileHistory.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedSettlements.GroupBy(row => $"{row.MatchId}|{row.AccountId}", StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedBroadcasts.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
+            throw new InvalidDataException("排位档案、结算或广播标识为空/重复");
         return data;
     }
 

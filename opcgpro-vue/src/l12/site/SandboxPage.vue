@@ -42,7 +42,7 @@ async function startSandbox() {
 <template>
   <div class="sandbox-page">
     <section>
-      <header><div><small>TEST SANDBOX</small><h1>单人测试沙盒</h1><p>复用正式规则内核，GM 指令仅对本沙盒生效；操作会写入对局记录，可导出复现。</p></div><span :class="l12State.status"><i/>{{ l12State.status === 'online' ? '服务器在线' : '服务器离线' }}</span></header>
+      <header><div><small>TEST SANDBOX</small><h1>单人测试沙盒</h1><p>复用正式规则内核，GM 指令仅对本沙盒生效；沙盒不会进入个人对局记录或排位统计。</p></div><span :class="l12State.status"><i/>{{ l12State.status === 'online' ? '服务器在线' : '服务器离线' }}</span></header>
       <div class="sandbox-grid">
         <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/profile">前往登录</router-link></div>
         <label><b>我方牌库</b><DeckProfile v-if="playerDeck" compact :master-id="playerDeck.masterId" :master-name="byId.get(playerDeck.masterId)?.nameZh" :name="playerDeck.name" context="我方"/><select v-model="playerDeckName"><option v-for="deck in decks" :key="`self-${deck.name}`" :value="deck.name">{{ deck.name }}</option></select></label>

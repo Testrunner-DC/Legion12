@@ -121,7 +121,51 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var match = await _recorder.GetMatchForPlayerAsync(matchId, account.Username);
             return match is null ? Results.NotFound() : Results.Ok(match);
         });
-        _app.MapGet("/api/rankings", async (int? limit) => Results.Ok(await _recorder.ListRankingMatchesAsync(limit ?? 500)));
+        _app.MapGet("/api/rankings", async (string? faction, int? limit) =>
+            Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
+                matches = await _recorder.ListRankingMatchesAsync(500) }));
+        _app.MapGet("/api/ranked/me", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.RankedOverview(account.Id));
+        });
+        _app.MapPost("/api/ranked/faction", (HttpRequest request, RankedFactionRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!_rooms.CanChangeRankedFaction(account.Id))
+                return Results.Conflict(new { message = "匹配、房间、观战或对局期间不能更换派系" });
+            try { return Results.Ok(_platform.SelectRankedFaction(account.Id, body.Faction ?? string.Empty)); }
+            catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
+        });
+        _app.MapGet("/api/ranked/broadcasts", (int? limit) => Results.Ok(_platform.RankedBroadcasts(limit ?? 30)));
+        _app.MapGet("/api/admin/ranked/config", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure)) return failure;
+            return Results.Ok(_platform.RankedConfig(authenticated.Account));
+        });
+        _app.MapPut("/api/admin/ranked/config", (HttpRequest request, RankedConfigRequest body) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.UpdateRankedConfig(authenticated.Account, body.Config,
+                    body.Reason ?? string.Empty, new L12AdminAuditContext(CorrelationId(request),
+                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
+                        Reason: body.Reason, RequestMethod: "PUT",
+                        RequestPath: request.Path.Value ?? "/api/admin/ranked/config")));
+            }
+            catch (L12OperationsConfigException error) { return Results.BadRequest(new { code = error.Code, message = error.Message }); }
+        });
+        _app.MapDelete("/api/admin/ranked/broadcasts/{id}", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure)) return failure;
+            return _platform.DeleteRankedBroadcast(authenticated.Account, id,
+                new L12AdminAuditContext(CorrelationId(request),
+                    Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
+                    RequestMethod: "DELETE", RequestPath: request.Path.Value ?? string.Empty))
+                ? Results.NoContent() : Results.NotFound();
+        });
         _app.MapPost("/api/auth/register", (AuthRequest request) =>
         {
             var result = _platform.Register(request.Username ?? string.Empty, request.Password ?? string.Empty);
@@ -1329,6 +1373,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "createRoom" => CreateRoom(sessionId, root),
                 "updateRoomOptions" => UpdateRoomOptions(sessionId, root),
                 "createSandbox" => await CreateSandboxAsync(sessionId, root),
+                "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
+                "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
+                "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                 "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
                     GetString(root, "tournamentId"), GetString(root, "matchId")),
@@ -1494,6 +1541,20 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         authenticated = null!;
         failure = ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
         return false;
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> JoinMatchmakingAsync(Guid sessionId, JsonElement root)
+    {
+        try
+        {
+            var deck = root.TryGetProperty("deck", out var deckElement)
+                ? deckElement.Deserialize<L12CustomDeckSubmission>(CommandJsonOptions) : null;
+            return await _rooms.JoinMatchmakingAsync(sessionId, GetString(root, "mode"), deck);
+        }
+        catch (JsonException)
+        {
+            return [new OutgoingMessage(sessionId, new { type = "matchmakingRejected", message = "匹配牌库格式错误" })];
+        }
     }
 
     private IReadOnlyList<OutgoingMessage> UpdateRoomOptions(Guid sessionId, JsonElement root)
@@ -2388,6 +2449,8 @@ public sealed record TokenRequest(string? Token);
 public sealed record PasswordResetRequest(string? Token, string? NewPassword);
 public sealed record FriendRequest(string? AccountId);
 public sealed record FriendResolveRequest(bool Accept);
+public sealed record RankedFactionRequest(string? Faction);
+public sealed record RankedConfigRequest(L12RankedConfigView Config, string? Reason);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
 public sealed record RoleCommandPayload(string AccountId, string Role);

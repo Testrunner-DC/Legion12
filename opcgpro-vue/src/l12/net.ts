@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import type { GameState, RoomState } from './types'
 import type { SavedL12Deck } from './decks'
-import type { EffectiveOperationsPolicy } from './platform'
+import type { EffectiveOperationsPolicy, RankedSettlement } from './platform'
 
 function normalizeEndpoint(value: string) {
   return value.trim().replace(/\/ws\/$/, '/ws')
@@ -20,6 +20,7 @@ const initialEndpoint = location.protocol === 'https:' && !configuredEndpoint
 let connectPromise: Promise<void> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+let matchmakingPollTimer: ReturnType<typeof setInterval> | null = null
 let reconnectAttempts = 0
 let automaticConnectionEnabled = false
 
@@ -31,6 +32,19 @@ function clearReconnectTimer() {
 function clearHeartbeat() {
   if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer)
   heartbeatTimer = null
+}
+
+function clearMatchmakingPolling() {
+  if (matchmakingPollTimer !== null) window.clearInterval(matchmakingPollTimer)
+  matchmakingPollTimer = null
+}
+
+function startMatchmakingPolling() {
+  if (matchmakingPollTimer !== null) return
+  matchmakingPollTimer = window.setInterval(() => {
+    if (l12State.matchmaking?.queued && l12State.socket?.readyState === WebSocket.OPEN)
+      l12State.socket.send(JSON.stringify({ type: 'pollMatchmaking' }))
+  }, 5_000)
 }
 
 function startHeartbeat(socket: WebSocket) {
@@ -66,6 +80,8 @@ export const l12State = reactive({
   notice: '',
   operationsPolicy: null as EffectiveOperationsPolicy | null,
   friendInvitation: null as null | { invitationId: string; roomCode: string; fromAccountId: string; fromName: string },
+  matchmaking: null as null | { queued: boolean; mode?: 'ranked' | 'casual'; joinedAt?: string },
+  rankedSettlement: null as RankedSettlement | null,
 })
 
 export function connect(): Promise<void> {
@@ -132,6 +148,22 @@ export function connect(): Promise<void> {
         window.dispatchEvent(new CustomEvent('l12-friend-room-created', { detail: message }))
       }
       else if (message.type === 'friendInvitationSent' || message.type === 'friendInvitationRejected') l12State.notice = message.message || ''
+      else if (message.type === 'matchmakingState') {
+        l12State.matchmaking = message.queued ? message : null
+        if (message.queued) startMatchmakingPolling()
+        else clearMatchmakingPolling()
+        l12State.notice = message.message || ''
+      }
+      else if (message.type === 'matchmakingFound') {
+        clearMatchmakingPolling()
+        l12State.matchmaking = null
+        l12State.notice = message.message || '匹配成功'
+      }
+      else if (message.type === 'matchmakingRejected') {
+        clearMatchmakingPolling()
+        l12State.matchmaking = null
+        l12State.notice = message.message || '匹配请求未能完成'
+      }
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
         l12State.room = null
         l12State.game = null
@@ -156,6 +188,7 @@ export function connect(): Promise<void> {
           l12State.spectating = Boolean(message.spectating)
           l12State.gmEnabled = Boolean(message.gmEnabled)
           l12State.pendingAction = false
+          l12State.rankedSettlement = message.rankedSettlement || null
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
         }
       }
@@ -175,6 +208,8 @@ export function connect(): Promise<void> {
     socket.onclose = () => {
       if (l12State.socket === socket) {
         clearHeartbeat()
+        clearMatchmakingPolling()
+        l12State.matchmaking = null
         l12State.socket = null
         l12State.status = 'offline'
         l12State.pendingAction = false
@@ -205,6 +240,7 @@ export function disconnect() {
   automaticConnectionEnabled = false
   clearReconnectTimer()
   clearHeartbeat()
+  clearMatchmakingPolling()
   l12State.socket?.close()
   l12State.socket = null
   l12State.status = 'offline'
@@ -215,6 +251,8 @@ export function disconnect() {
   l12State.leavingRoom = false
   l12State.gmEnabled = false
   l12State.pendingAction = false
+  l12State.matchmaking = null
+  l12State.rankedSettlement = null
 }
 
 export function send(payload: unknown) {
@@ -245,6 +283,8 @@ export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12
   send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
 }
 export const joinRoom = (roomCode: string) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'joinRoom', roomCode }) }
+export const joinMatchmaking = (mode: 'ranked' | 'casual', deck?: SavedL12Deck) => send({ type: 'joinMatchmaking', mode, deck })
+export const cancelMatchmaking = () => { clearMatchmakingPolling(); send({ type: 'cancelMatchmaking' }) }
 export const enterTournamentMatch = (tournamentId: string, matchId: string) => {
   l12State.spectating = false
   l12State.leavingRoom = false

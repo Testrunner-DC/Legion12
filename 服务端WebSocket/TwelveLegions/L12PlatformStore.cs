@@ -221,6 +221,11 @@ public sealed partial class L12PlatformStore
         public SecurityStateRow Security { get; set; } = new();
         public OperationsConfigRow? OperationsConfig { get; set; }
         public List<OperationsConfigVersionRow> OperationsConfigHistory { get; set; } = [];
+        public RankedConfigRow? RankedConfig { get; set; }
+        public List<RankedProfileRow> RankedProfiles { get; set; } = [];
+        public List<RankedProfileHistoryRow> RankedProfileHistory { get; set; } = [];
+        public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
+        public List<RankedBroadcastRow> RankedBroadcasts { get; set; } = [];
     }
 
     private static readonly string[] ForbiddenNames =
@@ -259,6 +264,7 @@ public sealed partial class L12PlatformStore
         _data = LoadTransactionalState();
         EnsureRootAdmin();
         EnsureOperationsState();
+        EnsureRankedState();
     }
 
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)

@@ -35,16 +35,20 @@ public sealed class MatchRecorder : IAsyncDisposable
             CREATE UNIQUE INDEX IF NOT EXISTS ix_match_events_sequence ON match_events(match_id, sequence);
             """;
         await command.ExecuteNonQueryAsync();
+        await EnsureColumnAsync(connection, "matches", "mode_id", "TEXT NOT NULL DEFAULT 'legacy'");
+        await EnsureColumnAsync(connection, "matches", "account_0", "TEXT");
+        await EnsureColumnAsync(connection, "matches", "account_1", "TEXT");
     }
 
-    public async Task StartAsync(L12GameState state)
+    public async Task StartAsync(L12GameState state, string modeId = "friendly",
+        string? account0 = null, string? account1 = null)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO matches(match_id, room_code, seed, player_0, player_1, deck_0, deck_1, started_utc)
-            VALUES($id,$room,$seed,$p0,$p1,$d0,$d1,$utc);
+            INSERT INTO matches(match_id, room_code, seed, player_0, player_1, deck_0, deck_1, started_utc, mode_id, account_0, account_1)
+            VALUES($id,$room,$seed,$p0,$p1,$d0,$d1,$utc,$mode,$a0,$a1);
             """;
         command.Parameters.AddWithValue("$id", state.MatchId);
         command.Parameters.AddWithValue("$room", state.RoomCode);
@@ -54,6 +58,9 @@ public sealed class MatchRecorder : IAsyncDisposable
         command.Parameters.AddWithValue("$d0", state.Players[0].DeckName);
         command.Parameters.AddWithValue("$d1", state.Players[1].DeckName);
         command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$mode", string.IsNullOrWhiteSpace(modeId) ? "friendly" : modeId);
+        command.Parameters.AddWithValue("$a0", (object?)account0 ?? DBNull.Value);
+        command.Parameters.AddWithValue("$a1", (object?)account1 ?? DBNull.Value);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -119,7 +126,7 @@ public sealed class MatchRecorder : IAsyncDisposable
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
                    m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
-            WHERE m.player_0=$player OR m.player_1=$player
+            WHERE (m.player_0=$player OR m.player_1=$player) AND m.mode_id <> 'sandbox'
             GROUP BY m.match_id ORDER BY m.started_utc DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$player", playerName);
@@ -142,7 +149,7 @@ public sealed class MatchRecorder : IAsyncDisposable
                 SELECT latest.id FROM match_events latest
                 WHERE latest.match_id=m.match_id ORDER BY latest.sequence DESC LIMIT 1
             )
-            WHERE m.ended_utc IS NOT NULL
+            WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
             ORDER BY m.started_utc DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 2000));
@@ -457,6 +464,19 @@ public sealed class MatchRecorder : IAsyncDisposable
         reader.GetInt32(11));
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private static async Task EnsureColumnAsync(SqliteConnection connection, string table, string column,
+        string declaration)
+    {
+        var inspect = connection.CreateCommand();
+        inspect.CommandText = $"PRAGMA table_info({table});";
+        await using (var reader = await inspect.ExecuteReaderAsync())
+            while (await reader.ReadAsync())
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return;
+        var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration};";
+        await alter.ExecuteNonQueryAsync();
+    }
 }
 
 public sealed record L12MatchSummary(

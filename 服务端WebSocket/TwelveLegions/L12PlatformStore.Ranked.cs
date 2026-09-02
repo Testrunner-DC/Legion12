@@ -1,0 +1,550 @@
+namespace TwelveLegions.Server;
+
+public sealed record L12RankedTierConfig(string Name, int Minimum, int BaseDelta,
+    int WinStreakCap, int LossProtectionCap, int RatingGapCap, string Color, string Icon);
+public sealed record L12RankedFactionConfig(string Id, string Name, string Color, string Icon,
+    string FirstTitle, string TopFiveTitle, IReadOnlyList<L12RankedTierConfig> Tiers);
+public sealed record L12RankedConfigView(int PlacementMatches, int PlacementMaximum,
+    bool BroadcastEnabled, IReadOnlyList<L12RankedFactionConfig> Factions);
+public sealed record L12RankedProfileView(string AccountId, string Username, string SeasonId,
+    string? Faction, int SevenValue, string DisplayValue, int PlacementPlayed, int PlacementWins,
+    bool Placed, int Wins, int Losses, int WinStreak, int LossStreak, string Tier,
+    int TierIndex, int FactionRank, string? Title);
+public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction, int SevenValue,
+    int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
+    DateTimeOffset ArchivedAt);
+public sealed record L12RankedSettlementComponent(string Kind, string Label, int Value);
+public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
+    bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
+    int Delta, string TierBefore, string TierAfter, IReadOnlyList<L12RankedSettlementComponent> Components,
+    DateTimeOffset SettledAt);
+public sealed record L12RankedBroadcastView(string Id, string MatchId, string EventType,
+    string Message, DateTimeOffset CreatedAt);
+public sealed record L12RankedLeaderboardEntry(int Rank, string Username,
+    string Faction, int SevenValue, string DisplayValue, string Tier, string? Title,
+    int Wins, int Losses, int WinStreak);
+public sealed record L12RankedOverviewView(L12RankedProfileView Profile,
+    IReadOnlyDictionary<string, int> FactionTotals, L12RankedConfigView Config,
+    IReadOnlyList<L12RankedProfileHistoryView> History);
+public sealed record L12RankedSettlementPair(L12RankedSettlementView First,
+    L12RankedSettlementView Second, IReadOnlyList<L12RankedBroadcastView> Broadcasts);
+
+public sealed partial class L12PlatformStore
+{
+    private static readonly string[] RankedFactionIds = ["order", "chaos", "fate"];
+    private sealed class RankedTierRow
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Minimum { get; set; }
+        public int BaseDelta { get; set; }
+        public int WinStreakCap { get; set; }
+        public int LossProtectionCap { get; set; }
+        public int RatingGapCap { get; set; }
+        public string Color { get; set; } = "#d5b85c";
+        public string Icon { get; set; } = string.Empty;
+    }
+    private sealed class RankedFactionRow
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Color { get; set; } = "#d5b85c";
+        public string Icon { get; set; } = string.Empty;
+        public string FirstTitle { get; set; } = string.Empty;
+        public string TopFiveTitle { get; set; } = string.Empty;
+        public List<RankedTierRow> Tiers { get; set; } = [];
+    }
+    private sealed class RankedConfigRow
+    {
+        public int PlacementMatches { get; set; } = 5;
+        public int PlacementMaximum { get; set; } = 29999;
+        public bool BroadcastEnabled { get; set; } = true;
+        public List<RankedFactionRow> Factions { get; set; } = [];
+    }
+    private sealed class RankedProfileRow
+    {
+        public string AccountId { get; set; } = string.Empty;
+        public string SeasonId { get; set; } = string.Empty;
+        public string? Faction { get; set; }
+        public double HiddenRating { get; set; } = 1500;
+        public int SevenValue { get; set; }
+        public int PlacementPlayed { get; set; }
+        public int PlacementWins { get; set; }
+        public int Wins { get; set; }
+        public int Losses { get; set; }
+        public int WinStreak { get; set; }
+        public int LossStreak { get; set; }
+        public int HighestFloor { get; set; }
+        public bool ReachedHighestTier { get; set; }
+    }
+    private sealed class RankedProfileHistoryRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AccountId { get; set; } = string.Empty;
+        public string SeasonId { get; set; } = string.Empty;
+        public string Faction { get; set; } = string.Empty;
+        public int SevenValue { get; set; }
+        public int PlacementPlayed { get; set; }
+        public int PlacementWins { get; set; }
+        public int Wins { get; set; }
+        public int Losses { get; set; }
+        public int WinStreak { get; set; }
+        public DateTimeOffset ArchivedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+    private sealed class RankedSettlementRow
+    {
+        public string MatchId { get; set; } = string.Empty;
+        public string AccountId { get; set; } = string.Empty;
+        public string Faction { get; set; } = string.Empty;
+        public bool Won { get; set; }
+        public bool Placement { get; set; }
+        public int PlacementPlayed { get; set; }
+        public int PlacementRequired { get; set; }
+        public int Before { get; set; }
+        public int After { get; set; }
+        public int Delta { get; set; }
+        public string TierBefore { get; set; } = string.Empty;
+        public string TierAfter { get; set; } = string.Empty;
+        public List<L12RankedSettlementComponent> Components { get; set; } = [];
+        public DateTimeOffset SettledAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+    private sealed class RankedBroadcastRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string MatchId { get; set; } = string.Empty;
+        public string EventType { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private void EnsureRankedState()
+    {
+        lock (_gate)
+        {
+            var changed = false;
+            if (_data.RankedConfig is null)
+            {
+                _data.RankedConfig = DefaultRankedConfig();
+                changed = true;
+            }
+            if (_data.RankedConfig.Factions.Count != 3)
+            {
+                _data.RankedConfig = DefaultRankedConfig();
+                changed = true;
+            }
+            _data.RankedProfiles ??= [];
+            _data.RankedProfileHistory ??= [];
+            _data.RankedSettlements ??= [];
+            _data.RankedBroadcasts ??= [];
+            if (changed) Save();
+        }
+    }
+
+    private static RankedConfigRow DefaultRankedConfig()
+    {
+        static List<RankedTierRow> Tiers() =>
+        [
+            new() { Name = "初阶", Minimum = 0, BaseDelta = 200, WinStreakCap = 100, LossProtectionCap = 50, RatingGapCap = 50, Color = "#87959c" },
+            new() { Name = "进阶", Minimum = 15000, BaseDelta = 400, WinStreakCap = 200, LossProtectionCap = 100, RatingGapCap = 100, Color = "#67a7b7" },
+            new() { Name = "精英", Minimum = 30000, BaseDelta = 800, WinStreakCap = 400, LossProtectionCap = 200, RatingGapCap = 200, Color = "#8d73c7" },
+            new() { Name = "统领", Minimum = 60000, BaseDelta = 1500, WinStreakCap = 750, LossProtectionCap = 380, RatingGapCap = 380, Color = "#d5904b" },
+            new() { Name = "冠冕", Minimum = 100000, BaseDelta = 2500, WinStreakCap = 1250, LossProtectionCap = 630, RatingGapCap = 630, Color = "#e4c15e" },
+        ];
+        return new RankedConfigRow
+        {
+            Factions =
+            [
+                new() { Id = "order", Name = "秩序", Color = "#5ea4c7", FirstTitle = "秩序冠首", TopFiveTitle = "秩序中枢", Tiers = Tiers() },
+                new() { Id = "chaos", Name = "混沌", Color = "#c05d65", FirstTitle = "混沌冠首", TopFiveTitle = "混沌先声", Tiers = Tiers() },
+                new() { Id = "fate", Name = "命运", Color = "#b698d2", FirstTitle = "命运冠首", TopFiveTitle = "命运织者", Tiers = Tiers() },
+            ],
+        };
+    }
+
+    public L12RankedConfigView RankedConfig(L12AccountView? actor = null)
+    {
+        if (actor is not null) EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate) return ToView(_data.RankedConfig!);
+    }
+
+    public L12RankedConfigView UpdateRankedConfig(L12AccountView actor, L12RankedConfigView value,
+        string reason, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        if (string.IsNullOrWhiteSpace(reason)) throw new L12OperationsConfigException("reason_required", "请填写排位配置变更理由");
+        var normalized = NormalizeRankedConfig(value);
+        lock (_gate)
+        {
+            _data.RankedConfig = normalized;
+            AddAdminAudit(actor, "operations", "ranked-config-apply", "ranked:config", null, null,
+                reason.Trim(), context with { Reason = reason.Trim(), Outcome = "succeeded" });
+            Save();
+            return ToView(normalized);
+        }
+    }
+
+    public L12RankedProfileView RankedProfile(string accountId)
+    {
+        lock (_gate)
+        {
+            var row = RequireRankedProfile(accountId);
+            return ProfileView(row);
+        }
+    }
+
+    public L12RankedProfileView SelectRankedFaction(string accountId, string faction)
+    {
+        faction = faction.Trim().ToLowerInvariant();
+        if (!RankedFactionIds.Contains(faction)) throw new ArgumentException("派系只能选择秩序、混沌或命运");
+        lock (_gate)
+        {
+            var row = RequireRankedProfile(accountId);
+            if (!string.Equals(row.Faction, faction, StringComparison.OrdinalIgnoreCase))
+            {
+                ArchiveRankedProfile(row);
+                row.Faction = faction;
+                row.SevenValue = row.PlacementPlayed = row.PlacementWins = row.Wins = row.Losses = 0;
+                row.WinStreak = row.LossStreak = row.HighestFloor = 0;
+                row.ReachedHighestTier = false;
+                Save();
+            }
+            return ProfileView(row);
+        }
+    }
+
+    internal double HiddenRating(string accountId)
+    {
+        lock (_gate) return RequireRankedProfile(accountId).HiddenRating;
+    }
+
+    public L12RankedOverviewView RankedOverview(string accountId)
+    {
+        lock (_gate)
+        {
+            var profile = RequireRankedProfile(accountId);
+            var history = _data.RankedProfileHistory.Where(item => item.AccountId == accountId)
+                .OrderByDescending(item => item.ArchivedAt)
+                .Select(item => new L12RankedProfileHistoryView(item.SeasonId,
+                    FactionFor(item.Faction).Name, item.SevenValue, item.PlacementPlayed,
+                    item.PlacementWins, item.Wins, item.Losses, item.WinStreak, item.ArchivedAt))
+                .ToArray();
+            return new L12RankedOverviewView(ProfileView(profile), FactionTotalsLocked(),
+                ToView(_data.RankedConfig!), history);
+        }
+    }
+
+    public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 100)
+    {
+        lock (_gate)
+        {
+            var season = RequireOperationsConfig().Season.Id;
+            var rows = _data.RankedProfiles.Where(row => row.SeasonId == season
+                    && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
+                    && !string.IsNullOrWhiteSpace(row.Faction)
+                    && (string.IsNullOrWhiteSpace(faction) || string.Equals(row.Faction, faction, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(row => row.SevenValue).ThenByDescending(row => row.HiddenRating)
+                .ThenBy(row => AccountName(row.AccountId), StringComparer.OrdinalIgnoreCase).Take(Math.Clamp(limit, 1, 500)).ToArray();
+            return rows.Select((row, index) => LeaderboardView(row, index + 1)).ToArray();
+        }
+    }
+
+    public L12RankedSettlementView? RankedSettlement(string matchId, string accountId)
+    {
+        lock (_gate)
+        {
+            var row = _data.RankedSettlements.FirstOrDefault(item => item.MatchId == matchId && item.AccountId == accountId);
+            return row is null ? null : ToView(row);
+        }
+    }
+
+    public IReadOnlyList<L12RankedBroadcastView> RankedBroadcasts(int limit = 30)
+    {
+        lock (_gate) return _data.RankedBroadcasts.OrderByDescending(row => row.CreatedAt)
+            .Take(Math.Clamp(limit, 1, 100)).Select(ToView).ToArray();
+    }
+
+    public bool DeleteRankedBroadcast(L12AccountView actor, string id, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        lock (_gate)
+        {
+            var removed = _data.RankedBroadcasts.RemoveAll(row => row.Id == id) > 0;
+            if (removed)
+            {
+                AddAdminAudit(actor, "operations", "ranked-broadcast-delete", $"ranked:broadcast:{id}", null, null, null, context);
+                Save();
+            }
+            return removed;
+        }
+    }
+
+    internal L12RankedSettlementPair SettleRankedMatch(string matchId, string firstAccountId,
+        string secondAccountId, int winner)
+    {
+        lock (_gate)
+        {
+            var existingFirst = _data.RankedSettlements.FirstOrDefault(row => row.MatchId == matchId && row.AccountId == firstAccountId);
+            var existingSecond = _data.RankedSettlements.FirstOrDefault(row => row.MatchId == matchId && row.AccountId == secondAccountId);
+            if (existingFirst is not null && existingSecond is not null)
+                return new(ToView(existingFirst), ToView(existingSecond), []);
+
+            var first = RequireRankedProfile(firstAccountId);
+            var second = RequireRankedProfile(secondAccountId);
+            if (string.IsNullOrWhiteSpace(first.Faction) || string.IsNullOrWhiteSpace(second.Faction))
+                throw new InvalidOperationException("排位结算缺少赛季派系");
+            var beforeRanks = CurrentFactionRanks();
+            var firstRating = first.HiddenRating;
+            var secondRating = second.HiddenRating;
+            var firstSevenBefore = first.SevenValue;
+            var secondSevenBefore = second.SevenValue;
+            var firstStreakBefore = first.WinStreak;
+            var secondStreakBefore = second.WinStreak;
+            var firstSettlement = SettleOne(matchId, first, winner == 0, firstRating,
+                secondSevenBefore, secondStreakBefore);
+            var secondSettlement = SettleOne(matchId, second, winner == 1, secondRating,
+                firstSevenBefore, firstStreakBefore);
+            var expectedFirst = 1d / (1d + Math.Pow(10d, (secondRating - firstRating) / 400d));
+            first.HiddenRating = Math.Clamp(firstRating + 24d * ((winner == 0 ? 1d : 0d) - expectedFirst), 500d, 2500d);
+            second.HiddenRating = Math.Clamp(secondRating + 24d * ((winner == 1 ? 1d : 0d) - (1d - expectedFirst)), 500d, 2500d);
+            _data.RankedSettlements.Add(firstSettlement);
+            _data.RankedSettlements.Add(secondSettlement);
+            var broadcasts = BuildBroadcasts(matchId, first, second, winner, beforeRanks,
+                firstStreakBefore, secondStreakBefore);
+            _data.RankedBroadcasts.AddRange(broadcasts);
+            if (_data.RankedBroadcasts.Count > 300)
+                _data.RankedBroadcasts.RemoveRange(0, _data.RankedBroadcasts.Count - 300);
+            Save();
+            return new(ToView(firstSettlement), ToView(secondSettlement), broadcasts.Select(ToView).ToArray());
+        }
+    }
+
+    private RankedSettlementRow SettleOne(string matchId, RankedProfileRow player, bool won,
+        double ratingBefore, int opponentSevenBefore, int opponentWinStreakBefore)
+    {
+        var config = _data.RankedConfig!;
+        var before = player.SevenValue;
+        var tierBefore = TierFor(player);
+        var placement = player.PlacementPlayed < config.PlacementMatches;
+        var components = new List<L12RankedSettlementComponent>();
+        player.PlacementPlayed++;
+        if (won) player.PlacementWins++;
+        player.Wins += won ? 1 : 0;
+        player.Losses += won ? 0 : 1;
+        player.WinStreak = won ? player.WinStreak + 1 : 0;
+        player.LossStreak = won ? 0 : player.LossStreak + 1;
+        if (placement)
+        {
+            if (player.PlacementPlayed >= config.PlacementMatches)
+            {
+                var ratingPart = Math.Clamp((int)Math.Round((ratingBefore - 1000d) * 15d), 0, 12000);
+                var recordPart = player.PlacementWins * 3500;
+                player.SevenValue = Math.Min(config.PlacementMaximum, ratingPart + recordPart);
+                components.Add(new("placement", "定级结果", player.SevenValue));
+            }
+        }
+        else
+        {
+            var tier = TierFor(player);
+            var baseDelta = won ? tier.BaseDelta : -tier.BaseDelta;
+            components.Add(new("base", "基础胜负", baseDelta));
+            var gapRaw = (int)Math.Round((opponentSevenBefore - before) / 1000d * (tier.RatingGapCap / 5d));
+            // 对手越强，胜利时多得、失败时少扣；对手越弱则相反。修正方向与胜负无关。
+            var gap = Math.Clamp(gapRaw, -tier.RatingGapCap, tier.RatingGapCap);
+            components.Add(new("gap", "实力差修正", gap));
+            var streakStep = tier.WinStreakCap / 10d;
+            var winBonus = won ? Math.Min(tier.WinStreakCap, (int)Math.Round(Math.Max(0, player.WinStreak - 1) * streakStep)) : 0;
+            if (winBonus != 0) components.Add(new("win-streak", "连胜奖励", winBonus));
+            var protectionStep = tier.LossProtectionCap / 5d;
+            var lossProtection = !won ? Math.Min(tier.LossProtectionCap, (int)Math.Round(Math.Max(0, player.LossStreak - 1) * protectionStep)) : 0;
+            if (lossProtection != 0) components.Add(new("loss-protection", "连败保护", lossProtection));
+            var terminate = won && opponentWinStreakBefore >= 5 ? StreakTerminationReward(opponentSevenBefore) : 0;
+            if (terminate != 0) components.Add(new("streak-termination", "终结连胜", terminate));
+            var rawAfter = before + components.Sum(item => item.Value);
+            var protectedAfter = Math.Max(player.HighestFloor, Math.Max(0, rawAfter));
+            if (protectedAfter != rawAfter) components.Add(new("floor", "段位保底", protectedAfter - rawAfter));
+            player.SevenValue = protectedAfter;
+        }
+        player.HighestFloor = Math.Max(player.HighestFloor, FloorFor(player.SevenValue));
+        var tierAfter = TierFor(player);
+        return new RankedSettlementRow
+        {
+            MatchId = matchId, AccountId = player.AccountId, Faction = player.Faction!, Won = won,
+            Placement = placement, PlacementPlayed = player.PlacementPlayed,
+            PlacementRequired = config.PlacementMatches, Before = before, After = player.SevenValue,
+            Delta = player.SevenValue - before, TierBefore = tierBefore.Name, TierAfter = tierAfter.Name,
+            Components = components, SettledAt = DateTimeOffset.UtcNow,
+        };
+    }
+
+    private List<RankedBroadcastRow> BuildBroadcasts(string matchId, RankedProfileRow first,
+        RankedProfileRow second, int winner, IReadOnlyDictionary<string, int> beforeRanks,
+        int firstStreakBefore, int secondStreakBefore)
+    {
+        if (!_data.RankedConfig!.BroadcastEnabled) return [];
+        var winnerRow = winner == 0 ? first : second;
+        var loserRow = winner == 0 ? second : first;
+        var loserStreakBefore = winner == 0 ? secondStreakBefore : firstStreakBefore;
+        var rows = new List<RankedBroadcastRow>();
+        void Add(string type, string message)
+        {
+            if (_data.RankedBroadcasts.Any(row => row.MatchId == matchId && row.EventType == type)) return;
+            rows.Add(new RankedBroadcastRow { MatchId = matchId, EventType = type, Message = message });
+        }
+        var faction = FactionFor(winnerRow.Faction!);
+        var winnerName = AccountName(winnerRow.AccountId);
+        if (winnerRow.WinStreak >= 5) Add("win-streak", $"【{faction.Name}】{winnerName} 已取得 {winnerRow.WinStreak} 连胜");
+        if (loserStreakBefore >= 5) Add("streak-ended", $"【{faction.Name}】{winnerName} 终结了 {AccountName(loserRow.AccountId)} 的 {loserStreakBefore} 连胜");
+        if (!winnerRow.ReachedHighestTier && TierIndex(winnerRow) == 4)
+        {
+            winnerRow.ReachedHighestTier = true;
+            Add("highest-tier", $"【{faction.Name}】{winnerName} 晋升至 {faction.Tiers[4].Name}");
+        }
+        var after = FactionRank(winnerRow);
+        var beforeRank = beforeRanks.GetValueOrDefault(winnerRow.AccountId);
+        if (after == 1 && beforeRank != 1)
+            Add("faction-first", $"【{faction.Name}】{winnerName} 获得称号「{faction.FirstTitle}」");
+        else if (after is >= 2 and <= 5 && beforeRank is not (>= 2 and <= 5))
+            Add("faction-top-five", $"【{faction.Name}】{winnerName} 跻身派系前五，获得称号「{faction.TopFiveTitle}」");
+        return rows;
+    }
+
+    private RankedProfileRow RequireRankedProfile(string accountId)
+    {
+        var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Disabled && !row.Deleted)
+            ?? throw new KeyNotFoundException("账号不存在或不可用");
+        var season = RequireOperationsConfig().Season.Id;
+        var row = _data.RankedProfiles.FirstOrDefault(item => item.AccountId == accountId);
+        if (row is null)
+        {
+            row = new RankedProfileRow { AccountId = accountId, SeasonId = season };
+            _data.RankedProfiles.Add(row);
+        }
+        else if (row.SeasonId != season)
+        {
+            ArchiveRankedProfile(row);
+            row.SeasonId = season;
+            row.SevenValue = row.PlacementPlayed = row.PlacementWins = row.Wins = row.Losses = 0;
+            row.WinStreak = row.LossStreak = row.HighestFloor = 0;
+            row.ReachedHighestTier = false;
+        }
+        _ = account;
+        return row;
+    }
+
+    private void ArchiveRankedProfile(RankedProfileRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed == 0) return;
+        _data.RankedProfileHistory.Add(new RankedProfileHistoryRow
+        {
+            AccountId = row.AccountId,
+            SeasonId = row.SeasonId,
+            Faction = row.Faction,
+            SevenValue = row.SevenValue,
+            PlacementPlayed = row.PlacementPlayed,
+            PlacementWins = row.PlacementWins,
+            Wins = row.Wins,
+            Losses = row.Losses,
+            WinStreak = row.WinStreak,
+        });
+    }
+
+    private L12RankedProfileView ProfileView(RankedProfileRow row)
+    {
+        var tier = TierFor(row);
+        var rank = FactionRank(row);
+        var faction = string.IsNullOrWhiteSpace(row.Faction) ? null : FactionFor(row.Faction);
+        var title = rank == 1 ? faction?.FirstTitle : rank is >= 2 and <= 5 ? faction?.TopFiveTitle : null;
+        return new(row.AccountId, AccountName(row.AccountId), row.SeasonId, faction?.Name,
+            row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.PlacementPlayed, row.PlacementWins,
+            row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches, row.Wins, row.Losses,
+            row.WinStreak, row.LossStreak, tier.Name, TierIndex(row), rank, title);
+    }
+
+    private L12RankedLeaderboardEntry LeaderboardView(RankedProfileRow row, int rank)
+    {
+        var faction = FactionFor(row.Faction!);
+        var factionRank = FactionRank(row);
+        return new(rank, AccountName(row.AccountId), faction.Name, row.SevenValue,
+            $"七曜值 {row.SevenValue:N0}", TierFor(row).Name,
+            factionRank == 1 ? faction.FirstTitle : factionRank <= 5 ? faction.TopFiveTitle : null,
+            row.Wins, row.Losses, row.WinStreak);
+    }
+
+    private int FactionRank(RankedProfileRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed < _data.RankedConfig!.PlacementMatches) return 0;
+        return _data.RankedProfiles.Where(item => item.SeasonId == row.SeasonId && item.Faction == row.Faction
+                && item.PlacementPlayed >= _data.RankedConfig.PlacementMatches)
+            .OrderByDescending(item => item.SevenValue).ThenByDescending(item => item.HiddenRating)
+            .ThenBy(item => AccountName(item.AccountId), StringComparer.OrdinalIgnoreCase).ToList().IndexOf(row) + 1;
+    }
+
+    private Dictionary<string, int> CurrentFactionRanks()
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var faction in RankedFactionIds)
+        {
+            var rows = _data.RankedProfiles.Where(row => row.SeasonId == RequireOperationsConfig().Season.Id
+                    && row.Faction == faction && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches)
+                .OrderByDescending(row => row.SevenValue).ThenByDescending(row => row.HiddenRating).ToArray();
+            for (var index = 0; index < rows.Length; index++) result[rows[index].AccountId] = index + 1;
+        }
+        return result;
+    }
+
+    private IReadOnlyDictionary<string, int> FactionTotalsLocked()
+        => _data.RankedConfig!.Factions.ToDictionary(faction => faction.Name,
+            faction => _data.RankedProfiles.Where(row => row.SeasonId == RequireOperationsConfig().Season.Id
+                    && row.Faction == faction.Id && row.PlacementPlayed >= _data.RankedConfig.PlacementMatches
+                    && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted))
+                .Sum(row => row.SevenValue));
+
+    private RankedFactionRow FactionFor(string id) => _data.RankedConfig!.Factions.First(row => row.Id == id);
+    private RankedTierRow TierFor(RankedProfileRow row) => FactionFor(row.Faction ?? "order").Tiers[RankedTierIndex(row.SevenValue)];
+    private int TierIndex(RankedProfileRow row) => RankedTierIndex(row.SevenValue);
+    private int RankedTierIndex(int value)
+    {
+        var tiers = _data.RankedConfig!.Factions[0].Tiers;
+        var result = 0;
+        for (var index = 0; index < tiers.Count; index++) if (value >= tiers[index].Minimum) result = index;
+        return result;
+    }
+    private int FloorFor(int value) => _data.RankedConfig!.Factions[0].Tiers.Where(tier => value >= tier.Minimum).Max(tier => tier.Minimum);
+    private static int StreakTerminationReward(int opponentValue) => opponentValue >= 100000 ? 1250
+        : opponentValue >= 60000 ? 750 : opponentValue >= 30000 ? 400 : opponentValue >= 15000 ? 200 : 0;
+    private string AccountName(string id) => _data.Accounts.FirstOrDefault(row => row.Id == id)?.Username ?? "已注销玩家";
+
+    private static L12RankedConfigView ToView(RankedConfigRow row) => new(row.PlacementMatches,
+        row.PlacementMaximum, row.BroadcastEnabled, row.Factions.Select(faction => new L12RankedFactionConfig(
+            faction.Id, faction.Name, faction.Color, faction.Icon, faction.FirstTitle, faction.TopFiveTitle,
+            faction.Tiers.Select(tier => new L12RankedTierConfig(tier.Name, tier.Minimum, tier.BaseDelta,
+                tier.WinStreakCap, tier.LossProtectionCap, tier.RatingGapCap, tier.Color, tier.Icon)).ToArray())).ToArray());
+    private L12RankedSettlementView ToView(RankedSettlementRow row) => new(row.MatchId, row.AccountId,
+        FactionFor(row.Faction).Name, row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before, row.After,
+        row.Delta, row.TierBefore, row.TierAfter, row.Components.ToArray(), row.SettledAt);
+    private static L12RankedBroadcastView ToView(RankedBroadcastRow row) => new(row.Id, row.MatchId,
+        row.EventType, row.Message, row.CreatedAt);
+
+    private static RankedConfigRow NormalizeRankedConfig(L12RankedConfigView value)
+    {
+        if (value.PlacementMatches is < 1 or > 20 || value.PlacementMaximum is < 0 or > 29999)
+            throw new L12OperationsConfigException("invalid_ranked_config", "定级场次需为1–20，定级上限不得超过第二段位");
+        if (value.Factions.Count != 3 || !value.Factions.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(RankedFactionIds))
+            throw new L12OperationsConfigException("invalid_ranked_factions", "排位派系必须且只能为秩序、混沌、命运");
+        var row = new RankedConfigRow { PlacementMatches = value.PlacementMatches,
+            PlacementMaximum = value.PlacementMaximum, BroadcastEnabled = value.BroadcastEnabled };
+        foreach (var faction in value.Factions)
+        {
+            if (faction.Tiers.Count != 5) throw new L12OperationsConfigException("invalid_ranked_tiers", "每个派系必须恰好配置5个段位");
+            var tiers = faction.Tiers.OrderBy(tier => tier.Minimum).ToArray();
+            if (!tiers.Select(tier => tier.Minimum).SequenceEqual([0, 15000, 30000, 60000, 100000]))
+                throw new L12OperationsConfigException("invalid_ranked_thresholds", "五个段位阈值固定为0、15000、30000、60000、100000");
+            row.Factions.Add(new RankedFactionRow { Id = faction.Id.ToLowerInvariant(), Name = faction.Name.Trim(),
+                Color = faction.Color.Trim(), Icon = faction.Icon.Trim(), FirstTitle = faction.FirstTitle.Trim(),
+                TopFiveTitle = faction.TopFiveTitle.Trim(), Tiers = tiers.Select(tier => new RankedTierRow
+                { Name = tier.Name.Trim(), Minimum = tier.Minimum, BaseDelta = Math.Max(0, tier.BaseDelta),
+                    WinStreakCap = Math.Max(0, tier.WinStreakCap), LossProtectionCap = Math.Max(0, tier.LossProtectionCap),
+                    RatingGapCap = Math.Max(0, tier.RatingGapCap), Color = tier.Color.Trim(), Icon = tier.Icon.Trim() }).ToList() });
+        }
+        return row;
+    }
+}

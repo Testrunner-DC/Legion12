@@ -123,6 +123,16 @@ export interface EffectiveOperationsPolicy {
   defaultPresetDeckIds: string[]
   maintenance: { active: boolean; message: string; startsAt?: string; endsAt?: string }
 }
+export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
+export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
+export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[] }
+export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string }
+export interface RankedProfileHistory { seasonId: string; faction: string; sevenValue: number; placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number; archivedAt: string }
+export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
+export interface RankedSettlementComponent { kind: string; label: string; value: number }
+export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string }
+export interface RankedBroadcast { id: string; matchId: string; eventType: string; message: string; createdAt: string }
+export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; wins: number; losses: number; winStreak: number }
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
 }
@@ -554,6 +564,16 @@ export const adminApi = {
     method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion })),
   }),
   runtimeStatus: () => platformRequest<RuntimeStatus>('/api/admin/runtime/status'),
+  rankedConfig: () => platformRequest<RankedConfig>('/api/admin/ranked/config'),
+  saveRankedConfig: (config: RankedConfig, reason: string) => platformRequest<RankedConfig>('/api/admin/ranked/config', { method: 'PUT', body: JSON.stringify({ config, reason }) }),
+  deleteRankedBroadcast: (id: string) => platformRequest<void>(`/api/admin/ranked/broadcasts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
+export const rankedApi = {
+  overview: () => platformRequest<RankedOverview>('/api/ranked/me'),
+  selectFaction: (faction: 'order' | 'chaos' | 'fate') => platformRequest<RankedProfile>('/api/ranked/faction', { method: 'POST', body: JSON.stringify({ faction }) }),
+  leaderboard: (faction = '') => platformRequest<{ players: RankedLeaderboardEntry[]; matches: Array<Record<string, unknown>> }>(`/api/rankings${faction ? `?faction=${encodeURIComponent(faction)}` : ''}`),
+  broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
 }
 
 export const tournamentApi = {

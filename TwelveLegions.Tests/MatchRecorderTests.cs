@@ -29,7 +29,7 @@ public sealed class MatchRecorderTests
         await using (var recorder = new MatchRecorder(path))
         {
             await recorder.InitializeAsync();
-            await recorder.StartAsync(game.State);
+            await recorder.StartAsync(game.State, "ranked", "account-a", "account-b");
             var accepted = game.Handle(0, new L12Command("mulligan", CardInstanceIds: []));
             await recorder.AppendAsync(game, 1, 0, "{\"type\":\"mulligan\"}", accepted);
             var rejectedPlayer = 1 - game.State.ActivePlayer;
