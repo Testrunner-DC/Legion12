@@ -197,6 +197,9 @@ public sealed class L12CardInstance
     public bool TauntRequiresFrontRow { get; set; }
     /// <summary>若不小于0，则挑衅在该玩家的下个回合开始时精确失效；用于兼容额外回合。</summary>
     public int TauntExpiresAtPlayerTurnStart { get; set; } = -1;
+    /// <summary>临时挑衅在该玩家下一次完成回合时失效；授予当回合结束不失效。</summary>
+    public int TauntExpiresAtPlayerTurnEnd { get; set; } = -1;
+    public int TauntGrantedTurnSerial { get; set; } = -1;
     public int ImmortalUses { get; set; }
     public int ImmortalUntilTurn { get; set; } = -1;
     public bool ImmortalRequiresFrontRow { get; set; }
@@ -355,6 +358,8 @@ public sealed class L12PendingDefense
     /// </summary>
     public Dictionary<string, string> LethalReplacementSubstitutes { get; } = new(StringComparer.Ordinal);
     public List<string> DeclaredBlockIds { get; } = [];
+    public List<string> DeclaredSupportIds { get; } = [];
+    /// <summary>旧快照兼容字段；新流程统一使用 DeclaredSupportIds。</summary>
     public string? DeclaredSupportId { get; set; }
     public bool ForceInvalidDefense { get; set; }
     /// <summary>佣兵部队等响应已抵挡进攻；仍须结算已发动的【进攻时】效果。</summary>

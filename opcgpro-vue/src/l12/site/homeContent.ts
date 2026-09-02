@@ -7,6 +7,48 @@ export type HomeContentField = {
   rows?: number
 }
 
+export type NewsEntry = {
+  id: string
+  title: string
+  category: '官方公告' | '规则勘误' | '赛季更新' | '赛事信息'
+  summary: string
+  body: string
+  coverUrl: string
+  publishedAt: string
+  pinned: boolean
+  published: boolean
+}
+
+export const newsContentKey = 'news.entries'
+
+export function createNewsEntry(): NewsEntry {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? `news-${Date.now().toString(36)}`,
+    title: '', category: '官方公告', summary: '', body: '', coverUrl: '',
+    publishedAt: new Date().toISOString(), pinned: false, published: true,
+  }
+}
+
+export function parseNewsEntries(value?: string): NewsEntry[] {
+  if (!value?.trim()) return []
+  try {
+    const rows = JSON.parse(value)
+    if (!Array.isArray(rows)) return []
+    return rows.filter(row => row && typeof row.title === 'string').map(row => ({
+      id: String(row.id || `news-${Math.random().toString(36).slice(2)}`),
+      title: String(row.title),
+      category: ['官方公告', '规则勘误', '赛季更新', '赛事信息'].includes(row.category) ? row.category : '官方公告',
+      summary: String(row.summary || ''), body: String(row.body || ''), coverUrl: String(row.coverUrl || ''),
+      publishedAt: String(row.publishedAt || new Date().toISOString()),
+      pinned: row.pinned === true, published: row.published !== false,
+    }))
+  } catch { return [] }
+}
+
+export function serializeNewsEntries(entries: NewsEntry[]) {
+  return JSON.stringify(entries.map(entry => ({ ...entry, title: entry.title.trim() })), null, 2)
+}
+
 export const homeContentFields: HomeContentField[] = [
   { id: 'heroEyebrow', key: 'home.heroEyebrow', label: '首页眉题', defaultValue: 'LEGION 12 · OFFICIAL WEB PLATFORM' },
   { id: 'headline', key: 'home.headline', label: '首页标题', defaultValue: '十二军团' },

@@ -11,6 +11,7 @@ const props = defineProps<{
   controllable?: boolean
   viewerPlayerIndex?: number
   selectedId?: string | null
+  selectedIds?: string[]
   attackMode?: boolean
   moveMode?: boolean
   freeMoveMode?: boolean
@@ -50,6 +51,8 @@ const emit = defineEmits<{
   selectCard: [card: Card]
   paymentResource: [instanceId: string]
 }>()
+const isSelected = (instanceId?: string) => Boolean(instanceId
+  && (props.selectedId === instanceId || props.selectedIds?.includes(instanceId)))
 
 const factionOpen = ref(false)
 const factionMinimized = ref(false)
@@ -310,7 +313,7 @@ function beginCardAbility(card: Card) {
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`)) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
-              source: selectedId === player.field[row][slot]?.instanceId,
+              source: isSelected(player.field[row][slot]?.instanceId),
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
               'payment-resource': paymentChoiceIds?.includes(player.field[row][slot]?.instanceId ?? ''),
@@ -337,7 +340,7 @@ function beginCardAbility(card: Card) {
                 type="button" class="trial-direct-action" data-ui-contract="independent-trial-action"
                 @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">试炼</button>
               <CardTile :card="hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!"
-                :selected="selectedId === player.field[row][slot]!.instanceId"
+                :selected="isSelected(player.field[row][slot]!.instanceId)"
                 @focus-card="emit('focus', $event)"
                 @mouseenter="emit('focus', hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!)" />
             </template>

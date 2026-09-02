@@ -923,7 +923,9 @@ public sealed class S2FactionRegressionTests
 
         Assert.Contains(victim, game.State.Players[1].Graveyard);
         Assert.True(achilles.TauntUntilTurn > game.State.TurnSerial);
-        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnStart);
+        Assert.Equal(-1, achilles.TauntExpiresAtPlayerTurnStart);
+        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnEnd);
+        Assert.Equal(game.State.TurnSerial, achilles.TauntGrantedTurnSerial);
         Assert.True(achilles.TauntRequiresFrontRow);
         Assert.True(L12StructuredCardRules.HasTaunt(achilles, 0));
         Assert.False(L12StructuredCardRules.HasTaunt(achilles, 1));
@@ -1003,7 +1005,7 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void AchillesTauntExpiresAtItsControllersActualNextTurnStartIncludingExtraTurns()
+    public void AchillesTauntExpiresAtEndOfItsControllersNextTurnIncludingExtraTurns()
     {
         var game = Create(631341);
         var achilles = Card("S02-0503", "achilles-extra-turn-attacker");
@@ -1018,14 +1020,21 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("attack", achilles.InstanceId,
             Target: new L12AttackTarget("legion", victim.InstanceId))).Accepted);
         PassResponses(game);
-        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnStart);
+        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnEnd);
 
         game.State.ExtraTurnsForPlayer = 0;
         Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
 
         Assert.Equal(0, game.State.ActivePlayer);
+        Assert.True(L12StructuredCardRules.HasTaunt(achilles, 0));
+        Assert.Equal(0, achilles.TauntExpiresAtPlayerTurnEnd);
+
+        Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
+
+        Assert.Equal(1, game.State.ActivePlayer);
         Assert.Equal(-1, achilles.TauntUntilTurn);
         Assert.Equal(-1, achilles.TauntExpiresAtPlayerTurnStart);
+        Assert.Equal(-1, achilles.TauntExpiresAtPlayerTurnEnd);
     }
 
     [Fact]
@@ -3523,8 +3532,8 @@ public sealed class S2FactionRegressionTests
                 PromptId: prompt.PromptId, Choice: "mode:none")).Accepted);
         }
         Assert.Contains("mode:use", prompt.ValidChoices);
-        Assert.Equal("false", prompt.Data[$"{prompt.Data["previewCardId"]}:hasPrintedCost"]);
-        Assert.DoesNotContain($"{prompt.Data["previewCardId"]}:cost", prompt.Data.Keys);
+        Assert.Equal("effect-decision", prompt.Data["uiPattern"]);
+        Assert.False(prompt.Data.ContainsKey("previewCardId"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts,
             candidate => candidate.Continuation == "pending-activation");

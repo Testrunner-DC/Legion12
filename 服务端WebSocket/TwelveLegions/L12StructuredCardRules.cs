@@ -161,6 +161,8 @@ public static partial class L12StructuredCardRules
         if (card.TauntUntilTurn >= 0) return !card.TauntRequiresFrontRow || row == 0;
         var abilities = GetCombatRuleAbilities(card.CardId);
         return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .Where(ability => !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Condition
+                && atom.Parameters.GetValueOrDefault("expression")?.Contains("source.has-ability=", StringComparison.OrdinalIgnoreCase) == true))
             .Any(ability => AbilityGrantsKeyword(ability, abilities, "taunt"));
     }
 
@@ -171,6 +173,16 @@ public static partial class L12StructuredCardRules
             .SelectMany(ability => ability.Atoms)
             .Any(atom => atom.Kind == L12AtomKinds.AttackRule
                 && atom.Parameters.GetValueOrDefault("cannotReceiveBackRowSupport") == "true");
+    }
+
+    public static bool HasCooperativeSupport(L12CardInstance card, int row)
+    {
+        if (row != 1) return false;
+        return GetCombatRuleAbilities(card.CardId)
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .SelectMany(ability => ability.Atoms)
+            .Any(atom => atom.Kind == L12AtomKinds.Keyword
+                && atom.Parameters.GetValueOrDefault("keywordRef") == "cooperative-support");
     }
 
     private static bool HandConditionMatches(string? expression, L12PlayerState controller,
@@ -386,6 +398,7 @@ public static partial class L12StructuredCardRules
             "S02-0517" => PenthesileaAbilities(),
             "S02-0518" => TheseusAbilities(),
             "S02-0519" => SpartanWarriorAbilities(),
+            "ST04-07" => CooperativeSupportAbilities(),
             "S02-0520" => ForgeAbilities(),
             "S02-0521" => GloryRoadAbilities(),
             "S02-0522" => NyxMeteorAbilities(),
@@ -574,11 +587,11 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.AttackRule, "本回合可进攻对方军团", "resolution", new() { ["canAttackOpponentLegion"] = "true" }),
             new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
         ]),
-        new("after-attack", "triggered", "击杀时 直到我方下个回合开始前，此军团获得 ABILITY 5。",
+        new("after-attack", "triggered", "击杀时 直到我方下个回合结束前，此军团获得 ABILITY 5。",
         [
             new(L12AtomKinds.Condition, "本次进攻击杀对象", "condition", new() { ["expression"] = "item.killed=true" }),
             new(L12AtomKinds.SetState, "获得 ABILITY 5", "resolution", new() { ["abilityRef"] = "S02-0503:ability:5", ["value"] = "true" }),
-            new(L12AtomKinds.Duration, "直到我方下个回合开始前", "duration", new() { ["duration"] = "until-controller-next-turn-start" }),
+            new(L12AtomKinds.Duration, "直到我方下个回合结束前", "duration", new() { ["duration"] = "until-controller-next-turn-end" }),
         ]),
         new("granted-static", "granted-continuous", "「位于前排」获得 ABILITY 6。",
         [
@@ -590,6 +603,20 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.Keyword, "【挑衅】规则引用", "resolution", new() { ["keywordRef"] = "taunt", ["targetRule"] = "opponent-must-attack-taunt-legion" }),
         ]),
     ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> CooperativeSupportAbilities() =>
+    [
+        RangedAbility(),
+        new("continuous", "continuous", "「位于后排」获得协防。（可支援我方任意前排军团，可联合支援）",
+        [
+            new(L12AtomKinds.Condition, "位于后排", "condition", new() { ["expression"] = "source.row=back" }),
+            new(L12AtomKinds.Keyword, "获得【协防】", "resolution", new()
+            {
+                ["keywordRef"] = "cooperative-support",
+                ["supportRule"] = "any-friendly-front;allow-multiple",
+            }),
+        ]),
+    ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> AchillesAbilities() => Assisted(
     [

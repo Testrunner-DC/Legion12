@@ -4,7 +4,7 @@ import type { GameState, PlayerView } from '../types'
 defineProps<{
   game: GameState; me: PlayerView; mode: 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'; selectedId: string | null;
   mulliganCount: number; defenseCount: number; defenseTargetType: string | null;
-  supportId: string | null; canSupport: boolean; busy?: boolean
+  supportIds: string[]; canSupport: boolean; supportReady: boolean; busy?: boolean
 }>()
 const emit = defineEmits<{
   command: [type: string, extra?: Record<string, unknown>]
@@ -25,9 +25,9 @@ const emit = defineEmits<{
       <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense')">不抵挡 · 主宰承受伤害</button>
     </template>
     <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && game.activePlayer !== me.playerIndex && defenseTargetType === 'legion'">
-      <p v-if="canSupport">可点击被进攻军团同列的后排军团，将其选为支援军团。</p>
-      <p v-else>当前没有符合兵力条件的同列后排支援军团。</p>
-      <button class="primary" :disabled="!supportId || busy" @click="emit('command', 'resolveDefense')">确认支援</button>
+      <p v-if="canSupport">可选择正后方军团及任意具有协防的后排军团；允许复数军团联合支援。</p>
+      <p v-else>当前没有能够完成支援的后排军团。</p>
+      <button class="primary" :disabled="!supportReady || busy" @click="emit('command', 'resolveDefense')">确认支援 ({{ supportIds.length }})</button>
       <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense', { supportInstanceId: null })">不支援 · 结算双方兵力</button>
     </template>
     <template v-else-if="game.activePlayer === me.playerIndex && ['Disaster','Reset','Draw','Morale','End'].includes(game.phase)">

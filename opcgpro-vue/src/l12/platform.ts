@@ -468,6 +468,12 @@ export async function getPublicContent(key: string) {
   return platformRequest<{ key: string; value: string }>(`/api/content/${encodeURIComponent(key)}`)
 }
 
+export async function getPublicContentBatch(keys: string[]) {
+  const params = new URLSearchParams()
+  keys.forEach(key => params.append('key', key))
+  return platformRequest<{ values: Record<string, string> }>(`/api/content?${params}`)
+}
+
 export const getEffectiveOperationsPolicy = () =>
   platformRequest<EffectiveOperationsPolicy>('/api/operations/effective-policy')
 

@@ -116,10 +116,16 @@ public sealed class Bq20260830_02RegressionTests
         Assert.Null(player.Field[0][0]);
         Assert.DoesNotContain(player.Graveyard, card => card.InstanceId == xiaotian.InstanceId);
         Assert.DoesNotContain(player.Removed, card => card.InstanceId == xiaotian.InstanceId);
-        var death = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Continuation == "pending-activation"
-                && prompt.Data.GetValueOrDefault("previewCardId") == xiaotian.InstanceId);
+        var death = Assert.Single(game.State.PendingPrompts, prompt =>
+        {
+            if (prompt.Continuation != "pending-activation"
+                || !prompt.Data.TryGetValue("activationId", out var activationId)) return false;
+            return game.State.PendingActivations.Single(candidate => candidate.ActivationId == activationId)
+                .SourceCardId == xiaotian.CardId;
+        });
         Assert.Equal(0, death.PlayerIndex);
+        Assert.Equal("effect-decision", death.Data["uiPattern"]);
+        Assert.False(death.Data.ContainsKey("previewCardId"));
         Assert.Contains(game.State.Events, entry => entry.Type == "derived-vanished"
             && entry.Cards.Any(card => card.InstanceId == xiaotian.InstanceId));
     }

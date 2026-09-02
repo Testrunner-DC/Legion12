@@ -117,7 +117,7 @@ public sealed partial class L12GameEngine
                 activation.CurrentStep++;
                 continue;
             }
-            if (pendingStep.AutoSelectWhenExact
+            if ((pendingStep.AutoSelectWhenExact || IsDeterministicCostSelection(pendingStep))
                 && pendingStep.MinChoose == pendingStep.MaxChoose
                 && pendingStep.ValidChoices.Count == pendingStep.MinChoose)
             {
@@ -517,6 +517,16 @@ public sealed partial class L12GameEngine
         {
             var triggerSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
                 ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+            var triggerCandidate = activation.TriggerCandidateId is null ? null
+                : State.PendingTriggerStackCandidates.FirstOrDefault(candidate => candidate.CandidateId == activation.TriggerCandidateId);
+            if (step.Kind == "option")
+            {
+                promptData["uiPattern"] = "effect-decision";
+                promptData["sourceName"] = triggerCandidate?.SourceName ?? triggerSource.Name;
+                promptData["effectText"] = triggerCandidate?.Text ?? step.Text;
+                promptData["mode:use"] = "发动";
+                promptData["mode:none"] = "不发动";
+            }
             var referencedCardId = step.ReferenceDeclarationKey is { } previewReferenceKey
                 ? activation.DeclaredValues.GetValueOrDefault(previewReferenceKey, []).FirstOrDefault()
                 : null;
@@ -524,8 +534,11 @@ public sealed partial class L12GameEngine
                 || referencedCardId.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)
                 ? triggerSource
                 : FindPromptCard(activation.Controller, referencedCardId) ?? triggerSource;
-            promptData["previewCardId"] = previewCard.InstanceId;
-            AddPromptCardData(promptData, previewCard);
+            if (step.Kind != "option")
+            {
+                promptData["previewCardId"] = previewCard.InstanceId;
+                AddPromptCardData(promptData, previewCard);
+            }
         }
         if (targetPlayerIndex is not null) promptData["targetPlayerIndex"] = targetPlayerIndex.Value.ToString();
         if (step.Kind == "opponent-hand-anonymous")
@@ -568,6 +581,16 @@ public sealed partial class L12GameEngine
                 || choice.Equals("no", StringComparison.OrdinalIgnoreCase)
                 || choice.Equals("skip", StringComparison.OrdinalIgnoreCase)),
         };
+
+    private static bool IsDeterministicCostSelection(L12ActivationSelectionStep step)
+    {
+        if (step.ValidChoices.Count == 0 || step.MinChoose <= 0) return false;
+        // Auto-pay only the shared resource-payment controls. Other colon costs may be
+        // the player's last opportunity to cancel an active effect, or may carry ordering
+        // semantics even when only one card is currently legal. Those flows opt in with
+        // AutoSelectWhenExact after their own activation confirmation instead.
+        return step.Kind is "resource-payment" or "composite-ordinary-payment";
+    }
 
     private IEnumerable<string> AdjacentEmptySlots(L12PlayerState player, int row, int slot)
         => new[] { (row - 1, slot), (row + 1, slot), (row, slot - 1), (row, slot + 1) }

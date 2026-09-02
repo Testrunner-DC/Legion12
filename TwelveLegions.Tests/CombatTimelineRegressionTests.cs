@@ -243,6 +243,54 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
+    public void CooperativeSupportMayJoinTheDirectRearSupportWithoutReplacingIt()
+    {
+        var game = Create(828031);
+        ReadyForCombat(game);
+        var attacker = PlainLegion("cooperative-attacker", 5000);
+        var target = PlainLegion("cooperative-target", 1000);
+        var directSupport = PlainLegion("cooperative-direct", 2000);
+        var cooperativeSupport = Card("ST04-07", "cooperative-any-column");
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Field[1][0] = directSupport;
+        game.State.Players[1].Field[1][2] = cooperativeSupport;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense",
+            CardInstanceIds: [directSupport.InstanceId, cooperativeSupport.InstanceId])).Accepted);
+
+        Assert.Same(target, game.State.Players[1].Field[0][0]);
+        Assert.Equal(1000, target.Troops);
+        Assert.Contains(directSupport, game.State.Players[1].Graveyard);
+        Assert.Contains(cooperativeSupport, game.State.Players[1].Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("联合支援", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void OrdinaryRearLegionCannotSupportAcrossColumns()
+    {
+        var game = Create(828032);
+        ReadyForCombat(game);
+        var attacker = PlainLegion("ordinary-attacker", 3000);
+        var target = PlainLegion("ordinary-target", 1000);
+        var wrongColumn = PlainLegion("ordinary-wrong-column", 2000);
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Field[1][2] = wrongColumn;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        var result = game.Handle(1, new L12Command("resolveDefense",
+            CardInstanceIds: [wrongColumn.InstanceId]));
+
+        Assert.False(result.Accepted);
+        Assert.Contains("支援", result.Error);
+    }
+
+    [Fact]
     public void DefenseAuthorityEventRevalidatesBeforeExtraSettlement()
     {
         var game = Create(82804, autoPass: false);

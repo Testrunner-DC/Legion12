@@ -110,12 +110,10 @@ public sealed class AtomicReviewBatch4RegressionTests
         Assert.Single(game.State.EffectStack,
             item => item.Data.GetValueOrDefault("ability") == "tsukuyomiFrontAttackBuff");
         Resolve(game, "mode:use");
-        var cost = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains(morale.InstanceId, cost.ValidChoices);
-        Assert.False(morale.Tapped);
-        Resolve(game, morale.InstanceId);
+        // 唯一合法的士气费用由公共费用组件自动选中，目标与位置仍由玩家选择。
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(target.InstanceId, targetPrompt.ValidChoices);
+        Assert.False(morale.Tapped);
         Resolve(game, target.InstanceId);
         var slot = Assert.Single(game.State.PendingPrompts);
         Assert.Contains("0:1", slot.ValidChoices);

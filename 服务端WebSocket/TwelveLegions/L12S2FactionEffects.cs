@@ -751,8 +751,8 @@ public sealed partial class L12GameEngine
                 && !string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("defeatedInstanceId"))
                 && FindOnField(State.Players[item.Controller], card.InstanceId, out _, out _) is not null)
             {
-                GrantTauntUntilNextTurnStart(card, item.Controller, requiresFrontRow: true);
-                AddEvent("effect", item.Controller, $"{card.Name}因击杀军团，在我方下个回合开始前于前排获得挑衅", card);
+                GrantTauntUntilNextOwnTurnEnd(card, item.Controller, requiresFrontRow: true);
+                AddEvent("effect", item.Controller, $"{card.Name}因击杀军团，在我方下个回合结束前于前排获得挑衅", card);
             }
             FinishStackItem(item);
             return true;

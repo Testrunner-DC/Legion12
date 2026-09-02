@@ -85,7 +85,9 @@ public sealed partial class L12GameEngine
             {
                 var blockIds = item.Data.GetValueOrDefault("blockIds", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
-                var supportId = item.Data.GetValueOrDefault("supportId");
+                var supportIds = item.Data.GetValueOrDefault("supportIds")?.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    ?? (string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("supportId"))
+                        ? [] : [item.Data.GetValueOrDefault("supportId")!]);
                 var pending = State.PendingDefense;
                 var attacker = pending is null ? null : FindOnField(State.Players[pending.AttackerPlayer],
                     pending.AttackerInstanceId, out _, out _);
@@ -99,7 +101,7 @@ public sealed partial class L12GameEngine
                     }
                     else
                     {
-                        var validation = ValidateDefenseChoice(authorityEvent.ActorPlayer, pending, attacker, blockIds, supportId);
+                        var validation = ValidateDefenseChoice(authorityEvent.ActorPlayer, pending, attacker, blockIds, supportIds);
                         if (!validation.Accepted)
                         {
                             item.Data["invalid"] = "true";
@@ -112,7 +114,7 @@ public sealed partial class L12GameEngine
                 ResolveDefenseCore(
                     authorityEvent.ActorPlayer,
                     blockIds,
-                    supportId,
+                    supportIds,
                     item.Data.GetValueOrDefault("invalid") == "true");
                 break;
             }
@@ -146,6 +148,7 @@ public sealed partial class L12GameEngine
             || State.PendingDefense?.RichardDefenseTaxActive != true) return false;
         var hasDeclaredDefense = item.Data.GetValueOrDefault("action") is "block" or "support"
             && (!string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("blockIds"))
+                || !string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("supportIds"))
                 || !string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("supportId")));
         if (!hasDeclaredDefense) return false;
 

@@ -1045,6 +1045,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             });
             return AdminCommandResponse(request, command, outcome);
         });
+        _app.MapGet("/api/content", (HttpRequest request) =>
+        {
+            var keys = request.Query["key"].Where(key => _platform.IsContentKeyAllowed(key)).Distinct(StringComparer.OrdinalIgnoreCase);
+            return Results.Ok(new { values = keys.ToDictionary(key => key!, key => _platform.GetContent(key!), StringComparer.OrdinalIgnoreCase) });
+        });
         _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
         _app.MapGet("/api/admin/content/{key}", (HttpRequest request, string key) =>
         {

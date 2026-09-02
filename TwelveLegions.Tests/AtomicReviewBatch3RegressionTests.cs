@@ -259,7 +259,9 @@ public sealed class AtomicReviewBatch3RegressionTests
         AddMorale(opponent, 1);
         player.Hand.Clear();
         var discard = Card("S01-0101", "mengpo-declared-discard");
+        var alternateDiscard = Card("S01-0102", "mengpo-alternate-discard");
         player.Hand.Add(discard);
+        player.Hand.Add(alternateDiscard);
         HoldOpponentResponseWindow(game);
         PrepareMain(game);
 
@@ -287,7 +289,9 @@ public sealed class AtomicReviewBatch3RegressionTests
         player.Morale.Clear();
         AddMorale(player, 2, tapped: true);
         var discard = Card("S01-0401", "amaterasu-declared-discard");
+        var alternateDiscard = Card("S01-0402", "amaterasu-alternate-discard");
         player.Hand.Add(discard);
+        player.Hand.Add(alternateDiscard);
         HoldOpponentResponseWindow(game);
         PrepareMain(game);
 

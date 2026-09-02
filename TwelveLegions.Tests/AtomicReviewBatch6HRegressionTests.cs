@@ -263,7 +263,6 @@ public sealed class AtomicReviewBatch6HRegressionTests
 
         AttackMaster(game, takasugi);
         Resolve(game, "mode:use");
-        Resolve(game, morale.InstanceId);
         Resolve(game, target.InstanceId);
         Assert.True(morale.Tapped);
 
@@ -292,7 +291,6 @@ public sealed class AtomicReviewBatch6HRegressionTests
 
         AttackMaster(game, nobunaga);
         Resolve(game, "mode:use");
-        Resolve(game, morale.InstanceId);
         player.Field[0][0] = null;
         player.Graveyard.Add(nobunaga);
         PassResponses(game);

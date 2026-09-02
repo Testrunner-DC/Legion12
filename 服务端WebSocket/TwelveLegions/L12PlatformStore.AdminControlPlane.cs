@@ -111,7 +111,7 @@ public sealed partial class L12PlatformStore
         "home.decksTitle", "home.decksText", "home.recordsTitle", "home.recordsText", "home.newsTitle",
         "home.latestNews", "home.newsEmptyTitle", "home.newsEmptyText", "home.rulesTitle", "home.cardLinkLabel",
         "home.rulesLinkLabel", "home.replayLinkLabel", "home.developmentTitle", "home.battleStatus",
-        "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice",
+        "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice", "news.entries",
         // 兼容旧 platform.json 和既有平台持久化测试中的早期首页键。
         "home.hero.title",
     };

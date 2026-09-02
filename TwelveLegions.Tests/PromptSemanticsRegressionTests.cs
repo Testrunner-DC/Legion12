@@ -77,6 +77,25 @@ public sealed class PromptSemanticsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "prompt:shared-effect-decision-presentation")]
+    public void EffectDecisionUsesSourceEffectAndButtonsWithoutSourceCardPreview()
+    {
+        var prompt = Begin(new L12ActivationSelectionStep
+        {
+            Kind = "option",
+            Text = "彭忒西勒亚：进攻时 可消耗并翻转1神力：本回合兵力+2000。",
+            ValidChoices = ["mode:none", "mode:use"],
+        });
+
+        Assert.Equal("effect-decision", prompt.Data["uiPattern"]);
+        Assert.Equal("彭忒西勒亚", prompt.Data["sourceName"]);
+        Assert.Equal("进攻时 可消耗并翻转1神力：本回合兵力+2000。", prompt.Data["effectText"]);
+        Assert.Equal("发动", prompt.ChoiceLabels["mode:use"]);
+        Assert.Equal("不发动", prompt.ChoiceLabels["mode:none"]);
+        Assert.False(prompt.Data.ContainsKey("previewCardId"));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "prompt:separate-segment-and-activation-cancellation")]
     public void ARealSegmentSkipAndWholeActivationCancellationUseExplicitPolicyAndDifferentLabels()
     {

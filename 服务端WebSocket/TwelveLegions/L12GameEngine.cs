@@ -517,6 +517,7 @@ public sealed partial class L12GameEngine
         if (HasActiveImmortal(card, row)) keywords.Add("免死");
         if (card.HasSureHit) keywords.Add("必中");
         if (L12StructuredCardRules.HasTaunt(card, row)) keywords.Add("挑衅");
+        if (L12StructuredCardRules.HasCooperativeSupport(card, row)) keywords.Add("协防");
         if (card.HasCharge && card.SummonRound >= State.Round) keywords.Add("冲锋");
         if (card.HasShock) keywords.Add("震击");
         if (controller.UsedAbilities.Contains($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}")) keywords.Add("贯穿");
@@ -815,7 +816,7 @@ public sealed partial class L12GameEngine
         {
             player.MasterDamageTakenThisTurn = 0;
             player.HandDiscardedByMasterThisTurn = false;
-            ResetTemporaryCardState(player, State.TurnSerial);
+            ResetTemporaryCardState(player, State.TurnSerial, playerIndex);
             player.UsedAbilities.Clear();
         }
         if (!DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10")
@@ -1073,7 +1074,7 @@ public sealed partial class L12GameEngine
         if (player.Relic is not null && player.Relic.CannotUntapUntilRound < State.Round) player.Relic.Tapped = false;
     }
 
-    private static void ResetTemporaryCardState(L12PlayerState player, int completedTurn)
+    private static void ResetTemporaryCardState(L12PlayerState player, int completedTurn, int completedPlayer)
     {
         foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>())
         {
@@ -1094,6 +1095,12 @@ public sealed partial class L12GameEngine
             card.MasterAttackDamageBonusUntilTurn = -1;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
             card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
+            if (card.TauntExpiresAtPlayerTurnEnd == completedPlayer && completedTurn > card.TauntGrantedTurnSerial)
+            {
+                card.TauntUntilTurn = -1;
+                card.TauntExpiresAtPlayerTurnEnd = -1;
+                card.TauntGrantedTurnSerial = -1;
+            }
             if (card.ReadyAfterNextKillUntilTurn <= completedTurn)
             {
                 card.ReadyAfterNextKillUntilTurn = -1;
@@ -1138,12 +1145,14 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private static void GrantTauntUntilNextTurnStart(L12CardInstance card, int controller,
+    private void GrantTauntUntilNextOwnTurnEnd(L12CardInstance card, int controller,
         bool requiresFrontRow = false)
     {
         card.TauntUntilTurn = int.MaxValue;
         card.TauntRequiresFrontRow = requiresFrontRow;
-        card.TauntExpiresAtPlayerTurnStart = controller;
+        card.TauntExpiresAtPlayerTurnStart = -1;
+        card.TauntExpiresAtPlayerTurnEnd = controller;
+        card.TauntGrantedTurnSerial = State.TurnSerial;
     }
 
     private static void GrantImmortalUntilNextTurnStart(L12CardInstance card, int controller)
@@ -1474,6 +1483,8 @@ public sealed partial class L12GameEngine
         card.TauntUntilTurn = -1;
         card.TauntRequiresFrontRow = false;
         card.TauntExpiresAtPlayerTurnStart = -1;
+        card.TauntExpiresAtPlayerTurnEnd = -1;
+        card.TauntGrantedTurnSerial = -1;
         card.ImmortalUses = 0;
         card.ImmortalUntilTurn = -1;
         card.ImmortalRequiresFrontRow = false;

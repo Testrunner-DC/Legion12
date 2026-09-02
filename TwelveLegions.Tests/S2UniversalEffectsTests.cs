@@ -853,9 +853,7 @@ public sealed class S2UniversalEffectsTests
         var payment = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", payment.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId, Choice: "mode:use")).Accepted);
-        var resource = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: resource.PromptId,
-            Choice: resource.ValidChoices[0])).Accepted);
+        // 两张士气均为本次费用且没有选择差异，公共费用组件应直接支付。
         PassResponses(game);
 
         var preview = Assert.Single(game.State.PendingPrompts);

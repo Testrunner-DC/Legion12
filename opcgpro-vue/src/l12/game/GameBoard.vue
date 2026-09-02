@@ -39,7 +39,7 @@ type BoardMode = 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'
 const mode = ref<BoardMode>('play')
 const mulliganIds = ref<string[]>([])
 const defenseIds = ref<string[]>([])
-const supportId = ref<string | null>(null)
+const supportIds = ref<string[]>([])
 const graveyardPlayer = ref<number | null>(null)
 const playArmed = ref(false)
 const masterPlayerIndex = ref<number | null>(null)
@@ -252,7 +252,7 @@ watch(controlledPlayerIndex, () => {
   playArmed.value = false
   mulliganIds.value = []
   defenseIds.value = []
-  supportId.value = null
+  supportIds.value = []
   boardTargetIds.value = []
   paymentResourceIds.value = []
   graveyardPlayer.value = null
@@ -372,14 +372,6 @@ const eventLabels: Record<string, string> = {
   discard: '弃置', reorder: '排序', 'game-over': '胜负', 'extra-turn': '追加回合',
 }
 function eventLabel(event: ActionEvent) { return eventLabels[event.type] ?? '记录' }
-const combatStageLabels: Record<string, string> = {
-  AttackerAttackTiming: '进攻方【进攻时】', DefenderAttackTiming: '防守方【对方进攻时】',
-  DefenseChoice: '抵挡 / 支援', CombatDamage: '战斗伤害', KillTriggers: '进攻者【击杀时】',
-  DefenderKillTriggers: '被攻击者【击杀时】',
-  AttackerDeathTriggers: '进攻者【阵亡时】', DefenderDeathTriggers: '被攻击者【阵亡时】',
-  FinalizeDeaths: '阵亡军团进入墓地', AttackerAfterAttack: '进攻者【进攻后】',
-  DefenderAfterAttack: '防守方【对方进攻后 / 被进攻后】', Complete: '进攻结束',
-}
 const combat = computed(() => {
   const pending = props.game.pendingDefense
   if (!pending) return null
@@ -391,28 +383,34 @@ const combat = computed(() => {
   const target = pending.target.type === 'master'
     ? null : [...targetOwner.field.flat(), ...(targetOwner.resolving ?? [])]
       .find(card => card?.instanceId === pending.target.instanceId)
-  const support = supportId.value ? me.value.field.flat().find(card => card?.instanceId === supportId.value) : null
+  const supports = me.value.field.flat().filter(card => card && supportIds.value.includes(card.instanceId)) as Card[]
   return {
-    attacker, target, attackerOwner, targetOwner, support, stage: pending.stage,
+    attacker, target, attackerOwner, targetOwner, supports, stage: pending.stage,
     attackValue: pending.attackValue > 0 ? pending.attackValue : attacker.troops,
     attackUnit: pending.attackValue > 0 ? '冻结进攻值' : '兵力',
     targetName: target?.name ?? targetOwner.master.masterName,
-    targetValue: target ? target.troops + (support?.troops ?? 0) : targetOwner.master.hp,
+    targetValue: target ? target.troops + supports.reduce((sum, card) => sum + card.troops, 0) : targetOwner.master.hp,
     targetUnit: target ? '兵力' : '血量',
   }
 })
-const eligibleSupportId = computed(() => {
-  if (defenseTargetType.value !== 'legion') return null
+const eligibleSupportIds = computed(() => {
+  if (defenseTargetType.value !== 'legion') return []
   const targetId = props.game.pendingDefense?.target.instanceId
+  const result: string[] = []
   for (let slot = 0; slot < 3; slot++) {
     const target = me.value.field[0][slot]
-    const support = me.value.field[1][slot]
-    const attacker = enemy.value.field.flat().find(card => card?.instanceId === props.game.pendingDefense?.attackerInstanceId)
-    if (!target || !support || !attacker || target.instanceId !== targetId) continue
-    const attackValue = props.game.pendingDefense?.attackValue || attacker.troops
-    if (target.troops + support.troops >= attackValue) return support.instanceId
+    if (!target || target.instanceId !== targetId) continue
+    me.value.field[1].forEach((support, supportSlot) => {
+      if (!support || support.cannotSupport) return
+      const hasCooperativeSupport = support.activeKeywords?.includes('协防')
+      if (supportSlot === slot || hasCooperativeSupport) result.push(support.instanceId)
+    })
   }
-  return null
+  return result
+})
+const supportReady = computed(() => {
+  if (!combat.value || defenseTargetType.value !== 'legion' || supportIds.value.length === 0) return false
+  return combat.value.targetValue >= combat.value.attackValue
 })
 
 function updateScale() {
@@ -445,11 +443,11 @@ function command(type: string, extra: Record<string, unknown> = {}) {
   if (type === 'mulligan') extra.cardInstanceIds = mulliganIds.value
   if (type === 'resolveDefense') {
     extra.cardInstanceIds = defenseIds.value
-    if (supportId.value && !Object.prototype.hasOwnProperty.call(extra, 'supportInstanceId')) extra.supportInstanceId = supportId.value
+    if (defenseTargetType.value === 'legion') extra.cardInstanceIds = [...supportIds.value]
   }
   if (l12State.gmEnabled) sandboxAction(controlledPlayerIndex.value, { type, ...extra })
   else gameAction({ type, ...extra })
-  if (type === 'resolveDefense') { defenseIds.value = []; supportId.value = null }
+  if (type === 'resolveDefense') { defenseIds.value = []; supportIds.value = [] }
 }
 function toggle(list: string[], id: string) {
   const index = list.indexOf(id)
@@ -508,10 +506,13 @@ function selectPublicCardFor(playerIndex: number, card: Card) {
 }
 function targetableIdsFor(playerIndex: number) {
   if (boardTargetPrompt.value) return boardTargetableIds.value
+  if (isControlledPlayer(playerIndex) && props.game.phase === 'Defense' && defenseTargetType.value === 'legion')
+    return eligibleSupportIds.value
   return isControlledPlayer(playerIndex) ? promotionFoundationTargetIds.value : selectedAttackTargets.value
 }
 function selectionModeFor(playerIndex: number) {
   return Boolean(boardTargetPrompt.value || (isControlledPlayer(playerIndex)
+    && props.game.phase === 'Defense' && defenseTargetType.value === 'legion') || (isControlledPlayer(playerIndex)
     && (boardSlotPrompt.value || promotionFoundationTargetIds.value.length)))
 }
 function selectHand(card: Card) {
@@ -535,8 +536,8 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
   if (props.game.phase === 'Defense' && defenseTargetType.value === 'legion') {
-    if (row === 1 && card?.instanceId === eligibleSupportId.value) {
-      supportId.value = supportId.value === card.instanceId ? null : card.instanceId
+    if (row === 1 && card && eligibleSupportIds.value.includes(card.instanceId)) {
+      toggle(supportIds.value, card.instanceId)
       focusCard.value = card
     }
     return
@@ -776,7 +777,7 @@ function statusTexts(card: Card) {
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
-              :selected-id="selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
@@ -842,17 +843,16 @@ function statusTexts(card: Card) {
                 <span :class="combat.targetOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.targetOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.targetName }}</span>
                 <b>{{ combat.targetValue }}<small>{{ combat.targetUnit }}</small></b>
               </div>
-              <small class="combat-stage-label" data-ui-contract="combat-substage">当前子阶段：{{ combatStageLabels[combat.stage] ?? combat.stage }}</small>
               <div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly" class="combat-resolution-panel">
                 <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
                   :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
-                  :support-id="supportId" :can-support="Boolean(eligibleSupportId)" :busy="l12State.pendingAction" @command="command" />
+                  :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
               </div>
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
-              :selected-id="supportId || selectedId" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
@@ -905,7 +905,7 @@ function statusTexts(card: Card) {
           </section>
           <section v-if="!combat && !readOnly" class="grand-panel action-panel"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
             :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
-            :support-id="supportId" :can-support="Boolean(eligibleSupportId)" :busy="l12State.pendingAction" @command="command" /></section>
+            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section>
         </aside>
       </div>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"

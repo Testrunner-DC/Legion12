@@ -126,8 +126,7 @@ public sealed partial class L12GameEngine
         var playerText = L12PlayerFacingText.Naturalize(text);
         var validChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         data ??= [];
-        if (validChoices.Count == 2 && validChoices.Contains("yes") && validChoices.Contains("no"))
-            data.TryAdd("choiceMode", "instant");
+        ApplySharedPromptPresentation(playerIndex, kind, playerText, validChoices, stackItemId, data);
         ApplyDirectBoardChoiceMode(validChoices, data);
         EnrichPromptCardData(playerIndex, validChoices, data);
         var choiceLabels = BuildPlayerChoiceLabels(playerIndex, kind, playerText, validChoices, data);
@@ -149,6 +148,70 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Add(prompt);
         AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
+    }
+
+    /// <summary>
+    /// 所有卡效选择只从这里取得界面语义。卡牌实现只声明“可见对象/合法对象/费用”，
+    /// 不再各自决定卡图排列、发动按钮或把内部协议文本交给前端猜测。
+    /// </summary>
+    private void ApplySharedPromptPresentation(int playerIndex, string kind, string playerText,
+        IReadOnlyList<string> validChoices, string? stackItemId, Dictionary<string, string> data)
+    {
+        var choiceSet = validChoices.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var isDecision = (choiceSet.SetEquals(["yes", "no"])
+                || choiceSet.SetEquals(["mode:use", "mode:none"]))
+            && kind is "optional" or "option";
+        if (isDecision)
+        {
+            data["uiPattern"] = "effect-decision";
+            data["yes"] = "发动";
+            data["mode:use"] = "发动";
+            data["no"] = "不发动";
+            data["mode:none"] = "不发动";
+
+            var stackItem = stackItemId is null ? null : State.EffectStack.Concat(State.DeferredEffectStack)
+                .FirstOrDefault(item => item.StackItemId == stackItemId);
+            if (stackItem is not null)
+            {
+                data.TryAdd("sourceName", stackItem.SourceName);
+                data.TryAdd("effectText", stackItem.Text);
+            }
+            else
+            {
+                var separator = playerText.IndexOf('：');
+                if (separator > 0)
+                {
+                    data.TryAdd("sourceName", playerText[..separator]);
+                    data.TryAdd("effectText", playerText[(separator + 1)..]);
+                }
+            }
+        }
+
+        var horizontalCardKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "card", "cards", "hand-card", "hand-cards", "discard", "discard-cost",
+            "discard-or-decline", "optional-card", "search", "library-search", "grave-card",
+            "opponent-hand-card",
+        };
+        if (!horizontalCardKinds.Contains(kind)) return;
+
+        data.TryAdd("layout", "single-row");
+        if (kind.Contains("hand", StringComparison.OrdinalIgnoreCase) || kind.StartsWith("discard", StringComparison.OrdinalIgnoreCase))
+            data.TryAdd("sourceZone", "hand");
+
+        if (!data.ContainsKey("displayCardIds"))
+        {
+            var metadataIds = data.Keys
+                .Where(key => key.EndsWith(":cardId", StringComparison.OrdinalIgnoreCase))
+                .Select(key => key[..^":cardId".Length])
+                .Where(id => !id.Equals(data.GetValueOrDefault("previewCardId"), StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var displayed = metadataIds.Length > 0
+                ? metadataIds
+                : validChoices.Where(choice => !choice.Equals("skip", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (displayed.Length > 0) data["displayCardIds"] = string.Join('|', displayed);
+        }
     }
 
     private static readonly IReadOnlyDictionary<string, string> CommonPlayerChoiceLabels

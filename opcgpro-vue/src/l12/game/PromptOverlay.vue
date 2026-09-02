@@ -151,6 +151,10 @@ function naturalChoiceLabel(value: string | undefined, id: string) {
   return normalized && normalized !== id && !isInternalChoiceValue(normalized) ? normalized : null
 }
 function label(id: string) {
+  if (isEffectDecision.value) {
+    if (['yes', 'mode:use'].includes(id.toLowerCase())) return '发动'
+    if (['no', 'mode:none'].includes(id.toLowerCase())) return '不发动'
+  }
   const base = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
     ?? cardFor(id)?.name
     ?? safeChoiceFallback(id)
@@ -226,7 +230,15 @@ function focusHistoryCard(card: DisasterCardView) {
 }
 
 const currentChoices = computed(() => isMulligan.value ? (me.value.hand ?? []).map(card => card.instanceId) : (prompt.value?.validChoices ?? []))
+const isEffectDecision = computed(() => prompt.value?.data?.uiPattern === 'effect-decision')
+const decisionChoiceOrder = computed(() => {
+  const choices = currentChoices.value
+  const affirmative = choices.find(choice => ['yes', 'mode:use'].includes(choice.toLowerCase()))
+  const decline = choices.find(choice => ['no', 'mode:none'].includes(choice.toLowerCase()))
+  return [affirmative, decline, ...choices.filter(choice => choice !== affirmative && choice !== decline)].filter(Boolean) as string[]
+})
 const displayedChoices = computed(() => {
+  if (isEffectDecision.value) return decisionChoiceOrder.value
   const listed = prompt.value?.data?.displayCardIds?.split('|').filter(Boolean)
   if (listed?.length) return listed
   if (previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
@@ -236,8 +248,10 @@ const displayedCardsAreChoices = computed(() => displayedChoices.value.some(id =
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
 const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
 const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
-const hasCardChoices = computed(() => Boolean(previewCardId.value) || displayedChoices.value.some(id => Boolean(detailFor(id))))
-const isEffectOptionList = computed(() => prompt.value?.kind === 'option' && !hasCardChoices.value && !isInitiative.value)
+const hasCardChoices = computed(() => !isEffectDecision.value
+  && (Boolean(previewCardId.value) || displayedChoices.value.some(id => Boolean(detailFor(id)))))
+const isEffectOptionList = computed(() => (isEffectDecision.value || prompt.value?.kind === 'option')
+  && !hasCardChoices.value && !isInitiative.value)
 const displayedCardsAreAllFromHand = computed(() => {
   const handIds = new Set(props.game.players.flatMap(player => (player.hand ?? []).map(card => card.instanceId)))
   const cards = displayedChoices.value.filter(id => Boolean(detailFor(id)))
@@ -249,11 +263,12 @@ const isSingleCardRow = computed(() => prompt.value?.data?.layout === 'single-ro
   || placementMode.value === 'single-top-bottom')
 const unassignedChoices = computed(() => currentChoices.value.filter(id => !placementTop.value.includes(id) && !placementBottom.value.includes(id)))
 const overlayTitle = computed(() => {
-  if (prompt.value) return prompt.value.text
+  if (prompt.value) return isEffectDecision.value ? (prompt.value.data?.sourceName || prompt.value.text) : prompt.value.text
   if (isMulligan.value) return '选择需要调度的起始手牌'
   if (isMulliganPhase.value) return '等待对手完成调度'
   return waitingText()
 })
+const decisionEffectText = computed(() => prompt.value?.data?.effectText?.trim() || prompt.value?.text || '')
 
 function toggle(id: string) {
   const p = prompt.value
@@ -380,6 +395,7 @@ function waitingText() {
   return `${waiting.playerName} ${action[waiting.kind] ?? '正在处理选择'}`
 }
 function kindLabel() {
+  if (isEffectDecision.value) return 'OPTION'
   if (isInitiative.value) return '先后攻决定'
   if (isDisasterChoice.value) return prompt.value?.kind === 'disaster-ban' ? '天灾禁用' : '天灾选择'
   if (prompt.value?.kind === 'disaster-reveal') return '随机公开天灾'
@@ -396,9 +412,10 @@ function kindLabel() {
         <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow }" role="dialog" aria-modal="true" :aria-label="prompt.text">
-        <header>
-          <small>{{ kindLabel() }}</small><h2>{{ prompt.text }}</h2>
+      <section v-else-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="prompt.text">
+        <header :class="{ 'effect-decision-header': isEffectDecision }">
+          <small>{{ kindLabel() }}</small><h2>{{ isEffectDecision ? (prompt.data?.sourceName || prompt.text) : prompt.text }}</h2>
+          <p v-if="isEffectDecision" class="effect-decision-text l12-effect-body">{{ decisionEffectText }}</p>
           <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
         </header>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
@@ -518,7 +535,7 @@ function kindLabel() {
             <span>点击选项后立即结算</span>
           </template>
           <template v-else>
-            <span>{{ isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
+            <span>{{ isEffectDecision ? '请选择是否发动本次效果' : isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
             <button class="primary" :disabled="l12State.pendingAction || selected.length < prompt.minChoose || selected.length > prompt.maxChoose" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : (isInfoConfirm ? '确认信息' : '确认选择') }}
@@ -579,6 +596,7 @@ function kindLabel() {
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:18px}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(820px,calc(100vw - 36px))}.prompt-choices.card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;min-height:0;max-height:292px;padding:10px 3px;overflow:auto}.prompt-choices.card-grid>button{display:flex;width:100%;min-width:0;max-width:none;min-height:0;flex-direction:column;align-items:center;justify-content:center;padding:5px;border:2px solid #d9d8cf;background:#101516;color:#fff}.prompt-choices.card-grid>button:hover,.prompt-choices.card-grid>button.selected{border-color:#70d7df;background:#174e54;color:#fff}.prompt-choices.card-grid .l12-card-image{width:72px;max-width:100%;height:100px;margin:0 auto 5px}.prompt-choices.card-grid span{display:block;width:100%;overflow:hidden;color:#fff;font-size:11px;line-height:17px;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .prompt-choices.effect-option-list{display:flex;max-width:640px;flex-direction:column;align-items:stretch;gap:8px;margin:12px auto}.prompt-choices.effect-option-list>button{width:100%;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:11px;font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
+.effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:13px;line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{display:grid;grid-template-columns:1fr 1fr;max-width:440px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:14px}
 .prompt-choices.card-grid>button.horizontal-card{grid-column:span 2}.prompt-choices.card-grid>button.horizontal-card .l12-card-image{width:180px;height:112px}.prompt-panel.single-card-row{width:min(900px,calc(100vw - 36px))}.prompt-panel.single-card-row .prompt-choices.card-grid{display:flex;max-height:none;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden}.prompt-panel.single-card-row .prompt-choices.card-grid>button{flex:0 0 112px;width:112px;padding:3px}.prompt-panel.single-card-row .prompt-choices.card-grid .l12-card-image{width:92px;height:128px}
 .prompt-featured-card{display:flex;width:150px;min-height:0;flex-direction:column;align-items:center;gap:5px;margin:10px auto 2px;padding:5px;border:2px solid #ded9cc;background:#0a0e0f;color:#fff}.prompt-featured-card .l12-card-image{width:126px;height:176px}.prompt-featured-card.disaster{width:230px}.prompt-featured-card.disaster .l12-card-image{width:210px;height:132px}.prompt-featured-card span{font-size:11px;font-weight:900}
 .l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid{display:flex;justify-content:center;max-height:none}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button{flex:0 0 min(616px,calc(100vw - 100px));width:min(616px,calc(100vw - 100px));max-width:616px}.l12-prompt-overlay.information-confirm .prompt-choices.card-grid>button .l12-card-image{width:min(588px,calc(100vw - 140px));height:min(368px,48vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card{width:min(630px,calc(100vw - 90px));margin-inline:auto}.l12-prompt-overlay.information-confirm .prompt-featured-card .l12-card-image{width:min(602px,calc(100vw - 130px));height:min(376px,48vh)}.l12-prompt-overlay.information-confirm .prompt-featured-card span{font-size:14px}

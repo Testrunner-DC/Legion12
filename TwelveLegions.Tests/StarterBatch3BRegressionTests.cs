@@ -419,9 +419,12 @@ public sealed class StarterBatch3BRegressionTests
         var defender = defenseGame.State.Players[1];
         SetMaster(defender, "ST04-M1");
         var attackingLegion = Card("ST01-01", "defense-timing-attacker");
+        attackingLegion.Troops = 7000;
         var defendedLegion = Card("ST04-03", "defense-timing-target");
+        var cooperativeSupport = Card("ST04-07", "defense-timing-cooperative-support");
         defenseGame.State.Players[0].Field[0][0] = attackingLegion;
         defender.Field[0][0] = defendedLegion;
+        defender.Field[1][2] = cooperativeSupport;
         GiveMorale(defender, 2, "defense-kagutsuchi");
         var defenseAttack = defenseGame.Handle(0, new L12Command("attack", attackingLegion.InstanceId,
             Target: new L12AttackTarget("legion", defendedLegion.InstanceId)));
@@ -429,7 +432,13 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Equal(1, Prompt(defenseGame).PlayerIndex);
         Choose(defenseGame, "mode:morale");
         PassResponses(defenseGame);
-        Assert.Equal(defendedLegion.BaseTroops + 2000 - attackingLegion.BaseTroops, defendedLegion.Troops);
+        Assert.Equal(L12CombatStage.DefenseChoice, defenseGame.State.PendingDefense?.Stage);
+        var supportResult = defenseGame.Handle(1, new L12Command("resolveDefense",
+            CardInstanceIds: [cooperativeSupport.InstanceId]));
+        Assert.True(supportResult.Accepted, supportResult.Error);
+        PassResponses(defenseGame);
+        Assert.Equal(defendedLegion.BaseTroops + 2000, defendedLegion.Troops);
+        Assert.Contains(cooperativeSupport, defender.Graveyard);
     }
 
     [Fact]

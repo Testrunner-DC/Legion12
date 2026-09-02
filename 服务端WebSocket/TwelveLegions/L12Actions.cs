@@ -796,12 +796,15 @@ public sealed partial class L12GameEngine
         var attacker = FindOnField(attackerPlayer, pending.AttackerInstanceId, out _, out _);
         if (attacker is null) return CommandResult.Ok();
 
-        var blockIds = command.CardInstanceIds ?? [];
-        var supportId = command.SupportInstanceId;
-        var validation = ValidateDefenseChoice(playerIndex, pending, attacker, blockIds, supportId);
+        var blockIds = pending.Target.Type == "master" ? command.CardInstanceIds ?? [] : [];
+        var supportIds = pending.Target.Type == "legion"
+            ? (command.CardInstanceIds?.Count > 0 ? command.CardInstanceIds
+                : string.IsNullOrWhiteSpace(command.SupportInstanceId) ? [] : [command.SupportInstanceId])
+            : [];
+        var validation = ValidateDefenseChoice(playerIndex, pending, attacker, blockIds, supportIds);
         if (!validation.Accepted) return validation;
 
-        var declaredDefense = pending.Target.Type == "master" ? blockIds.Count > 0 : !string.IsNullOrWhiteSpace(supportId);
+        var declaredDefense = pending.Target.Type == "master" ? blockIds.Count > 0 : supportIds.Count > 0;
         if (declaredDefense)
         {
             QueueAuthorityEvent("defense", playerIndex, attacker,
@@ -811,16 +814,16 @@ public sealed partial class L12GameEngine
                 {
                     ["action"] = pending.Target.Type == "master" ? "block" : "support",
                     ["blockIds"] = string.Join('|', blockIds),
-                    ["supportId"] = supportId ?? string.Empty,
+                    ["supportIds"] = string.Join('|', supportIds),
                 });
             return CommandResult.Ok();
         }
 
-        return ResolveDefenseCore(playerIndex, blockIds, supportId, forceInvalid: false);
+        return ResolveDefenseCore(playerIndex, blockIds, supportIds, forceInvalid: false);
     }
 
     private CommandResult ValidateDefenseChoice(int playerIndex, L12PendingDefense pending, L12CardInstance attacker,
-        IReadOnlyList<string> blockIds, string? supportId)
+        IReadOnlyList<string> blockIds, IReadOnlyList<string> supportIds)
     {
         var defender = State.Players[playerIndex];
         if (pending.Target.Type == "master")
@@ -834,17 +837,28 @@ public sealed partial class L12GameEngine
             return CommandResult.Ok();
         }
 
-        if (string.IsNullOrWhiteSpace(supportId)) return CommandResult.Ok();
+        if (supportIds.Count == 0) return CommandResult.Ok();
         if (pending.SureHit) return CommandResult.Reject("必中进攻无法被支援");
+        if (supportIds.Count != supportIds.Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            return CommandResult.Reject("支援军团不能重复选择");
         var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
         if (target is null) return CommandResult.Reject("进攻目标已经离场");
-        var support = FindOnField(defender, supportId, out var supportRow, out var supportSlot);
-        if (support is null || !IsFieldLegion(support) || supportRow != 1 || targetRow != 0 || supportSlot != targetSlot)
-            return CommandResult.Reject("支援军团必须位于被进攻军团同列后排");
-        if (support.CannotSupport || defender.BackRowCannotSupport
+        if (targetRow != 0 || defender.BackRowCannotSupport
             || L12StructuredCardRules.CannotReceiveBackRowSupport(target, targetRow))
             return CommandResult.Reject("该军团不能获得后排支援");
-        if (target.Troops + support.Troops < EffectiveAttackValue(pending, attacker)) return CommandResult.Reject("支援后兵力仍不足");
+        var supporters = new List<L12CardInstance>();
+        foreach (var supportId in supportIds)
+        {
+            var support = FindOnField(defender, supportId, out var supportRow, out var supportSlot);
+            if (support is null || !IsFieldLegion(support) || supportRow != 1)
+                return CommandResult.Reject("只能选择我方后排军团进行支援");
+            if (supportSlot != targetSlot && !L12StructuredCardRules.HasCooperativeSupport(support, supportRow))
+                return CommandResult.Reject("非同列后排军团必须具有协防");
+            if (support.CannotSupport) return CommandResult.Reject($"〈{support.Name}〉当前无法支援");
+            supporters.Add(support);
+        }
+        if (target.Troops + supporters.Sum(card => card.Troops) < EffectiveAttackValue(pending, attacker))
+            return CommandResult.Reject("支援后合计兵力仍不足");
         return CommandResult.Ok();
     }
 
@@ -856,9 +870,14 @@ public sealed partial class L12GameEngine
         var target = FindOnField(defender, pending.Target.InstanceId, out var targetRow, out var targetSlot);
         if (attacker is null || target is null || targetRow != 0 || defender.BackRowCannotSupport
             || L12StructuredCardRules.CannotReceiveBackRowSupport(target, targetRow)) return false;
-        var support = defender.Field[1][targetSlot];
-        return support is not null && IsFieldLegion(support) && !support.CannotSupport
-            && target.Troops + support.Troops >= EffectiveAttackValue(pending, attacker);
+        var supporters = defender.Field[1]
+            .Where(card => card is not null && IsFieldLegion(card) && !card.CannotSupport)
+            .Cast<L12CardInstance>()
+            .Where(card => FindOnField(defender, card.InstanceId, out var row, out var slot) is not null
+                && (slot == targetSlot || L12StructuredCardRules.HasCooperativeSupport(card, row)))
+            .ToArray();
+        return supporters.Length > 0
+            && target.Troops + supporters.Sum(card => card.Troops) >= EffectiveAttackValue(pending, attacker);
     }
 
     private bool AutoResolveLegionDefenseWithoutSupport()
@@ -867,12 +886,12 @@ public sealed partial class L12GameEngine
         if (pending is null || pending.Stage != L12CombatStage.DefenseChoice
             || pending.Target.Type != "legion" || HasLegalLegionSupport(pending)) return false;
         AddEvent("support-skipped", 1 - pending.AttackerPlayer, "没有可进行支援的军团，跳过支援选择");
-        ResolveDefenseCore(1 - pending.AttackerPlayer, [], null, forceInvalid: false);
+        ResolveDefenseCore(1 - pending.AttackerPlayer, [], [], forceInvalid: false);
         return true;
     }
 
     private CommandResult ResolveDefenseCore(int playerIndex, IReadOnlyList<string> declaredBlockIds,
-        string? declaredSupportId, bool forceInvalid)
+        IReadOnlyList<string> declaredSupportIds, bool forceInvalid)
     {
         var pending = State.PendingDefense;
         if (State.Phase != L12Phase.Defense || pending is null
@@ -886,10 +905,12 @@ public sealed partial class L12GameEngine
 
         pending.DeclaredBlockIds.Clear();
         pending.DeclaredBlockIds.AddRange(declaredBlockIds);
-        pending.DeclaredSupportId = declaredSupportId;
+        pending.DeclaredSupportIds.Clear();
+        pending.DeclaredSupportIds.AddRange(declaredSupportIds);
+        pending.DeclaredSupportId = declaredSupportIds.FirstOrDefault();
         if (!forceInvalid)
         {
-            var revalidation = ValidateDefenseChoice(playerIndex, pending, attacker, declaredBlockIds, declaredSupportId);
+            var revalidation = ValidateDefenseChoice(playerIndex, pending, attacker, declaredBlockIds, declaredSupportIds);
             if (!revalidation.Accepted)
             {
                 forceInvalid = true;
@@ -929,16 +950,17 @@ public sealed partial class L12GameEngine
             return CommandResult.Ok();
         }
 
-        var supportId = forceInvalid ? null : declaredSupportId;
-        if (!string.IsNullOrWhiteSpace(supportId))
+        var supportIds = forceInvalid ? [] : declaredSupportIds;
+        if (supportIds.Count > 0)
         {
-            var support = FindOnField(defender, supportId, out _, out _);
-            if (support is not null)
+            var supporters = supportIds.Select(id => FindOnField(defender, id, out _, out _))
+                .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
+            if (supporters.Length > 0)
             {
                 pending.Stage = L12CombatStage.AttackerAfterAttack;
-                RemoveFromField(defender, support, true, "作为支援军团阵亡");
-                AddEvent("support", playerIndex, $"{support.Name} 支援 {target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
-                    support, target, attacker);
+                foreach (var support in supporters) RemoveFromField(defender, support, true, "作为支援军团阵亡");
+                AddEvent("support", playerIndex, $"{string.Join('、', supporters.Select(card => card.Name))}联合支援{target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
+                    supporters.Append(target).Append(attacker).ToArray());
                 AdvanceCombatTimelineIfIdle();
                 return CommandResult.Ok();
             }
@@ -1055,7 +1077,7 @@ public sealed partial class L12GameEngine
             var appliedSubstitution = ResolveCombatCardLethalSubstitution(player, card, pending, prompt, choice);
             pending.LethalReplacementDecisions[card.InstanceId] = appliedSubstitution;
             ResolveDefenseCore(1 - pending.AttackerPlayer, pending.DeclaredBlockIds,
-                pending.DeclaredSupportId, pending.ForceInvalidDefense);
+                pending.DeclaredSupportIds, pending.ForceInvalidDefense);
             return;
         }
         var applied = choice == "yes" && CanUseAchillesLethalReplacement(player, card)
@@ -1070,7 +1092,7 @@ public sealed partial class L12GameEngine
                 $"{card.Name}消耗并翻转1神力，代替承受致命进攻并保持当时状态", card);
         }
         ResolveDefenseCore(1 - pending.AttackerPlayer, pending.DeclaredBlockIds,
-            pending.DeclaredSupportId, pending.ForceInvalidDefense);
+            pending.DeclaredSupportIds, pending.ForceInvalidDefense);
     }
 
     private void BeginPiercingAttack(int playerIndex, L12CardInstance attacker)
