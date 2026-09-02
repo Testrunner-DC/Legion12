@@ -12,16 +12,10 @@ public sealed partial class L12GameEngine
         var enemy = State.Players[1 - playerIndex];
         switch ((source.CardId, ability))
         {
+            // 基础费用只有消耗2士气；额外治疗是抽牌结算后的可选段。
+            // 是否满足血量与额外支付条件必须以主效果结算后的状态为准。
             case ("S01-03C1", "asgardDraw"):
-            {
-                var modes = new List<string> { "mode:none" };
-                if (player.Hp <= 5 && ActiveResourceCount(player) >= 3) modes.Add("mode:heal");
-                return BeginPendingActivationSequence(playerIndex, source, ability,
-                [
-                    PublicActiveStep("option", "mode",
-                        "阿斯加德阵营效果：预先声明是否额外消耗1士气并增加1点血量", modes),
-                ]);
-            }
+                return null;
             // 费用只有“消耗2士气”。抽牌后的可选位移属于效果结算，不得在支付阶段
             // 提前询问模式、军团或位置；ResolveActiveEffect 会在抽牌处理后建立场面选择。
             case ("S01-04C1", "factionDrawMove"):

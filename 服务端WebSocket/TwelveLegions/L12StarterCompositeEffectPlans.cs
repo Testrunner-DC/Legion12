@@ -9,7 +9,7 @@ internal static partial class L12CompositeEffectPlans
             ["legendary-bloodline"] =
             [
                 new("legendary-bloodline-base", "使所选阿斯加德军团本回合兵力+2000", PublicTargetKeys: ["buffTarget"]),
-                new("legendary-bloodline-grave", "墓地每有3张阿斯加德军团，使该强化额外+1000", PublicTargetKeys: ["buffTarget"]),
+                new("legendary-bloodline-grave", "墓地每有3张阿斯加德军团，所选军团本回合兵力额外+1000", PublicTargetKeys: ["buffTarget"]),
             ],
             ["invasion-fire"] = [new("invasion-fire", "叠放至所选高天原军团下方", PublicTargetKeys: ["attachTarget"])],
             ["hunter-gift"] = [new("hunter-gift", "执行所选猎神赐福", PublicTargetKeys: ["shockTarget", "rangedTarget"])],
@@ -28,7 +28,7 @@ internal static partial class L12CompositeEffectPlans
             ["starter-athena-active"] =
             [
                 new("athena-morale-flip", "翻转已声明的1张士气", PublicTargetKeys: ["flipTarget"]),
-                new("athena-front-buff", "随后强化已声明的最多2张前排奥林匹斯军团", PublicTargetKeys: ["buffTargets"]),
+                new("athena-front-buff", "选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1", PublicTargetKeys: ["buffTargets"]),
             ],
         };
 }
@@ -67,15 +67,15 @@ public sealed partial class L12GameEngine
                 var modes = new List<string>();
                 if (olympus.Length > 0) modes.Add("mode:shock");
                 if (ranged.Length > 0) modes.Add("mode:ranged");
-                steps.Add(CompositeStep("option", "mode", "猎神的赐福：选择强化震击或远程进攻",
+                steps.Add(CompositeStep("option", "mode", "猎神的赐福：选择本回合震击伤害+2000或进攻时兵力+2000",
                     modes, 1, 1, new()
                     {
                         ["mode:shock"] = "所选奥林匹斯军团本回合震击伤害+2000",
                         ["mode:ranged"] = "所选奥林匹斯远程军团本回合进攻时兵力+2000",
                     }));
-                steps.Add(CompositeStep("field-legion", "shockTarget", "猎神的赐福：选择要强化震击的奥林匹斯军团",
+                steps.Add(CompositeStep("field-legion", "shockTarget", "猎神的赐福：选择本回合震击伤害+2000的奥林匹斯军团",
                     olympus.Select(card => card.InstanceId), 1, requiredChoice: "mode:shock"));
-                steps.Add(CompositeStep("field-legion", "rangedTarget", "猎神的赐福：选择要强化进攻的奥林匹斯远程军团",
+                steps.Add(CompositeStep("field-legion", "rangedTarget", "猎神的赐福：选择本回合进攻时兵力+2000的奥林匹斯远程军团",
                     ranged.Select(card => card.InstanceId), 1, requiredChoice: "mode:ranged"));
                 break;
             }

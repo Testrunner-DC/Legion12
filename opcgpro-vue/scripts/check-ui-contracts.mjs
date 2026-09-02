@@ -30,6 +30,7 @@ const specialAssets = read('../src/l12/specialAssets.ts')
 const cardTile = read('../src/l12/CardTile.vue')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
+const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const sandbox = read('../src/l12/site/SandboxPage.vue')
 const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
@@ -68,6 +69,7 @@ const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
 const bugQueue = read('../../ops/windows/Get-L12BugQueue.ps1')
 const s1Cards = JSON.parse(read('../public/data/l12/cards.s1.json'))
 const starterCards = JSON.parse(read('../public/data/l12/cards.st.json'))
+const moraleIdentities = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'))
 
 const confirmedS1DisasterLevels = {
   'S01-0304': 2,
@@ -79,6 +81,25 @@ const confirmedS1DisasterLevels = {
 }
 
 const contracts = [
+  [moraleIdentities.length === 6
+    && moraleIdentities.every(identity => identity.displayName.startsWith('士气·') && !identity.canonicalCardId.startsWith('ST'))
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.canonicalCardId === 'S02-05C1A'
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.godPowerCardId === 'S02-05C1'
+    && moraleIdentities.find(identity => identity.faction === 'otherworld')?.canonicalCardId === 'S02-06C1'
+    && decks.includes('morale-identities.json') && decks.includes('canonicalMoraleCardId')
+    && cardArchive.includes('loadCardArchiveCatalog') && sandboxPicker.includes('loadDeckCatalog'), '所有页面与运行时必须共用权威阵营士气身份，ST版本不得抢占基准，奥林匹斯普通士气与神力反面必须保持分离'],
+  [decks.includes('export async function loadCardArchiveCatalog()') && decks.includes("card.cardNo?.startsWith('S01-')")
+    && cardArchive.includes('groupArchiveCards(cards.value)') && cardArchive.includes('entry.versions.some(card =>')
+    && cardArchive.includes('/ {{ logicalCards.length }} 张') && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌档案必须载入展示用异画、按任一版本搜索筛选，并按逻辑卡而不是物理版本计数'],
+  [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('productRank(a.product)')
+    && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
+    && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须稳定按最早产品、最低已知罕贵度及卡号排序，缺失罕贵度须有确定顺序'],
+  [cardArchive.includes('class="archive-version-arrow previous"') && cardArchive.includes('class="archive-version-arrow next"')
+    && cardArchive.includes('@click="cycleVersion(-1)"') && cardArchive.includes('@click="cycleVersion(1)"')
+    && cardArchive.includes(':card-id="selected.id"') && globalStyle.includes('.archive-version-arrow{')
+    && globalStyle.includes('background:transparent'), '卡牌档案详情必须以左右透明三角切换逻辑卡全部版本，并由当前版本同步卡图与详情'],
+  [cardArchiveVersions.includes('identity.versionCardIds.map') && cardArchiveVersions.includes('godPowerCardId is deliberately absent')
+    && !moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1'), '士气版本可按 canonical 别名聚合，但奥林匹斯神力反面不得与普通士气合并'],
   [indexHtml.includes('<link rel="icon" type="image/png" href="/favicon.png" />') && existsSync(faviconPath), '网页标签必须使用项目提供的 Logo-Mini PNG，不得回退默认 Vite 图标'],
   [board.includes("import ActionPresentationLayer from './ActionPresentationLayer.vue'") && board.includes('<ActionPresentationLayer :events="game.recentEvents ?? []"') && actionLayer.includes('data-ui-contract="authoritative-action-presentation"'), 'L12 对局必须消费服务端 recentEvents 播放统一阶段变化条'],
   [actionPresentation.includes("event.type === 'turn-start'") && actionPresentation.includes("event.text === '进入主要阶段'") && actionPresentation.includes("event.text === '执行结束阶段'") && !actionPresentation.includes("执行抽牌阶段") && !actionPresentation.includes("执行士气阶段") && !actionPresentation.includes("event.type === 'play'") && !actionPresentation.includes("event.type === 'attack'"), '通用动作条只能呈现回合开始、主要阶段和回合结束，不得承载其他阶段或卡牌动作'],
@@ -218,7 +239,7 @@ const contracts = [
   [board.includes(':mine="masterPlayerIndex === controlledPlayerIndex"') && board.includes("sandboxAction(controlledPlayerIndex.value, { type, ...extra })") && prompt.includes('sandboxAction(actingPlayerIndex, command)'), '沙盒代操作对方时必须按受控方索引开放主宰效果并完成后续提示，正式房仍只允许登录座位'],
   [board.includes('watch(activeBoardPromptId, promptId => {') && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null'), '任何场面直选 Prompt 开始时必须关闭墓地、效果弹框与浮动卡牌详情'],
   [graveyardOverlay.includes('function selectCard(card: Card)') && graveyardOverlay.includes("enabledAbilities.length === 1") && !graveyardOverlay.includes('graveyard-abilities'), '墓地主动效果必须点击卡牌本身进入是否发动流程，卡面不得重新覆盖效果文字按钮'],
-  [sandboxPicker.includes('cards.s1.json') && sandboxPicker.includes('cards.lookup.json') && sandboxPicker.includes('cards.st.json') && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '沙盒卡牌选择器必须复用卡牌档案的完整卡池搜索与筛选逻辑'],
+  [sandboxPicker.includes('loadDeckCatalog') && !sandboxPicker.includes("fetch('/data/l12/cards.s1.json')") && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '沙盒卡牌选择器必须复用卡牌档案的完整卡池搜索与筛选逻辑'],
   [starterCards.length === 76 && starterCards.some(card => card.id === 'ST06-01' && card.nameZh === '伊丽莎白一世'), '前端权威目录必须收录 76 张 ST 产品卡，并以数据库中的伊丽莎白一世为准'],
   [sandbox.includes('<option value="custom">自定天灾（四张始终公开）</option>') && board.includes("type: 'replaceDisaster'") && board.includes('index < 3'), '自定天灾必须四张公开、前三槽可更换且第四槽堙灭锁定'],
   [adminPage.includes('卡效原子化') && adminPage.includes('atom-flow') && adminPage.includes('原子定义 JSON'), '管理后台必须保留卡效原子组合、流程图与原始定义视图'],

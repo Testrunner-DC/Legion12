@@ -597,6 +597,8 @@ public sealed class GameEngineTests
                 new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
         }
 
+        Assert.True(game.State.PendingDefense is null,
+            $"进攻时间线停滞于 {game.State.PendingDefense?.Stage}；Prompt={game.State.PendingPrompts.FirstOrDefault()?.Kind ?? "none"}");
         Assert.Same(achilles, game.State.Players[defenderPlayer].Field[0][0]);
         Assert.Equal(2000, achilles.Troops);
         Assert.Equal(4000, attacker.Troops);

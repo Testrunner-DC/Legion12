@@ -97,7 +97,7 @@ public sealed class AtomicReviewBatch3RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:asgardDraw")]
-    public void AsgardDrawDeclaresExtraHealBeforePayingAnyMorale()
+    public void AsgardDrawChecksAndPaysOptionalHealAfterTheDrawResolves()
     {
         var game = CreateWithFirstMaster("S01-03M2", 6901);
         var player = game.State.Players[0];
@@ -111,19 +111,47 @@ public sealed class AtomicReviewBatch3RegressionTests
         PrepareMain(game);
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "asgardDraw")).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("mode:heal", mode.ValidChoices);
-        Assert.Empty(game.State.EffectStack);
-        Assert.Equal(3, player.Morale.Count(card => !card.Tapped));
+        Assert.Equal(1, player.Morale.Count(card => !card.Tapped));
+        Assert.Single(game.State.EffectStack);
         Assert.DoesNotContain(drawn, player.Hand);
 
-        ResolveSinglePrompt(game, "mode:heal");
+        PassResponses(game);
+        Assert.Contains(drawn, player.Hand);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["mode:none", "mode:use"], mode.ValidChoices);
+        Assert.Equal(1, player.Morale.Count(card => !card.Tapped));
+
+        ResolveSinglePrompt(game, "mode:use");
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
-        Assert.Single(game.State.EffectStack);
+        Assert.Equal(6, player.Hp);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Theory]
+    [InlineData(5, 2)]
+    [InlineData(6, 3)]
+    [Trait("L12Evidence", "ability:asgardDraw")]
+    public void AsgardDrawSkipsOptionalHealPromptWhenConditionOrExtraPaymentIsUnavailable(int hp, int moraleCount)
+    {
+        var game = CreateWithFirstMaster("S01-03M2", 6910 + moraleCount);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, moraleCount, "S01-03C1");
+        var drawn = Card("S01-0301", $"asgard-no-followup-{hp}-{moraleCount}");
+        player.Library.Add(drawn);
+        player.Hp = hp;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        var activation = game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "asgardDraw"));
+        Assert.True(activation.Accepted, activation.Error);
         PassResponses(game);
 
         Assert.Contains(drawn, player.Hand);
-        Assert.Equal(6, player.Hp);
+        Assert.Equal(hp, player.Hp);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Fact]

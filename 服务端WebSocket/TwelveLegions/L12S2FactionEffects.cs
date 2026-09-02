@@ -285,6 +285,7 @@ public sealed partial class L12GameEngine
             case "圣女贞德":
             {
                 var choices = player.Hand.Select(candidate => candidate.InstanceId).ToList();
+                if (choices.Count == 0) { FinishStackItem(item); return true; }
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "圣女贞德：可弃置1张手牌，使我方主宰直到下个我方回合开始前无法被进攻", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-joan-master-guard" });
@@ -299,6 +300,7 @@ public sealed partial class L12GameEngine
             {
                 var candidates = player.Hand.Concat(player.Library).Concat(player.Graveyard)
                     .Where(candidate => candidate.CardId == "S02-0609").ToArray();
+                if (candidates.Length == 0) { FinishStackItem(item); return true; }
                 var squires = candidates.Select(candidate => candidate.InstanceId).Append("skip").ToArray();
                 var data = new Dictionary<string, string>
                 {
@@ -322,6 +324,7 @@ public sealed partial class L12GameEngine
             {
                 if (player.SpecialZones.Runes < 1) { FinishStackItem(item); return true; }
                 var targets = PublicLegions(State.Players[1 - item.Controller]).Select(target => target.InstanceId).ToList();
+                if (targets.Count == 0) { FinishStackItem(item); return true; }
                 targets.Add("skip");
                 CreatePrompt(item.Controller, "optional-target", "克劳迪娅：可消耗1符文，选择对方1张军团本回合兵力-2000",
                     targets, 1, 1, "card-effect", item.StackItemId,
@@ -461,6 +464,7 @@ public sealed partial class L12GameEngine
                 if (player.Hand.Count >= State.Players[1 - item.Controller].Hand.Count) { FinishStackItem(item); return true; }
                 var choices = player.Graveyard.Where(candidate => candidate.Faction == "taiyangcheng" && candidate.CardType == "legion" && candidate.Cost >= 6)
                     .Select(candidate => candidate.InstanceId).ToList();
+                if (choices.Count == 0) { FinishStackItem(item); return true; }
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "伊姆何泰普：可将墓地1张费用为6及以上的【太阳城】军团加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-imhotep-recover" });

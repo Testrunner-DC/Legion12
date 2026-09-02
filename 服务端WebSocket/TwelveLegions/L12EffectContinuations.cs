@@ -24,6 +24,7 @@ public sealed partial class L12GameEngine
         switch (action)
         {
             case "effect-morale-payment": ContinueEffectMoralePayment(item, prompt, chosen); break;
+            case "optional-paid-effect": ContinueOptionalPaidEffectFollowup(item, prompt, chosen); break;
             case "effect-morale-return": ContinueEffectMoraleReturn(item, prompt, chosen); break;
             case "lubu-kill":
                 if (chosen[0] != "skip") BeginEffectMoraleReturn(item, 2, "lubu-kill", new() { ["target"] = chosen[0] });
@@ -82,6 +83,7 @@ public sealed partial class L12GameEngine
             case "disaster-keep-field": CompleteDisasterKeepField(item, prompt, chosen); break;
             case "disaster-apocalypse-hand-order": ContinueApocalypseHandOrder(item, prompt, chosen); break;
             case "disaster-s2-fog-discard": CompleteS2FogDiscard(item, prompt, chosen); break;
+            case "disaster-st-evil-eye-discard": CompleteStarterEvilEyeDiscard(item, prompt, chosen); break;
             case "disaster-s2-pride-mode": ContinueS2PrideMode(item, prompt, chosen[0]); break;
             case "disaster-s2-pride-discard": CompleteS2PrideDiscard(item, prompt, chosen); break;
             case "disaster-main-choice":
@@ -120,6 +122,52 @@ public sealed partial class L12GameEngine
             ResolveTypedKillSourceEvent(killEvent);
             return;
         }
+    }
+
+    /// <summary>
+    /// 主效果已经结算后才检查的可选付费段。条件、支付能力或其他合法性不足时直接结束，
+    /// 不制造只剩“不发动”的无意义询问；目标若不属于费用，应由后续结算流程再选择。
+    /// </summary>
+    private void BeginOptionalPaidEffectFollowup(L12StackItem item, bool conditionMet, int cost,
+        string effectText, string operation, Dictionary<string, string>? extra = null)
+    {
+        var player = State.Players[item.Controller];
+        if (!conditionMet || cost < 0 || ActiveResourceCount(player) < cost)
+        {
+            FinishStackItem(item);
+            return;
+        }
+
+        var data = new Dictionary<string, string>
+        {
+            ["mode:none"] = "不发动",
+            ["mode:use"] = "发动",
+            ["operation"] = operation,
+            ["cost"] = cost.ToString(),
+            ["sourceName"] = item.SourceName,
+            ["effectText"] = effectText,
+            ["uiPattern"] = "effect-decision",
+        };
+        if (extra is not null)
+            foreach (var pair in extra) data[$"optional:{pair.Key}"] = pair.Value;
+        CreateResolutionChoicePrompt(item, "option", effectText,
+            ["mode:none", "mode:use"], "optional-paid-effect", data);
+    }
+
+    private void ContinueOptionalPaidEffectFollowup(L12StackItem item, L12Prompt prompt,
+        IReadOnlyCollection<string> choices)
+    {
+        if (!choices.Contains("mode:use", StringComparer.OrdinalIgnoreCase))
+        {
+            FinishStackItem(item);
+            return;
+        }
+
+        var cost = int.TryParse(prompt.Data.GetValueOrDefault("cost"), out var parsedCost) ? parsedCost : 0;
+        var extra = prompt.Data.Where(pair => pair.Key.StartsWith("optional:", StringComparison.Ordinal))
+            .ToDictionary(pair => pair.Key[9..], pair => pair.Value);
+        extra["operation"] = prompt.Data.GetValueOrDefault("operation") ?? string.Empty;
+        BeginEffectMoralePayment(item, cost, "optional-paid-effect-operation", extra);
     }
 
     private void BeginGaotianyuanMoveChoice(L12StackItem item)

@@ -117,6 +117,37 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Contains(game.State.PendingActivations, activation => activation.SourceCardId == cardId);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "entry:optional-followup-eligibility")]
+    public void CompositePlanSkipsAFollowupDecisionWhenOnlyDeclineRemains()
+    {
+        var game = Create(9988);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Hand.Clear();
+        player.Morale.Clear();
+        for (var row = 0; row < opponent.Field.Length; row++)
+            for (var slot = 0; slot < opponent.Field[row].Length; slot++)
+                opponent.Field[row][slot] = null;
+        var march = Card("S01-0118", "batch6jb-no-kill-followup");
+        var buffTarget = Card("S01-0109", "batch6jb-only-buff-target");
+        player.Hand.Add(march);
+        player.Field[0][0] = buffTarget;
+        AddMorale(player, Math.Max(3, march.CurrentCost), "batch6jb-no-kill-morale");
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var play = game.Handle(0, new L12Command("playCard", march.InstanceId));
+
+        Assert.True(play.Accepted, play.Error);
+        var targetPrompt = OnlyPrompt(game);
+        Assert.Equal("pending-activation", targetPrompt.Continuation);
+        Assert.Contains(buffTarget.InstanceId, targetPrompt.ValidChoices);
+        Assert.DoesNotContain("mode:none", targetPrompt.ValidChoices);
+        Assert.Contains(game.State.PendingActivations, activation =>
+            activation.DeclaredValues.GetValueOrDefault("mode", []).Contains("mode:none"));
+    }
+
     [Theory]
     [InlineData("S01-0101", "after-attack")]
     [InlineData("S01-0311", "after-attack")]

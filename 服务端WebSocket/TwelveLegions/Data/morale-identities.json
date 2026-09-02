@@ -1,0 +1,40 @@
+[
+  {
+    "faction": "tianting",
+    "displayName": "士气·天廷",
+    "canonicalCardId": "S01-01C1",
+    "versionCardIds": ["S01-01C1", "S01-01C1A", "ST01-C1"]
+  },
+   {
+    "faction": "taiyangcheng",
+    "displayName": "士气·太阳城",
+    "canonicalCardId": "S01-02C1",
+    "versionCardIds": ["S01-02C1", "S01-02C1A", "ST02-C1"]
+  },
+  {
+    "faction": "asgard",
+    "displayName": "士气·阿斯加德",
+    "canonicalCardId": "S01-03C1",
+    "versionCardIds": ["S01-03C1", "S01-03C1A", "ST03-C1"]
+  },
+  {
+    "faction": "gaotianyuan",
+    "displayName": "士气·高天原",
+    "canonicalCardId": "S01-04C1",
+    "versionCardIds": ["S01-04C1", "S01-04C1A", "ST04-C1"]
+  },
+  {
+    "faction": "olympus",
+    "displayName": "士气·奥林匹斯",
+    "canonicalCardId": "S02-05C1A",
+    "versionCardIds": ["S02-05C1A", "ST05-C1"],
+    "godPowerCardId": "S02-05C1",
+    "godPowerDisplayName": "神力·奥林匹斯"
+  },
+  {
+    "faction": "otherworld",
+    "displayName": "士气·彼界",
+    "canonicalCardId": "S02-06C1",
+    "versionCardIds": ["S02-06C1", "ST06-C1"]
+  }
+]

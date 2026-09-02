@@ -1,26 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType, normalizeLookupCardType } from '../cardPresentation'
+import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
+import { loadDeckCatalog, type DeckCard } from '../decks'
 import CardImage from '../CardImage.vue'
 
-export interface SandboxCatalogCard {
-  id: string
-  number: string
-  nameZh: string
-  cardType: string
-  product: string
-  faction: string
-  imageUrl?: string
-  cost?: number
-  troops?: number
-  disasterLevel?: number
-  effect?: string
-}
-
-interface LookupCard {
-  cardNo: string; name: string; type: string; faction: string; cost?: number | null
-  attack?: number | null; disasterLevel?: number | null; image?: string; effectText?: string
-}
+export type SandboxCatalogCard = DeckCard
 
 const props = withDefaults(defineProps<{ title?: string; allowedTypes?: string[] }>(), { title: '选择卡片', allowedTypes: () => [] })
 const emit = defineEmits<{ select: [card: SandboxCatalogCard]; close: [] }>()
@@ -34,35 +18,13 @@ const product = ref('all')
 const cost = ref('all')
 const disaster = ref('all')
 
-const factionMap: Record<string, string> = {
-  通用: 'universal', 天廷: 'tianting', 高天原: 'gaotianyuan', 阿斯加德: 'asgard',
-  太阳城: 'taiyangcheng', 奥林匹斯: 'olympus', 彼界: 'bijie', 天灾: 'disaster',
-}
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
   taiyangcheng: '太阳城', olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
 }
-const s1CounterTactics = new Set(['S01-0016','S01-0017','S01-0018','S01-0019','S01-0020','S01-0021','S01-0120','S01-0223','S01-0224','S01-0320','S01-0420'])
-
 onMounted(async () => {
   try {
-    const [s1Response, lookupResponse, stResponse] = await Promise.all([fetch('/data/l12/cards.s1.json'), fetch('/data/l12/cards.lookup.json'), fetch('/data/l12/cards.st.json')])
-    if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据请求失败')
-    const seasonOne = (await s1Response.json() as SandboxCatalogCard[]).map(card => ({
-      ...card,
-      cardType: s1CounterTactics.has(card.id) ? 'counter-tactic' : card.cardType,
-    }))
-    const lookup = await lookupResponse.json() as LookupCard[]
-    const seasonTwo = lookup.filter(card => card.cardNo?.startsWith('S02-')).map(card => ({
-      id: card.cardNo, number: card.cardNo, nameZh: card.name,
-      cardType: normalizeLookupCardType(card.type, card.name), product: 'S02',
-      faction: factionMap[card.faction] ?? card.faction,
-      imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
-      cost: card.cost ?? undefined, troops: card.attack ?? undefined,
-      disasterLevel: card.disasterLevel ?? undefined, effect: card.effectText ?? undefined,
-    }))
-    const starterProducts = await stResponse.json() as SandboxCatalogCard[]
-    cards.value = [...seasonOne, ...seasonTwo, ...starterProducts]
+    cards.value = await loadDeckCatalog()
   } catch (error) {
     errorText.value = error instanceof Error ? error.message : '卡牌加载失败'
   } finally { loading.value = false }

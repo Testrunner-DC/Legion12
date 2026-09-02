@@ -225,6 +225,16 @@ public sealed partial class L12GameEngine
         NotifyCardAddedToHandByEffect(player, card, originZone, reason);
     }
 
+    private bool MoveLibraryCardToHandByEffect(L12PlayerState player, string instanceId, string reason)
+    {
+        var index = player.Library.FindIndex(card => card.InstanceId == instanceId);
+        if (index < 0) return false;
+        var card = player.Library[index];
+        player.Library.RemoveAt(index);
+        AddCardToHandByEffect(player, card, "library", reason);
+        return true;
+    }
+
     private static string ZoneLabel(string zone) => zone switch
     {
         "library" => "牌库",

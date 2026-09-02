@@ -124,7 +124,7 @@ public sealed class AtomicReviewBatch6FRegressionTests
     [Theory]
     [MemberData(nameof(TrialLegions))]
     [Trait("L12Evidence", "entry:trial-advance-public-event")]
-    public void EveryTrialValueLegionPaysRestBeforeARespondableAdvanceEffect(string cardId)
+    public void EveryTrialValueLegionRestsAndAdvancesImmediatelyWithoutAResponseWindow(string cardId)
     {
         var game = Create(8000 + Array.IndexOf(TrialLegionIds, cardId));
         var player = game.State.Players[0];
@@ -137,16 +137,14 @@ public sealed class AtomicReviewBatch6FRegressionTests
 
         Assert.True(result.Accepted, result.Error);
         Assert.True(legion.Tapped);
-        Assert.Equal(0, trial.TrialProgress);
-        var item = Assert.Single(game.State.EffectStack);
-        Assert.Equal("true", item.Data["trialAdvanceEvent"]);
-        Assert.Equal(legion.TrialValue.ToString(), item.Data["trialAdvanceCount"]);
-        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        Assert.Equal(legion.TrialValue, trial.TrialProgress);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 
     [Fact]
     [Trait("L12Evidence", "entry:trial-advance-negated-cost-not-refunded")]
-    public void NegatedTrialAdvanceKeepsItsRestCostAndDoesNotPublishFinnFollowUp()
+    public void UsualTrialAdvanceCannotBeNegatedAndFinnFollowUpRemainsAnIndependentCardEffect()
     {
         var game = Create(8010);
         var player = game.State.Players[0];
@@ -157,14 +155,12 @@ public sealed class AtomicReviewBatch6FRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", finn.InstanceId,
             Ability: "trialAdvance")).Accepted);
-        Assert.Single(game.State.EffectStack).Negated = true;
-        PassResponses(game);
-
         Assert.True(finn.Tapped);
-        Assert.Equal(0, trial.TrialProgress);
+        Assert.Equal(1, trial.TrialProgress);
         Assert.Equal(1, player.SpecialZones.Runes);
-        Assert.Empty(game.State.PendingActivations);
-        Assert.DoesNotContain(game.State.PendingPrompts,
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Text.Contains("芬恩", StringComparison.Ordinal));
     }
 
@@ -369,7 +365,6 @@ public sealed class AtomicReviewBatch6FRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", galahad.InstanceId,
             Ability: "trialAdvance")).Accepted);
-        PassResponses(game);
 
         Assert.Equal(8, trial.TrialProgress);
         Assert.False(trial.TrialCompleted);

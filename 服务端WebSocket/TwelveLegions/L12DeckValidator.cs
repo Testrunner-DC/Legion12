@@ -44,13 +44,15 @@ public static class L12DeckValidator
             error = "复苏的奥西里斯不能被选择为主宰；选择伊西斯时会自动置入额外区并在开局进入墓地";
             return false;
         }
+        var normalizedMoraleIds = submission.MoraleIds
+            .Select(catalog.MoraleIdentities.CanonicalDeckCardId).ToList();
         var restrictions = (cardRestrictions ?? []).ToArray();
         L12CardRestrictionConfig? ResolveRestriction(string cardId)
             => restrictions.FirstOrDefault(item => string.Equals(item.CardId, cardId, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(item.MasterId, master.Id, StringComparison.OrdinalIgnoreCase))
                ?? restrictions.FirstOrDefault(item => string.Equals(item.CardId, cardId, StringComparison.OrdinalIgnoreCase)
                     && string.IsNullOrWhiteSpace(item.MasterId));
-        var restricted = submission.CardIds.Concat(submission.MoraleIds).Concat(submission.SpecialIds)
+        var restricted = submission.CardIds.Concat(normalizedMoraleIds).Concat(submission.SpecialIds)
             .Append(master.Id)
             .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
             .Select(group => new { Id = group.Key, Count = group.Count(), Rule = ResolveRestriction(group.Key) })
@@ -106,15 +108,16 @@ public static class L12DeckValidator
         }
 
         var requiredMorale = master.Faction == "taiyangcheng" ? 6 : 8;
-        if (submission.MoraleIds.Count != requiredMorale)
+        if (normalizedMoraleIds.Count != requiredMorale)
         {
             error = $"{master.NameZh} 的士气牌库须为 {requiredMorale} 张";
             return false;
         }
-        foreach (var moraleId in submission.MoraleIds)
+        foreach (var moraleId in normalizedMoraleIds)
         {
             if (!catalog.Cards.TryGetValue(moraleId, out var morale)
-                || morale.CardType is not ("rune" or "divinity") || morale.Faction != master.Faction)
+                || morale.CardType != "rune" || morale.Faction != master.Faction
+                || !catalog.MoraleIdentities.IsVersionForFaction(moraleId, master.Faction))
             {
                 error = $"无效的士气卡：{moraleId}";
                 return false;
@@ -148,7 +151,7 @@ public static class L12DeckValidator
             Name = name,
             MasterId = master.Id,
             CardIds = submission.CardIds.ToList(),
-            MoraleIds = submission.MoraleIds.ToList(),
+            MoraleIds = normalizedMoraleIds,
             SpecialIds = submission.SpecialIds.ToList(),
         };
         error = string.Empty;

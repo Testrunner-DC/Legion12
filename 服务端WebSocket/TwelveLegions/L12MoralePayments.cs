@@ -152,7 +152,27 @@ public sealed partial class L12GameEngine
     {
         switch (afterPayment)
         {
+            case "optional-paid-effect-operation":
+                CompleteOptionalPaidEffectOperation(item, data);
+                break;
             default: FinishStackItem(item); break;
         }
+    }
+
+    private void CompleteOptionalPaidEffectOperation(L12StackItem item, IReadOnlyDictionary<string, string> data)
+    {
+        switch (data.GetValueOrDefault("operation"))
+        {
+            case "heal-master":
+            {
+                var amount = int.TryParse(data.GetValueOrDefault("amount"), out var parsedAmount)
+                    ? Math.Max(0, parsedAmount)
+                    : 0;
+                if (amount > 0)
+                    HealMaster(item.Controller, amount, data.GetValueOrDefault("reason") ?? item.SourceName);
+                break;
+            }
+        }
+        FinishStackItem(item);
     }
 }

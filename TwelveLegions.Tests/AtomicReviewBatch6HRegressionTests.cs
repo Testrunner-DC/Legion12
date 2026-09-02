@@ -146,7 +146,17 @@ public sealed class AtomicReviewBatch6HRegressionTests
         if (cardId == "S02-0617")
             player.Field[1][0] = Card("S02-0608", $"batch6h-richard-{cardId}");
 
-        AttackMaster(game, attacker);
+        if (cardId == "S02-0511")
+        {
+            player.Field[0][0] = attacker;
+            var result = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+                Target: new L12AttackTarget("legion", enemy.InstanceId)));
+            Assert.True(result.Accepted, result.Error);
+        }
+        else
+        {
+            AttackMaster(game, attacker);
+        }
 
         var prompt = Assert.Single(game.State.PendingPrompts);
         if (cardId is "S02-0608" or "S02-0617")

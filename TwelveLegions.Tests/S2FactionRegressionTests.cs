@@ -2481,7 +2481,7 @@ public sealed class S2FactionRegressionTests
     [Fact]
     public void OlympusMoraleConsumesOneMoraleThenLetsThePlayerFlipOneMorale()
     {
-        var game = Create(6314);
+        var game = CreateWithFirstMaster("S02-05M2", 6314);
         var playerIndex = game.State.ActivePlayer;
         var player = game.State.Players[playerIndex];
         player.Morale.Clear();
@@ -2504,8 +2504,9 @@ public sealed class S2FactionRegressionTests
         Assert.Contains("olympus-morale-active", payment.ValidChoices);
         Assert.Contains("olympus-morale-kept-active", payment.ValidChoices);
         Assert.False(player.Morale.Single(card => card.InstanceId == "olympus-morale-active").Tapped);
-        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: ["olympus-morale-active"])).Accepted);
+        var paymentResult = game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["olympus-morale-active"]));
+        Assert.True(paymentResult.Accepted, paymentResult.Error);
         PassResponses(game);
 
         var prompt = Assert.Single(game.State.PendingPrompts);

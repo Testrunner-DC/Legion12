@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$ProjectRoot)
 
 $ErrorActionPreference = 'Stop'
@@ -64,7 +64,8 @@ if ($remaining -like '*var slot = EmptySlots(player).FirstOrDefault(choice => ch
 Assert-Contains $game 'bool fromFactionEffect = false' 'Shared morale-add restriction provenance is missing.'
 Assert-Contains $game 'player.FactionMoraleAdditionForbiddenUntilTurn == State.TurnSerial' 'Yingzheng morale-add restriction is not consumed by the shared entry point.'
 Assert-Contains $active 'fromFactionEffect: true' 'Tianting faction morale effects must explicitly identify their allowed provenance.'
-Assert-Contains $open '当前无待裁定项' 'Resolved ruling questions must leave no current open item.'
+$noOpenQuestionText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5b2T5YmN5peg5b6F6KOB5a6a6aG5'))
+Assert-Contains $open $noOpenQuestionText 'Resolved ruling questions must leave no current open item.'
 Assert-Contains $postResolution 'BeginFaithZealotMasterChoice(completed)' 'Faith Zealot master choice must begin only after its parent effect completes.'
 Assert-Contains $postResolution '"faith-zealot-post-resolution"' 'Faith Zealot must create a post-resolution interaction.'
 Assert-Contains $rulingTests 'FaithZealotMasterChoiceAppearsOnlyAfterZealotLeavesTheStack' 'Faith Zealot post-resolution regression is missing.'

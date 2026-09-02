@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -80,6 +81,25 @@ public sealed class StarterFullCatalogAuditTests
         // them as silently untested: ST01-10, ST02-08, ST05-04 also retain parsed trigger entries.
         foreach (var cardId in new[] { "ST01-10", "ST02-08", "ST05-04" })
             Assert.NotEmpty(Catalog.AtomicEffects.Find(cardId)!.Abilities);
+    }
+
+    [Fact]
+    public void StarterPlayerFacingAbilityButtonsUsePrintedEffectLanguageInsteadOfDeveloperSummaries()
+    {
+        var game = new L12GameEngine(Catalog, "starter-full-audit", "STARTERFULL", 20450,
+            ["甲", "乙"], [0, 1], skipPreparation: true);
+        var method = typeof(L12GameEngine).GetMethod("GetAbilities",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var abilities = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(game, ["ST05-M1"]));
+        var athena = Assert.Single(abilities, ability => ability.Id == "athenaFrontBuff");
+        Assert.Contains("本回合兵力+1000，且对对方主宰造成的伤害+1", athena.Label);
+        Assert.DoesNotContain("强化", athena.Label);
+
+        string[] forbidden = ["减益", "模式一", "模式二", "效果一", "效果二", "预先声明", "预先选择", "公开区域", "私密区域", "公开资源"];
+        foreach (var card in Catalog.Cards.Values.Where(card => card.Id.StartsWith("ST", StringComparison.OrdinalIgnoreCase)))
+        foreach (var ability in Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(game, [card.Id])))
+        foreach (var term in forbidden)
+            Assert.DoesNotContain(term, ability.Label);
     }
 
     private static L12CardInstance Create(string cardId)

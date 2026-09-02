@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$ProjectRoot)
 
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,7 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { $ProjectRoot = Split-Path -Par
 
 function Read-Source([string]$FileName) {
     $file = Get-ChildItem -LiteralPath $ProjectRoot -Filter $FileName -Recurse -File |
-        Where-Object { $_.FullName -notmatch '[\/](bin|obj)[\/]' } | Select-Object -First 1
+        Where-Object { $_.FullName -notmatch '[\\/](bin|obj)[\\/]' } | Select-Object -First 1
     if ($null -eq $file) { throw "Missing Batch 6L-D source: $FileName" }
     return [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
 }
@@ -150,7 +150,8 @@ foreach ($row in $allAuditRows) {
     }
 }
 
-Assert-Contains $openQuestions '当前无待裁定项' 'OPEN-QUESTIONS must record that the current queue is empty.'
+$noOpenQuestionText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5b2T5YmN5peg5b6F6KOB5a6a6aG5'))
+Assert-Contains $openQuestions $noOpenQuestionText 'OPEN-QUESTIONS must record that the current queue is empty.'
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
 if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 

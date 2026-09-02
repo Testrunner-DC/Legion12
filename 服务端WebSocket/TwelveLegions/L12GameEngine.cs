@@ -354,9 +354,10 @@ public sealed partial class L12GameEngine
 
     private object FactionEffectSnapshot(L12PlayerState player)
     {
-        if (player.Faction == "olympus"
-            && _catalog.Cards.TryGetValue("S02-05C1A", out var moraleFace)
-            && _catalog.Cards.TryGetValue("S02-05C1", out var godPowerFace))
+        var identity = _catalog.MoraleIdentities.ForFaction(player.Faction);
+        if (identity.GodPowerCardId is { Length: > 0 } godPowerCardId
+            && _catalog.Cards.TryGetValue(identity.CanonicalCardId, out var moraleFace)
+            && _catalog.Cards.TryGetValue(godPowerCardId, out var godPowerFace))
         {
             var abilities = BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}")
                 .Concat(BuildAbilityViews(player, godPowerFace.Id, $"faction-{player.PlayerIndex}"))
@@ -364,13 +365,13 @@ public sealed partial class L12GameEngine
             return new
             {
                 cardId = moraleFace.Id,
-                name = "奥林匹斯士气 / 神力",
+                name = $"{identity.DisplayName} / {identity.GodPowerDisplayName}",
                 imageUrl = moraleFace.ImageUrl,
                 effectText = $"{moraleFace.Effect}\n{godPowerFace.Effect}",
                 abilities,
             };
         }
-        var moraleId = player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
+        var moraleId = identity.CanonicalCardId;
         if (moraleId is null || !_catalog.Cards.TryGetValue(moraleId, out var card))
             return new { cardId = string.Empty, name = "阵营效果", imageUrl = (string?)null, effectText = string.Empty, abilities = Array.Empty<L12AbilityView>() };
         return new { cardId = card.Id, name = card.NameZh, imageUrl = card.ImageUrl, effectText = card.Effect, abilities = BuildAbilityViews(player, card.Id, $"faction-{player.PlayerIndex}") };
@@ -401,11 +402,12 @@ public sealed partial class L12GameEngine
         var godPower = player.Morale.Where(card => card.IsGodPower).Select(card => new
         {
             card.InstanceId,
-            cardId = "S02-05C1",
-            name = "神力",
+            cardId = _catalog.MoraleIdentities.ForFaction("olympus").GodPowerCardId,
+            name = _catalog.MoraleIdentities.ForFaction("olympus").GodPowerDisplayName,
             cardType = "rune",
             faction = "olympus",
-            imageUrl = _catalog.Cards.GetValueOrDefault("S02-05C1")?.ImageUrl,
+            imageUrl = _catalog.Cards.GetValueOrDefault(
+                _catalog.MoraleIdentities.ForFaction("olympus").GodPowerCardId ?? string.Empty)?.ImageUrl,
             tapped = card.Tapped,
         }).ToArray();
         return new
@@ -417,7 +419,15 @@ public sealed partial class L12GameEngine
 
     private List<L12AbilityView> BuildAbilityViews(L12PlayerState player, string cardId, string sourceInstanceId)
     {
-        return GetAbilities(cardId).Select(view =>
+        var views = GetAbilities(cardId);
+        if (_catalog.Cards.GetValueOrDefault(cardId) is { CardType: "legion", TrialValue: > 0 } definition
+            && views.All(view => view.Id != "trialAdvance"))
+        {
+            views.Insert(0, new L12AbilityView("trialAdvance",
+                $"试炼 休整此军团：增加{definition.TrialValue.Value}点试炼进度。"));
+        }
+
+        return views.Select(view =>
         {
             if (view.TriggerOnly)
                 return view with { Enabled = false, DisabledReason = view.DisabledReason ?? "仅在符合触发时点时发动" };
@@ -426,6 +436,25 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = "安卡神碑已经休整" };
             if (!CanAct(player.PlayerIndex))
                 return view with { Enabled = false, DisabledReason = "仅在我方主要阶段可以发动" };
+            if (view.Id == "trialAdvance")
+            {
+                var source = FindOnField(player, sourceInstanceId, out _, out _);
+                if (source is null)
+                    return view with { Enabled = false, DisabledReason = "试炼军团必须位于我方战场" };
+                if (source.Tapped)
+                    return view with { Enabled = false, DisabledReason = "试炼军团必须为活跃状态" };
+                if (source.SummonRound >= State.Round)
+                    return view with { Enabled = false, DisabledReason = "登场回合不能发动试炼" };
+                if (player.SpecialZones.Trials.All(card => card.TrialCompleted))
+                    return view with { Enabled = false, DisabledReason = "没有尚未完成的试炼" };
+                if (player.UsedAbilities.Contains($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}"))
+                    return view with { Enabled = false, DisabledReason = "该军团因卡牌效果本回合无法再次发动试炼" };
+            }
+            if (L12StructuredCardRules.HasActiveRestAbility(cardId)
+                && (FindOnField(player, sourceInstanceId, out _, out _) is { Tapped: true }
+                    || player.Relic is { Tapped: true } relic && relic.InstanceId == sourceInstanceId
+                    || player.ExtraRelics.Any(extraRelic => extraRelic.InstanceId == sourceInstanceId && extraRelic.Tapped)))
+                return view with { Enabled = false, DisabledReason = $"{_catalog.Cards.GetValueOrDefault(cardId)?.NameZh ?? "该卡牌"}必须为活跃状态" };
             if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
             if (view.Id == "sunDraw" && player.Hand.Count > 3)
@@ -601,7 +630,7 @@ public sealed partial class L12GameEngine
             player.MoraleDeck.Add(new L12MoraleCard
             {
                 InstanceId = $"p{index}-m{i + 1}",
-                CardId = deck.MoraleIds[i],
+                CardId = _catalog.MoraleIdentities.CanonicalDeckCardId(deck.MoraleIds[i]),
             });
         for (var i = 0; i < deck.SpecialIds.Count; i++)
             player.SpecialZones.Trials.Add(CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}"));

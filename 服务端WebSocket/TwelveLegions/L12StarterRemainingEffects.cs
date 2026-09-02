@@ -11,6 +11,37 @@ public sealed partial class L12GameEngine
         var player = State.Players[controller];
         switch (ability)
         {
+            case "oasisDancerBuff":
+            case "christinaFreeTactic":
+            case "kaneMillOne":
+                if (source.Tapped) return CommandResult.Reject($"{source.Name}必须为活跃状态");
+                return CommitActiveAbility(controller, source, ability, null);
+            case "oiranTransfer":
+            {
+                if (source.Tapped) return CommandResult.Reject("吉原的花魁必须为活跃状态");
+                var own = PublicLegions(player).Select(card => card.InstanceId).ToList();
+                var enemy = PublicLegions(State.Players[1 - controller]).Select(card => card.InstanceId).ToList();
+                if (own.Count == 0 || enemy.Count == 0) return CommandResult.Reject("双方战场各需要至少1张军团");
+                return BeginPendingActivationSequence(controller, source, ability,
+                [
+                    new L12ActivationSelectionStep { Kind = "enemy-legion", DeclarationKey = "enemyTarget", Text = "吉原的花魁：选择本回合兵力-1000的对方军团", ValidChoices = enemy, MinChoose = 1, MaxChoose = 1, TargetPlayerIndex = 1 - controller },
+                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "ownTarget", Text = "吉原的花魁：选择本回合兵力+1000的我方军团", ValidChoices = own, MinChoose = 1, MaxChoose = 1 },
+                ]);
+            }
+            case "lightSwordActive":
+            {
+                if (source.Tapped) return CommandResult.Reject("光之剑必须为活跃状态");
+                if (player.Hand.Count == 0) return CommandResult.Reject("需要弃置1张手牌");
+                var targets = player.Field[0].Where(card => card is not null && IsFieldLegion(card)
+                        && L12StructuredCardRules.HasFaction(player, card, "otherworld"))
+                    .Select(card => card!.InstanceId).ToList();
+                return BeginPendingActivationSequence(controller, source, ability,
+                [
+                    new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "光之剑：选择使我方前排1张【彼界】军团本回合兵力+2000，或获得1符文", ValidChoices = targets.Count > 0 ? ["mode:buff", "mode:rune"] : ["mode:rune"], MinChoose = 1, MaxChoose = 1, ChoiceLabels = new() { ["mode:buff"] = "我方前排1张【彼界】军团本回合兵力+2000", ["mode:rune"] = "获得1符文" } },
+                    new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "光之剑：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTarget", Text = "光之剑：选择本回合兵力+2000的我方前排【彼界】军团", ValidChoices = targets, MinChoose = 1, MaxChoose = 1, RequiredDeclaredChoice = "mode:buff" },
+                ]);
+            }
             case "horusRevive":
             {
                 var field = PublicLegions(player).Select(card => card.InstanceId).ToList();
@@ -42,6 +73,19 @@ public sealed partial class L12GameEngine
                     new L12ActivationSelectionStep { Kind = "target-morale", DeclarationKey = "flipTarget", Text = "雅典娜：选择翻转的1张士气", ValidChoices = player.Morale.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
                     new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTargets", Text = "雅典娜：选择我方前排最多2张奥林匹斯军团", ValidChoices = player.Field[0].Where(card => card is not null && IsFieldLegion(card) && L12StructuredCardRules.HasFaction(player, card, "olympus")).Select(card => card!.InstanceId).ToList(), MinChoose = 0, MaxChoose = 2 },
                 ]);
+            case "telemachusTopThree":
+                if (source.Tapped) return CommandResult.Reject("特勒马科斯必须为活跃状态");
+                return BeginPendingActivationSequence(controller, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "option", DeclarationKey = "mode",
+                        Text = "特勒马科斯：主动休整，查看牌库顶部3张牌，可选择其中1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌，其余卡牌自选顺序全部返回牌库顶部或全部返回牌库底部。",
+                        ValidChoices = ["mode:use"], MinChoose = 1, MaxChoose = 1,
+                        CancellationPolicy = L12ActivationCancellationPolicy.SeparateChoice,
+                        ChoiceLabels = new() { ["mode:use"] = "发动" },
+                    },
+                ]);
             case "nuadaReadyMorale":
             {
                 var rested = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToList();
@@ -64,6 +108,26 @@ public sealed partial class L12GameEngine
         var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
         switch (ability)
         {
+            case "oasisDancerBuff":
+            case "christinaFreeTactic":
+            case "kaneMillOne":
+                return values.Length == 0 && !source.Tapped ? null : $"{source.Name}必须为活跃状态且无需选择目标";
+            case "oiranTransfer":
+                return values.Length == 2 && !source.Tapped
+                    && DeclaredEnemyTarget(controller, values[0]) is not null
+                    && FindOnField(player, values[1], out _, out _) is { } own && IsFieldLegion(own)
+                    ? null : "吉原的花魁选择的军团已失效";
+            case "lightSwordActive":
+            {
+                if (source.Tapped || values.Length is < 2 or > 3) return "光之剑必须活跃并完成费用与效果选择";
+                if (values[0] is not ("mode:buff" or "mode:rune")) return "光之剑选择的效果无效";
+                if (!player.Hand.Any(card => card.InstanceId == values[1])) return "光之剑选择的弃牌已失效";
+                if (values[0] == "mode:buff" && (values.Length != 3
+                    || FindOnField(player, values[2], out var row, out _) is not { } lightTarget || row != 0
+                    || !IsFieldLegion(lightTarget) || !L12StructuredCardRules.HasFaction(player, lightTarget, "otherworld")))
+                    return "光之剑选择的前排彼界军团已失效";
+                return null;
+            }
             case "horusRevive":
             {
                 if (values.Length != 4 || values.Take(2).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
@@ -100,6 +164,9 @@ public sealed partial class L12GameEngine
                     ? null : "银臂努阿达选择的符文费用或休整士气已失效";
             case "skyCityDiscount":
                 return values.Length == 0 ? null : "探寻天空之城无需选择目标";
+            case "telemachusTopThree":
+                return values is ["mode:use"] && !source.Tapped
+                    ? null : "特勒马科斯必须为活跃状态并确认发动";
             default:
                 return null;
         }
@@ -108,7 +175,7 @@ public sealed partial class L12GameEngine
     private CommandResult? TryCommitStarterRemainingActiveAbility(int controller, L12CardInstance source,
         string ability, string? target, string onceKey)
     {
-        if (ability is not ("horusRevive" or "sifCycle" or "athenaFrontBuff" or "nuadaReadyMorale" or "skyCityDiscount"))
+        if (ability is not ("oasisDancerBuff" or "christinaFreeTactic" or "kaneMillOne" or "oiranTransfer" or "lightSwordActive" or "horusRevive" or "sifCycle" or "athenaFrontBuff" or "nuadaReadyMorale" or "skyCityDiscount" or "telemachusTopThree"))
             return null;
         var player = State.Players[controller];
         var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -116,6 +183,19 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject(error);
         switch (ability)
         {
+            case "oasisDancerBuff":
+            case "christinaFreeTactic":
+            case "kaneMillOne":
+            case "oiranTransfer":
+            case "lightSwordActive":
+                source.Tapped = true;
+                AddEvent("cost", controller, $"{source.Name}主动休整", source);
+                if (ability == "lightSwordActive")
+                {
+                    MoveHandToGrave(player, values[1], causedByEffect: false);
+                    AddEvent("cost", controller, "光之剑弃置1张手牌", source);
+                }
+                break;
             case "horusRevive":
                 if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要消耗1士气");
                 var costs = values.Take(2).Select(id => FindOnField(player, id, out _, out _)!).ToArray();
@@ -138,8 +218,13 @@ public sealed partial class L12GameEngine
                 if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
                 AddEvent("cost", controller, "银臂努阿达消耗2符文", source);
                 break;
+            case "telemachusTopThree":
+                if (source.Tapped) return CommandResult.Reject("特勒马科斯必须为活跃状态");
+                source.Tapped = true;
+                AddEvent("cost", controller, "特勒马科斯主动休整", source);
+                break;
         }
-        player.UsedAbilities.Add(onceKey);
+        if (ability is not ("telemachusTopThree" or "oasisDancerBuff" or "christinaFreeTactic" or "kaneMillOne" or "oiranTransfer" or "lightSwordActive")) player.UsedAbilities.Add(onceKey);
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (values.Length > 0) data["target"] = string.Join('|', values);
         IEnumerable<string>? publicTargets = null;
@@ -160,13 +245,48 @@ public sealed partial class L12GameEngine
     private bool TryResolveStarterRemainingActiveEffect(L12StackItem item, L12CardInstance? source,
         string ability)
     {
-        if (ability is not ("horusRevive" or "sifCycle" or "athenaFrontBuff" or "nuadaReadyMorale" or "skyCityDiscount"))
+        if (ability is not ("oasisDancerBuff" or "christinaFreeTactic" or "kaneMillOne" or "oiranTransfer" or "lightSwordActive" or "horusRevive" or "sifCycle" or "athenaFrontBuff" or "nuadaReadyMorale" or "skyCityDiscount" or "telemachusTopThree"))
             return false;
         var player = State.Players[item.Controller];
         var values = item.Data.GetValueOrDefault("target", string.Empty)
             .Split('|', StringSplitOptions.RemoveEmptyEntries);
         switch (ability)
         {
+            case "oasisDancerBuff":
+                foreach (var legion in PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")))
+                    AddTimedModifier(legion, 1000, 0, State.TurnSerial, source?.Name ?? "绿洲的舞女");
+                AddEvent("effect", item.Controller, "绿洲的舞女使我方所有【太阳城】军团本回合兵力+1000", source is null ? [] : [source]);
+                break;
+            case "christinaFreeTactic":
+                player.UsedAbilities.Add($"starter-christina-free-tactic:{State.TurnSerial}");
+                AddEvent("effect", item.Controller, "本回合从手牌打出的下1张费用不高于3的主动战术无需消耗费用，改为对我方主宰造成1点伤害", source is null ? [] : [source]);
+                break;
+            case "kaneMillOne":
+                Mill(player, 1, "送葬者凯恩主动效果");
+                AddEvent("effect", item.Controller, "送葬者凯恩弃置我方牌库顶部1张牌", source is null ? [] : [source]);
+                break;
+            case "oiranTransfer":
+            {
+                var enemy = DeclaredEnemyTarget(item.Controller, values.ElementAtOrDefault(0));
+                var own = FindOnField(player, values.ElementAtOrDefault(1), out _, out _);
+                if (enemy is not null) AddTimedModifier(enemy, -1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
+                if (own is not null && IsFieldLegion(own)) AddTimedModifier(own, 1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
+                AddEvent("effect", item.Controller, "吉原的花魁使所选对方军团本回合兵力-1000，并使所选我方军团本回合兵力+1000", source is null ? [] : [source]);
+                break;
+            }
+            case "lightSwordActive":
+                if (values.ElementAtOrDefault(0) == "mode:rune")
+                {
+                    L12S2ZoneOps.GainRunes(player, 1);
+                    AddEvent("runes", item.Controller, "光之剑使我方获得1符文", source is null ? [] : [source]);
+                }
+                else if (FindOnField(player, values.ElementAtOrDefault(2), out var row, out _) is { } target
+                         && row == 0 && L12StructuredCardRules.HasFaction(player, target, "otherworld"))
+                {
+                    AddTimedModifier(target, 2000, 0, State.TurnSerial, source?.Name ?? "光之剑");
+                    AddEvent("effect", item.Controller, $"光之剑使〈{target.Name}〉本回合兵力+2000", target);
+                }
+                break;
             case "horusRevive":
                 _ = TrySummonFromAnyPrivateZone(player, item.Controller, values.ElementAtOrDefault(2) ?? string.Empty,
                     values.ElementAtOrDefault(3) ?? string.Empty, tapped: true);
@@ -191,6 +311,36 @@ public sealed partial class L12GameEngine
                 player.NextOtherworldLegionEntryDiscount++;
                 AddEvent("effect", item.Controller, "本回合下一张彼界军团登场费用-1", source is null ? [] : [source]);
                 break;
+            case "telemachusTopThree":
+            {
+                var top = player.Library.Take(3).ToArray();
+                if (top.Length == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                item.Data["telemachusTop"] = string.Join('|', top.Select(card => card.InstanceId));
+                var choices = top.Where(card => card.CardType == "legion"
+                            && L12StructuredCardRules.HasAnyRowRangeBonus(card)
+                        || card.CardType is "tactic" or "counter-tactic"
+                            && L12StructuredCardRules.HasFaction(player, card, "olympus"))
+                    .Select(card => card.InstanceId).ToArray();
+                if (choices.Length == 0)
+                {
+                    BeginAllTopBottomReorder(item, "telemachus", top.Select(card => card.InstanceId),
+                        "特勒马科斯：调整其余卡牌的顺序，然后将其全部返回牌库顶部或全部返回牌库底部");
+                    return true;
+                }
+                var data = new Dictionary<string, string>
+                {
+                    ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId)),
+                };
+                foreach (var card in top) AddPromptCardData(data, card);
+                CreateDelayedPublicResolutionPrompt(item, "card",
+                    "特勒马科斯：选择1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌",
+                    choices, "starter-telemachus-pick", data, isPrivate: true, min: 1, max: 1);
+                return true;
+            }
         }
         FinishStackItem(item);
         return true;
@@ -206,6 +356,54 @@ public sealed partial class L12GameEngine
 
         switch (plan)
         {
+            case "zhaoyun-enter-charge":
+            case "zhaoyun-kill-piercing":
+            case "crossbow-ready":
+            case "wangzhaojun-draw":
+            {
+                if (plan == "zhaoyun-kill-piercing" && candidate.Data.GetValueOrDefault("killed") != "true")
+                {
+                    RemoveUnstackedTriggerCandidate(candidate, "赵云本次进攻没有完成击杀");
+                    return true;
+                }
+                var onceKey = plan == "crossbow-ready" ? $"trigger:starter-crossbow-ready:{source.InstanceId}:{State.TurnSerial}" : null;
+                var canUse = player.Morale.Count > 0 && (onceKey is null || !player.UsedAbilities.Contains(onceKey));
+                var effectText = plan switch
+                {
+                    "zhaoyun-enter-charge" => "赵云：是否返还1张士气并获得冲锋？",
+                    "zhaoyun-kill-piercing" => "赵云：是否返还1张士气，以剩余兵力对对方主宰发动1次贯穿进攻？",
+                    "crossbow-ready" => "诸葛连弩兵：是否返还1张士气，将此军团转为活跃？",
+                    _ => "王昭君：是否返还1张士气并抽取1张牌？",
+                };
+                steps.Add(StarterStep("option", "mode", effectText, OptionalModes(canUse)));
+                steps.Add(StarterStep("target-morale", "returnCost", $"{source.Name}：选择返还的1张士气",
+                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"));
+                if (onceKey is not null) candidate.Data["onceKey"] = onceKey;
+                break;
+            }
+            case "kane-enter-mill":
+                steps.Add(StarterStep("option", "mode", "送葬者凯恩：是否弃置我方牌库顶部2张牌？",
+                    OptionalModes(player.Library.Count > 0)));
+                break;
+            case "hidden-pass-summon":
+            {
+                var entries = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 4
+                        && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                    .Select(card => card.InstanceId).ToList();
+                var slots = EmptySlots(player).ToList();
+                var canUse = player.Morale.Count > 0 && entries.Count > 0 && slots.Count > 0;
+                steps.Add(StarterStep("option", "mode",
+                    "暗度陈仓：是否返还1张士气，从我方手牌中将1张费用不高于4的【天廷】军团活跃登场？",
+                    OptionalModes(canUse)));
+                steps.Add(StarterStep("target-morale", "returnCost", "暗度陈仓：选择返还的1张士气",
+                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"));
+                steps.Add(StarterStep("hand-card", "entryCard",
+                    "暗度陈仓：选择手牌中1张费用不高于4的【天廷】军团",
+                    entries, requiredChoice: "mode:use"));
+                steps.Add(StarterStep("unused-slot", "entrySlot", "暗度陈仓：选择该军团活跃登场的位置",
+                    slots, requiredChoice: "mode:use"));
+                break;
+            }
             case "change-rested-morale":
                 steps.Add(StarterStep("option", "mode",
                     "嫦娥：是否从士气牌库追加1张休整的士气？",
@@ -255,7 +453,7 @@ public sealed partial class L12GameEngine
                 var resources = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
                     .Concat(ActiveTombGuardResources(player).Select(card => card.InstanceId)).ToList();
                 steps.Add(StarterSelectionStep("option", "mode",
-                    target is null ? "火之迦具土：触发目标已经离场" : $"火之迦具土：是否强化〈{target.Name}〉？",
+                    target is null ? "火之迦具土：触发目标已经离场" : $"火之迦具土：是否使〈{target.Name}〉本回合兵力+2000？",
                     modes, 1, 1, labels: new()
                     {
                         ["mode:none"] = "不发动",
@@ -265,7 +463,7 @@ public sealed partial class L12GameEngine
                 steps.Add(new L12ActivationSelectionStep
                 {
                     Kind = "resource-payment", DeclarationKey = "moraleCost",
-                    Text = "火之迦具土：选择支付2士气的公开资源", ValidChoices = resources,
+                    Text = "火之迦具土：选择用于支付2士气的资源", ValidChoices = resources,
                     MinChoose = visibleCost, MaxChoose = visibleCost, RequiredDeclaredChoice = "mode:morale",
                     AutoSelectWhenExact = resources.Count == visibleCost,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
@@ -288,8 +486,29 @@ public sealed partial class L12GameEngine
                 steps.Add(StarterStep("option", "mode",
                     "银臂努阿达：是否使我方1张【彼界】军团本回合兵力+1000？",
                     OptionalModes(targets.Count > 0)));
-                steps.Add(StarterStep("field-legion", "buffTarget", "银臂努阿达：选择要强化的彼界军团",
+                steps.Add(StarterStep("field-legion", "buffTarget", "银臂努阿达：选择本回合兵力+1000的彼界军团",
                     targets, requiredChoice: "mode:use"));
+                break;
+            }
+            case "akhenaten-death-heal":
+            {
+                steps.Add(StarterStep("option", "mode",
+                    "阿肯那顿：是否弃置1张手牌，使我方主宰增加1点血量？",
+                    OptionalModes(player.Hand.Count > 0)));
+                steps.Add(StarterStep("hand-card", "discardCost", "阿肯那顿：选择弃置的1张手牌",
+                    player.Hand.Select(card => card.InstanceId), requiredChoice: "mode:use"));
+                break;
+            }
+            case "light-sword-enter-kill":
+            {
+                var targets = PublicLegions(opponent).Where(card => card.BaseTroops <= 2000)
+                    .Select(card => card.InstanceId).ToList();
+                steps.Add(StarterStep("option", "mode",
+                    "光之剑：是否击杀对方最多2张原本兵力不高于2000的军团？",
+                    OptionalModes(targets.Count > 0)));
+                steps.Add(StarterSelectionStep("field-legion", "enemyTargets",
+                    "光之剑：选择对方最多2张原本兵力不高于2000的军团",
+                    targets, 0, 2, opponent.PlayerIndex, requiredChoice: "mode:use"));
                 break;
             }
             case "sky-city-completion":
@@ -321,8 +540,11 @@ public sealed partial class L12GameEngine
         var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
             ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
-        var optionalDeclined = plan is "change-rested-morale" or "tomb-defender-debuff"
+        var optionalDeclined = plan is "zhaoyun-enter-charge" or "zhaoyun-kill-piercing" or "crossbow-ready"
+                or "wangzhaojun-draw" or "kane-enter-mill" or "hidden-pass-summon"
+                or "change-rested-morale" or "tomb-defender-debuff"
                 or "kagutsuchi-buff" or "aeneas-promotion-search" or "nuada-rune-buff"
+                or "akhenaten-death-heal" or "light-sword-enter-kill"
             && mode == "mode:none";
         if (plan == "sky-city-completion")
         {
@@ -356,6 +578,16 @@ public sealed partial class L12GameEngine
         string? error = null;
         switch (plan)
         {
+            case "zhaoyun-enter-charge":
+            case "zhaoyun-kill-piercing":
+            case "crossbow-ready":
+            case "wangzhaojun-draw":
+            {
+                var ids = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
+                if (ids.Count != 1 || !CanReturnSelectedMoraleById(player, ids, 1))
+                    error = $"{source.Name}选择的返还士气已失效；未支付费用且效果未入栈";
+                break;
+            }
             case "tomb-defender-debuff":
                 if (DeclaredEnemyTarget(candidate.Controller, candidate.Data.GetValueOrDefault("target")) is null)
                     error = "陵墓的守卫者对应的位移军团已离场；效果未入栈";
@@ -390,6 +622,33 @@ public sealed partial class L12GameEngine
                     is not { } nuadaTarget || !L12StructuredCardRules.HasFaction(player, nuadaTarget, "otherworld"))
                     error = "银臂努阿达选择的彼界军团已失效；效果未入栈";
                 break;
+            case "akhenaten-death-heal":
+                if (!player.Hand.Any(card => card.InstanceId ==
+                        activation.DeclaredValues.GetValueOrDefault("discardCost", []).SingleOrDefault()))
+                    error = "阿肯那顿选择的弃牌已失效；未支付费用且效果未入栈";
+                break;
+            case "light-sword-enter-kill":
+            {
+                var targets = activation.DeclaredValues.GetValueOrDefault("enemyTargets", []);
+                if (targets.Count > 2 || targets.Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Count
+                    || targets.Any(id => DeclaredEnemyTarget(candidate.Controller, id,
+                        card => card.BaseTroops <= 2000) is null))
+                    error = "光之剑选择的军团已失效；效果未入栈";
+                break;
+            }
+            case "hidden-pass-summon":
+            {
+                var returnCost = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
+                var entryId = activation.DeclaredValues.GetValueOrDefault("entryCard", []).SingleOrDefault();
+                var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
+                if (returnCost.Count != 1 || !CanReturnSelectedMoraleById(player, returnCost, 1)
+                    || !player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
+                        && card.CurrentCost <= 4 && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                    || string.IsNullOrWhiteSpace(slot)
+                    || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    error = "暗度陈仓选择的士气、手牌军团或登场位置已失效；未返还士气且效果未入栈";
+                break;
+            }
         }
         if (error is not null)
         {
@@ -399,6 +658,12 @@ public sealed partial class L12GameEngine
         }
 
         candidate.Data["declaration-committing"] = "true";
+        if (plan is "zhaoyun-enter-charge" or "zhaoyun-kill-piercing" or "crossbow-ready" or "wangzhaojun-draw")
+        {
+            var ids = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
+            _ = ReturnSelectedMoraleById(player, ids, 1);
+            AddEvent("cost", candidate.Controller, $"{source.Name}返还1张士气", source);
+        }
         if (plan == "kagutsuchi-buff")
         {
             var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 2;
@@ -415,6 +680,18 @@ public sealed partial class L12GameEngine
                 mode == "mode:morale"
                     ? moraleCost == 0 ? "火之迦具土本次无需消耗士气" : "火之迦具土消耗2士气"
                     : "火之迦具土弃置1张手牌", source);
+        }
+        else if (plan == "akhenaten-death-heal")
+        {
+            var discard = activation.DeclaredValues.GetValueOrDefault("discardCost", []).Single();
+            MoveHandToGrave(player, discard, causedByEffect: false);
+            AddEvent("cost", candidate.Controller, "阿肯那顿弃置1张手牌", source);
+        }
+        else if (plan == "hidden-pass-summon")
+        {
+            var returnCost = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
+            _ = ReturnSelectedMoraleById(player, returnCost, 1);
+            AddEvent("cost", candidate.Controller, "暗度陈仓返还1张士气", source);
         }
 
         foreach (var pair in activation.DeclaredValues)
@@ -552,6 +829,35 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (flow)
         {
+            case "zhaoyun-enter-charge":
+                if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } zhaoyun)
+                {
+                    zhaoyun.HasCharge = true;
+                    AddEvent("effect", item.Controller, "赵云获得冲锋", zhaoyun);
+                }
+                FinishStackItem(item);
+                return true;
+            case "zhaoyun-kill-piercing":
+                if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } piercingZhaoyun)
+                {
+                    player.UsedAbilities.Add($"starter-piercing:{piercingZhaoyun.InstanceId}:{State.TurnSerial}");
+                    BeginPiercingAttack(item.Controller, piercingZhaoyun);
+                }
+                FinishStackItem(item);
+                return true;
+            case "crossbow-ready":
+                if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } crossbow)
+                    ReadyCardByEffect(item.Controller, crossbow, crossbow, "诸葛连弩兵因进攻后效果转为活跃");
+                FinishStackItem(item);
+                return true;
+            case "wangzhaojun-draw":
+                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "王昭君效果抽牌时牌库为空");
+                FinishStackItem(item);
+                return true;
+            case "kane-enter-mill":
+                Mill(player, 2, "送葬者凯恩登场时效果");
+                FinishStackItem(item);
+                return true;
             case "starter-lust-disaster":
             case "starter-grave-asgard-copies":
             case "kondo-lethal-substitution":
@@ -613,7 +919,7 @@ public sealed partial class L12GameEngine
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+2000", target);
                 }
                 else AddEvent("effect-cancelled", item.Controller,
-                    "火之迦具土对应的军团已离场，本次强化未生效；已支付费用不返还");
+                    "火之迦具土对应的军团已离场，本次兵力+2000未生效；已支付费用不返还");
                 FinishStackItem(item);
                 return true;
             }
@@ -656,10 +962,20 @@ public sealed partial class L12GameEngine
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+1000", target);
                 }
                 else AddEvent("effect-cancelled", item.Controller,
-                    "银臂努阿达选择的彼界军团已离场，本次强化未生效");
+                    "银臂努阿达选择的彼界军团已离场，本次兵力+1000未生效");
                 FinishStackItem(item);
                 return true;
             }
+            case "akhenaten-death-heal":
+                HealMaster(item.Controller, 1, "阿肯那顿阵亡时效果", legionEffect: true);
+                FinishStackItem(item);
+                return true;
+            case "light-sword-enter-kill":
+                foreach (var targetId in StarterDeclaredMany(item, "enemyTargets"))
+                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.BaseTroops <= 2000) is not null)
+                        KillTarget(item, targetId, "被光之剑的登场时效果击杀");
+                FinishStackItem(item);
+                return true;
             case "sky-city-completion":
             {
                 var segments = item.Data.GetValueOrDefault("skySegments", string.Empty)
@@ -702,7 +1018,7 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(target, 2000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+2000", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次强化未生效");
+                else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次兵力+2000未生效");
                 FinishStackItem(item);
                 return true;
             }
@@ -720,7 +1036,7 @@ public sealed partial class L12GameEngine
                     }
                     else AddEvent("effect", item.Controller, "墓地中不足3张阿斯加德军团，本段没有追加兵力", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次额外强化未生效");
+                else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次按墓地数量增加兵力未生效");
                 FinishStackItem(item);
                 return true;
             }
@@ -767,6 +1083,36 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
+            case "telemachus-top-three":
+            {
+                var top = player.Library.Take(3).ToArray();
+                if (top.Length == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                item.Data["telemachusTop"] = string.Join('|', top.Select(card => card.InstanceId));
+                var choices = top.Where(card => card.CardType == "legion"
+                            && L12StructuredCardRules.HasAnyRowRangeBonus(card)
+                        || card.CardType is "tactic" or "counter-tactic"
+                            && L12StructuredCardRules.HasFaction(player, card, "olympus"))
+                    .Select(card => card.InstanceId).ToArray();
+                if (choices.Length == 0)
+                {
+                    BeginAllTopBottomReorder(item, "telemachus", top.Select(card => card.InstanceId),
+                        "特勒马科斯：调整其余卡牌的顺序，然后将其全部返回牌库顶部或全部返回牌库底部");
+                    return true;
+                }
+                var data = new Dictionary<string, string>
+                {
+                    ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId)),
+                };
+                foreach (var card in top) AddPromptCardData(data, card);
+                CreateDelayedPublicResolutionPrompt(item, "card",
+                    "特勒马科斯：选择1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌",
+                    choices, "starter-telemachus-pick", data, isPrivate: true, min: 1, max: 1);
+                return true;
+            }
             default:
                 return false;
         }
@@ -805,6 +1151,34 @@ public sealed partial class L12GameEngine
                 }
                 BeginQueuedSummons(item, selected, tapped: false,
                     "埃涅阿斯：选择远程军团活跃登场的位置");
+                return true;
+            }
+            case "starter-telemachus-pick":
+            {
+                var player = State.Players[item.Controller];
+                var topIds = item.Data.GetValueOrDefault("telemachusTop", string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var chosenId = chosen.SingleOrDefault();
+                if (chosenId is not null && topIds.Contains(chosenId, StringComparer.OrdinalIgnoreCase)
+                    && player.Library.FirstOrDefault(card => card.InstanceId == chosenId) is { } selected
+                    && (selected.CardType == "legion" && L12StructuredCardRules.HasAnyRowRangeBonus(selected)
+                        || selected.CardType is "tactic" or "counter-tactic"
+                            && L12StructuredCardRules.HasFaction(player, selected, "olympus")))
+                {
+                    AddEvent("reveal", item.Controller,
+                        $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌", selected);
+                    _ = MoveLibraryCardToHandByEffect(player, selected.InstanceId,
+                        $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌");
+                }
+                var remaining = topIds.Where(id => !string.Equals(id, chosenId,
+                    StringComparison.OrdinalIgnoreCase) && player.Library.Any(card => card.InstanceId == id)).ToArray();
+                if (remaining.Length == 0)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                BeginAllTopBottomReorder(item, "telemachus", remaining,
+                    "特勒马科斯：调整其余卡牌的顺序，然后将其全部返回牌库顶部或全部返回牌库底部");
                 return true;
             }
             default:

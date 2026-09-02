@@ -59,6 +59,9 @@ public sealed partial class L12GameEngine
                     else if (atom.Parameters.GetValueOrDefault("key") == "source.canAttackMasterOnSummonUntilTurn"
                         && atom.Parameters.GetValueOrDefault("value") == "current-turn")
                         source.CanAttackMasterOnSummonUntilTurn = State.TurnSerial;
+                    else if (atom.Parameters.GetValueOrDefault("key") == "opponent.taunt-disabled-this-turn"
+                        && atom.Parameters.GetValueOrDefault("value") == "current-turn")
+                        opponent.UsedAbilities.Add($"starter-taunt-disabled:{State.TurnSerial}");
                     else
                         throw new InvalidOperationException($"Unsupported verified atomic state key: {atom.Parameters.GetValueOrDefault("key")}");
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
@@ -66,6 +69,7 @@ public sealed partial class L12GameEngine
                 case L12AtomKinds.Keyword:
                     if (atom.Parameters.GetValueOrDefault("keyword") == "charge") source.HasCharge = true;
                     else if (atom.Parameters.GetValueOrDefault("keyword") == "strong-attack") GrantStrongAttack(source);
+                    else if (atom.Parameters.GetValueOrDefault("keyword") == "shock") source.HasShock = true;
                     else throw new InvalidOperationException($"Unsupported verified atomic keyword: {atom.Parameters.GetValueOrDefault("keyword")}");
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
@@ -89,12 +93,13 @@ public sealed partial class L12GameEngine
                 case L12AtomKinds.Draw:
                 {
                     var amount = AtomicInt(atom, "amount");
-                    var succeeded = Draw(controller, amount);
+                    var drawPlayer = atom.Parameters.GetValueOrDefault("target") == "opponent" ? opponent : controller;
+                    var succeeded = Draw(drawPlayer, amount);
                     if (!succeeded)
                     {
-                        SetWinner(1 - item.Controller, atom.Parameters.GetValueOrDefault("emptyLossReason") ?? $"{source.Name}效果抽牌时牌库为空");
+                        SetWinner(1 - drawPlayer.PlayerIndex, atom.Parameters.GetValueOrDefault("emptyLossReason") ?? $"{source.Name}效果抽牌时牌库为空");
                     }
-                    if (succeeded) EmitVerifiedAtomicEvent(atom, item.Controller, source, amount);
+                    if (succeeded) EmitVerifiedAtomicEvent(atom, drawPlayer.PlayerIndex, source, amount);
                     break;
                 }
                 case L12AtomKinds.HealMaster:
@@ -118,6 +123,11 @@ public sealed partial class L12GameEngine
                     break;
                 case L12AtomKinds.ModifyTroops when atom.Parameters.GetValueOrDefault("operation") == "set":
                     source.Troops = AtomicInt(atom, "value");
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source);
+                    break;
+                case L12AtomKinds.ModifyTroops when atom.Parameters.GetValueOrDefault("operation") == "add":
+                    AddTimedModifier(source, AtomicInt(atom, "value"), item.Controller,
+                        ExpiryAtNextOwnEnd(item.Controller), source.Name);
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
                 case L12AtomKinds.CompositeFlow:
@@ -150,6 +160,9 @@ public sealed partial class L12GameEngine
             "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
             "source.hidden=true" => source.Hidden,
             "item.killed=true" => data.GetValueOrDefault("killed") == "true",
+            "controller.field-troops<opponent.field-troops" =>
+                controller.Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Sum(card => card!.Troops)
+                < opponent.Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Sum(card => card!.Troops),
             _ => throw new InvalidOperationException($"Unsupported verified atomic condition: {expression}"),
         };
 

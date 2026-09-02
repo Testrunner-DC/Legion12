@@ -545,10 +545,8 @@ public sealed class NewSystemsTests
         var originalTop = player.Library.Take(5).Select(card => card.InstanceId).ToArray();
 
         Assert.True(game.Handle(owner, new L12Command("playCard", observingStars.InstanceId)).Accepted);
-        var declaration = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", declaration.Continuation);
-        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
-            Choice: "mode:none")).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
         while (game.State.PendingPrompts.Count > 0 && game.State.PendingPrompts[0].Kind == "response")
         {
             var response = game.State.PendingPrompts[0];
@@ -592,10 +590,8 @@ public sealed class NewSystemsTests
         }
 
         Assert.True(game.Handle(owner, new L12Command("playCard", gift.InstanceId)).Accepted);
-        var declaration = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", declaration.Continuation);
-        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
-            Choice: "mode:none")).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
         while (game.State.PendingPrompts.Count > 0 && game.State.PendingPrompts[0].Kind == "response")
         {
             var response = game.State.PendingPrompts[0];

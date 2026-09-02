@@ -36,26 +36,26 @@ public sealed partial class L12GameEngine
         List<L12ActivationSelectionStep> steps = plan switch
         {
             "lancelot-entry" =>
-            [PublicTriggerStep("option", "mode", "兰斯洛特：预先声明是否消耗1符文并获得冲锋",
+            [PublicTriggerStep("option", "mode", "兰斯洛特：是否消耗1符文并获得冲锋",
                 player.SpecialZones.Runes > 0 ? ["mode:none", "mode:use"] : ["mode:none"])],
             "lancelot-kill" =>
-            [PublicTriggerStep("option", "mode", "兰斯洛特：预先声明击杀时效果",
+            [PublicTriggerStep("option", "mode", "兰斯洛特：选择击杀时效果",
                 hasOpenTrial ? ["mode:none", "mode:trial", "mode:rune"] : ["mode:none", "mode:rune"])],
             "galahad-entry" =>
-            [PublicTriggerStep("option", "mode", "加拉哈德：预先声明是否休整并发动试炼",
+            [PublicTriggerStep("option", "mode", "加拉哈德：是否休整并发动试炼",
                 hasOpenTrial && SourceIsFieldCard(candidate.Controller, candidate.SourceInstanceId, out var galahad)
                     && !galahad.Tapped ? ["mode:none", "mode:trial"] : ["mode:none"])],
             "finn-entry" =>
-            [PublicTriggerStep("option", "mode", "芬恩：预先声明是否休整并发动试炼",
+            [PublicTriggerStep("option", "mode", "芬恩：是否休整并发动试炼",
                 hasOpenTrial && SourceIsFieldCard(candidate.Controller, candidate.SourceInstanceId, out var finn)
                     && !finn.Tapped ? ["mode:none", "mode:trial"] : ["mode:none"])],
             "constance-entry" =>
-            [PublicTriggerStep("option", "mode", "康斯坦丝：预先声明登场时效果",
+            [PublicTriggerStep("option", "mode", "康斯坦丝：选择登场时效果",
                 hasOpenTrial && SourceIsFieldCard(candidate.Controller, candidate.SourceInstanceId, out var constance)
                     && !constance.Tapped
                     ? ["mode:none", "mode:rune", "mode:trial"] : ["mode:none", "mode:rune"])],
             "finn-ready" =>
-            [PublicTriggerStep("option", "mode", "芬恩：预先声明是否消耗1符文并转为活跃",
+            [PublicTriggerStep("option", "mode", "芬恩：是否消耗1符文并转为活跃",
                 player.SpecialZones.Runes > 0
                     && SourceIsFieldCard(candidate.Controller, candidate.SourceInstanceId, out var readyFinn)
                     && readyFinn.Tapped ? ["mode:none", "mode:use"] : ["mode:none"])],
@@ -72,7 +72,7 @@ public sealed partial class L12GameEngine
         var result = BeginPendingActivationSequence(candidate.Controller, source, "public-trigger-declaration",
             steps, candidate.CandidateId);
         if (result.Accepted) return true;
-        RemoveUnstackedTriggerCandidate(candidate, result.Error ?? "试炼推进声明已失效，效果未入栈");
+        RemoveUnstackedTriggerCandidate(candidate, result.Error ?? "试炼推进选择已失效，效果未入栈");
         return true;
     }
 
@@ -155,13 +155,7 @@ public sealed partial class L12GameEngine
         if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
         if (player.UsedAbilities.Contains($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}"))
             return CommandResult.Reject("该军团因卡牌效果本回合无法再次发动试炼");
-        return BeginPendingActivationSequence(playerIndex, source, "trialAdvance",
-        [new L12ActivationSelectionStep
-        {
-            Kind = "option", DeclarationKey = "mode", Text = "发动试炼",
-            ValidChoices = ["mode:mandatory"], MinChoose = 1, MaxChoose = 1,
-            AutoSelectWhenExact = true,
-        }]);
+        return ResolveUsualTrialAdvance(playerIndex, source);
     }
 
     private CommandResult? TryCommitTrialAdvanceActivation(int playerIndex, L12CardInstance source, string ability)
@@ -172,13 +166,21 @@ public sealed partial class L12GameEngine
             || player.SpecialZones.Trials.All(card => card.TrialCompleted)
             || player.UsedAbilities.Contains($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}"))
             return CommandResult.Reject("发动试炼的来源或条件已失效");
+        return ResolveUsualTrialAdvance(playerIndex, source);
+    }
+
+    /// <summary>
+    /// FAQ“发动试炼”是试炼军团的通常行动，不是卡牌效果：休整后立即推进，
+    /// 不进入效果堆叠，也不会开启响应窗口。卡牌文字产生的试炼推进仍走各自的
+    /// 触发/主动效果流程，两类入口不得合并。
+    /// </summary>
+    private CommandResult ResolveUsualTrialAdvance(int playerIndex, L12CardInstance source)
+    {
+        var player = State.Players[playerIndex];
         source.Tapped = true;
-        AddEvent("cost", playerIndex, $"〈{source.Name}〉入栈前休整以发动试炼", source);
-        PushEffect(playerIndex, source, "active", "发动试炼", data: new Dictionary<string, string>
-        {
-            ["ability"] = "trialAdvance", ["trialAdvancePlan"] = "generic",
-            ["trialAdvanceEvent"] = "true", ["trialAdvanceCount"] = source.TrialValue.ToString(),
-        });
+        AddEvent("trial-action", playerIndex, $"〈{source.Name}〉休整并发动试炼", source);
+        if (AdvanceTrial(playerIndex, source.TrialValue, source))
+            QueueFinnReadyAfterTrial(playerIndex, source);
         return CommandResult.Ok();
     }
 

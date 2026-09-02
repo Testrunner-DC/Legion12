@@ -26,6 +26,7 @@ public sealed class AtomicReviewBatch6IARegressionTests
         ("S02-0616", "enter"),
         ("ST01-02", "after-attack"),
         ("ST02-04", "enter"),
+        ("ST05-04", "enter"),
         ("ST06-03", "enter"),
         ("ST06-05", "enter"),
         ("ST06-05", "attack"),
@@ -112,12 +113,15 @@ public sealed class AtomicReviewBatch6IARegressionTests
         else if (trigger == "death") player.Resolving.Add(source);
         else player.Field[0][0] = source;
         player.Library.Add(Card("S01-0001", $"batch6ia-draw-{cardId}-{trigger}"));
+        if (cardId == "ST05-04")
+            player.Library.Add(Card("S01-0002", "batch6ia-medea-draw-second"));
 
         player.Hp = 6;
         opponent.Hp = 8;
         if (conditionSatisfied)
         {
             if (cardId == "S01-0405") opponent.Hand.Add(Card("S01-0002", "batch6ia-miyamoto-opponent-hand"));
+            if (cardId == "ST05-04") opponent.Field[0][0] = Card("S01-0301", "batch6ia-medea-opponent-legion");
         }
         else
         {
@@ -247,6 +251,8 @@ public sealed class AtomicReviewBatch6IARegressionTests
             Assert.Equal(1, player.SpecialZones.Runes);
         else if (program.Atoms.Any(atom => atom.Kind == L12AtomKinds.AddMorale))
             Assert.Single(player.Morale);
+        else if (program.Atoms.FirstOrDefault(atom => atom.Kind == L12AtomKinds.Draw) is { } draw)
+            Assert.Equal(int.Parse(draw.Parameters.GetValueOrDefault("amount", "1")), player.Hand.Count);
         else
             Assert.Single(player.Hand);
     }

@@ -117,6 +117,16 @@ public sealed partial class L12GameEngine
                 activation.CurrentStep++;
                 continue;
             }
+            // 可选后续段在条件、目标或支付能力不足时，构造器只会留下“不发动”。
+            // 该结果没有玩家决策空间：自动记录拒绝并继续后续强制段，避免无意义弹框。
+            if (IsOnlyNegativeOptionalChoice(pendingStep))
+            {
+                activation.DeclaredTargets.Add(pendingStep.ValidChoices[0]);
+                if (!string.IsNullOrWhiteSpace(pendingStep.DeclarationKey))
+                    activation.DeclaredValues[pendingStep.DeclarationKey] = [pendingStep.ValidChoices[0]];
+                activation.CurrentStep++;
+                continue;
+            }
             if ((pendingStep.AutoSelectWhenExact || IsDeterministicCostSelection(pendingStep))
                 && pendingStep.MinChoose == pendingStep.MaxChoose
                 && pendingStep.ValidChoices.Count == pendingStep.MinChoose)
@@ -591,6 +601,15 @@ public sealed partial class L12GameEngine
         // AutoSelectWhenExact after their own activation confirmation instead.
         return step.Kind is "resource-payment" or "composite-ordinary-payment";
     }
+
+    private static bool IsOnlyNegativeOptionalChoice(L12ActivationSelectionStep step)
+        => step.MinChoose == 1
+            && step.MaxChoose == 1
+            && step.ValidChoices.Count == 1
+            && step.ValidChoices[0] is var choice
+            && (choice.Equals("mode:none", StringComparison.OrdinalIgnoreCase)
+                || choice.Equals("no", StringComparison.OrdinalIgnoreCase)
+                || choice.Equals("skip", StringComparison.OrdinalIgnoreCase));
 
     private IEnumerable<string> AdjacentEmptySlots(L12PlayerState player, int row, int slot)
         => new[] { (row - 1, slot), (row + 1, slot), (row, slot - 1), (row, slot + 1) }
@@ -1205,7 +1224,15 @@ public sealed partial class L12GameEngine
         if (!State.IsResolvingStack && State.EffectStack.Count > 0 && State.ResponseWindow is null)
             BeginResponseWindow(State.EffectStack[^1]);
         else if (State.EffectStack.Count == 0)
+        {
             TrySettleScheduledDisasterIfIdle();
+            // A declaration can disappear without ever creating a stack item (for example an
+            // optional attack trigger whose cost/target is unavailable).  In that path there is
+            // no FinishStackItem callback to resume the persisted combat state machine, so the
+            // attack used to remain stranded at AttackerAttackTiming.  Resuming here is safe:
+            // AdvanceCombatTimelineIfIdle rechecks every prompt/activation/trigger/stack guard.
+            AdvanceCombatTimelineIfIdle();
+        }
     }
 
     private void ResolveTriggerBatchOrder(L12Prompt prompt, List<string> chosen)

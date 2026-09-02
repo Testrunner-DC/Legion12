@@ -117,6 +117,7 @@ try {
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.st.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.st.json" },
+        @{ Source = "服务端WebSocket\TwelveLegions\Data\morale-identities.json"; Target = "服务端WebSocket\TwelveLegions\Data\morale-identities.json" },
         @{ Source = "ops\windows\Get-L12BugQueue.ps1"; Target = "ops\windows\Get-L12BugQueue.ps1" }
     )
     foreach ($contractFile in $contractFiles) {

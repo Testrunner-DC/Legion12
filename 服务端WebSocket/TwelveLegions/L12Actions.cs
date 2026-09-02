@@ -28,6 +28,9 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0306" && player.UsedAbilities.Contains("s2-mimir-used"))
             return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
+        var christinaReplacementKey = $"starter-christina-free-tactic:{State.TurnSerial}";
+        var usesChristinaReplacement = card.CardType == "tactic" && !IsCounterTactic(card.CardId)
+            && card.CurrentCost <= 3 && player.UsedAbilities.Contains(christinaReplacementKey);
         Dictionary<string, List<string>>? compositeDeclaration = null;
         if (L12CompositeEffectPlans.HasHandPlayPlan(card.CardId))
         {
@@ -156,6 +159,12 @@ public sealed partial class L12GameEngine
                     compositeReservation.TemporaryMorale),
                 compositeReservation.ResourceIds, compositeReservation.TemporaryMorale);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+        if (usesChristinaReplacement)
+        {
+            player.UsedAbilities.Remove(christinaReplacementKey);
+            DamageMaster(playerIndex, 1, "克里斯蒂娜主动效果");
+            AddEvent("cost", playerIndex, "克里斯蒂娜使本次主动战术无需消耗费用，改为我方主宰受到1点伤害", card);
+        }
         if (rolloReturns.Length > 0)
             MoveGraveToLibraryBottom(player, rolloReturns.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
         if (card.CardType == "legion")
@@ -435,6 +444,8 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         var counterTactic = card.CardType == "tactic" && IsCounterTactic(card.CardId);
+        if (card.CardType == "tactic" && !counterTactic && card.CurrentCost <= 3
+            && player.UsedAbilities.Contains($"starter-christina-free-tactic:{State.TurnSerial}")) return 0;
         if (card.CardType == "tactic" && (player.FreeTacticCount > 0
             || (!counterTactic && player.UsedAbilities.Contains("ds01-free-tactic")))) return 0;
         if (counterTactic) return card.CurrentCost;
@@ -712,7 +723,8 @@ public sealed partial class L12GameEngine
                 error = "目标无法被远程进攻";
             else
             {
-                var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
+                var taunts = State.ActiveDisaster?.CardId == "S02-DS02"
+                    || defender.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}") ? []
                     : defender.Field[0].Where(candidate => candidate is not null
                         && HasS1Taunt(candidate, 0) && !candidate.Hidden).ToArray();
                 if (taunts.Length > 0 && !HasS1Taunt(card, targetRow)) error = "对方前排存在带有挑衅的军团";
@@ -775,7 +787,8 @@ public sealed partial class L12GameEngine
                 error = "后排远程军团不能进攻主宰";
             else
             {
-                var taunts = State.ActiveDisaster?.CardId == "S02-DS02" ? []
+                var taunts = State.ActiveDisaster?.CardId == "S02-DS02"
+                    || defender.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}") ? []
                     : defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden).ToArray();
                 if (taunts.Length > 0) error = "对方前排存在带有挑衅的军团";
             }

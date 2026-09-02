@@ -1,49 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType, normalizeLookupCardType } from './cardPresentation'
+import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
+import { groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
+import { loadCardArchiveCatalog, loadOfficialPresetDecks, type DeckCard, type OfficialL12PresetDeck } from './decks'
 import CardImage from './CardImage.vue'
 
-interface CatalogCard {
-  id: string
-  number: string
-  nameZh: string
-  cardType: string
-  product: string
-  faction: string
-  imageUrl?: string
-  cost?: number
-  hp?: number
-  troops?: number
-  disasterLevel?: number
-  trialValue?: number
-  traits?: string[]
-  profession?: string
-  effect?: string
-}
-
-interface PresetDeck {
-  name: string
-  masterId: string
-  cardIds: string[]
-  moraleIds: string[]
-  specialIds?: string[]
-}
-
-interface LookupCard {
-  cardNo: string
-  name: string
-  type: string
-  faction: string
-  cost?: number | null
-  attack?: number | null
-  disasterLevel?: number | null
-  health?: number | null
-  trialValue?: number | null
-  image?: string
-  effectText?: string
-  tags?: string[]
-  subType?: string
-}
+type CatalogCard = DeckCard
+type PresetDeck = OfficialL12PresetDeck
 
 const typeLabels: Record<string, string> = {
   legion: '军团', tactic: '战术', rune: '士气卡', artifact: '圣物',
@@ -55,15 +18,6 @@ const factionLabels: Record<string, string> = {
   asgard: '阿斯加德', taiyangcheng: '太阳城',
   olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
 }
-const lookupFactionMap: Record<string, string> = {
-  通用: 'universal', 天廷: 'tianting', 高天原: 'gaotianyuan', 阿斯加德: 'asgard',
-  太阳城: 'taiyangcheng', 奥林匹斯: 'olympus', 彼界: 'bijie', 天灾: 'disaster',
-}
-const s1CounterTactics = new Set([
-  'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
-  'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
-])
-
 const cards = ref<CatalogCard[]>([])
 const decks = ref<PresetDeck[]>([])
 const loading = ref(true)
@@ -75,45 +29,16 @@ const cost = ref('all')
 const disaster = ref('all')
 const product = ref('all')
 const sort = ref<'number' | 'cost' | 'troops' | 'name'>('number')
-const selected = ref<CatalogCard | null>(null)
+const selectedLogicalId = ref('')
+const selectedVersionId = ref('')
+const logicalCards = computed(() => groupArchiveCards(cards.value))
 const productOptions = computed(() => [...new Set(cards.value.map(card => card.product))].sort())
 
 onMounted(async () => {
   try {
-    const [cardResponse, s1DeckResponse, s2DeckResponse, lookupResponse, stResponse] = await Promise.all([
-      fetch('/data/l12/cards.s1.json'),
-      fetch('/data/l12/preset-decks.s1.json'),
-      fetch('/data/l12/preset-decks.s2.json'),
-      fetch('/data/l12/cards.lookup.json').catch(() => null),
-      fetch('/data/l12/cards.st.json'),
-    ])
-    if (!cardResponse.ok || !s1DeckResponse.ok || !s2DeckResponse.ok || !stResponse.ok) throw new Error('卡牌数据请求失败')
-    const rawSeasonOne: CatalogCard[] = await cardResponse.json()
-    const seasonOne = rawSeasonOne.map(card => s1CounterTactics.has(card.id)
-      ? { ...card, cardType: 'counter-tactic' }
-      : card)
-    const lookupCards: LookupCard[] = lookupResponse?.ok ? await lookupResponse.json() : []
-    const seasonTwo: CatalogCard[] = lookupCards.filter(card => card.cardNo?.startsWith('S02-')).map(card => ({
-      id: card.cardNo,
-      number: card.cardNo,
-      nameZh: card.name,
-      cardType: normalizeLookupCardType(card.type, card.name),
-      product: 'S02',
-      faction: lookupFactionMap[card.faction] ?? card.faction,
-      imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
-      cost: card.cost ?? undefined,
-      troops: card.attack ?? undefined,
-      disasterLevel: card.disasterLevel ?? undefined,
-      hp: card.health ?? undefined,
-      trialValue: card.trialValue ?? undefined,
-      traits: card.tags ?? [],
-      profession: card.subType || undefined,
-      effect: card.effectText ?? undefined,
-    }))
-    const starterProducts: CatalogCard[] = await stResponse.json()
-    cards.value = [...seasonOne, ...seasonTwo, ...starterProducts]
-    decks.value = [...await s1DeckResponse.json(), ...await s2DeckResponse.json()]
-    selected.value = cards.value[0] ?? null
+    ;[cards.value, decks.value] = await Promise.all([loadCardArchiveCatalog(), loadOfficialPresetDecks()])
+    const first = logicalCards.value[0]
+    if (first) selectLogical(first)
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '卡牌档案加载失败'
   } finally {
@@ -123,28 +48,37 @@ onMounted(async () => {
 
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
-  const result = cards.value.filter(card => {
-    const matchesQuery = !keyword || [card.nameZh, card.number, card.effect, card.profession, ...(card.traits ?? [])]
+  const result = logicalCards.value.filter(entry => entry.versions.some(card => {
+    const matchesQuery = !keyword || [card.nameZh, card.number, card.product, card.rarity, card.effect, card.profession, ...(card.traits ?? [])]
       .some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword))
-    const matchesType = type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value
-    const matchesFaction = faction.value === 'all' || card.faction === faction.value
-    const matchesProduct = product.value === 'all' || card.product === product.value
-    const matchesCost = cost.value === 'all' || (cost.value === '7+' ? (card.cost ?? -1) >= 7 : card.cost === Number(cost.value))
-    const matchesDisaster = disaster.value === 'all'
-      || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value))
-    return matchesQuery && matchesType && matchesFaction && matchesProduct && matchesCost && matchesDisaster
-  })
+    return matchesQuery
+      && (type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value)
+      && (faction.value === 'all' || card.faction === faction.value)
+      && (product.value === 'all' || card.product === product.value)
+      && (cost.value === 'all' || (cost.value === '7+' ? (card.cost ?? -1) >= 7 : card.cost === Number(cost.value)))
+      && (disaster.value === 'all'
+        || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value)))
+  }))
   return result.sort((a, b) => {
-    if (sort.value === 'name') return a.nameZh.localeCompare(b.nameZh, 'zh-CN')
-    if (sort.value === 'cost') return (a.cost ?? 99) - (b.cost ?? 99) || a.number.localeCompare(b.number)
-    if (sort.value === 'troops') return (b.troops ?? -1) - (a.troops ?? -1) || a.number.localeCompare(b.number)
-    return a.number.localeCompare(b.number)
+    const left = a.defaultVersion
+    const right = b.defaultVersion
+    if (sort.value === 'name') return left.nameZh.localeCompare(right.nameZh, 'zh-CN')
+    if (sort.value === 'cost') return (left.cost ?? 99) - (right.cost ?? 99) || left.number.localeCompare(right.number)
+    if (sort.value === 'troops') return (right.troops ?? -1) - (left.troops ?? -1) || left.number.localeCompare(right.number)
+    return left.number.localeCompare(right.number)
   })
 })
 
 const types = computed(() => [...new Set(cards.value.map(card => cardTypeFilterKey(card.cardType)))]
   .filter(key => typeLabels[key]))
 const factions = computed(() => Object.keys(factionLabels).filter(key => cards.value.some(card => card.faction === key)))
+const selectedLogical = computed(() => logicalCards.value.find(entry => entry.logicalId === selectedLogicalId.value) ?? null)
+const selected = computed(() => selectedLogical.value?.versions.find(card => card.id === selectedVersionId.value)
+  ?? selectedLogical.value?.defaultVersion
+  ?? null)
+const selectedVersionIndex = computed(() => selectedLogical.value && selected.value
+  ? selectedLogical.value.versions.findIndex(card => card.id === selected.value?.id)
+  : -1)
 const selectedDecks = computed(() => {
   if (!selected.value) return []
   const selectedId = selected.value.id
@@ -155,6 +89,18 @@ const selectedDecks = computed(() => {
       + (deck.masterId === selectedId ? 1 : 0),
   })).filter(deck => deck.copies > 0)
 })
+
+function selectLogical(entry: LogicalArchiveCard) {
+  selectedLogicalId.value = entry.logicalId
+  selectedVersionId.value = entry.defaultVersion.id
+}
+
+function cycleVersion(direction: -1 | 1) {
+  const entry = selectedLogical.value
+  if (!entry || entry.versions.length < 2) return
+  const nextIndex = (selectedVersionIndex.value + direction + entry.versions.length) % entry.versions.length
+  selectedVersionId.value = entry.versions[nextIndex].id
+}
 
 function resetFilters() {
   query.value = ''
@@ -168,7 +114,7 @@ function resetFilters() {
     <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
     <header class="archive-header">
       <div><p class="kicker">CARD ARCHIVE · SEASON 1–2</p><h1>卡牌档案</h1></div>
-      <div class="archive-count"><b>{{ filtered.length }}</b><span>/ {{ cards.length }} 张</span></div>
+      <div class="archive-count"><b>{{ filtered.length }}</b><span>/ {{ logicalCards.length }} 张</span></div>
     </header>
 
     <div class="archive-toolbar">
@@ -186,24 +132,32 @@ function resetFilters() {
     <div v-else-if="loadError" class="archive-empty error">{{ loadError }}</div>
     <div v-else class="archive-workspace">
       <div class="archive-grid" role="list" aria-label="卡牌搜索结果">
-        <button v-for="card in filtered" :key="card.id" role="listitem" class="archive-card"
-          :class="[{ selected: selected?.id === card.id, 'landscape-thumbnail': isHorizontalCardType(card.cardType) }, `faction-${card.faction}`]" @click="selected = card">
+        <button v-for="entry in filtered" :key="entry.logicalId" role="listitem" class="archive-card"
+          :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(entry.defaultVersion.cardType) }, `faction-${entry.defaultVersion.faction}`]" @click="selectLogical(entry)">
           <div class="archive-card-image">
-            <CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/>
-            <b v-if="card.cost !== undefined" class="archive-cost">{{ card.cost }}</b>
-            <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
-            <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
+            <CardImage :card-id="entry.defaultVersion.id" :legacy-url="entry.defaultVersion.imageUrl" :alt="entry.defaultVersion.nameZh" intent="thumb"/>
+            <b v-if="entry.defaultVersion.cost !== undefined" class="archive-cost">{{ entry.defaultVersion.cost }}</b>
+            <b v-if="entry.defaultVersion.disasterLevel" class="archive-disaster">{{ entry.defaultVersion.disasterLevel }}</b>
+            <b v-if="entry.defaultVersion.troops" class="archive-troops">{{ entry.defaultVersion.troops }}</b>
+            <b v-if="entry.versions.length > 1" class="archive-version-count">{{ entry.versions.length }}</b>
           </div>
-          <span>{{ card.nameZh }}</span><small>{{ card.number }} · {{ cardTypeLabel(card.cardType) }}</small>
+          <span>{{ entry.defaultVersion.nameZh }}</span><small>{{ entry.defaultVersion.number }} · {{ cardTypeLabel(entry.defaultVersion.cardType) }}</small>
         </button>
         <div v-if="!filtered.length" class="archive-empty">没有符合条件的卡牌。</div>
       </div>
 
       <aside v-if="selected" class="archive-detail">
-        <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }"><CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/></div>
+        <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">
+          <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>
+          <template v-if="selectedLogical && selectedLogical.versions.length > 1">
+            <button class="archive-version-arrow previous" type="button" aria-label="上一版本" title="上一版本" @click="cycleVersion(-1)">‹</button>
+            <button class="archive-version-arrow next" type="button" aria-label="下一版本" title="下一版本" @click="cycleVersion(1)">›</button>
+            <span class="archive-version-position">{{ selectedVersionIndex + 1 }} / {{ selectedLogical.versions.length }}</span>
+          </template>
+        </div>
         <p class="archive-number">{{ selected.number }} · {{ selected.product }}</p>
         <h2>{{ selected.nameZh }}</h2>
-        <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span></div>
+        <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span><span v-if="selected.rarity">{{ selected.rarity }}</span></div>
         <dl>
           <template v-if="selected.cost !== undefined"><dt>费用</dt><dd>{{ selected.cost }}</dd></template>
           <template v-if="selected.troops !== undefined"><dt>兵力</dt><dd>{{ selected.troops }}</dd></template>

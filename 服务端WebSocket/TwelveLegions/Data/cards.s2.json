@@ -1180,7 +1180,7 @@
   {
     "id": "S02-05C1",
     "number": "S02-05C1",
-    "nameZh": "神力",
+    "nameZh": "神力·奥林匹斯",
     "imageUrl": "/cards/faces/奥林匹斯/神力.png",
     "cardType": "rune",
     "product": "S02",
@@ -1194,7 +1194,7 @@
   {
     "id": "S02-05C1A",
     "number": "S02-05C1A",
-    "nameZh": "士气",
+    "nameZh": "士气·奥林匹斯",
     "imageUrl": "/cards/faces/奥林匹斯/士气.png",
     "cardType": "rune",
     "product": "S02",
@@ -1649,7 +1649,7 @@
   {
     "id": "S02-06C1",
     "number": "S02-06C1",
-    "nameZh": "士气",
+    "nameZh": "士气·彼界",
     "imageUrl": "/cards/faces/彼界/士气.png",
     "cardType": "rune",
     "product": "S02",

@@ -32,23 +32,9 @@ public sealed partial class L12GameEngine
         => trigger == "enter" ? S1ExtendedEnterCards.Contains(cardId) || HasS1FactionImmediateEffect(cardId, trigger)
             : S1ExtendedTacticCards.Contains(cardId) || HasS1FactionImmediateEffect(cardId, trigger);
 
-    private static readonly IReadOnlyDictionary<string, string> FactionEffectCardAliases =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    private List<L12AbilityView> GetAbilities(string cardId)
     {
-        ["ST01-C1"] = "S01-01C1",
-        ["ST02-C1"] = "S01-02C1",
-        ["ST03-C1"] = "S01-03C1",
-        ["ST04-C1"] = "S01-04C1",
-        ["ST05-C1"] = "S02-05C1A",
-        ["ST06-C1"] = "S02-06C1",
-    };
-
-    private static string CanonicalFactionEffectCardId(string cardId)
-        => FactionEffectCardAliases.GetValueOrDefault(cardId, cardId);
-
-    private static List<L12AbilityView> GetAbilities(string cardId)
-    {
-        cardId = CanonicalFactionEffectCardId(cardId);
+        cardId = _catalog.MoraleIdentities.CanonicalEffectCardId(cardId);
         return cardId switch
         {
         "S01-0003" => [new("extendedRange", "消耗2士气：扩展进攻范围")],
@@ -893,7 +879,8 @@ public sealed partial class L12GameEngine
     private static bool IsCounterTactic(string cardId) => cardId is
         "S01-0016" or "S01-0017" or "S01-0018" or "S01-0019" or "S01-0020" or "S01-0021" or "S01-0120" or
         "S01-0223" or "S01-0224" or "S01-0320" or "S01-0420" or
-        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106" or "S02-0523";
+        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106" or "S02-0523" or
+        "ST01-10";
 
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {
@@ -950,6 +937,21 @@ public sealed partial class L12GameEngine
         }
         switch (AtomicFlowKey(item))
         {
+            case "hidden-pass-summon":
+            {
+                var entryId = PublicTriggerDeclared(item, "entryCard");
+                var slot = PublicTriggerDeclared(item, "entrySlot");
+                if (!string.IsNullOrWhiteSpace(entryId) && !string.IsNullOrWhiteSpace(slot)
+                    && player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
+                        && card.CurrentCost <= 4 && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    SummonFromHand(player, entryId, slot, tapped: false);
+                else
+                    AddEvent("effect-cancelled", item.Controller,
+                        "暗度陈仓选择的军团或登场位置已失效；已返还的士气不返还");
+                FinishStackItem(item);
+                return;
+            }
             case "伏击":
             {
                 var target = PublicLegions(player).FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target"));
@@ -1105,7 +1107,11 @@ public sealed partial class L12GameEngine
         var hasRestedOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any(target => target.Tapped);
         var candidates = defender.Field[1].Where(card => card is not null
                 && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
-                    hasRestedOpponentLegion)).Cast<L12CardInstance>()
+                    hasRestedOpponentLegion)
+                && (card.CardId != "ST01-10" || defender.Morale.Count > 0
+                    && defender.Hand.Any(hand => hand.CardType == "legion" && hand.CurrentCost <= 4
+                        && L12StructuredCardRules.HasFaction(defender, hand, "tianting"))
+                    && EmptySlots(defender).Any())).Cast<L12CardInstance>()
             .Select(counter => IsTrojanHorse(counter)
                 ? CreateTriggerCandidate(defenderIndex, counter, "trojan-after-attack", "【对方进攻后】反击战术",
                     new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })

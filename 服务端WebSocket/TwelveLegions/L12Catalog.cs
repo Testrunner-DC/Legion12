@@ -11,14 +11,17 @@ public sealed class L12Catalog
 
     public IReadOnlyDictionary<string, L12CardDefinition> Cards { get; }
     public IReadOnlyList<L12PresetDeckDefinition> PresetDecks { get; }
+    public L12MoraleIdentityCatalog MoraleIdentities { get; }
     public L12AtomicEffectCatalog AtomicEffects { get; }
 
     private L12Catalog(
         IReadOnlyDictionary<string, L12CardDefinition> cards,
-        IReadOnlyList<L12PresetDeckDefinition> presetDecks)
+        IReadOnlyList<L12PresetDeckDefinition> presetDecks,
+        L12MoraleIdentityCatalog moraleIdentities)
     {
         Cards = cards;
         PresetDecks = presetDecks;
+        MoraleIdentities = moraleIdentities;
         AtomicEffects = L12AtomicEffectCatalog.Build(cards.Values);
     }
 
@@ -45,16 +48,20 @@ public sealed class L12Catalog
         if (duplicateIds.Length > 0)
             throw new InvalidDataException($"存在重复卡号：{string.Join(", ", duplicateIds)}");
         var byId = cards.ToDictionary(card => card.Id, StringComparer.OrdinalIgnoreCase);
+        var moraleIdentities = L12MoraleIdentityCatalog.Load(
+            Path.Combine(dataPath, "morale-identities.json"), byId);
         if (decks.Count < 2) throw new InvalidDataException("至少需要两套官方预组。");
         foreach (var deck in decks)
         {
+            var normalizedMorale = deck.MoraleIds.Select(moraleIdentities.CanonicalDeckCardId).ToArray();
+            deck.MoraleIds.Clear();
+            deck.MoraleIds.AddRange(normalizedMorale);
             var ids = deck.CardIds.Append(deck.MasterId).Concat(deck.MoraleIds).Concat(deck.SpecialIds);
             var missing = ids.Where(id => !byId.ContainsKey(id)).Distinct().ToArray();
             if (missing.Length > 0)
             {
                 throw new InvalidDataException($"预组 {deck.Name} 引用了不存在的卡：{string.Join(", ", missing)}");
             }
-
             var master = byId[deck.MasterId];
             var countedMain = deck.CardIds.Count(id => !L12SpecialDeckRules.DoesNotCountTowardMainDeck(byId[id]));
             var requiredMorale = master.Faction == "taiyangcheng" ? 6 : 8;
@@ -64,7 +71,7 @@ public sealed class L12Catalog
                 throw new InvalidDataException($"预组 {deck.Name} 包含无效的特殊区卡牌。");
         }
 
-        return new L12Catalog(byId, decks);
+        return new L12Catalog(byId, decks, moraleIdentities);
     }
 
     public L12PresetDeckDefinition DeckAt(int index)

@@ -112,6 +112,27 @@ public sealed partial class L12GameEngine
                 ];
                 break;
             }
+            case "penelope-summon":
+            {
+                var entries = player.Hand.Where(card => card.CardType == "legion"
+                        && card.CurrentCost <= 3
+                        && L12StructuredCardRules.HasFaction(player, card, "olympus"))
+                    .Select(card => card.InstanceId).ToList();
+                var canUse = player.Morale.Any(card => card.IsGodPower && !card.Tapped)
+                    && entries.Count > 0 && slots.Count > 0;
+                steps =
+                [
+                    StarterStep("option", "mode",
+                        "珀涅罗珀：是否消耗并翻转1神力，将手牌中1张费用不高于3的【奥林匹斯】军团活跃登场？",
+                        Modes(canUse)),
+                    StarterStep("hand-card", "entryCard",
+                        "珀涅罗珀：选择手牌中1张费用不高于3的【奥林匹斯】军团",
+                        entries, requiredChoice: "mode:use"),
+                    StarterStep("unused-slot", "entrySlot", "珀涅罗珀：选择该军团活跃登场的位置",
+                        slots, requiredChoice: "mode:use"),
+                ];
+                break;
+            }
             case "antinous-ready":
             {
                 if (!player.HandDiscardedByMasterThisTurn)
@@ -215,7 +236,8 @@ public sealed partial class L12GameEngine
 
     private static L12ActivationSelectionStep StarterSelectionStep(string kind, string key, string text,
         IEnumerable<string> choices, int min, int max, int? targetPlayerIndex = null,
-        bool autoSelectWhenExact = false, Dictionary<string, string>? labels = null) => new()
+        bool autoSelectWhenExact = false, Dictionary<string, string>? labels = null,
+        string? requiredChoice = null) => new()
     {
         Kind = kind,
         DeclarationKey = key,
@@ -225,6 +247,7 @@ public sealed partial class L12GameEngine
         MaxChoose = max,
         TargetPlayerIndex = targetPlayerIndex,
         AutoSelectWhenExact = autoSelectWhenExact,
+        RequiredDeclaredChoice = requiredChoice,
         CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
         ChoiceLabels = labels ?? [],
     };
@@ -240,7 +263,7 @@ public sealed partial class L12GameEngine
 
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var isOptionalActivation = plan is "xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"
-            or "george-debuff" or "freydis-recover" or "antinous-ready";
+            or "george-debuff" or "freydis-recover" or "penelope-summon" or "antinous-ready";
         if (isOptionalActivation && mode != "mode:use")
         {
             CleanupPublicTriggerReservation(candidate);
@@ -306,6 +329,17 @@ public sealed partial class L12GameEngine
                         && CanEnterHandOrLibrary(card)))
                     error = "弗蕾迪斯选择的弃牌或墓地军团已失效；未弃置手牌且效果未入栈";
                 break;
+            case "penelope-summon":
+            {
+                var entry = activation.DeclaredValues.GetValueOrDefault("entryCard", []).SingleOrDefault();
+                var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
+                if (!player.Morale.Any(card => card.IsGodPower && !card.Tapped)
+                    || !player.Hand.Any(card => card.InstanceId == entry && card.CardType == "legion"
+                        && card.CurrentCost <= 3 && L12StructuredCardRules.HasFaction(player, card, "olympus"))
+                    || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    error = "珀涅罗珀选择的神力、手牌军团或登场位置已失效；未支付神力且效果未入栈";
+                break;
+            }
             case "antinous-ready":
                 if (candidate.Data.GetValueOrDefault("starterConditionLocked") != "true"
                     || FindOnField(player,
@@ -368,6 +402,15 @@ public sealed partial class L12GameEngine
             MoveHandToGrave(player, handCost.InstanceId, causedByEffect: false);
             AddEvent("cost", candidate.Controller, "弗蕾迪斯弃置1张手牌", source, handCost);
         }
+        if (plan == "penelope-summon")
+        {
+            if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1))
+            {
+                RemoveUnstackedTriggerCandidate(candidate, "珀涅罗珀需要1张活跃神力；效果未入栈");
+                return true;
+            }
+            AddEvent("cost", candidate.Controller, "珀涅罗珀消耗并翻转1神力", source);
+        }
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
@@ -382,7 +425,7 @@ public sealed partial class L12GameEngine
     {
         var flow = item.Data.GetValueOrDefault("atomicFlow");
         if (flow is not ("xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"
-            or "george-debuff" or "freydis-recover" or "khufu-counter-protection"
+            or "george-debuff" or "freydis-recover" or "penelope-summon" or "khufu-counter-protection"
             or "antinous-ready" or "elizabeth-derived-cost" or "elizabeth-lock-morale"
             or "mordred-enter-choice" or "mordred-death-kill" or "boudica-immortal"))
             return false;
@@ -397,6 +440,7 @@ public sealed partial class L12GameEngine
         {
             case "xiaohe-summon":
             case "snake-charmer-summon":
+            case "penelope-summon":
                 _ = TrySummonFromAnyPrivateZone(player, item.Controller, One("entryCard") ?? string.Empty,
                     One("entrySlot") ?? string.Empty, tapped: false);
                 break;

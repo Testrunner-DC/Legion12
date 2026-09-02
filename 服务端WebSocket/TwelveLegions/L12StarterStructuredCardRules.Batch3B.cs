@@ -19,9 +19,15 @@ public static partial class L12StructuredCardRules
 
     internal static IReadOnlyList<L12AbilityView> StarterRemainingAbilityViews(string cardId) => cardId switch
     {
+        "ST02-05" => [new("oasisDancerBuff", "主动休整 我方所有【太阳城】军团，本回合兵力+1000。")],
+        "ST03-05" => [new("christinaFreeTactic", "主动休整 本回合从我方手牌中打出的下1张费用不高于3的〈主动战术〉无需消耗费用，改为对我方主宰造成1点伤害。")],
+        "ST03-07" => [new("kaneMillOne", "主动休整 弃置我方牌库顶部1张牌。")],
+        "ST04-06" => [new("oiranTransfer", "主动休整 选择对方1张军团，本回合兵力-1000。选择我方1张军团，本回合兵力+1000。")],
         "ST02-M1" => [new("horusRevive", "我方 回合1次 可消耗1士气并弃置我方战场2张军团：选择墓地1张兵力不高于2000的【太阳城】军团休整登场。")],
         "ST03-M1" => [new("sifCycle", "我方 回合1次 可将墓地3张【阿斯加德】卡牌自选顺序返回牌库底部：抽取1张牌。")],
-        "ST05-M1" => [new("athenaFrontBuff", "我方 回合1次 可弃置1张手牌：翻转1张士气，并强化我方前排最多2张【奥林匹斯】军团。")],
+        "ST05-M1" => [new("athenaFrontBuff", "我方 回合1次 可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1。")],
+        "ST05-06" => [new("telemachusTopThree", "主动休整 查看牌库顶部3张牌，选择其中1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌，其余卡牌自选顺序全部返回牌库顶部或全部返回牌库底部。")],
+        "ST06-09" => [new("lightSwordActive", "主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000；或获得1符文。")],
         "ST06-M1" => [new("nuadaReadyMorale", "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃。")],
         "ST06-S1" =>
         [
@@ -40,12 +46,20 @@ public static partial class L12StructuredCardRules
     internal static string? StarterRemainingPlan(string cardId, string trigger)
         => (cardId, trigger) switch
         {
+            ("ST01-01", "enter") => "zhaoyun-enter-charge",
+            ("ST01-01", "after-attack") => "zhaoyun-kill-piercing",
+            ("ST01-07", "after-attack") => "crossbow-ready",
+            ("ST01-09", "enter") => "wangzhaojun-draw",
+            ("ST01-10", "reaction") => "hidden-pass-summon",
+            ("ST03-07", "enter") => "kane-enter-mill",
             ("ST01-M1", "morale-return") => "change-rested-morale",
             ("ST02-07", "opponent-back-to-front") => "tomb-defender-debuff",
             ("ST04-02", "attack") => "kojiro-discard",
             ("ST04-02", "death") => "kojiro-death-kill",
             ("ST04-04", "enter") => "kai-master-waiver",
             ("ST04-M1", "legion-attack-timing") => "kagutsuchi-buff",
+            ("ST02-08", "death") => "akhenaten-death-heal",
+            ("ST06-09", "enter") => "light-sword-enter-kill",
             ("ST05-01", "promotion-enter") => "aeneas-promotion-search",
             ("ST06-M1", "rune-spent") => "nuada-rune-buff",
             ("ST06-S1", "trial-complete") => "sky-city-completion",
@@ -53,9 +67,12 @@ public static partial class L12StructuredCardRules
         };
 
     internal static bool IsStarterRemainingPlan(string plan)
-        => plan is "change-rested-morale" or "tomb-defender-debuff" or "kojiro-discard"
+        => plan is "zhaoyun-enter-charge" or "zhaoyun-kill-piercing" or "crossbow-ready"
+            or "wangzhaojun-draw" or "hidden-pass-summon" or "kane-enter-mill"
+            or "change-rested-morale" or "tomb-defender-debuff" or "kojiro-discard"
             or "kojiro-death-kill" or "kai-master-waiver" or "kagutsuchi-buff"
-            or "aeneas-promotion-search" or "nuada-rune-buff" or "sky-city-completion";
+            or "aeneas-promotion-search" or "nuada-rune-buff" or "sky-city-completion"
+            or "akhenaten-death-heal" or "light-sword-enter-kill";
 
     internal static bool RequiresStarterDisasterAttackDiscard(string? cardId)
         => cardId == "ST-DS02";
@@ -158,11 +175,60 @@ public static partial class L12StructuredCardRules
                 new(L12AtomKinds.Visibility, "仅控制者查看牌库候选", "target", new() { ["audience"] = "controller-only" }),
                 new(L12AtomKinds.SelectTarget, "选择牌库最多2张远程军团", "target", new() { ["zone"] = "controller.library", ["min"] = "0", ["max"] = "2", ["filter"] = "ranged=true" }),
                 Move("controller.library", "controller.field", "active"), new(L12AtomKinds.Shuffle, "重洗牌库", "resolution", new()))],
+            "ST05-06" => [Targeted("active", "主动休整 查看牌库顶部3张牌，选择其中1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌，其余卡牌自选顺序全部返回牌库顶部或全部返回牌库底部。",
+                new(L12AtomKinds.RestSource, "休整此军团", "cost", new()),
+                new(L12AtomKinds.Visibility, "查看牌库顶部3张牌", "resolution", new()
+                {
+                    ["audience"] = "controller-only", ["count"] = "3",
+                }),
+                new(L12AtomKinds.SelectTarget, "选择1张远程军团或奥林匹斯战术卡", "resolution", new()
+                {
+                    ["zone"] = "controller.library-top-3", ["min"] = "1", ["max"] = "1",
+                    ["filter"] = "ranged-legion=true|faction=olympus;tactic=true",
+                }),
+                new(L12AtomKinds.Visibility, "展示所选卡牌", "resolution", new()
+                {
+                    ["audience"] = "both",
+                }),
+                Move("controller.library", "controller.hand", "revealed"),
+                new(L12AtomKinds.MoveZone, "其余卡牌自选顺序全部返回牌库顶部或全部返回牌库底部", "resolution", new()
+                {
+                    ["from"] = "controller.library-top-3", ["to"] = "controller.library",
+                    ["placement"] = "all-top-or-all-bottom",
+                }))],
             "ST05-10" => [Targeted("play", "选择一项：我方1张【奥林匹斯】军团本回合震击伤害+2000；或我方1张【奥林匹斯】【远程】军团本回合进攻时兵力+2000。",
                 new(L12AtomKinds.SelectMode, "选择一项效果", "target", new() { ["options"] = "shock|ranged-attack" }),
                 Select("选择我方奥林匹斯军团", "controller.field", "faction=olympus;legion=true"),
                 new(L12AtomKinds.SetState, "震击伤害或进攻兵力+2000", "resolution", new() { ["duration"] = "this-turn" }))],
-            "ST05-M1" => [Targeted("active", "我方 回合1次 可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000且对主宰造成的伤害+1。",
+            "ST02-08" =>
+            [
+                new("enter", "triggered", "登场时 抽取1张卡牌。随后，对方抽取1张牌。",
+                [
+                    new(L12AtomKinds.Draw, "我方抽取1张牌", "resolution", new() { ["amount"] = "1", ["target"] = "controller" }),
+                    new(L12AtomKinds.Draw, "随后对方抽取1张牌", "resolution", new() { ["amount"] = "1", ["target"] = "opponent" }),
+                ], "human-assisted", "product-database"),
+                Targeted("death", "阵亡时 可弃置1张手牌：我方主宰增加1点血量。",
+                    new(L12AtomKinds.Optional, "可发动", "condition", new()),
+                    Select("选择弃置的1张手牌", "controller.hand", "any=true"),
+                    new(L12AtomKinds.Discard, "弃置所选手牌", "cost", new()),
+                    new(L12AtomKinds.HealMaster, "我方主宰增加1点血量", "resolution", new() { ["amount"] = "1" })),
+            ],
+            "ST06-09" =>
+            [
+                Targeted("enter", "登场时 可击杀对方最多2张原本兵力不高于2000的军团。",
+                    new(L12AtomKinds.Optional, "可发动", "condition", new()),
+                    new(L12AtomKinds.SelectTarget, "选择对方最多2张原本兵力不高于2000的军团", "target", new()
+                    {
+                        ["zone"] = "opponent.field", ["min"] = "0", ["max"] = "2", ["filter"] = "base-troops<=2000",
+                    }),
+                    new(L12AtomKinds.MoveZone, "击杀所选军团", "resolution", new() { ["to"] = "owner.graveyard" })),
+                Targeted("active", "主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000；或获得1符文。",
+                    new(L12AtomKinds.RestSource, "主动休整", "cost", new()),
+                    Select("选择弃置的1张手牌", "controller.hand", "any=true"),
+                    new(L12AtomKinds.Discard, "弃置所选手牌", "cost", new()),
+                    new(L12AtomKinds.SelectMode, "选择使军团兵力+2000或获得1符文", "target", new() { ["options"] = "buff|rune" })),
+            ],
+        "ST05-M1" => [Targeted("active", "我方 回合1次 可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1。",
                 Select("选择弃置的1张手牌", "controller.hand", "any=true"), new(L12AtomKinds.Discard, "弃置所选手牌", "cost", new()),
                 Select("选择翻转的1张士气", "controller.morale", "any=true"),
                 new(L12AtomKinds.SelectTarget, "选择前排最多2张奥林匹斯军团", "target", new() { ["zone"] = "controller.front", ["min"] = "0", ["max"] = "2" }),

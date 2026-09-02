@@ -551,6 +551,7 @@ public sealed partial class L12GameEngine
                     data[$"{candidate.InstanceId}:zone"] = player.Hand.Contains(candidate) ? "手牌"
                         : player.Library.Contains(candidate) ? "牌库" : "墓地";
                 }
+                if (candidates.Length == 0) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional-card", "罗宾汉：选择1张侍从骑士活跃登场", candidates.Select(card => card.InstanceId).Append("skip"), 1, 1,
                     "card-effect", item.StackItemId, data: data); return true;
             }

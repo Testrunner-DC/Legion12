@@ -289,18 +289,17 @@ public sealed class AtomicReviewBatch6BRegressionTests
         var trial = order.ValidChoices.Single(id => id != angus);
         ResolveMany(game, trial, angus);
 
-        var trialMode = Assert.Single(game.State.PendingPrompts);
-        Assert.DoesNotContain("skip", trialMode.ValidChoices);
-        Assert.Equal(trialMode.ValidChoices.Count,
-            trialMode.ValidChoices.Select(choice => trialMode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
-        Resolve(game, "mode:use");
-        Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
-        Assert.Single(game.State.EffectStack);
         var angusMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", angusMode.Continuation);
+        Assert.True(angusMode.Data.TryGetValue("sourceName", out var sourceName));
+        Assert.Contains("安格斯", sourceName, StringComparison.Ordinal);
         Assert.DoesNotContain("skip", angusMode.ValidChoices);
         Assert.Equal(angusMode.ValidChoices.Count,
             angusMode.ValidChoices.Select(choice => angusMode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
-        Resolve(game, "mode:none");
+        Resolve(game, "mode:use");
+        Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
+        Assert.Single(game.State.EffectStack);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
         PassResponses(game);
         Assert.Equal(1, game.State.Players[0].SpecialZones.Runes);
         Assert.Empty(game.State.EffectStack);

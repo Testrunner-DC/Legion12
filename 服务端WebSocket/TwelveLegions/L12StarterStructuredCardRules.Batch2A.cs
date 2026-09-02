@@ -18,6 +18,7 @@ public static partial class L12StructuredCardRules
             ("ST02-03", "enter") => "snake-charmer-summon",
             ("ST02-06", "enter") => "george-debuff",
             ("ST03-03", "enter") => "freydis-recover",
+            ("ST05-03", "enter") => "penelope-summon",
             _ => null,
         };
 
@@ -95,6 +96,33 @@ public static partial class L12StructuredCardRules
                         ["from"] = "controller.hand", ["amount"] = "1",
                     }),
                     Move("controller.graveyard", "controller.hand", "revealed")),
+            ],
+            "ST05-03" =>
+            [
+                new("continuous", "continuous", "进攻距离+1，远程进攻无损。",
+                [
+                    new(L12AtomKinds.AttackRule, "进攻距离+1", "continuous", new()
+                    {
+                        ["rangeBonus"] = "1",
+                    }),
+                    new(L12AtomKinds.AttackRule, "远程进攻无损", "continuous", new()
+                    {
+                        ["rangedNoLoss"] = "true",
+                    }),
+                ], "human-assisted", "product-database"),
+                Targeted("enter", "登场时 可消耗并翻转1神力，将手牌中1张费用不高于3的【奥林匹斯】军团活跃登场。",
+                    new(L12AtomKinds.Optional, "可发动", "condition", new()),
+                    new(L12AtomKinds.Special, "消耗并翻转1神力", "cost", new()
+                    {
+                        ["resource"] = "god-power", ["amount"] = "1", ["flip"] = "morale",
+                    }),
+                    Select("选择手牌中1张费用不高于3的【奥林匹斯】军团",
+                        "controller.hand", "faction=olympus;legion=true;current-cost<=3"),
+                    new(L12AtomKinds.SelectTarget, "选择活跃登场位置", "target", new()
+                    {
+                        ["zone"] = "controller.field.empty-slot", ["min"] = "1", ["max"] = "1",
+                    }),
+                    Move("controller.hand", "controller.field", "active")),
             ],
             _ => [],
         };

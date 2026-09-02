@@ -95,6 +95,15 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
             case "风暴乱象": ResolveS2StormChaos(item); return;
             case "傲慢之罪": BeginS2Pride(item); return;
+            case "怒触不周山":
+                for (var owner = 0; owner < 2; owner++)
+                    foreach (var card in State.Players[owner].Field[0]
+                        .Where(card => card is not null && IsDisasterFieldCard(card) && card.Troops <= 4000)
+                        .Cast<L12CardInstance>().ToArray())
+                        RemoveFromField(State.Players[owner], card, true, "因〈怒触不周山〉置入所有者墓地",
+                            queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
+                FinishStackItem(item); return;
+            case "邪眼末日": BeginStarterEvilEyeDiscard(item); return;
             default:
                 FinishStackItem(item); return;
         }
@@ -115,6 +124,41 @@ public sealed partial class L12GameEngine
         AddEvent("library-orientation", null, reversed
             ? "〈天地异变〉使双方牌库翻转；原牌库底成为牌库顶"
             : "〈天地异变〉离场，双方牌库恢复原方向");
+    }
+
+    private void BeginStarterEvilEyeDiscard(L12StackItem item)
+    {
+        var prompted = 0;
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var choices = DisasterLegions(State.Players[playerIndex]).Select(card => card.InstanceId).ToArray();
+            if (choices.Length == 0) continue;
+            CreateDelayedPublicResolutionPrompt(item, "field-legion",
+                "〈邪眼末日〉：选择弃置我方战场上1张军团", choices,
+                "disaster-st-evil-eye-discard", new Dictionary<string, string>
+                {
+                    ["player"] = playerIndex.ToString(), ["simultaneous"] = "true",
+                }, isPrivate: true, chooser: playerIndex);
+            prompted++;
+        }
+        if (prompted == 0) FinishStackItem(item);
+    }
+
+    private void CompleteStarterEvilEyeDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
+    {
+        var playerIndex = int.Parse(prompt.Data["player"]);
+        item.Data[$"evil-eye-discard:{playerIndex}"] = chosen.SingleOrDefault() ?? string.Empty;
+        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == "disaster-st-evil-eye-discard")) return;
+        for (var owner = 0; owner < 2; owner++)
+        {
+            var id = item.Data.GetValueOrDefault($"evil-eye-discard:{owner}");
+            var card = FindOnField(State.Players[owner], id, out _, out _);
+            if (card is not null && IsDisasterFieldCard(card))
+                RemoveFromField(State.Players[owner], card, true, "因〈邪眼末日〉弃置",
+                    queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
+        }
+        FinishStackItem(item);
     }
 
     private void BeginS2FogDeadEnd(L12StackItem item)

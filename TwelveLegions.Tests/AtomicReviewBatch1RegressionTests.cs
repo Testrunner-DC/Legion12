@@ -240,10 +240,8 @@ public sealed class AtomicReviewBatch1RegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", primary.InstanceId))).Accepted);
-        var declaration = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", declaration.Continuation);
-        Assert.Contains("mode:none", declaration.ValidChoices);
-        Resolve(game, "mode:none");
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
 
         Assert.Contains(left, game.State.Players[1].Graveyard);
         Assert.Contains(right, game.State.Players[1].Graveyard);

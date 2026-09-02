@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -241,6 +242,13 @@ public sealed class Bq20260830_02RegressionTests
         Assert.Contains(card.Abilities, ability => ability.Id == "trialAdvance");
         Assert.All(card.Abilities.Where(ability => ability.Id != "trialAdvance"),
             ability => Assert.NotEqual("trialAdvance", ability.Id));
+
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var battlefieldAbilities = snapshot.GetProperty("players")[0].GetProperty("field")[0][0]
+            .GetProperty("abilities").EnumerateArray().ToArray();
+        Assert.Contains(battlefieldAbilities,
+            ability => ability.GetProperty("id").GetString() == "trialAdvance");
     }
 
     [Theory]

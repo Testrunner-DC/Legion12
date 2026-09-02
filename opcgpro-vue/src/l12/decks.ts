@@ -1,5 +1,6 @@
 import { normalizeLookupCardType } from './cardPresentation'
 import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
+import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'
 
 export interface DeckCard {
   id: string
@@ -10,13 +11,25 @@ export interface DeckCard {
   faction: string
   imageUrl?: string
   cost?: number
+  hp?: number
   troops?: number
   disasterLevel?: number
   trialValue?: number
+  rarity?: string
   deckLimit?: number
   traits?: string[]
   profession?: string
   effect?: string
+  canonicalMoraleId?: string
+}
+
+export interface MoraleIdentity {
+  faction: string
+  displayName: string
+  canonicalCardId: string
+  versionCardIds: string[]
+  godPowerCardId?: string
+  godPowerDisplayName?: string
 }
 
 export interface SavedL12Deck {
@@ -43,9 +56,11 @@ interface LookupCard {
   faction: string
   cost?: number | null
   attack?: number | null
+  health?: number | null
   disasterLevel?: number | null
   trialValue?: number | null
   deckLimit?: number | null
+  rarity?: string | null
   image?: string
   effectText?: string
   tags?: string[]
@@ -63,6 +78,53 @@ const S1_COUNTER_TACTICS = new Set([
 const lookupFactionMap: Record<string, string> = {
   通用: 'universal', 天廷: 'tianting', 高天原: 'gaotianyuan', 阿斯加德: 'asgard',
   太阳城: 'taiyangcheng', 奥林匹斯: 'olympus', 彼界: 'otherworld', 天灾: 'disaster',
+}
+
+export const moraleIdentities = moraleIdentityData as MoraleIdentity[]
+const moraleIdentityByFaction = new Map(moraleIdentities.map(identity => [identity.faction, identity]))
+const moraleIdentityByVersion = new Map(moraleIdentities.flatMap(identity =>
+  identity.versionCardIds.map(cardId => [cardId, identity] as const)))
+const moraleIdentityByGodPower = new Map(moraleIdentities.filter(identity => identity.godPowerCardId)
+  .map(identity => [identity.godPowerCardId!, identity] as const))
+
+export function canonicalMoraleCardId(cardId: string) {
+  return (moraleIdentityByVersion.get(cardId) ?? moraleIdentityByGodPower.get(cardId))?.canonicalCardId ?? cardId
+}
+
+function normalizeMoraleCatalogCard(card: DeckCard): DeckCard {
+  const identity = moraleIdentityByVersion.get(card.id)
+  if (identity) return { ...card, nameZh: identity.displayName, canonicalMoraleId: identity.canonicalCardId }
+  const powerIdentity = moraleIdentityByGodPower.get(card.id)
+  return powerIdentity
+    ? { ...card, nameZh: powerIdentity.godPowerDisplayName ?? '神力·奥林匹斯', canonicalMoraleId: powerIdentity.canonicalCardId }
+    : card
+}
+
+function normalizeLookupRarity(value: string | null | undefined) {
+  const rarity = value?.trim().toUpperCase()
+  return rarity && ['C', 'U', 'UC', 'R', 'SR', 'L', 'SEC', 'P'].includes(rarity) ? rarity : undefined
+}
+
+function lookupDeckCard(card: LookupCard): DeckCard {
+  return normalizeMoraleCatalogCard({
+    id: card.cardNo,
+    number: card.cardNo,
+    nameZh: card.name,
+    cardType: normalizeLookupCardType(card.type, card.name),
+    product: card.cardNo.split('-')[0] || 'UNKNOWN',
+    faction: lookupFactionMap[card.faction] ?? card.faction,
+    imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
+    cost: card.cost ?? undefined,
+    troops: card.attack ?? undefined,
+    hp: card.health ?? undefined,
+    disasterLevel: card.disasterLevel ?? undefined,
+    trialValue: card.trialValue ?? undefined,
+    deckLimit: card.deckLimit ?? undefined,
+    rarity: normalizeLookupRarity(card.rarity),
+    traits: card.tags ?? [],
+    profession: card.subType || undefined,
+    effect: card.effectText ?? undefined,
+  })
 }
 
 let catalogPromise: Promise<DeckCard[]> | null = null
@@ -92,25 +154,9 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
       ? { ...card, cardType: 'counter-tactic' }
       : card)
     const lookup: LookupCard[] = await lookupResponse.json()
-    const seasonTwo = lookup.filter(card => card.cardNo?.startsWith('S02-')).map(card => ({
-      id: card.cardNo,
-      number: card.cardNo,
-      nameZh: card.name,
-      cardType: normalizeLookupCardType(card.type, card.name),
-      product: 'S02',
-      faction: lookupFactionMap[card.faction] ?? card.faction,
-      imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
-      cost: card.cost ?? undefined,
-      troops: card.attack ?? undefined,
-      disasterLevel: card.disasterLevel ?? undefined,
-      trialValue: card.trialValue ?? undefined,
-      deckLimit: card.deckLimit ?? undefined,
-      traits: card.tags ?? [],
-      profession: card.subType || undefined,
-      effect: card.effectText ?? undefined,
-    }))
+    const seasonTwo = lookup.filter(card => card.cardNo?.startsWith('S02-')).map(lookupDeckCard)
     const starterProducts: DeckCard[] = await stResponse.json()
-    return [...seasonOne, ...seasonTwo, ...starterProducts]
+    return [...seasonOne, ...seasonTwo, ...starterProducts].map(normalizeMoraleCatalogCard)
   })
   return catalogPromise
 }
@@ -126,7 +172,11 @@ export function loadSavedDecks(): Record<string, SavedL12Deck> {
     if (!value || typeof value !== 'object') return {}
     return Object.fromEntries(Object.entries(value).map(([name, raw]) => {
       const deck = raw as SavedL12Deck
-      return [name, { ...deck, specialIds: Array.isArray(deck.specialIds) ? deck.specialIds : [] }]
+      return [name, {
+        ...deck,
+        moraleIds: (deck.moraleIds ?? []).map(canonicalMoraleCardId),
+        specialIds: Array.isArray(deck.specialIds) ? deck.specialIds : [],
+      }]
     }))
   } catch {
     return {}
@@ -141,14 +191,18 @@ export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL
     const merged: Record<string, SavedL12Deck> = Object.fromEntries(remote.map(deck => [deck.name, {
       ...deck,
       cardIds: [...deck.cardIds],
-      moraleIds: [...deck.moraleIds],
+      moraleIds: deck.moraleIds.map(canonicalMoraleCardId),
       specialIds: [...(deck.specialIds ?? [])],
     }]))
     for (const deck of Object.values(local)) {
       const serverDeck = merged[deck.name]
       if (!serverDeck || deck.updatedAt > serverDeck.updatedAt) {
         const saved = await platformRequest<SavedL12Deck>('/api/decks', { method: 'PUT', body: JSON.stringify(deck) })
-        merged[saved.name] = { ...saved, specialIds: [...(saved.specialIds ?? [])] }
+        merged[saved.name] = {
+          ...saved,
+          moraleIds: saved.moraleIds.map(canonicalMoraleCardId),
+          specialIds: [...(saved.specialIds ?? [])],
+        }
       }
     }
     writeSavedDecks(merged)
@@ -165,7 +219,11 @@ export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]
   ])
   if (responses.some(response => !response.ok)) throw new Error('官方预组加载失败')
   const seasons = await Promise.all(responses.map(response => response.json() as Promise<OfficialL12PresetDeck[]>))
-  return seasons.flat().map(deck => ({ ...deck, specialIds: deck.specialIds ?? [] }))
+  return seasons.flat().map(deck => ({
+    ...deck,
+    moraleIds: deck.moraleIds.map(canonicalMoraleCardId),
+    specialIds: deck.specialIds ?? [],
+  }))
 }
 
 export async function ensureOfficialPrebuiltDecks() {
@@ -200,6 +258,7 @@ export async function ensureOfficialPrebuiltDecks() {
 
 export function saveDeck(deck: SavedL12Deck) {
   const decks = loadSavedDecks()
+  deck = { ...deck, moraleIds: deck.moraleIds.map(canonicalMoraleCardId) }
   decks[deck.name] = deck
   writeSavedDecks(decks)
   localStorage.setItem(selectedDeckStorageKey(), deck.name)
@@ -218,6 +277,7 @@ export function deleteDeck(name: string) {
 export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'> & { specialIds?: string[] }, catalog: DeckCard[], restrictions: readonly OperationsCardRestriction[] = []) {
   const byId = new Map(catalog.map(card => [card.id, card]))
   const master = byId.get(deck.masterId)
+  const normalizedMoraleIds = deck.moraleIds.map(canonicalMoraleCardId)
   if (!deck.name.trim() || deck.name.trim().length > 24) return '牌库名称须为 1–24 个字符'
   if (!master || master.cardType !== 'master') return '请选择主宰'
   if (master.id === 'S01-02M2') return '复苏的奥西里斯不能被选择为主宰；请选择伊西斯'
@@ -226,7 +286,7 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   const counts = new Map<string, number>()
   const resolveRestriction = (cardId: string) => restrictions.find(rule => rule.cardId === cardId && rule.masterId === deck.masterId)
     ?? restrictions.find(rule => rule.cardId === cardId && !rule.masterId)
-  const seasonalCounts = [deck.masterId, ...deck.cardIds, ...deck.moraleIds, ...(deck.specialIds ?? [])]
+  const seasonalCounts = [deck.masterId, ...deck.cardIds, ...normalizedMoraleIds, ...(deck.specialIds ?? [])]
     .reduce((map, id) => map.set(id, (map.get(id) ?? 0) + 1), new Map<string, number>())
   for (const [id, count] of seasonalCounts) {
     const rule = resolveRestriction(id)
@@ -247,10 +307,11 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     counts.set(id, count)
   }
   const moraleCount = master.faction === 'taiyangcheng' ? 6 : 8
-  if (deck.moraleIds.length !== moraleCount) return `士气牌库须为 ${moraleCount} 张`
-  if (deck.moraleIds.some(id => {
+  if (normalizedMoraleIds.length !== moraleCount) return `士气牌库须为 ${moraleCount} 张`
+  if (normalizedMoraleIds.some(id => {
     const card = byId.get(id)
-    return !card || !['rune', 'divinity'].includes(card.cardType) || card.faction !== master.faction
+    return !card || card.cardType !== 'rune' || card.faction !== master.faction
+      || moraleIdentityByFaction.get(master.faction)?.canonicalCardId !== id
   })) return '士气卡与主宰阵营不符'
   const trialCapacity = trialCapacityForMaster(master)
   if ((deck.specialIds ?? []).length !== trialCapacity) return trialCapacity
@@ -262,6 +323,37 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
     return !card || card.cardType !== 'trial' || card.faction !== master.faction
   })) return '特殊区卡牌与主宰阵营不符'
   return ''
+}
+
+/**
+ * The playable catalog intentionally excludes presentation-only alternate card
+ * numbers. The archive may show those faces, so it adds the S01 lookup entries
+ * without changing deck building, sandbox, or server card identities.
+ */
+export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
+  const [catalog, lookupResponse] = await Promise.all([
+    loadDeckCatalog(),
+    fetch('/data/l12/cards.lookup.json'),
+  ])
+  if (!lookupResponse.ok) throw new Error('卡牌版本数据加载失败')
+  const lookup: LookupCard[] = await lookupResponse.json()
+  const byId = new Map(catalog.map(card => [card.id, card]))
+  lookup.filter(card => card.cardNo?.startsWith('S01-')).map(lookupDeckCard).forEach(card => {
+    if (byId.has(card.id)) return
+    const base = card.id.endsWith('A') ? byId.get(card.id.slice(0, -1)) : undefined
+    const archiveVersion = base && base.nameZh.trim() === card.nameZh.trim()
+      ? {
+          ...base,
+          id: card.id,
+          number: card.number,
+          product: card.product,
+          imageUrl: card.imageUrl,
+          rarity: card.rarity ?? base.rarity,
+        }
+      : card
+    byId.set(archiveVersion.id, normalizeMoraleCatalogCard(archiveVersion))
+  })
+  return [...byId.values()]
 }
 
 export function effectiveDeckLimit(card: DeckCard, masterId: string, restrictions: readonly OperationsCardRestriction[] = []) {
@@ -293,7 +385,7 @@ export function trialCapacityForMaster(master: DeckCard | undefined) {
 
 export function buildMoraleDeck(master: DeckCard | undefined, catalog: DeckCard[]) {
   if (!master) return []
-  const morale = catalog.find(card => ['rune', 'divinity'].includes(card.cardType) && card.faction === master.faction)
-  if (!morale) return []
-  return Array(master.faction === 'taiyangcheng' ? 6 : 8).fill(morale.id)
+  const identity = moraleIdentityByFaction.get(master.faction)
+  if (!identity || !catalog.some(card => card.id === identity.canonicalCardId)) return []
+  return Array(master.faction === 'taiyangcheng' ? 6 : 8).fill(identity.canonicalCardId)
 }

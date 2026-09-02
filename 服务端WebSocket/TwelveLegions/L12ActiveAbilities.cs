@@ -33,7 +33,12 @@ public sealed partial class L12GameEngine
             && FindPublicCard(command.CardInstanceId, out _) is { CardId: "S01-0004" } infiltrator)
             source = infiltrator;
         if (source is null && player.Morale.FirstOrDefault(card => card.InstanceId == command.CardInstanceId) is { } morale)
-            source = CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId);
+        {
+            var identity = _catalog.MoraleIdentities.ForFaction(player.Faction);
+            source = CreateCard(morale.IsGodPower && identity.GodPowerCardId is { } powerId
+                ? powerId
+                : identity.CanonicalCardId, morale.InstanceId);
+        }
         if (source is null && command.CardInstanceId is not null
             && (command.CardInstanceId == player.MasterId || command.CardInstanceId == $"master-{playerIndex}"))
         {
@@ -42,11 +47,12 @@ public sealed partial class L12GameEngine
         }
         if (source is null && command.CardInstanceId == $"faction-{playerIndex}")
         {
-            var moraleId = player.Faction == "olympus"
-                ? (ability == "godPowerDraw" ? "S02-05C1" : "S02-05C1A")
-                : player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
+            var identity = _catalog.MoraleIdentities.ForFaction(player.Faction);
+            var moraleId = ability == "godPowerDraw" && identity.GodPowerCardId is { } powerId
+                ? powerId
+                : identity.CanonicalCardId;
             if (moraleId is not null)
-                source = CreateCard(CanonicalFactionEffectCardId(moraleId), $"faction-{playerIndex}");
+                source = CreateCard(moraleId, $"faction-{playerIndex}");
         }
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
@@ -133,12 +139,6 @@ public sealed partial class L12GameEngine
         var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
         switch ((source.CardId, ability))
         {
-            case ("S01-03C1", "asgardDraw"):
-                if (declared.Length != 1 || declared[0] is not ("mode:none" or "mode:heal"))
-                    return "阿斯加德阵营效果必须预先声明是否治疗";
-                if (declared[0] == "mode:heal" && player.Hp > 5)
-                    return "主宰血量高于5，不能声明额外治疗";
-                break;
             case ("S01-01M2", "mengpoMorale"):
                 if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count
                     || declared.Length != 1 || !player.Hand.Any(card => card.InstanceId == declared[0]))
@@ -413,8 +413,6 @@ public sealed partial class L12GameEngine
     {
         "drawCycle" or "frontBuff" or "kusanagiDebuff" or "kusanagiStrong" or "cleopatraGuard" or "sunDraw"
             or "medjedDebuff" or "valkyrieRecover" or "lokiCycle" or "lokiHeal" or "amaterasuKill" => 1,
-        "asgardDraw" when (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries)
-            .Contains("mode:heal", StringComparer.OrdinalIgnoreCase) => 3,
         "kusanagi" or "factionAddActive" or "factionDrawMove" or "destroyInfiltrator" or "sunGuard" or "asgardDraw"
             or "gramReady" or "sunTopThree" or "sunBottomEnemy" or "valhallaRecover" or "yomiSweep" => 2,
         "extendedRange" when source.CardId == "S01-0003" => 2,

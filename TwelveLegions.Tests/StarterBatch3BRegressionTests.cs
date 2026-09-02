@@ -121,10 +121,11 @@ public sealed class StarterBatch3BRegressionTests
     [InlineData("ST06-C1", "S02-06C1")]
     public void StarterMoraleCardsReuseTheCanonicalFactionAbilitySet(string starterId, string canonicalId)
     {
+        var game = Create(20390);
         var method = typeof(L12GameEngine).GetMethod("GetAbilities",
-            BindingFlags.Static | BindingFlags.NonPublic)!;
-        var starter = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(null, [starterId]));
-        var canonical = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(null, [canonicalId]));
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var starter = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(game, [starterId]));
+        var canonical = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(game, [canonicalId]));
 
         Assert.Equal(canonical.Select(ability => ability.Id), starter.Select(ability => ability.Id));
         Assert.NotEmpty(starter);

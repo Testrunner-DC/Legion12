@@ -107,6 +107,7 @@ public sealed partial class L12GameEngine
             case "霍列姆赫布":
             {
                 var guards = PublicLegions(player).Where(target => target.CardId == "S01-0212").Select(target => target.InstanceId).ToList();
+                if (guards.Count == 0) { FinishStackItem(item); return true; }
                 guards.Add("skip");
                 CreatePrompt(item.Controller, "optional-target", "霍列姆赫布：可弃置我方1张陵墓守卫，获得冲锋", guards, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "horemheb-charge" });
@@ -185,6 +186,12 @@ public sealed partial class L12GameEngine
             case "卡诺匹斯罐 四":
             {
                 var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng").Select(target => target.InstanceId).ToList();
+                if (choices.Count == 0)
+                {
+                    DiscardRelic(player, card);
+                    FinishStackItem(item);
+                    return true;
+                }
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-targets", "卡诺匹斯罐四：选择我方最多2张【太阳城】军团获得免死", choices, 1, Math.Min(2, Math.Max(1, choices.Count - 1)),
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "canopic-four" });
@@ -739,10 +746,7 @@ public sealed partial class L12GameEngine
             case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             case "asgardDraw" when source.CardId == "S01-03C1":
             {
-                var mode = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).SingleOrDefault();
-                var cost = mode == "mode:heal" ? 3 : 2;
-                if (mode is not ("mode:none" or "mode:heal") || !ConsumeMorale(cost))
-                    return CommandResult.Reject($"需要完整声明模式并消耗{cost}张活跃士气");
+                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
                 player.UsedAbilities.Add(onceKey);
                 break;
             }
@@ -1082,8 +1086,12 @@ public sealed partial class L12GameEngine
             case "sunDraw": Draw(player, 1); FinishStackItem(item); return true;
             case "asgardDraw":
                 Draw(player, 1);
-                if (item.Data.GetValueOrDefault("target") == "mode:heal") HealMaster(item.Controller, 1, "阿斯加德阵营效果");
-                FinishStackItem(item);
+                BeginOptionalPaidEffectFollowup(item,
+                    player.Hp <= 5,
+                    1,
+                    "若我方主宰血量不高于5，可额外消耗1士气：我方主宰增加1点血量。",
+                    "heal-master",
+                    new Dictionary<string, string> { ["amount"] = "1", ["reason"] = "阿斯加德阵营效果" });
                 return true;
             case "alvidaSummon":
             {
@@ -1373,16 +1381,16 @@ public sealed partial class L12GameEngine
                 && (predicate?.Invoke(target) ?? true)
                 && (row is null || FindOnField(enemy, target.InstanceId, out var targetRow, out _) is not null && targetRow == row))
             .Select(target => target.InstanceId).ToList();
-        if (optional) choices.Add("skip");
         if (choices.Count == 0) { FinishStackItem(item); return; }
+        if (optional) choices.Add("skip");
         CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
     }
 
     private void PromptOwnLegion(L12StackItem item, string action, string text, Func<L12CardInstance, bool> predicate, bool optional)
     {
         var choices = PublicLegions(State.Players[item.Controller]).Where(predicate).Select(target => target.InstanceId).ToList();
-        if (optional) choices.Add("skip");
         if (choices.Count == 0) { FinishStackItem(item); return; }
+        if (optional) choices.Add("skip");
         CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
     }
 
@@ -1489,13 +1497,17 @@ public sealed partial class L12GameEngine
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CurrentCost <= maxCost && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList(); choices.Add("skip");
+        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CurrentCost <= maxCost && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList();
+        if (choices.Count == 0) { FinishStackItem(item); return; }
+        choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" });
     }
 
     private void SummonAsgardFromGrave(L12StackItem item, int maxCost)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && card.CurrentCost <= maxCost).Select(card => card.InstanceId).ToList(); choices.Add("skip");
+        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && card.CurrentCost <= maxCost).Select(card => card.InstanceId).ToList();
+        if (choices.Count == 0) { FinishStackItem(item); return; }
+        choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "summon-asgard" });
     }
 
