@@ -764,12 +764,19 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string> { ["action"] = action, ["sourceZone"] = "hand", ["layout"] = "single-row" });
     }
 
-    private void MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect)
+    private void MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect,
+        L12CardInstance? source = null)
     {
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         player.Hand.Remove(card);
         player.Graveyard.Add(card);
+        var authoritativeSource = source;
+        if (authoritativeSource is null && State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
+            authoritativeSource = FindAuthoritativeCard(origin.SourceInstanceId) ?? origin.SourceSnapshot;
+        if (authoritativeSource is not null
+            && (authoritativeSource.CardType == "master" || authoritativeSource.CardId == player.MasterId))
+            player.HandDiscardedByMasterThisTurn = true;
         AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
         NotifyCardDiscarded(player, card, "hand", causedByEffect);
     }

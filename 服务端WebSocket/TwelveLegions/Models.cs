@@ -276,6 +276,8 @@ public sealed class L12PlayerState
     public string? LastActiveTacticCardId { get; set; }
     public int ReturnedMoraleThisTurn { get; set; }
     public int MasterDamageTakenThisTurn { get; set; }
+    /// <summary>本回合是否曾由主宰来源令该玩家从手牌弃牌；由权威区域移动入口记录。</summary>
+    public bool HandDiscardedByMasterThisTurn { get; set; }
     public int NextFactionLegionDiscount { get; set; }
     public int NextS2SunDisasterLegionDiscount { get; set; }
     public int NextS2OlympusLegionDiscount { get; set; }

@@ -170,7 +170,7 @@ public sealed partial class L12GameEngine
             ["mode:search"] = "检索牌库", ["mode:recover"] = "回收卡牌",
             ["mode:damage"] = "分配兵力伤害", ["mode:debuff"] = "削弱军团",
             ["mode:buff"] = "强化军团", ["mode:trial"] = "试炼进度+1",
-            ["mode:rune"] = "获得1枚符文",
+            ["mode:rune"] = "获得1枚符文", ["mode:charge"] = "获得冲锋",
             ["mode:mandatory"] = "强制发动",
             ["mode:normal"] = "按通常方式发动", ["mode:strong"] = "发动强化效果",
             ["mode:second"] = "追加第二段效果", ["mode:use"] = "发动追加效果",

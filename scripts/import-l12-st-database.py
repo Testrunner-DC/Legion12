@@ -168,6 +168,11 @@ def build_card(headers: list[str], raw: list[object | None]) -> dict[str, object
     effect = normalized_text(row["效果文本"])
     if effect:
         card["effect"] = effect
+        # 试炼军团把卡面独立行“试炼 N”同时写入结构化数值。该转换仅发生在
+        # 权威数据库导入阶段，实战不得再从可变 EffectText 推断规则数值。
+        trial_match = re.search(r"(?m)^试炼\s*(\d+)\s*$", effect)
+        if source_type == "军团" and trial_match:
+            card["trialValue"] = int(trial_match.group(1))
     atomic_reference = normalized_text(row["原子化参考"])
     if atomic_reference:
         card["atomicReference"] = atomic_reference
@@ -194,6 +199,9 @@ def main() -> None:
     authoritative = {"ST03-01", "ST04-10", "ST05-09", "ST06-01"}
     if not authoritative.issubset(ids):
         raise ValueError("数据库优先卡牌缺失")
+    trial_values = {card["id"]: card.get("trialValue") for card in cards if "trialValue" in card}
+    if trial_values != {"ST06-06": 1, "ST06-07": 1, "ST06-08": 2}:
+        raise ValueError(f"ST 试炼值导入不完整：{trial_values}")
 
     content = json.dumps(cards, ensure_ascii=False, indent=2) + "\n"
     for output in (args.server_output, args.web_output):

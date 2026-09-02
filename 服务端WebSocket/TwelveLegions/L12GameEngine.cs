@@ -809,6 +809,7 @@ public sealed partial class L12GameEngine
         foreach (var player in State.Players)
         {
             player.MasterDamageTakenThisTurn = 0;
+            player.HandDiscardedByMasterThisTurn = false;
             ResetTemporaryCardState(player, State.TurnSerial);
             player.UsedAbilities.Clear();
         }

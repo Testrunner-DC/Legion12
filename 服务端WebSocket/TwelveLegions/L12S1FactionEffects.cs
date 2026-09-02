@@ -536,7 +536,8 @@ public sealed partial class L12GameEngine
                 if (source is null) FinishStackItem(item);
                 else BeginQueuedSummons(item, [source.InstanceId], tapped: true, "勇士比约恩：选择其休整登场的位置");
                 return true;
-            case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true); FinishStackItem(item); return true;
+            case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true,
+                FindSource(item) ?? item.SourceSnapshot); FinishStackItem(item); return true;
             case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]); FinishStackItem(item); return true;
             case "summon-asgard": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
@@ -794,7 +795,7 @@ public sealed partial class L12GameEngine
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == target);
                 if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || discard is null)
                     return CommandResult.Reject("士气需少于对方，且声明的弃牌费用必须保持合法");
-                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
                 player.UsedAbilities.Add(onceKey);
                 break;
             }
@@ -963,7 +964,7 @@ public sealed partial class L12GameEngine
                     ? player.Hand.FirstOrDefault(card => card.InstanceId == declared[0])
                     : null;
                 if (discard is null) return CommandResult.Reject("声明的弃牌费用已失效");
-                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
                 player.UsedAbilities.Add(onceKey);
                 break;
             }

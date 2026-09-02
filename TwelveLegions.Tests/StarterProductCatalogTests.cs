@@ -57,6 +57,14 @@ public sealed class StarterProductCatalogTests
     }
 
     [Fact]
+    public void StarterTrialLegionsKeepStructuredTrialValuesFromTheDatabase()
+    {
+        Assert.Equal(1, Catalog.Cards["ST06-06"].TrialValue);
+        Assert.Equal(1, Catalog.Cards["ST06-07"].TrialValue);
+        Assert.Equal(2, Catalog.Cards["ST06-08"].TrialValue);
+    }
+
+    [Fact]
     public void DatabaseAtomicReferenceDefinesAbilityBoundariesWithoutInventingNoEffectAbilities()
     {
         Assert.Equal(5, Catalog.AtomicEffects.Find("ST01-01")?.Abilities.Count);

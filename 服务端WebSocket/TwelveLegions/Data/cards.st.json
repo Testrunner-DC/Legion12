@@ -960,6 +960,7 @@
       "彼界"
     ],
     "effect": "试炼 1\n登场时 可抽取1张牌。\n阵亡时 试炼+2。",
+    "trialValue": 1,
     "atomicReference": "Ability 1 （试炼军团）\n试炼 1\nAbility 2\n登场时 可抽取1张牌。\nAbility 3\n阵亡时 试炼+2。"
   },
   {
@@ -976,6 +977,7 @@
       "彼界"
     ],
     "effect": "试炼 1\n登场时 选择我方1张【彼界】军团，直到下个我方回合开始前获得免死。（仅1次，即将阵亡时，将兵力在本回合变为1000作为代替）",
+    "trialValue": 1,
     "atomicReference": "Ability 1 （试炼军团）\n试炼 1\nAbility 2\n登场时 选择我方1张【彼界】军团，直到下个我方回合开始前获得Ability 3。\nAbility 3\n免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。"
   },
   {
@@ -992,6 +994,7 @@
       "彼界"
     ],
     "effect": "试炼 2\n登场时 可获得1符文。",
+    "trialValue": 2,
     "atomicReference": "Ability 1 （试炼军团）\n试炼 2\nAbility 2\n登场时 可获得1符文。"
   },
   {

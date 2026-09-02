@@ -146,7 +146,7 @@ public static partial class L12StructuredCardRules
         {
             var condition = ability.Atoms.FirstOrDefault(atom => atom.Kind == L12AtomKinds.Condition)
                 ?.Parameters.GetValueOrDefault("expression");
-            if (!HandConditionMatches(condition, godPowerCount)) continue;
+            if (!HandConditionMatches(condition, controller, card, godPowerCount)) continue;
             foreach (var atom in ability.Atoms.Where(atom => atom.Kind == L12AtomKinds.SetState
                 && atom.Parameters.GetValueOrDefault("key") == "source.derived-cost"
                 && atom.Parameters.GetValueOrDefault("operation") == "add"))
@@ -173,13 +173,22 @@ public static partial class L12StructuredCardRules
                 && atom.Parameters.GetValueOrDefault("cannotReceiveBackRowSupport") == "true");
     }
 
-    private static bool HandConditionMatches(string? expression, int godPowerCount)
+    private static bool HandConditionMatches(string? expression, L12PlayerState controller,
+        L12CardInstance source, int godPowerCount)
     {
         if (string.IsNullOrWhiteSpace(expression) || !expression.Contains("source.zone=hand", StringComparison.Ordinal))
             return false;
-        if (expression.Contains("controller.god-power=0", StringComparison.Ordinal)) return godPowerCount == 0;
-        if (expression.Contains("controller.god-power>=5", StringComparison.Ordinal)) return godPowerCount >= 5;
-        return false;
+        if (!controller.Hand.Any(card => card.InstanceId == source.InstanceId)) return false;
+        if (expression.Contains("controller.god-power=0", StringComparison.Ordinal) && godPowerCount != 0) return false;
+        if (expression.Contains("controller.god-power>=5", StringComparison.Ordinal) && godPowerCount < 5) return false;
+
+        const string fieldCardPrefix = "controller.field.card-id=";
+        var fieldCardId = expression.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(term => term.StartsWith(fieldCardPrefix, StringComparison.Ordinal))?[fieldCardPrefix.Length..];
+        if (fieldCardId is not null && !controller.Field.SelectMany(row => row)
+                .Any(card => card?.CardId == fieldCardId))
+            return false;
+        return true;
     }
 
     public static L12ConditionalCombatProfile CombatProfile(L12CardInstance card, int row)
@@ -349,6 +358,7 @@ public static partial class L12StructuredCardRules
     {
         if (TryGetStarterBatch1Abilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2AAbilities(cardId, out abilities)) return true;
+        if (TryGetStarterTargetedBatch2BAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {

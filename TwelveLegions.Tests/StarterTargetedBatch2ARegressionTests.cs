@@ -121,7 +121,7 @@ public sealed class StarterTargetedBatch2ARegressionTests
             "ST01-03", "ST02-01", "ST02-03", "ST02-06", "ST03-03",
             "ST05-07", "ST06-01", "ST06-03", "ST06-04", "ST06-07",
         ], scanned);
-        Assert.All(new[] { "ST01-03", "ST02-01", "ST02-03", "ST02-06", "ST03-03" },
+        Assert.All(scanned,
             cardId => Assert.NotNull(L12VerifiedAtomicPrograms.Find(cardId, "enter")));
     }
 
