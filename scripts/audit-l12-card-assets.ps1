@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { $ProjectRoot = Split-Path -Parent $PSScriptRoot }
 $publicRoot = Join-Path $ProjectRoot 'opcgpro-vue/public'
-$sources = @('cards.s1.json', 'cards.s2.json') | ForEach-Object {
+$sources = @('cards.s1.json', 'cards.s2.json', 'cards.st.json') | ForEach-Object {
     Get-ChildItem -LiteralPath $ProjectRoot -Recurse -File -Filter $_ |
         Where-Object { $_.FullName -match 'TwelveLegions[\\/]Data' } |
         Select-Object -First 1 -ExpandProperty FullName

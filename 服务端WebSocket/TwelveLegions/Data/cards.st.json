@@ -1,0 +1,1156 @@
+[
+  {
+    "id": "ST01-01",
+    "number": "ST01-01",
+    "nameZh": "赵云",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 5000,
+    "cost": 5,
+    "disasterLevel": 1,
+    "profession": "骑兵",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "我方 回合1次 可进行1次位移。\n登场时 可返还1士气：获得冲锋。（可在登场回合进攻）\n击杀时 可返还1士气：本回合获得贯穿。（以剩余兵力进攻主宰）",
+    "atomicReference": "Ability 1\n我方 回合1次 可进行1次位移。\nAbility 2\n登场时 可返还1士气：获得Ability 3。\nAbility 3\n冲锋 在登场的回合即可进行进攻。\nAbility 4\n击杀时 可返还1士气：本回合获得Ability 5。\nAbility 5\n贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。"
+  },
+  {
+    "id": "ST01-02",
+    "number": "ST01-02",
+    "nameZh": "武松",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 5000,
+    "cost": 4,
+    "profession": "武者",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "击杀时 可从士气牌库追加1张休整的士气。",
+    "atomicReference": "Ability 1\n击杀时 可从士气牌库追加1张休整的士气。"
+  },
+  {
+    "id": "ST01-03",
+    "number": "ST01-03",
+    "nameZh": "萧何",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 3000,
+    "cost": 4,
+    "profession": "特殊",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "登场时 可返还1士气：将1张<韩信>从手牌活跃登场。",
+    "atomicReference": "Ability 1\n登场时 可返还1士气：将1张<韩信>从手牌活跃登场。"
+  },
+  {
+    "id": "ST01-04",
+    "number": "ST01-04",
+    "nameZh": "程咬金",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 4000,
+    "cost": 4,
+    "profession": "斗士",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "「位于前排」获得挑衅。（对方只可进攻带有此效果的军团）",
+    "atomicReference": "Ability 1\n「位于前排」获得Ability 2。\nAbility 2\n挑衅 对方只可进攻带有此效果的军团。"
+  },
+  {
+    "id": "ST01-05",
+    "number": "ST01-05",
+    "nameZh": "食铁兽",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 4000,
+    "cost": 3,
+    "profession": "野兽",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST01-06",
+    "number": "ST01-06",
+    "nameZh": "刘季",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 3000,
+    "cost": 3,
+    "profession": "领军",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "登场时 本回合我方下1张军团登场费用-1。",
+    "atomicReference": "Ability 1\n登场时 本回合我方下1张军团登场费用-1。"
+  },
+  {
+    "id": "ST01-07",
+    "number": "ST01-07",
+    "nameZh": "诸葛连弩兵",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "弓手",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n我方 回合1次 此军团进攻后，可返还1士气：将此军团转为活跃。",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n我方 回合1次 此军团进攻后，可返还1士气：将此军团转为活跃。"
+  },
+  {
+    "id": "ST01-08",
+    "number": "ST01-08",
+    "nameZh": "聂隐娘",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 3000,
+    "cost": 3,
+    "profession": "刺客",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "「位于前排」进攻距离+1，远程进攻无损。\n登场时 本回合对方军团 挑衅 效果无效。",
+    "atomicReference": "Ability 1\n「位于前排」进攻距离+1，远程进攻无损。\nAbility 2\n登场时 本回合对方军团 挑衅 效果无效。"
+  },
+  {
+    "id": "ST01-09",
+    "number": "ST01-09",
+    "nameZh": "王昭君",
+    "cardType": "legion",
+    "product": "ST01",
+    "faction": "tianting",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "术师",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n登场时 可返还1士气：抽取1张牌。",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n登场时 可返还1士气：抽取1张牌。"
+  },
+  {
+    "id": "ST01-10",
+    "number": "ST01-10",
+    "nameZh": "暗度陈仓",
+    "cardType": "counter-tactic",
+    "product": "ST01",
+    "faction": "tianting",
+    "cost": 2,
+    "traits": [
+      "天廷"
+    ],
+    "effect": "对方 进攻后，可返还1士气：从我方手牌中将1张费用不高于4的【天廷】军团活跃登场。",
+    "atomicReference": "Ability 1\n对方 进攻后，可返还1士气：从我方手牌中将1张费用不高于4的【天廷】军团活跃登场。"
+  },
+  {
+    "id": "ST01-M1",
+    "number": "ST01-M1",
+    "nameZh": "嫦娥",
+    "cardType": "master",
+    "product": "ST01",
+    "faction": "tianting",
+    "cost": 10,
+    "traits": [
+      "天廷"
+    ],
+    "effect": "回合1次 我方返还士气时，可从士气牌库追加1张休整的士气。",
+    "atomicReference": "Ability 1\n回合1次 我方返还士气时，可从士气牌库追加1张休整的士气。"
+  },
+  {
+    "id": "ST02-01",
+    "number": "ST02-01",
+    "nameZh": "胡夫",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 6000,
+    "cost": 6,
+    "disasterLevel": 2,
+    "profession": "领军",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "此军团登场时不受反击战术效果影响。\n登场时 可弃置我方战场1张<陵墓守卫>：选择对方1张军团，本回合兵力-4000。",
+    "atomicReference": "Ability 1\n此军团登场时不受反击战术效果影响。\nAbility 2\n登场时 可弃置我方战场1张<陵墓守卫>：选择对方1张军团，本回合兵力-4000。"
+  },
+  {
+    "id": "ST02-02",
+    "number": "ST02-02",
+    "nameZh": "沙漠卫兵",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 3000,
+    "cost": 3,
+    "profession": "武者",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "「位于前排」获得挑衅，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团）",
+    "atomicReference": "Ability 1\n「位于前排」获得Ability 2，且在对方回合此军团兵力+1000。\nAbility 2\n挑衅 对方只可进攻带有此效果的军团。"
+  },
+  {
+    "id": "ST02-03",
+    "number": "ST02-03",
+    "nameZh": "白沙瓦舞蛇人",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 3000,
+    "cost": 3,
+    "profession": "特殊",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "登场时 可将手牌/牌库中1张<沙漠眼镜蛇>活跃登场。",
+    "atomicReference": "Ability 1\n登场时 可将手牌/牌库中1张<沙漠眼镜蛇>活跃登场。"
+  },
+  {
+    "id": "ST02-04",
+    "number": "ST02-04",
+    "nameZh": "绿洲的商人",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "特殊",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "登场时 可抽取1张牌。",
+    "atomicReference": "Ability 1\n登场时 可抽取1张牌。"
+  },
+  {
+    "id": "ST02-05",
+    "number": "ST02-05",
+    "nameZh": "绿洲的舞女",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "特殊",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "主动休整 我方所有【太阳城】军团，本回合兵力+1000。",
+    "atomicReference": "Ability 1\n主动休整 我方所有【太阳城】军团，本回合兵力+1000。"
+  },
+  {
+    "id": "ST02-06",
+    "number": "ST02-06",
+    "nameZh": "乔泽",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "领军",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "登场时 可弃置我方战场上1张军团：选择对方1张军团，本回合兵力-2000。",
+    "atomicReference": "Ability 1\n登场时 可弃置我方战场上1张军团：选择对方1张军团，本回合兵力-2000。"
+  },
+  {
+    "id": "ST02-07",
+    "number": "ST02-07",
+    "nameZh": "陵墓防卫体",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 1000,
+    "cost": 2,
+    "profession": "特殊",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "回合1次 对方 军团从后排位移至前排时，可使其本回合兵力-3000。",
+    "atomicReference": "Ability 1\n回合1次 对方军团从后排位移至前排时，可使其本回合兵力-3000。"
+  },
+  {
+    "id": "ST02-08",
+    "number": "ST02-08",
+    "nameZh": "阿肯那顿",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "弓手",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n登场时 抽取1张卡牌。随后，对方抽取1张牌。\n阵亡时 可弃置1张手牌：我方主宰增加1点血量。",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n登场时 抽取1张卡牌。随后，对方抽取1张牌。\nAbility 3\n阵亡时 可弃置1张手牌：我方主宰增加1点血量。"
+  },
+  {
+    "id": "ST02-09",
+    "number": "ST02-09",
+    "nameZh": "沙漠眼镜蛇",
+    "cardType": "legion",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "troops": 2000,
+    "cost": 1,
+    "profession": "野兽",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST02-10",
+    "number": "ST02-10",
+    "nameZh": "沙漠送葬",
+    "cardType": "tactic",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "cost": 1,
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "将墓地1张<陵墓守卫>活跃登场，回合结束时，弃置该<陵墓守卫>。",
+    "atomicReference": "Ability 1\n将墓地1张<陵墓守卫>活跃登场，回合结束时，弃置该<陵墓守卫>。"
+  },
+  {
+    "id": "ST02-M1",
+    "number": "ST02-M1",
+    "nameZh": "荷鲁斯",
+    "cardType": "master",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "cost": 8,
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "我方 回合1次 可消耗1士气并弃置我方战场2张军团：选择墓地1张兵力不高于2000的【太阳城】军团休整登场。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗1士气并弃置我方战场2张军团：选择墓地1张兵力不高于2000的【太阳城】军团休整登场。"
+  },
+  {
+    "id": "ST03-01",
+    "number": "ST03-01",
+    "nameZh": "蛇眼西格德",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 5000,
+    "cost": 5,
+    "disasterLevel": 1,
+    "profession": "武者",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "可将墓地1张卡牌返回牌库底部：此军团登场费用-1。\n登场时 本回合可进攻对方军团。",
+    "atomicReference": "Ability 1\n「位于手牌」可将墓地1张卡牌返回牌库底部：此军团登场费用-1。\nAbility 2\n登场时 本回合可进攻对方军团。"
+  },
+  {
+    "id": "ST03-02",
+    "number": "ST03-02",
+    "nameZh": "维京狂战士",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 6000,
+    "cost": 5,
+    "disasterLevel": 1,
+    "profession": "斗士",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "若我方主宰血量不高于7，此军团登场费用-1。",
+    "atomicReference": "Ability 1\n「位于手牌」若我方主宰血量不高于7，此军团登场费用-1。"
+  },
+  {
+    "id": "ST03-03",
+    "number": "ST03-03",
+    "nameZh": "弗蕾迪斯",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 4000,
+    "cost": 4,
+    "profession": "武者",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "登场时 可弃置1张手牌：将墓地1张【阿斯加德】军团加入手牌。",
+    "atomicReference": "Ability 1\n登场时 可弃置1张手牌：将墓地1张【阿斯加德】军团加入手牌。"
+  },
+  {
+    "id": "ST03-04",
+    "number": "ST03-04",
+    "nameZh": "维京掠夺者",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 4000,
+    "cost": 4,
+    "profession": "斗士",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "此军团对 对方 主宰造成伤害时，抽取2张牌。",
+    "atomicReference": "Ability 1\n此军团对对方主宰造成伤害时，抽取2张牌。"
+  },
+  {
+    "id": "ST03-05",
+    "number": "ST03-05",
+    "nameZh": "克里斯蒂娜",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "术师",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n主动休整 本回合从我方手牌中打出的下1张费用不高于3的<主动战术>无需消耗费用，改为对我方主宰造成1点伤害。",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n主动休整 本回合从我方手牌中打出的下1张费用不高于3的<主动战术>无需消耗费用，改为对我方主宰造成1点伤害。"
+  },
+  {
+    "id": "ST03-06",
+    "number": "ST03-06",
+    "nameZh": "北欧巨狼",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 4000,
+    "cost": 3,
+    "profession": "野兽",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST03-07",
+    "number": "ST03-07",
+    "nameZh": "送葬者凯恩",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "特殊",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "登场时 可弃置我方牌库顶部2张牌。\n主动休整 弃置我方牌库顶部1张牌。",
+    "atomicReference": "Ability 1\n登场时 可弃置我方牌库顶部2张牌。\nAbility 2\n主动休整 弃置我方牌库顶部1张牌。"
+  },
+  {
+    "id": "ST03-08",
+    "number": "ST03-08",
+    "nameZh": "渴求死亡的勇士",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "特殊",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "「位于墓地」可最多视为3张【阿斯加德】军团。",
+    "atomicReference": "Ability 1\n「位于墓地」可最多视为3张【阿斯加德】军团。"
+  },
+  {
+    "id": "ST03-09",
+    "number": "ST03-09",
+    "nameZh": "英灵殿勇士",
+    "cardType": "legion",
+    "product": "ST03",
+    "faction": "asgard",
+    "troops": 2000,
+    "cost": 1,
+    "profession": "武者",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST03-10",
+    "number": "ST03-10",
+    "nameZh": "传奇的血脉",
+    "cardType": "tactic",
+    "product": "ST03",
+    "faction": "asgard",
+    "cost": 1,
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "选择我方1张【阿斯加德】军团，本回合兵力+2000。我方墓地每有3张【阿斯加德】军团，该军团本回合兵力+1000。",
+    "atomicReference": "Ability 1\n选择我方1张【阿斯加德】军团，本回合兵力+2000。我方墓地每有3张【阿斯加德】军团，该军团本回合兵力+1000。"
+  },
+  {
+    "id": "ST03-M1",
+    "number": "ST03-M1",
+    "nameZh": "西芙",
+    "cardType": "master",
+    "product": "ST03",
+    "faction": "asgard",
+    "cost": 10,
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "我方 回合1次 可将墓地3张【阿斯加德】卡牌返回牌库底：抽取1张牌。",
+    "atomicReference": "Ability 1\n我方 回合1次 可将墓地3张【阿斯加德】卡牌返回牌库底：抽取1张牌。"
+  },
+  {
+    "id": "ST04-01",
+    "number": "ST04-01",
+    "nameZh": "森可成",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 6000,
+    "cost": 6,
+    "disasterLevel": 2,
+    "profession": "骑兵",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "我方 回合1次 可进行1次位移。\n「位于前排」获得挑衅，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团）",
+    "atomicReference": "Ability 1\n我方 回合1次 可进行1次位移。\nAbility 2\n「位于前排」获得Ability 3，且在对方回合此军团兵力+1000。\nAbility 3\n挑衅 对方只可进攻带有此效果的军团。"
+  },
+  {
+    "id": "ST04-02",
+    "number": "ST04-02",
+    "nameZh": "佐佐木小次郎",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 5000,
+    "cost": 5,
+    "disasterLevel": 1,
+    "profession": "斗士",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "进攻时 若我方手牌数量不高于对方，对方弃置1张手牌。\n阵亡时 可击杀对方最多2张原本兵力不高于2000的军团。",
+    "atomicReference": "Ability 1\n进攻时 若我方手牌数量不高于对方，对方弃置1张手牌。\nAbility 2\n阵亡时 可击杀对方最多2张原本兵力不高于2000的军团。"
+  },
+  {
+    "id": "ST04-03",
+    "number": "ST04-03",
+    "nameZh": "侍大将",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 4000,
+    "cost": 4,
+    "profession": "武者",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "登场时 本回合可进攻对方军团。",
+    "atomicReference": "Ability 1\n登场时 本回合可进攻对方军团。"
+  },
+  {
+    "id": "ST04-04",
+    "number": "ST04-04",
+    "nameZh": "甲斐姬",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 3000,
+    "cost": 3,
+    "profession": "武者",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "登场时 本回合我方发动主宰效果无需消耗士气。",
+    "atomicReference": "Ability 1\n登场时 本回合我方发动主宰效果无需消耗士气。"
+  },
+  {
+    "id": "ST04-05",
+    "number": "ST04-05",
+    "nameZh": "近藤勇",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "武者",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "对方回合 当我方1张<近藤勇>以外的【高天原】军团即将阵亡时，可弃置此军团：代替承受本次致命进攻或效果。",
+    "atomicReference": "Ability 1\n对方回合 当我方1张<近藤勇>以外的【高天原】军团即将阵亡时，可弃置此军团：代替承受本次致命进攻或效果。"
+  },
+  {
+    "id": "ST04-06",
+    "number": "ST04-06",
+    "nameZh": "吉原的花魁",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "特殊",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "主动休整 选择对方1张军团，本回合兵力-1000。选择我方1张军团，本回合兵力+1000。",
+    "atomicReference": "Ability 1\n主动休整 选择对方1张军团，本回合兵力-1000。选择我方1张军团，本回合兵力+1000。"
+  },
+  {
+    "id": "ST04-07",
+    "number": "ST04-07",
+    "nameZh": "木下藤吉郎",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "术师",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n「位于后排」获得协防。（可支援我方任意前排军团，可联合支援）",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n「位于后排」获得Ability 3。\nAbility 3 （新关键词）\n协防 可支援我方任意前排军团，可联合支援。"
+  },
+  {
+    "id": "ST04-08",
+    "number": "ST04-08",
+    "nameZh": "无名的武士",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 3000,
+    "cost": 2,
+    "profession": "武者",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST04-09",
+    "number": "ST04-09",
+    "nameZh": "野猪王",
+    "cardType": "legion",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "troops": 1000,
+    "cost": 1,
+    "profession": "野兽",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "登场时 本回合可进攻对方主宰。",
+    "atomicReference": "Ability 1\n登场时 本回合可进攻对方主宰。"
+  },
+  {
+    "id": "ST04-10",
+    "number": "ST04-10",
+    "nameZh": "侵略如火",
+    "cardType": "tactic",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "cost": 1,
+    "traits": [
+      "高天原"
+    ],
+    "effect": "若我方场上存在<武田信玄>，此卡从手牌打出的费用-1。\n将此战术叠放至我方1张【高天原】军团下方，被叠放的军团获得强攻。（进攻对主宰造成额外1点伤害。）",
+    "atomicReference": "Ability 1\n若我方场上存在<武田信玄>，此卡从手牌打出的费用-1。\nAbility 2\n将此战术叠放至我方1张【高天原】军团下方。\nAbility 3 （这里的叠放时指叠放期间）\n「叠放时」被叠放的军团获得Ability 4\nAbility 4\n强攻 进攻对主宰造成额外1点伤害。"
+  },
+  {
+    "id": "ST04-M1",
+    "number": "ST04-M1",
+    "nameZh": "迦具土",
+    "cardType": "master",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "cost": 9,
+    "traits": [
+      "高天原"
+    ],
+    "effect": "回合1次 我方军团进攻/被进攻时，可消耗2士气或弃置1张手牌：该军团本回合兵力+2000。",
+    "atomicReference": "Ability 1\n回合1次 我方军团进攻/被进攻时，可消耗2士气或弃置1张手牌：该军团本回合兵力+2000。"
+  },
+  {
+    "id": "ST05-01",
+    "number": "ST05-01",
+    "nameZh": "埃涅阿斯·晋升",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 7000,
+    "cost": 7,
+    "disasterLevel": 2,
+    "profession": "领军",
+    "traits": [
+      "奥林匹斯",
+      "晋升者"
+    ],
+    "effect": "晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可查看我方牌库，选择最多2张【远程】军团活跃登场。随后重洗牌库。",
+    "atomicReference": "Ability 1\n晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\nAbility 2\n晋升登场 可查看我方牌库，选择最多2张【远程】军团活跃登场。随后重洗牌库。"
+  },
+  {
+    "id": "ST05-02",
+    "number": "ST05-02",
+    "nameZh": "特洛伊勇士",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 6000,
+    "cost": 5,
+    "disasterLevel": 1,
+    "profession": "斗士",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST05-03",
+    "number": "ST05-03",
+    "nameZh": "珀涅罗珀",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "术师",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n登场时 可消耗并翻转1神力：将手牌中1张费用不高于3的【奥林匹斯】军团活跃登场。",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n登场时 可消耗并翻转1神力：将手牌中1张费用不高于3的【奥林匹斯】军团活跃登场。"
+  },
+  {
+    "id": "ST05-04",
+    "number": "ST05-04",
+    "nameZh": "美狄亚",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "术师",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n登场时 若我方战场军团合计兵力少于对方，可抽取2张牌。",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n登场时 若我方战场军团合计兵力少于对方，可抽取2张牌。"
+  },
+  {
+    "id": "ST05-05",
+    "number": "ST05-05",
+    "nameZh": "愤怒的公牛",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 4000,
+    "cost": 3,
+    "profession": "野兽",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "无效果"
+  },
+  {
+    "id": "ST05-06",
+    "number": "ST05-06",
+    "nameZh": "特勒马科斯",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 3000,
+    "cost": 3,
+    "profession": "特殊",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "主动休整 查看牌库顶部3张牌，选择其中1张【远程】军团或【奥林匹斯】战术卡展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。",
+    "atomicReference": "Ability 1\n主动休整 查看牌库顶部3张牌，选择其中1张【远程】军团或【奥林匹斯】战术卡展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。"
+  },
+  {
+    "id": "ST05-07",
+    "number": "ST05-07",
+    "nameZh": "安提诺乌斯",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "特殊",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "登场时 若本回合因主宰弃置过手牌，可将我方1张休整的【奥林匹斯】军团转为活跃。",
+    "atomicReference": "Ability 1\n登场时 若本回合因主宰弃置过手牌，可将我方1张休整的【奥林匹斯】军团转为活跃。"
+  },
+  {
+    "id": "ST05-08",
+    "number": "ST05-08",
+    "nameZh": "希帕蒂娅",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 2000,
+    "cost": 3,
+    "profession": "术师",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n登场时 获得冲锋。（可在登场回合进攻）",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n登场时 获得Ability 3。\nAbility 3\n冲锋 可在登场回合进攻。"
+  },
+  {
+    "id": "ST05-09",
+    "number": "ST05-09",
+    "nameZh": "美杜莎",
+    "cardType": "legion",
+    "product": "ST05",
+    "faction": "olympus",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "弓手",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "进攻距离+1，远程进攻无损。\n进攻时 获得 震击，本回合兵力+1000。（进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。）",
+    "atomicReference": "Ability 1\n进攻距离+1，远程进攻无损。\nAbility 2\n进攻时 获得Ability 3，本回合兵力+1000。\nAbility 3\n震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。"
+  },
+  {
+    "id": "ST05-10",
+    "number": "ST05-10",
+    "nameZh": "猎神的赐福",
+    "cardType": "tactic",
+    "product": "ST05",
+    "faction": "olympus",
+    "cost": 1,
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "选择以下一项。\n・选择我方1张【奥林匹斯】军团，本回合其震击造成的伤害+2000。\n・选择我方1张【奥林匹斯】【远程】军团，本回合其进攻时兵力+2000。",
+    "atomicReference": "Ability 1\n选择Ability 2或Ability 3。\nAbility 2\n选择我方1张【奥林匹斯】军团，本回合其震击造成的伤害+2000。\nAbility 3\n选择我方1张【奥林匹斯】【远程】军团，本回合其进攻时兵力+2000。"
+  },
+  {
+    "id": "ST05-M1",
+    "number": "ST05-M1",
+    "nameZh": "雅典娜",
+    "cardType": "master",
+    "product": "ST05",
+    "faction": "olympus",
+    "cost": 8,
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "我方 回合1次，可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1。",
+    "atomicReference": "Ability 1\n我方 回合1次，可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1。"
+  },
+  {
+    "id": "ST06-01",
+    "number": "ST06-01",
+    "nameZh": "伊丽莎白一世",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 7000,
+    "cost": 7,
+    "disasterLevel": 2,
+    "profession": "领军",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "若我方场上存在<伊丽莎白 都铎>，此军团登场费用-2。\n登场时 选择对方最多2张休整的士气，下个重置阶段无法转为活跃。",
+    "atomicReference": "Ability 1\n「位于手牌」若我方场上存在<伊丽莎白 都铎>，此军团登场费用-2。\nAbility 2\n登场时 选择对方最多2张休整的士气，下个重置阶段无法转为活跃。"
+  },
+  {
+    "id": "ST06-02",
+    "number": "ST06-02",
+    "nameZh": "森林魁熊",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 6000,
+    "cost": 6,
+    "disasterLevel": 2,
+    "profession": "野兽",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "「位于前排」获得挑衅，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团）",
+    "atomicReference": "Ability 1\n「位于前排」获得Ability 2，且在对方回合此军团兵力+1000。\nAbility 2\n挑衅 对方只可进攻带有此效果的军团。"
+  },
+  {
+    "id": "ST06-03",
+    "number": "ST06-03",
+    "nameZh": "加雷斯",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 5000,
+    "cost": 5,
+    "disasterLevel": 1,
+    "profession": "斗士",
+    "traits": [
+      "彼界",
+      "圆桌骑士"
+    ],
+    "effect": "登场时 可获得1符文。\n击杀时 可将此军团转为活跃，本回合兵力+2000。",
+    "atomicReference": "Ability 1\n登场时 可获得1符文。\nAbility 2\n击杀时 可将此军团转为活跃，本回合兵力+2000。"
+  },
+  {
+    "id": "ST06-04",
+    "number": "ST06-04",
+    "nameZh": "莫德雷德",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 4000,
+    "cost": 4,
+    "profession": "骑兵",
+    "traits": [
+      "彼界",
+      "圆桌骑士"
+    ],
+    "effect": "我方 回合1次 可进行1次位移。\n登场时 选择以下一项。\n·获得1符文。\n·获得冲锋。\n阵亡时 击杀对方1张兵力不高于2000的军团。",
+    "atomicReference": "Ability 1\n我方 回合1次 可进行1次位移。\nAbility 2\n登场时 选择Ability 3或Ability 4。\nAbility 3\n获得1符文。\nAbility 4\n获得Ability 5。\nAbility 5\n冲锋 在登场的回合即可进行进攻。\nAbility 6\n阵亡时 击杀对方1张兵力不高于2000的军团。"
+  },
+  {
+    "id": "ST06-05",
+    "number": "ST06-05",
+    "nameZh": "栖木猎鹰",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 4000,
+    "cost": 4,
+    "profession": "野兽",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "登场时/进攻时 可抽取1张牌。",
+    "atomicReference": "Ability 1\n登场时/进攻时 可抽取1张牌。"
+  },
+  {
+    "id": "ST06-06",
+    "number": "ST06-06",
+    "nameZh": "费奥纳的骑士",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 2000,
+    "cost": 2,
+    "profession": "武者",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "试炼 1\n登场时 可抽取1张牌。\n阵亡时 试炼+2。",
+    "atomicReference": "Ability 1 （试炼军团）\n试炼 1\nAbility 2\n登场时 可抽取1张牌。\nAbility 3\n阵亡时 试炼+2。"
+  },
+  {
+    "id": "ST06-07",
+    "number": "ST06-07",
+    "nameZh": "布狄卡",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 1000,
+    "cost": 1,
+    "profession": "武者",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "试炼 1\n登场时 选择我方1张【彼界】军团，直到下个我方回合开始前获得免死。（仅1次，即将阵亡时，将兵力在本回合变为1000作为代替）",
+    "atomicReference": "Ability 1 （试炼军团）\n试炼 1\nAbility 2\n登场时 选择我方1张【彼界】军团，直到下个我方回合开始前获得Ability 3。\nAbility 3\n免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。"
+  },
+  {
+    "id": "ST06-08",
+    "number": "ST06-08",
+    "nameZh": "纯白的灵鹿",
+    "cardType": "legion",
+    "product": "ST06",
+    "faction": "otherworld",
+    "troops": 1000,
+    "cost": 1,
+    "profession": "野兽",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "试炼 2\n登场时 可获得1符文。",
+    "atomicReference": "Ability 1 （试炼军团）\n试炼 2\nAbility 2\n登场时 可获得1符文。"
+  },
+  {
+    "id": "ST06-09",
+    "number": "ST06-09",
+    "nameZh": "光之剑",
+    "cardType": "artifact",
+    "product": "ST06",
+    "faction": "otherworld",
+    "cost": 3,
+    "traits": [
+      "彼界"
+    ],
+    "effect": "登场时 可击杀对方最多2张原本兵力不高于2000的军团。\n主动休整 弃置1张手牌：选择以下一项。\n·选择我方前排1张【彼界】军团，本回合兵力+2000。\n·获得1符文。",
+    "atomicReference": "Ability 1\n登场时 可击杀对方最多2张原本兵力不高于2000的军团。\nAbility 2\n主动休整 弃置1张手牌：选择Ability 3或Ability 4。\nAbility 3\n选择我方前排1张【彼界】军团，本回合兵力+2000。\nAbility 4\n获得1符文。"
+  },
+  {
+    "id": "ST06-10",
+    "number": "ST06-10",
+    "nameZh": "自然馈赠",
+    "cardType": "tactic",
+    "product": "ST06",
+    "faction": "otherworld",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "试炼+2。",
+    "atomicReference": "Ability 1\n试炼+2。"
+  },
+  {
+    "id": "ST06-M1",
+    "number": "ST06-M1",
+    "nameZh": "银臂努阿达",
+    "cardType": "master",
+    "product": "ST06",
+    "faction": "otherworld",
+    "cost": 8,
+    "traits": [
+      "彼界"
+    ],
+    "effect": "我方回合 我方消耗符文时，可选择我方1张【彼界】军团，本回合兵力+1000。\n我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃。",
+    "atomicReference": "Ability 1\n我方回合 我方消耗符文时，可选择我方1张【彼界】军团，本回合兵力+1000。\nAbility 2\n我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃。"
+  },
+  {
+    "id": "ST06-S1",
+    "number": "ST06-S1",
+    "nameZh": "探寻天空之城",
+    "cardType": "trial",
+    "product": "ST06",
+    "faction": "otherworld",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "触发 可获得2符文。我方主宰可增加2点血量。可抽取1张牌。\n我方 回合1次 本回合我方下一张【彼界】军团登场费用-1。",
+    "atomicReference": "Ability 1\n触发 可获得2符文。我方主宰可增加2点血量。可抽取1张牌。\nAbility 2\n我方 回合1次 本回合我方下一张【彼界】军团登场费用-1。"
+  },
+  {
+    "id": "ST-DS01",
+    "number": "ST-DS01",
+    "nameZh": "怒触不周山",
+    "cardType": "destruction",
+    "product": "STDS",
+    "faction": "universal",
+    "effect": "触发 将所有前排兵力不高于4000的军团置入所有者墓地。"
+  },
+  {
+    "id": "ST-DS02",
+    "number": "ST-DS02",
+    "nameZh": "色欲之罪",
+    "cardType": "destruction",
+    "product": "STDS",
+    "faction": "universal",
+    "effect": "持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。"
+  },
+  {
+    "id": "ST-DS03",
+    "number": "ST-DS03",
+    "nameZh": "邪眼末日",
+    "cardType": "destruction",
+    "product": "STDS",
+    "faction": "universal",
+    "effect": "触发 双方弃置各自战场上1张军团。"
+  },
+  {
+    "id": "ST01-C1",
+    "number": "ST01-C1",
+    "nameZh": "士气·天廷",
+    "cardType": "rune",
+    "product": "ST01",
+    "faction": "tianting",
+    "traits": [
+      "天廷"
+    ],
+    "effect": "我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。\n我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。\nAbility 2\n我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。"
+  },
+  {
+    "id": "ST02-C1",
+    "number": "ST02-C1",
+    "nameZh": "士气·太阳城",
+    "cardType": "rune",
+    "product": "ST02",
+    "faction": "taiyangcheng",
+    "traits": [
+      "太阳城"
+    ],
+    "effect": "我方 回合1次 可消耗2士气：将1张<陵墓守卫>从我方墓地活跃登场。\n我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗2士气：将1张<陵墓守卫>从我方墓地活跃登场。\nAbility 2\n我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌。"
+  },
+  {
+    "id": "ST03-C1",
+    "number": "ST03-C1",
+    "nameZh": "士气·阿斯加德",
+    "cardType": "rune",
+    "product": "ST03",
+    "faction": "asgard",
+    "traits": [
+      "阿斯加德"
+    ],
+    "effect": "我方 回合1次 可消耗2士气：抽取1张牌；若我方主宰血量不高于5，可额外消耗1士气，我方主宰增加1点血量。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗2士气：抽取1张牌；若我方主宰血量不高于5，可额外消耗1士气，我方主宰增加1点血量。"
+  },
+  {
+    "id": "ST04-C1",
+    "number": "ST04-C1",
+    "nameZh": "士气·高天原",
+    "cardType": "rune",
+    "product": "ST04",
+    "faction": "gaotianyuan",
+    "traits": [
+      "高天原"
+    ],
+    "effect": "我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。"
+  },
+  {
+    "id": "ST05-C1",
+    "number": "ST05-C1",
+    "nameZh": "士气·奥林匹斯",
+    "cardType": "rune",
+    "product": "ST05",
+    "faction": "olympus",
+    "traits": [
+      "奥林匹斯"
+    ],
+    "effect": "我方 回合1次 可消耗1士气：翻转1张士气。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗1士气：翻转1张士气。"
+  },
+  {
+    "id": "ST06-C1",
+    "number": "ST06-C1",
+    "nameZh": "士气·彼界",
+    "cardType": "rune",
+    "product": "ST06",
+    "faction": "otherworld",
+    "traits": [
+      "彼界"
+    ],
+    "effect": "我方 回合1次 可消耗2士气：获得1符文。",
+    "atomicReference": "Ability 1\n我方 回合1次 可消耗2士气：获得1符文。"
+  }
+]

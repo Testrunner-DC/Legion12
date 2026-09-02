@@ -24,6 +24,13 @@ public sealed class AtomicReviewBatch6IARegressionTests
         ("S02-0507", "enter"),
         ("S02-0507", "promotion-enter"),
         ("S02-0616", "enter"),
+        ("ST01-02", "after-attack"),
+        ("ST02-04", "enter"),
+        ("ST06-03", "enter"),
+        ("ST06-05", "enter"),
+        ("ST06-05", "attack"),
+        ("ST06-06", "enter"),
+        ("ST06-08", "enter"),
     ];
 
     private static L12GameEngine Create(int seed)
@@ -233,9 +240,15 @@ public sealed class AtomicReviewBatch6IARegressionTests
         PassResponses(game);
         Assert.DoesNotContain(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "verified-atomic-optional");
-        if (cardId == "S01-0304") Assert.Equal(hpBefore - 1, opponent.Hp);
-        else if (cardId == "S02-0616") Assert.Equal(1, player.SpecialZones.Runes);
-        else Assert.Single(player.Hand);
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(L12VerifiedAtomicPrograms.Find(cardId, trigger));
+        if (program.Atoms.Any(atom => atom.Kind == L12AtomKinds.DamageMaster))
+            Assert.Equal(hpBefore - 1, opponent.Hp);
+        else if (program.Atoms.Any(atom => atom.Kind == L12AtomKinds.GainRune))
+            Assert.Equal(1, player.SpecialZones.Runes);
+        else if (program.Atoms.Any(atom => atom.Kind == L12AtomKinds.AddMorale))
+            Assert.Single(player.Morale);
+        else
+            Assert.Single(player.Hand);
     }
 
     [Theory]

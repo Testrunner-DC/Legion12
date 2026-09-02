@@ -217,7 +217,7 @@ public sealed class DeckValidatorTests
     {
         var incomplete = Catalog.Cards.Values
             .Where(card => card.CardType == "legion"
-                && System.Text.RegularExpressions.Regex.IsMatch(card.Id, @"^S\d{2}-\d{4}$")
+                && System.Text.RegularExpressions.Regex.IsMatch(card.Id, @"^(?:S\d{2}-\d{4}|ST\d{2}-\d{2})$")
                 && (card.Cost is null || card.Troops is null))
             .Select(card => $"{card.Id} {card.NameZh}")
             .Order()

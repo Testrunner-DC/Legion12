@@ -1106,7 +1106,8 @@ public sealed partial class L12GameEngine
     private bool HasDeathTrigger(L12CardInstance card)
         => card.SuppressDeathUntilTurn < State.TurnSerial && (card.CardId is "S01-0102" or "S01-0108" or "S01-0417"
             || S1ExtendedDeathCards.Contains(card.CardId) || IsS1FactionDeathCard(card.CardId)
-            || IsS2FactionDeathCard(card.CardId));
+            || IsS2FactionDeathCard(card.CardId)
+            || L12VerifiedAtomicPrograms.Find(card.CardId, "death") is not null);
 
     private void AdvanceTriggerBatches()
     {

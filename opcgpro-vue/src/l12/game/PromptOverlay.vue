@@ -159,7 +159,7 @@ function label(id: string) {
 }
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }
 function cardIdFor(id: string) {
-  return cardFor(id)?.cardId ?? prompt.value?.data?.[`${id}:cardId`] ?? (/^S\d{2}-/.test(id) ? id : '')
+  return cardFor(id)?.cardId ?? prompt.value?.data?.[`${id}:cardId`] ?? (/^(?:S\d{2}|ST\d{2}|ST)-/.test(id) ? id : '')
 }
 function numberData(id: string, key: string) {
   const value = prompt.value?.data?.[`${id}:${key}`]

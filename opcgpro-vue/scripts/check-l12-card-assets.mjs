@@ -7,7 +7,8 @@ const read = path => {
 
 const s1 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s1.json'))
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
-const cards = [...s1, ...s2]
+const st = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.st.json'))
+const cards = [...s1, ...s2, ...st]
 const ids = new Set(cards.map(card => card.id))
 const cardAssets = read('../src/l12/cardAssets.ts')
 const cardImage = read('../src/l12/CardImage.vue')
@@ -46,7 +47,7 @@ const styledCardImageConsumers = [
 ]
 
 const contracts = [
-  [s1.length === 133 && s2.length === 115 && cards.length === 248 && ids.size === 248, 'S01/S02 必须保持 133+115=248 张唯一卡号'],
+  [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
   [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && cardAssets.includes('legacyUrl'), '必须提供按逻辑卡号解析且保留旧 imageUrl 的统一资源解析器'],
   [cardAssets.includes('cdnBaseUrl') && cardAssets.includes('sameOrigin') && cardAssets.includes('placeholder'), '资源候选必须按 CDN、同源优化资源、旧 imageUrl、占位单向降级'],
   [cardImage.includes('<picture') && cardAssets.includes('detailAvif') && cardAssets.includes('thumbWebp') && cardAssets.includes('boardWebp'), '公共卡图组件必须支持 240/480/960 WebP 与详情 AVIF'],
@@ -58,9 +59,9 @@ const contracts = [
   [remainingDirectImages.every(tag => tag.includes('masterProfileUrl') || tag.includes('roundCardUrl')), '普通卡面不得绕过 CardImage；仅允许官方方形头像与圆形裁切专用资源保留原始 img'],
   [read('../src/l12/site/deckShare.ts').includes('resolveCardAssetUrls') && read('../src/l12/site/deckShare.ts').includes('for (const url of candidates)'), 'Canvas 牌库图必须逐个尝试 resolver 候选且单图失败可回落'],
   [serviceWorker.includes("caches.delete('l12-images-v1')") && !serviceWorker.includes("request.destination !== 'image'"), '旧广域图片 Service Worker 必须退役并只清理自身缓存'],
-  [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('completeCatalog.length !== 248'), '生成器必须默认同源内容寻址路径并拒绝非 248 张目录'],
+  [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedCardCount = 324'), '生成器必须默认同源内容寻址路径并拒绝非 324 张目录'],
   [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']"), '旧发布清单缺失优化卡图字段时必须在 StrictMode 下安全降级'],
-  [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 248'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
+  [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 324'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
   [serverDeploy.includes('mv "$stage_card_assets_dir" "$card_assets_target"') && serverDeploy.includes('dist/card-assets') && serverDeploy.includes('nginx -T'), '服务端必须在验证完成后原子发布优化资产，并仅在 Nginx 缓存片段已接入时切换'],
   [nginxCache.includes('max-age=31536000') && nginxCache.includes('immutable') && nginxCache.includes('card-assets.manifest.json') && nginxCache.includes('max-age=300'), 'Nginx 必须区分哈希二进制一年缓存与 manifest 五分钟缓存'],
   [(nginxCache.match(/root \/opt\/legion12-test\/opcgpro-vue\/dist;/g) ?? []).length === 4, 'Nginx 的四类卡图 location 必须显式绑定当前发布目录，不能继承默认站点根目录'],

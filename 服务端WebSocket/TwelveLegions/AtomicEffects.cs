@@ -267,9 +267,19 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicCardEffect BuildCard(L12CardDefinition card)
     {
         var text = card.Effect?.Trim() ?? string.Empty;
-        var sourceAbilities = L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
-            ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToList()
-            : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+        var noEffect = text.Equals("无效果", StringComparison.Ordinal);
+        var sourceAbilities = noEffect
+            ? []
+            : L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
+                ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToList()
+                : SplitDatabaseAtomicReference(card.AtomicReference) is { Count: > 0 } databaseAbilities
+                    ? databaseAbilities.Select((clause, index) => BuildAbility(card, clause, index + 1) with
+                    {
+                        MappingSource = "database-atomic-reference+registry",
+                        ReviewStatus = "human-assisted",
+                        ReviewSource = "product-database",
+                    }).ToList()
+                    : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
         foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
         {
             if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text)) continue;
@@ -280,7 +290,7 @@ public sealed class L12AtomicEffectCatalog
         var legacy = abilities.Sum(ability => ability.Atoms.Count(atom => atom.Kind == L12AtomKinds.Legacy));
         var executable = abilities.Sum(ability => ability.Atoms.Count(atom => atom.RuntimeExecutable));
         var atomCount = abilities.Sum(ability => ability.Atoms.Count);
-        var status = string.IsNullOrWhiteSpace(text) ? "no-effect"
+        var status = string.IsNullOrWhiteSpace(text) || noEffect ? "no-effect"
             : abilities.Length > 0 && abilities.All(ability => ability.MigrationStatus == "verified") ? "verified"
             : abilities.Any(ability => ability.MigrationStatus == "verified") ? "partially-atomized"
             : legacy == 0 ? "declarative-ready"
@@ -292,6 +302,24 @@ public sealed class L12AtomicEffectCatalog
             text, abilities, status, atomCount, executable, legacy,
             abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray(),
             reviewStatus, reviewSource);
+    }
+
+    private static IReadOnlyList<string> SplitDatabaseAtomicReference(string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference)) return [];
+        var normalized = reference.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
+        var headers = Regex.Matches(normalized, @"(?im)^\s*Ability\s+\d+(?:\s*[（(][^）)\r\n]*[）)])?\s*$")
+            .Cast<Match>().ToArray();
+        if (headers.Length == 0) return [];
+        var result = new List<string>();
+        for (var index = 0; index < headers.Length; index++)
+        {
+            var start = headers[index].Index + headers[index].Length;
+            var end = index + 1 < headers.Length ? headers[index + 1].Index : normalized.Length;
+            var text = normalized[start..end].Trim();
+            if (!string.IsNullOrWhiteSpace(text)) result.Add(text);
+        }
+        return result;
     }
 
     private static L12AtomicAbility BuildStructuredAbility(
@@ -664,6 +692,50 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Optional, "可获得 1 符文",
                     ("prompt", "阿麦金：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("ST01-02", "after-attack",
+                Atom(L12AtomKinds.Condition, "本次进攻击杀对象", ("expression", "item.killed=true")),
+                Atom(L12AtomKinds.Optional, "可追加 1 张休整士气",
+                    ("prompt", "武松：是否从士气牌库追加1张休整的士气？"), ("yes", "追加1张休整士气"), ("no", "不发动")),
+                Atom(L12AtomKinds.AddMorale, "追加 1 张休整士气", ("amount", "1"), ("tapped", "true"),
+                    ("event", "武松从士气牌库追加 {value} 张休整士气"))),
+            Program("ST02-04", "enter",
+                OptionalDraw("绿洲的商人"),
+                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "绿洲的商人效果抽牌时牌库为空"), ("event", "绿洲的商人抽取 1 张牌"))),
+            Program("ST03-01", "enter",
+                Atom(L12AtomKinds.SetState, "本回合可进攻对方军团",
+                    ("key", "source.canAttackLegionsOnSummonUntilTurn"), ("value", "current-turn"),
+                    ("event", "{source} 本回合可进攻对方军团"))),
+            Program("ST04-03", "enter",
+                Atom(L12AtomKinds.SetState, "本回合可进攻对方军团",
+                    ("key", "source.canAttackLegionsOnSummonUntilTurn"), ("value", "current-turn"),
+                    ("event", "{source} 本回合可进攻对方军团"))),
+            Program("ST04-09", "enter",
+                Atom(L12AtomKinds.SetState, "本回合可进攻对方主宰",
+                    ("key", "source.canAttackMasterOnSummonUntilTurn"), ("value", "current-turn"),
+                    ("event", "{source} 本回合可进攻对方主宰"))),
+            Program("ST05-08", "enter",
+                Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
+            Program("ST06-03", "enter",
+                Atom(L12AtomKinds.Optional, "可获得 1 符文",
+                    ("prompt", "加雷斯：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
+                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("ST06-05", "enter",
+                OptionalDraw("栖木猎鹰"),
+                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "栖木猎鹰登场效果抽牌时牌库为空"), ("event", "栖木猎鹰因登场抽取 1 张牌"))),
+            Program("ST06-05", "attack",
+                OptionalDraw("栖木猎鹰"),
+                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "栖木猎鹰进攻效果抽牌时牌库为空"), ("event", "栖木猎鹰因进攻抽取 1 张牌"))),
+            Program("ST06-06", "enter",
+                OptionalDraw("费奥纳的骑士"),
+                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "费奥纳的骑士登场效果抽牌时牌库为空"), ("event", "费奥纳的骑士抽取 1 张牌"))),
+            Program("ST06-06", "death",
+                Atom(L12AtomKinds.AdvanceTrial, "试炼 +2", ("amount", "2"))),
+            Program("ST06-08", "enter",
+                Atom(L12AtomKinds.Optional, "可获得 1 符文",
+                    ("prompt", "纯白的灵鹿：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
+                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
+            Program("ST06-10", "play",
+                Atom(L12AtomKinds.AdvanceTrial, "试炼 +2", ("amount", "2"))),
             Program("S01-DS02", "disaster",
                 Atom(L12AtomKinds.DamageMaster, "双方主宰各受到 1 点非致命伤害", ("amount", "1"), ("target", "both"), ("lethal", "false"), ("neutralSource", "true"), ("reason", "〈百鬼夜行〉"))),
             Program("S02-DS05", "disaster",

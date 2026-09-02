@@ -19,7 +19,7 @@ const requestedCardIds = new Set((args.get('--card-ids') || '').split(';').filte
 const concurrency = Math.max(1, Math.min(12, Number(args.get('--concurrency') || 4)))
 const horizontalTypes = new Set(['disaster', 'destruction', 'trial'])
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif'])
-const expectedCardCount = 248
+const expectedCardCount = 324
 const maxVariantBytes = {
   originalWebp: 2_500_000,
   thumbWebp: 90_000,
@@ -111,8 +111,8 @@ const sourceFiles = await walk(sourceRoot)
 const completeCatalog = await readCatalog()
 const catalogIds = new Set(completeCatalog.map(card => card.id.toUpperCase()))
 if (completeCatalog.length !== catalogIds.size) throw new Error('卡牌目录存在重复卡号，拒绝生成资源清单')
-if (completeCatalog.length !== 248) throw new Error(`完整卡牌目录必须为 ${expectedCardCount} 张，当前 ${completeCatalog.length} 张`)
-if (completeCatalog.some(card => !/^S\d{2}-[A-Z0-9]+$/i.test(card.id))) throw new Error('卡牌目录包含不安全卡号，拒绝生成文件路径')
+if (completeCatalog.length !== expectedCardCount) throw new Error(`完整卡牌目录必须为 ${expectedCardCount} 张，当前 ${completeCatalog.length} 张`)
+if (completeCatalog.some(card => !/^(?:S\d{2}|ST\d{2}|ST)-[A-Z0-9]+$/i.test(card.id))) throw new Error('卡牌目录包含不安全卡号，拒绝生成文件路径')
 const catalog = completeCatalog.filter(card => requestedCardIds.size === 0 || requestedCardIds.has(card.id.toUpperCase()))
 if (requestedCardIds.size > 0) {
   const found = new Set(catalog.map(card => card.id.toUpperCase()))

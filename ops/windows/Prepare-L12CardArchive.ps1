@@ -19,13 +19,13 @@ $catalogRoot = (Get-ChildItem -LiteralPath $ProjectRoot -Recurse -Filter 'cards.
 if ([string]::IsNullOrWhiteSpace($catalogRoot)) { throw '找不到 L12 权威卡牌目录。' }
 $publicRoot = Join-Path $ProjectRoot 'opcgpro-vue\public'
 $cards = [System.Collections.Generic.List[object]]::new()
-foreach ($catalogName in @('cards.s1.json', 'cards.s2.json')) {
+foreach ($catalogName in @('cards.s1.json', 'cards.s2.json', 'cards.st.json')) {
     $catalogCards = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path $catalogRoot $catalogName) | ConvertFrom-Json
     foreach ($catalogCard in $catalogCards) { $cards.Add($catalogCard) }
 }
 $uniqueCardIds = @($cards | ForEach-Object { [string]$_.id } | Sort-Object -Unique)
-if ($cards.Count -ne 248 -or $uniqueCardIds.Count -ne 248) {
-    throw "权威卡牌目录必须为 248 张唯一卡号，当前 total=$($cards.Count) unique=$($uniqueCardIds.Count)"
+if ($cards.Count -ne 324 -or $uniqueCardIds.Count -ne 324) {
+    throw "权威卡牌目录必须为 324 张唯一卡号，当前 total=$($cards.Count) unique=$($uniqueCardIds.Count)"
 }
 
 New-Item -ItemType Directory -Force -Path $ArchiveDirectory | Out-Null
@@ -87,4 +87,4 @@ $archivedIds = @(Get-ChildItem -LiteralPath $ArchiveDirectory -File |
     ForEach-Object BaseName)
 $missingIds = @($uniqueCardIds | Where-Object { $_ -notin $archivedIds })
 if ($missingIds.Count -gt 0) { throw "D 盘原图归档缺少 $($missingIds.Count) 张：$($missingIds -join '、')" }
-Write-Host "D 盘原图归档完整性通过：248/248（$ArchiveDirectory）"
+Write-Host "D 盘原图归档完整性通过：324/324（$ArchiveDirectory）"

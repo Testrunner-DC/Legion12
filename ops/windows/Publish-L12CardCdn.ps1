@@ -19,7 +19,7 @@ $catalogRoot = (Get-ChildItem -LiteralPath $ProjectRoot -Recurse -Filter 'cards.
     Where-Object { $_.DirectoryName -like '*TwelveLegions*Data' } |
     Select-Object -First 1).DirectoryName
 if ([string]::IsNullOrWhiteSpace($catalogRoot)) { throw '找不到 L12 权威卡牌目录。' }
-$catalogFiles = (@((Join-Path $catalogRoot 'cards.s1.json'), (Join-Path $catalogRoot 'cards.s2.json')) -join ';')
+$catalogFiles = (@((Join-Path $catalogRoot 'cards.s1.json'), (Join-Path $catalogRoot 'cards.s2.json'), (Join-Path $catalogRoot 'cards.st.json')) -join ';')
 
 if ($SourceDirectory.StartsWith('C:\', [System.StringComparison]::OrdinalIgnoreCase) -or
     $OutputDirectory.StartsWith('C:\', [System.StringComparison]::OrdinalIgnoreCase)) {

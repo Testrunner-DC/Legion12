@@ -40,14 +40,14 @@ const factionMap: Record<string, string> = {
 }
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
-  taiyangcheng: '太阳城', olympus: '奥林匹斯', bijie: '彼界', disaster: '天灾',
+  taiyangcheng: '太阳城', olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
 }
 const s1CounterTactics = new Set(['S01-0016','S01-0017','S01-0018','S01-0019','S01-0020','S01-0021','S01-0120','S01-0223','S01-0224','S01-0320','S01-0420'])
 
 onMounted(async () => {
   try {
-    const [s1Response, lookupResponse] = await Promise.all([fetch('/data/l12/cards.s1.json'), fetch('/data/l12/cards.lookup.json')])
-    if (!s1Response.ok || !lookupResponse.ok) throw new Error('卡牌数据请求失败')
+    const [s1Response, lookupResponse, stResponse] = await Promise.all([fetch('/data/l12/cards.s1.json'), fetch('/data/l12/cards.lookup.json'), fetch('/data/l12/cards.st.json')])
+    if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据请求失败')
     const seasonOne = (await s1Response.json() as SandboxCatalogCard[]).map(card => ({
       ...card,
       cardType: s1CounterTactics.has(card.id) ? 'counter-tactic' : card.cardType,
@@ -61,7 +61,8 @@ onMounted(async () => {
       cost: card.cost ?? undefined, troops: card.attack ?? undefined,
       disasterLevel: card.disasterLevel ?? undefined, effect: card.effectText ?? undefined,
     }))
-    cards.value = [...seasonOne, ...seasonTwo]
+    const starterProducts = await stResponse.json() as SandboxCatalogCard[]
+    cards.value = [...seasonOne, ...seasonTwo, ...starterProducts]
   } catch (error) {
     errorText.value = error instanceof Error ? error.message : '卡牌加载失败'
   } finally { loading.value = false }
@@ -72,6 +73,7 @@ const available = computed(() => props.allowedTypes.length
   : cards.value)
 const types = computed(() => [...new Set(available.value.map(card => cardTypeFilterKey(card.cardType)))])
 const factions = computed(() => [...new Set(available.value.map(card => card.faction))])
+const products = computed(() => [...new Set(available.value.map(card => card.product))])
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return available.value.filter(card => {
@@ -95,7 +97,7 @@ const filtered = computed(() => {
           <input v-model="query" type="search" placeholder="搜索卡名、编号或效果文字" autofocus/>
           <select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ cardTypeLabel(key) }}</option></select>
           <select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] ?? key }}</option></select>
-          <select v-model="product"><option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option></select>
+          <select v-model="product"><option value="all">全部卡池</option><option v-for="value in products" :key="value" :value="value">{{ value }}</option></select>
           <select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value">{{ value }}</option></select>
           <select v-model="disaster"><option value="all">全部天灾等级</option><option value="none">无天灾等级</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select>
         </div>

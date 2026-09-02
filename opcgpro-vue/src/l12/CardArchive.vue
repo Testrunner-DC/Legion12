@@ -53,7 +53,7 @@ const typeLabels: Record<string, string> = {
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原',
   asgard: '阿斯加德', taiyangcheng: '太阳城',
-  olympus: '奥林匹斯', bijie: '彼界', disaster: '天灾',
+  olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
 }
 const lookupFactionMap: Record<string, string> = {
   通用: 'universal', 天廷: 'tianting', 高天原: 'gaotianyuan', 阿斯加德: 'asgard',
@@ -76,16 +76,18 @@ const disaster = ref('all')
 const product = ref('all')
 const sort = ref<'number' | 'cost' | 'troops' | 'name'>('number')
 const selected = ref<CatalogCard | null>(null)
+const productOptions = computed(() => [...new Set(cards.value.map(card => card.product))].sort())
 
 onMounted(async () => {
   try {
-    const [cardResponse, s1DeckResponse, s2DeckResponse, lookupResponse] = await Promise.all([
+    const [cardResponse, s1DeckResponse, s2DeckResponse, lookupResponse, stResponse] = await Promise.all([
       fetch('/data/l12/cards.s1.json'),
       fetch('/data/l12/preset-decks.s1.json'),
       fetch('/data/l12/preset-decks.s2.json'),
       fetch('/data/l12/cards.lookup.json').catch(() => null),
+      fetch('/data/l12/cards.st.json'),
     ])
-    if (!cardResponse.ok || !s1DeckResponse.ok || !s2DeckResponse.ok) throw new Error('卡牌数据请求失败')
+    if (!cardResponse.ok || !s1DeckResponse.ok || !s2DeckResponse.ok || !stResponse.ok) throw new Error('卡牌数据请求失败')
     const rawSeasonOne: CatalogCard[] = await cardResponse.json()
     const seasonOne = rawSeasonOne.map(card => s1CounterTactics.has(card.id)
       ? { ...card, cardType: 'counter-tactic' }
@@ -108,7 +110,8 @@ onMounted(async () => {
       profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
     }))
-    cards.value = [...seasonOne, ...seasonTwo]
+    const starterProducts: CatalogCard[] = await stResponse.json()
+    cards.value = [...seasonOne, ...seasonTwo, ...starterProducts]
     decks.value = [...await s1DeckResponse.json(), ...await s2DeckResponse.json()]
     selected.value = cards.value[0] ?? null
   } catch (error) {
@@ -172,7 +175,7 @@ function resetFilters() {
       <label class="archive-search"><span>搜索</span><input v-model="query" type="search" placeholder="卡名、编号或效果文字"/></label>
       <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
       <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
-      <label><span>卡池</span><select v-model="product"><option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option></select></label>
+      <label><span>卡池</span><select v-model="product"><option value="all">全部卡池</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
       <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
       <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
       <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>

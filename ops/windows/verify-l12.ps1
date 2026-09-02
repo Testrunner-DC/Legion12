@@ -66,12 +66,12 @@ try {
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
     $cardAssetManifest = Get-Content -LiteralPath $cardAssetManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
-    if ($cardAssetManifest.schemaVersion -ne 2 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 248 -or
+    if ($cardAssetManifest.schemaVersion -ne 2 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 324 -or
         [string]$cardAssetManifest.assetVersion -notmatch '^[0-9a-f]{64}$') {
-        throw "优化卡图发布清单必须为完整 schema v2 248 张内容寻址版本"
+        throw "优化卡图发布清单必须为完整 schema v2 324 张内容寻址版本"
     }
     $catalogRoot = Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data"
-    Invoke-External node ".\opcgpro-vue\scripts\audit-l12-card-cdn.mjs" --root $CardAssetDirectory --catalog-files "$catalogRoot\cards.s1.json;$catalogRoot\cards.s2.json"
+    Invoke-External node ".\opcgpro-vue\scripts\audit-l12-card-cdn.mjs" --root $CardAssetDirectory --catalog-files "$catalogRoot\cards.s1.json;$catalogRoot\cards.s2.json;$catalogRoot\cards.st.json"
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $artifactDirectory = Join-Path $OutputDirectory $commit
@@ -116,6 +116,7 @@ try {
         @{ Source = "ops\server\nginx-l12-card-assets.conf"; Target = "ops\server\nginx-l12-card-assets.conf" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },
+        @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.st.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.st.json" },
         @{ Source = "ops\windows\Get-L12BugQueue.ps1"; Target = "ops\windows\Get-L12BugQueue.ps1" }
     )
     foreach ($contractFile in $contractFiles) {

@@ -9,10 +9,11 @@ $sourcePath = Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions'
 $dataPath = Join-Path $sourcePath 'Data'
 $atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
+$cardIdPattern = '(?:S\d{2}|ST(?:\d{2})?)-[A-Za-z0-9]+'
 $programMatches = [regex]::Matches($atomicSource,
-    'Program\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
+    'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
 $routeMatches = [regex]::Matches($routeSource,
-    'new\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
+    'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
 
 function Group-TriggersByCard([System.Text.RegularExpressions.MatchCollection]$matches) {
     $grouped = @{}
@@ -27,7 +28,7 @@ $fineByCard = Group-TriggersByCard $programMatches
 $compositeByCard = Group-TriggersByCard $routeMatches
 
 $cards = New-Object System.Collections.Generic.List[object]
-foreach ($fileName in @('cards.s1.json', 'cards.s2.json')) {
+foreach ($fileName in @('cards.s1.json', 'cards.s2.json', 'cards.st.json')) {
     $decoded = [System.IO.File]::ReadAllText((Join-Path $dataPath $fileName), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
     foreach ($card in $decoded) { $cards.Add($card) }
 }
@@ -286,7 +287,7 @@ $unroutedRuntime = @($unrouted | Where-Object { $_.Review.StartsWith('未进入�
 $noRuntime = @($unrouted | Where-Object { $_.Review.StartsWith('无实战入口', [StringComparison]::Ordinal) })
 $unroutedWithTests = @($unrouted | Where-Object Tests -ne '—')
 $lines = New-Object System.Collections.Generic.List[string]
-$lines.Add('# 248 张卡效独立审查矩阵')
+$lines.Add("# $($cards.Count) 张卡效独立审查矩阵")
 $lines.Add('')
 $lines.Add("生成日期：$(Get-Date -Format 'yyyy-MM-dd')")
 $lines.Add('')

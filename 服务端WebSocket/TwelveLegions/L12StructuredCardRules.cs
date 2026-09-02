@@ -21,17 +21,19 @@ public static partial class L12StructuredCardRules
         "S01-0003", "S01-0110", "S01-0111", "S01-0112", "S01-0113", "S01-0114", "S01-0116",
         "S01-0208", "S01-0209", "S01-0210", "S01-0211", "S01-0214", "S01-0309", "S01-0313",
         "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416", "S02-0614", "S02-0617",
-        "S02-0618",
+        "S02-0618", "ST01-07", "ST01-09", "ST02-08", "ST03-05", "ST04-07", "ST05-03",
+        "ST05-04", "ST05-08", "ST05-09",
     };
 
     private static readonly HashSet<string> FrontOnlyRangedCards = new(StringComparer.Ordinal)
     {
-        "S01-0115", "S01-0213", "S01-0316", "S01-0415", "S02-0619",
+        "S01-0115", "S01-0213", "S01-0316", "S01-0415", "S02-0619", "ST01-08",
     };
 
     private static readonly HashSet<string> FrontRowTauntOverlayCards = new(StringComparer.Ordinal)
     {
         "S01-0107", "S01-0204", "S01-0312", "S02-0615",
+        "ST01-04", "ST02-02", "ST04-01", "ST06-02",
     };
 
     private static readonly HashSet<string> AlwaysAttackNoLossCards = new(StringComparer.Ordinal)
@@ -56,7 +58,7 @@ public static partial class L12StructuredCardRules
     private static readonly HashSet<string> TriggeredDisasterCards = new(StringComparer.Ordinal)
     {
         "S01-DS02", "S01-DS03", "S01-DS04", "S01-DS05", "S01-DS06", "S01-DS07", "S01-DS09",
-        "S02-DS02", "S02-DS03", "S02-DS04", "S02-DS05", "S02-DS06",
+        "S02-DS02", "S02-DS03", "S02-DS04", "S02-DS05", "S02-DS06", "ST-DS01", "ST-DS03",
     };
 
     // 主动休整是规则费用类型而非按钮文案。无眠之夜等监听入口查询此集合，
@@ -66,6 +68,7 @@ public static partial class L12StructuredCardRules
         "S01-0105", "S01-0109", "S01-0117", "S01-01D1", "S01-0214", "S01-0215", "S01-0317",
         "S01-03D1", "S01-04D1", "S02-0003", "S02-0104", "S02-0204", "S02-0205", "S02-0404",
         "S02-0510", "S02-0513", "S02-0520", "S02-05D1", "S02-0603", "S02-0616", "S02-06D1",
+        "ST02-05", "ST03-05", "ST03-07", "ST04-06", "ST05-06", "ST06-09",
     };
 
     // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
@@ -186,6 +189,7 @@ public static partial class L12StructuredCardRules
         var rangedNoLoss = false;
         var attackNoLoss = false;
         var cannotBeRanged = false;
+        var professionDerived = false;
         int? attackTroopsSetValue = null;
         var incomingRangedCombatDamageAdjustment = 0;
         var matchedConditions = new List<string>();
@@ -200,7 +204,10 @@ public static partial class L12StructuredCardRules
                 {
                     if (atom.Kind == L12AtomKinds.SetState
                         && atom.Parameters.GetValueOrDefault("key") == "source.derived-profession")
+                    {
                         profession = atom.Parameters.GetValueOrDefault("value") ?? profession;
+                        professionDerived = true;
+                    }
                     if (atom.Kind != L12AtomKinds.AttackRule) continue;
                     ranged |= atom.Parameters.GetValueOrDefault("rangeBonus") == "1";
                     rangedNoLoss |= atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true";
@@ -221,7 +228,7 @@ public static partial class L12StructuredCardRules
         // 职介本身是规则能力的来源，而不只是展示标签。任何持续效果将军团
         // “视为【弓手】”后，都必须立即获得弓手的完整职介能力，禁止再要求
         // 每张赋予职介的卡重复写距离与远程无损，或在进攻流程中按卡号特判。
-        if (string.Equals(profession, "弓手", StringComparison.Ordinal))
+        if (professionDerived && string.Equals(profession, "弓手", StringComparison.Ordinal))
         {
             ranged = true;
             rangedNoLoss = true;
@@ -340,6 +347,7 @@ public static partial class L12StructuredCardRules
 
     public static bool TryGetStructuredAbilities(string cardId, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
     {
+        if (TryGetStarterBatch1Abilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {

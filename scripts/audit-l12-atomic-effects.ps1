@@ -13,31 +13,35 @@ $sourcePath = Join-Path $serverProject.DirectoryName 'TwelveLegions'
 $dataPath = Join-Path $sourcePath 'Data'
 $baseline = [System.IO.File]::ReadAllText($baselinePath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 $cards = New-Object System.Collections.Generic.List[object]
-foreach ($fileName in @('cards.s1.json', 'cards.s2.json')) {
+foreach ($fileName in @('cards.s1.json', 'cards.s2.json', 'cards.st.json')) {
     $decoded = [System.IO.File]::ReadAllText((Join-Path $dataPath $fileName), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
     foreach ($card in $decoded) { $cards.Add($card) }
 }
 $runtimeFiles = @(Get-ChildItem -LiteralPath $sourcePath -Filter 'L12*.cs' -File | Where-Object {
     ($_.Name -notin @('AtomicEffects.cs', 'L12RuntimeEffectRoutes.cs', 'L12CompositeEffectPlans.cs')) -and
-        ($_.Name -notmatch '^L12StructuredCardRules(?:\.|$)')
+        ($_.Name -notmatch '^L12(?:Starter)?Structured(?:Card)?Rules(?:\.|$)')
 })
 $source = ($runtimeFiles | Get-Content -Raw) -join "`n"
-$matches = [regex]::Matches($source, 'case\s+"(?<id>S\d{2}-[A-Za-z0-9]+)"')
+$cardIdPattern = '(?:S\d{2}|ST(?:\d{2})?)-[A-Za-z0-9]+'
+$matches = [regex]::Matches($source, 'case\s+"(?<id>' + $cardIdPattern + ')"')
 $uniqueIds = @($matches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $effectCards = @($cards | Where-Object { -not [string]::IsNullOrWhiteSpace($_.effect) })
+$effectById = @{}
+foreach ($card in $cards) { $effectById[$card.id] = [string]$card.effect }
+$noEffectText = ([char]0x65E0) + ([char]0x6548) + ([char]0x679C)
 
 $branchPatterns = [ordered]@{
-    cardCase = 'case\s+"S\d{2}-[A-Za-z0-9]+"'
-    cardConditional = '(?m)^\s*(?:if|else\s+if)\s*\([^\r\n]*(?:CardId|SourceCardId)[^\r\n]*"S\d{2}-[A-Za-z0-9]+"'
-    cardSwitchArm = '(?m)^\s*"S\d{2}-[A-Za-z0-9]+"\s*=>'
+    cardCase = 'case\s+"' + $cardIdPattern + '"'
+    cardConditional = '(?m)^\s*(?:if|else\s+if)\s*\([^\r\n]*(?:CardId|SourceCardId)[^\r\n]*"' + $cardIdPattern + '"'
+    cardSwitchArm = '(?m)^\s*"' + $cardIdPattern + '"\s*=>'
     effectTextInference = '(?:EffectText|\.Effect)\??\.Contains\s*\('
 }
 $atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
 $fineProgramMatches = [regex]::Matches($atomicSource,
-    'Program\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
+    'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
 $compositeRouteMatches = [regex]::Matches($routeSource,
-    'new\("(?<id>S\d{2}-[A-Za-z0-9]+)"\s*,\s*"(?<trigger>[^"]+)"')
+    'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
 $fineCardIds = @($fineProgramMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $compositeCardIds = @($compositeRouteMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $catalogOnlyCardIds = @($cards | Where-Object {
@@ -48,7 +52,7 @@ $unroutedRuntimeCardIds = @($catalogOnlyCardIds | Where-Object {
     $runtimeEvidence[$_].Sources.Count -gt 0
 } | Sort-Object -Unique)
 $noRuntimeEntranceCardIds = @($catalogOnlyCardIds | Where-Object {
-    $runtimeEvidence[$_].Sources.Count -eq 0
+    $runtimeEvidence[$_].Sources.Count -eq 0 -and ($effectById.Item($_) -ne $noEffectText)
 } | Sort-Object -Unique)
 $unroutedWithTestEvidenceCardIds = @($catalogOnlyCardIds | Where-Object {
     $runtimeEvidence[$_].Tests.Count -gt 0

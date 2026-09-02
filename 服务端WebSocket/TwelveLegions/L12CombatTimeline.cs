@@ -9,16 +9,17 @@ public sealed partial class L12GameEngine
     internal static readonly HashSet<string> NativeCombatKillCards = new(StringComparer.OrdinalIgnoreCase)
     {
         "S01-0409", "S02-0002", "S02-0503", "S02-0602", "S02-0606", "S02-0611",
+        "ST01-01", "ST01-02", "ST06-03",
     };
 
     internal static readonly HashSet<string> AttackerAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S01-0101", "S01-0311", "S01-0414",
+        "S01-0101", "S01-0311", "S01-0414", "ST01-07",
     };
 
     internal static readonly HashSet<string> DefenderAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S01-0017", "S01-0213", "S01-0420", "S02-0523",
+        "S01-0017", "S01-0213", "S01-0420", "S02-0523", "ST01-10",
     };
 
     private static int EffectiveAttackValue(L12PendingDefense pending, L12CardInstance attacker)

@@ -17,7 +17,8 @@ public sealed class AtomicEffectsTests
             var mapped = catalog.AtomicEffects.Find(definition.Id);
             Assert.NotNull(mapped);
             Assert.Equal(definition.Effect?.Trim() ?? string.Empty, mapped.EffectText);
-            if (string.IsNullOrWhiteSpace(definition.Effect)) continue;
+            if (string.IsNullOrWhiteSpace(definition.Effect)
+                || definition.Effect.Trim().Equals("无效果", StringComparison.Ordinal)) continue;
             Assert.NotEmpty(mapped.Abilities);
             foreach (var ability in mapped.Abilities)
             {
@@ -328,6 +329,10 @@ public sealed class AtomicEffectsTests
             ("S02-0507", "enter"),
             ("S02-0507", "promotion-enter"),
             ("S02-0512", "death"),
+            ("ST02-04", "enter"),
+            ("ST06-05", "enter"),
+            ("ST06-05", "attack"),
+            ("ST06-06", "enter"),
         };
         var actualPrograms = L12VerifiedAtomicPrograms.All
             .Where(program => program.Atoms.Any(atom => atom.Kind == L12AtomKinds.Optional)

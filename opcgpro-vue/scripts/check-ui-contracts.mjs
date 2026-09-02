@@ -64,6 +64,7 @@ const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
 const bugQueue = read('../../ops/windows/Get-L12BugQueue.ps1')
 const s1Cards = JSON.parse(read('../public/data/l12/cards.s1.json'))
+const starterCards = JSON.parse(read('../public/data/l12/cards.st.json'))
 
 const confirmedS1DisasterLevels = {
   'S01-0304': 2,
@@ -168,13 +169,13 @@ const contracts = [
   [board.includes('promotionFoundationTargetIds') && board.includes('nextS2PromotionGodPowerDiscount'), '晋升登场必须高亮合法基底并纳入锻造炉减免'],
   [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
   [deckEditor.includes('<h2>筛选</h2>') && !deckEditor.includes('<h2>构筑设定</h2>') && deckEditor.includes('costFilter') && deckEditor.includes('disasterFilter') && deckEditor.includes('sortMode'), '牌库编辑器必须复用卡牌档案的搜索、类型、卡池、费用、天灾等级与排序筛选（不含阵营）'],
-  [deckEditor.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>'), '牌库编辑器卡池筛选必须统一使用全部卡池、S01、S02'],
+  [deckEditor.includes('const productOptions = computed(') && deckEditor.includes('<option value="all">全部卡池</option><option v-for="value in productOptions"'), '牌库编辑器卡池筛选必须使用全部卡池并从完整目录动态列出 S01、S02 与 ST 产品'],
   [deckEditor.includes('effectiveDeckLimit(card, masterId.value)')
     && deckEditor.includes('effectiveDeckLimit(entry.card, masterId)')
     && !deckEditor.includes('activeRestrictions') && !deckLibrary.includes('activeRestrictions')
     && decks.includes('rule.masterId === masterId') && decks.includes('rule.masterId === deck.masterId'),
   '通用牌库编辑、保存、导入与公开不得全局应用运营禁限卡；显式规则作用域仍保留主宰专属解析能力'],
-  [cardArchive.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>') && sandboxPicker.includes('<option value="all">全部卡池</option><option value="S01">S01</option><option value="S02">S02</option>'), '卡牌档案与沙盒选择器不得回退为 S1 + S2、S1、S2 旧称'],
+  [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部卡池</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部卡池</option><option v-for="value in products"'), '卡牌档案与沙盒选择器必须从完整目录动态列出产品，不得回退为旧双卡池硬编码'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
   [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckLibrary.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
@@ -208,7 +209,8 @@ const contracts = [
   [board.includes(':mine="masterPlayerIndex === controlledPlayerIndex"') && board.includes("sandboxAction(controlledPlayerIndex.value, { type, ...extra })") && prompt.includes('sandboxAction(actingPlayerIndex, command)'), '沙盒代操作对方时必须按受控方索引开放主宰效果并完成后续提示，正式房仍只允许登录座位'],
   [board.includes('watch(activeBoardPromptId, promptId => {') && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null'), '任何场面直选 Prompt 开始时必须关闭墓地、效果弹框与浮动卡牌详情'],
   [graveyardOverlay.includes('function selectCard(card: Card)') && graveyardOverlay.includes("enabledAbilities.length === 1") && !graveyardOverlay.includes('graveyard-abilities'), '墓地主动效果必须点击卡牌本身进入是否发动流程，卡面不得重新覆盖效果文字按钮'],
-  [sandboxPicker.includes('cards.s1.json') && sandboxPicker.includes('cards.lookup.json') && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '沙盒卡牌选择器必须复用卡牌档案的双卡池搜索与筛选逻辑'],
+  [sandboxPicker.includes('cards.s1.json') && sandboxPicker.includes('cards.lookup.json') && sandboxPicker.includes('cards.st.json') && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '沙盒卡牌选择器必须复用卡牌档案的完整卡池搜索与筛选逻辑'],
+  [starterCards.length === 76 && starterCards.some(card => card.id === 'ST06-01' && card.nameZh === '伊丽莎白一世'), '前端权威目录必须收录 76 张 ST 产品卡，并以数据库中的伊丽莎白一世为准'],
   [sandbox.includes('<option value="custom">自定天灾（四张始终公开）</option>') && board.includes("type: 'replaceDisaster'") && board.includes('index < 3'), '自定天灾必须四张公开、前三槽可更换且第四槽堙灭锁定'],
   [adminPage.includes('卡效原子化') && adminPage.includes('atom-flow') && adminPage.includes('原子定义 JSON'), '管理后台必须保留卡效原子组合、流程图与原始定义视图'],
   [adminPage.includes('旧实现兜底') && adminPage.includes('新旧实现不会同时结算'), '原子化后台必须明确显示旧实现兜底与防重复结算边界'],

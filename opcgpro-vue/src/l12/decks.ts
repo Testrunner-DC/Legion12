@@ -84,8 +84,9 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
   catalogPromise = Promise.all([
     fetch('/data/l12/cards.s1.json'),
     fetch('/data/l12/cards.lookup.json'),
-  ]).then(async ([s1Response, lookupResponse]) => {
-    if (!s1Response.ok || !lookupResponse.ok) throw new Error('卡牌数据加载失败')
+    fetch('/data/l12/cards.st.json'),
+  ]).then(async ([s1Response, lookupResponse, stResponse]) => {
+    if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
     const seasonOneRaw: DeckCard[] = await s1Response.json()
     const seasonOne = seasonOneRaw.map(card => S1_COUNTER_TACTICS.has(card.id)
       ? { ...card, cardType: 'counter-tactic' }
@@ -108,7 +109,8 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
       profession: card.subType || undefined,
       effect: card.effectText ?? undefined,
     }))
-    return [...seasonOne, ...seasonTwo]
+    const starterProducts: DeckCard[] = await stResponse.json()
+    return [...seasonOne, ...seasonTwo, ...starterProducts]
   })
   return catalogPromise
 }

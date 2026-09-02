@@ -52,10 +52,12 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void CatalogContainsS1AndS2CardsAndSixOfficialPresets()
+    public void CatalogContainsS1S2AndStarterCardsAndSixOfficialPresets()
     {
         var catalog = Catalog;
-        Assert.Equal(248, catalog.Cards.Count);
+        Assert.Equal(324, catalog.Cards.Count);
+        Assert.Equal(76, catalog.Cards.Values.Count(card =>
+            card.Id.StartsWith("ST", StringComparison.Ordinal)));
         Assert.Equal(6, catalog.PresetDecks.Count);
         Assert.Equal(6, catalog.PresetDecks.Select(deck => catalog.Cards[deck.MasterId].Faction).Distinct().Count());
         Assert.All(catalog.PresetDecks, deck =>

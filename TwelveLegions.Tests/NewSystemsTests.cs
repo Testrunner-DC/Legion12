@@ -61,12 +61,13 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
-    public void CatalogLoadsTheS2ArchiveAlongsideS1()
+    public void CatalogLoadsS2AndStarterProductsAlongsideS1()
     {
-        Assert.Equal(248, Catalog.Cards.Count);
+        Assert.Equal(324, Catalog.Cards.Count);
         Assert.Equal("始皇帝 嬴政", Catalog.Cards["S02-0101"].NameZh);
         Assert.Equal("destruction", Catalog.Cards["S02-DS01"].CardType);
         Assert.Equal("otherworld", Catalog.Cards["S02-06M1"].Faction);
+        Assert.Equal("伊丽莎白一世", Catalog.Cards["ST06-01"].NameZh);
     }
 
     [Fact]
@@ -1425,7 +1426,7 @@ public sealed class NewSystemsTests
             .Select(card => card.Id)
             .ToHashSet(StringComparer.Ordinal);
 
-        Assert.Equal(12, expected.Count);
+        Assert.Equal(14, expected.Count);
         foreach (var definition in Catalog.Cards.Values.Where(card => card.CardType == "destruction"))
             Assert.Equal(expected.Contains(definition.Id),
                 L12StructuredCardRules.HasTriggeredDisasterEffect(definition.Id));
@@ -1440,7 +1441,7 @@ public sealed class NewSystemsTests
             .Select(card => card.Id)
             .ToHashSet(StringComparer.Ordinal);
 
-        Assert.Equal(21, expected.Count);
+        Assert.Equal(27, expected.Count);
         foreach (var definition in Catalog.Cards.Values.Where(card => card.CardType != "destruction"))
             Assert.Equal(expected.Contains(definition.Id), L12StructuredCardRules.HasActiveRestAbility(definition.Id));
     }

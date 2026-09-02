@@ -60,6 +60,11 @@ public sealed class L12CardDefinition
     public List<string> Traits { get; init; } = [];
     public string? Profession { get; init; }
     public string? Effect { get; init; }
+    /// <summary>
+    /// 由产品数据库人工拆分的能力边界。它只决定后台原子清单的能力分组，
+    /// 实战仍必须由验证过的原子程序或公共复合流程接管。
+    /// </summary>
+    public string? AtomicReference { get; init; }
 }
 
 public sealed class L12PresetDeckDefinition

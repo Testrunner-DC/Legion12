@@ -78,18 +78,18 @@ const requiredVariants = {
   detailAvif: 'detail-960.avif',
 }
 
-if (manifest.schemaVersion !== 2 || manifest.complete !== true || manifest.cardCount !== 248) fail('manifest 必须是完整 schema v2 且包含 248 张卡')
+if (manifest.schemaVersion !== 2 || manifest.complete !== true || manifest.cardCount !== 324) fail('manifest 必须是完整 schema v2 且包含 324 张卡')
 if (manifest.assetVersion !== expectedHash || !/^[0-9a-f]{64}$/.test(expectedHash)) fail('manifest 资产版本不匹配')
 if (!/^[A-Za-z0-9._-]+$/.test(manifest.catalogVersion)) fail('目录版本包含不安全字符')
 if (manifest.basePath !== '/card-assets' || manifest.missing?.length !== 0) fail('manifest 基础路径或缺失列表无效')
 const cards = manifest.cards && typeof manifest.cards === 'object' ? manifest.cards : {}
 const entries = Object.entries(cards)
-if (entries.length !== 248 || new Set(entries.map(([id]) => id)).size !== 248) fail('manifest 卡号不是 248 个唯一值')
+if (entries.length !== 324 || new Set(entries.map(([id]) => id)).size !== 324) fail('manifest 卡号不是 324 个唯一值')
 
 let totalBytes = 0
 const versionRows = []
 for (const [cardId, card] of entries) {
-  if (!/^S\d{2}-[A-Z0-9]+$/.test(cardId) || card.cardId !== cardId) fail(`非法卡号：${cardId}`)
+  if (!/^(?:S\d{2}|ST\d{2}|ST)-[A-Z0-9]+$/.test(cardId) || card.cardId !== cardId) fail(`非法卡号：${cardId}`)
   if (!/^[0-9a-f]{64}$/.test(card.contentHash)) fail(`内容哈希无效：${cardId}`)
   const prefix = `cards/${manifest.catalogVersion}/${cardId}/${card.contentHash.slice(0, 20)}/`
   for (const [variant, fileName] of Object.entries(requiredVariants)) {
@@ -102,7 +102,7 @@ for (const [cardId, card] of entries) {
   versionRows.push(`${cardId}:${card.contentHash}`)
 }
 const actualVersion = createHash('sha256').update(versionRows.sort().join('\n')).digest('hex')
-if (actualVersion !== expectedHash) fail('248 张卡的内容哈希聚合版本不匹配')
+if (actualVersion !== expectedHash) fail('324 张卡的内容哈希聚合版本不匹配')
 if (manifest.totalBytes !== totalBytes || totalBytes > 400 * 1024 * 1024) fail('优化卡图总量与 manifest 不匹配或超过 400 MiB')
 if (!Array.isArray(preload.entries)) fail('preload 清单格式无效')
 for (const entry of preload.entries) {
