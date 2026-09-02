@@ -148,6 +148,43 @@ function uniqueSources(sources: Array<CardAssetSource | null>) {
   })
 }
 
+function resolvedCardAssetFromManifest(
+  manifest: CardAssetManifest,
+  cardId: string,
+  legacyUrl: string | undefined,
+  intent: CardImageIntent,
+): ResolvedCardAsset | null {
+  const entry = manifest.cards[cardId]
+  if (!entry) return null
+
+  const explicitCdnBaseUrl = configuredCdnBase()
+  const manifestCdnBaseUrl = manifest.cdnBaseUrl?.replace(/\/$/, '') || ''
+  const sameOrigin = manifest.basePath || SAME_ORIGIN_ROOT
+  return {
+    cardId,
+    intent,
+    orientation: entry.orientation,
+    sources: uniqueSources([
+      explicitCdnBaseUrl ? sourceFor('cdn', explicitCdnBaseUrl, entry.variants, intent) : null,
+      sourceFor('sameOrigin', sameOrigin, entry.variants, intent),
+      !explicitCdnBaseUrl && manifestCdnBaseUrl
+        ? sourceFor('cdn', manifestCdnBaseUrl, entry.variants, intent)
+        : null,
+      legacyUrl ? { kind: 'legacy', lowWebp: legacyUrl, webp: legacyUrl } : null,
+      { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER },
+    ]),
+  }
+}
+
+/**
+ * Return the real card asset synchronously once the manifest has been primed.
+ * Animation layers use this to avoid mounting a placeholder for one frame while
+ * the already-loaded manifest is needlessly awaited again.
+ */
+export function peekCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent) {
+  return manifestValue ? resolvedCardAssetFromManifest(manifestValue, cardId, legacyUrl, intent) : null
+}
+
 export function fallbackCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
   return {
     cardId,
@@ -172,24 +209,8 @@ export async function resolveCardAsset(cardId: string, legacyUrl: string | undef
     entry = manifest?.cards[cardId]
   }
   if (!manifest || !entry) return fallbackCardAsset(cardId, legacyUrl, intent)
-
-  const explicitCdnBaseUrl = configuredCdnBase()
-  const manifestCdnBaseUrl = manifest.cdnBaseUrl?.replace(/\/$/, '') || ''
-  const sameOrigin = manifest.basePath || SAME_ORIGIN_ROOT
-  return {
-    cardId,
-    intent,
-    orientation: entry.orientation,
-    sources: uniqueSources([
-      explicitCdnBaseUrl ? sourceFor('cdn', explicitCdnBaseUrl, entry.variants, intent) : null,
-      sourceFor('sameOrigin', sameOrigin, entry.variants, intent),
-      !explicitCdnBaseUrl && manifestCdnBaseUrl
-        ? sourceFor('cdn', manifestCdnBaseUrl, entry.variants, intent)
-        : null,
-      legacyUrl ? { kind: 'legacy', lowWebp: legacyUrl, webp: legacyUrl } : null,
-      { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER },
-    ]),
-  }
+  return resolvedCardAssetFromManifest(manifest, cardId, legacyUrl, intent)
+    ?? fallbackCardAsset(cardId, legacyUrl, intent)
 }
 
 export async function resolveCardAssetUrls(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent = 'detail') {

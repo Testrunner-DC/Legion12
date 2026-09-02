@@ -1,6 +1,6 @@
 # 324 张卡效独立审查矩阵
 
-生成日期：2026-09-02
+生成日期：2026-09-03
 
 本表把“是否进入原子路由”与“是否存在权威实战入口”分开。主动注册、时机集合、响应池、静态/派生规则、主宰/阵营与试炼/Token/特殊区都是真实运行入口；测试文件只是独立证据，不会单独把卡升级为“已实装”。`细原子已验证`仍只证明至少1项能力被接管。
 
@@ -11,7 +11,7 @@
 - 未进入原子路由：109 张
   - 有权威实战入口：103 张
   - 无实战入口：6 张
-  - 已有至少1个自动测试文件证据：93 张
+  - 已有至少1个自动测试文件证据：109 张
 - 细原子程序：94 条；复合过渡路由：179 条
 
 | 卡号 | 卡名 | 赛季 | 阵营 | 类型 | 原子路由层级 | 细原子时机 | 复合过渡时机 | 其他权威实战入口 | 源码证据 | 测试证据 | 审查结论 |
@@ -39,7 +39,7 @@
 | S01-0021 | 摄政皇权 | S01 | universal | tactic | 复合过渡 | — | reaction | 权威效果处理 | L12PublicTriggerEffectPlans.cs、L12S1ExtendedEffects.cs | AtomicReviewBatch6KARegressionTests.cs | 已入原子路由；逐能力待验收；6K-A逐卡逐能力独立语义已验收（6K-A明确错误已修复） |
 | S01-00C1 | 士气·通用 | S01 | universal | rune | 未进入原子路由 | — | — | 阵营/士气入口 | L12DeckValidator.cs(按 rune 类型派生) | AtomicReviewBatch6KARegressionTests.cs、ExtendedCardEffectsTests.cs | 未进入原子路由（有实战入口）；6K-A逐卡逐能力独立语义已验收 |
 | S01-0101 | 吕布 | S01 | tianting | legion | 复合过渡 | — | after-attack、enter | 静态/派生规则、权威效果处理、时机集合 | L12CardEffects.cs、L12CombatTimeline.cs、L12StructuredCardRules.cs | AtomicReviewBatch3RegressionTests.cs、AtomicReviewBatch6CRegressionTests.cs、AtomicReviewBatch6HRegressionTests.cs、AtomicReviewBatch6JARegressionTests.cs、AtomicReviewBatch6JBRegressionTests.cs、AtomicReviewBatch6JCRegressionTests.cs、AtomicReviewBatch6KARegressionTests.cs、CombatTimelineRegressionTests.cs、LatestBugRegressionTests.cs、NewSystemsTests.cs、S1DisasterLevelRegressionTests.cs、S2FactionRegressionTests.cs、S2UniversalEffectsTests.cs | 已入原子路由；逐能力待验收；6J-A登场/晋升登场公开声明、隐藏信息延迟与独立段已验收；6J-B主动/响应/后续触发公开声明与合法结算Prompt分类已验收；6K-A逐卡逐能力独立语义已验收 |
-| S01-0102 | 武则天 | S01 | tianting | legion | 混合：细原子 + 复合过渡 | death | enter | 权威效果处理 | L12CardEffects.cs、L12RuleKernelIntegration.cs | AtomicEffectsTests.cs、AtomicReviewBatch6DRegressionTests.cs、AtomicReviewBatch6JARegressionTests.cs、AtomicReviewBatch6JBRegressionTests.cs、AtomicReviewBatch6KARegressionTests.cs、CombatTimelineRegressionTests.cs、LatestBugRegressionTests.cs、NewSystemsTests.cs、RuleKernelTests.cs、S1DisasterLevelRegressionTests.cs、S2FactionRegressionTests.cs、StarterTargetedBatch2ARegressionTests.cs、TriggeredEffectPresentationTests.cs | 已入原子路由；逐能力待验收；6J-A登场/晋升登场公开声明、隐藏信息延迟与独立段已验收；6K-A逐卡逐能力独立语义已验收 |
+| S01-0102 | 武则天 | S01 | tianting | legion | 混合：细原子 + 复合过渡 | death | enter | 权威效果处理 | L12CardEffects.cs、L12RuleKernelIntegration.cs | AtomicEffectsTests.cs、AtomicReviewBatch3RegressionTests.cs、AtomicReviewBatch6DRegressionTests.cs、AtomicReviewBatch6JARegressionTests.cs、AtomicReviewBatch6JBRegressionTests.cs、AtomicReviewBatch6KARegressionTests.cs、CombatTimelineRegressionTests.cs、LatestBugRegressionTests.cs、NewSystemsTests.cs、RuleKernelTests.cs、S1DisasterLevelRegressionTests.cs、S2FactionRegressionTests.cs、StarterTargetedBatch2ARegressionTests.cs、TriggeredEffectPresentationTests.cs | 已入原子路由；逐能力待验收；6J-A登场/晋升登场公开声明、隐藏信息延迟与独立段已验收；6K-A逐卡逐能力独立语义已验收 |
 | S01-0103 | 李靖 | S01 | tianting | legion | 复合过渡 | — | enter | 权威效果处理 | L12CardEffects.cs | AtomicReviewBatch6ARegressionTests.cs、AtomicReviewBatch6GBRegressionTests.cs、AtomicReviewBatch6JARegressionTests.cs、AtomicReviewBatch6KARegressionTests.cs、GameEngineTests.cs、LatestBugRegressionTests.cs、MatchRecorderTests.cs、RulingClosureRegressionTests.cs、S1DisasterLevelRegressionTests.cs、S2UniversalEffectsTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收；6J-A登场/晋升登场公开声明、隐藏信息延迟与独立段已验收；6K-A逐卡逐能力独立语义已验收 |
 | S01-0104 | 韩信 | S01 | tianting | legion | 复合过渡 | — | attack | 权威效果处理、行动/状态入口 | L12Actions.cs、L12AttackPublicTriggerPlans.cs、L12StarterStructuredCardRules.Batch2A.cs | AtomicReviewBatch6ARegressionTests.cs、AtomicReviewBatch6HRegressionTests.cs、AtomicReviewBatch6JARegressionTests.cs、AtomicReviewBatch6KARegressionTests.cs、CombatTimelineRegressionTests.cs、GameEngineTests.cs、PromptSemanticsRegressionTests.cs、RuleKernelTests.cs、S1DisasterLevelRegressionTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收；6H进攻公开声明已验收；6K-A逐卡逐能力独立语义已验收 |
 | S01-0105 | 刘备 | S01 | tianting | legion | 复合过渡 | — | enter | 静态/派生规则、权威效果处理、主动注册 | L12ActiveAbilities.cs、L12CardEffects.cs、L12MoraleReturns.cs、L12PublicTriggerEffectPlans.cs、L12S1ExtendedEffects.cs、L12StructuredCardRules.cs | AtomicReviewBatch6JARegressionTests.cs、AtomicReviewBatch6KARegressionTests.cs、GameEngineTests.cs、MoraleReturnSelectionTests.cs、NewSystemsTests.cs、RulingClosureRegressionTests.cs、S1DisasterLevelRegressionTests.cs、S2UniversalEffectsTests.cs | 已入原子路由；逐能力待验收；6K-A逐卡逐能力独立语义已验收（6K-A明确错误已修复） |
@@ -252,7 +252,7 @@
 | S02-06D1 | 彼界 阿瓦隆 | S02 | otherworld | divinity | 未进入原子路由 | — | — | 静态/派生规则、权威效果处理、特殊区入口、行动/状态入口 | L12GameEngine.cs、L12GmCommands.cs、L12S1ExtendedEffects.cs、L12S2FactionEffects.cs、L12StructuredCardRules.cs、L12TrialAdvanceEffectPlans.cs | AtomicReviewBatch6FRegressionTests.cs、AtomicReviewBatch6LDRegressionTests.cs、DeckValidatorTests.cs、RuleKernelTests.cs、S2FactionRegressionTests.cs | 未进入原子路由（有实战入口）；6F试炼推进公开事件与费用预付已验收；6L-D逐卡逐能力独立语义已验收 |
 | S02-06M1 | 莫瑞甘 | S02 | otherworld | master | 未进入原子路由 | — | — | 权威效果处理、主宰入口 | L12PublicTriggerEffectPlans.cs、L12S1ExtendedEffects.cs、L12S2FactionEffects.cs | AtomicReviewBatch6GARegressionTests.cs、AtomicReviewBatch6LDRegressionTests.cs、DeckValidatorTests.cs、NewSystemsTests.cs、S2FactionRegressionTests.cs | 未进入原子路由（有实战入口）；6G-A可选触发声明、次数预留与独立段已验收；6L-D逐卡逐能力独立语义已验收（6L-D明确错误已修复） |
 | S02-06M2 | 安格斯·麦·奥格 | S02 | otherworld | master | 未进入原子路由 | — | — | 权威效果处理、主宰入口 | L12S2RemainingEffects.cs、L12TrialAdvanceEffectPlans.cs、L12TrialCompletionTriggerPlans.cs | AtomicReviewBatch6BRegressionTests.cs、AtomicReviewBatch6FRegressionTests.cs、AtomicReviewBatch6LDRegressionTests.cs、LatestBugRegressionTests.cs | 未进入原子路由（有实战入口）；6B试炼完成触发链已验收；6F试炼推进公开事件与费用预付已验收；6L-D逐卡逐能力独立语义已验收 |
-| S02-06S1 | 符文 | S02 | otherworld | token | 未进入原子路由 | — | — | 权威效果处理、Token/特殊区入口 | L12S2FactionEffects.cs | AtomicReviewBatch6LDRegressionTests.cs、RuleKernelTests.cs | 未进入原子路由（有实战入口）；6L-D逐卡逐能力独立语义已验收 |
+| S02-06S1 | 符文 | S02 | otherworld | token | 未进入原子路由 | — | — | Token/特殊区入口、权威效果处理 | L12S2FactionEffects.cs | AtomicReviewBatch6LDRegressionTests.cs、RuleKernelTests.cs | 未进入原子路由（有实战入口）；6L-D逐卡逐能力独立语义已验收 |
 | S02-06S2 | 王者之剑 | S02 | otherworld | legion | 未进入原子路由 | — | — | 静态/派生规则、权威效果处理、行动/状态入口 | L12Actions.cs、L12EnterPublicTriggerPlans.cs、L12GameEngine.cs、L12RuleKernelIntegration.cs、L12S2FactionEffects.cs、L12StructuredCardRules.StatusSemantics.cs | AtomicReviewBatch6LDRegressionTests.cs、Bq20260830RegressionTests.cs、GameEngineTests.cs、ImmortalityRegressionTests.cs、RuleKernelTests.cs、S2FactionRegressionTests.cs | 未进入原子路由（有实战入口）；6L-D逐卡逐能力独立语义已验收 |
 | S02-06S3 | 湖中仙女的馈赠 | S02 | otherworld | trial | 未进入原子路由 | — | — | 权威效果处理、试炼/特殊区入口、行动/状态入口 | L12GameEngine.cs、L12S1ExtendedEffects.cs、L12TrialCompletionTriggerPlans.cs | AtomicReviewBatch6BRegressionTests.cs、AtomicReviewBatch6LDRegressionTests.cs、Bq20260830_02RegressionTests.cs、ImmortalityRegressionTests.cs | 未进入原子路由（有实战入口）；6B试炼完成触发链已验收；6L-D逐卡逐能力独立语义已验收 |
 | S02-06S4 | 寻找圣杯之旅 | S02 | otherworld | trial | 未进入原子路由 | — | — | 权威效果处理、试炼/特殊区入口、行动/状态入口 | L12GameEngine.cs、L12PublicTriggerEffectPlans.cs、L12S1ExtendedEffects.cs、L12S2FactionEffects.cs、L12S2RemainingEffects.cs、L12TrialCompletionTriggerPlans.cs | AtomicReviewBatch6BRegressionTests.cs、AtomicReviewBatch6FRegressionTests.cs、AtomicReviewBatch6GARegressionTests.cs、AtomicReviewBatch6LDRegressionTests.cs、Bq20260830_02RegressionTests.cs、DeckValidatorTests.cs、LatestBugRegressionTests.cs、S2FactionRegressionTests.cs | 未进入原子路由（有实战入口）；6B试炼完成触发链已验收；6G-A可选触发声明、次数预留与独立段已验收；6L-D逐卡逐能力独立语义已验收（6L-D明确错误已修复） |
@@ -264,79 +264,79 @@
 | S02-DS04 | 风暴乱象 | S02 | universal | destruction | 复合过渡 | — | disaster | 静态/派生规则、行动/状态入口 | L12Actions.cs、L12StructuredCardRules.cs | AtomicReviewBatch6LDRegressionTests.cs、NewSystemsTests.cs | 已入原子路由；逐能力待验收；6L-D逐卡逐能力独立语义已验收 |
 | S02-DS05 | 暴怒之罪 | S02 | universal | destruction | 细原子已验证 | disaster | — | 静态/派生规则、行动/状态入口 | L12Actions.cs、L12StructuredCardRules.cs | AtomicReviewBatch6LDRegressionTests.cs | 已入原子路由；逐能力待验收；6L-D逐卡逐能力独立语义已验收 |
 | S02-DS06 | 傲慢之罪 | S02 | universal | destruction | 复合过渡 | — | disaster | 静态/派生规则、行动/状态入口、主动注册 | L12Actions.cs、L12ActiveAbilities.cs、L12StructuredCardRules.cs | AtomicReviewBatch6LDRegressionTests.cs、NewSystemsTests.cs、S2FactionRegressionTests.cs | 已入原子路由；逐能力待验收；6L-D逐卡逐能力独立语义已验收 |
-| ST-DS01 | 怒触不周山 | STDS | universal | destruction | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST-DS02 | 色欲之罪 | STDS | universal | destruction | 细原子已验证 | continuous | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST-DS03 | 邪眼末日 | STDS | universal | destruction | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST01-01 | 赵云 | ST01 | tianting | legion | 未进入原子路由 | — | — | 时机集合 | L12CombatTimeline.cs | StarterBatch3BRegressionTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST01-02 | 武松 | ST01 | tianting | legion | 细原子已验证 | after-attack | — | 权威效果处理、时机集合 | L12CombatTimeline.cs、L12StarterStructuredRules.cs | AtomicReviewBatch6IARegressionTests.cs、StarterBatch3BRegressionTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST01-03 | 萧何 | ST01 | tianting | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterBatch3BRegressionTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST01-04 | 程咬金 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterBatch3ARegressionTests.cs、StarterProductCatalogTests.cs | 未进入原子路由（有实战入口） |
-| ST01-05 | 食铁兽 | ST01 | tianting | legion | 未进入原子路由 | — | — | — | — | StarterBatch3ARegressionTests.cs、StarterProductCatalogTests.cs | 无实战入口 |
-| ST01-06 | 刘季 | ST01 | tianting | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3A.cs | StarterBatch3ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST01-07 | 诸葛连弩兵 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则、时机集合 | L12CombatTimeline.cs、L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST01-08 | 聂隐娘 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST01-09 | 王昭君 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST01-10 | 暗度陈仓 | ST01 | tianting | counter-tactic | 未进入原子路由 | — | — | 时机集合 | L12CombatTimeline.cs | — | 未进入原子路由（有实战入口） |
-| ST01-C1 | 士气·天廷 | ST01 | tianting | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST01-M1 | 嫦娥 | ST01 | tianting | master | 细原子已验证 | morale-return | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-01 | 胡夫 | ST02 | taiyangcheng | legion | 细原子已验证 | continuous、enter | — | 静态/派生规则、权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs、L12StructuredCardRules.cs | RuleKernelTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-02 | 沙漠卫兵 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterProductCatalogTests.cs | 未进入原子路由（有实战入口） |
-| ST02-03 | 白沙瓦舞蛇人 | ST02 | taiyangcheng | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-04 | 绿洲的商人 | ST02 | taiyangcheng | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicEffectsTests.cs、AtomicReviewBatch6IARegressionTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-05 | 绿洲的舞女 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs | 未进入原子路由（有实战入口） |
-| ST02-06 | 乔泽 | ST02 | taiyangcheng | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | RuleKernelTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-07 | 陵墓防卫体 | ST02 | taiyangcheng | legion | 细原子已验证 | opponent-back-to-front | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-08 | 阿肯那顿 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST02-09 | 沙漠眼镜蛇 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterTargetedBatch2ARegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST02-10 | 沙漠送葬 | ST02 | taiyangcheng | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST02-C1 | 士气·太阳城 | ST02 | taiyangcheng | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST02-M1 | 荷鲁斯 | ST02 | taiyangcheng | master | 细原子已验证 | active | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-01 | 蛇眼西格德 | ST03 | asgard | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterBatch3BRegressionTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-02 | 维京狂战士 | ST03 | asgard | legion | 细原子已验证 | continuous | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3A.cs | StarterBatch3ARegressionTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-03 | 弗蕾迪斯 | ST03 | asgard | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterBatch3BRegressionTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-04 | 维京掠夺者 | ST03 | asgard | legion | 细原子已验证 | after-damage | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3A.cs | StarterBatch3ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-05 | 克里斯蒂娜 | ST03 | asgard | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST03-06 | 北欧巨狼 | ST03 | asgard | legion | 未进入原子路由 | — | — | — | — | — | 无实战入口 |
-| ST03-07 | 送葬者凯恩 | ST03 | asgard | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST03-08 | 渴求死亡的勇士 | ST03 | asgard | legion | 细原子已验证 | continuous | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-09 | 英灵殿勇士 | ST03 | asgard | legion | 未进入原子路由 | — | — | — | — | — | 无实战入口 |
-| ST03-10 | 传奇的血脉 | ST03 | asgard | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST03-C1 | 士气·阿斯加德 | ST03 | asgard | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST03-M1 | 西芙 | ST03 | asgard | master | 细原子已验证 | active | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-01 | 森可成 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterProductCatalogTests.cs | 未进入原子路由（有实战入口） |
-| ST04-02 | 佐佐木小次郎 | ST04 | gaotianyuan | legion | 细原子已验证 | attack、death | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-03 | 侍大将 | ST04 | gaotianyuan | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterBatch3BRegressionTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-04 | 甲斐姬 | ST04 | gaotianyuan | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-05 | 近藤勇 | ST04 | gaotianyuan | legion | 细原子已验证 | opponent-turn-lethal | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-06 | 吉原的花魁 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs | 未进入原子路由（有实战入口） |
-| ST04-07 | 木下藤吉郎 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST04-08 | 无名的武士 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | — | — | — | 无实战入口 |
-| ST04-09 | 野猪王 | ST04 | gaotianyuan | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-10 | 侵略如火 | ST04 | gaotianyuan | tactic | 细原子已验证 | continuous、play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST04-C1 | 士气·高天原 | ST04 | gaotianyuan | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、NewSystemsTests.cs、StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST04-M1 | 迦具土 | ST04 | gaotianyuan | master | 细原子已验证 | legion-attack-timing | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST05-01 | 埃涅阿斯·晋升 | ST05 | olympus | legion | 细原子已验证 | promotion-enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST05-02 | 特洛伊勇士 | ST05 | olympus | legion | 未进入原子路由 | — | — | — | — | StarterBatch3BRegressionTests.cs | 无实战入口 |
-| ST05-03 | 珀涅罗珀 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST05-04 | 美狄亚 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST05-05 | 愤怒的公牛 | ST05 | olympus | legion | 未进入原子路由 | — | — | — | — | — | 无实战入口 |
-| ST05-06 | 特勒马科斯 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | — | 未进入原子路由（有实战入口） |
-| ST05-07 | 安提诺乌斯 | ST05 | olympus | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST05-08 | 希帕蒂娅 | ST05 | olympus | legion | 细原子已验证 | enter | — | 静态/派生规则、权威效果处理 | L12StarterStructuredRules.cs、L12StructuredCardRules.cs | StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST05-09 | 美杜莎 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs | 未进入原子路由（有实战入口） |
-| ST05-10 | 猎神的赐福 | ST05 | olympus | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST05-C1 | 士气·奥林匹斯 | ST05 | olympus | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs、L12StarterStructuredCardRules.Batch3B.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST05-M1 | 雅典娜 | ST05 | olympus | master | 细原子已验证 | active | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-01 | 伊丽莎白一世 | ST06 | otherworld | legion | 细原子已验证 | continuous、enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | NewSystemsTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-02 | 森林魁熊 | ST06 | otherworld | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST06-03 | 加雷斯 | ST06 | otherworld | legion | 细原子已验证 | enter | — | 权威效果处理、时机集合 | L12CombatTimeline.cs、L12StarterStructuredRules.cs | AtomicReviewBatch6IARegressionTests.cs、RuleKernelTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-04 | 莫德雷德 | ST06 | otherworld | legion | 细原子已验证 | death、enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-05 | 栖木猎鹰 | ST06 | otherworld | legion | 细原子已验证 | attack、enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicEffectsTests.cs、AtomicReviewBatch6IARegressionTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-06 | 费奥纳的骑士 | ST06 | otherworld | legion | 细原子已验证 | death、enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicEffectsTests.cs、AtomicReviewBatch6IARegressionTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-07 | 布狄卡 | ST06 | otherworld | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | RuleKernelTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-08 | 纯白的灵鹿 | ST06 | otherworld | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicReviewBatch6IARegressionTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-09 | 光之剑 | ST06 | otherworld | artifact | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs | 未进入原子路由（有实战入口） |
-| ST06-10 | 自然馈赠 | ST06 | otherworld | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-C1 | 士气·彼界 | ST06 | otherworld | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs | 未进入原子路由（有实战入口） |
-| ST06-M1 | 银臂努阿达 | ST06 | otherworld | master | 细原子已验证 | active、rune-spent | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
-| ST06-S1 | 探寻天空之城 | ST06 | otherworld | trial | 细原子已验证 | active、trial-complete | — | 权威效果处理、试炼/特殊区入口 | L12StarterStructuredCardRules.Batch3B.cs | Bq20260830_02RegressionTests.cs、StarterBatch3BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST01-01 | 赵云 | ST01 | tianting | legion | 未进入原子路由 | — | — | 时机集合 | L12CombatTimeline.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2BRegressionTests.cs | 未进入原子路由（有实战入口） |
+| ST01-02 | 武松 | ST01 | tianting | legion | 细原子已验证 | after-attack | — | 权威效果处理、时机集合 | L12CombatTimeline.cs、L12StarterStructuredRules.cs | AtomicReviewBatch6IARegressionTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST01-03 | 萧何 | ST01 | tianting | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST01-04 | 程咬金 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterBatch3ARegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 未进入原子路由（有实战入口） |
+| ST01-05 | 食铁兽 | ST01 | tianting | legion | 未进入原子路由 | — | — | — | — | StarterBatch3ARegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 无实战入口 |
+| ST01-06 | 刘季 | ST01 | tianting | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3A.cs | StarterBatch3ARegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST01-07 | 诸葛连弩兵 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则、时机集合 | L12CombatTimeline.cs、L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST01-08 | 聂隐娘 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST01-09 | 王昭君 | ST01 | tianting | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST01-10 | 暗度陈仓 | ST01 | tianting | counter-tactic | 未进入原子路由 | — | — | 时机集合 | L12CombatTimeline.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST01-C1 | 士气·天廷 | ST01 | tianting | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST01-M1 | 嫦娥 | ST01 | tianting | master | 细原子已验证 | morale-return | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-01 | 胡夫 | ST02 | taiyangcheng | legion | 细原子已验证 | continuous、enter | — | 静态/派生规则、权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs、L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-02 | 沙漠卫兵 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 未进入原子路由（有实战入口） |
+| ST02-03 | 白沙瓦舞蛇人 | ST02 | taiyangcheng | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-04 | 绿洲的商人 | ST02 | taiyangcheng | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicEffectsTests.cs、AtomicReviewBatch6IARegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-05 | 绿洲的舞女 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST02-06 | 乔泽 | ST02 | taiyangcheng | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-07 | 陵墓防卫体 | ST02 | taiyangcheng | legion | 细原子已验证 | opponent-back-to-front | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-08 | 阿肯那顿 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST02-09 | 沙漠眼镜蛇 | ST02 | taiyangcheng | legion | 未进入原子路由 | — | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs | 未进入原子路由（有实战入口） |
+| ST02-10 | 沙漠送葬 | ST02 | taiyangcheng | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST02-C1 | 士气·太阳城 | ST02 | taiyangcheng | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST02-M1 | 荷鲁斯 | ST02 | taiyangcheng | master | 细原子已验证 | active | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-01 | 蛇眼西格德 | ST03 | asgard | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-02 | 维京狂战士 | ST03 | asgard | legion | 细原子已验证 | continuous | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3A.cs | StarterBatch3ARegressionTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-03 | 弗蕾迪斯 | ST03 | asgard | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2A.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-04 | 维京掠夺者 | ST03 | asgard | legion | 细原子已验证 | after-damage | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3A.cs | StarterBatch3ARegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-05 | 克里斯蒂娜 | ST03 | asgard | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST03-06 | 北欧巨狼 | ST03 | asgard | legion | 未进入原子路由 | — | — | — | — | StarterFullCatalogAuditTests.cs | 无实战入口 |
+| ST03-07 | 送葬者凯恩 | ST03 | asgard | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST03-08 | 渴求死亡的勇士 | ST03 | asgard | legion | 细原子已验证 | continuous | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-09 | 英灵殿勇士 | ST03 | asgard | legion | 未进入原子路由 | — | — | — | — | StarterFullCatalogAuditTests.cs | 无实战入口 |
+| ST03-10 | 传奇的血脉 | ST03 | asgard | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST03-C1 | 士气·阿斯加德 | ST03 | asgard | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST03-M1 | 西芙 | ST03 | asgard | master | 细原子已验证 | active | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-01 | 森可成 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 未进入原子路由（有实战入口） |
+| ST04-02 | 佐佐木小次郎 | ST04 | gaotianyuan | legion | 细原子已验证 | attack、death | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-03 | 侍大将 | ST04 | gaotianyuan | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-04 | 甲斐姬 | ST04 | gaotianyuan | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-05 | 近藤勇 | ST04 | gaotianyuan | legion | 细原子已验证 | opponent-turn-lethal | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-06 | 吉原的花魁 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST04-07 | 木下藤吉郎 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | CombatTimelineRegressionTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST04-08 | 无名的武士 | ST04 | gaotianyuan | legion | 未进入原子路由 | — | — | — | — | StarterFullCatalogAuditTests.cs | 无实战入口 |
+| ST04-09 | 野猪王 | ST04 | gaotianyuan | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-10 | 侵略如火 | ST04 | gaotianyuan | tactic | 细原子已验证 | continuous、play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST04-C1 | 士气·高天原 | ST04 | gaotianyuan | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、NewSystemsTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST04-M1 | 迦具土 | ST04 | gaotianyuan | master | 细原子已验证 | legion-attack-timing | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST05-01 | 埃涅阿斯·晋升 | ST05 | olympus | legion | 细原子已验证 | promotion-enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST05-02 | 特洛伊勇士 | ST05 | olympus | legion | 未进入原子路由 | — | — | — | — | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 无实战入口 |
+| ST05-03 | 珀涅罗珀 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST05-04 | 美狄亚 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST05-05 | 愤怒的公牛 | ST05 | olympus | legion | 未进入原子路由 | — | — | — | — | StarterFullCatalogAuditTests.cs | 无实战入口 |
+| ST05-06 | 特勒马科斯 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST05-07 | 安提诺乌斯 | ST05 | olympus | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST05-08 | 希帕蒂娅 | ST05 | olympus | legion | 细原子已验证 | enter | — | 静态/派生规则、权威效果处理 | L12StarterStructuredRules.cs、L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST05-09 | 美杜莎 | ST05 | olympus | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST05-10 | 猎神的赐福 | ST05 | olympus | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST05-C1 | 士气·奥林匹斯 | ST05 | olympus | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs、L12StarterStructuredCardRules.Batch3B.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST05-M1 | 雅典娜 | ST05 | olympus | master | 细原子已验证 | active | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-01 | 伊丽莎白一世 | ST06 | otherworld | legion | 细原子已验证 | continuous、enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | NewSystemsTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-02 | 森林魁熊 | ST06 | otherworld | legion | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2BRegressionTests.cs | 未进入原子路由（有实战入口） |
+| ST06-03 | 加雷斯 | ST06 | otherworld | legion | 细原子已验证 | enter | — | 权威效果处理、时机集合 | L12CombatTimeline.cs、L12StarterStructuredRules.cs | AtomicReviewBatch6IARegressionTests.cs、RuleKernelTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2ARegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-04 | 莫德雷德 | ST06 | otherworld | legion | 细原子已验证 | death、enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | StarterFullCatalogAuditTests.cs、StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-05 | 栖木猎鹰 | ST06 | otherworld | legion | 细原子已验证 | attack、enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicEffectsTests.cs、AtomicReviewBatch6IARegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-06 | 费奥纳的骑士 | ST06 | otherworld | legion | 细原子已验证 | death、enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicEffectsTests.cs、AtomicReviewBatch6IARegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-07 | 布狄卡 | ST06 | otherworld | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredCardRules.Batch2B.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs、StarterTargetedBatch2ARegressionTests.cs、StarterTargetedBatch2BRegressionTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-08 | 纯白的灵鹿 | ST06 | otherworld | legion | 细原子已验证 | enter | — | 权威效果处理 | L12StarterStructuredRules.cs | AtomicReviewBatch6IARegressionTests.cs、StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-09 | 光之剑 | ST06 | otherworld | artifact | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | RuleKernelTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST06-10 | 自然馈赠 | ST06 | otherworld | tactic | 细原子已验证 | play | — | 权威效果处理 | L12StarterStructuredRules.cs | StarterFullCatalogAuditTests.cs、StarterProductCatalogTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-C1 | 士气·彼界 | ST06 | otherworld | rune | 未进入原子路由 | — | — | 权威效果处理、阵营/士气入口 | L12S1ExtendedEffects.cs | ExtendedCardEffectsTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST06-M1 | 银臂努阿达 | ST06 | otherworld | master | 细原子已验证 | active、rune-spent | — | 权威效果处理、主宰入口 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST06-S1 | 探寻天空之城 | ST06 | otherworld | trial | 细原子已验证 | active、trial-complete | — | 权威效果处理、试炼/特殊区入口 | L12StarterStructuredCardRules.Batch3B.cs | Bq20260830_02RegressionTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST-DS01 | 怒触不周山 | STDS | universal | destruction | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |
+| ST-DS02 | 色欲之罪 | STDS | universal | destruction | 细原子已验证 | continuous | — | 权威效果处理 | L12StarterStructuredCardRules.Batch3B.cs | RuleKernelTests.cs、StarterBatch3BRegressionTests.cs、StarterFullCatalogAuditTests.cs | 已入原子路由；逐能力待验收 |
+| ST-DS03 | 邪眼末日 | STDS | universal | destruction | 未进入原子路由 | — | — | 静态/派生规则 | L12StructuredCardRules.cs | StarterFullCatalogAuditTests.cs | 未进入原子路由（有实战入口） |

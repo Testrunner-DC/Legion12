@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import CardImage from '../CardImage.vue'
+import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card } from '../types'
 
 type Zone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'center'
@@ -17,6 +17,7 @@ type Movement = {
   fromRect: AnchorRect
   toRect: AnchorRect
   sourceGhost?: HTMLElement
+  preparedImageUrl?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -31,6 +32,32 @@ const queue: Movement[] = []
 let initialized = false
 let lastSequence = 0
 let timer: ReturnType<typeof setTimeout> | null = null
+const preparedImageUrls = new Map<string, string>()
+
+function waitForImage(url: string) {
+  return new Promise<boolean>(resolve => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => resolve(true)
+    image.onerror = () => resolve(false)
+    image.src = url
+  })
+}
+
+async function prepareMovementImage(card: Card) {
+  const key = `${card.cardId}\n${card.imageUrl ?? ''}`
+  const cached = preparedImageUrls.get(key)
+  if (cached) return cached
+  const candidates = (await resolveCardAssetUrls(card.cardId, card.imageUrl, 'board'))
+    .filter(url => url !== CARD_IMAGE_PLACEHOLDER)
+  for (const url of candidates) {
+    if (!await waitForImage(url)) continue
+    preparedImageUrls.set(key, url)
+    return url
+  }
+  // The placeholder is a confirmed last resort here, never an unresolved first frame.
+  return CARD_IMAGE_PLACEHOLDER
+}
 
 function textSource(text: string): Zone {
   if (/从墓地|墓地中|墓地的/.test(text)) return 'graveyard'
@@ -249,6 +276,9 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       ? movementFromEvent(event, starts[index]!.rect, resolveRect(draft.to, draft.playerIndex, draft.card?.instanceId))
       : null
     if (movement) movement.sourceGhost = starts[index]?.ghost
+    if (movement && !movement.sourceGhost && !movement.concealed && movement.card) {
+      movement.preparedImageUrl = await prepareMovementImage(movement.card)
+    }
     const previous = queue.at(-1) ?? active.value
     const repeated = movement && previous && movement.card?.instanceId
       && movement.card.instanceId === previous.card?.instanceId
@@ -272,8 +302,7 @@ onBeforeUnmount(reset)
       data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
       <div class="moving-card" :class="{ concealed: active.concealed, covered: active.covered }">
         <img v-if="active.concealed" src="/assets/l12/card-back-official.png" alt="" />
-        <CardImage v-else-if="active.card" :card-id="active.card.cardId" :legacy-url="active.card.imageUrl"
-          :alt="active.card.name" intent="board" eager />
+        <img v-else-if="active.preparedImageUrl" :src="active.preparedImageUrl" :alt="active.card?.name || ''" />
       </div>
     </div>
   </Teleport>

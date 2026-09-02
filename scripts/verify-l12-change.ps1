@@ -141,7 +141,7 @@ try {
         '(^|/)L12S1FactionEffects\.cs$',
         '(^|/)L12S2UniversalEffects\.cs$'
     )
-    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes)'))
+    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes|test-l12-st-effect-audit)'))
     $platformChanged = Test-AnyPath @('^service-tests-never-match$')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
@@ -194,6 +194,8 @@ try {
             (Join-Path $repoRoot "scripts\test-l12-trial-completion-declarations.ps1")
         Invoke-CheckedPowerShellScript "Private-zone summon resolution transaction guard" `
             (Join-Path $repoRoot "scripts\test-l12-private-zone-summon-transactions.ps1")
+        Invoke-CheckedPowerShellScript "ST full catalog effect coverage guard" `
+            (Join-Path $repoRoot "scripts\test-l12-st-effect-audit.ps1")
     }
 
     if ($configChanged) {

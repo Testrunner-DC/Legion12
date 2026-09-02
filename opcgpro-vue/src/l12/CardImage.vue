@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   CARD_IMAGE_PLACEHOLDER,
   fallbackCardAsset,
+  peekCardAsset,
   resolveCardAsset,
   type CardAssetSource,
   type CardImageIntent,
@@ -30,7 +31,9 @@ const emit = defineEmits<{
   fallback: [kind: CardAssetSource['kind']]
 }>()
 
-const resolved = ref(fallbackCardAsset(props.cardId, props.legacyUrl, props.intent))
+const cachedAsset = peekCardAsset(props.cardId, props.legacyUrl, props.intent)
+const resolved = ref(cachedAsset ?? fallbackCardAsset(props.cardId, props.legacyUrl, props.intent))
+const resolutionComplete = ref(Boolean(cachedAsset || props.legacyUrl))
 const sourceIndex = ref(0)
 const highRequested = ref(false)
 const avifDisabled = ref(false)
@@ -42,12 +45,23 @@ const useHigh = computed(() => props.intent === 'detail' && highRequested.value)
 const imageUrl = computed(() => useHigh.value ? activeSource.value.webp : activeSource.value.lowWebp)
 const avifUrl = computed(() => useHigh.value && !avifDisabled.value ? activeSource.value.avif : undefined)
 const landscapeThumbnail = computed(() => props.intent === 'thumb' && resolved.value.orientation === 'landscape')
+const imageReady = computed(() => resolutionComplete.value || activeSource.value.kind !== 'placeholder')
 
 async function refresh() {
   const expected = `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`
+  const cached = peekCardAsset(props.cardId, props.legacyUrl, props.intent)
+  if (cached) {
+    resolved.value = cached
+    resolutionComplete.value = true
+  } else if (!props.legacyUrl) {
+    // Keep the stable card-sized shell, but never expose the XII placeholder
+    // while a real manifest-backed image is still resolving.
+    resolutionComplete.value = false
+  }
   const next = await resolveCardAsset(props.cardId, props.legacyUrl, props.intent)
   if (expected !== `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`) return
   resolved.value = next
+  resolutionComplete.value = true
   sourceIndex.value = 0
   highRequested.value = false
   avifDisabled.value = false
@@ -114,6 +128,7 @@ onMounted(refresh)
   >
     <source v-if="avifUrl" :key="`avif-${renderKey}`" type="image/avif" :srcset="avifUrl" />
     <img
+      v-if="imageReady"
       :key="`img-${renderKey}`"
       class="l12-card-image__img"
       :src="imageUrl"
@@ -125,11 +140,13 @@ onMounted(refresh)
       @load="onLoad"
       @error="onError"
     />
+    <span v-else class="l12-card-image__resolving" aria-hidden="true"></span>
   </picture>
 </template>
 
 <style scoped>
 .l12-card-image{display:block;width:100%;height:100%;overflow:hidden;background:#090d0e;line-height:0}
 .l12-card-image__img{display:block;width:100%;height:100%;background:#090d0e}
+.l12-card-image__resolving{display:block;width:100%;height:100%;background:#090d0e}
 .l12-card-image.landscape-thumbnail-image{position:relative;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
 </style>

@@ -1058,7 +1058,8 @@
     "cardType": "destruction",
     "product": "STDS",
     "faction": "universal",
-    "effect": "触发 将所有前排兵力不高于4000的军团置入所有者墓地。"
+    "effect": "触发 将所有前排兵力不高于4000的军团置入所有者墓地。",
+    "atomicReference": "Ability 1\n触发 将所有前排兵力不高于4000的军团置入所有者墓地。"
   },
   {
     "id": "ST-DS02",
@@ -1067,7 +1068,8 @@
     "cardType": "destruction",
     "product": "STDS",
     "faction": "universal",
-    "effect": "持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。"
+    "effect": "持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。",
+    "atomicReference": "Ability 1\n持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。"
   },
   {
     "id": "ST-DS03",
@@ -1076,7 +1078,8 @@
     "cardType": "destruction",
     "product": "STDS",
     "faction": "universal",
-    "effect": "触发 双方弃置各自战场上1张军团。"
+    "effect": "触发 双方弃置各自战场上1张军团。",
+    "atomicReference": "Ability 1\n触发 双方弃置各自战场上1张军团。"
   },
   {
     "id": "ST01-C1",

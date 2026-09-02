@@ -78,6 +78,12 @@ MORALE_CARDS = [
     },
 ]
 
+ATOMIC_REFERENCE_OVERRIDES = {
+    "ST-DS01": "Ability 1\n触发 将所有前排兵力不高于4000的军团置入所有者墓地。",
+    "ST-DS02": "Ability 1\n持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。",
+    "ST-DS03": "Ability 1\n触发 双方弃置各自战场上1张军团。",
+}
+
 
 def column_index(reference: str) -> int:
     letters = re.match(r"[A-Z]+", reference).group(0)
@@ -176,6 +182,10 @@ def build_card(headers: list[str], raw: list[object | None]) -> dict[str, object
     atomic_reference = normalized_text(row["原子化参考"])
     if atomic_reference:
         card["atomicReference"] = atomic_reference
+    elif card_id in ATOMIC_REFERENCE_OVERRIDES:
+        # ST天灾没有单独维护的人工原子列时，仍以数据库效果原文建立稳定能力边界。
+        # 仅补结构，不从可变展示文本推断实战规则。
+        card["atomicReference"] = ATOMIC_REFERENCE_OVERRIDES[card_id]
     return card
 
 

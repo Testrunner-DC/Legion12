@@ -1,4 +1,8 @@
 const assetRoot = '/assets/l12/special'
+// Public assets are served outside Vite's hashed bundle. Keep an explicit
+// revision so a previously cached 404 for a newly added Profile cannot survive
+// after the file has been deployed.
+const masterProfileAssetRevision = '20260903-2'
 
 const roundCardAssets: Record<string, string> = {
   'S01-0216': 'Round_S01-0216-卡诺匹斯箱.png',
@@ -45,7 +49,7 @@ export const defaultSiteLogoUrl = `${assetRoot}/logo/main.png`
 export const transparentSiteLogoUrl = `${assetRoot}/logo/main-trans.png`
 
 export function masterProfileUrl(masterId?: string, fallback?: string) {
-  return masterId ? `${assetRoot}/master/${masterId}.png` : fallback
+  return masterId ? `${assetRoot}/master/${masterId}.png?v=${masterProfileAssetRevision}` : fallback
 }
 
 export function roundCardUrl(cardId?: string, fallback?: string) {
