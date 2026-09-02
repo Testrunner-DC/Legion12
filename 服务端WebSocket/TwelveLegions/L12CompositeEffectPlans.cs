@@ -18,7 +18,7 @@ internal sealed record L12CompositeEffectSegmentSpec(
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在支付前
 /// 收齐公开模式、目标与费用对象，并让每个独立效果段各自进入堆叠和响应窗口。
 /// </summary>
-internal static class L12CompositeEffectPlans
+internal static partial class L12CompositeEffectPlans
 {
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> HandPlayPlans =
         new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
@@ -383,17 +383,24 @@ internal static class L12CompositeEffectPlans
     private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
         new(StringComparer.OrdinalIgnoreCase) { "S01-0015", "S02-0405" };
 
-    public static bool HasHandPlayPlan(string cardId) => HandPlayPlans.ContainsKey(cardId);
+    public static bool HasHandPlayPlan(string cardId)
+        => HandPlayPlans.ContainsKey(cardId)
+            || L12StructuredCardRules.StarterHandPlayPlanId(cardId) is { } starter
+                && StarterHandPlayPlans.ContainsKey(starter);
 
     public static bool RequiresHandPlayDeclaration(string cardId)
-        => HasHandPlayPlan(cardId) && !HandPlayPlansWithoutControllerDeclaration.Contains(cardId);
+        => L12StructuredCardRules.StarterHandPlayPlanId(cardId) is not null
+            || HasHandPlayPlan(cardId) && !HandPlayPlansWithoutControllerDeclaration.Contains(cardId);
 
     public static bool RequiresTriggerDeclaration(string cardId, string trigger)
         => cardId.Equals("S02-0516", StringComparison.OrdinalIgnoreCase)
             && trigger.Equals("attack", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<L12CompositeEffectSegmentSpec> Segments(string cardId)
-        => HandPlayPlans.TryGetValue(cardId, out var handPlay) ? handPlay
+        => L12StructuredCardRules.StarterHandPlayPlanId(cardId) is { } starterPlan
+            && StarterHandPlayPlans.TryGetValue(starterPlan, out var starter) ? starter
+            : StarterContinuationPlans.TryGetValue(cardId, out var starterContinuation) ? starterContinuation
+            : HandPlayPlans.TryGetValue(cardId, out var handPlay) ? handPlay
             : ActivePlans.TryGetValue(cardId, out var active) ? active
             : ResponseAndTriggerPlans.GetValueOrDefault(cardId, []);
 }
@@ -446,6 +453,7 @@ public sealed partial class L12GameEngine
         var opponent = State.Players[1 - playerIndex];
         var steps = new List<L12ActivationSelectionStep>();
 
+        if (!TryBuildStarterCompositeDeclaration(playerIndex, source, player, opponent, steps))
         switch (source.CardId)
         {
             case "S01-0005":
@@ -1111,7 +1119,7 @@ public sealed partial class L12GameEngine
                 && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
             "S02-0406" => mode is "mode:row-cost" or "mode:front-attack" or "mode:free-move"
                 && (mode != "mode:row-cost" || declared.GetValueOrDefault("row", []).SingleOrDefault() is "row:0" or "row:1"),
-            _ => false,
+            _ => ValidateStarterCompositeDeclaration(controller, card, declared),
         };
         return valid;
     }

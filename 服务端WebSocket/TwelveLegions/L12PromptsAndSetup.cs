@@ -191,6 +191,8 @@ public sealed partial class L12GameEngine
             ["mode:entry"] = "使军团登场",
             ["mode:revive"] = "从墓地使军团登场",
             ["mode:summon"] = "使已声明军团登场",
+            ["mode:shock"] = "强化震击伤害",
+            ["mode:ranged"] = "强化远程进攻",
             ["row:0"] = "选择前排", ["row:1"] = "选择后排",
             ["pay:god-power"] = "支付神力", ["buff:strong"] = "获得强攻", ["buff:shock"] = "获得震击",
         };

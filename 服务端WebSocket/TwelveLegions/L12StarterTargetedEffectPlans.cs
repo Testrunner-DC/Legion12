@@ -4,7 +4,8 @@ public sealed partial class L12GameEngine
 {
     private static string? StarterTargetedPlan(string cardId, string trigger)
         => L12StructuredCardRules.StarterTargetedBatch2APlan(cardId, trigger)
-            ?? L12StructuredCardRules.StarterTargetedBatch2BPlan(cardId, trigger);
+            ?? L12StructuredCardRules.StarterTargetedBatch2BPlan(cardId, trigger)
+            ?? L12StructuredCardRules.StarterRemainingPlan(cardId, trigger);
 
     private static bool HasStarterTargetedTriggerDeclarationPlan(string cardId, string trigger)
         => StarterTargetedPlan(cardId, trigger) is not null;
@@ -13,6 +14,9 @@ public sealed partial class L12GameEngine
     {
         var plan = StarterTargetedPlan(candidate.SourceCardId, candidate.Trigger);
         if (plan is null) return false;
+
+        if (L12StructuredCardRules.IsStarterRemainingPlan(plan))
+            return TryBeginStarterRemainingTriggerDeclaration(candidate, source, plan);
 
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
@@ -230,6 +234,9 @@ public sealed partial class L12GameEngine
     {
         var plan = StarterTargetedPlan(candidate.SourceCardId, candidate.Trigger);
         if (plan is null) return false;
+
+        if (L12StructuredCardRules.IsStarterRemainingPlan(plan))
+            return TryCompleteStarterRemainingTriggerDeclaration(candidate, activation, plan);
 
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var isOptionalActivation = plan is "xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"

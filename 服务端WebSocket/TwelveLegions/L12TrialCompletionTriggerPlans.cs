@@ -10,11 +10,11 @@ public sealed partial class L12GameEngine
     private const string TrialGrailJourney = "S02-06S4";
     private const string TrialFenianLegend = "S02-06S5";
     private const string TrialAngusMaster = "S02-06M2";
-
     private static bool HasTrialCompletionTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data)
         => trigger == "trial-complete"
             && (cardId is TrialLakeLady or TrialGrailJourney or TrialFenianLegend
+                || L12StructuredCardRules.StarterRemainingPlan(cardId, trigger) == "sky-city-completion"
                 || cardId == TrialAngusMaster
                     && data?.GetValueOrDefault("trialCompletionPlan") == "angus-rune");
 
@@ -28,6 +28,9 @@ public sealed partial class L12GameEngine
             TrialFenianLegend => "fenian-legend",
             _ => null,
         };
+        if (printedPlan is null
+            && L12StructuredCardRules.StarterRemainingPlan(trial.CardId, "trial-complete") == "sky-city-completion")
+            printedPlan = "sky-city";
         if (printedPlan is not null)
         {
             var triggerText = ResolveTriggeredEffectDisplayText(trial, "trial-complete", "触发");
@@ -394,6 +397,8 @@ public sealed partial class L12GameEngine
             "lake-lady" when current < 2 => current + 1,
             "fenian-legend" when current + 1 < item.Data.GetValueOrDefault("fenianTargets", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).Length => current + 1,
+            "sky-city" when current + 1 < item.Data.GetValueOrDefault("skySegments", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries).Length => current + 1,
             _ => -1,
         };
         if (next < 0) return;
@@ -403,7 +408,10 @@ public sealed partial class L12GameEngine
         {
             ["trialSegment"] = next.ToString(),
         };
-        var text = plan == "fenian-legend"
+        var text = plan == "sky-city"
+            ? StarterSkySegmentText(item.Data.GetValueOrDefault("skySegments", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries)[next])
+            : plan == "fenian-legend"
             ? $"芬尼亚传奇：第{next + 1}个目标本回合兵力-3000"
             : next == 1
                 ? "湖中仙女的馈赠：墓地所有亚瑟王返回牌库并重洗"

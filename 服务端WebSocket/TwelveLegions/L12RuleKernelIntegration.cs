@@ -721,6 +721,12 @@ public sealed partial class L12GameEngine
             return;
         }
 
+        if (activation.Ability == "starter-disaster-attack")
+        {
+            CompleteStarterDisasterAttackDiscard(activation);
+            return;
+        }
+
         var player = State.Players[activation.Controller];
         var source = FindOnField(player, activation.SourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == activation.SourceInstanceId ? player.Relic : null)
@@ -850,6 +856,12 @@ public sealed partial class L12GameEngine
                 return FindOnField(battlefield, activation.DeclaredTargets[0], out _, out _) is not null
                     && battlefield.Field[row][slot] is null
                     && EffectCavalryDestinations(battlefield).Contains(choice);
+            }
+            if (activation?.Ability == "horusRevive")
+            {
+                var occupant = State.Players[controller].Field[row][slot];
+                return occupant is null || activation.DeclaredValues.GetValueOrDefault("discardCosts", [])
+                    .Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase);
             }
             return State.Players[controller].Field[row][slot] is null;
         }
@@ -1436,6 +1448,10 @@ public sealed partial class L12GameEngine
         void Add(string key, int amount) => bonuses[key] = bonuses.GetValueOrDefault(key) + amount;
         foreach (var sword in card.AttachedCards.Where(attached => attached.CardId == "S02-06S2"))
             Add($"attached:{sword.InstanceId}:king-sword", 1000);
+        var starterDisasterBonus = L12StructuredCardRules.StarterDisasterTroopsBonus(
+            State.ActiveDisaster?.CardId, card);
+        if (starterDisasterBonus != 0)
+            Add($"disaster:{State.ActiveDisaster!.InstanceId}:disaster-legion", starterDisasterBonus);
         var isOpponentTurn = State.ActivePlayer != owner.PlayerIndex;
         if (card.CardId == "S01-0204")
             foreach (var guard in card.AttachedCards.Where(attached => attached.CardId == "S01-0212"))

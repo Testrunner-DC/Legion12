@@ -86,7 +86,8 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add(chosen[0] == "free-tactic" ? "ds01-free-tactic" : "ds01-back-master");
                 FinishStackItem(item); break;
             default:
-                if (!TryContinueS1Extended(item, prompt, chosen, command)
+                if (!TryContinueStarterRemainingEffect(item, prompt, chosen)
+                    && !TryContinueS1Extended(item, prompt, chosen, command)
                     && !TryContinueS2Faction(item, prompt, chosen, command)) FinishStackItem(item);
                 break;
         }

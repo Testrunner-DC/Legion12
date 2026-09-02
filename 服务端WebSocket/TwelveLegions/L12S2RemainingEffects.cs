@@ -604,6 +604,21 @@ public sealed partial class L12GameEngine
                 AddEvent("draw", endingPlayer, $"{horse.Name}的效果使{owner.Name}抽取1张牌", horse);
             }
         }
+        for (var hostIndex = 0; hostIndex < State.Players.Length; hostIndex++)
+        {
+            var host = State.Players[hostIndex];
+            for (var row = 0; row < host.Field.Length; row++)
+            for (var slot = 0; slot < host.Field[row].Length; slot++)
+            {
+                var delayed = host.Field[row][slot];
+                if (delayed is null || L12StructuredCardRules.HasDedicatedEndTurnDiscardRoute(delayed.CardId)
+                    || delayed.OwnerIndex != endingPlayer
+                    || delayed.DiscardAtEndOfTurnUntilTurn < 0
+                    || delayed.DiscardAtEndOfTurnUntilTurn > State.TurnSerial) continue;
+                _ = RemoveFromField(host, delayed, true, "在所有者回合结束时弃置",
+                    leaveKind: L12FieldLeaveKind.Discard);
+            }
+        }
         RecalculateContinuousTroops();
     }
 
@@ -631,6 +646,27 @@ public sealed partial class L12GameEngine
     {
         moved.LastMovedTurn = State.TurnSerial;
         var player = State.Players[playerIndex];
+        if (fromRow == 1 && toRow == 0)
+        {
+            var watcher = State.Players[1 - playerIndex];
+            foreach (var source in PublicLegions(watcher).Where(card =>
+                         L12StructuredCardRules.StarterRemainingPlan(card.CardId, "opponent-back-to-front")
+                         == "tomb-defender-debuff"))
+            {
+                var onceKey = $"trigger:starter-tomb-defender:{source.InstanceId}:{State.TurnSerial}";
+                var pendingKey = $"{onceKey}:pending";
+                if (watcher.UsedAbilities.Contains(onceKey) || !watcher.UsedAbilities.Add(pendingKey)) continue;
+                QueueTriggerCandidates([
+                    CreateTriggerCandidate(watcher.PlayerIndex, source, "opponent-back-to-front",
+                        "对方军团从后排位移至前排时效果", new Dictionary<string, string>
+                        {
+                            ["target"] = moved.InstanceId,
+                            ["onceKey"] = onceKey,
+                            ["cleanupReservation"] = pendingKey,
+                        })
+                ]);
+            }
+        }
         if (player.MasterId != "S02-04M1" || State.ActivePlayer != playerIndex) return;
         var master = CreateCard("S02-04M1", $"master-{playerIndex}");
         var candidates = new List<L12TriggerCandidate>();

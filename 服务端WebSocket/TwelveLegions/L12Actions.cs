@@ -232,6 +232,9 @@ public sealed partial class L12GameEngine
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus")
             && player.NextS2OlympusLegionDiscount > 0)
             player.NextS2OlympusLegionDiscount = 0;
+        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "otherworld")
+            && player.NextOtherworldLegionEntryDiscount > 0)
+            player.NextOtherworldLegionEntryDiscount = 0;
         if (card.CardType == "legion" && player.NextLegionEntryDiscount > 0)
             player.NextLegionEntryDiscount = 0;
         if (card.CardType == "tactic" && player.FreeTacticCount > 0)
@@ -441,8 +444,7 @@ public sealed partial class L12GameEngine
             && State.Players[playerIndex].Morale.Count < State.Players[1 - playerIndex].Morale.Count)
             modifier--;
         if (card.CardId == "S01-0202" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier -= 2;
-        if (card.CardId == "S01-0301") modifier -= player.Graveyard.Count(target => target.CardType == "legion"
-            && L12StructuredCardRules.HasFaction(player, target, "asgard")) / 4;
+        if (card.CardId == "S01-0301") modifier -= CountGraveFactionLegions(player, "asgard") / 4;
         if (card.CardId == "S01-0302") modifier -= PublicLegions(player).Count();
         if (card.CardId is "S01-0305" or "S01-0306" && player.Hp <= 6) modifier--;
         if (card.CardId == "S02-0202") modifier -= player.TombNamedLegionsLeftThisTurn;
@@ -462,6 +464,8 @@ public sealed partial class L12GameEngine
             modifier -= player.NextS2SunDisasterLegionDiscount;
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus"))
             modifier -= player.NextS2OlympusLegionDiscount;
+        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "otherworld"))
+            modifier -= player.NextOtherworldLegionEntryDiscount;
         if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S02-DS06")
             modifier++;
         if (card.CardId == "S02-0622") modifier -= Math.Max(0, spentRunes) * 2;
@@ -537,6 +541,22 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject(attackError);
         var defender = State.Players[1 - playerIndex];
 
+        if (L12StructuredCardRules.RequiresStarterDisasterAttackDiscard(State.ActiveDisaster?.CardId))
+        {
+            var selected = command.CardInstanceIds?.ToArray();
+            if (selected is null)
+            {
+                if (State.Players[playerIndex].Hand.Count == 0)
+                    return CommandResult.Reject("当前天灾持续期间，手牌为空时不能发动进攻");
+                return BeginStarterDisasterAttackDiscard(playerIndex, attacker, command.Target);
+            }
+            if (selected.Length != 1 || State.Players[playerIndex].Hand.All(card => card.InstanceId != selected[0]))
+                return CommandResult.Reject("选择的进攻弃牌费用已失效");
+            var discarded = State.Players[playerIndex].Hand.First(card => card.InstanceId == selected[0]);
+            MoveHandToGrave(State.Players[playerIndex], discarded.InstanceId, causedByEffect: false);
+            AddEvent("cost", playerIndex, "色欲之罪使进攻方弃置1张手牌", attacker, discarded);
+        }
+
         if (State.ActiveDisaster?.CardId == "S01-DS04" && attacker.Troops > 2000)
         {
             var thunderRoll = _random.Next(1, 7);
@@ -588,11 +608,22 @@ public sealed partial class L12GameEngine
             attacker.Troops += tsukuyomiBonus;
             AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+{tsukuyomiBonus}", attacker);
         }
-        var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2") ? 1 : 0);
+        if (attacker.AttackOnlyTroopsBonusUntilTurn == State.TurnSerial && attacker.AttackOnlyTroopsBonus != 0)
+        {
+            temporaryAttackerTroopsBonus += attacker.AttackOnlyTroopsBonus;
+            attacker.Troops += attacker.AttackOnlyTroopsBonus;
+            AddEvent("effect", playerIndex, $"〈{attacker.Name}〉本次进攻兵力+{attacker.AttackOnlyTroopsBonus}", attacker);
+        }
+        var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2"
+            || L12StructuredCardRules.StarterAttachedCardGrantsStrongAttack(card.CardId)) ? 1 : 0);
         if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
             damage += attacker.GawainMasterDamageBonus;
+        if (attacker.MasterAttackDamageBonusUntilTurn == State.TurnSerial)
+            damage += attacker.MasterAttackDamageBonus;
         if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
-        var hasAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
+        var kagutsuchiCandidate = BuildStarterKagutsuchiCandidate(playerIndex, attacker);
+        var hasPrintedAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
+        var hasAttackerAttackTiming = hasPrintedAttackerAttackTiming || kagutsuchiCandidate is not null;
         State.PendingDefense = new L12PendingDefense
         {
             AttackerPlayer = playerIndex,
@@ -618,7 +649,16 @@ public sealed partial class L12GameEngine
                 $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.Troops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.Troops}", attacker, attackTarget);
         if (hasAttackerAttackTiming)
         {
-            if (L12CompositeEffectPlans.RequiresTriggerDeclaration(attacker.CardId, "attack"))
+            if (kagutsuchiCandidate is not null)
+            {
+                var candidates = new List<L12TriggerCandidate>();
+                if (hasPrintedAttackerAttackTiming)
+                    candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "attack",
+                        "进攻方【进攻时】效果"));
+                candidates.Add(kagutsuchiCandidate);
+                QueueTriggerCandidates(candidates);
+            }
+            else if (L12CompositeEffectPlans.RequiresTriggerDeclaration(attacker.CardId, "attack"))
                 QueueTriggerCandidates([
                     CreateTriggerCandidate(playerIndex, attacker, "attack", "进攻方【进攻时】效果")
                 ]);

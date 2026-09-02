@@ -2570,11 +2570,13 @@ public sealed partial class L12GameEngine
             .Where(candidate => candidate is not null && IsFieldLegion(candidate) && !candidate.Hidden)
             .Cast<L12CardInstance>()
             .ToArray();
+        var shockDamage = 2000 + (source.ShockDamageBonusUntilTurn == State.TurnSerial
+            ? source.ShockDamageBonus : 0);
         foreach (var candidate in adjacent)
-            AddTimedModifier(candidate, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), $"{source.Name}的震击");
+            AddTimedModifier(candidate, -shockDamage, 0, ExpiryAtNextOwnEnd(item.Controller), $"{source.Name}的震击");
         RecordPotentialStateBasedSourceKills(item, source, adjacent);
         if (adjacent.Length > 0)
-            AddEvent("effect", item.Controller, $"{source.Name}的震击使进攻目标左右相邻军团本回合兵力-2000", [source, .. adjacent]);
+            AddEvent("effect", item.Controller, $"{source.Name}的震击使进攻目标左右相邻军团本回合兵力-{shockDamage}", [source, .. adjacent]);
     }
 
     private void BeginS2OkitaAttack(L12StackItem item)

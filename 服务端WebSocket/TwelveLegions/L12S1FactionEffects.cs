@@ -595,7 +595,10 @@ public sealed partial class L12GameEngine
             case "gramDamage":
                 choices = player.Graveyard.Where(card => card.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).ToArray();
-                return BeginPendingActivation(playerIndex, source, ability, choices, "神剑格拉墨：依次选择4张【阿斯加德】军团返回牌库底部", 4, 4);
+                var minimumGramCards = player.Graveyard.Any(card =>
+                    L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard") >= 3) ? 2 : 4;
+                return BeginPendingActivation(playerIndex, source, ability, choices,
+                    "神剑格拉墨：依次选择可视为合计4张的阿斯加德军团返回牌库底部", minimumGramCards, 4);
             case "valhallaKill":
             {
                 var graveChoices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToList();
@@ -830,8 +833,11 @@ public sealed partial class L12GameEngine
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
                     && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard"))).ToArray();
-                if (source.Tapped || cards.Length != 4 || cards.Any(card => card is null) || ids.Distinct().Count() != 4)
-                    return CommandResult.Reject("需要活跃的神剑格拉墨与墓地4张不同的【阿斯加德】军团");
+                if (source.Tapped || cards.Any(card => card is null)
+                    || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Length
+                    || !L12StructuredCardRules.CanRepresentGraveFactionLegionCount(player,
+                        cards.Cast<L12CardInstance>().ToArray(), "asgard", 4))
+                    return CommandResult.Reject("需要活跃的神剑格拉墨与可视为合计4张的墓地阿斯加德军团");
                 source.Tapped = true;
                 foreach (var card in cards.Cast<L12CardInstance>()) { player.Graveyard.Remove(card); player.Library.Add(card); }
                 break;
@@ -1418,7 +1424,11 @@ public sealed partial class L12GameEngine
         var queue = item.Data.GetValueOrDefault("summon-queue", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
         queue.RemoveAll(id => player.Graveyard.All(card => card.InstanceId != id)
             && player.Hand.All(card => card.InstanceId != id) && player.Library.All(card => card.InstanceId != id));
-        if (queue.Count == 0 || !EmptySlots(player).Any()) { FinishStackItem(item); return; }
+        if (queue.Count == 0 || !EmptySlots(player).Any())
+        {
+            FinishStackItem(item);
+            return;
+        }
         item.Data["summon-queue"] = string.Join('|', queue);
         var current = player.Graveyard.Concat(player.Hand).Concat(player.Library).First(card => card.InstanceId == queue[0]);
         var data = new Dictionary<string, string> { ["action"] = "queued-summon-slot", ["previewCardId"] = current.InstanceId };

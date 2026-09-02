@@ -20,6 +20,12 @@ public sealed partial class L12GameEngine
         if (protectedCard.CardId == "S02-0515"
             && FindOnField(controller, protectedCard.InstanceId, out var row, out _) is not null
             && row == 0) return "helen-hand";
+        if (State.ActivePlayer != controller.PlayerIndex
+            && L12StructuredCardRules.HasFaction(controller, protectedCard, "gaotianyuan")
+            && !L12StructuredCardRules.IsStarterKondoReplacementSource(protectedCard.CardId)
+            && PublicLegions(controller).Any(card => card.InstanceId != protectedCard.InstanceId
+                && L12StructuredCardRules.IsStarterKondoReplacementSource(card.CardId)))
+            return "kondo-field-discard";
         return null;
     }
 
@@ -32,6 +38,10 @@ public sealed partial class L12GameEngine
                 .ToArray(),
             "helen-hand" => controller.Hand
                 .Where(card => card.CardType == "legion" && card.CardId != "S02-0515")
+                .ToArray(),
+            "kondo-field-discard" => PublicLegions(controller)
+                .Where(card => card.InstanceId != protectedCard.InstanceId
+                    && L12StructuredCardRules.IsStarterKondoReplacementSource(card.CardId))
                 .ToArray(),
             _ => [],
         };
@@ -57,10 +67,13 @@ public sealed partial class L12GameEngine
             [DeclineLethalSubstitution] = "不发动",
         };
         foreach (var candidate in candidates) data[candidate.InstanceId] = candidate.Name;
-        CreatePrompt(controller.PlayerIndex, "option",
-            kind == "horemheb-field"
-                ? $"〈{protectedCard.Name}〉即将阵亡，选择我方1张〈陵墓守卫〉代替承受，或不发动"
-                : $"〈{protectedCard.Name}〉即将阵亡，弃置手牌中1张其他军团代替承受，或不发动",
+        var promptText = kind switch
+        {
+            "horemheb-field" => $"〈{protectedCard.Name}〉即将阵亡，选择我方1张〈陵墓守卫〉代替承受，或不发动",
+            "kondo-field-discard" => $"〈{protectedCard.Name}〉即将阵亡，是否弃置我方〈近藤勇〉代替承受？",
+            _ => $"〈{protectedCard.Name}〉即将阵亡，弃置手牌中1张其他军团代替承受，或不发动",
+        };
+        CreatePrompt(controller.PlayerIndex, "option", promptText,
             choices, 1, 1, continuation, isPrivate: kind == "helen-hand", data: data);
         return true;
     }
@@ -175,6 +188,21 @@ public sealed partial class L12GameEngine
             NotifyCardDiscarded(controller, substitute, "hand", causedByEffect: true);
             AddEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉按卡面从手牌弃置并进入所有者墓地，代替〈{protectedCard.Name}〉承受致命结果",
+                protectedCard, substitute);
+            return true;
+        }
+
+        if (kind == "kondo-field-discard")
+        {
+            var substitute = FindOnField(controller, substituteId, out _, out _);
+            if (substitute is null || substitute.InstanceId == protectedCard.InstanceId
+                || !L12StructuredCardRules.IsStarterKondoReplacementSource(substitute.CardId)) return false;
+            if (!RemoveFromField(controller, substitute, true,
+                    $"作为费用弃置，代替〈{protectedCard.Name}〉承受{reason}",
+                    queueDeathTrigger: !deferFieldDeath, leaveKind: L12FieldLeaveKind.Discard,
+                    bypassLethalReplacement: true)) return false;
+            AddEvent("replacement", controller.PlayerIndex,
+                $"〈{substitute.Name}〉作为费用弃置，代替〈{protectedCard.Name}〉承受原致命结果",
                 protectedCard, substitute);
             return true;
         }

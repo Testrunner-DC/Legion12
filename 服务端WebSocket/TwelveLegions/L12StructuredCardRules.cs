@@ -362,6 +362,7 @@ public static partial class L12StructuredCardRules
         if (TryGetStarterTargetedBatch2AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2BAbilities(cardId, out abilities)) return true;
         if (TryGetStarterBatch3AAbilities(cardId, out abilities)) return true;
+        if (TryGetStarterBatch3BAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {

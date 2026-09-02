@@ -97,7 +97,9 @@ public sealed partial class L12GameEngine
             new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
             new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
         ],
-        _ => GetS1FactionAbilities(cardId) is { Count: > 0 } s1Abilities ? s1Abilities : GetS2FactionAbilities(cardId),
+        _ => GetStarterRemainingAbilityViews(cardId) is { Count: > 0 } starterAbilities
+            ? starterAbilities
+            : GetS1FactionAbilities(cardId) is { Count: > 0 } s1Abilities ? s1Abilities : GetS2FactionAbilities(cardId),
     };
 
     private bool TryResolveS1ExtendedEnter(L12StackItem item, L12CardInstance card)

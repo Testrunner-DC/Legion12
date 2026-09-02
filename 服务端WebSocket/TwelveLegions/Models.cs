@@ -165,6 +165,15 @@ public sealed class L12CardInstance
     /// <summary>高文已结算的本回合后续进攻主宰伤害增量。</summary>
     public int GawainMasterDamageBonus { get; set; }
     public int GawainMasterDamageBonusUntilTurn { get; set; } = -1;
+    /// <summary>本回合震击对相邻军团造成的额外兵力伤害。</summary>
+    public int ShockDamageBonus { get; set; }
+    public int ShockDamageBonusUntilTurn { get; set; } = -1;
+    /// <summary>只在此军团作为进攻方时计入的临时兵力，战场常态兵力不受影响。</summary>
+    public int AttackOnlyTroopsBonus { get; set; }
+    public int AttackOnlyTroopsBonusUntilTurn { get; set; } = -1;
+    /// <summary>本回合该军团进攻主宰时追加的伤害。</summary>
+    public int MasterAttackDamageBonus { get; set; }
+    public int MasterAttackDamageBonusUntilTurn { get; set; } = -1;
     public int CannotUntapUntilRound { get; set; }
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
@@ -284,6 +293,11 @@ public sealed class L12PlayerState
     public int NextS2SunDisasterLegionDiscount { get; set; }
     public int NextS2OlympusLegionDiscount { get; set; }
     public int NextS2PromotionGodPowerDiscount { get; set; }
+    public int MasterMoraleWaiverUntilTurn { get; set; } = -1;
+    public int NextOtherworldLegionEntryDiscount { get; set; }
+    public int PendingStarterMoraleReturnEvents { get; set; }
+    public int PendingStarterRuneSpendEvents { get; set; }
+    internal int MasterMoraleWaiverCredit;
     /// <summary>平阳昭公主：本回合主宰对对方主宰造成的下一次伤害变为2。</summary>
     public int NextMasterDamageToOpponentBecomesTwoUntilTurn { get; set; } = -1;
     public int S2ArthurDiscountUntilTurn { get; set; } = -1;
@@ -346,6 +360,7 @@ public sealed class L12PendingDefense
     /// <summary>佣兵部队等响应已抵挡进攻；仍须结算已发动的【进攻时】效果。</summary>
     public bool BlockedByResponse { get; set; }
     public bool DefenderAttackTimingOpened { get; set; }
+    public bool StarterDefenderMasterTimingOffered { get; set; }
     public bool AttackerAfterAttackStarted { get; set; }
     public bool StageEffectsQueued { get; set; }
     /// <summary>战斗伤害已确认阵亡、等待各自触发完成后才进入墓地的实例。</summary>

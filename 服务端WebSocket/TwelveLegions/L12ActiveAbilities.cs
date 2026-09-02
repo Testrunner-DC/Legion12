@@ -74,7 +74,8 @@ public sealed partial class L12GameEngine
                 choices = PublicFactionLegions(player, "gaotianyuan").Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团，本回合获得强攻");
             default:
-                return TryBeginPublicActiveDeclaration(playerIndex, source, ability)
+                return TryBeginStarterRemainingActiveAbility(playerIndex, source, ability)
+                    ?? TryBeginPublicActiveDeclaration(playerIndex, source, ability)
                     ?? TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability)
@@ -111,6 +112,8 @@ public sealed partial class L12GameEngine
     private string[] ActiveAbilityReservedResourceIds(L12PlayerState player, L12CardInstance source, string ability,
         string? target, bool reserveInternalCosts)
     {
+        if (ability == "horusRevive")
+            return (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).Take(2).ToArray();
         if (L12StructuredCardSemantics.IsMedjed(source.CardId) && ability == "medjedDebuff")
         {
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -123,6 +126,8 @@ public sealed partial class L12GameEngine
 
     private string? ValidatePublicActiveDeclarationBeforePayment(int playerIndex, L12CardInstance source, string ability, string? target)
     {
+        if (ValidateStarterRemainingActiveDeclaration(playerIndex, source, ability, target) is { } starterError)
+            return starterError;
         var player = State.Players[playerIndex];
         var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
         switch ((source.CardId, ability))
@@ -192,7 +197,10 @@ public sealed partial class L12GameEngine
         if (ValidatePublicActiveDeclarationBeforePayment(playerIndex, source, ability, target) is { } declarationError)
             return CommandResult.Reject(declarationError);
         var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
-        var moraleCost = GetActiveAbilityMoraleCost(source, ability, target) + disasterMasterSurcharge;
+        var baseMoraleCost = GetActiveAbilityMoraleCost(source, ability, target);
+        var masterMoraleWaived = source.CardId == player.MasterId
+            && player.MasterMoraleWaiverUntilTurn >= State.TurnSerial;
+        var moraleCost = (masterMoraleWaived ? 0 : baseMoraleCost) + disasterMasterSurcharge;
         var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);
         var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
         var reservedResourceIds = ActiveAbilityReservedResourceIds(player, source, ability, target,
@@ -265,6 +273,7 @@ public sealed partial class L12GameEngine
             // 下层各阵营效果仍通过统一 ConsumeMorale 申报费用；以临时士气作为一次性预付凭证，避免重复扣费。
             player.TemporaryMorale += moraleCost;
         }
+        player.MasterMoraleWaiverCredit = masterMoraleWaived ? baseMoraleCost : 0;
         bool ConsumeMorale(int cost) => useTombGuards switch
         {
             true => TryConsumeMorale(player, cost, preferTombGuards: true, allowTombGuards: true),
@@ -340,6 +349,7 @@ public sealed partial class L12GameEngine
             default:
             {
                 var result = TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey, returnPrepaid)
+                    ?? TryCommitStarterRemainingActiveAbility(playerIndex, source, ability, target, onceKey)
                     ?? TryCommitS2FactionActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards)
                     ?? TryCommitS1ExtendedActiveAbility(playerIndex, source, ability, target, onceKey, useTombGuards, returnPrepaid)
                     ?? CommandResult.Reject("该卡没有此主动效果");
@@ -415,7 +425,7 @@ public sealed partial class L12GameEngine
             or "gramReady" or "sunTopThree" or "sunBottomEnemy" or "valhallaRecover" or "yomiSweep" => 2,
         "extendedRange" when source.CardId == "S01-0003" => 2,
         "discardHolyLock" => 3,
-        "forgePromotionDiscount" or "forgeReadyOnKill" or "olympusMoraleFlip" => 1,
+        "forgePromotionDiscount" or "forgeReadyOnKill" or "olympusMoraleFlip" or "horusRevive" => 1,
         "thorCharge" => 2,
         "hippolytaRevive" => 3,
         "factionGainRune" => 2,
@@ -434,6 +444,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var source = FindSource(item);
         var ability = item.Data.GetValueOrDefault("ability") ?? string.Empty;
+        if (TryResolveStarterRemainingActiveEffect(item, source, ability)) return;
         switch (ability)
         {
             case "drawCycle":

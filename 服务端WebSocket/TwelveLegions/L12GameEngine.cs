@@ -142,9 +142,11 @@ public sealed partial class L12GameEngine
         if (result.Accepted)
         {
             ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
+            FlushStarterResourceTriggerBatches();
             State.Revision++;
             CheckWinner();
         }
+        foreach (var player in State.Players) player.MasterMoraleWaiverCredit = 0;
         return result;
     }
 
@@ -805,6 +807,8 @@ public sealed partial class L12GameEngine
         current.NextFactionLegionDiscount = 0;
         current.NextS2SunDisasterLegionDiscount = 0;
         current.NextS2OlympusLegionDiscount = 0;
+        current.NextOtherworldLegionEntryDiscount = 0;
+        current.MasterMoraleWaiverUntilTurn = -1;
         current.NextMasterDamageToOpponentBecomesTwoUntilTurn = -1;
         current.NextActiveTacticSurcharge = 0;
         foreach (var player in State.Players)
@@ -892,7 +896,11 @@ public sealed partial class L12GameEngine
 
     private bool TryConsumeMorale(L12PlayerState player, int cost, bool preferTombGuards = false, bool allowTombGuards = true)
     {
-        if ((allowTombGuards ? ActiveResourceCount(player) : ActiveMoraleCountWithoutTombGuards(player)) < cost) return false;
+        var waived = Math.Min(cost, player.MasterMoraleWaiverCredit);
+        if ((allowTombGuards ? ActiveResourceCount(player) : ActiveMoraleCountWithoutTombGuards(player)) + waived < cost)
+            return false;
+        player.MasterMoraleWaiverCredit -= waived;
+        cost -= waived;
         var temporary = Math.Min(cost, player.TemporaryMorale);
         player.TemporaryMorale -= temporary;
         var remaining = cost - temporary;
@@ -965,6 +973,7 @@ public sealed partial class L12GameEngine
     private void RegisterReturnedMorale(L12PlayerState player, int count)
     {
         player.ReturnedMoraleThisTurn += count;
+        if (count > 0) player.PendingStarterMoraleReturnEvents++;
         if (player.PlayerIndex == State.ActivePlayer && player.Faction == "tianting" && player.Morale.Count == 0
             && player.MoraleDeck.Count > 0 && !player.UsedAbilities.Contains("trigger:factionZeroRecovery")
             && !player.UsedAbilities.Contains("pending:factionZeroRecovery"))
@@ -1077,6 +1086,12 @@ public sealed partial class L12GameEngine
             card.TsukuyomiFrontMoveBonusTurn = -1;
             card.GawainMasterDamageBonus = 0;
             card.GawainMasterDamageBonusUntilTurn = -1;
+            card.ShockDamageBonus = 0;
+            card.ShockDamageBonusUntilTurn = -1;
+            card.AttackOnlyTroopsBonus = 0;
+            card.AttackOnlyTroopsBonusUntilTurn = -1;
+            card.MasterAttackDamageBonus = 0;
+            card.MasterAttackDamageBonusUntilTurn = -1;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
             card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
             if (card.ReadyAfterNextKillUntilTurn <= completedTurn)
@@ -1439,6 +1454,12 @@ public sealed partial class L12GameEngine
         card.TsukuyomiFrontMoveBonusTurn = -1;
         card.GawainMasterDamageBonus = 0;
         card.GawainMasterDamageBonusUntilTurn = -1;
+        card.ShockDamageBonus = 0;
+        card.ShockDamageBonusUntilTurn = -1;
+        card.AttackOnlyTroopsBonus = 0;
+        card.AttackOnlyTroopsBonusUntilTurn = -1;
+        card.MasterAttackDamageBonus = 0;
+        card.MasterAttackDamageBonusUntilTurn = -1;
         card.CannotUntapUntilRound = 0;
         card.CannotRespondUntilRound = 0;
         card.SetRound = 0;

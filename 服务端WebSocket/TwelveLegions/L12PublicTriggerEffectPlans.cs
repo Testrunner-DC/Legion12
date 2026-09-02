@@ -1648,11 +1648,11 @@ public sealed partial class L12GameEngine
 
     private void CreateDelayedPublicResolutionPrompt(L12StackItem item, string kind, string text,
         IEnumerable<string> choices, string action, Dictionary<string, string> data,
-        bool isPrivate = false)
+        bool isPrivate = false, int min = 1, int max = 1, int? chooser = null)
     {
         data["action"] = action;
         data["declarationTiming"] = "post-hidden-reveal";
-        CreatePrompt(item.Controller, kind, text, choices, 1, 1, "card-effect", item.StackItemId,
+        CreatePrompt(chooser ?? item.Controller, kind, text, choices, min, max, "card-effect", item.StackItemId,
             isPrivate: isPrivate, data: data);
     }
 }

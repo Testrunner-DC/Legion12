@@ -187,6 +187,20 @@ public sealed partial class L12GameEngine
     {
         var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
         if (attacker is null) return;
+        if (!pending.StarterDefenderMasterTimingOffered && pending.Target.Type == "legion")
+        {
+            pending.StarterDefenderMasterTimingOffered = true;
+            var defender = State.Players[1 - pending.AttackerPlayer];
+            var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
+            var candidate = target is null ? null : BuildStarterKagutsuchiCandidate(defender.PlayerIndex, target);
+            if (candidate is not null)
+            {
+                // 该可选触发结束后仍需重新打开通常的防守方【对方进攻时】响应窗口。
+                pending.DefenderAttackTimingOpened = false;
+                QueueTriggerCandidates([candidate]);
+                return;
+            }
+        }
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",

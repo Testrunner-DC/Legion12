@@ -267,6 +267,7 @@ public static class L12S2ZoneOps
     {
         if (count < 0 || player.SpecialZones.Runes < count) return false;
         player.SpecialZones.Runes -= count;
+        if (count > 0) player.PendingStarterRuneSpendEvents++;
         return true;
     }
 
@@ -301,7 +302,7 @@ public static class L12S2ZoneOps
     public static bool FlipMoraleFace(L12PlayerState player, string instanceId, bool? toGodPower = null)
     {
         var morale = player.Morale.FirstOrDefault(card => card.InstanceId == instanceId);
-        if (morale is null || morale.CardId is not ("S02-05C1" or "S02-05C1A")) return false;
+        if (morale is null || !L12StructuredCardRules.IsReversibleOlympusMorale(morale.CardId)) return false;
         morale.IsGodPower = toGodPower ?? !morale.IsGodPower;
         return true;
     }

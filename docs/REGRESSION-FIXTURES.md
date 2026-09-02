@@ -160,3 +160,11 @@
 - `AtomicReviewBatch6JARegressionTests.RingEntrySearchDeclarationDoesNotPeekForAHiddenUniversalMatch`固定种子10005：牌库非空但没有【通用】命中时仍必须提供私密发动声明，声明不得预读或泄露命中存在性。
 - `AtomicReviewBatch6KBRegressionTests.DivinityRecoveryDeclarationUsesRingModifiedEffectiveFaction`覆盖众神之乡与英灵殿：戒指生效时，墓地通用卡必须出现在控制者的前置声明中；公共声明/复合计划静态门禁禁止恢复裸印刷阵营过滤。
 - 七表汇总门禁要求248张、552项、188通过/54修复/6疑点卡，并核对矩阵状态及5项OPEN；Release固定证据为规则1006、平台60、原子248、UI171、卡图19/248、优化卡图248/248及生产构建/publish。
+
+## ST 第三批B剩余卡效样例
+
+- `StarterBatch3BRegressionTests`使用固定种子`20401`至`20423`的13项场景覆盖18张卡。目录样例同时断言结构化能力与verified runtime；原子审计必须保持324张、`noRuntimeEntranceCards=0`、卡号case为0、效果文本推断为0。
+- ST-DS02、ST02-M1、ST03-M1、ST04-M1、ST05-M1等费用场景必须在第一张效果StackItem出现前完成公开声明与支付；取消、目标或费用失效均不得支付或入栈。ST05-01只在合法结算后读取牌库身份，候选只对控制者可见。
+- ST03-10两个增益、ST05-01检索登场/随后洗牌、ST05-M1翻转士气/军团强化以及ST06-S1三句可选效果分别形成独立响应窗口；前段被无效不得吞掉确定存在的后段。
+- ST04-05替代其他高天原军团时继承原致命动作、所有者墓地及离场语义；ST02-10的延迟弃置和ST04-10的叠放强攻必须经过公共区域入口。ST03-08墓地三倍计数除本批战术外，还以既有格拉墨费用作为全卡池控制组。
+- ST06-M1主动的“最多2张”必须接受0目标；甲斐姬免除迦具土印刷士气费用时仍要生成自然语言发动选项。最终专项13/13，Focused/Batch规则均1089/1089，公开声明、私区事务、试炼完成和原子零旧入口门禁全绿。
