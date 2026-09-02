@@ -1740,7 +1740,12 @@ public sealed class NewSystemsTests
         foreach (var morale in player.MoraleDeck.Take(2).ToArray())
         {
             player.MoraleDeck.Remove(morale);
-            player.Morale.Add(morale);
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = morale.InstanceId,
+                CardId = "ST04-C1",
+                Tapped = morale.Tapped,
+            });
         }
         var legion = player.Hand.First(card => card.CardType == "legion");
         player.Hand.Remove(legion);
@@ -1748,9 +1753,14 @@ public sealed class NewSystemsTests
         player.Field[0][0] = legion;
 
         Assert.True(game.Handle(1, new L12Command("activateAbility", "faction-1", Ability: "factionDrawMove")).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:move")).Accepted);
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
         var target = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("gaotianyuan-move-target", target.Data["action"]);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: target.PromptId, Choice: legion.InstanceId)).Accepted);
         var slot = Assert.Single(game.State.PendingPrompts);
         Assert.DoesNotContain("1:0", slot.ValidChoices);

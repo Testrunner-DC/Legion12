@@ -135,15 +135,23 @@ public sealed class AtomicReviewBatch6JARegressionTests
 
     [Theory]
     [MemberData(nameof(ReviewedRows))]
-    [Trait("L12Evidence", "entry:batch6ja-enter-prestack-declaration")]
-    public void EveryReviewedEntryDeclaresBeforeAnyStackItem(string cardId, string trigger)
+    [Trait("L12Evidence", "entry:batch6ja-enter-selection-boundary")]
+    public void EveryReviewedEntryUsesItsConfiguredSelectionBoundary(string cardId, string trigger)
     {
         var index = Array.FindIndex(ReviewedEntries, entry => entry == (cardId, trigger));
         var fixture = Arrange(cardId, trigger, 9900 + index);
 
         var prompt = OnlyPrompt(fixture.Game);
-        Assert.Equal("pending-activation", prompt.Continuation);
-        Assert.Empty(fixture.Game.State.EffectStack);
+        if (cardId is "S02-0513" or "S02-0518" or "S02-0520")
+        {
+            Assert.Equal("stack-response", prompt.Continuation);
+            Assert.Single(fixture.Game.State.EffectStack);
+        }
+        else
+        {
+            Assert.Equal("pending-activation", prompt.Continuation);
+            Assert.Empty(fixture.Game.State.EffectStack);
+        }
     }
 
     [Theory]

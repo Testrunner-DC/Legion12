@@ -22,27 +22,10 @@ public sealed partial class L12GameEngine
                         "阿斯加德阵营效果：预先声明是否额外消耗1士气并增加1点血量", modes),
                 ]);
             }
+            // 费用只有“消耗2士气”。抽牌后的可选位移属于效果结算，不得在支付阶段
+            // 提前询问模式、军团或位置；ResolveActiveEffect 会在抽牌处理后建立场面选择。
             case ("S01-04C1", "factionDrawMove"):
-            {
-                var movers = PublicLegions(player)
-                    .Where(card => !card.Tapped
-                        && FindOnField(player, card.InstanceId, out var row, out var slot) is not null
-                        && AdjacentEmptySlots(player, row, slot).Any())
-                    .Select(card => card.InstanceId).ToList();
-                var modes = movers.Count == 0
-                    ? new List<string> { "mode:none" }
-                    : ["mode:none", "mode:move"];
-                return BeginPendingActivationSequence(playerIndex, source, ability,
-                [
-                    PublicActiveStep("option", "mode", "高天原阵营效果：预先声明抽牌后是否位移军团", modes),
-                    PublicActiveStep("active-target", "moveTarget",
-                        "高天原阵营效果：预先选择要位移的活跃军团", movers,
-                        requiredChoice: "mode:move"),
-                    PublicActiveStep("adjacent-slot", "moveSlot",
-                        "高天原阵营效果：预先选择军团位移后的相邻空位", ["dynamic"],
-                        referenceKey: "moveTarget", requiredChoice: "mode:move"),
-                ]);
-            }
+                return null;
             case ("S01-02D1", "sunTopThree"):
             {
                 var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
@@ -283,7 +266,7 @@ public sealed partial class L12GameEngine
             RequiredDeclaredChoice = requiredChoice,
             ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["mode:none"] = "不选择公开对象",
+                ["mode:none"] = "不发动",
             },
         };
 

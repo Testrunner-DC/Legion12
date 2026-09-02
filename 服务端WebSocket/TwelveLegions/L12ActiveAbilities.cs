@@ -45,7 +45,8 @@ public sealed partial class L12GameEngine
             var moraleId = player.Faction == "olympus"
                 ? (ability == "godPowerDraw" ? "S02-05C1" : "S02-05C1A")
                 : player.Morale.FirstOrDefault()?.CardId ?? player.MoraleDeck.FirstOrDefault()?.CardId;
-            if (moraleId is not null) source = CreateCard(moraleId, $"faction-{playerIndex}");
+            if (moraleId is not null)
+                source = CreateCard(CanonicalFactionEffectCardId(moraleId), $"faction-{playerIndex}");
         }
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
@@ -138,15 +139,6 @@ public sealed partial class L12GameEngine
                 if (declared[0] == "mode:heal" && player.Hp > 5)
                     return "主宰血量高于5，不能声明额外治疗";
                 break;
-            case ("S01-04C1", "factionDrawMove"):
-                if (declared.Length == 1 && declared[0] == "mode:none") break;
-                if (declared.Length != 3 || declared[0] != "mode:move")
-                    return "高天原阵营效果必须完整声明位移模式、军团和位置";
-                var mover = FindOnField(player, declared[1], out var row, out var slot);
-                if (mover is null || !IsFieldLegion(mover) || mover.Tapped || mover.Hidden
-                    || !AdjacentEmptySlots(player, row, slot).Contains(declared[2], StringComparer.OrdinalIgnoreCase))
-                    return "高天原阵营效果声明的军团或相邻空位已失效";
-                break;
             case ("S01-01M2", "mengpoMorale"):
                 if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count
                     || declared.Length != 1 || !player.Hand.Any(card => card.InstanceId == declared[0]))
@@ -191,9 +183,6 @@ public sealed partial class L12GameEngine
         if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
             return freeResult;
         if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
-        if (ability is "olympusMoraleFlip" or "divinityFlipMorale"
-            && !player.Morale.Any(card => card.InstanceId == target && !card.IsGodPower))
-            return CommandResult.Reject("声明的士气已失效或已是神力面");
         if (ValidatePublicActiveDeclarationBeforePayment(playerIndex, source, ability, target) is { } declarationError)
             return CommandResult.Reject(declarationError);
         var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
@@ -235,6 +224,10 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("选择的返还士气已失效或数量不正确");
         var excludedResourceIds = (declaredReturnIds ?? [])
             .Concat(reservedResourceIds).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        // 奥林匹斯阵营效果支付后还要从同一士气区选择翻转目标。只要存在多种
+        // 支付结果，支付对象就会影响效果结果，必须让玩家先点击真正要消耗的资源。
+        var forceManualResourcePayment = ability == "olympusMoraleFlip"
+            && ActiveResourceCountExcluding(player, excludedResourceIds) > moraleCost;
         if (disasterMasterSurcharge > 0 && ActiveResourceCountExcluding(player, excludedResourceIds) < moraleCost)
             return CommandResult.Reject("〈傲慢之罪〉使主宰效果额外需要消耗1士气");
         if (moraleCost > 0 && (reservedResourceIds.Length > 0 || disasterMasterSurcharge > 0)
@@ -244,7 +237,8 @@ public sealed partial class L12GameEngine
             selectedResourceIds = SelectAutomaticOrdinaryResourcePaymentIds(player, moraleCost, excludedResourceIds);
         }
         if (moraleCost > 0 && useTombGuards is null && selectedResourceIds is null
-            && NeedsManualOrdinaryResourcePayment(player, moraleCost, excludedResourceIds))
+            && (forceManualResourcePayment
+                || NeedsManualOrdinaryResourcePayment(player, moraleCost, excludedResourceIds)))
         {
             var paymentData = new Dictionary<string, string>
             {
@@ -543,35 +537,7 @@ public sealed partial class L12GameEngine
             case "factionDrawMove":
             {
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "高天原阵营效果抽牌时牌库为空"); FinishStackItem(item); return; }
-                var declared = item.Data.GetValueOrDefault("target", string.Empty)
-                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length == 1 && declared[0] == "mode:none")
-                {
-                    FinishStackItem(item);
-                    return;
-                }
-                var row = -1;
-                var slot = -1;
-                var legion = declared.Length == 3
-                    ? FindOnField(player, declared[1], out row, out slot)
-                    : null;
-                var (targetRow, targetSlot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
-                if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden
-                    || targetRow is < 0 or > 1 || targetSlot is < 0 or > 2
-                    || Math.Abs(row - targetRow) + Math.Abs(slot - targetSlot) != 1
-                    || State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
-                    || player.Field[targetRow][targetSlot] is not null)
-                {
-                    AddEvent("effect-cancelled", item.Controller, "高天原阵营效果声明的位移目标或位置已失效");
-                    FinishStackItem(item);
-                    return;
-                }
-                player.Field[row][slot] = null;
-                player.Field[targetRow][targetSlot] = legion;
-                legion.LastMovedTurn = State.TurnSerial;
-                AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
-                RecordLegionMovement(item.Controller, legion, row, targetRow);
-                FinishStackItem(item);
+                BeginGaotianyuanMoveChoice(item);
                 return;
             }
             default:

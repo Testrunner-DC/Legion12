@@ -6,7 +6,7 @@
 
 - 固定范围为 `cards.s2.json` 的 7 张 `gaotianyuan` 高天原卡与 28 张 `olympus` 奥林匹斯卡，含主宰、主神、士气/神力、晋升者与特殊牌，共 35 张、101 项原子目录能力；S02 天灾留后批。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。逐项核对时点、费用预付、独立段、区域/所有者、四状态资源、晋升叠放、数值、隐藏信息、来源 LKI 与响应无效。
-- 唯一结论：21 张通过、14 张明确错误并修复、有疑点 0、缺少测试 0、未实现 0。海伦已按 2026-09-02 玩家裁定闭环。
+- 唯一结论：19 张通过、16 张明确错误并修复、有疑点 0、缺少测试 0、未实现 0。海伦已按 2026-09-02 玩家裁定闭环。
 
 ## 逐卡逐能力结论
 
@@ -31,22 +31,22 @@
 | S02-0510 希波吕忒 | 3 | 神力≥5减费与休整时免费前后位移持续生效；主动休整/3士气/弃牌在入栈前支付，墓地奥林匹斯目标与位置前置并按戒指有效阵营重验。 | `L12S2RemainingEffects`、`L12StructuredCardRules` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-0511 珀洛特埃 | 3 | 登场本回合可攻军团；进攻目标为军团时先声明是否支付1神力，支付/翻面与+1000/震击只作用本段。 | `L12EnterPublicTriggerPlans`、`L12AttackPublicTriggerPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S02-0512 埃涅阿斯 | 4 | 0神力减费；前排挑衅实时；阵亡抽牌模式候选期声明，拒绝不造空栈。 | `L12StructuredCardRules`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IARegressionTests`、`S2FactionRegressionTests` | 通过 |
-| S02-0513 亚里士多德 | 3 | 远程常驻；登场翻士气目标前置；主动休整的下一张奥林匹斯军团-1必须识别戒指通用军团并由该军团消费。 | `L12Actions`、`L12EnterPublicTriggerPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
+| S02-0513 亚里士多德 | 3 | 远程常驻；登场效果结算时直接选择要翻转的士气或不发动，不再先问一次是否发动；主动休整的下一张奥林匹斯军团-1必须识别戒指通用军团并由该军团消费。 | `L12Actions`、`L12EnterPublicTriggerPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-0514 柏拉图 | 2 | 远程常驻；牌库顶身份只在登场段合法开始后展示，戒指使通用卡成为合法奥林匹斯命中，其余有序回底。 | `L12S1FactionEffects`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`AtomicEffectsTests` | 明确错误→已修复 |
 | S02-0515 海伦 | 3 | 远程常驻与神力条件登场弃牌已实现；前排即将阵亡时弃置另一张手牌军团进入其所有者墓地，只产生弃牌及其触发，不伪造战场离场/阵亡。 | `L12StructuredCardRules`、`L12LethalReplacements` | `S2FactionRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S02-0516 汉尼拔 | 3 | 活跃不可被攻与相邻+1000实时；进攻先支付1神力并同时声明双方公开军团目标，目标分别失效不互吞。 | `L12AttackPublicTriggerPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6HRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0517 彭忒西勒亚 | 3 | 前排远程常驻；登场本回合可攻军团；进攻消耗并翻转1神力在入栈前支付，+2000本回合有效且无效不退款。 | `L12AttackPublicTriggerPlans`、`L12EnterPublicTriggerPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
-| S02-0518 忒修斯 | 3 | 0神力减费；登场翻休整士气目标前置；阵亡墓地晋升者目标先声明并以展示加入手牌公共事件移动。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
+| S02-0518 忒修斯 | 3 | 0神力减费；登场效果结算时直接选择要翻转的休整士气或不发动，不重复确认；阵亡墓地晋升者按既有展示加入手牌事件移动。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `S2FactionRegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 明确错误→已修复 |
 | S02-0519 斯巴达勇士 | 2 | 进攻消耗并翻转1神力在入栈前支付并获得+2000；对方回合+2000为持续层，修正标签不得冒充阿喀琉斯。 | `L12AttackPublicTriggerPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6HRegressionTests`、`S2FactionRegressionTests` | 通过 |
-| S02-0520 匠神锻造炉 | 4 | 登场翻士气目标前置；主动休整/士气预付后选模式，下一次晋升减费或非晋升奥林匹斯击杀后转活跃，戒指通用军团合法。 | `L12S2FactionEffects`、`L12KillSourceEvents` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
+| S02-0520 匠神锻造炉 | 4 | 登场效果结算时直接选择要翻转的士气或不发动，不再出现“是否发动→对象取消”双重选择；主动休整/士气预付后选模式，下一次晋升减费或非晋升奥林匹斯击杀后转活跃，戒指通用军团合法。 | `L12S2FactionEffects`、`L12KillSourceEvents`、`L12EnterPublicTriggerPlans` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-0521 荣耀之路 | 2 | 翻最多3士气与可选检索是独立段；检索2神力入栈前支付，身份结算期展示，戒指通用卡合法并随后洗牌。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-0522 倪克斯的陨星 | 2 | -3000首段与可选支付/翻转1神力的-2000后段独立响应；公开目标先声明，费用不因无效返还。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6HRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0523 特洛伊木马 | 2 | 对方进攻后模式与对方战场空位前置，位置重验不覆盖；延迟至下个己方回合结束弃置并抽牌，场上持续-1000。 | `L12PublicTriggerEffectPlans`、`L12GameEngine` | `AtomicReviewBatch6ERegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-05M1 阿尔忒弥斯 | 4 | 远程阵亡翻士气与主动各自回合1次；主动费用/奥林匹斯目标/强攻或震击模式前置，戒指通用军团合法。 | `L12PublicTriggerEffectPlans`、`L12S2RemainingEffects` | `AtomicReviewBatch6GARegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
 | S02-05M2 普罗米修斯 | 1 | 只消耗1神力不翻面；牌库顶身份结算期读取，戒指通用卡合法，剩余牌整体自选顺序回顶或回底。 | `L12S2FactionEffects`、`L12S2ZoneOps` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-05C1 神力 | 2 | 与士气同区且可付普通费用；自身主动只选择活跃神力，消耗并翻面后成为休整士气，回合1次按实例。 | `RuleKernel`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`RuleKernelTests` | 通过 |
-| S02-05C1A 士气 | 1 | 主动消耗1士气并公开声明要翻转的士气目标；目标失效不产生部分翻转，四状态维度保持正交。 | `L12S2FactionEffects`、`RuleKernel` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 通过 |
-| S02-05D1 奥林匹斯 诸神巅 | 3 | 两项主神能力各自回合1次且公开声明；2神力预付。墓地回收与随后可选登场分别响应，前段无效不吞后段；戒指通用卡合法；主神开场额外2士气只执行一次。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12S2RemainingEffects` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
+| S02-05C1A 士气 | 1 | 主动发动先选择并消耗实际费用资源；若支付选择会影响可翻转目标，必须由玩家点击费用对象。入栈结算后再按支付后的场面选择另一张士气翻为神力，四状态维度保持正交。 | `L12ActiveAbilities`、`L12S2FactionEffects`、`RuleKernel` | `S2FactionRegressionTests` | 明确错误→已修复 |
+| S02-05D1 奥林匹斯 诸神巅 | 3 | 两项主神能力各自回合1次；翻士气能力在效果结算时选择目标。2神力预付；墓地回收与随后可选登场分别响应，前段无效不吞后段；戒指通用卡合法；主神开场额外2士气只执行一次。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12S2RemainingEffects` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
 
 ## 公共根因、跨范围控制与保留边界
 

@@ -914,10 +914,8 @@ public sealed partial class L12GameEngine
         {
             var onceKey = $"active:{source.InstanceId}:{ability}";
             if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
-            var choices = player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId).ToArray();
-            if (choices.Length == 0) return CommandResult.Reject("没有可翻转的士气");
-            return BeginPendingActivation(playerIndex, source, ability, choices,
-                "奥林匹斯士气：预先选择要翻转的1张士气");
+            if (!player.Morale.Any(card => !card.IsGodPower)) return CommandResult.Reject("没有可翻转的士气");
+            return CommitActiveAbility(playerIndex, source, ability, null);
         }
         if (ability == "prometheusTopThree" && source.CardId == "S02-05M2")
         {
@@ -1456,14 +1454,10 @@ public sealed partial class L12GameEngine
         }
         if (ability == "olympusMoraleFlip" && source.CardId == "S02-05C1A")
         {
-            if (!player.Morale.Any(card => card.InstanceId == target && !card.IsGodPower))
-                return CommandResult.Reject("声明的士气已失效或已是神力面");
             if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
             player.UsedAbilities.Add(onceKey);
-            PushEffect(playerIndex, source, "active", "阵营效果", data: new Dictionary<string, string>
-            {
-                ["ability"] = ability, ["target"] = target!,
-            });
+            PushEffect(playerIndex, source, "active", "阵营效果",
+                data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
         return TryCommitS2RemainingAbility(playerIndex, source, ability, target, onceKey);
@@ -1570,17 +1564,7 @@ public sealed partial class L12GameEngine
             return true;
         }
         if (ability == "olympusMoraleFlip" && source?.CardId == "S02-05C1A")
-        {
-            var target = player.Morale.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target")
-                && !card.IsGodPower);
-            if (target is not null)
-            {
-                L12S2ZoneOps.FlipMoraleFace(player, target.InstanceId, toGodPower: true);
-                AddEvent("morale", item.Controller, "翻转1张士气", source);
-            }
-            FinishStackItem(item);
-            return true;
-        }
+            return PromptS2FlipMorale(item, source);
         if (ability == "prometheusTopThree" && source?.CardId == "S02-05M2")
         {
             var top = player.Library.Take(3).ToArray();

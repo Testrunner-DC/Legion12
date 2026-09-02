@@ -1650,8 +1650,15 @@ public sealed partial class L12GameEngine
         IEnumerable<string> choices, string action, Dictionary<string, string> data,
         bool isPrivate = false, int min = 1, int max = 1, int? chooser = null)
     {
-        data["action"] = action;
         data["declarationTiming"] = "post-hidden-reveal";
+        CreateResolutionChoicePrompt(item, kind, text, choices, action, data, isPrivate, min, max, chooser);
+    }
+
+    private void CreateResolutionChoicePrompt(L12StackItem item, string kind, string text,
+        IEnumerable<string> choices, string action, Dictionary<string, string> data,
+        bool isPrivate = false, int min = 1, int max = 1, int? chooser = null)
+    {
+        data["action"] = action;
         CreatePrompt(chooser ?? item.Controller, kind, text, choices, min, max, "card-effect", item.StackItemId,
             isPrivate: isPrivate, data: data);
     }

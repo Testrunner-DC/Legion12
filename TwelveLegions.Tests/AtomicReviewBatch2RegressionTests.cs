@@ -68,6 +68,16 @@ public sealed class AtomicReviewBatch2RegressionTests
         }
     }
 
+    private static void HoldOpponentResponseWindow(L12GameEngine game, int actingPlayer = 0)
+    {
+        var opponent = game.State.Players[1 - actingPlayer];
+        var counter = Card("S01-0019", $"atomic2-response-{actingPlayer}-{game.State.StackSequence}");
+        counter.Hidden = true;
+        counter.SetRound = 0;
+        opponent.Field[1][2] = counter;
+        opponent.Field[0][2] ??= Card("S01-0004", $"atomic2-response-target-{actingPlayer}-{game.State.StackSequence}");
+    }
+
     private static (L12PlayerState Player, L12CardInstance Trial) PrepareCrusade(L12GameEngine game, int runes)
     {
         var player = game.State.Players[0];
@@ -439,7 +449,7 @@ public sealed class AtomicReviewBatch2RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:divinityFlipMorale")]
-    public void DivinityFlipDeclaresMoraleBeforeCommitAndInvalidationIsFree()
+    public void DivinityFlipChoosesMoraleOnlyWhileItsEffectResolves()
     {
         var invalidGame = CreateWithFirstMaster("S02-05D1", 6815);
         var invalidPlayer = invalidGame.State.Players[0];
@@ -449,19 +459,19 @@ public sealed class AtomicReviewBatch2RegressionTests
             CardId = "S02-05C1A", InstanceId = "divinity-invalid-flip", Tapped = true,
         };
         invalidPlayer.Morale.Add(invalidTarget);
+        HoldOpponentResponseWindow(invalidGame);
         invalidGame.State.ActivePlayer = 0;
         invalidGame.State.Phase = L12Phase.Main;
 
         Assert.True(invalidGame.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
-        var prompt = Assert.Single(invalidGame.State.PendingPrompts);
-        Assert.Equal("pending-activation", prompt.Continuation);
-        Assert.Empty(invalidGame.State.EffectStack);
+        Assert.DoesNotContain(invalidGame.State.PendingPrompts, candidate => candidate.Continuation == "pending-activation");
+        Assert.Single(invalidGame.State.EffectStack);
         invalidTarget.IsGodPower = true;
-        Assert.True(invalidGame.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
-            Choice: invalidTarget.InstanceId)).Accepted);
-        Assert.DoesNotContain(invalidPlayer.UsedAbilities, key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
+        PassResponses(invalidGame);
+        Assert.Contains(invalidPlayer.UsedAbilities, key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
         Assert.Empty(invalidGame.State.EffectStack);
+        Assert.Empty(invalidGame.State.PendingPrompts);
 
         var successGame = CreateWithFirstMaster("S02-05D1", 6816);
         var successPlayer = successGame.State.Players[0];
@@ -471,15 +481,18 @@ public sealed class AtomicReviewBatch2RegressionTests
             CardId = "S02-05C1A", InstanceId = "divinity-success-flip", Tapped = true,
         };
         successPlayer.Morale.Add(target);
+        HoldOpponentResponseWindow(successGame);
         successGame.State.ActivePlayer = 0;
         successGame.State.Phase = L12Phase.Main;
 
         Assert.True(successGame.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
-        prompt = Assert.Single(successGame.State.PendingPrompts);
+        Assert.DoesNotContain(successGame.State.PendingPrompts, candidate => candidate.Continuation == "pending-activation");
+        PassResponses(successGame);
+        var prompt = Assert.Single(successGame.State.PendingPrompts);
+        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
         Assert.True(successGame.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: target.InstanceId)).Accepted);
-        PassResponses(successGame);
         Assert.True(target.IsGodPower);
         Assert.True(target.Tapped);
         Assert.Contains($"active:master-0:divinityFlipMorale", successPlayer.UsedAbilities);

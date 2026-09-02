@@ -8,7 +8,7 @@ public sealed class PromptSemanticsRegressionTests
 {
     private static readonly string[] ForbiddenPlayerTerms =
     [
-        "预先声明", "预先选择", "公开区域", "私密区域", "公开资源", "公开目标",
+        "预先声明", "预先选择", "公开区域", "私密区域", "公开资源", "公开目标", "公开对象",
         "公开登场位置", "私密选择", "独立段", "独立的", "结算模式",
     ];
 

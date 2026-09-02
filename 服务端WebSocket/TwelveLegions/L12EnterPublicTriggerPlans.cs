@@ -39,6 +39,10 @@ public sealed partial class L12GameEngine
         var plan = Batch6JAEnterPlan(candidate.SourceCardId, candidate.Trigger);
         if (plan is null) return true;
         candidate.Data["batch6JAConditionLocked"] = "true";
+        // “可翻转1张士气”的唯一决定就是选择目标。目标选择界面本身提供不发动，
+        // 不再先询问一次“是否发动”，并将目标选择延后到效果真正结算时。
+        if (plan is "morale-flip" or "theseus-flip" or "morale-flip-two")
+            candidate.Data["declaration-complete"] = "true";
         if (plan is "canopic-one" or "canopic-four"
             && !PublicLegions(State.Players[candidate.Controller]).Any(card =>
                 L12StructuredCardRules.HasFaction(State.Players[candidate.Controller], card, "taiyangcheng")))
@@ -216,13 +220,7 @@ public sealed partial class L12GameEngine
             case "heracles-promoted-entry": Optional("赫拉克勒斯·晋升：预先声明是否对双方主宰造成非致命伤害"); break;
             case "heracles": Optional("赫拉克勒斯：预先声明是否抽2后弃1"); break;
             case "morale-flip" or "theseus-flip" or "morale-flip-two":
-            {
-                var morale = player.Morale.Where(card => !card.IsGodPower
-                    && (plan != "theseus-flip" || card.Tapped)).Select(card => card.InstanceId).ToArray();
-                if (morale.Length == 0) break;
-                Optional($"〈{source.Name}〉：预先声明是否翻转士气");
-                One("target-morale", "target", $"〈{source.Name}〉：预先选择士气目标", morale, "mode:use"); break;
-            }
+                break;
             case "joan":
                 if (player.Hand.Count == 0) break;
                 Optional("圣女贞德：预先声明是否弃置1张手牌发动效果");
@@ -539,9 +537,7 @@ public sealed partial class L12GameEngine
                     player.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
                     data: new() { ["action"] = "s2-olympus-draw-discard" }); return true;
             case "morale-flip" or "theseus-flip" or "morale-flip-two":
-                if (player.Morale.FirstOrDefault(card => card.InstanceId == One("target")) is { } morale)
-                { L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true); AddEvent("morale", item.Controller, "翻转1张士气", source); }
-                break;
+                return PromptS2FlipMorale(item, source, optional: true, onlyTapped: plan == "theseus-flip");
             case "joan": ProtectMasterUntilNextTurnStart(player, item.Controller); break;
             case "robin":
             {

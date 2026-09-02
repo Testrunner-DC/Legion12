@@ -74,6 +74,8 @@ public sealed partial class L12GameEngine
             case "yangjian-return-place": CompleteYangJianReturn(item, chosen[0]); break;
             case "liubei-search": CompleteLiuBeiSearch(item, chosen[0]); break;
             case "shanhe-search-pick": CompleteShanheSearch(item, chosen[0]); break;
+            case "gaotianyuan-move-target": ContinueGaotianyuanMoveTarget(item, chosen[0]); break;
+            case "gaotianyuan-move-slot": CompleteGaotianyuanMove(item, chosen[0]); break;
             case "disaster-return-field": CompleteDisasterReturnField(item, prompt, chosen[0]); break;
             case "disaster-grave-bottom": ContinueDisasterGraveBottom(item, prompt, chosen); break;
             case "disaster-discard": CompleteDisasterDiscard(item, prompt, chosen); break;
@@ -118,6 +120,80 @@ public sealed partial class L12GameEngine
             ResolveTypedKillSourceEvent(killEvent);
             return;
         }
+    }
+
+    private void BeginGaotianyuanMoveChoice(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var movers = PublicLegions(player)
+            .Where(card => !card.Tapped && !card.Hidden
+                && FindOnField(player, card.InstanceId, out var row, out var slot) is not null
+                && AdjacentEmptySlots(player, row, slot).Any())
+            .Select(card => card.InstanceId)
+            .ToList();
+        if (movers.Count == 0)
+        {
+            AddEvent("effect", item.Controller, "高天原阵营效果抽牌后没有可进行1格位移的活跃军团");
+            FinishStackItem(item);
+            return;
+        }
+        movers.Add("skip");
+        CreateResolutionChoicePrompt(item, "active-target",
+            "高天原阵营效果：选择我方1张活跃军团进行1格位移，或不位移",
+            movers, "gaotianyuan-move-target", new Dictionary<string, string>
+            {
+                ["skip"] = "不位移",
+            });
+    }
+
+    private void ContinueGaotianyuanMoveTarget(L12StackItem item, string choice)
+    {
+        if (choice == "skip")
+        {
+            FinishStackItem(item);
+            return;
+        }
+        var player = State.Players[item.Controller];
+        var legion = FindOnField(player, choice, out var row, out var slot);
+        if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden)
+        {
+            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的军团已无法位移");
+            FinishStackItem(item);
+            return;
+        }
+        var destinations = AdjacentEmptySlots(player, row, slot).ToArray();
+        if (destinations.Length == 0)
+        {
+            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的军团已没有相邻空位");
+            FinishStackItem(item);
+            return;
+        }
+        item.Data["gaotianyuanMoveTarget"] = legion.InstanceId;
+        CreateResolutionChoicePrompt(item, "adjacent-slot", "高天原阵营效果：选择军团位移后的相邻空位",
+            destinations, "gaotianyuan-move-slot", []);
+    }
+
+    private void CompleteGaotianyuanMove(L12StackItem item, string slotChoice)
+    {
+        var player = State.Players[item.Controller];
+        var legion = FindOnField(player, item.Data.GetValueOrDefault("gaotianyuanMoveTarget"), out var row, out var slot);
+        var (targetRow, targetSlot) = ParseSlot(slotChoice);
+        if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden
+            || targetRow is < 0 or > 1 || targetSlot is < 0 or > 2
+            || Math.Abs(row - targetRow) + Math.Abs(slot - targetSlot) != 1
+            || State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
+            || player.Field[targetRow][targetSlot] is not null)
+        {
+            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的位移位置已失效");
+            FinishStackItem(item);
+            return;
+        }
+        player.Field[row][slot] = null;
+        player.Field[targetRow][targetSlot] = legion;
+        legion.LastMovedTurn = State.TurnSerial;
+        AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
+        RecordLegionMovement(item.Controller, legion, row, targetRow);
+        FinishStackItem(item);
     }
 
     private void BeginLiJingEffect(L12StackItem item)

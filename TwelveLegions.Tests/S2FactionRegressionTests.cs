@@ -1960,32 +1960,35 @@ public sealed class S2FactionRegressionTests
         Assert.DoesNotContain(player.UsedAbilities, key => key.Contains("runeUse", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void OlympusFlipEntryLetsThePlayerChooseOneMoraleToFlip()
+    [Theory]
+    [InlineData("S02-0513")]
+    [InlineData("S02-0518")]
+    [InlineData("S02-0520")]
+    public void OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution(string cardId)
     {
         var game = Create(6305);
         var player = game.State.Players[0];
-        var card = Card("S02-0513", "s2-olympus-flip-entry");
+        var card = Card(cardId, $"s2-olympus-flip-entry-{cardId}");
         player.Hand.Add(card);
         player.Morale.Clear();
         for (var index = 0; index < card.Cost + 1; index++)
             player.Morale.Add(new L12MoraleCard
             {
-                InstanceId = $"olympus-flip-morale-{index}", CardId = "S02-05C1A", Tapped = false,
+                InstanceId = $"olympus-flip-morale-{index}", CardId = "S02-05C1A",
+                Tapped = cardId == "S02-0518" && index == card.Cost,
             });
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:use")).Accepted);
-        var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", prompt.Continuation);
-        var morale = player.Morale.First(candidate => !candidate.Tapped && prompt.ValidChoices.Contains(candidate.InstanceId));
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: morale.InstanceId)).Accepted);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
         PassResponses(game);
-        Assert.False(morale.Tapped);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
+        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.Single(game.State.PendingPrompts);
+        var morale = player.Morale.First(candidate => prompt.ValidChoices.Contains(candidate.InstanceId));
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: morale.InstanceId)).Accepted);
         Assert.True(morale.IsGodPower);
     }
 
@@ -2480,23 +2483,30 @@ public sealed class S2FactionRegressionTests
         });
         player.Morale.Add(new L12MoraleCard
         {
-            InstanceId = "olympus-morale-rested", CardId = "S02-05C1A", Tapped = true,
+            InstanceId = "olympus-morale-kept-active", CardId = "S02-05C1A", Tapped = false,
         });
         game.State.Phase = L12Phase.Main;
 
         var activation = game.Handle(playerIndex, new L12Command("activateAbility", $"faction-{playerIndex}",
             Ability: "olympusMoraleFlip"));
         Assert.True(activation.Accepted, activation.Error);
-        var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", prompt.Continuation);
-        Assert.Contains("olympus-morale-rested", prompt.ValidChoices);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("active-morale-choice", payment.Continuation);
+        Assert.Contains("olympus-morale-active", payment.ValidChoices);
+        Assert.Contains("olympus-morale-kept-active", payment.ValidChoices);
         Assert.False(player.Morale.Single(card => card.InstanceId == "olympus-morale-active").Tapped);
-        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
-            Choice: "olympus-morale-rested")).Accepted);
+        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["olympus-morale-active"])).Accepted);
         PassResponses(game);
 
-        var flipped = player.Morale.Single(card => card.InstanceId == "olympus-morale-rested");
-        Assert.True(flipped.Tapped);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
+        Assert.Contains("olympus-morale-kept-active", prompt.ValidChoices);
+        Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "olympus-morale-kept-active")).Accepted);
+
+        var flipped = player.Morale.Single(card => card.InstanceId == "olympus-morale-kept-active");
+        Assert.False(flipped.Tapped);
         Assert.True(flipped.IsGodPower);
         Assert.True(player.Morale.Single(card => card.InstanceId == "olympus-morale-active").Tapped);
         Assert.Contains($"active:faction-{playerIndex}:olympusMoraleFlip", player.UsedAbilities);

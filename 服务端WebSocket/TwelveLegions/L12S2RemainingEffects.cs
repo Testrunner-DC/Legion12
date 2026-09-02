@@ -57,9 +57,7 @@ public sealed partial class L12GameEngine
                 return CommitActiveAbility(playerIndex, source, ability, null);
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
                 if (!player.Morale.Any(card => !card.IsGodPower)) return CommandResult.Reject("没有可翻转的士气");
-                return BeginPendingActivation(playerIndex, source, ability,
-                    player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId).ToArray(),
-                    "诸神巅：预先选择要翻转的1张士气");
+                return CommitActiveAbility(playerIndex, source, ability, null);
             case "divinityPower" when source.CardId == "S02-05D1":
                 return TryBeginPublicActiveDeclaration(playerIndex, source, ability);
             case "divinityFreePromotion" when source.CardId == "S02-05D1":
@@ -154,10 +152,8 @@ public sealed partial class L12GameEngine
                 return CommandResult.Ok();
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
                 player.UsedAbilities.Add(onceKey);
-                PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string>
-                {
-                    ["ability"] = ability, ["target"] = target!,
-                });
+                PushEffect(playerIndex, source, "active", "主神效果",
+                    data: new Dictionary<string, string> { ["ability"] = ability });
                 return CommandResult.Ok();
             case "divinityPower" when source.CardId == "S02-05D1":
             {
@@ -306,17 +302,7 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, "本回合我方【阿斯加德】军团登场时获得冲锋；主宰本局无法因效果增加血量", source);
                 FinishStackItem(item); return true;
             case "divinityFlipMorale" when source?.CardId == "S02-05D1":
-            {
-                var target = player.Morale.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target")
-                    && !card.IsGodPower);
-                if (target is not null)
-                {
-                    L12S2ZoneOps.FlipMoraleFace(player, target.InstanceId, toGodPower: true);
-                    AddEvent("morale", item.Controller, "翻转1张士气", source);
-                }
-                FinishStackItem(item);
-                return true;
-            }
+                return PromptS2FlipMorale(item, source);
             case "divinityFreePromotion" when source?.CardId == "S02-05D1":
                 player.NextS2PromotionGodPowerDiscount = Math.Max(player.NextS2PromotionGodPowerDiscount, 99);
                 AddEvent("effect", item.Controller, "本回合我方下一张【奥林匹斯】军团晋升登场无需消耗并翻转神力", source);

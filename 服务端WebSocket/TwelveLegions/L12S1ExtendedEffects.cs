@@ -32,8 +32,25 @@ public sealed partial class L12GameEngine
         => trigger == "enter" ? S1ExtendedEnterCards.Contains(cardId) || HasS1FactionImmediateEffect(cardId, trigger)
             : S1ExtendedTacticCards.Contains(cardId) || HasS1FactionImmediateEffect(cardId, trigger);
 
-    private static List<L12AbilityView> GetAbilities(string cardId) => cardId switch
+    private static readonly IReadOnlyDictionary<string, string> FactionEffectCardAliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        ["ST01-C1"] = "S01-01C1",
+        ["ST02-C1"] = "S01-02C1",
+        ["ST03-C1"] = "S01-03C1",
+        ["ST04-C1"] = "S01-04C1",
+        ["ST05-C1"] = "S02-05C1A",
+        ["ST06-C1"] = "S02-06C1",
+    };
+
+    private static string CanonicalFactionEffectCardId(string cardId)
+        => FactionEffectCardAliases.GetValueOrDefault(cardId, cardId);
+
+    private static List<L12AbilityView> GetAbilities(string cardId)
+    {
+        cardId = CanonicalFactionEffectCardId(cardId);
+        return cardId switch
+        {
         "S01-0003" => [new("extendedRange", "消耗2士气：扩展进攻范围")],
         "S01-0004" => [new("destroyInfiltrator", "消耗2士气：击杀此军团")],
         "S01-0105" => [new("searchBrothers", "检索关羽/张飞")],
@@ -97,10 +114,11 @@ public sealed partial class L12GameEngine
             new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
             new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
         ],
-        _ => GetStarterRemainingAbilityViews(cardId) is { Count: > 0 } starterAbilities
-            ? starterAbilities
-            : GetS1FactionAbilities(cardId) is { Count: > 0 } s1Abilities ? s1Abilities : GetS2FactionAbilities(cardId),
-    };
+            _ => GetStarterRemainingAbilityViews(cardId) is { Count: > 0 } starterAbilities
+                ? starterAbilities
+                : GetS1FactionAbilities(cardId) is { Count: > 0 } s1Abilities ? s1Abilities : GetS2FactionAbilities(cardId),
+        };
+    }
 
     private bool TryResolveS1ExtendedEnter(L12StackItem item, L12CardInstance card)
     {

@@ -6,7 +6,7 @@
 
 - 固定范围为 `cards.s1.json` 全部 24 张 `gaotianyuan` 卡，含主宰、士气、阵营、草薙剑和特殊区形态，共 55 项原子目录能力。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。每行独立核对时点、入栈声明/费用、区域、数值层、可见性、目标失效、来源 LKI、多实例次数与响应无效。
-- 唯一结论：15 张通过、9 张明确错误并修复，有疑点 0、缺少测试 0、未实现 0。本批没有新增待裁定项。
+- 唯一结论：14 张通过、10 张明确错误并修复，有疑点 0、缺少测试 0、未实现 0。本批没有新增待裁定项。
 
 ## 逐卡逐能力结论
 
@@ -32,7 +32,7 @@
 | S01-0418 天诛 | 1 | 打出前声明公开费用不高于7的击杀目标；付费/移入Resolving后无效不回手，目标失效不改选。 | `L12CompositeEffectPlans`、`L12HandPlay` | `AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
 | S01-0419 花魁的馈赠 | 1 | 顶3身份只在首段合法开始后查看，选牌展示入手、其余私密排序回底；随后公开士气先声明且独立响应，戒指阵营正确。 | `L12CompositeEffectPlans`、`L12S1FactionEffects`、`L12StructuredCardRules` | `AtomicReviewBatch6CRegressionTests`、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
 | S01-0420 切腹仪式 | 2 | 仅在对方进攻后触发；抽1与同句公开目标减费同段，目标在候选入栈前声明并在结算重验。 | `L12PublicResponseEffectPlans`、`L12S1ExtendedEffects` | `AtomicReviewBatch6JBRegressionTests`、`CombatTimelineRegressionTests` | 通过 |
-| S01-04C1 士气·高天原 | 1 | 回合1次消耗2士气前付；抽1与随后可选公开军团移位分别响应，首段无效不吞后段。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans` | `AtomicReviewBatch3RegressionTests`、`ExtendedCardEffectsTests` | 通过 |
+| S01-04C1 士气·高天原 | 1 | 回合1次先选择并消耗2士气；效果结算先抽1，再按结算后的场面选择活跃军团及相邻空位，目标选择可直接“不位移”，不得在费用阶段预选。 | `L12ActiveAbilities`、`L12EffectContinuations` | `AtomicReviewBatch3RegressionTests`、`NewSystemsTests` | 明确错误→已修复 |
 | S01-04D1 黄泉之门 | 3 | 两个回合次数独立；抽牌/全体费用与随后两击杀分成4段；主动休整的公开墓地目标先声明，戒指下通用墓地卡可被回收。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12StructuredCardRules` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
 | S01-04M1 天照大神 | 2 | 两项回合1次独立；士气/弃手牌费用与公开目标入栈前完整提交；减费→击杀、翻士气→前排强化均分段，无效不返费也不吞后段。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6KCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S01-04M2 须佐之男 | 3 | 前排进攻强化只在当回合后续的前排进攻中生效；公开目标排除隐匿并按戒指阵营；草薙剑使用单一实例、入前排不占圣物区、离场可回所有者牌库顶。 | `L12PublicActiveEffectPlans`、`L12Actions`、`L12AuthoritativeCardZones` | `AtomicReviewBatch6DRegressionTests`、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |

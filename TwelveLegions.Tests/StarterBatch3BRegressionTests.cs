@@ -112,6 +112,24 @@ public sealed class StarterBatch3BRegressionTests
             player.Morale.Add(new L12MoraleCard { CardId = "S01-01C1", InstanceId = $"{prefix}-{index}" });
     }
 
+    [Theory]
+    [InlineData("ST01-C1", "S01-01C1")]
+    [InlineData("ST02-C1", "S01-02C1")]
+    [InlineData("ST03-C1", "S01-03C1")]
+    [InlineData("ST04-C1", "S01-04C1")]
+    [InlineData("ST05-C1", "S02-05C1A")]
+    [InlineData("ST06-C1", "S02-06C1")]
+    public void StarterMoraleCardsReuseTheCanonicalFactionAbilitySet(string starterId, string canonicalId)
+    {
+        var method = typeof(L12GameEngine).GetMethod("GetAbilities",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var starter = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(null, [starterId]));
+        var canonical = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(method.Invoke(null, [canonicalId]));
+
+        Assert.Equal(canonical.Select(ability => ability.Id), starter.Select(ability => ability.Id));
+        Assert.NotEmpty(starter);
+    }
+
     [Fact]
     public void RemainingStarterCardsShareStructuredAndVerifiedRuntimeBoundaries()
     {

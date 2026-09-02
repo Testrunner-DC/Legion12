@@ -128,7 +128,7 @@ public sealed class AtomicReviewBatch3RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:factionDrawMove")]
-    public void GaotianyuanDrawMoveDeclaresModeLegionAndSlotBeforePayment()
+    public void GaotianyuanDrawsBeforeChoosingOptionalMoveTargetAndSlot()
     {
         var game = CreateWithFirstMaster("S01-04M2", 6902);
         var player = game.State.Players[0];
@@ -144,27 +144,23 @@ public sealed class AtomicReviewBatch3RegressionTests
 
         var activation = game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove"));
         Assert.True(activation.Accepted, activation.Error);
-        ResolveSinglePrompt(game, "mode:move");
-        var target = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains(mover.InstanceId, target.ValidChoices);
-        Assert.Equal(2, player.Morale.Count(card => !card.Tapped));
+        Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
         Assert.DoesNotContain(drawn, player.Hand);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+
+        PassResponses(game);
+        Assert.Contains(drawn, player.Hand);
+        var target = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("gaotianyuan-move-target", target.Data["action"]);
+        Assert.Contains(mover.InstanceId, target.ValidChoices);
         ResolveSinglePrompt(game, mover.InstanceId);
         var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("gaotianyuan-move-slot", slot.Data["action"]);
         Assert.Contains("0:1", slot.ValidChoices);
-        Assert.Equal(2, player.Morale.Count(card => !card.Tapped));
         ResolveSinglePrompt(game, "0:1");
 
-        Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
-        player.Field[0][0] = null;
-        player.Graveyard.Add(mover);
-        PassResponses(game);
-
-        Assert.Contains(drawn, player.Hand);
-        Assert.Contains(mover, player.Graveyard);
-        Assert.Null(player.Field[0][1]);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("位移", StringComparison.Ordinal));
+        Assert.Null(player.Field[0][0]);
+        Assert.Same(mover, player.Field[0][1]);
     }
 
     [Fact]
