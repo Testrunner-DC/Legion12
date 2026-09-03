@@ -667,22 +667,22 @@ public sealed partial class L12GameEngine
                 var modes = new List<string>();
                 if (ActiveResourceCount(player) >= 1) modes.Add("mode:normal");
                 if (strongGuards.Count > 0) modes.Add("mode:strong");
-                if (modes.Count == 0) return CommandResult.Reject("需要1张可用资源；强模式还需另有1张活跃陵墓守卫");
+                if (modes.Count == 0) return CommandResult.Reject("需要1份可用资源；若要使目标兵力-3000，还需额外休整1张活跃〈陵墓守卫〉");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep
                     {
-                        Kind = "option", Text = "梅杰德：先声明本次兵力降低模式",
+                        Kind = "option", Text = "梅杰德：消耗1士气，使对方1张军团本回合兵力-1000；若额外休整我方1张〈陵墓守卫〉，则改为兵力-3000",
                         ValidChoices = modes, MinChoose = 1, MaxChoose = 1,
                         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                         {
-                            ["mode:normal"] = "普通模式：目标本回合兵力-1000",
-                            ["mode:strong"] = "强模式：额外休整1张活跃〈陵墓守卫〉，目标本回合兵力-3000",
+                            ["mode:normal"] = "消耗1士气：对方1张军团本回合兵力-1000",
+                            ["mode:strong"] = "消耗1士气并额外休整1张活跃〈陵墓守卫〉：对方1张军团本回合兵力-3000",
                         },
                     },
                     new L12ActivationSelectionStep
                     {
-                        Kind = "active-target", Text = "梅杰德：选择强模式要休整的1张活跃〈陵墓守卫〉",
+                        Kind = "active-target", Text = "梅杰德：选择额外休整的1张活跃〈陵墓守卫〉",
                         ValidChoices = strongGuards, MinChoose = 1, MaxChoose = 1,
                         RequiredDeclaredChoice = "mode:strong",
                     },
@@ -857,7 +857,7 @@ public sealed partial class L12GameEngine
                 if (declared.Length != 5 || guards.Length != 3 || guards.Any(card => card is null)
                     || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3 || canopic is null
                     || declared[4] is not ("mode:draw" or "mode:heal"))
-                    return CommandResult.Reject("伊西斯声明的陵墓守卫、卡诺匹斯圣物或奖励模式已失效");
+                    return CommandResult.Reject("伊西斯选择的陵墓守卫、卡诺匹斯圣物或奖励选项已失效");
                 foreach (var guard in guards)
                     RemoveFromField(player, guard!, true, "作为伊西斯主宰效果的发动费用弃置",
                         leaveKind: L12FieldLeaveKind.Discard);
@@ -875,7 +875,7 @@ public sealed partial class L12GameEngine
                     : null;
                 if (declared.FirstOrDefault() is not ("mode:normal" or "mode:strong") || enemyTarget is null
                     || strong && guard is null)
-                    return CommandResult.Reject("梅杰德声明的模式、陵墓守卫或目标不再合法");
+                    return CommandResult.Reject("梅杰德选择的效果、陵墓守卫或目标不再合法");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张可用资源");
                 if (guard is not null) guard.Tapped = true;
                 player.UsedAbilities.Add(onceKey);
@@ -1290,7 +1290,7 @@ public sealed partial class L12GameEngine
                     var targetId = CompositeDeclared(item, "debuffTarget").SingleOrDefault();
                     if (DeclaredEnemyTarget(item.Controller, targetId) is { } debuff) debuff.CostModifier--;
                     else AddEvent("effect-cancelled", item.Controller,
-                        "天照大神已声明的费用降低目标失效；仅取消本段", source is null ? [] : [source]);
+                        "天照大神选择的费用降低目标失效；该项目标的费用降低不结算", source is null ? [] : [source]);
                 }
                 else if (AtomicFlowKey(item) == "amaterasu-kill")
                 {
@@ -1299,7 +1299,7 @@ public sealed partial class L12GameEngine
                         && DeclaredEnemyTarget(item.Controller, targetId, card => card.CurrentCost == 0) is not null)
                         KillTarget(item, targetId!, "被天照大神击杀");
                     else if (targetId != "mode:none") AddEvent("effect-cancelled", item.Controller,
-                        "天照大神已声明的费用为0目标失效；仅取消随后击杀段", source is null ? [] : [source]);
+                        "天照大神选择的费用为0目标失效；该目标不会被击杀", source is null ? [] : [source]);
                 }
                 FinishStackItem(item);
                 return true;
@@ -1369,7 +1369,7 @@ public sealed partial class L12GameEngine
         if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 1000) is not null)
             KillTarget(item, targetId!, "被图特摩斯三世击杀");
         else AddEvent("effect-cancelled", item.Controller,
-            "图特摩斯三世声明的随后击杀目标已失效；仅取消击杀段");
+            "图特摩斯三世选择的击杀目标已失效；该目标不会被击杀");
         FinishStackItem(item);
     }
 
@@ -1418,7 +1418,7 @@ public sealed partial class L12GameEngine
             || !player.Graveyard.Any(card => card.InstanceId == guardId && card.CardId == "S01-0212")
             || !EmptySlots(player).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
-            AddEvent("effect-cancelled", item.Controller, "梅杰德声明的陵墓守卫或登场位置已失效；本段取消");
+            AddEvent("effect-cancelled", item.Controller, "梅杰德选择的陵墓守卫或登场位置已失效；该军团不登场");
             FinishStackItem(item);
             return;
         }
@@ -1439,7 +1439,11 @@ public sealed partial class L12GameEngine
         }
         item.Data["summon-queue"] = string.Join('|', queue);
         var current = player.Graveyard.Concat(player.Hand).Concat(player.Library).First(card => card.InstanceId == queue[0]);
-        var data = new Dictionary<string, string> { ["action"] = "queued-summon-slot", ["previewCardId"] = current.InstanceId };
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "queued-summon-slot", ["previewCardId"] = current.InstanceId,
+            ["previewPresentation"] = "handled-card",
+        };
         AddPromptCardData(data, current);
         CreatePrompt(item.Controller, "slot", item.Data.GetValueOrDefault("summon-text", "选择军团登场的位置"), EmptySlots(player), 1, 1,
             "card-effect", item.StackItemId, data: data);

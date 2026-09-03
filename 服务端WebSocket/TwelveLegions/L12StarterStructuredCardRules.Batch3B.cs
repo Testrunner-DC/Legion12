@@ -77,9 +77,6 @@ public static partial class L12StructuredCardRules
     internal static bool RequiresStarterDisasterAttackDiscard(string? cardId)
         => cardId == "ST-DS02";
 
-    internal static bool StarterAttachedCardGrantsStrongAttack(string cardId)
-        => cardId == "ST04-10";
-
     internal static bool IsStarterKondoReplacementSource(string cardId)
         => cardId == "ST04-05";
 

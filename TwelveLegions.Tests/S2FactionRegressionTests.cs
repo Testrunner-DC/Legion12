@@ -187,6 +187,7 @@ public sealed class S2FactionRegressionTests
         var chooseSlot = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", chooseSlot.Continuation);
         Assert.Equal(beetle.InstanceId, chooseSlot.Data["previewCardId"]);
+        Assert.Equal("handled-card", chooseSlot.Data["previewPresentation"]);
         var destination = Assert.Single(chooseSlot.ValidChoices.Take(1));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: chooseSlot.PromptId,
             Choice: destination)).Accepted);

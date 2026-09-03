@@ -446,9 +446,10 @@ public sealed partial class L12GameEngine
             {
                 var target = FindOnField(player, candidate.Data.GetValueOrDefault("target"), out _, out _);
                 var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 2;
-                var modes = new List<string> { "mode:none" };
+                var modes = new List<string>();
                 if (target is not null && ActiveResourceCount(player) >= moraleCost) modes.Add("mode:morale");
                 if (target is not null && player.Hand.Count > 0) modes.Add("mode:discard");
+                modes.Add("mode:none");
                 var visibleCost = Math.Max(0, moraleCost - player.TemporaryMorale);
                 var resources = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
                     .Concat(ActiveTombGuardResources(player).Select(card => card.InstanceId)).ToList();
@@ -1034,7 +1035,7 @@ public sealed partial class L12GameEngine
                         AddEvent("effect", item.Controller,
                             $"墓地的阿斯加德军团使〈{target.Name}〉本回合额外兵力+{bonus}", target);
                     }
-                    else AddEvent("effect", item.Controller, "墓地中不足3张阿斯加德军团，本段没有追加兵力", target);
+                    else AddEvent("effect", item.Controller, "墓地中不足3张阿斯加德军团，没有获得额外兵力", target);
                 }
                 else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次按墓地数量增加兵力未生效");
                 FinishStackItem(item);

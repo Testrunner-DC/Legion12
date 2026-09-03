@@ -156,7 +156,7 @@ public sealed partial class L12GameEngine
                     FindSource(item) is { } liMu ? [liMu] : []);
             }
             else
-                AddEvent("effect-cancelled", item.Controller, "李牧结算时士气牌库已空；本段取消，回合次数不恢复");
+                AddEvent("effect-cancelled", item.Controller, "李牧结算时士气牌库已空；无法追加士气，回合次数不恢复");
             FinishStackItem(item);
             return;
         }
@@ -170,7 +170,7 @@ public sealed partial class L12GameEngine
             || !Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null)
                 .Select(slot => $"0:{slot}").Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
-            AddEvent("effect-cancelled", item.Controller, "哮天犬·稚声明的前排登场位置已失效；本段取消");
+            AddEvent("effect-cancelled", item.Controller, "哮天犬·稚选择的前排登场位置已失效；该军团不登场");
             FinishStackItem(item);
             return;
         }
@@ -246,7 +246,7 @@ public sealed partial class L12GameEngine
                     if (!Draw(player, 1)) SetWinner(1 - item.Controller, "〈李牧〉效果抽牌时牌库为空");
                 }
                 else
-                    AddEvent("effect-cancelled", item.Controller, "李牧的随后抽牌段结算时牌库已空；本段取消", card);
+                    AddEvent("effect-cancelled", item.Controller, "李牧结算抽牌效果时牌库已空；无法抽牌", card);
                 FinishStackItem(item);
                 return true;
             case "平阳昭公主":
@@ -1007,8 +1007,8 @@ public sealed partial class L12GameEngine
                     ValidChoices = ["mode:none", "mode:heal"],
                     ChoiceLabels = new Dictionary<string, string>
                     {
-                        ["mode:none"] = "只抽取1张牌",
-                        ["mode:heal"] = "抽取1张牌并使我方主宰增加1点血量",
+                        ["mode:none"] = "抽取1张牌",
+                        ["mode:heal"] = "抽取1张牌；我方主宰增加1点血量",
                     },
                 },
             ]);
@@ -1189,7 +1189,7 @@ public sealed partial class L12GameEngine
             || !player.Graveyard.Any(card => card.InstanceId == scarabId && card.CardId == "S02-0201")
             || !EmptySlots(player).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
-            AddEvent("effect-cancelled", item.Controller, "奈芙蒂斯声明的增殖甲虫或登场位置已失效；本段取消");
+            AddEvent("effect-cancelled", item.Controller, "奈芙蒂斯选择的增殖甲虫或登场位置已失效；该军团不登场");
             FinishStackItem(item);
             return;
         }
@@ -1290,14 +1290,14 @@ public sealed partial class L12GameEngine
         {
             if (source.Tapped || player.SpecialZones.Runes < 1) return CommandResult.Reject("梅林需要为活跃状态且消耗1符文");
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-            if (declared.Length == 0) return CommandResult.Reject("需要声明效果模式");
+            if (declared.Length == 0) return CommandResult.Reject("需要选择效果");
             var valid = declared[0] switch
             {
                 "mode:debuff" => declared.Length == 2 && DeclaredEnemyTarget(playerIndex, declared[1]) is not null,
                 "mode:search" => declared.Length == 1 && player.Library.Count > 0,
                 _ => false,
             };
-            if (!valid) return CommandResult.Reject("梅林声明的模式或公开目标已不合法");
+            if (!valid) return CommandResult.Reject("梅林选择的效果或目标已不合法");
             source.Tapped = true;
             if (!L12S2ZoneOps.SpendRunes(player, 1)) return CommandResult.Reject("需要消耗1符文");
             player.UsedAbilities.Add(onceKey);
@@ -1712,6 +1712,7 @@ public sealed partial class L12GameEngine
             var data = new Dictionary<string, string>
             {
                 ["action"] = "s2-amakine-top-place", ["previewCardId"] = top.InstanceId,
+                ["previewPresentation"] = "handled-card",
                 ["hand"] = "加入手牌", ["top"] = "返回牌库顶部", ["bottom"] = "返回牌库底部",
             };
             AddPromptCardData(data, top);
@@ -2239,6 +2240,7 @@ public sealed partial class L12GameEngine
         var data = new Dictionary<string, string>
         {
             ["action"] = "s2-limu-tactic", ["previewCardId"] = top.InstanceId,
+            ["previewPresentation"] = "handled-card",
             ["play"] = "无需消耗费用打出", ["bottom"] = "不打出，返回牌库底部",
         };
         AddPromptCardData(data, top);
@@ -2591,6 +2593,7 @@ public sealed partial class L12GameEngine
         {
             ["action"] = "s2-okita-top",
             ["previewCardId"] = top.InstanceId,
+            ["previewPresentation"] = "handled-card",
             ["play"] = "无需消耗费用将其打出",
             ["hand"] = "不打出，将其加入手牌",
         };

@@ -264,6 +264,16 @@ public sealed class StarterBatch3BRegressionTests
         PassResponses(fireGame);
         Assert.Contains(fire, host.AttachedCards);
 
+        var snapshot = JsonSerializer.SerializeToElement(fireGame.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var hostView = snapshot.GetProperty("players")[0].GetProperty("field")[0]
+            .EnumerateArray().Single(card => card.ValueKind != JsonValueKind.Null
+                && card.GetProperty("instanceId").GetString() == host.InstanceId);
+        Assert.Equal("强攻", Assert.Single(hostView.GetProperty("activeKeywords").EnumerateArray())
+            .GetString());
+        Assert.Contains(hostView.GetProperty("attachedCards").EnumerateArray(),
+            card => card.GetProperty("cardId").GetString() == "ST04-10");
+
         var giftGame = Create(20407);
         var giftPlayer = giftGame.State.Players[0];
         giftPlayer.TemporaryMorale = 20;
@@ -403,10 +413,16 @@ public sealed class StarterBatch3BRegressionTests
         var attacker = Card("ST04-03", "kagutsuchi-attacker");
         player.Field[0][0] = attacker;
         GiveMorale(player, 2, "kagutsuchi");
+        player.Hand.Add(Card("ST01-02", "kagutsuchi-discard"));
 
         var attack = game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("master")));
         Assert.True(attack.Accepted, attack.Error);
+        var choicePrompt = Prompt(game);
+        Assert.Equal(["mode:morale", "mode:discard", "mode:none"], choicePrompt.ValidChoices);
+        Assert.Equal("消耗2士气", choicePrompt.ChoiceLabels["mode:morale"]);
+        Assert.Equal("弃置1张手牌", choicePrompt.ChoiceLabels["mode:discard"]);
+        Assert.Equal("不发动", choicePrompt.ChoiceLabels["mode:none"]);
         Choose(game, "mode:morale");
         PassResponses(game);
 
@@ -440,6 +456,26 @@ public sealed class StarterBatch3BRegressionTests
         PassResponses(defenseGame);
         Assert.Equal(defendedLegion.BaseTroops + 2000, defendedLegion.Troops);
         Assert.Contains(cooperativeSupport, defender.Graveyard);
+    }
+
+    [Fact]
+    public void StrongAttackFromSelfTemporaryAndEveryAttachmentSourceAddsOnlyOneMasterDamage()
+    {
+        var game = Create(204061);
+        var player = game.State.Players[0];
+        var attacker = Card("ST01-01", "multi-source-strong-attacker");
+        attacker.AttachedCards.Add(Card("ST04-10", "attached-invasion-fire"));
+        attacker.AttachedCards.Add(Card("S02-06S2", "attached-kings-sword"));
+        player.Field[0][0] = attacker;
+
+        var attack = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.True(attack.Accepted, attack.Error);
+        Assert.Equal(2, game.State.PendingDefense?.MasterDamage);
+
+        Invoke(game, "GrantStrongAttack", attacker);
+        Assert.True(attacker.HasStrongAttack);
+        Assert.Equal(2, game.State.PendingDefense?.MasterDamage);
     }
 
     [Fact]

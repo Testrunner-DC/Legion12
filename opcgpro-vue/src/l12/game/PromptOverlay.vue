@@ -245,17 +245,20 @@ function focusHistoryCard(card: DisasterCardView) {
 
 const currentChoices = computed(() => isMulligan.value ? (me.value.hand ?? []).map(card => card.instanceId) : (prompt.value?.validChoices ?? []))
 const isEffectDecision = computed(() => prompt.value?.data?.uiPattern === 'effect-decision')
-const decisionChoiceOrder = computed(() => {
-  const choices = currentChoices.value
-  const affirmative = choices.find(choice => ['yes', 'mode:use'].includes(choice.toLowerCase()))
-  const decline = choices.find(choice => ['no', 'mode:none'].includes(choice.toLowerCase()))
-  return [affirmative, decline, ...choices.filter(choice => choice !== affirmative && choice !== decline)].filter(Boolean) as string[]
-})
+const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
+const previewPresentation = computed(() => prompt.value?.data?.previewPresentation ?? '')
+const showPreviewCard = computed(() => Boolean(previewCardId.value)
+  && ['handled-card', 'information-card'].includes(previewPresentation.value))
+const declineChoices = new Set(['no', 'mode:none', 'skip'])
+const orderedEffectChoices = computed(() => [
+  ...currentChoices.value.filter(choice => !declineChoices.has(choice.toLowerCase())),
+  ...currentChoices.value.filter(choice => declineChoices.has(choice.toLowerCase())),
+])
 const displayedChoices = computed(() => {
-  if (isEffectDecision.value) return decisionChoiceOrder.value
+  if (prompt.value?.kind === 'option') return orderedEffectChoices.value
   const listed = prompt.value?.data?.displayCardIds?.split('|').filter(Boolean)
   if (listed?.length) return listed
-  if (previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
+  if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
 const supplementalChoices = computed(() => currentChoices.value
@@ -263,9 +266,8 @@ const supplementalChoices = computed(() => currentChoices.value
 const isCardSelectionPrompt = computed(() => prompt.value?.data?.cardSelection === 'true')
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
 const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
-const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
 const hasCardChoices = computed(() => !isEffectDecision.value
-  && (Boolean(previewCardId.value) || displayedChoices.value.some(id => Boolean(detailFor(id)))))
+  && (showPreviewCard.value || displayedChoices.value.some(id => Boolean(detailFor(id)))))
 const isEffectOptionList = computed(() => (isEffectDecision.value || prompt.value?.kind === 'option')
   && !hasCardChoices.value && !isInitiative.value)
 const displayedCardsAreAllFromHand = computed(() => {
@@ -451,7 +453,7 @@ function kindLabel() {
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
-        <div v-if="previewCardId && !displayedChoices.includes(previewCardId)" class="prompt-card-strip featured-card-strip">
+        <div v-if="showPreviewCard && previewCardId && !displayedChoices.includes(previewCardId)" class="prompt-card-strip featured-card-strip">
           <PromptCardCandidate :card-id="cardIdFor(previewCardId)" :legacy-url="imageFor(previewCardId)"
             :name="cardName(previewCardId)" :meta="cardMeta(previewCardId)" :horizontal="isHorizontalCardType(detailFor(previewCardId)?.cardType)"
             intent="detail" size="featured" @focus="focusChoice(previewCardId)" @select="focusChoice(previewCardId)"/>
@@ -616,9 +618,9 @@ function kindLabel() {
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:18px;line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:18px}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(920px,calc(100vw - 36px))}.prompt-card-strip{display:flex;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:8px;padding:10px 3px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.prompt-card-strip{max-height:none}.featured-card-strip{justify-content:center;margin:2px auto}
-.prompt-choices.effect-option-list{display:flex;max-width:640px;flex-direction:column;align-items:stretch;gap:8px;margin:12px auto}.prompt-choices.effect-option-list>button{width:100%;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:11px;font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
+.prompt-choices.effect-option-list{display:flex;max-width:100%;flex-direction:row;flex-wrap:nowrap;align-items:stretch;justify-content:flex-start;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.effect-option-list>button{width:auto;min-width:180px;max-width:360px;min-height:54px;flex:1 0 180px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:11px;font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
 .prompt-supplemental-choices{display:flex;justify-content:flex-end;gap:7px;margin:4px 3px}.prompt-supplemental-choices button{padding:7px 12px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:9px;font-weight:900}.prompt-supplemental-choices button:hover,.prompt-supplemental-choices button.selected{border-color:#70d7df;background:#174e54}
-.effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:13px;line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{display:grid;grid-template-columns:1fr 1fr;max-width:440px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:14px}
+.effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:13px;line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{min-width:210px;flex-basis:210px;text-align:center;font-size:14px}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:11px}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:7px;line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:8px;line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:8px;font-weight:900}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
 .all-placement-workspace{display:grid;grid-template-columns:62px minmax(0,1fr) 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{min-width:0;padding:5px}.placement-edge{color:#fff;font-size:18px;font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}

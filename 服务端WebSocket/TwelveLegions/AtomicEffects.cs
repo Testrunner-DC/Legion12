@@ -171,7 +171,7 @@ public static class L12EffectAtomRegistry
             [L12AtomKinds.Condition] = new(L12AtomKinds.Condition, "校验", "检查条件", "在声明和结算时重新检查合法条件。", true, "PendingActivation validation"),
             [L12AtomKinds.Optional] = new(L12AtomKinds.Optional, "流程", "可选发动", "建立是/否选择；选择后立即确认。", true, "Prompt(option)"),
             [L12AtomKinds.SelectTarget] = new(L12AtomKinds.SelectTarget, "选择", "选择对象", "按区域、阵营、类型、数量和数值筛选合法对象。", true, "PendingActivation target declaration"),
-            [L12AtomKinds.SelectMode] = new(L12AtomKinds.SelectMode, "选择", "选择模式", "从完整效果文本按钮中选择一个模式。", true, "PendingActivation mode declaration"),
+            [L12AtomKinds.SelectMode] = new(L12AtomKinds.SelectMode, "选择", "选择以下一项", "从完整效果文本按钮中选择一项。", true, "PendingActivation mode declaration"),
             [L12AtomKinds.PayMorale] = new(L12AtomKinds.PayMorale, "费用", "支付士气", "消耗活跃士气、神力或规则允许的替代资源。", true, "ResourcePayment"),
             [L12AtomKinds.ReturnMorale] = new(L12AtomKinds.ReturnMorale, "费用", "返还士气", "玩家选择具体士气并返还士气牌库。", true, "ResourceReturn"),
             [L12AtomKinds.RestSource] = new(L12AtomKinds.RestSource, "费用", "休整来源", "将能力来源由活跃转为休整。", true, "RestCard"),
@@ -415,7 +415,7 @@ public sealed class L12AtomicEffectCatalog
         if (ContainsAny(text, "选择", "选取"))
             Add(atoms, L12AtomKinds.SelectTarget, "声明合法对象", new() { ["text"] = text }, "inferred");
         if (ContainsAny(text, "选择以下", "选择1项", "选择一项", "或：", "或使"))
-            Add(atoms, L12AtomKinds.SelectMode, "选择效果模式", new() { ["text"] = text }, "inferred");
+            Add(atoms, L12AtomKinds.SelectMode, "选择以下一项", new() { ["text"] = text }, "inferred");
         if (text.Contains("消耗") && text.Contains("士气")) AddNumeric(atoms, L12AtomKinds.PayMorale, text, "支付士气");
         if (text.Contains("返还") && text.Contains("士气")) AddNumeric(atoms, L12AtomKinds.ReturnMorale, text, "返还士气");
         if (text.Contains("主动休整")) Add(atoms, L12AtomKinds.RestSource, "休整能力来源", new(), "inferred");

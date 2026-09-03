@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
             if (!result.Accepted)
             {
                 AddEvent("effect-cancelled", controller,
-                    $"〈{source.Name}〉的重复效果没有足够的合法模式或目标；未建立效果", source);
+                    $"〈{source.Name}〉的重复效果没有足够的合法选项或目标；未建立效果", source);
                 ResumeAfterPostResolutionGeneratedInteraction();
             }
             return;

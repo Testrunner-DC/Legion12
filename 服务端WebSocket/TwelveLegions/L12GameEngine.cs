@@ -8,8 +8,7 @@ public sealed partial class L12GameEngine
 {
     private void GrantStrongAttack(L12CardInstance card)
     {
-        var alreadyAppliedToCurrentAttack = card.HasStrongAttack
-            || card.AttachedCards.Any(attached => attached.CardId == "S02-06S2");
+        var alreadyAppliedToCurrentAttack = L12StructuredCardSemantics.HasEffectiveStrongAttack(card);
         card.HasStrongAttack = true;
 
         var pending = State.PendingDefense;
@@ -542,7 +541,7 @@ public sealed partial class L12GameEngine
     {
         if (card.Hidden) return [];
         var keywords = new List<string>();
-        if (card.HasStrongAttack) keywords.Add("强攻");
+        if (L12StructuredCardSemantics.HasEffectiveStrongAttack(card)) keywords.Add("强攻");
         if (HasActiveImmortal(card, row)) keywords.Add("免死");
         if (card.HasSureHit) keywords.Add("必中");
         if (L12StructuredCardRules.HasTaunt(card, row)) keywords.Add("挑衅");

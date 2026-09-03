@@ -825,6 +825,7 @@ public sealed class S2UniversalEffectsTests
         {
             Assert.Equal("s2-prayer-public-confirm", prompt.Continuation);
             Assert.Equal(disaster.InstanceId, prompt.Data["previewCardId"]);
+            Assert.Equal("information-card", prompt.Data["previewPresentation"]);
         });
         foreach (var prompt in game.State.PendingPrompts.ToArray())
             Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
@@ -859,6 +860,7 @@ public sealed class S2UniversalEffectsTests
         var preview = Assert.Single(game.State.PendingPrompts);
         Assert.True(preview.IsPrivate);
         Assert.Equal(disaster.InstanceId, preview.Data["previewCardId"]);
+        Assert.Equal("information-card", preview.Data["previewPresentation"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: preview.PromptId,
             CardInstanceIds: [])).Accepted);
         Assert.Contains(player.Graveyard, card => card.InstanceId == prayer.InstanceId);

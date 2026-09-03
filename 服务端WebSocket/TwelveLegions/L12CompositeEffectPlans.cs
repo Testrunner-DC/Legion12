@@ -25,7 +25,7 @@ internal static partial class L12CompositeEffectPlans
         {
             ["S01-0005"] =
             [
-                new("volley-effect", "执行已声明的〈万箭齐发〉模式", PublicTargetKeys: ["singleTarget"]),
+                new("volley-effect", "执行已选择的〈万箭齐发〉效果", PublicTargetKeys: ["singleTarget"]),
             ],
             ["S01-0006"] =
             [
@@ -44,7 +44,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S01-0009"] =
             [
-                new("strategic-transfer-effect", "依次结算已声明的回手与强化目标",
+                new("strategic-transfer-effect", "依次结算已选择的回手与兵力+2000目标",
                     PublicTargetKeys: ["returnTarget", "buffTarget"]),
             ],
             ["S01-0010"] =
@@ -87,7 +87,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S01-0221"] =
             [
-                new("duat-effect", "执行已声明的〈杜阿特之门〉模式",
+                new("duat-effect", "执行已选择的〈杜阿特之门〉效果",
                     PublicTargetKeys: ["killTarget", "recoverTarget"]),
             ],
             ["S01-0318"] =
@@ -185,11 +185,11 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S02-0206"] =
             [
-                new("fearless-assassination", "无畏的刺杀：强化已声明的我方前排【太阳城】军团"),
+                new("fearless-assassination", "无畏的刺杀：使已选择的我方前排【太阳城】军团本回合兵力+3000并获得必中"),
             ],
             ["S02-0406"] =
             [
-                new("tenka-effect", "天下布武：执行已声明的模式"),
+                new("tenka-effect", "天下布武：执行已选择的效果"),
             ],
         };
 
@@ -356,7 +356,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["trigger:S01-0217:enter"] =
             [
-                new("canopic-one", "卡诺匹斯罐一：强化已声明的太阳城军团"),
+                new("canopic-one", "卡诺匹斯罐一：使已选择的太阳城军团本回合兵力+2000并获得强攻"),
                 new("canopic-one-discard", "卡诺匹斯罐一：随后弃置此圣物"),
             ],
             ["trigger:S01-0220:enter"] =
@@ -366,7 +366,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["response:S02-0016"] =
             [
-                new("ruined-ritual", "执行已声明的弃置手牌或登场效果无效模式"),
+                new("ruined-ritual", "执行已选择的弃置手牌或登场效果无效效果"),
             ],
             ["response:S02-0017"] =
             [
@@ -457,7 +457,7 @@ public sealed partial class L12GameEngine
         switch (source.CardId)
         {
             case "S01-0005":
-                steps.Add(CompositeStep("option", "volleyMode", "万箭齐发：预先声明效果模式",
+                steps.Add(CompositeStep("option", "volleyMode", "万箭齐发：选择以下一项",
                     ["mode:front", "mode:back", "mode:single"], 1, 1,
                     new()
                     {
@@ -478,19 +478,19 @@ public sealed partial class L12GameEngine
             case "S01-0007":
             {
                 var canPay = ActiveResourceCount(player) >= 1;
-                steps.Add(CompositeStep("option", "campMode", "野外扎营：预先声明是否发动独立的士气段",
+                steps.Add(CompositeStep("option", "campMode", "野外扎营：选择是否消耗1士气，并选择主宰增加血量或抽牌",
                     canPay ? ["mode:none", "mode:heal", "mode:draw"] : ["mode:none"], 1, 1,
                     new()
                     {
-                        ["mode:none"] = "只结算牌库顶部查看、选择与排序",
-                        ["mode:heal"] = "随后消耗1士气：我方主宰增加1点血量",
-                        ["mode:draw"] = "随后消耗1士气：抽取1张牌",
+                        ["mode:none"] = "查看牌库顶部3张牌，选择1张同阵营军团展示并加入手牌，其余置入牌库底部",
+                        ["mode:heal"] = "消耗1士气：我方主宰增加1点血量",
+                        ["mode:draw"] = "消耗1士气：抽取1张牌",
                     }));
                 steps.Add(CompositeStep("composite-ordinary-payment", "campHealCost",
                     "野外扎营：预先选择治疗段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
                     requiredChoice: "mode:heal"));
                 steps.Add(CompositeStep("composite-ordinary-payment", "campDrawCost",
-                    "野外扎营：预先选择抽牌段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
+                    "野外扎营：选择抽取1张牌所消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
                     requiredChoice: "mode:draw"));
                 break;
             }
@@ -528,12 +528,12 @@ public sealed partial class L12GameEngine
             case "S01-0013":
             {
                 var canUse = ActiveResourceCount(player) >= 1 && opponent.Hand.Count > 0;
-                steps.Add(CompositeStep("option", "mode", "前线侦查：预先声明是否发动独立的洗回手牌段",
+                steps.Add(CompositeStep("option", "mode", "前线侦查：选择是否消耗1士气，使对方将1张手牌洗回牌库",
                     canUse ? ["mode:none", "mode:use"] : ["mode:none"], 1, 1,
                     new()
                     {
-                        ["mode:none"] = "只查看对方所有手牌",
-                        ["mode:use"] = "随后消耗1士气，由对方选择1张手牌洗回牌库",
+                        ["mode:none"] = "查看对方所有手牌",
+                        ["mode:use"] = "消耗1士气：对方选择其1张手牌洗回牌库",
                     }));
                 steps.Add(CompositeStep("composite-ordinary-payment", "scoutCost",
                     "前线侦查：预先选择洗回手牌段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
@@ -542,7 +542,7 @@ public sealed partial class L12GameEngine
             }
 
             case "S01-0014":
-                steps.Add(CompositeStep("option", "disasterValue", "祭天仪式：预先声明独立后段的天灾值调整",
+                steps.Add(CompositeStep("option", "disasterValue", "祭天仪式：选择将天灾值增加或减少最多2点",
                     ["-2", "-1", "0", "1", "2"], 1, 1));
                 break;
 
@@ -552,18 +552,18 @@ public sealed partial class L12GameEngine
                 var killTargets = PublicLegions(opponent).Where(card => card.Troops <= 6000)
                     .Select(card => card.InstanceId).ToArray();
                 if (player.Morale.Count >= 2 && killTargets.Length > 0) modes.Add("mode:kill");
-                steps.Add(CompositeStep("option", "mode", "神妙行军：预先声明是否发动独立击杀段",
+                steps.Add(CompositeStep("option", "mode", "神妙行军：选择是否返还2士气，击杀对方1张兵力不高于6000的军团",
                     modes, 1, 1, new()
                     {
-                        ["mode:none"] = "只结算前排军团兵力+2000",
-                        ["mode:kill"] = "随后返还2士气并击杀1张兵力不高于6000的军团",
+                        ["mode:none"] = "选择我方前排1张军团，本回合兵力+2000",
+                        ["mode:kill"] = "返还2士气：击杀对方1张兵力不高于6000的军团",
                     }));
                 steps.Add(CompositeStep("field-legion", "buffTarget", "神妙行军：预先选择本回合兵力+2000的前排军团",
                     player.Field[0].Where(card => card is not null && IsFieldLegion(card))
                         .Select(card => card!.InstanceId), 1));
-                steps.Add(CompositeStep("resource-return", "marchCost", "神妙行军：预先选择第二段返还的2张士气",
+                steps.Add(CompositeStep("resource-return", "marchCost", "神妙行军：选择为击杀效果返还的2张士气",
                     player.Morale.Select(card => card.InstanceId), 2, 2, requiredChoice: "mode:kill"));
-                steps.Add(CompositeStep("enemy-legion", "killTarget", "神妙行军：预先选择第二段击杀目标",
+                steps.Add(CompositeStep("enemy-legion", "killTarget", "神妙行军：选择返还士气后击杀的目标",
                     killTargets, 1, requiredChoice: "mode:kill"));
                 break;
             }
@@ -572,11 +572,11 @@ public sealed partial class L12GameEngine
             {
                 var modes = new List<string> { "mode:none" };
                 if (player.MoraleDeck.Count > 0) modes.Add("mode:morale");
-                steps.Add(CompositeStep("option", "mode", "观星：预先声明是否发动独立士气段",
+                steps.Add(CompositeStep("option", "mode", "观星：选择是否从士气牌库追加1张活跃士气",
                     modes, 1, 1, new()
                     {
-                        ["mode:none"] = "只查看并排列牌库顶部卡牌",
-                        ["mode:morale"] = "随后从士气牌库追加1张活跃士气",
+                        ["mode:none"] = "查看牌库顶部5张牌，自选顺序放回牌库顶部或底部",
+                        ["mode:morale"] = "从士气牌库追加1张活跃士气",
                     }));
                 break;
             }
@@ -591,7 +591,7 @@ public sealed partial class L12GameEngine
                 var modes = new List<string>();
                 if (killTargets.Length > 0) modes.Add("mode:kill");
                 modes.Add("mode:recover");
-                steps.Add(CompositeStep("option", "duatMode", "杜阿特之门：预先声明效果模式",
+                steps.Add(CompositeStep("option", "duatMode", "杜阿特之门：选择以下一项",
                     modes, 1, 1, new()
                     {
                         ["mode:kill"] = "击杀对方1张兵力不高于5000的军团",
@@ -625,12 +625,12 @@ public sealed partial class L12GameEngine
             case "S01-0419":
             {
                 var rested = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
-                steps.Add(CompositeStep("option", "mode", "花魁的馈赠：预先声明是否发动独立士气段",
+                steps.Add(CompositeStep("option", "mode", "花魁的馈赠：选择是否将我方最多1张休整士气转为活跃",
                     rested.Length > 0 ? ["mode:none", "mode:morale"] : ["mode:none"], 1, 1,
                     new()
                     {
-                        ["mode:none"] = "只结算牌库顶部查看、加手与排序",
-                        ["mode:morale"] = "随后将己方1张休整士气转为活跃",
+                        ["mode:none"] = "查看牌库顶部3张牌，选择1张其他【高天原】卡牌展示并加入手牌，其余返回牌库底部",
+                        ["mode:morale"] = "将我方最多1张休整士气转为活跃",
                     }));
                 steps.Add(CompositeStep("target-morale", "moraleTarget", "花魁的馈赠：预先选择转为活跃的休整士气",
                     rested, 1, requiredChoice: "mode:morale"));
@@ -660,13 +660,13 @@ public sealed partial class L12GameEngine
                 if (ActiveResourceCount(player) >= 3) modes.Add("mode:morale");
                 steps.Add(CompositeStep("option", "disasterMode", "黑色莲花：预先声明天灾值调整",
                     ["-1", "0", "1"], 1, 1));
-                steps.Add(CompositeStep("option", "mode", "黑色莲花：预先声明是否发动独立士气段",
+                steps.Add(CompositeStep("option", "mode", "黑色莲花：选择是否消耗3士气，将此战术休整置入士气区",
                     modes, 1, 1, new()
                     {
                         ["mode:none"] = "调整天灾值后置入墓地",
-                        ["mode:morale"] = "随后消耗3士气并将此战术休整置入士气区",
+                        ["mode:morale"] = "消耗3士气：将此战术休整置入士气区并视为1张士气",
                     }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "lotusCost", "黑色莲花：预先选择第二段支付的3份资源",
+                steps.Add(CompositeStep("composite-ordinary-payment", "lotusCost", "黑色莲花：选择将此战术置入士气区所消耗的3份资源",
                     CompositeOrdinaryPaymentChoices(player), 3, 3, requiredChoice: "mode:morale"));
                 break;
             }
@@ -684,31 +684,39 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0306":
-                steps.Add(CompositeStep("option", "mode", "密米尔之泉：预先声明是否发动独立弃牌库段",
+                steps.Add(CompositeStep("option", "mode", "密米尔之泉：选择是否弃置我方牌库顶部2张牌",
                     ["mode:none", "mode:mill"], 1, 1, new()
                     {
-                        ["mode:none"] = "只结算主宰回血与抽牌",
-                        ["mode:mill"] = "随后弃置我方牌库顶部2张牌",
+                        ["mode:none"] = "我方主宰增加1点血量，抽取1张牌",
+                        ["mode:mill"] = "弃置我方牌库顶部2张牌",
                     }));
                 break;
 
             case "S02-0522":
-                steps.Add(CompositeStep("option", "mode", "倪克斯的陨星：预先声明是否发动第二段效果",
+                steps.Add(CompositeStep("option", "mode", "倪克斯的陨星：选择是否消耗并翻转1神力，使对方1张军团本回合兵力-2000",
                     ["mode:none", "mode:second"], 1, 1,
-                    new() { ["mode:none"] = "只执行兵力-3000", ["mode:second"] = "追加消耗并翻转1神力的兵力-2000" }));
-                steps.Add(CompositeStep("enemy-legion", "primaryTarget", "倪克斯的陨星：预先选择第一段目标",
+                    new()
+                    {
+                        ["mode:none"] = "选择对方1张军团，本回合兵力-3000",
+                        ["mode:second"] = "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
+                    }));
+                steps.Add(CompositeStep("enemy-legion", "primaryTarget", "倪克斯的陨星：选择本回合兵力-3000的目标",
                     PublicLegions(opponent).Select(card => card.InstanceId), 1));
-                steps.Add(CompositeStep("target-morale", "secondCost", "倪克斯的陨星：预先选择第二段消耗并翻转的1神力",
+                steps.Add(CompositeStep("target-morale", "secondCost", "倪克斯的陨星：选择为兵力-2000效果消耗并翻转的1神力",
                     player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId), 1,
                     requiredChoice: "mode:second"));
-                steps.Add(CompositeStep("enemy-legion", "secondaryTarget", "倪克斯的陨星：预先选择第二段目标",
+                steps.Add(CompositeStep("enemy-legion", "secondaryTarget", "倪克斯的陨星：选择本回合兵力-2000的目标",
                     PublicLegions(opponent).Select(card => card.InstanceId), 1, requiredChoice: "mode:second"));
                 break;
 
             case "S02-0105":
                 steps.Add(CompositeStep("option", "mode", "乾坤 阳：预先声明是否发动返还士气并抽牌",
                     ["mode:none", "mode:draw"], 1, 1,
-                    new() { ["mode:none"] = "只执行击杀", ["mode:draw"] = "击杀后返还1士气并抽1张牌" }));
+                    new()
+                    {
+                        ["mode:none"] = "击杀对方1张原本兵力不高于3000的军团",
+                        ["mode:draw"] = "返还1士气：抽取1张牌",
+                    }));
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "乾坤 阳：预先选择击杀目标",
                     PublicLegions(opponent).Where(card => card.BaseTroops <= 3000 && !card.Hidden)
                         .Select(card => card.InstanceId), 1));
@@ -719,7 +727,11 @@ public sealed partial class L12GameEngine
             case "S02-0521":
                 steps.Add(CompositeStep("option", "mode", "荣耀之路：预先声明是否发动神力检索段",
                     ["mode:none", "mode:search"], 1, 1,
-                    new() { ["mode:none"] = "只翻转士气", ["mode:search"] = "追加消耗并翻转2神力进行检索" }));
+                    new()
+                    {
+                        ["mode:none"] = "翻转最多3张士气",
+                        ["mode:search"] = "消耗并翻转2神力：查看牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库",
+                    }));
                 steps.Add(CompositeStep("target-morale", "flipTargets", "荣耀之路：预先选择最多3张要翻转的士气",
                     player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId), 0, 3));
                 steps.Add(CompositeStep("composite-glory-god-power-cost", "searchCost",
@@ -730,16 +742,24 @@ public sealed partial class L12GameEngine
             case "S02-0620":
                 steps.Add(CompositeStep("option", "mode", "符文之力：预先声明是否发动牌库查看段",
                     ["mode:none", "mode:search"], 1, 1,
-                    new() { ["mode:none"] = "只获得1符文", ["mode:search"] = "追加消耗1士气查看牌库顶部3张" }));
+                    new()
+                    {
+                        ["mode:none"] = "获得1符文",
+                        ["mode:search"] = "消耗1士气：查看牌库顶部3张牌，选择1张其他【彼界】卡牌展示并加入手牌，其余返回牌库底部",
+                    }));
                 steps.Add(CompositeStep("composite-ordinary-payment", "searchCost", "符文之力：预先选择支付的1份资源",
                     CompositeOrdinaryPaymentChoices(player), 1, requiredChoice: "mode:search"));
                 break;
 
             case "S02-0621":
-                steps.Add(CompositeStep("option", "mode", "圆桌领域：预先声明是否发动兵力强化段",
+                steps.Add(CompositeStep("option", "mode", "圆桌领域：选择是否消耗1士气使军团本回合兵力+2000",
                     ["mode:none", "mode:buff"], 1, 1,
-                    new() { ["mode:none"] = "只执行牌库检索", ["mode:buff"] = "追加消耗1士气并强化军团" }));
-                steps.Add(CompositeStep("field-legion", "buffTarget", "圆桌领域：预先选择强化的【圆桌骑士】军团",
+                    new()
+                    {
+                        ["mode:none"] = "查看牌库，选择1张【圆桌骑士】军团展示并加入手牌，随后重洗牌库",
+                        ["mode:buff"] = "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
+                    }));
+                steps.Add(CompositeStep("field-legion", "buffTarget", "圆桌领域：选择本回合兵力+2000的【圆桌骑士】军团",
                     PublicLegions(player).Where(card => card.HasTrait("圆桌骑士")).Select(card => card.InstanceId), 1,
                     requiredChoice: "mode:buff"));
                 steps.Add(CompositeStep("composite-ordinary-payment", "buffCost", "圆桌领域：预先选择支付的1份资源",
@@ -768,7 +788,7 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0406":
-                steps.Add(CompositeStep("option", "mode", "天下布武：预先声明本次效果模式",
+                steps.Add(CompositeStep("option", "mode", "天下布武：选择以下一项",
                     ["mode:row-cost", "mode:front-attack", "mode:free-move"], 1, 1,
                     new()
                     {
@@ -981,7 +1001,7 @@ public sealed partial class L12GameEngine
     private bool ValidateCompositeHandPlayDeclaration(int controller, L12CardInstance card,
         IReadOnlyDictionary<string, List<string>> declared, out string error, bool effectOnlyRepeat = false)
     {
-        error = "复合效果的模式、目标或费用对象已失效";
+        error = "复合效果的选项、目标或费用对象已失效";
         var player = State.Players[controller];
         var opponent = State.Players[1 - controller];
         var mode = declared.GetValueOrDefault("mode", []).SingleOrDefault();
@@ -1307,14 +1327,14 @@ public sealed partial class L12GameEngine
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
                 AddEvent("effect-cancelled", item.Controller,
-                    $"〈{source.Name}〉的“{next.Text}”因公开目标已失效而取消；其余独立段继续", source);
+                    $"〈{source.Name}〉的“{next.Text}”因目标已失效而取消；其余效果继续结算", source);
                 continue;
             }
             if (item.Data.GetValueOrDefault("repeatedEffectOnly") != "true"
                 && !next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
             {
                 AddEvent("effect-cancelled", item.Controller,
-                    $"〈{source.Name}〉的“{next.Text}”因费用对象或公开目标失效而取消；未发生部分支付，其余独立段继续", source);
+                    $"〈{source.Name}〉的“{next.Text}”因费用对象或目标失效而取消；未发生部分支付，其余效果继续结算", source);
                 continue;
             }
             var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)

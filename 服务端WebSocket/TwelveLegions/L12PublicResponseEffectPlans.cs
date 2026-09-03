@@ -42,11 +42,11 @@ public sealed partial class L12GameEngine
                 ? new[] { "mode:none", "mode:draw" }
                 : ["mode:none"];
             steps.Add(PublicResponseStep("option", "drawMode",
-                "战斗至黎明：预先声明墓地不少于5张时是否发动独立抽牌段", drawModes,
+                "战斗至黎明：墓地卡牌数量不少于5张时，选择是否抽取1张牌", drawModes,
                 labels: new Dictionary<string, string>
                 {
-                    ["mode:none"] = "不发动随后抽牌段",
-                    ["mode:draw"] = "发动随后抽取1张牌",
+                    ["mode:none"] = "不抽牌",
+                    ["mode:draw"] = "抽取1张牌",
                 }));
         }
         else if (responsePlan == EmptyCityResponsePlan)
@@ -58,11 +58,11 @@ public sealed partial class L12GameEngine
                 ? new[] { "mode:none", "mode:draw" }
                 : ["mode:none"];
             steps.Add(PublicResponseStep("option", "drawMode",
-                "空城计：预先声明前排没有军团时是否发动独立抽牌段", drawModes,
+                "空城计：我方前排没有军团时，选择是否抽取1张牌", drawModes,
                 labels: new Dictionary<string, string>
                 {
-                    ["mode:none"] = "不发动随后抽牌段",
-                    ["mode:draw"] = "发动随后抽取1张牌",
+                    ["mode:none"] = "不抽牌",
+                    ["mode:draw"] = "抽取1张牌",
                 }));
         }
         else if (responsePlan == RuinedRitualResponsePlan)
@@ -71,7 +71,7 @@ public sealed partial class L12GameEngine
             if (affected.Hand.Count > 0) choices.Add("mode:discard");
             if (FindOnField(affected, timing.SourceInstanceId, out _, out _) is not null)
                 choices.Add("mode:suppress");
-            steps.Add(PublicResponseStep("option", "mode", "破败仪式：预先声明结算模式", choices,
+            steps.Add(PublicResponseStep("option", "mode", "破败仪式：选择以下一项", choices,
                 labels: new Dictionary<string, string>
                 {
                     ["mode:discard"] = "盲选并弃置对方1张手牌",
@@ -139,7 +139,7 @@ public sealed partial class L12GameEngine
             var drawMode = declared.GetValueOrDefault("drawMode", []).SingleOrDefault();
             if (drawMode is not ("mode:none" or "mode:draw")
                 || drawMode == "mode:draw" && player.Graveyard.Count < 5)
-                error = "战斗至黎明声明的抽牌模式已失效，响应未进入堆叠";
+                error = "战斗至黎明选择的抽牌效果已失效，响应未进入堆叠";
         }
         else if (responsePlan == EmptyCityResponsePlan)
         {
@@ -147,7 +147,7 @@ public sealed partial class L12GameEngine
             var drawMode = declared.GetValueOrDefault("drawMode", []).SingleOrDefault();
             if (drawMode is not ("mode:none" or "mode:draw")
                 || drawMode == "mode:draw" && player.Field[0].Any(card => card is not null && IsFieldLegion(card)))
-                error = "空城计声明的抽牌模式已失效，未支付费用且未进入堆叠";
+                error = "空城计选择的抽牌效果已失效，未支付费用且未进入堆叠";
             else if (cost is null || !CanReturnSelectedMoraleById(player, [cost], 1))
                 error = "空城计声明的士气费用已失效，未支付费用且未进入堆叠";
             else
@@ -164,7 +164,7 @@ public sealed partial class L12GameEngine
                 && FindOnField(affected, timing.SourceInstanceId, out _, out _) is null)
                 error = "破败仪式声明的登场军团已失效，响应未进入堆叠";
             else if (mode is not ("mode:discard" or "mode:suppress"))
-                error = "破败仪式声明模式无效，响应未进入堆叠";
+                error = "破败仪式选择的效果无效，响应未进入堆叠";
         }
         else if (responsePlan == SupplyPlunderResponsePlan)
         {

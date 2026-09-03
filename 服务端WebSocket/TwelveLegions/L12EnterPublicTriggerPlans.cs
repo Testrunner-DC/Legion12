@@ -151,9 +151,9 @@ public sealed partial class L12GameEngine
                     tombGuards.Select(card => card.InstanceId), "mode:use"); break;
             case "nitocris": One("field-legion", "target", "尼托克丽丝：预先选择转为活跃的陵墓守卫",
                 own.Where(card => card.CardId == "S01-0212" && card.Tapped).Select(card => card.InstanceId)); break;
-            case "ankh": One("field-legion", "target", "安卡神碑：预先选择强化的陵墓守卫",
+            case "ankh": One("field-legion", "target", "安卡神碑：选择本回合兵力+2000的陵墓守卫",
                 own.Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId)); break;
-            case "canopic-one": One("field-legion", "targets", "卡诺匹斯罐一：预先选择强化的太阳城军团",
+            case "canopic-one": One("field-legion", "targets", "卡诺匹斯罐一：选择本回合兵力+2000并获得强攻的太阳城军团",
                 own.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId)); break;
             case "canopic-four": Many("field-legion", "targets", "卡诺匹斯罐四：预先选择1至2张太阳城军团",
@@ -499,7 +499,7 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(player, ina, "gaotianyuan"))
                     AddTimedModifier(ina, 1000, 0, State.TurnSerial, source.Name);
                 else AddEvent("effect-cancelled", item.Controller,
-                    "稻姬本多小松已声明的前排高天原军团失效；仅取消本段", source);
+                    "稻姬本多小松选择的前排高天原军团失效；该项兵力增加不结算", source);
                 break;
             case "court-magician":
             {

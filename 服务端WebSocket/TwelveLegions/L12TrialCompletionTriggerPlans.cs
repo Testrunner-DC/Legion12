@@ -81,9 +81,9 @@ public sealed partial class L12GameEngine
                     "湖中仙女的馈赠：预先声明是否从牌库或墓地将1张〈亚瑟王〉加入手牌",
                     modes, allowCancel: false, labels: new()
                     {
-                        ["mode:none"] = "不发动首个可选效果",
-                        ["mode:grave"] = "从墓地选择公开的亚瑟王",
-                        ["mode:library"] = "结算时查看牌库并选择亚瑟王",
+                        ["mode:none"] = "不从牌库或墓地将〈亚瑟王〉加入手牌",
+                        ["mode:grave"] = "从墓地选择1张〈亚瑟王〉加入手牌",
+                        ["mode:library"] = "查看牌库，选择1张〈亚瑟王〉加入手牌",
                     }));
                 steps.Add(TrialCompletionStep("grave-card", "graveArthur",
                     "湖中仙女的馈赠：预先选择墓地1张〈亚瑟王〉加入手牌",
@@ -190,7 +190,7 @@ public sealed partial class L12GameEngine
                 activation.DeclaredValues["mode"] = ["mode:none"];
                 activation.DeclaredValues.Remove("graveArthur");
                 AddEvent("effect-cancelled", candidate.Controller,
-                    "湖中仙女的馈赠声明的墓地亚瑟王已失效；首段取消，后续强制段仍会独立结算");
+                    "湖中仙女的馈赠选择的墓地亚瑟王已失效；不会加入手牌，其余效果仍会结算");
             }
         }
         else if (plan == "fenian-legend")
@@ -261,7 +261,7 @@ public sealed partial class L12GameEngine
                         card.InstanceId == targetId && card.CardId == "S02-0601");
                     if (arthur is null)
                         AddEvent("effect-cancelled", item.Controller,
-                            "湖中仙女的馈赠声明的墓地亚瑟王已失效；后续强制段仍会继续", source);
+                            "湖中仙女的馈赠选择的墓地亚瑟王已失效；不会加入手牌，其余效果仍会继续", source);
                     else
                     {
                         player.Graveyard.Remove(arthur);
@@ -332,7 +332,7 @@ public sealed partial class L12GameEngine
             var target = DeclaredEnemyTarget(item.Controller, targetId);
             if (target is null)
                 AddEvent("effect-cancelled", item.Controller,
-                    "芬尼亚传奇的公开目标已失效；本段取消，已支付符文不返还", source);
+                    "芬尼亚传奇选择的目标已失效；该目标不受影响，已支付符文不返还", source);
             else
                 AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
             ResolveStateBasedLegionDeaths();

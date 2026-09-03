@@ -376,8 +376,10 @@ public sealed class NewSystemsTests
             if (game.State.PendingPrompts.Count == 2)
             {
                 Assert.All(game.State.PendingPrompts, prompt => Assert.Equal("disaster-reveal", prompt.Kind));
-                var sharedPreview = game.State.PendingPrompts[0].Data["previewCardId"];
-                var revealPrompts = game.State.PendingPrompts.ToArray();
+                    var sharedPreview = game.State.PendingPrompts[0].Data["previewCardId"];
+                    var revealPrompts = game.State.PendingPrompts.ToArray();
+                    Assert.All(revealPrompts, reveal =>
+                        Assert.Equal("information-card", reveal.Data["previewPresentation"]));
                 for (var revealIndex = 0; revealIndex < revealPrompts.Length; revealIndex++)
                 {
                     var reveal = revealPrompts[revealIndex];
@@ -422,6 +424,7 @@ public sealed class NewSystemsTests
                 Assert.Empty(prompt.ValidChoices);
                 Assert.Equal(0, prompt.MinChoose);
                 Assert.True(prompt.Data.TryGetValue("previewCardId", out var previewId));
+                Assert.Equal("information-card", prompt.Data["previewPresentation"]);
                 Assert.True(prompt.Data.ContainsKey($"{previewId}:image"));
                 Assert.True(prompt.Data.ContainsKey($"{previewId}:effect"));
             }

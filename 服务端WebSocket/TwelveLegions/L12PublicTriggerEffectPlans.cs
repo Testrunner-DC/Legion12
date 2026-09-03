@@ -621,7 +621,7 @@ public sealed partial class L12GameEngine
             }
             steps =
             [
-                PublicTriggerStep("option", "mode", "智慧法典：预先声明是否发动独立的墓地回收段",
+                PublicTriggerStep("option", "mode", "智慧法典：选择是否将墓地最多1张其他战术或圣物加入手牌",
                     ["mode:none", "mode:recover"]),
                 PublicTriggerStep("grave-card", "recoverTarget",
                     "智慧法典：预先选择墓地1张费用不高于3的其他战术或圣物",
@@ -938,6 +938,10 @@ public sealed partial class L12GameEngine
                 ? L12ActivationCancellationPolicy.WhenNoExplicitDecline
                 : L12ActivationCancellationPolicy.NotAllowed,
             ReferenceDeclarationKey = referenceKey,
+            PreviewPresentation = referenceKey is not null
+                && kind is "effect-entry-battlefield" or "effect-entry-slot"
+                    ? "handled-card"
+                    : null,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,
             RequiredDeclaredChoice = requiredChoice,
             MinimumReferenceCount = minReferenceCount,
@@ -1207,14 +1211,14 @@ public sealed partial class L12GameEngine
         }
         else if (batch6IBPlan == "gwen-choice" && (mode is not ("mode:heal" or "mode:draw")
             || candidate.Data.GetValueOrDefault("cause") != "effect"))
-            error = "格温莉安的阵亡原因或公开模式声明已失效；效果未入栈";
+            error = "格温莉安选择的阵亡原因或效果已失效；效果未入栈";
         else if (batch6GAPlan == "limu-enter")
         {
             var revealMode = activation.DeclaredValues.GetValueOrDefault("revealMode", []).SingleOrDefault();
             var drawMode = activation.DeclaredValues.GetValueOrDefault("drawMode", []).SingleOrDefault();
             if (revealMode is not ("mode:none" or "mode:use")
                 || drawMode is not ("mode:none" or "mode:use"))
-                error = "李牧的展示或随后抽牌模式声明不完整；效果未入栈";
+                error = "李牧选择的展示或随后抽牌效果不完整；效果未入栈";
             else if ((revealMode == "mode:use" || drawMode == "mode:use") && player.Library.Count == 0)
                 error = "李牧的牌库已空；声明的效果未入栈";
         }
@@ -1416,7 +1420,7 @@ public sealed partial class L12GameEngine
                 && (entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
                         && card.CardId == PublicTriggerTombGuardCard)
                     || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Graveyard)))
-                error = "不朽之礼声明的陵墓守卫或登场位置已失效；抽牌段仍会独立结算";
+                error = "不朽之礼选择的陵墓守卫或登场位置已失效；抽取1张牌的效果仍会结算";
             if (error is not null)
             {
                 activation.DeclaredValues["entryCard"] = ["mode:none"];
@@ -1433,7 +1437,7 @@ public sealed partial class L12GameEngine
                 || order.Any(id => !player.Graveyard.Any(card => card.InstanceId == id
                     && card.InstanceId != candidate.SourceInstanceId && CanEnterHandOrLibrary(card)
                     && L12StructuredCardRules.HasFaction(player, card, "asgard"))))
-                error = "复仇血鹰声明的墓地顺序已失效；第一段仍会独立进入堆叠";
+                error = "复仇血鹰选择的墓地顺序已失效；此前的兵力增加效果仍会进入堆叠";
             if (error is not null)
             {
                 activation.DeclaredValues.Clear();
@@ -1454,7 +1458,7 @@ public sealed partial class L12GameEngine
                 activation.DeclaredValues["mode"] = ["mode:none"];
                 activation.DeclaredValues.Remove("recoverTarget");
                 AddEvent("effect-cancelled", candidate.Controller,
-                    "智慧法典声明的墓地目标已失效；抽牌段仍会独立结算");
+                    "智慧法典选择的墓地目标已失效；抽取1张牌的效果仍会结算");
             }
         }
         else if (key is ("S02-0203" or "S02-0205", "enter", _))

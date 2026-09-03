@@ -258,7 +258,8 @@ public sealed partial class L12GameEngine
         var data = new Dictionary<string, string>
         {
             ["action"] = "lijing-choice",
-            ["previewCardId"] = top.InstanceId
+            ["previewCardId"] = top.InstanceId,
+            ["previewPresentation"] = "handled-card",
         };
         AddPromptCardData(data, top);
         CreatePrompt(item.Controller, "option", "将展示牌放回牌库顶部、底部，或返还 1 张士气使其活跃登场", choices, 1, 1,

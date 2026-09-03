@@ -507,6 +507,11 @@ public sealed class L12ActivationSelectionStep
     public string? DeclarationKey { get; init; }
     /// <summary>动态声明步读取哪一个已声明字段作为公开对象来源。</summary>
     public string? ReferenceDeclarationKey { get; init; }
+    /// <summary>
+    /// 仅用于显式展示“玩家正在处理的公开卡牌”；为空时即使步骤引用了卡牌，也不得把
+    /// 效果来源或场面目标自动当成中置预览。当前允许值为 handled-card。
+    /// </summary>
+    public string? PreviewPresentation { get; init; }
     /// <summary>引用列表至少达到此数量才执行本步；用于“最多选择多张对象”后逐个声明位置。</summary>
     public int MinimumReferenceCount { get; init; }
     /// <summary>引用的稳定数值选项至少达到此值才执行本步；用于可变数量费用后的逐项目标声明。</summary>
@@ -530,7 +535,7 @@ public sealed class L12ActivationSelectionStep
     public bool SkipWhenPreviousStepEmpty { get; init; }
     /// <summary>
     /// 非空时，仅当此前已经声明该稳定选项才执行本步骤。
-    /// 用于“先选模式，再仅为强模式声明额外费用对象”的公共预声明流程。
+    /// 用于“先选效果，再仅为其中一项声明额外费用对象”的公共预声明流程。
     /// </summary>
     public string? RequiredDeclaredChoice { get; init; }
     /// <summary>公共多选的跨项约束；由统一 Prompt 校验层在移除 Prompt 前拒绝非法组合。</summary>

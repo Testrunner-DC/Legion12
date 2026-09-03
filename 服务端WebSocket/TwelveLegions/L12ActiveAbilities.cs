@@ -158,7 +158,7 @@ public sealed partial class L12GameEngine
                         && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
                         && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId))
                     || declared[4] is not ("mode:draw" or "mode:heal"))
-                    return "伊西斯声明的陵墓守卫、卡诺匹斯圣物或奖励模式已失效";
+                    return "伊西斯选择的陵墓守卫、卡诺匹斯圣物或奖励选项已失效";
                 break;
             }
             case ("S01-04M1", "amaterasuReady"):
@@ -200,7 +200,7 @@ public sealed partial class L12GameEngine
             var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == reservedResourceIds[0]
                 && card.CardId == "S01-0212" && !card.Tapped);
             if (declared.Length != 3 || guard is null || DeclaredEnemyTarget(playerIndex, declared[2]) is null)
-                return CommandResult.Reject("梅杰德强模式声明的陵墓守卫或目标已失效");
+                return CommandResult.Reject("梅杰德为兵力-3000效果选择的陵墓守卫或目标已失效");
         }
         if (returnCost > 0 && ValidateActiveReturnPrepayment(playerIndex, source, ability, target) is { } returnError)
             return CommandResult.Reject(returnError);

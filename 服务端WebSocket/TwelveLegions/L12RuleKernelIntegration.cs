@@ -45,6 +45,7 @@ public sealed partial class L12GameEngine
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
             DeclarationKey = step.DeclarationKey,
             ReferenceDeclarationKey = step.ReferenceDeclarationKey,
+            PreviewPresentation = step.PreviewPresentation,
             MinimumReferenceCount = step.MinimumReferenceCount,
             MinimumReferenceNumericValue = step.MinimumReferenceNumericValue,
             ReferenceNumericChoicePrefix = step.ReferenceNumericChoicePrefix,
@@ -488,7 +489,7 @@ public sealed partial class L12GameEngine
             choices.Insert(0, "mode:none");
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
-            step.ChoiceLabels["mode:none"] = "本段不选择击杀目标";
+            step.ChoiceLabels["mode:none"] = "不选择击杀目标";
             promptKind = "active-target";
         }
         else if (step.Kind == "public-enemy-after-declared-cost-debuff")
@@ -537,16 +538,18 @@ public sealed partial class L12GameEngine
                 promptData["mode:use"] = "发动";
                 promptData["mode:none"] = "不发动";
             }
-            var referencedCardId = step.ReferenceDeclarationKey is { } previewReferenceKey
-                ? activation.DeclaredValues.GetValueOrDefault(previewReferenceKey, []).FirstOrDefault()
-                : null;
+            var referencedCardId = step.PreviewPresentation == "handled-card"
+                && step.ReferenceDeclarationKey is { } previewReferenceKey
+                    ? activation.DeclaredValues.GetValueOrDefault(previewReferenceKey, []).FirstOrDefault()
+                    : null;
             var previewCard = referencedCardId is null
                 || referencedCardId.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)
-                ? triggerSource
-                : FindPromptCard(activation.Controller, referencedCardId) ?? triggerSource;
-            if (step.Kind != "option")
+                    ? null
+                    : FindPromptCard(activation.Controller, referencedCardId);
+            if (previewCard is not null)
             {
                 promptData["previewCardId"] = previewCard.InstanceId;
+                promptData["previewPresentation"] = step.PreviewPresentation!;
                 AddPromptCardData(promptData, previewCard);
             }
         }
@@ -1312,7 +1315,11 @@ public sealed partial class L12GameEngine
                 && PublicLegions(player).Any() && PublicLegions(opponent).Any();
             steps.Add(CompositeStep("option", "mode", "汉尼拔：预先声明是否消耗1神力并选择双方各1张军团",
                 canUse ? ["mode:none", "mode:use"] : ["mode:none"], 1, 1,
-                new() { ["mode:none"] = "不发动汉尼拔的可选效果", ["mode:use"] = "消耗1神力并令双方各1张军团兵力-2000" }));
+                new()
+                {
+                    ["mode:none"] = "不消耗神力且不降低双方军团兵力",
+                    ["mode:use"] = "消耗1神力：我方与对方各1张军团本回合兵力-2000",
+                }));
             steps.Add(CompositeStep("target-morale", "hannibalCost", "汉尼拔：预先选择消耗的1神力",
                 player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId), 1,
                 requiredChoice: "mode:use"));

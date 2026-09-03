@@ -384,6 +384,7 @@ public sealed partial class L12GameEngine
         var data = new Dictionary<string, string>
         {
             ["previewCardId"] = disaster.InstanceId,
+            ["previewPresentation"] = "information-card",
             ["sourceStackItemId"] = item.StackItemId,
         };
         AddPromptCardData(data, disaster);
@@ -402,6 +403,7 @@ public sealed partial class L12GameEngine
         {
             ["action"] = "s2-prayer-private-confirm",
             ["previewCardId"] = disaster.InstanceId,
+            ["previewPresentation"] = "information-card",
         };
         AddPromptCardData(data, disaster);
         CreatePrompt(item.Controller, "information-confirm", $"祷告仪式：查看下1张天灾卡〈{disaster.Name}〉", [], 0, 0,

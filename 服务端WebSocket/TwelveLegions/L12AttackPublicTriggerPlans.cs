@@ -195,7 +195,7 @@ public sealed partial class L12GameEngine
                     break;
                 case "enemy-after-cost-debuff":
                     steps.Add(PublicTriggerStep("enemy-legion", "killTarget",
-                        "本多忠胜：预先选择费用-1后将被随后效果击杀的军团",
+                        "本多忠胜：选择费用-1后将被击杀的军团",
                         PublicLegions(opponent).Where(card => card.CurrentCost <= 1).Select(card => card.InstanceId)));
                     break;
                 case "enemy-covered-counter":
@@ -474,7 +474,7 @@ public sealed partial class L12GameEngine
         void Finish() => FinishStackItem(item);
         void BuffSource(int amount, string label)
         {
-            if (source is null) Cancel($"〈{item.SourceName}〉已离开战场；其自身增益段取消");
+            if (source is null) Cancel($"〈{item.SourceName}〉已离开战场；其自身兵力增加不结算");
             else AddTimedModifier(source, amount, 0,
                 item.SourceCardId.StartsWith("S02", StringComparison.Ordinal) ? ExpiryAtNextOwnEnd(item.Controller) : State.TurnSerial,
                 label);
@@ -493,7 +493,7 @@ public sealed partial class L12GameEngine
                     if (DeclaredEnemyTarget(item.Controller, hondaTarget,
                             target => target.CurrentCost == 0) is not null)
                         KillTarget(item, hondaTarget!, "被本多忠胜击杀");
-                    else Cancel("本多忠胜已声明的费用为0目标失效；仅取消随后击杀段");
+                    else Cancel("本多忠胜选择的费用为0目标失效；该目标不会被击杀");
                 }
                 Finish(); return true;
             case "hanxin":
@@ -605,7 +605,7 @@ public sealed partial class L12GameEngine
                     && int.TryParse(countText, out var declared) ? declared : 0;
                 if (count <= 0 || !L12S2ZoneOps.SpendRunes(player, count))
                 {
-                    Cancel("高文声明的符文数量在结算时已失效；消耗段取消");
+                    Cancel("高文选择的符文数量在结算时已失效；不消耗符文");
                     Finish(); return true;
                 }
                 var data = new Dictionary<string, string>
@@ -625,7 +625,7 @@ public sealed partial class L12GameEngine
                 var count = PublicTriggerDeclared(item, "runeCount").Split(':') is ["rune-count", var countText]
                     && int.TryParse(countText, out var declared) ? declared : 0;
                 if (source is null || count <= 0)
-                    Cancel("高文已离开战场；已消耗符文不返还，增益段取消");
+                    Cancel("高文已离开战场；已消耗符文不返还，兵力增加不结算");
                 else
                 {
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "高文");
@@ -643,13 +643,13 @@ public sealed partial class L12GameEngine
                 if (State.PendingDefense is { } richardAttack
                     && richardAttack.AttackerInstanceId == item.SourceInstanceId)
                     richardAttack.RichardDefenseTaxActive = true;
-                else Cancel("理查的抵挡费用段已不属于当前进攻，效果取消");
+                else Cancel("理查增加抵挡费用的效果已不属于当前进攻，效果取消");
                 Finish(); return true;
             case "richard-squires":
             {
                 var count = int.TryParse(PublicTriggerDeclared(item, "squireCount"), out var declared) ? declared : 0;
                 if (source is null || count <= 0)
-                    Cancel("理查已离开战场；已弃置的侍从骑士不返还，增益段取消");
+                    Cancel("理查已离开战场；已弃置的侍从骑士不返还，兵力增加不结算");
                 else
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "狮心王理查一世");
                 Finish(); return true;

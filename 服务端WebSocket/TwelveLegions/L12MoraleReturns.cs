@@ -199,6 +199,7 @@ public sealed partial class L12GameEngine
                 var promptData = new Dictionary<string, string>
                 {
                     ["action"] = "lijing-slot", ["previewCardId"] = recruit,
+                    ["previewPresentation"] = "handled-card",
                 };
                 var recruitCard = player.Library.FirstOrDefault(card => card.InstanceId == recruit);
                 if (recruitCard is not null) AddPromptCardData(promptData, recruitCard);

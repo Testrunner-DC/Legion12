@@ -38,14 +38,14 @@ public sealed class PromptSemanticsRegressionTests
         };
     }
 
-    private static L12Prompt Begin(L12ActivationSelectionStep step)
+    private static L12Prompt Begin(L12ActivationSelectionStep step, string ability = "prompt-semantics")
     {
         var game = Create();
         var method = typeof(L12GameEngine).GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
             .Single(candidate => candidate.Name == "BeginPendingActivationSequence"
                 && candidate.GetParameters().Length == 7);
         var result = Assert.IsType<CommandResult>(method.Invoke(game,
-            [0, Card(), "prompt-semantics", new[] { step }, null, null, null]));
+            [0, Card(), ability, new[] { step }, null, null, null]));
         Assert.True(result.Accepted, result.Error);
         return Assert.Single(game.State.PendingPrompts);
     }
@@ -93,6 +93,21 @@ public sealed class PromptSemanticsRegressionTests
         Assert.Equal("发动", prompt.ChoiceLabels["mode:use"]);
         Assert.Equal("不发动", prompt.ChoiceLabels["mode:none"]);
         Assert.False(prompt.Data.ContainsKey("previewCardId"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "prompt:battlefield-target-does-not-infer-source-preview")]
+    public void BattlefieldTargetDeclarationDoesNotInferTheEffectSourceAsAPreviewCard()
+    {
+        var prompt = Begin(new L12ActivationSelectionStep
+        {
+            Kind = "field-legion",
+            Text = "选择本回合兵力-1000的军团",
+            ValidChoices = ["target-instance"],
+        }, "public-trigger-declaration");
+
+        Assert.False(prompt.Data.ContainsKey("previewCardId"));
+        Assert.False(prompt.Data.ContainsKey("previewPresentation"));
     }
 
     [Fact]

@@ -166,6 +166,7 @@ public sealed class PromptCardPresentationSnapshotTests
         CreatePrompt(game, "option", ["mode:use", "mode:none"], new Dictionary<string, string>
         {
             ["previewCardId"] = preview.InstanceId,
+            ["previewPresentation"] = "handled-card",
         });
         var prompt = SnapshotPrompt(game);
 

@@ -346,7 +346,7 @@ public sealed partial class L12GameEngine
                         || !TrySummonFromAnyPrivateZone(player, item.Controller, entry, slot,
                             tapped: false))
                         AddEvent("effect-cancelled", item.Controller,
-                            "诸神巅声明的军团或位置已失效；本段取消，已支付神力不恢复");
+                            "诸神巅选择的军团或位置已失效；该军团不登场，已支付神力不恢复");
                     FinishStackItem(item);
                     return true;
                 }
@@ -376,7 +376,7 @@ public sealed partial class L12GameEngine
                 }
                 else
                     AddEvent("effect-cancelled", item.Controller,
-                        "阿尔忒弥斯声明的士气目标已失效；本段取消，已登记的回合次数不恢复");
+                        "阿尔忒弥斯选择的士气目标已失效；该项效果不结算，已登记的回合次数不恢复");
                 FinishStackItem(item);
                 return true;
             }
@@ -462,7 +462,7 @@ public sealed partial class L12GameEngine
                     AddEvent("morale", item.Controller, "月读使选择的休整士气转为活跃");
                 }
                 else
-                    AddEvent("effect-cancelled", item.Controller, "月读声明的休整士气已失效；本段取消");
+                    AddEvent("effect-cancelled", item.Controller, "月读选择的休整士气已失效；该士气无法转为活跃");
                 FinishStackItem(item);
                 return true;
             }
@@ -481,7 +481,7 @@ public sealed partial class L12GameEngine
         var destination = PublicTriggerDeclared(item, "slot");
         if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
-            AddEvent("effect-cancelled", item.Controller, "特洛伊木马声明的来源或置入位置已失效；本段取消");
+            AddEvent("effect-cancelled", item.Controller, "特洛伊木马选择的来源或置入位置已失效；该卡不置入战场");
             FinishStackItem(item);
             return;
         }

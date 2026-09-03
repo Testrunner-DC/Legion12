@@ -244,15 +244,15 @@ public sealed partial class L12GameEngine
             ["rune"] = "获得1枚符文", ["trial"] = "试炼进度+1", ["kill"] = "击杀军团",
             ["recover"] = "回收卡牌", ["free-tactic"] = "主动战术无需消耗费用",
             ["back-master"] = "后排远程军团可进攻主宰",
-            ["mode:none"] = "不发动追加效果", ["mode:draw"] = "抽取1张牌",
+            ["mode:none"] = "不发动", ["mode:draw"] = "抽取1张牌",
             ["mode:heal"] = "我方主宰增加1点血量", ["mode:move"] = "位移军团",
             ["mode:search"] = "检索牌库", ["mode:recover"] = "回收卡牌",
             ["mode:damage"] = "分配兵力伤害", ["mode:debuff"] = "削弱军团",
             ["mode:buff"] = "消耗1士气，使所选【圆桌骑士】军团本回合兵力+2000", ["mode:trial"] = "试炼进度+1",
             ["mode:rune"] = "获得1枚符文", ["mode:charge"] = "获得冲锋",
-            ["mode:mandatory"] = "强制发动",
+            ["mode:mandatory"] = "试炼进度+1",
             ["mode:normal"] = "目标本回合兵力-1000", ["mode:strong"] = "额外休整1张活跃〈陵墓守卫〉，目标本回合兵力-3000",
-            ["mode:second"] = "追加第二段效果", ["mode:use"] = "发动追加效果",
+            ["mode:second"] = "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000", ["mode:use"] = "发动",
             ["mode:all"] = "对全部目标生效",
             ["mode:front"] = "选择前排",
             ["mode:back"] = "选择后排",
@@ -887,7 +887,11 @@ public sealed partial class L12GameEngine
                 State.SelectedDisasters.Add(publicCard);
                 State.RevealedDisasters.Add(publicCard);
                 AddEvent("disaster-public", null, $"随机公开天灾〈{publicCard.Name}〉", publicCard);
-                var data = new Dictionary<string, string> { ["previewCardId"] = publicCard.InstanceId };
+                var data = new Dictionary<string, string>
+                {
+                    ["previewCardId"] = publicCard.InstanceId,
+                    ["previewPresentation"] = "information-card",
+                };
                 AddPromptCardData(data, publicCard);
                 CreatePrompt(first, "disaster-reveal", $"随机公开天灾〈{publicCard.Name}〉", [], 0, 0,
                     "setup-public-confirm", isPrivate: false, data: new Dictionary<string, string>(data));

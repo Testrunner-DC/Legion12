@@ -625,8 +625,7 @@ public sealed partial class L12GameEngine
             attacker.Troops += attacker.AttackOnlyTroopsBonus;
             AddEvent("effect", playerIndex, $"〈{attacker.Name}〉本次进攻兵力+{attacker.AttackOnlyTroopsBonus}", attacker);
         }
-        var damage = 1 + (attacker.HasStrongAttack || attacker.AttachedCards.Any(card => card.CardId == "S02-06S2"
-            || L12StructuredCardRules.StarterAttachedCardGrantsStrongAttack(card.CardId)) ? 1 : 0);
+        var damage = 1 + (L12StructuredCardSemantics.HasEffectiveStrongAttack(attacker) ? 1 : 0);
         if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
             damage += attacker.GawainMasterDamageBonus;
         if (attacker.MasterAttackDamageBonusUntilTurn == State.TurnSerial)

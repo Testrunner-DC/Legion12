@@ -217,7 +217,7 @@ function replaceCustomDisaster(card: SandboxCatalogCard) {
 const boardSlotPreview = computed<Card | null>(() => {
   const prompt = boardSlotPrompt.value
   const id = prompt?.data?.previewCardId
-  if (!prompt || !id) return null
+  if (!prompt || !id || prompt.data?.previewPresentation !== 'handled-card') return null
   return {
     instanceId: id,
     cardId: prompt.data?.[`${id}:cardId`] ?? '',
