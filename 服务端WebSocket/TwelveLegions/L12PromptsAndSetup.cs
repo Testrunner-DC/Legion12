@@ -126,9 +126,14 @@ public sealed partial class L12GameEngine
         var playerText = L12PlayerFacingText.Naturalize(text);
         var validChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         data ??= [];
+        var explicitlyDisplayedIds = data.GetValueOrDefault("displayCardIds")?
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        string[] previewCardIds = string.IsNullOrWhiteSpace(data.GetValueOrDefault("previewCardId"))
+            ? []
+            : [data["previewCardId"]];
+        EnrichPromptCardData(playerIndex, validChoices.Concat(explicitlyDisplayedIds).Concat(previewCardIds), data);
         ApplySharedPromptPresentation(playerIndex, kind, playerText, validChoices, stackItemId, data);
         ApplyDirectBoardChoiceMode(validChoices, data);
-        EnrichPromptCardData(playerIndex, validChoices, data);
         var choiceLabels = BuildPlayerChoiceLabels(playerIndex, kind, playerText, validChoices, data);
         var prompt = new L12Prompt
         {
@@ -187,31 +192,42 @@ public sealed partial class L12GameEngine
             }
         }
 
-        var horizontalCardKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        var cardChoiceKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "card", "cards", "hand-card", "hand-cards", "discard", "discard-cost",
             "discard-or-decline", "optional-card", "search", "library-search", "grave-card",
-            "opponent-hand-card",
+            "opponent-hand-card", "optional-cards", "order", "trial-order", "disaster-ban",
+            "disaster-pick",
         };
-        if (!horizontalCardKinds.Contains(kind)) return;
+        var explicitDisplayIds = data.GetValueOrDefault("displayCardIds")?
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        var metadataIds = data.Keys
+            .Where(key => key.EndsWith(":cardId", StringComparison.OrdinalIgnoreCase))
+            .Select(key => key[..^":cardId".Length])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var choiceCardIds = validChoices
+            .Where(choice => metadataIds.Contains(choice, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        var anonymousCardBackIds = validChoices
+            .Where(choice => data.ContainsKey($"{choice}:image")
+                && !data.ContainsKey($"{choice}:cardId"))
+            .ToArray();
+        var isCardChoice = explicitDisplayIds.Length > 0
+            || choiceCardIds.Length > 0
+            || (cardChoiceKinds.Contains(kind) && anonymousCardBackIds.Length > 0);
+        if (!isCardChoice) return;
 
+        data.TryAdd("cardSelection", "true");
         data.TryAdd("layout", "single-row");
         if (kind.Contains("hand", StringComparison.OrdinalIgnoreCase) || kind.StartsWith("discard", StringComparison.OrdinalIgnoreCase))
             data.TryAdd("sourceZone", "hand");
 
-        if (!data.ContainsKey("displayCardIds"))
-        {
-            var metadataIds = data.Keys
-                .Where(key => key.EndsWith(":cardId", StringComparison.OrdinalIgnoreCase))
-                .Select(key => key[..^":cardId".Length])
-                .Where(id => !id.Equals(data.GetValueOrDefault("previewCardId"), StringComparison.OrdinalIgnoreCase))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            var displayed = metadataIds.Length > 0
-                ? metadataIds
-                : validChoices.Where(choice => !choice.Equals("skip", StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (displayed.Length > 0) data["displayCardIds"] = string.Join('|', displayed);
-        }
+        var displayed = explicitDisplayIds.Concat(choiceCardIds)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (displayed.Length == 0) displayed = anonymousCardBackIds;
+        if (displayed.Length > 0) data["displayCardIds"] = string.Join('|', displayed);
     }
 
     private static readonly IReadOnlyDictionary<string, string> CommonPlayerChoiceLabels
@@ -422,7 +438,7 @@ public sealed partial class L12GameEngine
 
     private void EnrichPromptCardData(int viewer, IEnumerable<string> choices, Dictionary<string, string> data)
     {
-        foreach (var id in choices)
+        foreach (var id in choices.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var card = FindPromptCard(viewer, id);
             if (card is null) continue;
@@ -430,15 +446,17 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private static void AddPromptCardData(Dictionary<string, string> data, L12CardInstance card)
+    private void AddPromptCardData(Dictionary<string, string> data, L12CardInstance card)
     {
         var id = card.InstanceId;
         data.TryAdd(id, card.Name);
+        data.TryAdd($"{id}:name", card.Name);
         if (!string.IsNullOrWhiteSpace(card.ImageUrl)) data.TryAdd($"{id}:image", card.ImageUrl);
         if (!string.IsNullOrWhiteSpace(card.EffectText)) data.TryAdd($"{id}:effect", card.EffectText);
         data.TryAdd($"{id}:cardId", card.CardId);
         data.TryAdd($"{id}:cardType", card.CardType);
         data.TryAdd($"{id}:faction", card.Faction);
+        if (PromptCardZone(card) is { } zone) data.TryAdd($"{id}:zone", zone);
         if (card.Traits.Count > 0) data.TryAdd($"{id}:traits", string.Join('|', card.Traits));
         if (!string.IsNullOrWhiteSpace(card.Profession)) data.TryAdd($"{id}:profession", card.Profession);
         data.TryAdd($"{id}:hasPrintedCost", card.HasPrintedCost ? "true" : "false");
@@ -448,24 +466,54 @@ public sealed partial class L12GameEngine
         data.TryAdd($"{id}:disasterLevel", card.DisasterLevel.ToString());
     }
 
+    private string? PromptCardZone(L12CardInstance card)
+    {
+        foreach (var player in State.Players)
+        {
+            if (player.Hand.Contains(card)) return "手牌";
+            if (player.Library.Contains(card)) return "牌库";
+            if (player.Graveyard.Contains(card)) return "墓地";
+            if (player.Removed.Contains(card)) return "移除区";
+            if (player.Resolving.Contains(card)) return "结算区";
+            if (player.Field.SelectMany(row => row).Any(candidate => ReferenceEquals(candidate, card))) return "战场";
+            if (ReferenceEquals(player.Relic, card) || player.ExtraRelics.Contains(card)) return "圣物区";
+            if (player.SpecialZones.GodPower.Contains(card)) return "神力区";
+            if (player.SpecialZones.Trials.Contains(card)) return "试炼区";
+            if (player.SpecialZones.CanopicProgress.Contains(card)) return "卡诺匹斯区";
+        }
+        if (ReferenceEquals(State.ActiveDisaster, card)
+            || State.DisasterPool.Contains(card)
+            || State.DisasterDeck.Contains(card)
+            || State.BannedDisasters.Contains(card)
+            || State.RemovedDisasters.Contains(card)
+            || State.SelectedDisasters.Contains(card)
+            || State.RevealedDisasters.Contains(card)
+            || State.ChosenDisasters.Contains(card))
+            return "天灾区";
+        return null;
+    }
+
     private L12CardInstance? FindPromptCard(int viewer, string instanceId)
     {
         var mine = State.Players[viewer];
         var card = mine.Hand.Concat(mine.Library).Concat(mine.Graveyard).Concat(mine.Removed)
-            .Concat(mine.Resolving).FirstOrDefault(item => item.InstanceId == instanceId)
+            .Concat(mine.Resolving).Concat(mine.ExtraRelics).Concat(mine.SpecialZones.GodPower)
+            .Concat(mine.SpecialZones.Trials).Concat(mine.SpecialZones.CanopicProgress)
+            .FirstOrDefault(item => item.InstanceId == instanceId)
             ?? mine.Field.SelectMany(row => row).FirstOrDefault(item => item?.InstanceId == instanceId)
             ?? (mine.Relic?.InstanceId == instanceId ? mine.Relic : null);
         if (card is not null) return card;
 
         var opponent = State.Players[1 - viewer];
         card = opponent.Field.SelectMany(row => row).FirstOrDefault(item => item?.InstanceId == instanceId)
-            ?? opponent.Graveyard.Concat(opponent.Removed).Concat(opponent.Resolving)
+            ?? opponent.Graveyard.Concat(opponent.Removed).Concat(opponent.Resolving).Concat(opponent.ExtraRelics)
                 .FirstOrDefault(item => item.InstanceId == instanceId)
             ?? (opponent.Relic?.InstanceId == instanceId ? opponent.Relic : null);
         if (card is not null && !card.Hidden) return card;
 
         return State.DisasterPool.Concat(State.DisasterDeck).Concat(State.BannedDisasters)
-            .Concat(State.RemovedDisasters).Concat(State.SelectedDisasters)
+            .Concat(State.RemovedDisasters).Concat(State.SelectedDisasters).Concat(State.RevealedDisasters)
+            .Concat(State.ChosenDisasters)
             .Append(State.ActiveDisaster).FirstOrDefault(item => item?.InstanceId == instanceId);
     }
 

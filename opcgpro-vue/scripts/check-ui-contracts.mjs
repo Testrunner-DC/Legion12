@@ -15,6 +15,7 @@ const indexHtml = read('../index.html')
 const faviconPath = new URL('../public/favicon.png', import.meta.url)
 const globalStyle = read('../src/style.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
+const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
@@ -226,6 +227,25 @@ const contracts = [
   [!board.includes('当前子阶段：') && !board.includes('data-ui-contract="combat-substage"') && board.includes('pending.attackValue > 0') && board.includes("pendingDefense?.stage === 'DefenseChoice'") && gameActions.includes("pendingDefense?.stage === 'DefenseChoice'"), '进攻界面必须消费服务端子阶段与冻结进攻值，只在 DefenseChoice 开放抵挡/支援，并禁止显示内部子阶段调试文字'],
   [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes("return 'OPTION'") && prompt.includes("return '发动'") && prompt.includes("return '不发动'") && prompt.includes('decisionEffectText') && prompt.includes('!isEffectDecision.value') && prompt.includes('确认选择'), '可选卡效发动框必须统一为 OPTION、来源名、当前效果文本、发动/不发动与确认选择，且不得居中展示来源卡图'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],
+  [prompt.includes("import PromptCardCandidate from './PromptCardCandidate.vue'") && (prompt.match(/<PromptCardCandidate/g)?.length ?? 0) >= 6
+    && promptCardCandidate.indexOf('<CardImage') < promptCardCandidate.indexOf('prompt-card-candidate__name')
+    && promptCardCandidate.indexOf('prompt-card-candidate__name') < promptCardCandidate.indexOf('prompt-card-candidate__meta')
+    && promptCardCandidate.includes('v-if="cardId || legacyUrl"') && promptCardCandidate.includes('props.unavailable')
+    && prompt.includes('function cardName(id: string)') && prompt.includes('function cardMeta(id: string)')
+    && prompt.includes("? '匿名手牌' : ''") && prompt.includes(':name="cardName(choice)" :meta="cardMeta(choice)"')
+    && promptCardCandidate.includes('<div') && promptCardCandidate.includes('<button v-if="removable"') && !promptCardCandidate.includes('<i v-if="removable"')
+    && prompt.includes("prompt.value?.data?.cardSelection === 'true'") && prompt.includes(':unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"')
+    && prompt.includes("'prompt-card-strip': hasCardChoices") && prompt.includes('overflow-x:auto;overflow-y:hidden')
+    && !prompt.includes('card-grid') && !prompt.includes('placement-mini-card') && !prompt.includes('prompt-featured-card'), '普通选卡、非法灰置、回顶回底排序与调度必须复用同一卡牌候选组件，卡图在上卡名在下且超出横向滚动'],
+  [prompt.includes('const cardId = cardIdFor(id)') && prompt.includes('if (!card && !imageUrl && !cardId) return null')
+    && prompt.includes('cardId: detail.cardId') && promptCardCandidate.includes(':card-id="cardId"'), 'Prompt 候选只要具有 cardId 就必须创建详情并渲染 CardImage，不得依赖旧 imageUrl 才显示卡图'],
+  [l12PromptSetup.includes('"optional-cards", "order", "trial-order"')
+    && l12PromptSetup.includes('var isCardChoice = explicitDisplayIds.Length > 0')
+    && l12PromptSetup.includes('data.TryAdd($"{id}:name", card.Name)')
+    && l12PromptSetup.includes('data.TryAdd($"{id}:zone", zone)')
+    && l12PromptSetup.includes('validChoices.Concat(explicitlyDisplayedIds).Concat(previewCardIds)'), 'CreatePrompt 公共层必须按卡实例或元数据识别全部卡牌选择 kind，补齐展示非法项、独立预览与名称、卡号、类型、图片和区域元数据'],
+  [l12PromptSetup.includes('CreateAnonymousHandChoicePrompt') && l12PromptSetup.includes('/assets/l12/card-back-official.png')
+    && l12PromptSetup.includes('prompt.HiddenChoiceMap[slots[index]]') && !l12PromptSetup.includes('data[$"{slots[index]}:cardId"]'), '故意隐藏的对方手牌选择必须只投影匿名槽位、卡背和匿名标签，不得泄露真实卡牌身份'],
   [l12Types.includes('choiceLabels: Record<string, string>') && prompt.includes('prompt.value?.choiceLabels?.[id]') && prompt.includes('safeChoiceFallback') && prompt.includes('isInternalChoiceValue') && !prompt.includes("?? id.replace(':', ' 排第 ')") && !prompt.includes('?? choiceLabels[id] ?? cardFor(id)?.name ?? id'), '玩家可见选择必须使用服务端自然语言标签，前端不得把 mode、continuation、action 或其他内部 choice id 直接显示为兜底'],
   [internalModeChoices.every(choice => centralModeChoiceLabels.has(choice)) && [...centralModeChoiceLabels.values()].every(label => !/(?:mode|continuation|action):/i.test(label)) && l12PromptModel.includes('Dictionary<string, string> ChoiceLabels') && l12PromptSetup.includes('BuildPlayerChoiceLabels') && l12GameEngine.includes('prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels'), '服务端所有 mode:* 选项必须在 Prompt 公共入口具有自然语言标签，快照只投影标签而不得把内部值当玩家文案'],
   [windowsVerify.includes('Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\\TwelveLegions") -File -Filter "*.cs"') && windowsVerify.includes('Copy-Item -Destination $isolatedServerSourceRoot -Force'), '提交级隔离前端构建必须复制全部服务端 Prompt 定义，玩家文案全量扫描不得因缺文件失败或产生局部扫描假阳性'],

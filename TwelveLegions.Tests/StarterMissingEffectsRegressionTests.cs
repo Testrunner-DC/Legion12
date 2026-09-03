@@ -272,11 +272,26 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.Contains(ranged.InstanceId, choice.ValidChoices);
         Assert.Contains(tactic.InstanceId, choice.ValidChoices);
         Assert.DoesNotContain(invalid.InstanceId, choice.ValidChoices);
+        var choiceSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var choiceData = choiceSnapshot.GetProperty("prompts")[0].GetProperty("data");
+        Assert.Equal("single-row", choiceData.GetProperty("layout").GetString());
+        Assert.Equal("true", choiceData.GetProperty("cardSelection").GetString());
+        Assert.Equal(invalid.CardId, choiceData.GetProperty($"{invalid.InstanceId}:cardId").GetString());
+        Assert.Equal(invalid.Name, choiceData.GetProperty($"{invalid.InstanceId}:name").GetString());
+        Assert.Equal("牌库", choiceData.GetProperty($"{invalid.InstanceId}:zone").GetString());
         Choose(game, tactic.InstanceId);
         Assert.Contains(tactic, player.Hand);
 
         var order = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("all-top-bottom", order.Data["placementMode"]);
+        var orderSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var orderData = orderSnapshot.GetProperty("prompts")[0].GetProperty("data");
+        Assert.Equal("single-row", orderData.GetProperty("layout").GetString());
+        Assert.Equal("true", orderData.GetProperty("cardSelection").GetString());
+        Assert.Equal(invalid.CardId, orderData.GetProperty($"{invalid.InstanceId}:cardId").GetString());
+        Assert.Equal(ranged.CardId, orderData.GetProperty($"{ranged.InstanceId}:cardId").GetString());
         var result = game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
             TopCardInstanceIds: [], BottomCardInstanceIds: [invalid.InstanceId, ranged.InstanceId]));
         Assert.True(result.Accepted, result.Error);
