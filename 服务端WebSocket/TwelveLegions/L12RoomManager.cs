@@ -236,7 +236,8 @@ public sealed class L12RoomManager
                 new OutgoingMessage(opponent.SessionId, new { type = "matchmakingRejected", message = "建立匹配房间失败，已恢复队列" })];
         }
         var found = room.Sessions.Select(id => new OutgoingMessage(id, new { type = "matchmakingFound",
-            mode = normalizedMode, roomCode = room.Code, message = "匹配成功，正在决定先后手" }));
+            mode = normalizedMode, roomCode = room.Code, matchId = room.Game.State.MatchId,
+            message = "匹配成功，正在建立对局" }));
         return found.Concat(BroadcastRoom(room)).Concat(BroadcastGame(room)).ToArray();
     }
 
@@ -251,6 +252,8 @@ public sealed class L12RoomManager
 
     public Task<IReadOnlyList<OutgoingMessage>> PollMatchmakingAsync(Guid sessionId)
     {
+        if (_sessions.TryGetValue(sessionId, out var session) && session.RoomCode is not null)
+            return RecoveryStateAsync(sessionId);
         MatchmakingEntry? existing;
         lock (_matchmakingGate)
             existing = _matchmaking.FirstOrDefault(entry => entry.SessionId == sessionId && IsQueueEntryValid(entry));

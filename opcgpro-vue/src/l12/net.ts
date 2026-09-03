@@ -21,6 +21,7 @@ let connectPromise: Promise<void> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let matchmakingPollTimer: ReturnType<typeof setInterval> | null = null
+let matchmakingRecoveryTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 let automaticConnectionEnabled = false
 
@@ -37,6 +38,22 @@ function clearHeartbeat() {
 function clearMatchmakingPolling() {
   if (matchmakingPollTimer !== null) window.clearInterval(matchmakingPollTimer)
   matchmakingPollTimer = null
+}
+
+function clearMatchmakingRecovery() {
+  if (matchmakingRecoveryTimer !== null) window.clearTimeout(matchmakingRecoveryTimer)
+  matchmakingRecoveryTimer = null
+}
+
+function requestMatchedState(socket: WebSocket) {
+  if (socket.readyState !== WebSocket.OPEN) return
+  socket.send(JSON.stringify({ type: 'syncState' }))
+  clearMatchmakingRecovery()
+  matchmakingRecoveryTimer = window.setTimeout(() => {
+    matchmakingRecoveryTimer = null
+    if (l12State.matchFound && !l12State.game && socket === l12State.socket && socket.readyState === WebSocket.OPEN)
+      socket.send(JSON.stringify({ type: 'syncState' }))
+  }, 800)
 }
 
 function startMatchmakingPolling() {
@@ -81,6 +98,7 @@ export const l12State = reactive({
   operationsPolicy: null as EffectiveOperationsPolicy | null,
   friendInvitation: null as null | { invitationId: string; roomCode: string; fromAccountId: string; fromName: string },
   matchmaking: null as null | { queued: boolean; mode?: 'ranked' | 'casual'; joinedAt?: string },
+  matchFound: null as null | { mode?: 'ranked' | 'casual'; roomCode: string; matchId?: string },
   rankedSettlement: null as RankedSettlement | null,
 })
 
@@ -149,6 +167,7 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'friendInvitationSent' || message.type === 'friendInvitationRejected') l12State.notice = message.message || ''
       else if (message.type === 'matchmakingState') {
+        if (!message.queued && l12State.matchFound) return
         l12State.matchmaking = message.queued ? message : null
         if (message.queued) startMatchmakingPolling()
         else clearMatchmakingPolling()
@@ -157,20 +176,26 @@ export function connect(): Promise<void> {
       else if (message.type === 'matchmakingFound') {
         clearMatchmakingPolling()
         l12State.matchmaking = null
-        l12State.notice = message.message || '匹配成功'
+        l12State.matchFound = { mode: message.mode, roomCode: message.roomCode, matchId: message.matchId }
+        l12State.notice = message.message || '匹配成功，正在建立对局'
+        requestMatchedState(socket)
       }
       else if (message.type === 'matchmakingRejected') {
         clearMatchmakingPolling()
+        clearMatchmakingRecovery()
         l12State.matchmaking = null
+        l12State.matchFound = null
         l12State.notice = message.message || '匹配请求未能完成'
       }
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
+        clearMatchmakingRecovery()
         l12State.room = null
         l12State.game = null
         l12State.spectating = false
         l12State.leavingRoom = false
         l12State.gmEnabled = false
         l12State.pendingAction = false
+        l12State.matchFound = null
         l12State.notice = message.message || ''
       }
       else if (message.type === 'gameState') {
@@ -189,6 +214,8 @@ export function connect(): Promise<void> {
           l12State.gmEnabled = Boolean(message.gmEnabled)
           l12State.pendingAction = false
           l12State.rankedSettlement = message.rankedSettlement || null
+          clearMatchmakingRecovery()
+          l12State.matchFound = null
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
         }
       }
@@ -209,6 +236,7 @@ export function connect(): Promise<void> {
       if (l12State.socket === socket) {
         clearHeartbeat()
         clearMatchmakingPolling()
+        clearMatchmakingRecovery()
         l12State.matchmaking = null
         l12State.socket = null
         l12State.status = 'offline'
@@ -241,6 +269,7 @@ export function disconnect() {
   clearReconnectTimer()
   clearHeartbeat()
   clearMatchmakingPolling()
+  clearMatchmakingRecovery()
   l12State.socket?.close()
   l12State.socket = null
   l12State.status = 'offline'
@@ -252,6 +281,7 @@ export function disconnect() {
   l12State.gmEnabled = false
   l12State.pendingAction = false
   l12State.matchmaking = null
+  l12State.matchFound = null
   l12State.rankedSettlement = null
 }
 

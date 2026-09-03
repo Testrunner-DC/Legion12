@@ -34,10 +34,32 @@ public sealed class MatchmakingTests
             .GetProperty("type").GetString());
         Assert.Contains(matched, message => message.SessionId == firstSession
             && JsonSerializer.SerializeToElement(message.Payload, WebJson).GetProperty("type").GetString() == "matchmakingFound");
+        foreach (var sessionId in new[] { firstSession, secondSession })
+        {
+            var payloads = matched.Where(message => message.SessionId == sessionId)
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+            var found = Assert.Single(payloads,
+                payload => payload.GetProperty("type").GetString() == "matchmakingFound");
+            var room = Assert.Single(payloads,
+                payload => payload.GetProperty("type").GetString() == "roomState");
+            var game = Assert.Single(payloads,
+                payload => payload.GetProperty("type").GetString() == "gameState");
+            Assert.Equal(room.GetProperty("roomCode").GetString(), found.GetProperty("roomCode").GetString());
+            Assert.Equal(game.GetProperty("state").GetProperty("matchId").GetString(),
+                found.GetProperty("matchId").GetString());
+            Assert.True(room.GetProperty("started").GetBoolean());
+        }
         var firstGame = matched.Where(message => message.SessionId == firstSession)
             .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
             .Single(payload => payload.GetProperty("type").GetString() == "gameState");
         Assert.Equal("Initiative", firstGame.GetProperty("state").GetProperty("phase").GetString());
+
+        var stalePoll = (await manager.PollMatchmakingAsync(firstSession))
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        Assert.DoesNotContain(stalePoll,
+            payload => payload.GetProperty("type").GetString() == "matchmakingState");
+        Assert.Contains(stalePoll, payload => payload.GetProperty("type").GetString() == "roomState");
+        Assert.Contains(stalePoll, payload => payload.GetProperty("type").GetString() == "gameState");
     }
 
     [Fact]

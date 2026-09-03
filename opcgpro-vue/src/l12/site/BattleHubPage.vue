@@ -187,7 +187,12 @@ async function copyRoomCode() {
     <section v-if="maintenanceActive" class="maintenance-banner"><b>服务器维护中</b><span>{{ operationsPolicy?.maintenance.message || '暂时停止创建和加入新对局，已开始对局与重连不受影响。' }}</span></section>
       <section v-else-if="policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
 
-    <section v-if="l12State.room" class="room-stage panel">
+    <section v-if="l12State.matchFound && !l12State.game" class="match-found-stage panel" data-ui-contract="match-found-state-recovery">
+      <small>MATCH FOUND</small><h2>匹配成功</h2>
+      <p>正在建立对局并同步双方状态，请稍候……</p>
+      <code>{{ l12State.matchFound.roomCode }}</code>
+    </section>
+    <section v-else-if="l12State.room" class="room-stage panel">
       <header><div><small>FRIENDLY ROOM</small><h2>友谊战整备室</h2></div><div class="room-code"><code>{{ l12State.room.roomCode }}</code><button type="button" @click="copyRoomCode">{{ roomCodeCopied ? '已复制' : '复制房间码' }}</button></div></header>
       <div class="versus">
         <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
@@ -242,4 +247,5 @@ async function copyRoomCode() {
 .room-rule-editor{margin:0 0 18px;padding:14px;border:1px solid #695b36;background:#11140f}.room-rule-editor>header{display:flex;align-items:center;justify-content:space-between}.room-rule-editor>header span{color:#877d62;font-size:9px}.room-rule-editor>.room-settings{margin-top:12px}.room-rule-editor>button{display:block;margin:12px 0 0 auto;padding:9px 18px;border:1px solid #d7bb69;background:#d7bb69;color:#111;font-weight:900}
 @media(max-width:700px){.current-deck{grid-template-columns:1fr}}
 .match-options button.active{border-color:#d8ba65;background:#2a2414;color:#f4db90}.faction-totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}.faction-totals--overview{margin:-1px 12px 18px;padding:12px;border:1px solid rgba(235,230,216,.17);background:#101821}.faction-totals article{padding:12px;border:1px solid var(--accent);background:#0a1117}.faction-totals b,.faction-totals span{display:block}.faction-totals span{margin-top:5px;color:#d8c77f;font-size:11px}.faction-select,.ranked-profile{margin:14px 0;padding:14px;border:1px solid #45535c;background:#0a1117}.faction-select>b,.faction-select>span,.ranked-profile>b,.ranked-profile>span{display:block}.faction-select>span,.ranked-profile>span{margin:5px 0;color:#89969b;font-size:10px}.faction-select>div{display:flex;gap:8px;margin-top:10px}.faction-select button,.ranked-profile button,.cancel-match{padding:9px 14px;border:1px solid #887239;background:#211d10;color:#f0d582}.ranked-profile{display:grid;grid-template-columns:1fr auto;align-items:center}.ranked-profile span{grid-column:1}.ranked-profile button{grid-row:1/3;grid-column:2}.cancel-match{min-width:220px;margin-top:22px}
+.match-found-stage{display:grid;min-height:260px;place-items:center;padding:36px;text-align:center}.match-found-stage small{color:#50c4cc;font:900 10px monospace;letter-spacing:.2em}.match-found-stage h2{margin:4px 0 0;font-size:30px}.match-found-stage p{margin:0;color:#9aa5aa;font-size:12px}.match-found-stage code{padding:8px 12px;border:1px solid #d9bc6d;color:#f0d889;letter-spacing:.18em}
 </style>

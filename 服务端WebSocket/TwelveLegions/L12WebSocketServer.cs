@@ -23,6 +23,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly L12Catalog _catalog;
     private readonly int _cardCount;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _socketSendGates = new();
     private readonly ConcurrentDictionary<Guid, string> _socketPlatformSessions = new();
     private WebApplication? _app;
     private IReadOnlyList<string> _addresses = [];
@@ -1328,6 +1329,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             socket = await context.WebSockets.AcceptWebSocketAsync();
             _sockets[sessionId] = socket;
+            _socketSendGates.TryAdd(sessionId, new SemaphoreSlim(1, 1));
             var buffer = new byte[32 * 1024];
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
@@ -1343,6 +1345,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             _sockets.TryRemove(sessionId, out _);
             _socketPlatformSessions.TryRemove(sessionId, out _);
             await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
+            _socketSendGates.TryRemove(sessionId, out _);
             socket?.Dispose();
         }
     }
@@ -1380,6 +1383,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "createSandbox" => await CreateSandboxAsync(sessionId, root),
                 "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
                 "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
+                "syncState" => await _rooms.RecoveryStateAsync(sessionId),
                 "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
                 "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                 "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
@@ -1496,8 +1500,19 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private async Task SendAsync(Guid sessionId, object payload, CancellationToken cancellationToken)
     {
         if (!_sockets.TryGetValue(sessionId, out var socket) || socket.State != WebSocketState.Open) return;
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
+        var gate = _socketSendGates.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_sockets.TryGetValue(sessionId, out socket) || socket.State != WebSocketState.Open) return;
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload,
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private static async Task<string?> ReceiveTextAsync(WebSocket socket, byte[] buffer, CancellationToken cancellationToken)

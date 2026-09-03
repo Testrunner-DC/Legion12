@@ -128,6 +128,14 @@ const contracts = [
   [shell.includes('friendApi.resolve(player.accountId, accept)') && shell.includes("player.friendDirection === 'incoming'") && shell.includes('resolveOnlineFriend(player, false)') && shell.includes('resolveOnlineFriend(player, true)') && shell.includes('>拒绝</button>') && shell.includes("'接受'"), '在线玩家窗口必须允许直接接受或拒绝收到的好友申请，不能只显示待处理状态'],
   [!shell.includes('/assets/l12/card-back-navy.png'), '主页入口不得回退为卡背'],
   [shell.includes("{ to: '/battle', icon: 'battle', label: '大厅' }") && !shell.includes("label: '对战主页'") && router.includes("{ path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue')") && router.includes("{ path: '/battle/lobby', redirect: '/battle' }"), '对战区域必须直接以大厅为主页，不得恢复多余的对战主页层级'],
+  [l12Net.includes("matchFound: null as null") && l12Net.includes("type: 'syncState'")
+    && l12Net.includes('if (!message.queued && l12State.matchFound) return')
+    && l12Net.includes('requestMatchedState(socket)') && l12Net.includes('l12State.matchFound = null')
+    && lobby.includes('data-ui-contract="match-found-state-recovery"')
+    && wsServer.includes('ConcurrentDictionary<Guid, SemaphoreSlim> _socketSendGates')
+    && wsServer.includes('await gate.WaitAsync(cancellationToken)') && wsServer.includes('"syncState" =>')
+    && l12ServerSources.includes('session.RoomCode is not null')
+    && l12ServerSources.includes('return RecoveryStateAsync(sessionId);'), '排位与休闲匹配成功后必须进入显式建局加载态，忽略迟到的未排队消息并主动恢复房间/对局快照；服务端发送必须按会话串行化'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
   [board.includes('data-ui-contract="persistent-board-safe-layout"') && board.includes('data-ui-contract="phase-safe-track"') && board.includes('--l12-board-seam-safe-height:76px') && board.includes('grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr)') && board.includes('class="battlefield-half opponent-half"') && board.includes('class="battlefield-half my-half"'), '双方战场与中央阶段栏必须使用明确三轨安全布局，常驻 UI 不得依赖绝对定位互相覆盖'],
   [board.includes('.battlefield-half::before') && board.includes('.battlefield-half.my-half::before') && board.includes('box-sizing:border-box;width:100%'), '双方战场外框必须覆盖各自完整战场轨道，不得缩入我方后排'],
