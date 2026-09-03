@@ -1300,7 +1300,6 @@ public sealed partial class L12GameEngine
             if (!valid) return CommandResult.Reject("梅林选择的效果或目标已不合法");
             source.Tapped = true;
             if (!L12S2ZoneOps.SpendRunes(player, 1)) return CommandResult.Reject("需要消耗1符文");
-            player.UsedAbilities.Add(onceKey);
             var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = declared[0] };
             if (declared.Length == 2) data["target"] = declared[1];
             PushEffect(playerIndex, source, "active", "主动效果", data: data);
@@ -1310,7 +1309,6 @@ public sealed partial class L12GameEngine
         {
             if (source.Tapped) return CommandResult.Reject("亚里士多德必须为活跃状态");
             source.Tapped = true;
-            player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
@@ -1318,7 +1316,6 @@ public sealed partial class L12GameEngine
         {
             if (source.Tapped) return CommandResult.Reject("伊姆何泰普必须为活跃状态");
             source.Tapped = true;
-            player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
@@ -1327,7 +1324,6 @@ public sealed partial class L12GameEngine
             if (source.Tapped) return CommandResult.Reject("黄金圣甲虫必须为活跃状态");
             if (!EmptySlots(player).Contains(target ?? string.Empty)) return CommandResult.Reject("登场位置不合法");
             source.Tapped = true;
-            player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target! });
             return CommandResult.Ok();
         }
@@ -1383,7 +1379,6 @@ public sealed partial class L12GameEngine
             if (source.Tapped) return CommandResult.Reject("阿麦金必须为活跃状态");
             if (player.Library.Count == 0) return CommandResult.Reject("牌库为空，无法展示牌库顶部的牌");
             source.Tapped = true;
-            player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
@@ -1650,7 +1645,7 @@ public sealed partial class L12GameEngine
             var scarab = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0201");
             if (scarab is null)
                 AddEvent("effect-cancelled", item.Controller,
-                    "黄金圣甲虫声明的增殖甲虫已失效；已休整且本回合次数不返还");
+                    "黄金圣甲虫声明的增殖甲虫已失效；主动休整费用不返还");
             else
                 _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, scarab.InstanceId,
                     item.Data.GetValueOrDefault("target") ?? string.Empty, tapped: false);

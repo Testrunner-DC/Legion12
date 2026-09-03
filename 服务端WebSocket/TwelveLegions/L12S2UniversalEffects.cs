@@ -225,7 +225,6 @@ public sealed partial class L12GameEngine
         {
             if (source.Tapped) return CommandResult.Reject("宫廷魔术师必须为活跃状态");
             source.Tapped = true;
-            State.Players[playerIndex].UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();

@@ -19,6 +19,7 @@ const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
+const savedDeckSelector = read('../src/l12/SavedDeckSelector.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
 const gamePage = read('../src/l12/GamePage.vue')
 const app = read('../src/App.vue')
@@ -177,6 +178,25 @@ const contracts = [
   [specialAssets.includes('masterProfileUrl') && prompt.includes('masterProfileUrl(player.master.masterId'), '先后手掷骰必须使用官方主宰头像资源'],
   [playerMat.includes('godPowerLogoUrl') && specialAssets.includes('olympus-god-power.png'), '神力必须使用官方神力标志'],
   [deckProfile.includes('data-deck-profile') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('class="deck-profile__portrait"'), '各类牌库框必须复用主宰 Profile 公共组件，不得各自裁切卡面'],
+  [savedDeckSelector.includes('data-ui-contract="l12-saved-deck-selector"')
+    && savedDeckSelector.includes('validateDeck(deck, props.catalog, props.restrictions)')
+    && savedDeckSelector.includes("row.error || '符合当前模式规则'")
+    && savedDeckSelector.includes('当前模式没有可用牌库'), '大厅共享牌库选择器必须逐副展示当前模式合法性并明确提示无可用牌库'],
+  [savedDeckSelector.includes("emit('cancel')") && savedDeckSelector.includes("emit('confirm', selected.value.deck)")
+    && !savedDeckSelector.includes('saveSelectedDeckName(')
+    && savedDeckSelector.includes('draftName.value = props.currentDeckName'), '共享牌库选择器取消必须无副作用，且只有确认事件可提交草稿选择'],
+  [decks.includes("'ranked', 'casual', 'friendly', 'sandbox-player', 'sandbox-opponent'")
+    && decks.includes('scopedSelectedDeckStorageKey(scope)') && decks.includes('saveSelectedDeckName')
+    && decks.includes('L12_DECK_SELECTION_SCOPES.forEach'), '当前牌库必须按排位、休闲、好友房及沙盒双方隔离持久化，并在删除牌库时清理失效指针'],
+  [lobby.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
+    && lobby.includes("scope === 'ranked'") && lobby.includes("scope === 'friendly' && friendlyUsesRestrictions()")
+    && lobby.includes("if (tab.value === 'sandbox') return 'sandbox-player'")
+    && !lobby.includes('/decks?from=%2Fbattle%2Flobby')
+    && !lobby.includes('class="room-decks"'), '排位、休闲、好友房及大厅沙盒入口必须复用闭环选择器，好友房按房规启用禁限卡且不得跳转牌库页'],
+  [sandbox.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
+    && sandbox.includes("selectorTarget = 'sandbox-player'") && sandbox.includes("selectorTarget = 'sandbox-opponent'")
+    && !sandbox.includes('operationsPolicy') && !sandbox.includes('<select v-model="playerDeckName"')
+    && !sandbox.includes('<select v-model="opponentDeckName"'), '沙盒双方必须复用同一保存牌库选择器，且不得套用赛季禁限卡或退回原生下拉'],
   [deckEditor.includes("import DeckProfile from './DeckProfile.vue'") && deckLibrary.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && lobby.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && sandbox.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && legacyLobby.includes("import DeckProfile from './DeckProfile.vue'"), '牌库编辑器、牌库页、对战房间和沙盒的牌库框必须统一接入 DeckProfile'],
   [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库框不得恢复多卡裁切条或“库”占位图替代已选择主宰 Profile'],
   [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale?.instanceId') && playerMat.includes('selectMoralePayment(morale.instanceId)'), '费用资源必须按状态排序展示，同时保留真实士气实例 ID 作为支付与返还目标'],
@@ -203,10 +223,24 @@ const contracts = [
   [cardArchive.includes('trialValue') && cardArchive.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
   [playerMat.includes('class="morale-count"') && playerMat.match(/class="morale-count"/g)?.length === 2, '双方士气数量必须共用不溢出的计数器'],
-  [board.includes('promotionFoundationTargetIds') && board.includes('nextS2PromotionGodPowerDiscount'), '晋升登场必须高亮合法基底并纳入锻造炉减免'],
+  [board.includes('promotionFoundationTargetIds') && board.includes('promotionOptions')
+    && l12ServerSources.includes('NextS2PromotionGodPowerDiscount'), '晋升登场必须高亮服务端权威合法基底并纳入锻造炉减免'],
   [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
   [deckEditor.includes('class="catalog-filter-bar" aria-label="主牌库筛选"') && !deckEditor.includes('<h2>构筑设定</h2>') && deckEditor.includes('costFilter') && deckEditor.includes('disasterFilter') && deckEditor.includes('sortMode'), '牌库编辑器必须把卡牌档案式筛选放在主牌库卡池上方，并保留搜索、类型、卡池、费用、天灾等级与排序（不含阵营）'],
   [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('.saved-list{display:grid;gap:5px;overflow-y:auto'), '牌库编辑器卡牌详情与已保存牌库必须使用独立盒子，且已保存牌库可独立纵向滚动'],
+  [deckEditor.indexOf('class="current-deck-summary"') > deckEditor.indexOf('class="deck-catalog grand-panel"')
+    && deckEditor.indexOf('class="current-deck-summary"') < deckEditor.indexOf('<p class="kicker">CARD POOL</p>')
+    && deckEditor.includes('masterProfileUrl(selectedMaster.id') && deckEditor.includes('士气 {{ moraleIds.length }} 张')
+    && !deckEditor.includes('class="master-preview"'), '当前主宰头像、名称、阵营与士气数必须左对齐置于中间卡池盒顶部，左栏只保留选中卡牌详情'],
+  [(deckEditor.match(/class="deck-entry-row"/g)?.length ?? 0) >= 3
+    && deckEditor.includes('class="selected-extra-cards"') && deckEditor.includes('v-for="trial in selectedTrials"')
+    && deckEditor.includes('v-for="card in automaticExtraCards"'), '右下显式试炼与主宰自动额外卡必须复用主牌库横向条目视觉'],
+  [decks.includes("'S01-02M1': ['S01-02M2']") && decks.includes('export function automaticExtraCardIdsForMaster')
+    && deckEditor.includes('automaticExtraCardIdsForMaster(selectedMaster.value?.id)')
+    && deckShare.includes('automaticExtraCardIdsForMaster(deck.masterId)'), '主宰自动额外卡映射必须由 decks.ts 公共函数统一提供给编辑器与牌库图导出'],
+  [deckShare.includes('...(deck.specialIds ?? [])') && deckShare.includes('const extraIds = [...new Set([')
+    && deckShare.includes("isHorizontalCardType(card?.cardType) ? 1752 / 1255 : 5 / 7")
+    && deckShare.includes('extraBitmaps.forEach(bitmap => bitmap?.close())'), '牌库图必须包含显式试炼和主宰自动额外卡，且横版额外卡按正式横版比例绘制并释放位图'],
   [deckEditor.includes('const productOptions = computed(') && deckEditor.includes('<option value="all">全部卡池</option><option v-for="value in productOptions"'), '牌库编辑器卡池筛选必须使用全部卡池并从完整目录动态列出 S01、S02 与 ST 产品'],
   [deckEditor.includes('effectiveDeckLimit(card, masterId.value)')
     && deckEditor.includes('effectiveDeckLimit(entry.card, masterId)')
@@ -259,6 +293,11 @@ const contracts = [
   [l12PromptSetup.includes('CreateAnonymousHandChoicePrompt') && l12PromptSetup.includes('/assets/l12/card-back-official.png')
     && l12PromptSetup.includes('prompt.HiddenChoiceMap[slots[index]]') && !l12PromptSetup.includes('data[$"{slots[index]}:cardId"]'), '故意隐藏的对方手牌选择必须只投影匿名槽位、卡背和匿名标签，不得泄露真实卡牌身份'],
   [l12Types.includes('choiceLabels: Record<string, string>') && prompt.includes('prompt.value?.choiceLabels?.[id]') && prompt.includes('safeChoiceFallback') && prompt.includes('isInternalChoiceValue') && !prompt.includes("?? id.replace(':', ' 排第 ')") && !prompt.includes('?? choiceLabels[id] ?? cardFor(id)?.name ?? id'), '玩家可见选择必须使用服务端自然语言标签，前端不得把 mode、continuation、action 或其他内部 choice id 直接显示为兜底'],
+  [l12Types.includes('promotionOptions?: Record<string, string[]>')
+    && board.includes('me.value.promotionOptions?.[card.instanceId] ?? []')
+    && board.includes('promotionFoundationIdsFor(selectedHandCard.value).includes(card.instanceId)')
+    && !board.includes('const promotionFoundations:')
+    && !board.includes('effectText?.match(/消耗并翻转'), '晋升按钮与底座目标必须完全消费服务端按实例下发的合法集合，不得在前端维护卡号表或解析卡面费用'],
   [internalModeChoices.every(choice => centralModeChoiceLabels.has(choice)) && [...centralModeChoiceLabels.values()].every(label => !/(?:mode|continuation|action):/i.test(label)) && l12PromptModel.includes('Dictionary<string, string> ChoiceLabels') && l12PromptSetup.includes('BuildPlayerChoiceLabels') && l12GameEngine.includes('prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels'), '服务端所有 mode:* 选项必须在 Prompt 公共入口具有自然语言标签，快照只投影标签而不得把内部值当玩家文案'],
   [playerChoiceLabelLiterals.length > 0 && playerChoiceLabelLiterals.every(label => !inventedChoiceLabel.test(label)), '玩家效果选项必须使用卡面效果原文或准确费用动作，不得显示普通/强模式、追加效果、只结算等程序概括'],
   [windowsVerify.includes('Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\\TwelveLegions") -File -Filter "*.cs"') && windowsVerify.includes('Copy-Item -Destination $isolatedServerSourceRoot -Force'), '提交级隔离前端构建必须复制全部服务端 Prompt 定义，玩家文案全量扫描不得因缺文件失败或产生局部扫描假阳性'],

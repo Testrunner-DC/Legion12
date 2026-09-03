@@ -267,7 +267,8 @@ public static class L12S2ZoneOps
     {
         if (count < 0 || player.SpecialZones.Runes < count) return false;
         player.SpecialZones.Runes -= count;
-        if (count > 0) player.PendingStarterRuneSpendEvents++;
+        // “每消耗1符文”按实际消耗数量产生独立事件，而不是按一次支付动作只登记一次。
+        if (count > 0) player.PendingStarterRuneSpendEvents += count;
         return true;
     }
 

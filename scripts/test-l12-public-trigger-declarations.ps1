@@ -177,9 +177,18 @@ foreach ($cardId in @('S02-0602', 'S02-0604', 'S02-0610', 'S02-0614', 'S02-06M2'
 foreach ($contract in @(
     'BeginTrialAdvanceActivation', 'TryCommitTrialAdvanceActivation', 'TryResolveTrialAdvanceEffect',
     '["trialAdvanceEvent"] = "true"', 'QueueFinnReadyAfterTrial', 'QueueAvalonTurnStart',
-    'player.SpecialZones.Runes--', 'source.Tapped = true', 'FinishStackItem(item)'
+    'L12S2ZoneOps.SpendRunes(player, 1)', 'source.Tapped = true', 'FinishStackItem(item)'
 )) {
     Assert-Contains $trialAdvancePlans $contract "Trial advance event contract is missing: $contract"
+}
+
+$directRuneDecrements = [regex]::Matches($allRuntime, 'SpecialZones\.Runes\s*--').Count
+if ($directRuneDecrements -ne 0) {
+    throw "Rune spend contract regressed: found $directRuneDecrements direct decrement(s); all rune spending must use L12S2ZoneOps.SpendRunes."
+}
+$directRuneSubtractions = [regex]::Matches($allRuntime, 'SpecialZones\.Runes\s*-=').Count
+if ($directRuneSubtractions -ne 1) {
+    throw "Rune spend contract regressed: expected the single subtraction inside L12S2ZoneOps.SpendRunes, found $directRuneSubtractions."
 }
 if ($trialAdvancePlans.IndexOf('TrialCompleted = true', [StringComparison]::Ordinal) -ge 0 -or
     $trialAdvancePlans.IndexOf('QueueCompletedTrialTriggerBatch', [StringComparison]::Ordinal) -ge 0) {

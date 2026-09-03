@@ -93,16 +93,8 @@ const counterIds = new Set([
 ])
 const isCounter = (card?: Card | null) => Boolean(card && (card.cardType === 'counter-tactic' || counterIds.has(card.cardId)))
 const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
-const promotionFoundations: Record<string, string> = {
-  'S02-0501': 'S02-0502', 'S02-0503': 'S02-0504', 'S02-0505': 'S02-0506', 'S02-0507': 'S02-0508',
-}
-function canPromote(card: Card) {
-  const foundationId = promotionFoundations[card.cardId]
-  if (!foundationId) return false
-  const cost = Math.max(0, Number(card.effectText?.match(/消耗并翻转(\d+)神力/)?.[1] ?? 0) - (me.value.nextS2PromotionGodPowerDiscount ?? 0))
-  const godPowers = me.value.morale.filter(resource => resource.isGodPower && !resource.tapped).length
-  return godPowers >= cost && me.value.field.flat().some(unit => unit?.cardId === foundationId)
-}
+const promotionFoundationIdsFor = (card: Card) => me.value.promotionOptions?.[card.instanceId] ?? []
+const canPromote = (card: Card) => promotionFoundationIdsFor(card).length > 0
 const playableIds = computed(() => {
   if (!isMyMain.value) return []
   const hasLegionDestination = me.value.field.some((row, rowIndex) => row.some(card => !card || (rowIndex === 1 && isCounter(card))))
@@ -118,8 +110,7 @@ const playableIds = computed(() => {
 const selectedHandCard = computed(() => me.value.hand?.find(card => card.instanceId === selectedId.value) ?? null)
 const promotionFoundationTargetIds = computed(() => {
   const card = selectedHandCard.value
-  const foundationId = card && canPromote(card) ? promotionFoundations[card.cardId] : null
-  return foundationId ? me.value.field.flat().filter(unit => unit?.cardId === foundationId).map(unit => unit!.instanceId) : []
+  return card ? promotionFoundationIdsFor(card) : []
 })
 const selectedAttackTargets = computed(() => selectedId.value ? (props.game.legalAttackTargets?.[selectedId.value] ?? []) : [])
 const attackableIds = computed(() => Object.keys(props.game.legalAttackTargets ?? {}))
@@ -542,8 +533,8 @@ function ownSlot(row: number, slot: number, card: Card | null) {
     }
     return
   }
-  if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value && canPromote(selectedHandCard.value)
-    && promotionFoundations[selectedHandCard.value.cardId] === card.cardId) {
+  if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value
+    && promotionFoundationIdsFor(selectedHandCard.value).includes(card.instanceId)) {
     command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, choice: `promotion:${card.instanceId}` })
     selectedId.value = null
     playArmed.value = false

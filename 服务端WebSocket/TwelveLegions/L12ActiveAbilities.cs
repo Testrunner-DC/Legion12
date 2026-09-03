@@ -57,7 +57,8 @@ public sealed partial class L12GameEngine
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
             return CommandResult.Reject("该圣物被〈神圣伽锁〉叠放，当前无法使用");
-        if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability))
+        if (!L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)
+            && player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability))
             && !MatchesPendingFreeMasterActivation(playerIndex, source, ability))
             return CommandResult.Reject("该效果本回合已经发动");
 
@@ -182,7 +183,8 @@ public sealed partial class L12GameEngine
         var onceKey = ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability);
         if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
             return freeResult;
-        if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+        if (!L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)
+            && player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
         if (ValidatePublicActiveDeclarationBeforePayment(playerIndex, source, ability, target) is { } declarationError)
             return CommandResult.Reject(declarationError);
         var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;

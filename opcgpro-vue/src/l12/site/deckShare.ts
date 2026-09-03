@@ -1,6 +1,7 @@
-import { deckCountSummary, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { automaticExtraCardIdsForMaster, deckCountSummary, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { compareDeckCardIds } from '@/l12/deckOrdering'
 import { resolveCardAssetUrls } from '@/l12/cardAssets'
+import { isHorizontalCardType } from '@/l12/cardPresentation'
 
 interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
 
@@ -49,6 +50,10 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   const masterFaction = byId.get(deck.masterId)?.faction
   const groups = [...deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
     .sort(([left], [right]) => compareDeckCardIds(left, right, byId, masterFaction))
+  const extraIds = [...new Set([
+    ...(deck.specialIds ?? []),
+    ...automaticExtraCardIdsForMaster(deck.masterId),
+  ])]
   const columns = Math.min(10, Math.max(5, Math.ceil(groups.length / 2)))
   const rows = Math.max(1, Math.ceil(groups.length / columns))
   const canvas = document.createElement('canvas')
@@ -65,24 +70,54 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   context.fillStyle = '#55c4cb'; context.font = '900 18px Microsoft YaHei'; context.fillText('LEGION 12 · DECK ARCHIVE', 410, 60)
   context.fillStyle = '#f4f0e6'; context.font = '900 42px Microsoft YaHei'; context.fillText(deck.name, 410, 112)
   const master = byId.get(deck.masterId)
-  context.fillStyle = '#a7b0b4'; context.font = '700 18px Microsoft YaHei'; context.fillText(`主宰 ${master?.nameZh || deck.masterId}  ·  主牌 ${deckCountSummary(deck.cardIds, byId).label}  ·  士气 ${deck.moraleIds.length}`, 410, 145)
+  context.fillStyle = '#a7b0b4'; context.font = '700 18px Microsoft YaHei'; context.fillText(`主宰 ${master?.nameZh || deck.masterId}  ·  主牌 ${deckCountSummary(deck.cardIds, byId).label}  ·  士气 ${deck.moraleIds.length}  ·  额外 ${extraIds.length}`, 410, 145)
   context.fillStyle = '#e1bf6d'; context.fillRect(410, 168, 1464, 3)
 
-  const [masterBitmap, ...bitmaps] = await Promise.all([
+  const loadedBitmaps = await Promise.all([
     loadImage(master?.id, master?.imageUrl),
     ...groups.map(([id]) => loadImage(id, byId.get(id)?.imageUrl)),
+    ...extraIds.map(id => loadImage(id, byId.get(id)?.imageUrl)),
   ])
+  const masterBitmap = loadedBitmaps[0]
+  const bitmaps = loadedBitmaps.slice(1, 1 + groups.length)
+  const extraBitmaps = loadedBitmaps.slice(1 + groups.length)
   context.fillStyle = '#10171b'; roundedRect(context, 74, 104, 254, 356, 4)
   if (masterBitmap) context.drawImage(masterBitmap, 74, 104, 254, 356)
   else { context.fillStyle = '#263139'; context.fillRect(74, 104, 254, 356) }
   context.fillStyle = '#f4f0e6'; context.font = '900 25px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(master?.nameZh || '主宰', 201, 505)
   const factionName = ({ tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德', taiyangcheng: '太阳城', olympus: '奥林匹斯', otherworld: '彼界' } as Record<string, string>)[master?.faction || ''] || master?.faction || ''
   context.fillStyle = '#55c4cb'; context.font = '900 16px Microsoft YaHei'; context.fillText(factionName, 201, 534)
-  context.fillStyle = '#10171b'; roundedRect(context, 74, 580, 254, 170, 4)
-  context.fillStyle = '#e1bf6d'; context.font = '900 54px Microsoft YaHei'; context.fillText(String(deck.moraleIds.length), 201, 660)
-  context.fillStyle = '#f4f0e6'; context.font = '900 20px Microsoft YaHei'; context.fillText('士气', 201, 704)
-  context.fillStyle = '#89959a'; context.font = '700 14px Microsoft YaHei'; context.fillText(`${groups.length} 种卡牌`, 201, 730)
+  context.fillStyle = '#10171b'; roundedRect(context, 74, 570, 254, 76, 4)
+  context.fillStyle = '#e1bf6d'; context.font = '900 34px Microsoft YaHei'; context.fillText(String(deck.moraleIds.length), 146, 620)
+  context.fillStyle = '#f4f0e6'; context.font = '900 18px Microsoft YaHei'; context.fillText('士气', 214, 618)
+  context.fillStyle = '#89959a'; context.font = '700 12px Microsoft YaHei'; context.fillText(`${groups.length} 种主牌`, 214, 638)
   context.textAlign = 'left'
+
+  if (extraIds.length) {
+    context.fillStyle = '#e1bf6d'; context.font = '900 15px Microsoft YaHei'; context.fillText(`额外区 · ${extraIds.length} 张`, 74, 683)
+    const extraAreaX = 74; const extraAreaY = 700; const extraAreaWidth = 254; const extraAreaHeight = 274
+    const extraColumns = Math.min(2, extraIds.length)
+    const extraRows = Math.ceil(extraIds.length / extraColumns)
+    const extraGapX = 10; const extraGapY = 8
+    const extraCellWidth = (extraAreaWidth - extraGapX * (extraColumns - 1)) / extraColumns
+    const extraCellHeight = (extraAreaHeight - extraGapY * (extraRows - 1)) / extraRows
+    extraIds.forEach((id, index) => {
+      const card = byId.get(id)
+      const aspect = isHorizontalCardType(card?.cardType) ? 1752 / 1255 : 5 / 7
+      const imageWidth = Math.min(extraCellWidth, (extraCellHeight - 28) * aspect)
+      const imageHeight = imageWidth / aspect
+      const cellX = extraAreaX + (index % extraColumns) * (extraCellWidth + extraGapX)
+      const cellY = extraAreaY + Math.floor(index / extraColumns) * (extraCellHeight + extraGapY)
+      const x = cellX + (extraCellWidth - imageWidth) / 2
+      context.fillStyle = '#10171b'; roundedRect(context, x, cellY, imageWidth, imageHeight, 3)
+      const bitmap = extraBitmaps[index]
+      if (bitmap) context.drawImage(bitmap, x, cellY, imageWidth, imageHeight)
+      else { context.fillStyle = '#263139'; context.fillRect(x, cellY, imageWidth, imageHeight) }
+      context.fillStyle = '#f1ede3'; context.font = '900 11px Microsoft YaHei'; context.textAlign = 'center'
+      context.fillText((card?.nameZh || id).slice(0, 9), cellX + extraCellWidth / 2, cellY + imageHeight + 16)
+    })
+    context.textAlign = 'left'
+  }
 
   const areaX = 410; const areaY = 198; const areaWidth = 1464; const areaHeight = 784
   const gapX = 13
@@ -110,6 +145,7 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   context.fillStyle = '#e1bf6d'; context.font = '900 19px Microsoft YaHei'; context.fillText('LEGION12', 74, canvas.height - 42)
   masterBitmap?.close()
   bitmaps.forEach(bitmap => bitmap?.close())
+  extraBitmaps.forEach(bitmap => bitmap?.close())
   return await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('牌库图生成失败')), 'image/png'))
 }
 

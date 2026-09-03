@@ -289,14 +289,51 @@ public sealed partial class L12GameEngine
         => card.Faction == "olympus" && card.CardType == "legion"
             && card.HasTrait("晋升者");
 
-    private static string? S2PromotionFoundationCardId(string promotionCardId) => promotionCardId switch
+    private static readonly IReadOnlyDictionary<string, string> S2PromotionFoundationCardIds
+        = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        "S02-0501" => "S02-0502",
-        "S02-0503" => "S02-0504",
-        "S02-0505" => "S02-0506",
-        "S02-0507" => "S02-0508",
-        _ => null,
+        ["S02-0501"] = "S02-0502",
+        ["S02-0503"] = "S02-0504",
+        ["S02-0505"] = "S02-0506",
+        ["S02-0507"] = "S02-0508",
+        ["ST05-01"] = "S02-0512",
     };
+
+    private static string? S2PromotionFoundationCardId(string promotionCardId)
+        => S2PromotionFoundationCardIds.GetValueOrDefault(promotionCardId);
+
+    private static string S2PromotionFoundationName(L12CardInstance promoted)
+        => promoted.Name.EndsWith("·晋升", StringComparison.Ordinal)
+            ? promoted.Name[..^"·晋升".Length]
+            : promoted.Name;
+
+    private static L12CardInstance[] S2PromotionFoundations(L12PlayerState player, L12CardInstance promoted)
+    {
+        var foundationCardId = S2PromotionFoundationCardId(promoted.CardId);
+        var foundationName = S2PromotionFoundationName(promoted);
+        return PublicLegions(player)
+            .Where(card => card.Faction == "olympus"
+                && (card.CardId == foundationCardId || card.Name == foundationName)
+                && !card.HasTrait("晋升者"))
+            .ToArray();
+    }
+
+    private Dictionary<string, string[]> BuildS2PromotionOptions(L12PlayerState player)
+    {
+        var activeGodPower = player.Morale.Count(card => card.IsGodPower && !card.Tapped);
+        return player.Hand
+            .Where(IsS2PromotionCard)
+            .Select(promoted => new
+            {
+                Promoted = promoted,
+                Cost = Math.Max(0, S2PromotionGodPowerCost(promoted) - player.NextS2PromotionGodPowerDiscount),
+                Foundations = S2PromotionFoundations(player, promoted),
+            })
+            .Where(option => option.Cost <= activeGodPower && option.Foundations.Length > 0)
+            .ToDictionary(option => option.Promoted.InstanceId,
+                option => option.Foundations.Select(card => card.InstanceId).ToArray(),
+                StringComparer.Ordinal);
+    }
 
     private static int S2PromotionGodPowerCost(L12CardInstance card)
     {
@@ -317,12 +354,7 @@ public sealed partial class L12GameEngine
             return PlayS2Promotion(playerIndex, promoted, command);
 
         var player = State.Players[playerIndex];
-        var foundationCardId = S2PromotionFoundationCardId(promoted.CardId);
-        var foundationName = promoted.Name.EndsWith("·晋升", StringComparison.Ordinal)
-            ? promoted.Name[..^"·晋升".Length]
-            : promoted.Name;
-        var hasFoundation = PublicLegions(player).Any(card => card.Faction == "olympus"
-            && (card.CardId == foundationCardId || card.Name == foundationName) && !card.HasTrait("晋升者"));
+        var hasFoundation = S2PromotionFoundations(player, promoted).Length > 0;
         var promotionCost = Math.Max(0, S2PromotionGodPowerCost(promoted) - player.NextS2PromotionGodPowerDiscount);
         var canPromote = hasFoundation && player.Morale.Count(card => card.IsGodPower && !card.Tapped) >= promotionCost;
         var normalCost = GetPlayCost(playerIndex, promoted, useSelfDamageDiscount: false);
@@ -355,14 +387,7 @@ public sealed partial class L12GameEngine
     private CommandResult PlayS2Promotion(int playerIndex, L12CardInstance promoted, L12Command command)
     {
         var player = State.Players[playerIndex];
-        var foundationName = promoted.Name.EndsWith("·晋升", StringComparison.Ordinal)
-            ? promoted.Name[..^"·晋升".Length]
-            : promoted.Name;
-        var foundationCardId = S2PromotionFoundationCardId(promoted.CardId);
-        var foundations = PublicLegions(player)
-            .Where(card => card.Faction == "olympus" && (card.CardId == foundationCardId || card.Name == foundationName)
-                && !card.HasTrait("晋升者"))
-            .ToArray();
+        var foundations = S2PromotionFoundations(player, promoted);
         if (foundations.Length == 0) return CommandResult.Reject("战场上没有可供晋升的同名非【晋升者】军团");
 
         var foundationId = command.Choice?.StartsWith("promotion:", StringComparison.Ordinal) == true

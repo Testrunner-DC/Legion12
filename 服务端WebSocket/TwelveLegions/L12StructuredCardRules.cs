@@ -46,6 +46,22 @@ public static partial class L12StructuredCardRules
         "S01-0101",
     };
 
+    // 对方回合前排持续兵力修正是独立于嘲讽的结构化卡牌规则。
+    // 禁止复用 FrontRowTauntOverlayCards：部分卡只有嘲讽，部分卡只有兵力修正。
+    private static readonly IReadOnlyDictionary<string, int> OpponentTurnFrontTroopsBonuses
+        = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["S01-0107"] = 1000,
+            ["S01-0212"] = 1000,
+            ["S01-0312"] = 1000,
+            ["S02-0004"] = 1000,
+            ["S02-0007"] = 1000,
+            ["S02-0615"] = 1000,
+            ["ST02-02"] = 1000,
+            ["ST04-01"] = 1000,
+            ["ST06-02"] = 1000,
+        };
+
     // 卡面冒号前的可选主宰伤害属于登场费用替代，必须由结构化身份语义驱动，
     // 禁止根据可变的 EffectText 推断按钮合法性或最终费用。
     private static readonly HashSet<string> OptionalSelfDamageEntryDiscountCards = new(StringComparer.Ordinal)
@@ -69,6 +85,27 @@ public static partial class L12StructuredCardRules
         "S01-03D1", "S01-04D1", "S02-0003", "S02-0104", "S02-0204", "S02-0205", "S02-0404",
         "S02-0510", "S02-0513", "S02-0520", "S02-05D1", "S02-0603", "S02-0616", "S02-06D1",
         "ST02-05", "ST03-05", "ST03-07", "ST04-06", "ST05-06", "ST06-09",
+    };
+
+    // “主动休整”以来源由活跃转为休整作为每次发动的费用；若被其他效果重新转为活跃，
+    // 同回合可再次发动。它与印刷的“我方 回合1次”是两套互不替代的限制。
+    private static readonly HashSet<string> ActiveRestAbilities = new(StringComparer.Ordinal)
+    {
+        "S01-0105|searchBrothers", "S01-0109|addMorale",
+        "S01-0117|artifactDraw", "S01-0117|artifactSearch",
+        "S01-01D1|palaceExchange", "S01-0214|cleopatraGuard",
+        "S01-0215|ankhReady", "S01-0215|ankhDraw", "S01-0317|gramDamage",
+        "S01-03D1|valhallaKill", "S01-04D1|yomiRecover",
+        "S02-0003|disableCounters", "S02-0104|shennongReset",
+        "S02-0204|imhotepDiscount", "S02-0205|scarabSummon",
+        "S02-0404|magatamaMove", "S02-0404|magatamaImmortal",
+        "S02-0510|hippolytaRevive", "S02-0513|aristotleDiscount",
+        "S02-0520|forgePromotionDiscount", "S02-0520|forgeReadyOnKill",
+        "S02-05D1|divinityFreePromotion", "S02-0603|merlinRune",
+        "S02-0616|amakineTop", "S02-06D1|avalonDebuff",
+        "ST02-05|oasisDancerBuff", "ST03-05|christinaFreeTactic",
+        "ST03-07|kaneMillOne", "ST04-06|oiranTransfer",
+        "ST05-06|telemachusTopThree", "ST06-09|lightSwordActive",
     };
 
     // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
@@ -104,6 +141,12 @@ public static partial class L12StructuredCardRules
 
     public static bool HasActiveRestAbility(string cardId)
         => ActiveRestSourceCards.Contains(cardId);
+
+    public static bool IsActiveRestAbility(string cardId, string ability)
+        => ActiveRestAbilities.Contains($"{cardId}|{ability}");
+
+    public static int OpponentTurnFrontTroopsBonus(string cardId)
+        => OpponentTurnFrontTroopsBonuses.GetValueOrDefault(cardId);
 
     public static bool HasAnyRowRangeBonus(L12CardInstance card)
         => CombatProfile(card, 0).HasRangeBonus || CombatProfile(card, 1).HasRangeBonus;

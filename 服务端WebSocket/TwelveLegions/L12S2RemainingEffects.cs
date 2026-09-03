@@ -215,7 +215,6 @@ public sealed partial class L12GameEngine
             case "divinityFreePromotion" when source.CardId == "S02-05D1":
                 if (player.MasterTapped) return CommandResult.Reject("诸神巅必须为活跃状态");
                 player.MasterTapped = true;
-                player.UsedAbilities.Add(onceKey);
                 PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string> { ["ability"] = ability });
                 return CommandResult.Ok();
             case "artemisBuff" when source.CardId == "S02-05M1":
@@ -252,7 +251,7 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(player, card, "olympus")
                     && card.CardType == "legion" && card.CurrentCost <= 4);
                 if (discard is null || revive is null || !EmptySlots(player).Contains(declared[2])) return CommandResult.Reject("选择的卡牌或位置已失效");
-                source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard); player.UsedAbilities.Add(onceKey);
+                source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard);
                 PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
                 {
                     ["ability"] = ability, ["revive"] = revive.InstanceId, ["slot"] = declared[2],
@@ -435,18 +434,24 @@ public sealed partial class L12GameEngine
             {
                 var targetId = PublicTriggerDeclared(item, "target");
                 var destination = PublicTriggerDeclared(item, "slot");
-                var legion = FindOnField(player, targetId, out var oldRow, out var oldSlot);
+                var targetController = int.TryParse(item.Data.GetValueOrDefault("targetPlayerIndex"), out var parsedController)
+                    && parsedController is >= 0 and <= 1 ? parsedController : -1;
+                var targetPlayer = targetController >= 0 ? State.Players[targetController] : null;
+                var oldRow = -1;
+                var oldSlot = -1;
+                var legion = targetPlayer is null ? null
+                    : FindOnField(targetPlayer, targetId, out oldRow, out oldSlot);
                 if (legion is not null && !legion.Tapped
                     && legion.InstanceId != item.Data.GetValueOrDefault("moved")
-                    && AdjacentEmptySlots(player, oldRow, oldSlot).Contains(destination, StringComparer.OrdinalIgnoreCase))
+                    && AdjacentEmptySlots(targetPlayer!, oldRow, oldSlot).Contains(destination, StringComparer.OrdinalIgnoreCase))
                 {
                     var (newRow, newSlot) = ParseSlot(destination);
-                    player.Field[oldRow][oldSlot] = null;
-                    player.Field[newRow][newSlot] = legion;
+                    targetPlayer!.Field[oldRow][oldSlot] = null;
+                    targetPlayer.Field[newRow][newSlot] = legion;
                     legion.LastMovedTurn = State.TurnSerial;
                     AddTimedModifier(legion, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读");
                     AddEvent("move", item.Controller, $"月读使〈{legion.Name}〉位移1格", legion);
-                    RecordLegionMovement(item.Controller, legion, oldRow, newRow);
+                    RecordLegionMovement(targetController, legion, oldRow, newRow);
                 }
                 else
                     AddEvent("effect-cancelled", item.Controller, "月读的公开位移目标或位置已失效；已支付费用不回滚");
@@ -667,7 +672,10 @@ public sealed partial class L12GameEngine
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
         var key = $"active:master-{playerIndex}:tsukuyomiFollowMove";
         if (!player.UsedAbilities.Contains(key) && player.Morale.Any(card => !card.Tapped)
-            && PublicLegions(player).Any(card => card.InstanceId != moved.InstanceId && !card.Tapped))
+            && State.Players.Any(targetController => PublicLegions(targetController).Any(card =>
+                card.InstanceId != moved.InstanceId && !card.Tapped
+                && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
+                && AdjacentEmptySlots(targetController, row, slot).Any())))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团位移时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiFollowMove", ["moved"] = moved.InstanceId }));
         QueueTriggerCandidates(candidates);

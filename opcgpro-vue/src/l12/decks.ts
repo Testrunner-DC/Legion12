@@ -69,7 +69,14 @@ interface LookupCard {
 
 const STORAGE_KEY = 'l12-custom-decks-v1'
 export const SELECTED_DECK_KEY = 'l12-selected-custom-deck'
+export const L12_DECK_SELECTION_SCOPES = [
+  'ranked', 'casual', 'friendly', 'sandbox-player', 'sandbox-opponent',
+] as const
+export type L12DeckSelectionScope = typeof L12_DECK_SELECTION_SCOPES[number]
 export const MAIN_DECK_TYPES = new Set(['legion', 'tactic', 'counter-tactic', 'artifact'])
+const AUTOMATIC_EXTRA_CARD_IDS: Readonly<Record<string, readonly string[]>> = {
+  'S01-02M1': ['S01-02M2'],
+}
 const S1_COUNTER_TACTICS = new Set([
   'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
   'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
@@ -89,6 +96,10 @@ const moraleIdentityByGodPower = new Map(moraleIdentities.filter(identity => ide
 
 export function canonicalMoraleCardId(cardId: string) {
   return (moraleIdentityByVersion.get(cardId) ?? moraleIdentityByGodPower.get(cardId))?.canonicalCardId ?? cardId
+}
+
+export function automaticExtraCardIdsForMaster(masterId: string | null | undefined) {
+  return [...(masterId ? AUTOMATIC_EXTRA_CARD_IDS[masterId] ?? [] : [])]
 }
 
 function normalizeMoraleCatalogCard(card: DeckCard): DeckCard {
@@ -135,6 +146,24 @@ function accountStorageKey() {
 
 function selectedDeckStorageKey() {
   return platformState.account ? `${SELECTED_DECK_KEY}:${platformState.account.id}` : SELECTED_DECK_KEY
+}
+
+function scopedSelectedDeckStorageKey(scope: L12DeckSelectionScope) {
+  return `${selectedDeckStorageKey()}:${scope}`
+}
+
+export function loadSelectedDeckName(scope: L12DeckSelectionScope,
+    decks: Readonly<Record<string, SavedL12Deck>>) {
+  const scoped = localStorage.getItem(scopedSelectedDeckStorageKey(scope))
+  if (scoped && decks[scoped]) return scoped
+  // 兼容编辑器曾写入的单一选择键；迁移只读取，不在打开选择器时产生副作用。
+  const legacy = localStorage.getItem(selectedDeckStorageKey())
+  if (legacy && decks[legacy]) return legacy
+  return Object.keys(decks)[0] ?? ''
+}
+
+export function saveSelectedDeckName(scope: L12DeckSelectionScope, name: string) {
+  localStorage.setItem(scopedSelectedDeckStorageKey(scope), name)
 }
 
 function writeSavedDecks(decks: Record<string, SavedL12Deck>) {
@@ -271,6 +300,10 @@ export function deleteDeck(name: string) {
   writeSavedDecks(decks)
   const selectedKey = selectedDeckStorageKey()
   if (localStorage.getItem(selectedKey) === name) localStorage.removeItem(selectedKey)
+  L12_DECK_SELECTION_SCOPES.forEach(scope => {
+    const scopedKey = scopedSelectedDeckStorageKey(scope)
+    if (localStorage.getItem(scopedKey) === name) localStorage.removeItem(scopedKey)
+  })
   if (platformState.account) void platformRequest(`/api/decks/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => undefined)
 }
 

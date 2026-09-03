@@ -81,6 +81,7 @@ export interface PlayerView {
   libraryCount: number
   libraryTop?: Card | null
   hand?: Card[]
+  promotionOptions?: Record<string, string[]>
   handCount?: number
   moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
   moraleDeckCount?: number

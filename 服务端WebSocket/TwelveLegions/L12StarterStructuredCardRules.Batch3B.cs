@@ -28,7 +28,7 @@ public static partial class L12StructuredCardRules
         "ST05-M1" => [new("athenaFrontBuff", "我方 回合1次 可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1。")],
         "ST05-06" => [new("telemachusTopThree", "主动休整 查看牌库顶部3张牌，选择其中1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌，其余卡牌自选顺序全部返回牌库顶部或全部返回牌库底部。")],
         "ST06-09" => [new("lightSwordActive", "主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000；或获得1符文。")],
-        "ST06-M1" => [new("nuadaReadyMorale", "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃。")],
+        "ST06-M1" => [new("nuadaReadyMorale", "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃，试炼+2。")],
         "ST06-S1" =>
         [
             new("completeTrial", "试炼达到8：完成《探寻天空之城》。"),
@@ -232,12 +232,13 @@ public static partial class L12StructuredCardRules
                 Troops(1000), new(L12AtomKinds.AttackRule, "对主宰伤害+1", "resolution", new() { ["value"] = "1", ["duration"] = "this-turn" }))],
             "ST06-M1" =>
             [
-                Targeted("rune-spent", "我方回合 每当我方消耗符文时，可选择我方1张【彼界】军团，本回合兵力+1000。",
+                Targeted("rune-spent", "我方消耗符文时，每消耗1符文，可选择我方1张【彼界】军团，本回合兵力+1000。",
                     new(L12AtomKinds.Optional, "可发动", "condition", new()), Select("选择我方1张彼界军团", "controller.field", "faction=otherworld;legion=true"), Troops(1000)),
-                Targeted("active", "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃。",
+                Targeted("active", "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃，试炼+2。",
                     new(L12AtomKinds.Special, "消耗2符文", "cost", new() { ["resource"] = "rune", ["amount"] = "2" }),
                     new(L12AtomKinds.SelectTarget, "选择最多2张休整士气", "target", new() { ["zone"] = "controller.morale", ["min"] = "0", ["max"] = "2", ["filter"] = "tapped=true" }),
-                    new(L12AtomKinds.Ready, "将所选士气转为活跃", "resolution", new())),
+                    new(L12AtomKinds.Ready, "将所选士气转为活跃", "resolution", new()),
+                    new(L12AtomKinds.AdvanceTrial, "试炼+2", "resolution", new() { ["amount"] = "2" })),
             ],
             "ST06-S1" =>
             [

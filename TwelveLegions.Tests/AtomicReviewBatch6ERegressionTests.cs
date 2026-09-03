@@ -216,8 +216,8 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0205")]
-    [Trait("L12Evidence", "entry:active-slot-invalid-keeps-once")]
-    public void GoldenScarabActiveSlotInvalidationKeepsItsTapAndOnceReservation()
+    [Trait("L12Evidence", "entry:active-rest-slot-invalid-keeps-rest-cost-without-once")]
+    public void GoldenScarabActiveSlotInvalidationKeepsItsRestCostWithoutInventingOncePerTurn()
     {
         var game = Create(7913);
         var player = game.State.Players[0];
@@ -237,7 +237,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.Same(blocker, player.Field[0][1]);
         Assert.Contains(summoned, player.Graveyard);
         Assert.True(source.Tapped);
-        Assert.Contains($"active:{source.InstanceId}:scarabSummon", player.UsedAbilities);
+        Assert.DoesNotContain($"active:{source.InstanceId}:scarabSummon", player.UsedAbilities);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
             && entry.Text.Contains("位置", StringComparison.Ordinal));
     }

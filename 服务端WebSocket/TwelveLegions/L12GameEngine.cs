@@ -167,7 +167,7 @@ public sealed partial class L12GameEngine
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
-                hand = SnapshotHand(index), player.MoraleDeck, player.Morale,
+                hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck, player.Morale,
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
                 player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
@@ -449,12 +449,13 @@ public sealed partial class L12GameEngine
                 if (player.UsedAbilities.Contains($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}"))
                     return view with { Enabled = false, DisabledReason = "该军团因卡牌效果本回合无法再次发动试炼" };
             }
-            if (L12StructuredCardRules.HasActiveRestAbility(cardId)
+            if (L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
                 && (FindOnField(player, sourceInstanceId, out _, out _) is { Tapped: true }
                     || player.Relic is { Tapped: true } relic && relic.InstanceId == sourceInstanceId
                     || player.ExtraRelics.Any(extraRelic => extraRelic.InstanceId == sourceInstanceId && extraRelic.Tapped)))
                 return view with { Enabled = false, DisabledReason = $"{_catalog.Cards.GetValueOrDefault(cardId)?.NameZh ?? "该卡牌"}必须为活跃状态" };
-            if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
+            if (!L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
+                && player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
             if (view.Id == "sunDraw" && player.Hand.Count > 3)
                 return view with { Enabled = false, DisabledReason = "我方手牌需不高于3张" };

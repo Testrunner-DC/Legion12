@@ -633,10 +633,11 @@ public sealed partial class L12GameEngine
             case ("S02-04M1", "active", "tsukuyomiFollowMove"):
             {
                 var movedId = candidate.Data.GetValueOrDefault("moved");
-                var targets = PublicLegions(player).Where(card => !card.Tapped && card.InstanceId != movedId
-                        && FindOnField(player, card.InstanceId, out var row, out var slot) is not null
-                        && AdjacentEmptySlots(player, row, slot).Any())
-                    .Select(card => card.InstanceId).ToList();
+                var targets = State.Players.SelectMany(targetController => PublicLegions(targetController)
+                        .Where(card => !card.Tapped && card.InstanceId != movedId
+                            && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
+                            && AdjacentEmptySlots(targetController, row, slot).Any()))
+                    .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 var canUse = targets.Count > 0 && ActiveResourceCount(player) > 0;
                 steps =
                 [
@@ -1291,11 +1292,17 @@ public sealed partial class L12GameEngine
             var cost = activation.DeclaredValues.GetValueOrDefault("cost", []);
             var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
             var slot = activation.DeclaredValues.GetValueOrDefault("slot", []).SingleOrDefault();
-            var target = FindOnField(player, targetId, out var row, out var oldSlot);
+            var target = FindPublicCard(targetId, out var targetController);
+            var targetPlayer = targetController is >= 0 and <= 1 ? State.Players[targetController] : null;
+            var row = -1;
+            var oldSlot = -1;
+            var targetOnField = targetPlayer is null ? null
+                : FindOnField(targetPlayer, targetId, out row, out oldSlot);
             var onceKey = $"active:master-{candidate.Controller}:tsukuyomiFollowMove";
-            if (player.UsedAbilities.Contains(onceKey) || target is null || target.Tapped
-                || target.InstanceId == candidate.Data.GetValueOrDefault("moved") || slot is null
-                || !AdjacentEmptySlots(player, row, oldSlot).Contains(slot, StringComparer.OrdinalIgnoreCase)
+            if (player.UsedAbilities.Contains(onceKey) || targetOnField is null || targetOnField.Tapped
+                || !IsFieldLegion(targetOnField) || targetOnField.Hidden
+                || targetOnField.InstanceId == candidate.Data.GetValueOrDefault("moved") || slot is null
+                || !AdjacentEmptySlots(targetPlayer!, row, oldSlot).Contains(slot, StringComparer.OrdinalIgnoreCase)
                 || !CanConsumeSelectedResources(player, 1,
                     cost.Count == 1 && cost[0] == "temporary-morale:1" ? [] : cost))
                 error = "月读的费用、公开目标或位移位置已失效；未支付费用且效果未入栈";
@@ -1304,6 +1311,7 @@ public sealed partial class L12GameEngine
                 _ = TryConsumeSelectedResources(player, 1,
                     cost.Count == 1 && cost[0] == "temporary-morale:1" ? [] : cost);
                 player.UsedAbilities.Add(onceKey);
+                candidate.Data["targetPlayerIndex"] = targetController.ToString();
             }
         }
         else if (key == ("S02-04M1", "active", "tsukuyomiReadyMorale"))

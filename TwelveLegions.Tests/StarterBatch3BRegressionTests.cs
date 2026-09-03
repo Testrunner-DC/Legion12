@@ -102,6 +102,44 @@ public sealed class StarterBatch3BRegressionTests
         Assert.True(count < maximum, "响应窗口未在限定次数内结束");
     }
 
+    private static void OrderPendingTriggers(L12GameEngine game)
+    {
+        if (game.State.PendingPrompts.FirstOrDefault() is not { Kind: "trigger-order" } prompt) return;
+        var result = game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                CardInstanceIds: prompt.ValidChoices.ToList()));
+        Assert.True(result.Accepted, result.Error);
+    }
+
+    private static void DeclinePendingOptionalTriggers(L12GameEngine game, int maximum = 24)
+    {
+        var count = 0;
+        while (game.State.PendingPrompts.FirstOrDefault() is { } prompt && count++ < maximum)
+        {
+            if (prompt.Kind == "response")
+            {
+                var pass = game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass"));
+                Assert.True(pass.Accepted, pass.Error);
+            }
+            else if (prompt.Kind == "trigger-order")
+            {
+                var order = game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                        CardInstanceIds: prompt.ValidChoices.ToList()));
+                Assert.True(order.Accepted, order.Error);
+            }
+            else if (prompt.ValidChoices.Contains("mode:none"))
+            {
+                var decline = game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:none"));
+                Assert.True(decline.Accepted, decline.Error);
+            }
+            else break;
+        }
+        Assert.True(count < maximum, "可选触发未在限定次数内结束");
+    }
+
     private static void Queue(L12GameEngine game, int controller, L12CardInstance source, string trigger)
         => Invoke(game, "QueueOrPushTriggeredEffect", controller, source, trigger, $"【{trigger}】效果", null,
             new Dictionary<string, string>());
@@ -154,6 +192,16 @@ public sealed class StarterBatch3BRegressionTests
                 ability => ability.Trigger == trigger && ability.MigrationStatus == "verified"
                     && !ability.HasLegacyFallback);
         }
+
+        var nuada = Catalog.Cards["ST06-M1"];
+        Assert.Equal(
+            "我方消耗符文时，每消耗1符文，可选择我方1张【彼界】军团，本回合兵力+1000。\n" +
+            "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃，试炼+2。",
+            nuada.Effect);
+        Assert.True(L12StructuredCardRules.TryGetStructuredAbilities("ST06-M1", out var nuadaAbilities));
+        var nuadaActive = Assert.Single(nuadaAbilities, ability => ability.Trigger == "active");
+        Assert.Contains(nuadaActive.Atoms, atom => atom.Kind == L12AtomKinds.AdvanceTrial
+            && atom.Parameters.GetValueOrDefault("amount") == "2");
     }
 
     [Fact]
@@ -528,6 +576,8 @@ public sealed class StarterBatch3BRegressionTests
         var nuadaPlayer = nuadaGame.State.Players[0];
         SetMaster(nuadaPlayer, "ST06-M1");
         nuadaPlayer.SpecialZones.Runes = 2;
+        var nuadaTrial = Card("ST06-S1", "nuada-trial");
+        nuadaPlayer.SpecialZones.Trials.Add(nuadaTrial);
         var restedOne = new L12MoraleCard { CardId = "ST06-C1", InstanceId = "nuada-rested-1", Tapped = true };
         var restedTwo = new L12MoraleCard { CardId = "ST06-C1", InstanceId = "nuada-rested-2", Tapped = true };
         nuadaPlayer.Morale.AddRange([restedOne, restedTwo]);
@@ -535,10 +585,11 @@ public sealed class StarterBatch3BRegressionTests
             new L12Command("activateAbility", "master-0", Ability: "nuadaReadyMorale")).Accepted);
         ChooseMany(nuadaGame, restedOne.InstanceId, restedTwo.InstanceId);
         PassResponses(nuadaGame);
-        if (nuadaGame.State.PendingPrompts.Count > 0) Choose(nuadaGame, "mode:none");
+        DeclinePendingOptionalTriggers(nuadaGame);
         Assert.Equal(0, nuadaPlayer.SpecialZones.Runes);
         Assert.False(restedOne.Tapped);
         Assert.False(restedTwo.Tapped);
+        Assert.Equal(2, nuadaTrial.TrialProgress);
 
         var skyGame = Create(20420);
         var skyPlayer = skyGame.State.Players[0];
@@ -594,13 +645,17 @@ public sealed class StarterBatch3BRegressionTests
         var player = game.State.Players[0];
         SetMaster(player, "ST06-M1");
         player.SpecialZones.Runes = 2;
+        var trial = Card("ST06-S1", "nuada-zero-target-trial");
+        player.SpecialZones.Trials.Add(trial);
 
         var result = game.Handle(0,
             new L12Command("activateAbility", "master-0", Ability: "nuadaReadyMorale"));
         Assert.True(result.Accepted, result.Error);
         PassResponses(game);
+        DeclinePendingOptionalTriggers(game);
 
         Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Equal(2, trial.TrialProgress);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("0张士气"));
     }
@@ -633,17 +688,23 @@ public sealed class StarterBatch3BRegressionTests
     public void NuadaRuneSpendAndSkyCityCompletionUseIndependentDeclaredEffects()
     {
         var nuadaGame = Create(20413);
-        var nuadaPlayer = nuadaGame.State.Players[0];
+        var nuadaPlayer = nuadaGame.State.Players[1];
         SetMaster(nuadaPlayer, "ST06-M1");
         var target = Card("ST06-02", "nuada-target");
         nuadaPlayer.Field[0][0] = target;
         nuadaPlayer.SpecialZones.Runes = 2;
-        Assert.True(L12S2ZoneOps.SpendRunes(nuadaPlayer, 1));
+        Assert.Equal(0, nuadaGame.State.ActivePlayer);
+        Assert.True(L12S2ZoneOps.SpendRunes(nuadaPlayer, 2));
         Invoke(nuadaGame, "FlushStarterResourceTriggerBatches");
-        Choose(nuadaGame, "mode:use");
-        Choose(nuadaGame, target.InstanceId);
-        PassResponses(nuadaGame);
-        Assert.Equal(target.BaseTroops + 1000, target.Troops);
+        OrderPendingTriggers(nuadaGame);
+        for (var index = 0; index < 2; index++)
+        {
+            Choose(nuadaGame, "mode:use");
+            Choose(nuadaGame, target.InstanceId);
+            PassResponses(nuadaGame);
+        }
+        // 两次符文消费触发各 +1000；目标同时位于对方回合的前排，持续获得 +1000。
+        Assert.Equal(target.BaseTroops + 3000, target.Troops);
 
         var skyGame = Create(20414);
         var skyPlayer = skyGame.State.Players[0];

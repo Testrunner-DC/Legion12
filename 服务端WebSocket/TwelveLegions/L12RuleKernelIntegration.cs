@@ -150,14 +150,21 @@ public sealed partial class L12GameEngine
         int? targetPlayerIndex = null;
         if (step.Kind == "adjacent-slot")
         {
-            var player = State.Players[activation.Controller];
             var row = -1;
             var slot = -1;
             var movingId = step.ReferenceDeclarationKey is { } referenceKey
                 ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
                 : activation.DeclaredTargets.FirstOrDefault();
-            var moving = movingId is null ? null : FindOnField(player, movingId, out row, out slot);
-            List<string> choices = moving is null ? [] : AdjacentEmptySlots(player, row, slot).ToList();
+            var movingController = -1;
+            var moving = movingId is null ? null : FindPublicCard(movingId, out movingController);
+            var battlefield = moving is not null && movingController is >= 0 and <= 1
+                ? State.Players[movingController]
+                : null;
+            if (battlefield is not null)
+                moving = FindOnField(battlefield, movingId, out row, out slot);
+            List<string> choices = moving is null || battlefield is null
+                ? []
+                : AdjacentEmptySlots(battlefield, row, slot).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
             if (step.ValidChoices.Count < step.MinChoose)
@@ -166,6 +173,7 @@ public sealed partial class L12GameEngine
                 return;
             }
             promptKind = "slot";
+            targetPlayerIndex = moving is null ? null : movingController;
         }
         else if (step.Kind == "cavalry-slot")
         {
@@ -890,6 +898,20 @@ public sealed partial class L12GameEngine
                 return State.Players[target].Field[row][slot] is null
                     && !used.Contains(choice, StringComparer.OrdinalIgnoreCase);
             }
+            if (currentStep?.Kind == "adjacent-slot")
+            {
+                var movingId = currentStep.ReferenceDeclarationKey is { } referenceKey
+                    ? activation!.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
+                    : activation?.DeclaredTargets.FirstOrDefault();
+                var movingController = -1;
+                var moving = movingId is null ? null : FindPublicCard(movingId, out movingController);
+                if (moving is null || movingController is < 0 or > 1) return false;
+                var battlefield = State.Players[movingController];
+                moving = FindOnField(battlefield, movingId, out var movingRow, out var movingSlot);
+                return moving is not null
+                    && AdjacentEmptySlots(battlefield, movingRow, movingSlot)
+                        .Contains(choice, StringComparer.OrdinalIgnoreCase);
+            }
             var effectEntryBattlefield = activation?.DeclaredTargets
                 .Select(ParseEffectEntryBattlefieldChoice)
                 .FirstOrDefault(index => index is not null);
@@ -1516,8 +1538,11 @@ public sealed partial class L12GameEngine
 
         if (isOpponentTurn)
         {
-            if (row == 0 && card.CardId is "S01-0107" or "S01-0212" or "S01-0312" or "S02-0004" or "S02-0007" or "S02-0615")
-                Add($"self:{card.InstanceId}:opponent-turn-front", 1000);
+            var opponentTurnFrontBonus = row == 0
+                ? L12StructuredCardRules.OpponentTurnFrontTroopsBonus(card.CardId)
+                : 0;
+            if (opponentTurnFrontBonus != 0)
+                Add($"self:{card.InstanceId}:opponent-turn-front", opponentTurnFrontBonus);
             if (card.CardId == "S02-0519") Add($"self:{card.InstanceId}:opponent-turn", 2000);
             if (card.CardId == "S01-0203"
                 && !owner.Field.SelectMany(fieldRow => fieldRow).Any(fieldCard => fieldCard?.CardId == "S01-0212"))

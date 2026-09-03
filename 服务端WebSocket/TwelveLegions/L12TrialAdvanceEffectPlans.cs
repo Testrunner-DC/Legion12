@@ -105,7 +105,7 @@ public sealed partial class L12GameEngine
                     error = $"{candidate.SourceName}的来源或符文费用已失效；未支付费用且效果未入栈";
                 else
                 {
-                    player.SpecialZones.Runes--;
+                    L12S2ZoneOps.SpendRunes(player, 1);
                     AddEvent("cost", candidate.Controller, $"〈{candidate.SourceName}〉入栈前消耗1符文", source);
                 }
                 break;

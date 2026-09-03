@@ -306,6 +306,7 @@ public sealed partial class L12GameEngine
                     if (player.Morale.FirstOrDefault(card => card.InstanceId == id) is { Tapped: true } target)
                         target.Tapped = false;
                 AddEvent("effect", item.Controller, $"银臂努阿达将{values.Length}张士气转为活跃", source is null ? [] : [source]);
+                _ = AdvanceTrial(item.Controller, 2, source);
                 break;
             case "skyCityDiscount":
                 player.NextOtherworldLegionEntryDiscount++;
@@ -761,7 +762,7 @@ public sealed partial class L12GameEngine
                 }
             }
 
-            if (runeEvents <= 0 || State.ActivePlayer != player.PlayerIndex
+            if (runeEvents <= 0
                 || L12StructuredCardRules.StarterRemainingPlan(player.MasterId, "rune-spent")
                     != "nuada-rune-buff") continue;
             var nuada = CreateCard(player.MasterId, $"master-{player.PlayerIndex}");
