@@ -36,6 +36,7 @@ if (bootstrapIndex >= 0)
 
 await using var recorder = new MatchRecorder(Path.Combine(runtimePath, "matches.db"));
 await recorder.InitializeAsync();
+platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
 
 var rooms = new L12RoomManager(catalog, recorder, platform);
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);

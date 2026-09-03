@@ -140,4 +140,31 @@ public sealed class RankedPlatformTests
         store.SelectRankedFaction(amaterasu.Id, "fate");
         Assert.DoesNotContain(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
     }
+
+    [Fact]
+    public void ExistingSeasonRankedMatchesBackfillMasterTitlesExactlyOnce()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-master-import", Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var amaterasu = store.Register("import-amaterasu", "Password123!").Account!;
+        var rival = store.Register("import-rival", "Password123!").Account!;
+        store.SelectRankedFaction(amaterasu.Id, "order");
+        store.SelectRankedFaction(rival.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"import-placement-{index}", amaterasu.Id, rival.Id, 0);
+        var now = DateTimeOffset.UtcNow;
+        var history = Enumerable.Range(0, 5).Select(index => new L12RankingMatch(
+            $"historic-master-{index}", amaterasu.Username, rival.Username,
+            now.AddMinutes(index).ToString("O"), now.AddMinutes(index + 1).ToString("O"), 0,
+            "天照大神", "西芙", 0)).ToArray();
+
+        Assert.Equal(5, store.ImportRankedMasterHistory(history));
+        Assert.Equal(0, store.ImportRankedMasterHistory(history));
+        var champion = Assert.Single(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
+        Assert.Equal(5, champion.Games);
+        Assert.Equal(5, champion.Wins);
+        Assert.Equal("最强天照", champion.Title);
+    }
 }

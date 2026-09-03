@@ -155,9 +155,9 @@ public sealed partial class L12PlatformStore
             _data.RankedSettlements ??= [];
             _data.RankedBroadcasts ??= [];
             _data.RankedMasterRecords ??= [];
+            _data.RankedMasterRecordedMatchIds ??= [];
             _data.RankedConfig.MasterTitles ??= [];
-            foreach (var masterId in _officialDecks.Select(deck => deck.MasterId)
-                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (var masterId in SelectableMasterIds())
             {
                 if (_data.RankedConfig.MasterTitles.Any(item => item.MasterId.Equals(masterId,
                         StringComparison.OrdinalIgnoreCase))) continue;
@@ -307,6 +307,43 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public int ImportRankedMasterHistory(IReadOnlyList<L12RankingMatch> matches)
+    {
+        lock (_gate)
+        {
+            var season = RequireOperationsConfig().Season;
+            var imported = 0;
+            foreach (var match in matches.OrderBy(item => item.StartedUtc, StringComparer.Ordinal))
+            {
+                if (match.Winner is not (0 or 1)
+                    || _data.RankedMasterRecordedMatchIds.Contains(match.MatchId, StringComparer.OrdinalIgnoreCase)
+                    || !DateTimeOffset.TryParse(match.StartedUtc, out var started)
+                    || (season.StartsAt is not null && started < season.StartsAt)
+                    || (season.EndsAt is not null && started > season.EndsAt)) continue;
+                var first = RankedProfileByUsername(match.Player0, season.Id);
+                var second = RankedProfileByUsername(match.Player1, season.Id);
+                var firstMasterId = MasterIdByName(match.Master0);
+                var secondMasterId = MasterIdByName(match.Master1);
+                var recorded = false;
+                if (first is not null && firstMasterId is not null)
+                {
+                    UpdateMasterRecord(first, firstMasterId, match.Winner == 0);
+                    recorded = true;
+                }
+                if (second is not null && secondMasterId is not null)
+                {
+                    UpdateMasterRecord(second, secondMasterId, match.Winner == 1);
+                    recorded = true;
+                }
+                if (!recorded) continue;
+                _data.RankedMasterRecordedMatchIds.Add(match.MatchId);
+                imported++;
+            }
+            if (imported > 0) Save();
+            return imported;
+        }
+    }
+
     public L12RankedSettlementView? RankedSettlement(string matchId, string accountId)
     {
         lock (_gate)
@@ -369,6 +406,8 @@ public sealed partial class L12PlatformStore
             second.HiddenRating = Math.Clamp(secondRating + 24d * ((winner == 1 ? 1d : 0d) - (1d - expectedFirst)), 500d, 2500d);
             UpdateMasterRecord(first, firstMasterId, winner == 0);
             UpdateMasterRecord(second, secondMasterId, winner == 1);
+            if (!_data.RankedMasterRecordedMatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase))
+                _data.RankedMasterRecordedMatchIds.Add(matchId);
             _data.RankedSettlements.Add(firstSettlement);
             _data.RankedSettlements.Add(secondSettlement);
             var broadcasts = BuildBroadcasts(matchId, first, second, winner, beforeTitles,
@@ -582,6 +621,26 @@ public sealed partial class L12PlatformStore
         row.Games++;
         if (won) row.Wins++;
     }
+
+    private RankedProfileRow? RankedProfileByUsername(string username, string seasonId)
+    {
+        var account = _data.Accounts.FirstOrDefault(item => !item.Disabled && !item.Deleted
+            && item.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+        return account is null ? null : _data.RankedProfiles.FirstOrDefault(item => item.AccountId == account.Id
+            && item.SeasonId == seasonId);
+    }
+
+    private string? MasterIdByName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return SelectableMasterIds()
+            .FirstOrDefault(id => _officialCards.TryGetValue(id, out var card)
+                && card.NameZh.Equals(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<string> SelectableMasterIds()
+        => _officialCards.Values.Where(card => card.CardType == "master" && card.Id != "S01-02M2")
+            .OrderBy(card => card.Id, StringComparer.OrdinalIgnoreCase).Select(card => card.Id);
 
     private Dictionary<string, RankedMasterRecordRow> CurrentMasterChampions()
     {

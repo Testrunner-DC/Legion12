@@ -143,7 +143,7 @@ public sealed class MatchRecorder : IAsyncDisposable
         await connection.OpenAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,e.state_json
+            SELECT m.match_id,m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,e.state_json
             FROM matches m
             LEFT JOIN match_events e ON e.id=(
                 SELECT latest.id FROM match_events latest
@@ -160,9 +160,9 @@ public sealed class MatchRecorder : IAsyncDisposable
             var master0 = string.Empty;
             var master1 = string.Empty;
             var firstPlayer = 0;
-            if (!reader.IsDBNull(5))
+            if (!reader.IsDBNull(6))
             {
-                using var state = JsonDocument.Parse(reader.GetString(5));
+                using var state = JsonDocument.Parse(reader.GetString(6));
                 var root = state.RootElement;
                 firstPlayer = ReadInt(root, "FirstPlayer", "firstPlayer");
                 if (TryProperty(root, "Players", "players", out var players) && players.ValueKind == JsonValueKind.Array)
@@ -172,7 +172,8 @@ public sealed class MatchRecorder : IAsyncDisposable
                 }
             }
             matches.Add(new L12RankingMatch(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetInt32(4), master0, master1, firstPlayer));
+                reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                master0, master1, firstPlayer));
         }
         return matches;
     }
@@ -491,5 +492,5 @@ public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12Reco
     int? ViewerPlayerIndex = null);
 
 public sealed record L12RankingMatch(
-    string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,
+    string MatchId, string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,
     string Master0, string Master1, int FirstPlayer);
