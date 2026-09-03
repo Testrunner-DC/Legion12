@@ -5,6 +5,8 @@ namespace TwelveLegions.Tests;
 
 public sealed class RankedPlatformTests
 {
+    private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+
     [Fact]
     public void PlacementSettlementIsIdempotentAndLeaderboardIsFactionScoped()
     {
@@ -84,5 +86,58 @@ public sealed class RankedPlatformTests
 
         Assert.Contains(result.First.Components, component => component.Kind == "streak-termination");
         Assert.Contains(result.Broadcasts, item => item.EventType == "streak-ended");
+    }
+
+    [Fact]
+    public void FactionPlacementTitlesRequireTheHighestTier()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-title-tier", Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var leader = store.Register("ranked-tier-leader", "Password123!").Account!;
+        var rival = store.Register("ranked-tier-rival", "Password123!").Account!;
+        store.SelectRankedFaction(leader.Id, "order");
+        store.SelectRankedFaction(rival.Id, "order");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"title-placement-{index}", leader.Id, rival.Id, 0);
+
+        var placedLeader = store.RankedProfile(leader.Id);
+        Assert.Equal(1, placedLeader.FactionRank);
+        Assert.True(placedLeader.TierIndex < 4);
+        Assert.Null(placedLeader.Title);
+
+        for (var index = 0; index < 150 && store.RankedProfile(leader.Id).TierIndex < 4; index++)
+            store.SettleRankedMatch($"title-climb-{index}", leader.Id, rival.Id, 0);
+
+        var highestTierLeader = store.RankedProfile(leader.Id);
+        Assert.Equal(4, highestTierLeader.TierIndex);
+        Assert.Equal("秩序冠首", highestTierLeader.Title);
+        Assert.Contains("秩序冠首", highestTierLeader.Titles);
+        Assert.Null(store.RankedProfile(rival.Id).Title);
+    }
+
+    [Fact]
+    public void RankedMasterChampionUsesAuthoritativeSeasonUsageAndDedicatedTitle()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-master", Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var amaterasu = store.Register("ranked-amaterasu", "Password123!").Account!;
+        var rival = store.Register("ranked-master-rival", "Password123!").Account!;
+        store.SelectRankedFaction(amaterasu.Id, "order");
+        store.SelectRankedFaction(rival.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"master-placement-{index}", amaterasu.Id, rival.Id, 0,
+                "S01-04M1", "S02-03M1");
+
+        var champion = Assert.Single(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
+        Assert.Equal("天照大神", champion.MasterName);
+        Assert.Equal("最强天照", champion.Title);
+        Assert.Equal(amaterasu.Username, champion.Username);
+        Assert.Equal(5, champion.Games);
+        Assert.Contains("最强天照", store.RankedProfile(amaterasu.Id).Titles);
+
+        store.SelectRankedFaction(amaterasu.Id, "fate");
+        Assert.DoesNotContain(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
     }
 }

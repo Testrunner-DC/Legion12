@@ -124,6 +124,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         });
         _app.MapGet("/api/rankings", async (string? faction, int? limit) =>
             Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
+                masterChampions = _platform.RankedMasterChampions(),
                 matches = await _recorder.ListRankingMatchesAsync(500) }));
         _app.MapGet("/api/ranked/me", (HttpRequest request) =>
         {

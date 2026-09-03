@@ -1201,7 +1201,8 @@ public sealed class L12RoomManager
                 var members = room.Sessions.Select(id => _sessions[id]).ToArray();
                 if (members.All(member => !string.IsNullOrWhiteSpace(member.AccountId)))
                     _platform.SettleRankedMatch(room.Game.State.MatchId, members[0].AccountId!,
-                        members[1].AccountId!, rankedWinner);
+                        members[1].AccountId!, rankedWinner, SelectedDeck(members[0]).MasterId,
+                        SelectedDeck(members[1]).MasterId);
             }
         }
         if (room.TournamentId is null || room.TournamentMatchId is null || room.TournamentResultReported)

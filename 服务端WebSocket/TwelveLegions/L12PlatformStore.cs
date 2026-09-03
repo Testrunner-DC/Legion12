@@ -226,6 +226,7 @@ public sealed partial class L12PlatformStore
         public List<RankedProfileHistoryRow> RankedProfileHistory { get; set; } = [];
         public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
         public List<RankedBroadcastRow> RankedBroadcasts { get; set; } = [];
+        public List<RankedMasterRecordRow> RankedMasterRecords { get; set; } = [];
     }
 
     private static readonly string[] ForbiddenNames =
