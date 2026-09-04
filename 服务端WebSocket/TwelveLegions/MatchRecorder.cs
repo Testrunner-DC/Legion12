@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace TwelveLegions.Server;
 
-public sealed class MatchRecorder : IAsyncDisposable
+public sealed partial class MatchRecorder : IAsyncDisposable
 {
     private readonly string _connectionString;
 
@@ -38,6 +38,14 @@ public sealed class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "mode_id", "TEXT NOT NULL DEFAULT 'legacy'");
         await EnsureColumnAsync(connection, "matches", "account_0", "TEXT");
         await EnsureColumnAsync(connection, "matches", "account_1", "TEXT");
+        await EnsureColumnAsync(connection, "matches", "rules_version", "TEXT NOT NULL DEFAULT 'legacy'");
+        await EnsureColumnAsync(connection, "matches", "rules_policy_version", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "matches", "season_id", "TEXT");
+        await EnsureColumnAsync(connection, "matches", "initial_state_json", "TEXT");
+        await EnsureColumnAsync(connection, "matches", "first_player", "INTEGER");
+        await EnsureColumnAsync(connection, "matches", "fact_schema_version", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(connection, "matches", "last_fact_signal_sequence", "INTEGER NOT NULL DEFAULT 0");
+        await InitializeAnalyticsSchemaAsync(connection);
         var closeSandboxResidue = connection.CreateCommand();
         closeSandboxResidue.CommandText = """
             UPDATE matches SET ended_utc=$utc,
@@ -48,15 +56,38 @@ public sealed class MatchRecorder : IAsyncDisposable
         await closeSandboxResidue.ExecuteNonQueryAsync();
     }
 
-    public async Task StartAsync(L12GameState state, string modeId = "friendly",
-        string? account0 = null, string? account1 = null)
+    public Task StartAsync(L12GameState state, string modeId = "friendly",
+        string? account0 = null, string? account1 = null,
+        IReadOnlyList<L12PresetDeckDefinition>? decks = null)
+        => StartCoreAsync(state, modeId, account0, account1, decks, []);
+
+    public Task StartAsync(L12GameEngine engine, string modeId = "friendly",
+        string? account0 = null, string? account1 = null,
+        IReadOnlyList<L12PresetDeckDefinition>? decks = null)
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals);
+
+    private async Task StartCoreAsync(L12GameState state, string modeId,
+        string? account0, string? account1,
+        IReadOnlyList<L12PresetDeckDefinition>? decks,
+        IReadOnlyList<L12CardFactSignal> initialSignals)
     {
+        if (decks is not null && decks.Count != 2)
+            throw new ArgumentException("正式对局构筑快照必须恰好包含两名玩家", nameof(decks));
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+        var startedUtc = DateTimeOffset.UtcNow.ToString("O");
+        var normalizedMode = string.IsNullOrWhiteSpace(modeId)
+            ? "friendly" : modeId.Trim().ToLowerInvariant();
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO matches(match_id, room_code, seed, player_0, player_1, deck_0, deck_1, started_utc, mode_id, account_0, account_1)
-            VALUES($id,$room,$seed,$p0,$p1,$d0,$d1,$utc,$mode,$a0,$a1);
+            INSERT INTO matches(
+                match_id,room_code,seed,player_0,player_1,deck_0,deck_1,started_utc,mode_id,
+                account_0,account_1,rules_version,rules_policy_version,season_id,initial_state_json,
+                first_player,fact_schema_version,last_fact_signal_sequence)
+            VALUES($id,$room,$seed,$p0,$p1,$d0,$d1,$utc,$mode,$a0,$a1,$rules,$policy,$season,
+                   $initial,$first,$factSchema,$lastSignal);
             """;
         command.Parameters.AddWithValue("$id", state.MatchId);
         command.Parameters.AddWithValue("$room", state.RoomCode);
@@ -65,34 +96,29 @@ public sealed class MatchRecorder : IAsyncDisposable
         command.Parameters.AddWithValue("$p1", state.Players[1].Name);
         command.Parameters.AddWithValue("$d0", state.Players[0].DeckName);
         command.Parameters.AddWithValue("$d1", state.Players[1].DeckName);
-        command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$mode", string.IsNullOrWhiteSpace(modeId)
-            ? "friendly" : modeId.Trim().ToLowerInvariant());
+        command.Parameters.AddWithValue("$utc", startedUtc);
+        command.Parameters.AddWithValue("$mode", normalizedMode);
         command.Parameters.AddWithValue("$a0", (object?)account0 ?? DBNull.Value);
         command.Parameters.AddWithValue("$a1", (object?)account1 ?? DBNull.Value);
+        command.Parameters.AddWithValue("$rules", string.IsNullOrWhiteSpace(state.OperationsPolicy.VersionId)
+            ? $"policy:{state.OperationsPolicy.Version}" : state.OperationsPolicy.VersionId);
+        command.Parameters.AddWithValue("$policy", state.OperationsPolicy.Version);
+        command.Parameters.AddWithValue("$season", (object?)state.OperationsPolicy.Season.Id ?? DBNull.Value);
+        command.Parameters.AddWithValue("$initial", JsonSerializer.Serialize(state));
+        command.Parameters.AddWithValue("$first", state.Phase == L12Phase.Initiative
+            ? DBNull.Value : state.FirstPlayer);
+        command.Parameters.AddWithValue("$factSchema", L12CardFactKinds.SchemaVersion);
+        command.Parameters.AddWithValue("$lastSignal", initialSignals.Count == 0
+            ? 0 : initialSignals.Max(signal => signal.Sequence));
         await command.ExecuteNonQueryAsync();
+        await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
+            startedUtc, initialSignals);
+        await transaction.CommitAsync();
     }
 
     public async Task AppendAsync(L12GameEngine engine, long sequence, int playerIndex, string commandJson, CommandResult result)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO match_events(match_id, sequence, received_utc, player_index, command_json, accepted, error, revision, state_hash, state_json)
-            VALUES($id,$seq,$utc,$player,$json,$accepted,$error,$revision,$hash,$state);
-            """;
-        command.Parameters.AddWithValue("$id", engine.State.MatchId);
-        command.Parameters.AddWithValue("$seq", sequence);
-        command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$player", playerIndex);
-        command.Parameters.AddWithValue("$json", commandJson);
-        command.Parameters.AddWithValue("$accepted", result.Accepted ? 1 : 0);
-        command.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
-        command.Parameters.AddWithValue("$revision", engine.State.Revision);
-        command.Parameters.AddWithValue("$hash", engine.ComputeStateHash());
-        command.Parameters.AddWithValue("$state", engine.SerializeFullState());
-        await command.ExecuteNonQueryAsync();
+        await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result);
     }
 
     public Task AppendAuthorityAsync(L12GameEngine engine, long sequence, string reason)
@@ -108,12 +134,13 @@ public sealed class MatchRecorder : IAsyncDisposable
         var finalHash = engine.ComputeStateHash();
         var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash
+            UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash,first_player=$first
             WHERE match_id=$id AND ended_utc IS NULL;
             """;
         command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$winner", (object?)engine.State.Winner ?? DBNull.Value);
         command.Parameters.AddWithValue("$hash", finalHash);
+        command.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
         command.Parameters.AddWithValue("$id", engine.State.MatchId);
         if (await command.ExecuteNonQueryAsync() == 1) return true;
 
@@ -281,61 +308,11 @@ public sealed class MatchRecorder : IAsyncDisposable
         return new L12MatchDetail(detail.Match, commands, viewer);
     }
 
-    public async Task<int> AnonymizePlayerAsync(string playerName, string anonymousName)
-    {
-        if (string.IsNullOrWhiteSpace(playerName)) return 0;
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-        var matches = new List<string>();
-        var selectMatches = connection.CreateCommand();
-        selectMatches.Transaction = (SqliteTransaction)transaction;
-        selectMatches.CommandText = "SELECT match_id,player_0,player_1 FROM matches WHERE player_0=$player OR player_1=$player;";
-        selectMatches.Parameters.AddWithValue("$player", playerName);
-        await using (var reader = await selectMatches.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-                matches.Add(reader.GetString(0));
-        }
+    public Task<int> AnonymizePlayerAsync(string playerName, string anonymousName)
+        => AnonymizeIdentityAsync(null, playerName, anonymousName);
 
-        foreach (var match in matches)
-        {
-            var updateMatch = connection.CreateCommand();
-            updateMatch.Transaction = (SqliteTransaction)transaction;
-            updateMatch.CommandText = """
-                UPDATE matches SET
-                    player_0=CASE WHEN player_0=$player THEN $anonymous ELSE player_0 END,
-                    player_1=CASE WHEN player_1=$player THEN $anonymous ELSE player_1 END,
-                    deck_0=CASE WHEN player_0=$player THEN '已清理牌库' ELSE deck_0 END,
-                    deck_1=CASE WHEN player_1=$player THEN '已清理牌库' ELSE deck_1 END
-                WHERE match_id=$id;
-                """;
-            updateMatch.Parameters.AddWithValue("$player", playerName);
-            updateMatch.Parameters.AddWithValue("$anonymous", anonymousName);
-            updateMatch.Parameters.AddWithValue("$id", match);
-            await updateMatch.ExecuteNonQueryAsync();
-
-            var events = new List<(long Id, string Command, string State)>();
-            var selectEvents = connection.CreateCommand();
-            selectEvents.Transaction = (SqliteTransaction)transaction;
-            selectEvents.CommandText = "SELECT id,command_json,state_json FROM match_events WHERE match_id=$id;";
-            selectEvents.Parameters.AddWithValue("$id", match);
-            await using (var reader = await selectEvents.ExecuteReaderAsync())
-                while (await reader.ReadAsync()) events.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
-            foreach (var recorded in events)
-            {
-                var updateEvent = connection.CreateCommand();
-                updateEvent.Transaction = (SqliteTransaction)transaction;
-                updateEvent.CommandText = "UPDATE match_events SET command_json=$command,state_json=$state WHERE id=$id;";
-                updateEvent.Parameters.AddWithValue("$command", ScrubJsonString(recorded.Command, playerName, anonymousName));
-                updateEvent.Parameters.AddWithValue("$state", ScrubJsonString(recorded.State, playerName, anonymousName));
-                updateEvent.Parameters.AddWithValue("$id", recorded.Id);
-                await updateEvent.ExecuteNonQueryAsync();
-            }
-        }
-        await transaction.CommitAsync();
-        return matches.Count;
-    }
+    public Task<int> AnonymizeAccountAsync(string accountId, string playerName, string anonymousName)
+        => AnonymizeIdentityAsync(accountId, playerName, anonymousName);
 
     private static string ScrubJsonString(string json, string value, string replacement)
     {

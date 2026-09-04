@@ -261,7 +261,8 @@ public sealed partial class L12RoomManager
         try
         {
             if (!_rooms.TryAdd(room.Code, room)) throw new InvalidOperationException("匹配房间码冲突");
-            await _recorder.StartAsync(room.Game.State, normalizedMode, other.AccountId, session.AccountId);
+            await _recorder.StartAsync(room.Game, normalizedMode, other.AccountId, session.AccountId,
+                [opponent.Deck, entry.Deck]);
         }
         catch
         {
@@ -875,7 +876,8 @@ public sealed partial class L12RoomManager
             members.Select(SelectedDeck).ToArray(), disasterMode: room.Options.DisasterMode,
             operationsPolicy: room.OperationsPolicy);
         // 只有对局记录成功落库后才发布可操作引擎；失败时下一次进入/恢复可安全重试。
-        await _recorder.StartAsync(game.State, "tournament", members[0].AccountId, members[1].AccountId);
+        await _recorder.StartAsync(game, "tournament", members[0].AccountId, members[1].AccountId,
+            members.Select(SelectedDeck).ToArray());
         room.Game = game;
     }
 
@@ -942,14 +944,15 @@ public sealed partial class L12RoomManager
             if (room.Sessions.Count == 2 && room.Ready.All(value => value))
             {
                 var playerNames = room.Sessions.Select(id => _sessions[id].Name).ToArray();
+                var selectedDecks = room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray();
                 room.Game = new L12GameEngine(
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
-                    playerNames, room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray(),
+                    playerNames, selectedDecks,
                     disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
                 InitializeRankedClock(room);
                 var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
-                await _recorder.StartAsync(room.Game.State, room.Options.MatchModeId,
-                    startedMembers[0].AccountId, startedMembers[1].AccountId);
+                await _recorder.StartAsync(room.Game, room.Options.MatchModeId,
+                    startedMembers[0].AccountId, startedMembers[1].AccountId, selectedDecks);
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room);
         }

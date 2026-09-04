@@ -1477,6 +1477,7 @@ public sealed partial class L12GameEngine
 
     private void FinishStackItem(L12StackItem item)
     {
+        TrackStackCompletion(item);
         QueueNextTrialCompletionSegment(item);
         if (!item.Negated && item.Data.GetValueOrDefault("wisdomRewards") is { Length: > 0 } rewards)
         {

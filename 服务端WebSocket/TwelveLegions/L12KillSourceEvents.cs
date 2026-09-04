@@ -84,6 +84,13 @@ public sealed partial class L12GameEngine
                 ? $"〈{source.Name}〉以最原始战斗伤害完成击杀"
                 : $"〈{source.Name}〉的效果造成{killEvent.TargetInstanceIds.Count}张军团阵亡（FAQ53：不触发印刷【击杀时】）",
             source);
+        TrackCardFact("kill", killEvent.SourceController, source, amount: killEvent.TargetInstanceIds.Count,
+            data: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["sourceKind"] = killEvent.Kind.ToString(),
+                ["targetInstanceIds"] = string.Join('|', killEvent.TargetInstanceIds),
+                ["triggersPrintedKillTiming"] = killEvent.TriggersPrintedKillTiming ? "true" : "false",
+            });
 
         var candidates = new List<L12TriggerCandidate>();
         var printedKillTimingIsLegal = killEvent.TriggersPrintedKillTiming

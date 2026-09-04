@@ -82,6 +82,55 @@ export interface AdminAudit {
   id: string; actorId: string; actorName: string; category: string; action: string; target: string; fromValue?: string; toValue?: string; comment?: string; createdAt: string
   correlationId?: string; outcome?: string; permission?: string; reason?: string; commandId?: string; idempotencyKey?: string; dryRun?: boolean; expectedVersion?: number
 }
+export interface AdminMatchPlayerSummary {
+  accountId?: string | null; displayName: string; masterId?: string; deckName: string
+  result: 'win' | 'loss' | 'draw' | 'invalid' | 'pending' | string
+}
+export interface AdminMatchSummary {
+  matchId: string; modeId: string; status: 'completed' | 'ongoing' | 'invalid' | string
+  players: AdminMatchPlayerSummary[]; startedUtc: string; endedUtc?: string | null
+  durationSeconds?: number | null; commandCount: number; error?: string | null
+}
+export interface AdminMatchPage {
+  items: AdminMatchSummary[]; total: number; nextCursor?: string | null
+}
+export interface AdminMatchDeckCard { cardId: string; quantity: number; section: 'master' | 'main' | 'morale' | 'special' | string }
+export interface AdminMatchParticipant extends AdminMatchPlayerSummary {
+  playerIndex: number; masterName?: string; deckCards: AdminMatchDeckCard[]; deckSnapshotCoverage?: string
+}
+export interface AdminMatchCardFact {
+  kind: string; commandSequence: number; revision: number; occurredUtc: string
+  playerIndex?: number | null; accountId?: string | null; cardId?: string | null; cardInstanceId?: string | null
+  relatedCardId?: string | null; relatedInstanceId?: string | null; sourceZone?: string | null; destinationZone?: string | null
+  round?: number | null; phase?: string | null; amount?: number | null; coverage: string; metadata?: Record<string, unknown>
+}
+export interface AdminAnalyticsCoverage {
+  schemaVersion: number; supportedKinds: string[]; exactFacts: number; inferredFacts: number; partialFacts: number
+  exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean; limitations: string[]
+}
+export interface AdminMatchDetail {
+  summary: AdminMatchSummary; participants: AdminMatchParticipant[]
+  replay?: Record<string, unknown> | null; cardFacts: AdminMatchCardFact[]
+  coverage: AdminAnalyticsCoverage
+}
+export interface AdminCardAnalyticsItem {
+  cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; inclusionRate: number; wins: number; winRate: number
+  baselineWinRate?: number | null; winRateDelta?: number | null; drawnMatches: number; playedMatches: number
+  activatedCount: number; resolvedCount: number; negatedCount: number; fizzledCount: number
+  coverage: AdminAnalyticsCoverage
+}
+export interface AdminCardAnalyticsPage {
+  items: AdminCardAnalyticsItem[]; total: number; nextCursor?: string | null
+  summary?: { eligibleMatches?: number; sampleSize?: number; baselineWinRate?: number; minimumSampleSize?: number; coverage?: AdminMatchDetail['coverage'] }
+}
+export interface AdminCardAnalyticsBreakdown {
+  dimension: string; value: string; sampleSize: number; eligibleSampleSize: number; includedMatches?: number; wins: number; winRate: number
+  baselineWinRate?: number | null; winRateDelta?: number | null
+}
+export interface AdminCardAnalyticsDetail {
+  summary: AdminCardAnalyticsItem; breakdowns: AdminCardAnalyticsBreakdown[]
+  recentMatches: AdminMatchSummary[]; coverage: AdminAnalyticsCoverage
+}
 export interface AdminCommand {
   id: string; idempotencyKey?: string; type: string; actorId: string; actorName: string; requestedAt: string
   scope: string; reason?: string; dryRun: boolean; expectedVersion?: number; risk: string; status: string
@@ -529,6 +578,35 @@ export const adminApi = {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '' && value !== false) params.set(key, String(value)) })
     return platformRequest<RankedIntegrityAudit[]>(`/api/admin/ranked/integrity-audits${params.size ? `?${params}` : ''}`)
+  },
+  matches: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string; player?: string; masterId?: string } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
+    ;['mode', 'from', 'to'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminMatchPage>(`/api/admin/matches${params.size ? `?${params}` : ''}`)
+  },
+  match: (matchId: string) => platformRequest<AdminMatchDetail>(`/api/admin/matches/${encodeURIComponent(matchId)}`),
+  playerMatches: (accountId: string, query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
+    ;['mode', 'from', 'to'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
+  },
+  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; search?: string; minimumSample?: number } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to, minimumSampleSize: query.minimumSample }
+    ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminCardAnalyticsPage>(`/api/admin/analytics/cards${params.size ? `?${params}` : ''}`)
+  },
+  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
+    ;['mode', 'from', 'to'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
   },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),

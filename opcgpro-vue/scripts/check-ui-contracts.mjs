@@ -45,6 +45,8 @@ const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
+const adminMatches = read('../src/l12/site/AdminMatchesPanel.vue')
+const adminCardAnalytics = read('../src/l12/site/AdminCardAnalyticsPanel.vue')
 const friendsPage = read('../src/l12/site/FriendsPage.vue')
 const officialHome = read('../src/l12/site/OfficialHomePage.vue')
 const newsPage = read('../src/l12/site/NewsPage.vue')
@@ -358,6 +360,15 @@ const contracts = [
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
   [platform.includes("getPublicContentBatch") && officialHome.includes('v-if="ready"') && officialHome.includes('getPublicContentBatch') && platform.includes('platformRequest<Article[]>(`/api/articles') && adminPage.includes('AdminArticlesPanel') && adminPage.includes("tab === 'articles'") && newsPage.includes('articleApi.list') && !adminPage.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
   [adminPage.includes('✎ 资讯发布') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('正式发布') && adminArticles.includes('历史版本') && adminArticles.includes('封面图片地址') && adminArticles.includes('文章链接'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
+  [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
+    && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
+    && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],
+  [adminMatches.includes("view === 'recent'") && adminMatches.includes("view === 'player'")
+    && adminMatches.includes('participant.deckCards') && adminMatches.includes('结构化对局时间线')
+    && adminMatches.includes('进行中对局不展示私有构筑') && adminMatches.includes('沙盒不进入档案与分析'), '对局档案必须支持最近/按玩家查询、不可变构筑和权威时间线，并对进行中隐藏信息及沙盒数据失败关闭'],
+  [adminCardAnalytics.includes('使用漏斗') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
+    && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
+    && adminCardAnalytics.includes('同条件基线') && adminCardAnalytics.includes('不把相关性描述成因果'), '单卡分析必须展示收录至结算漏斗、同条件基线、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
   [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
   [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('friendApi.blocked()') && friendsPage.includes('selectedPresence?.canInvite') && friendsPage.includes('selectedPresence?.canSpectate'), '好友中心须支持申请、屏蔽，并按在线状态在邀请对战与观战之间切换'],
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],

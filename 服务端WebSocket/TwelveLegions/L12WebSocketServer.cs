@@ -123,14 +123,92 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized()
-                : Results.Ok(await _recorder.ListMatchesForPlayerAsync(account.Username, limit ?? 50));
+                : Results.Ok(await _recorder.ListMatchesForAccountAsync(account.Id, account.Username, limit ?? 50));
         });
         _app.MapGet("/api/matches/{matchId}", async (HttpRequest request, string matchId) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var match = await _recorder.GetMatchForPlayerAsync(matchId, account.Username);
+            var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
             return match is null ? Results.NotFound() : Results.Ok(match);
+        });
+        _app.MapGet("/api/admin/matches", async (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminMatchesRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var page = await _recorder.ListAdminMatchesAsync(AdminMatchQuery(request));
+                _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-list", "matches",
+                    AuditContext(request, permission));
+                return Results.Ok(page);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_match_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/admin/matches/{matchId}", async (HttpRequest request, string matchId) =>
+        {
+            const L12Permission permission = L12Permission.AdminMatchesRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var match = await _recorder.GetAdminMatchAsync(matchId);
+            _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-detail", matchId,
+                AuditContext(request, permission));
+            return match is null ? Results.NotFound() : Results.Ok(match);
+        });
+        _app.MapGet("/api/admin/players/{accountId}/matches", async (HttpRequest request, string accountId) =>
+        {
+            const L12Permission permission = L12Permission.AdminMatchesRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var page = await _recorder.ListAdminMatchesForAccountAsync(accountId, AdminMatchQuery(request));
+                _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-player-matches",
+                    accountId, AuditContext(request, permission));
+                return Results.Ok(page);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_match_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/admin/analytics/cards", async (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var page = await _recorder.ListCardAnalyticsAsync(CardAnalyticsQuery(request));
+                _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-list",
+                    "cards", AuditContext(request, permission));
+                return Results.Ok(page);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/admin/analytics/cards/{cardId}", async (HttpRequest request, string cardId) =>
+        {
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var detail = await _recorder.GetCardAnalyticsAsync(cardId, CardAnalyticsQuery(request));
+                _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-detail",
+                    cardId, AuditContext(request, permission));
+                return detail is null ? Results.NotFound() : Results.Ok(detail);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
+            }
         });
         _app.MapGet("/api/rankings", async (string? faction, int? limit, string? range) =>
         {
@@ -1765,6 +1843,75 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 ? path as string
                 : request.Path.Value);
 
+    private static L12AdminMatchQuery AdminMatchQuery(HttpRequest request)
+        => new(
+            Cursor: QueryValue(request, "cursor"),
+            Limit: QueryInt(request, 50, "limit"),
+            ModeId: QueryValue(request, "modeId", "mode"),
+            Status: QueryValue(request, "status"),
+            Player: QueryValue(request, "player"),
+            MasterId: QueryValue(request, "masterId"),
+            Winner: QueryNullableInt(request, "winner", "result"),
+            FromUtc: QueryDate(request, "fromUtc", "from"),
+            ToUtc: QueryDate(request, "toUtc", "to"));
+
+    private L12CardAnalyticsQuery CardAnalyticsQuery(HttpRequest request)
+    {
+        var search = QueryValue(request, "search");
+        var candidates = search is null ? null : _catalog.Cards.Values
+            .Where(card => card.Id.Contains(search, StringComparison.OrdinalIgnoreCase)
+                           || card.Number.Contains(search, StringComparison.OrdinalIgnoreCase)
+                           || card.NameZh.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .Select(card => card.Id)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new L12CardAnalyticsQuery(
+            Cursor: QueryValue(request, "cursor"),
+            Limit: QueryInt(request, 50, "limit"),
+            MinimumSampleSize: QueryInt(request, 5, "minimumSampleSize", "minimumSample"),
+            Search: search,
+            CandidateCardIds: candidates,
+            ModeId: QueryValue(request, "modeId", "mode"),
+            MasterId: QueryValue(request, "masterId"),
+            FromUtc: QueryDate(request, "fromUtc", "from"),
+            ToUtc: QueryDate(request, "toUtc", "to"));
+    }
+
+    private static string? QueryValue(HttpRequest request, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var value = request.Query[name].FirstOrDefault()?.Trim();
+            if (!string.IsNullOrWhiteSpace(value)) return value;
+        }
+        return null;
+    }
+
+    private static int QueryInt(HttpRequest request, int fallback, params string[] names)
+    {
+        var value = QueryValue(request, names);
+        if (value is null) return fallback;
+        if (!int.TryParse(value, out var parsed)) throw new ArgumentException($"查询参数 {names[0]} 必须是整数");
+        return parsed;
+    }
+
+    private static int? QueryNullableInt(HttpRequest request, params string[] names)
+    {
+        var value = QueryValue(request, names);
+        if (value is null) return null;
+        if (!int.TryParse(value, out var parsed)) throw new ArgumentException($"查询参数 {names[0]} 必须是整数");
+        return parsed;
+    }
+
+    private static DateTimeOffset? QueryDate(HttpRequest request, params string[] names)
+    {
+        var value = QueryValue(request, names);
+        if (value is null) return null;
+        if (!DateTimeOffset.TryParse(value, out var parsed))
+            throw new ArgumentException($"查询参数 {names[0]} 必须是 ISO-8601 时间");
+        return parsed;
+    }
+
     private static string CorrelationId(HttpRequest request)
         => request.HttpContext.Items.TryGetValue(L12CorrelationIds.ContextItemName, out var value)
            && value is string correlationId
@@ -2421,7 +2568,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (!apply)
                 return L12AdminCommandResult<L12AccountDeletionView>.Ok(preview, "干运行验证通过");
             var prior = _platform.Account(payload.AccountId)!;
-            var cleanedMatches = _recorder.AnonymizePlayerAsync(prior.Username,
+            var cleanedMatches = _recorder.AnonymizeAccountAsync(prior.Id, prior.Username,
                 L12PlatformStore.DeletedAccountName(prior.Id)).GetAwaiter().GetResult();
             var operation = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
                 audit, true) with { CleanedMatchRecords = cleanedMatches };

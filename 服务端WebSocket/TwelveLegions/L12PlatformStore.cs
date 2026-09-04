@@ -967,6 +967,24 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public void RecordAdminRead(L12AccountView actor, L12Permission permission, string category,
+        string action, string target, L12AdminAuditContext context)
+    {
+        if (!L12Authorization.HasPermission(actor, permission))
+            throw new UnauthorizedAccessException("当前账号没有读取该管理资源的权限");
+        lock (_gate)
+        {
+            AddAdminAudit(actor, category, action, target, null, null, "read",
+                context with
+                {
+                    Permission = L12Authorization.Key(permission),
+                    Outcome = "succeeded",
+                    Reason = "read",
+                });
+            Save(false);
+        }
+    }
+
     public void RecordCommandOutcome(L12AccountView actor, L12AdminAuditContext context,
         string commandType, string scope, string reason)
     {

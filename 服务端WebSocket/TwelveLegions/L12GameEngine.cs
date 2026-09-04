@@ -1014,6 +1014,8 @@ public sealed partial class L12GameEngine
     {
         var result = L12LibraryOps.Draw(player, count);
         if (!result.Success) return false;
+        foreach (var card in result.Cards)
+            TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
         if (State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
         {
             if (logEffectDraw && result.Cards.Count > 0)
@@ -1794,6 +1796,7 @@ public sealed partial class L12GameEngine
         amount = AdjustAnderstorpRingDamage(player, amount);
         player.Hp -= amount;
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
+        TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {amount} 点血量");
         if (player.Hp <= 0)
             SetWinner(1 - playerIndex, $"{player.Name}的主宰因{source}血量降至0");
@@ -1812,6 +1815,7 @@ public sealed partial class L12GameEngine
         if (actual == 0) return;
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
+        TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
         QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), effectDamage: true);
     }
@@ -1840,6 +1844,7 @@ public sealed partial class L12GameEngine
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text, cards.Select(card => card.Clone()).ToArray());
         State.Events.Add(State.LastAction);
+        TrackStructuredEventFacts(type, playerIndex, cards);
         State.Log.Add(text);
         if (State.Log.Count > 80) State.Log.RemoveAt(0);
     }
