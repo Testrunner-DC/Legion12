@@ -264,6 +264,10 @@ public static partial class L12StructuredCardRules
         foreach (Match match in Regex.Matches(text, @"消耗(\d+)士气"))
             Add(L12AtomKinds.PayMorale, $"消耗 {match.Groups[1].Value} 士气", "cost",
                 ("amount", match.Groups[1].Value), ("selection", "auto-or-field-resource-click"));
+        foreach (Match match in Regex.Matches(text, @"消耗(\d+)符文"))
+            Add(L12AtomKinds.Special, $"消耗 {match.Groups[1].Value} 符文", "cost",
+                ("semantic", "pay-runes"), ("amount", match.Groups[1].Value),
+                ("selection", "auto-or-field-resource-click"));
         foreach (Match match in Regex.Matches(text, @"返还(\d+)士气"))
             Add(L12AtomKinds.ReturnMorale, $"返还 {match.Groups[1].Value} 士气", "cost",
                 ("amount", match.Groups[1].Value), ("selection", "field-resource-click"));
@@ -272,6 +276,8 @@ public static partial class L12StructuredCardRules
             Add(L12AtomKinds.Discard, "弃置 1 张手牌", "cost", ("amount", "1"), ("zone", "controller.hand"));
         else if (text.Contains("弃置1张手牌", StringComparison.Ordinal))
             Add(L12AtomKinds.Discard, "弃置 1 张手牌", "resolution", ("amount", "1"), ("zone", "controller.hand"));
+        if (text.Contains("弃置此军团：", StringComparison.Ordinal))
+            Add(L12AtomKinds.Discard, "弃置此军团", "cost", ("amount", "1"), ("zone", "source.field"));
 
         foreach (Match match in Regex.Matches(text, @"抽取(\d+)张牌"))
             Add(L12AtomKinds.Draw, $"抽取 {match.Groups[1].Value} 张牌", "resolution",
@@ -283,6 +289,8 @@ public static partial class L12StructuredCardRules
             Add(L12AtomKinds.MoveZone, "按文本将卡牌返回牌库", "resolution", ("to", "owner.library"));
         if (text.Contains("活跃登场", StringComparison.Ordinal) || text.Contains("休整登场", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "将所选军团按指定状态登场", "resolution", ("to", "field"));
+        if (text.Contains("叠放至此军团下方", StringComparison.Ordinal))
+            Add(L12AtomKinds.MoveZone, "将所选卡牌叠放至此军团下方", "resolution", ("to", "source.attached"));
         if (text.Contains("置入所有者墓地", StringComparison.Ordinal) || text.Contains("置入墓地", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "置入所有者墓地", "resolution", ("to", "owner.grave"));
         if (text.Contains("重洗牌库", StringComparison.Ordinal))
@@ -302,6 +310,17 @@ public static partial class L12StructuredCardRules
         if (text.Contains("位移", StringComparison.Ordinal))
             Add(L12AtomKinds.Move, text.Contains("骑兵位移", StringComparison.Ordinal) ? "进行骑兵位移" : "进行效果位移",
                 "resolution", ("operation", text.Contains("骑兵位移", StringComparison.Ordinal) ? "cavalry-move" : "effect-move"));
+
+        foreach (Match match in Regex.Matches(text, @"获得(\d+)符文"))
+            Add(L12AtomKinds.GainRune, $"获得 {match.Groups[1].Value} 符文", "resolution",
+                ("amount", match.Groups[1].Value));
+        foreach (Match match in Regex.Matches(text, @"试炼\+(\d+)"))
+            Add(L12AtomKinds.AdvanceTrial, $"试炼 +{match.Groups[1].Value}", "resolution",
+                ("amount", match.Groups[1].Value));
+        foreach (Match match in Regex.Matches(text, @"主宰(?:可)?增加(\d+)点血量"))
+            Add(L12AtomKinds.HealMaster, $"主宰增加 {match.Groups[1].Value} 点血量", "resolution",
+                ("amount", match.Groups[1].Value),
+                ("target", text.Contains("双方主宰", StringComparison.Ordinal) ? "both" : "controller"));
 
         if (text.Contains("本回合", StringComparison.Ordinal))
             Add(L12AtomKinds.Duration, "持续至本回合结束", "duration", ("duration", "this-turn"));
@@ -346,14 +365,18 @@ public static partial class L12StructuredCardRules
                 ("rangeBonus", "1"), ("rangedNoLoss", "true"));
         if (text.Contains("进攻无损", StringComparison.Ordinal) && !text.Contains("远程进攻无损", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "进攻无损", "resolution", ("attackNoLoss", "true"));
-        if (text.Contains("无法进攻", StringComparison.Ordinal))
+        if (text.Contains("无法进攻主宰", StringComparison.Ordinal))
+            add(L12AtomKinds.AttackRule, "无法进攻主宰", "resolution", ("cannotAttackMaster", "true"));
+        else if (text.Contains("无法进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "无法进攻", "resolution", ("cannotAttack", "true"));
         if (text.Contains("无法被远程进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "无法被远程进攻", "resolution", ("cannotBeRanged", "true"));
         if (text.Contains("主宰无法被兵力不高于2000的军团进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "保护主宰免受兵力不高于 2000 的军团进攻", "resolution",
                 ("protectMasterFromTroopsAtMost", "2000"));
-        foreach (var keyword in new[] { "挑衅", "冲锋", "必中", "免死" })
+        if (text.Contains("无法被进攻", StringComparison.Ordinal))
+            add(L12AtomKinds.AttackRule, "无法被进攻", "resolution", ("cannotBeAttacked", "true"));
+        foreach (var keyword in new[] { "挑衅", "冲锋", "必中", "免死", "强攻", "贯穿" })
             if (text.Contains(keyword, StringComparison.Ordinal))
                 add(L12AtomKinds.Keyword, $"获得{keyword}", "resolution", ("keywordRef", KeywordRef(keyword)));
     }
@@ -366,10 +389,11 @@ public static partial class L12StructuredCardRules
         foreach (Match match in Regex.Matches(text, @"兵力(?:在本回合)?变为(\d+)"))
             add(L12AtomKinds.ModifyTroops, $"兵力设定为 {match.Groups[1].Value}", "resolution",
                 ("operation", "set"), ("value", match.Groups[1].Value));
-        foreach (Match match in Regex.Matches(text, @"登场费用([+-])(\d+)"))
-            add(L12AtomKinds.SetState, $"登场费用{match.Groups[1].Value}{match.Groups[2].Value}", "resolution",
-                ("key", "source.derived-cost"), ("operation", "add"),
-                ("value", match.Groups[1].Value == "-" ? $"-{match.Groups[2].Value}" : match.Groups[2].Value));
+        if (!text.Contains("每存在", StringComparison.Ordinal))
+            foreach (Match match in Regex.Matches(text, @"登场费用([+-])(\d+)"))
+                add(L12AtomKinds.SetState, $"登场费用{match.Groups[1].Value}{match.Groups[2].Value}", "resolution",
+                    ("key", "source.derived-cost"), ("operation", "add"),
+                    ("value", match.Groups[1].Value == "-" ? $"-{match.Groups[2].Value}" : match.Groups[2].Value));
         foreach (Match match in Regex.Matches(text, @"获得ABILITY\s*(\d+)"))
             add(L12AtomKinds.SetState, $"获得 ABILITY {match.Groups[1].Value}", "resolution",
                 ("abilityRef", $"ability:{match.Groups[1].Value}"));
@@ -387,6 +411,8 @@ public static partial class L12StructuredCardRules
         if (text.Contains("位于前排", StringComparison.Ordinal)) parts.Add("source.row=front");
         if (text.Contains("位于后排", StringComparison.Ordinal)) parts.Add("source.row=back");
         if (text.Contains("位于墓地", StringComparison.Ordinal)) parts.Add("source.zone=grave");
+        if (text.Contains("位于手牌", StringComparison.Ordinal)) parts.Add("source.zone=hand");
+        if (text.Contains("此军团休整时", StringComparison.Ordinal)) parts.Add("source.rested=true");
         if (text.Contains("作为士气", StringComparison.Ordinal)) parts.Add("source.identity=morale");
         if (text.Contains("主宰为杨戬", StringComparison.Ordinal)) parts.Add("controller.master=S01-01M1");
         if (text.Contains("主宰为【雷神索尔】", StringComparison.Ordinal)) parts.Add("controller.master=S02-03M1");
@@ -394,6 +420,8 @@ public static partial class L12StructuredCardRules
         if (text.Contains("对方回合", StringComparison.Ordinal)) parts.Add("opponent.turn");
         if (text.Contains("手牌不高于4张", StringComparison.Ordinal)) parts.Add("controller.hand<=4");
         if (text.Contains("手牌数量不高于4", StringComparison.Ordinal)) parts.Add("controller.hand<=4");
+        if (text.Contains("战场上存在<斯卡哈>", StringComparison.Ordinal)) parts.Add("controller.field.card-id=S02-0612");
+        if (text.Contains("战场上存在<库丘林>", StringComparison.Ordinal)) parts.Add("controller.field.card-id=S02-0611");
         return parts.Count == 0 ? null : string.Join(';', parts);
     }
 
@@ -403,6 +431,8 @@ public static partial class L12StructuredCardRules
         "冲锋" => "charge",
         "必中" => "must-hit",
         "免死" => "death-immunity",
+        "强攻" => "strong-attack",
+        "贯穿" => "piercing",
         _ => keyword,
     };
 }

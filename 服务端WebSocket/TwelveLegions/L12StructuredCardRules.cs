@@ -20,19 +20,19 @@ public static partial class L12StructuredCardRules
     {
         "S01-0003", "S01-0110", "S01-0111", "S01-0112", "S01-0113", "S01-0114", "S01-0116",
         "S01-0208", "S01-0209", "S01-0210", "S01-0211", "S01-0214", "S01-0309", "S01-0313",
-        "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416", "S02-0614", "S02-0617",
-        "S02-0618", "ST01-07", "ST01-09", "ST02-08", "ST03-05", "ST04-07", "ST05-03",
+        "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416",
+        "ST01-07", "ST01-09", "ST02-08", "ST03-05", "ST04-07", "ST05-03",
         "ST05-04", "ST05-08", "ST05-09",
     };
 
     private static readonly HashSet<string> FrontOnlyRangedCards = new(StringComparer.Ordinal)
     {
-        "S01-0115", "S01-0213", "S01-0316", "S01-0415", "S02-0619", "ST01-08",
+        "S01-0115", "S01-0213", "S01-0316", "S01-0415", "ST01-08",
     };
 
     private static readonly HashSet<string> FrontRowTauntOverlayCards = new(StringComparer.Ordinal)
     {
-        "S01-0107", "S01-0204", "S01-0312", "S02-0615",
+        "S01-0107", "S01-0204", "S01-0312",
         "ST01-04", "ST02-02", "ST04-01", "ST06-02",
     };
 
@@ -195,6 +195,14 @@ public static partial class L12StructuredCardRules
                 && atom.Parameters.GetValueOrDefault("operation") == "add"))
                 if (int.TryParse(atom.Parameters.GetValueOrDefault("value"), out var value))
                     modifier += value;
+            foreach (var atom in ability.Atoms.Where(atom => atom.Kind == L12AtomKinds.Special
+                && atom.Parameters.GetValueOrDefault("semantic") == "entry-cost-minus-per-friendly-faction-legion"))
+            {
+                var faction = atom.Parameters.GetValueOrDefault("faction");
+                if (string.IsNullOrWhiteSpace(faction)) continue;
+                modifier -= controller.Field.SelectMany(row => row)
+                    .Count(target => target is not null && HasFaction(controller, target, faction));
+            }
         }
         return modifier;
     }
@@ -204,6 +212,8 @@ public static partial class L12StructuredCardRules
         if (card.TauntUntilTurn >= 0) return !card.TauntRequiresFrontRow || row == 0;
         var abilities = GetCombatRuleAbilities(card.CardId);
         return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            // `granted-continuous` 是被其他能力引用的定义，不能脱离授予条件独立生效。
+            .Where(ability => ability.ExecutionModel != "granted-continuous")
             .Where(ability => !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Condition
                 && atom.Parameters.GetValueOrDefault("expression")?.Contains("source.has-ability=", StringComparison.OrdinalIgnoreCase) == true))
             .Any(ability => AbilityGrantsKeyword(ability, abilities, "taunt"));
@@ -420,6 +430,7 @@ public static partial class L12StructuredCardRules
         if (TryGetStarterBatch3AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterBatch3BAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
+        if (TryGetHumanAssistedOtherworldAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {
             "S01-0215" => AnkhSteleAbilities(),

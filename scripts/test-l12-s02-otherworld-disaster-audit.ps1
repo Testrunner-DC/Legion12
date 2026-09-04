@@ -16,7 +16,8 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
 }
 
 $active = Read-Source 'L12ActiveAbilities.cs'
-$actions = Read-Source 'L12Actions.cs'
+$structured = Read-Source 'L12StructuredCardRules.cs'
+$otherworldStructured = Read-Source 'L12StructuredCardRules.S02OtherworldHumanAssisted.cs'
 $faction = Read-Source 'L12S2FactionEffects.cs'
 $trialCompletion = Read-Source 'L12TrialCompletionTriggerPlans.cs'
 $disasters = Read-Source 'L12Disasters.cs'
@@ -41,7 +42,7 @@ $unexpected = @($auditCards | Where-Object { $expectedCards -notcontains $_ })
 if ($expectedCards.Count -ne 38 -or $auditCards.Count -ne 38 -or $missing.Count -gt 0 -or $unexpected.Count -gt 0) {
     throw "Batch 6L-D audit inventory drifted (expected=$($expectedCards.Count), actual=$($auditCards.Count), missing=$($missing -join ','), unexpected=$($unexpected -join ','))."
 }
-Assert-Contains $tests 'Assert.Equal(83, AuditedAbilityCounts.Values.Sum())' 'Batch 6L-D ability inventory must remain frozen at 83.'
+Assert-Contains $tests 'Assert.Equal(108, AuditedAbilityCounts.Values.Sum())' 'Batch 6L-D ability inventory must remain frozen at 108.'
 
 Assert-Contains $faction 'DeclarationKey = "mode", Text = "梅林：选择效果"' 'Merlin public mode declaration is missing.'
 Assert-Contains $faction 'RequiredDeclaredChoice = "mode:debuff"' 'Merlin public enemy target must only be declared for debuff mode.'
@@ -54,7 +55,9 @@ if ($trialCompletion.Contains('player.Library.Any(card => card.Faction == "other
     throw 'Grail hidden match existence leaked into declaration again.'
 }
 
-Assert-Contains $actions 'L12StructuredCardRules.HasFaction(player, target, "otherworld")' 'Bors discount must use effective Otherworld faction.'
+Assert-Contains $structured 'entry-cost-minus-per-friendly-faction-legion' 'Bors dynamic discount must use the shared structured cost query.'
+Assert-Contains $structured 'HasFaction(controller, target, faction)' 'Bors discount must use effective Otherworld faction.'
+Assert-Contains $otherworldStructured '("faction", "otherworld")' 'Bors confirmed Otherworld faction parameter is missing.'
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, declaredTarget, "otherworld")' 'Morrigan commit validation must use effective Otherworld faction.'
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, chosen, "otherworld")' 'Fenian commit validation must use effective Otherworld faction.'
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Otherworld hidden search must use effective faction.'
@@ -111,8 +114,8 @@ if ($allAuditRows.Count -ne 248 -or $allAudited.Count -ne 248 -or $duplicateAudi
     throw "Full-pool per-card audit coverage drifted (rows=$($allAuditRows.Count), unique=$($allAudited.Count), duplicateGroups=$($duplicateAuditIds.Count))."
 }
 $allAbilityCount = ($allAuditRows | Measure-Object Abilities -Sum).Sum
-if ($allAbilityCount -ne 552) {
-    throw "Full-pool per-ability audit total drifted (expected=552, actual=$allAbilityCount)."
+if ($allAbilityCount -ne 577) {
+    throw "Full-pool per-ability audit total drifted (expected=577, actual=$allAbilityCount)."
 }
 
 $questionStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5pyJ55aR54K5'))
@@ -155,4 +158,4 @@ Assert-Contains $openQuestions $noOpenQuestionText 'OPEN-QUESTIONS must record t
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
 if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 
-Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 83 abilities; full pool 248 cards / 552 abilities; 191 passed / 57 fixed / 0 question cards).'
+Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 108 abilities; full pool 248 cards / 577 abilities; 191 passed / 57 fixed / 0 question cards).'
