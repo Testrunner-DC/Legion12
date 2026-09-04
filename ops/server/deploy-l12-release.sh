@@ -88,7 +88,7 @@ if (entries.length !== 353 || new Set(entries.map(([id]) => id)).size !== 353) f
 let totalBytes = 0
 const versionRows = []
 for (const [cardId, card] of entries) {
-  if (!/^(?:S\d{2}|ST\d{2}|ST)-[A-Z0-9]+$/.test(cardId) || card.cardId !== cardId) fail(`非法卡号：${cardId}`)
+  if (!/^(?:S\d{2}|ST\d{2}|ST)-[A-Za-z0-9]+$/.test(cardId) || card.cardId !== cardId) fail(`非法卡号：${cardId}`)
   if (!/^[0-9a-f]{64}$/.test(card.contentHash)) fail(`内容哈希无效：${cardId}`)
   const prefix = `cards/${manifest.catalogVersion}/${cardId}/${card.contentHash.slice(0, 20)}/`
   for (const [variant, fileName] of Object.entries(requiredVariants)) {

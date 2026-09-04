@@ -85,6 +85,7 @@ const contracts = [
   [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']") && windowsDeploy.includes('拒绝退回旧卡图链路'), '发布清单必须显式包含完整优化卡图，禁止退回旧 imageUrl 链路'],
   [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 353'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
   [serverDeploy.includes('mv "$stage_card_assets_dir" "$card_assets_target"') && serverDeploy.includes('dist/card-assets') && serverDeploy.includes('nginx -T'), '服务端必须在验证完成后原子发布优化资产，并仅在 Nginx 缓存片段已接入时切换'],
+  [serverDeploy.includes("(?:S\\d{2}|ST\\d{2}|ST)-[A-Za-z0-9]+") && !serverDeploy.includes("(?:S\\d{2}|ST\\d{2}|ST)-[A-Z0-9]+"), '服务器发布校验必须接受清单中的小写异画后缀，且继续拒绝路径字符'],
   [!existsSync(new URL('../public/cards', import.meta.url)) && !windowsDeploy.includes('opcgpro-vue/public/cards') && serverDeploy.includes('旧版 /cards 卡图链路已退役') && !serverDeploy.includes('ln -s "$cards_target"'), '仓库与发布流程必须彻底退役 public/cards 旧卡图副本，仅保留内容寻址优化图库'],
   [nginxCache.includes('max-age=31536000') && nginxCache.includes('immutable') && nginxCache.includes('card-assets.manifest.json') && nginxCache.includes('max-age=300'), 'Nginx 必须区分哈希二进制一年缓存与 manifest 五分钟缓存'],
   [nginxCache.includes('(?:S|ST)[0-9]{2}-[A-Za-z0-9]+'), 'Nginx 内容寻址路径必须同时覆盖 S01/S02 与 ST01-ST06 卡号，禁止新产品卡图落入 no-store 兜底'],
