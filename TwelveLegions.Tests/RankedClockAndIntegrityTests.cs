@@ -291,8 +291,22 @@ public sealed class RankedClockAndIntegrityTests
         public async ValueTask DisposeAsync()
         {
             await Recorder.DisposeAsync();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
+            if (!Directory.Exists(_directory)) return;
+            for (var attempt = 1; attempt <= 5; attempt++)
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                try
+                {
+                    Directory.Delete(_directory, true);
+                    return;
+                }
+                catch (IOException) when (attempt < 5)
+                {
+                    // Windows may retain a just-closed SQLite handle for a very short time.
+                    // Retry only fixture cleanup; never mask a rule/test assertion failure.
+                    await Task.Delay(40 * attempt);
+                }
+            }
         }
     }
 }
