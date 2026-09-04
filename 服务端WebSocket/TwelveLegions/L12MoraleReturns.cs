@@ -155,6 +155,21 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item);
                 break;
+            case "march-followup-paid":
+            {
+                var targets = PublicLegions(State.Players[1 - item.Controller])
+                    .Where(target => target.Troops <= 6000)
+                    .Select(target => target.InstanceId).ToArray();
+                if (targets.Length == 0)
+                {
+                    FinishStackItem(item);
+                    break;
+                }
+                CreateResolutionChoicePrompt(item, "enemy-target",
+                    "神妙行军：选择对方1张兵力不高于6000的军团并击杀",
+                    targets, "march-followup-target", new Dictionary<string, string>());
+                break;
+            }
             case "mozi-immortal":
                 foreach (var id in (data.GetValueOrDefault("targets") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries))
                 {

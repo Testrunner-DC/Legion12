@@ -173,7 +173,7 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
           <div class="email-form"><label>新邮箱 / 换绑邮箱<input v-model="emailForm.email" type="email" maxlength="254" autocomplete="email"/></label><label>当前密码<input v-model="emailForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !emailStatus?.mailConfigured" @click="submitEmailBinding">发送验证邮件</button><button v-if="emailStatus?.verified" class="danger" :disabled="authBusy" @click="unbindEmail">解绑邮箱</button></div>
           <small v-if="emailStatus && !emailStatus.mailConfigured" class="mail-unavailable">邮件服务尚未配置，绑定和换绑暂不可用。</small>
         </section>
-        <section class="mfa-boundary"><b>MFA：{{ mfa?.enrollmentEnabled ? '已启用' : '尚未启用' }}</b><span>{{ mfa?.requirement || '正在读取服务端能力边界' }}</span><small>在环境密钥保护、TOTP 双次校验与恢复码 hash 生命周期完成前，页面不会收集或保存 MFA 密钥。</small></section>
+        <section v-if="mfa?.enrollmentEnabled" class="mfa-boundary"><b>MFA 已启用</b><span>可使用已登记的验证器保护账号。</span></section>
         <section class="session-manager">
           <header><div><h3>登录设备与会话</h3><p>撤销后对应设备的令牌立即失效。</p></div><span class="session-actions"><button :disabled="authBusy || sessions.length <= 1" @click="revokeOtherSessions">退出其他设备</button><button class="danger" :disabled="authBusy || !sessions.length" @click="revokeAllSessions">退出全部设备</button></span></header>
           <article v-for="session in sessions" :key="session.id" class="session-row">

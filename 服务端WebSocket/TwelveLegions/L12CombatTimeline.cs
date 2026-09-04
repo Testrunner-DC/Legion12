@@ -242,6 +242,9 @@ public sealed partial class L12GameEngine
 
     private void FinishCurrentCombatContext()
     {
+        if (State.PendingDefense is { AttackerShockGrantedForThisAttack: true } completed
+            && FindOnField(State.Players[completed.AttackerPlayer], completed.AttackerInstanceId, out _, out _) is { } attacker)
+            attacker.HasShock = false;
         State.PendingDefense = null;
         if (State.SuspendedCombatContexts.Count > 0)
         {

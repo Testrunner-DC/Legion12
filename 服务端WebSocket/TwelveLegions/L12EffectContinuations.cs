@@ -56,6 +56,32 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
                 FinishStackItem(item); break;
             }
+            case "march-followup-decision":
+                if (chosen.Contains("mode:use", StringComparer.OrdinalIgnoreCase))
+                    _ = BeginEffectMoraleReturn(item, 2, "march-followup-paid");
+                else FinishStackItem(item);
+                break;
+            case "march-followup-target":
+            {
+                var targetId = chosen.FirstOrDefault();
+                var marchSource = source;
+                if (marchSource is null || DeclaredEnemyTarget(item.Controller, targetId,
+                        target => target.Troops <= 6000) is null)
+                {
+                    FinishStackItem(item);
+                    break;
+                }
+                QueueOrPushTriggeredEffect(item.Controller, marchSource, "play",
+                    "返还2士气：击杀对方1张兵力不高于6000的军团。", [targetId!],
+                    new Dictionary<string, string>
+                    {
+                        ["atomicContinuation"] = "true",
+                        ["atomicFlow"] = "march-kill-effect",
+                        ["declared:killTarget"] = targetId!,
+                    });
+                FinishStackItem(item);
+                break;
+            }
             case "lijing-choice": ContinueLiJingChoice(item, chosen[0]); break;
             case "lijing-slot": CompleteLiJingRecruit(item, chosen[0]); break;
             case "reorder-order":

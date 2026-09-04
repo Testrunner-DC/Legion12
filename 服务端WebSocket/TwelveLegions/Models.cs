@@ -112,6 +112,11 @@ public sealed class L12CardInstance
     public int ContinuousCostModifier { get; set; }
     /// <summary>当前场面下从手牌打出此牌实际需要支付的费用，仅用于快照显示。</summary>
     public int? PlayCost { get; set; }
+    /// <summary>
+    /// 计入玩家尚未决定的可选费用减免后，本次打出能够达到的最低费用。
+    /// PlayCost 只显示已经生效的费用，客户端仅用本字段判断是否可开始打出流程。
+    /// </summary>
+    public int? MinimumPlayCost { get; set; }
     /// <summary>当前公开场面下禁止从手牌打出此牌的权威原因；为空表示未被静态规则禁止。</summary>
     public string? PlayBlockedReason { get; set; }
     public string? EffectText { get; init; }
@@ -368,6 +373,8 @@ public sealed class L12PendingDefense
     public bool StarterDefenderMasterTimingOffered { get; set; }
     public bool AttackerAfterAttackStarted { get; set; }
     public bool StageEffectsQueued { get; set; }
+    /// <summary>仅在本次进攻中临时获得震击；交战结束或中止时必须移除。</summary>
+    public bool AttackerShockGrantedForThisAttack { get; set; }
     /// <summary>战斗伤害已确认阵亡、等待各自触发完成后才进入墓地的实例。</summary>
     public string? DefeatedAttackerInstanceId { get; set; }
     public string? DefeatedDefenderInstanceId { get; set; }

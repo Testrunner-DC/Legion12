@@ -69,7 +69,17 @@ public sealed partial class L12GameEngine
                 case L12AtomKinds.Keyword:
                     if (atom.Parameters.GetValueOrDefault("keyword") == "charge") source.HasCharge = true;
                     else if (atom.Parameters.GetValueOrDefault("keyword") == "strong-attack") GrantStrongAttack(source);
-                    else if (atom.Parameters.GetValueOrDefault("keyword") == "shock") source.HasShock = true;
+                    else if (atom.Parameters.GetValueOrDefault("keyword") == "shock")
+                    {
+                        source.HasShock = true;
+                        if (item.Trigger == "attack" && State.PendingDefense is { } pending
+                            && pending.AttackerPlayer == item.Controller
+                            && pending.AttackerInstanceId == source.InstanceId)
+                        {
+                            pending.AttackerShockGrantedForThisAttack = true;
+                            ApplyS2Shock(item, source);
+                        }
+                    }
                     else throw new InvalidOperationException($"Unsupported verified atomic keyword: {atom.Parameters.GetValueOrDefault("keyword")}");
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;

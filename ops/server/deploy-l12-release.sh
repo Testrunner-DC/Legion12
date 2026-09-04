@@ -5,7 +5,6 @@ umask 027
 readonly active_dir="/opt/legion12-test"
 readonly releases_dir="/opt/legion12-releases"
 readonly runtime_dir="/opt/legion12-runtime"
-readonly static_cards_dir="/opt/legion12-static/cards"
 readonly static_card_assets_dir="/opt/legion12-static/card-assets"
 readonly deployment_dir="/opt/legion12-deployment"
 readonly incoming_dir="${deployment_dir}/incoming"
@@ -120,21 +119,17 @@ mode="${1:-}"
 commit="${2:-}"
 release_sha256="${3:-}"
 release_archive="${4:-}"
-cards_hash="${5:-}"
-cards_sha256="${6:--}"
-cards_archive="${7:--}"
+legacy_cards_hash="${5:--}"
+legacy_cards_sha256="${6:--}"
+legacy_cards_archive="${7:--}"
 card_assets_hash="${8:--}"
 card_assets_sha256="${9:--}"
 card_assets_archive="${10:--}"
-[[ "$mode" == "deploy" || "$mode" == "dry-run" ]] || fail "用法：$0 <deploy|dry-run> <提交> <运行包SHA256> <运行包> <卡图版本> <卡图SHA256|-> <卡图包|-> <优化卡图版本|-> <优化卡图SHA256|-> <优化卡图包|->"
+[[ "$mode" == "deploy" || "$mode" == "dry-run" ]] || fail "用法：$0 <deploy|dry-run> <提交> <运行包SHA256> <运行包> <- legacy已退役> <- > <- > <优化卡图版本> <优化卡图SHA256|-> <优化卡图包|->"
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "提交哈希格式错误"
 [[ "$release_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "运行包 SHA256 格式错误"
-[[ "$cards_hash" =~ ^[0-9a-f]{40,64}$ ]] || fail "卡图版本格式错误"
 [[ "$release_archive" == "${incoming_dir}/l12-release-${commit}.tar.gz" ]] || fail "运行包不在允许目录"
-if [[ "$cards_archive" != "-" ]]; then
-  [[ "$cards_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "卡图包 SHA256 格式错误"
-  [[ "$cards_archive" == "${incoming_dir}/l12-cards-${cards_hash}.tar.gz" ]] || fail "卡图包不在允许目录"
-fi
+[[ "$legacy_cards_hash" == "-" && "$legacy_cards_sha256" == "-" && "$legacy_cards_archive" == "-" ]] || fail "旧版 /cards 卡图链路已退役"
 
 if [[ "$card_assets_hash" == "-" ]]; then
   [[ "$card_assets_sha256" == "-" && "$card_assets_archive" == "-" ]] || fail "优化卡图参数必须全部为 - 或全部提供"
@@ -159,8 +154,8 @@ if [[ "$card_assets_hash" != "-" ]]; then
   grep -Fq 'location = /card-assets/card-assets.manifest.json' <<<"$nginx_dump" || fail "Nginx 未接入优化卡图 manifest 缓存片段"
   grep -Fq 'max-age=31536000, immutable' <<<"$nginx_dump" || fail "Nginx 未接入内容寻址长缓存策略"
 fi
-mkdir -p "$incoming_dir" "$releases_dir" "$static_cards_dir" "$static_card_assets_dir"
-chmod 0755 "$(dirname "$static_cards_dir")" "$static_cards_dir" "$static_card_assets_dir" "$releases_dir"
+mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir"
+chmod 0755 "$(dirname "$static_card_assets_dir")" "$static_card_assets_dir" "$releases_dir"
 test -f "$release_archive" || fail "找不到运行包"
 [[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "运行包 SHA256 校验失败"
 validate_archive "$release_archive"
@@ -168,7 +163,6 @@ validate_archive "$release_archive"
 short_commit="${commit:0:12}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 stage_dir="/opt/legion12-staging-${short_commit}-${timestamp}"
-stage_cards_dir=""
 stage_card_assets_dir=""
 release_dir="${releases_dir}/${commit}-${timestamp}"
 previous_target=""
@@ -181,11 +175,9 @@ failed_runtime_dir=""
 
 cleanup() {
   if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then rm -rf -- "$stage_dir"; fi
-  if [[ -n "$stage_cards_dir" && -d "$stage_cards_dir" ]]; then rm -rf -- "$stage_cards_dir"; fi
   if [[ -n "$stage_card_assets_dir" && -d "$stage_card_assets_dir" ]]; then rm -rf -- "$stage_card_assets_dir"; fi
   if [[ -n "$runtime_restore_dir" && -d "$runtime_restore_dir" ]]; then rm -rf -- "$runtime_restore_dir"; fi
   rm -f -- "$release_archive"
-  if [[ "$cards_archive" != "-" ]]; then rm -f -- "$cards_archive"; fi
   if [[ "$card_assets_archive" != "-" ]]; then rm -f -- "$card_assets_archive"; fi
 }
 
@@ -259,28 +251,6 @@ test -r "${stage_dir}/scripts/ws-smoke.mjs" || fail "运行包缺少 WebSocket �
 test ! -e "${stage_dir}/opcgpro-vue/dist/cards" || fail "运行包不应重复携带卡图缓存"
 
 test ! -e "${stage_dir}/opcgpro-vue/dist/card-assets" || fail "运行包不应重复携带优化卡图缓存"
-cards_target="${static_cards_dir}/${cards_hash}"
-if [[ ! -d "$cards_target" ]]; then
-  [[ "$cards_archive" != "-" ]] || fail "服务器没有该卡图缓存，且未提供卡图包"
-  test -f "$cards_archive" || fail "找不到卡图包"
-  [[ "$(sha256sum "$cards_archive" | awk '{print $1}')" == "$cards_sha256" ]] || fail "卡图包 SHA256 校验失败"
-  validate_archive "$cards_archive"
-  stage_cards_dir="/opt/legion12-cards-staging-${cards_hash}-${timestamp}"
-  mkdir -p "$stage_cards_dir"
-  tar --no-same-owner --no-same-permissions -xzf "$cards_archive" -C "$stage_cards_dir"
-  test -d "${stage_cards_dir}/cards" || fail "卡图包目录结构错误"
-  chmod 0755 "$stage_cards_dir"
-  find "${stage_cards_dir}/cards" -type d -exec chmod 0755 {} +
-  find "${stage_cards_dir}/cards" -type f -exec chmod 0644 {} +
-  if [[ "$mode" == "deploy" ]]; then
-    mv "${stage_cards_dir}/cards" "$cards_target"
-    rmdir "$stage_cards_dir"
-    stage_cards_dir=""
-  else
-    cards_target="${stage_cards_dir}/cards"
-  fi
-fi
-
 card_assets_target=""
 if [[ "$card_assets_hash" != "-" ]]; then
   card_assets_target="${static_card_assets_dir}/${card_assets_hash}"
@@ -314,7 +284,6 @@ if [[ "$card_assets_hash" != "-" ]]; then
   runuser -u "$web_user" -- test -r "$sample_card_asset" || fail "Nginx 账号无法读取优化卡图缓存"
 fi
 
-ln -s "$cards_target" "${stage_dir}/opcgpro-vue/dist/cards"
 if [[ -n "$card_assets_target" ]]; then
   ln -s "$card_assets_target" "${stage_dir}/opcgpro-vue/dist/card-assets"
 fi
@@ -325,9 +294,6 @@ find "${stage_dir}/publish" -type d -exec chmod 0755 {} +
 find "${stage_dir}/publish" -type f -exec chmod 0644 {} +
 runuser -u "$service_user" -- test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "服务账号无法读取后端入口"
 runuser -u "$web_user" -- test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "Nginx 账号无法读取前端首页"
-sample_card="$(find "$cards_target" -type f -print -quit)"
-test -n "$sample_card" || fail "卡图缓存为空"
-runuser -u "$web_user" -- test -r "$sample_card" || fail "Nginx 账号无法读取卡图缓存"
 
 if [[ "$mode" == "dry-run" ]]; then
   log "快速干运行通过：产物、哈希、目录结构及真实账号权限均正常"
@@ -413,7 +379,7 @@ Legion12 香港测试服
 上一版本：${previous_target}
 共享运行数据：${runtime_dir}
 部署前运行数据快照：${runtime_backup}
-共享卡图版本：${cards_hash}
+旧版 /cards 卡图：已退役
 内容寻址优化卡图版本：${card_assets_hash}
 域名：${public_host}
 部署日期：$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -422,7 +388,6 @@ EOF
 prune_runtime_backups
 
 rm -f -- "$release_archive"
-if [[ "$cards_archive" != "-" ]]; then rm -f -- "$cards_archive"; fi
 if [[ "$card_assets_archive" != "-" ]]; then rm -f -- "$card_assets_archive"; fi
 trap - ERR INT TERM
 log "快速部署完成：${commit}"

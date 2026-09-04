@@ -1693,7 +1693,11 @@ public sealed partial class L12GameEngine
             var rolloReturns = card.CardId == "S02-0302"
                 ? Math.Min(8, State.Players[playerIndex].Graveyard.Count(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
                 : 0;
-            snapshot.PlayCost = GetPlayCost(playerIndex, card, selfDamageDiscount, spentRunes, rolloReturns);
+            snapshot.PlayCost = GetPlayCost(playerIndex, card);
+            var canUseSigurdDiscount = card.CardId == "ST03-01"
+                && State.Players[playerIndex].Graveyard.Any(CanEnterHandOrLibrary);
+            snapshot.MinimumPlayCost = GetPlayCostWithSigurdDiscount(playerIndex, card, selfDamageDiscount, spentRunes, rolloReturns,
+                canUseSigurdDiscount);
             snapshot.PlayBlockedReason = L12StructuredCardRules.HandPlayBlockReason(State.Players[playerIndex], card);
             return snapshot;
         }).ToArray();

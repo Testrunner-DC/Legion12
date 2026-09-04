@@ -829,7 +829,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void BloodAxeErikAdvertisesItsFourMoraleSelfDamagePlayCost()
+    public void BloodAxeErikKeepsCurrentCostVisibleButRemainsPlayableAtOptionalDiscountMinimum()
     {
         var game = Create(6402);
         var player = game.State.Players[0];
@@ -841,7 +841,8 @@ public sealed class LatestBugRegressionTests
         game.State.Phase = L12Phase.Main;
 
         var snapshot = Assert.Single(SnapshotHand(game, 0));
-        Assert.Equal(4, snapshot.PlayCost);
+        Assert.Equal(erik.Cost, snapshot.PlayCost);
+        Assert.Equal(4, snapshot.MinimumPlayCost);
         Assert.True(game.Handle(0, new L12Command("playCard", erik.InstanceId, Row: 0, Slot: 0)).Accepted);
         Assert.Equal("play-cost-choice", Assert.Single(game.State.PendingPrompts).Continuation);
     }

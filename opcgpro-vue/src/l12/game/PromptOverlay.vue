@@ -233,6 +233,12 @@ function cardObjectFor(id: string): Card | null {
     summonRound: 0,
   }
 }
+watch(() => `${prompt.value?.promptId ?? ''}:${prompt.value?.data?.sourceInstanceId ?? ''}`, () => {
+  const sourceInstanceId = prompt.value?.data?.sourceInstanceId
+  if (!sourceInstanceId) return
+  const source = cardObjectFor(sourceInstanceId)
+  if (source) emit('focusCard', source)
+}, { immediate: true })
 function focusChoice(id: string) {
   hoveredChoice.value = id
   const card = cardObjectFor(id)

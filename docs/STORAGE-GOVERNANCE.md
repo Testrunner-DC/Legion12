@@ -26,6 +26,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-storage.ps1 -Strict
 
 默认预算重点限制：活动工作区 2.2 GiB、卡图 650 MiB、`node_modules` 220 MiB、测试产物 500 MiB、部署产物 700 MiB、缓存 1.2 GiB。生产构建完成后不得长期保留 `dist/bin/obj`。
 
+卡图只保留两类永久数据：`source-library`中的原始归档，以及`D:\L12-assets\published\current`当前完整内容寻址版本。Git当前树、前端`public/cards`、发布包和服务器运行目录均不得再保存旧PNG副本；Git历史不做破坏性改写。服务器只在新版本线上校验通过后清理非活动内容哈希版本和旧`/cards`目录。
+
 清理先预览，确认后执行：
 
 ```powershell

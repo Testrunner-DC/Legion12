@@ -27,7 +27,7 @@ type GmPlacementRequest = {
   cardType: string
   triggerEffects: boolean
 }
-const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; embedded?: boolean; gmPlacement?: GmPlacementRequest | null }>(), { readOnly: false, embedded: false, gmPlacement: null })
+const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; gmPlacement?: GmPlacementRequest | null }>(), { readOnly: false, gmPlacement: null })
 const emit = defineEmits<{ gmPlacementResolved: [] }>()
 const scale = ref(1)
 const compactViewport = ref(false)
@@ -62,7 +62,7 @@ let diceRollTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
 const controlledPlayerIndex = computed(() => {
-  if (!l12State.gmEnabled) return props.game.you
+  if (props.readOnly || !l12State.gmEnabled) return props.game.you
   const pendingPrompt = props.game.prompts?.[0]
   if (pendingPrompt) return pendingPrompt.playerIndex
   if (props.game.phase === 'Mulligan')
@@ -105,7 +105,7 @@ const playableIds = computed(() => {
     .filter(card => !card.playBlockedReason)
     .filter(card => !(props.game.activeDisaster?.cardId === 'S02-DS01' && card.cardType === 'legion'
       && card.profession && card.profession === me.value.libraryTop?.profession))
-    .filter(card => canPromote(card) || ((card.playCost ?? card.currentCost ?? card.cost) <= activeMorale.value
+    .filter(card => canPromote(card) || ((card.minimumPlayCost ?? card.playCost ?? card.currentCost ?? card.cost) <= activeMorale.value
       && (card.cardType !== 'legion' || (isInfiltrator(card) ? hasInfiltratorDestination : hasLegionDestination))))
     .map(card => card.instanceId)
 })
@@ -412,7 +412,6 @@ const supportReady = computed(() => {
 })
 
 function updateScale() {
-  if (props.embedded) { compactViewport.value = false; scale.value = 1; return }
   compactViewport.value = window.innerWidth < 820
   scale.value = compactViewport.value
     ? Math.max(.78, Math.min(1, window.innerHeight / 900))
@@ -732,7 +731,7 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'embedded-replay': embedded, 'read-only-board': readOnly }">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'read-only-board': readOnly }">
     <div class="board-stage" :style="{ transform: `scale(${scale})` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">

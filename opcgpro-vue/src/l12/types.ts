@@ -51,6 +51,7 @@ export interface Card {
   identityKnown?: boolean
   currentCost?: number
   playCost?: number
+  minimumPlayCost?: number
   playBlockedReason?: string
   tapped: boolean
   summonRound: number

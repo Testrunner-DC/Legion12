@@ -60,7 +60,7 @@ const starterMasterProfileIds = ['ST01-M1', 'ST02-M1', 'ST03-M1', 'ST04-M1', 'ST
 
 const contracts = [
   [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
-  [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && cardAssets.includes('legacyUrl'), '必须提供按逻辑卡号解析且保留旧 imageUrl 的统一资源解析器'],
+  [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && !cardAssets.includes("kind: 'legacy'") && !cardAssets.includes("{ kind: 'legacy'"), '必须按逻辑卡号解析完整内容寻址图库，且不得重新请求已退役的 /cards 旧卡图'],
   [cardAssets.includes('missingEntryRefreshAfter') && cardAssets.includes('loadCardAssetManifest(true)') && cardAssets.includes("cache: force ? 'reload' : 'no-cache'") && cardAssets.includes('if (manifestPromise)'), '已加载旧清单但缺少新卡号时必须共享一次强制刷新，避免旧页面永久显示占位图或并发重复请求'],
   [cardAssets.includes('explicitCdnBaseUrl') && cardAssets.includes('manifestCdnBaseUrl') && cardAssets.indexOf("sourceFor('sameOrigin'") < cardAssets.indexOf("!explicitCdnBaseUrl && manifestCdnBaseUrl") && cardAssets.includes('placeholder'), '未显式启用 CDN 时必须优先使用同源优化资源，清单 CDN 仅作后备'],
   [cardImage.includes('<picture') && cardAssets.includes('detailAvif') && cardAssets.includes('thumbWebp') && cardAssets.includes('boardWebp'), '公共卡图组件必须支持 240/480/960 WebP 与详情 AVIF'],
@@ -82,9 +82,10 @@ const contracts = [
   [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedPlayableCardCount = 324') && generator.includes('expectedPresentationCardCount = 29'), '生成器必须默认同源内容寻址路径并严格区分324张可玩卡与29张展示版本'],
   [productInclusions.cards?.length === 349 && new Set(productInclusions.cards.map(card => card.cardId)).size === 349 && productInclusions.products?.length === 13, '收录产品目录必须保持349个唯一实体编号和13项产品'],
   [archiveAssets.cards?.length === 29 && archiveAssets.cards.every(card => (/[a-z]$/.test(card.id) || /C1A$/.test(card.id)) && ids.has(card.baseCardId)), '25张预组复刻与4张既有士气展示版本必须指向现有可玩规则基底'],
-  [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']"), '旧发布清单缺失优化卡图字段时必须在 StrictMode 下安全降级'],
+  [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']") && windowsDeploy.includes('拒绝退回旧卡图链路'), '发布清单必须显式包含完整优化卡图，禁止退回旧 imageUrl 链路'],
   [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 353'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
   [serverDeploy.includes('mv "$stage_card_assets_dir" "$card_assets_target"') && serverDeploy.includes('dist/card-assets') && serverDeploy.includes('nginx -T'), '服务端必须在验证完成后原子发布优化资产，并仅在 Nginx 缓存片段已接入时切换'],
+  [!existsSync(new URL('../public/cards', import.meta.url)) && !windowsDeploy.includes('opcgpro-vue/public/cards') && serverDeploy.includes('旧版 /cards 卡图链路已退役') && !serverDeploy.includes('ln -s "$cards_target"'), '仓库与发布流程必须彻底退役 public/cards 旧卡图副本，仅保留内容寻址优化图库'],
   [nginxCache.includes('max-age=31536000') && nginxCache.includes('immutable') && nginxCache.includes('card-assets.manifest.json') && nginxCache.includes('max-age=300'), 'Nginx 必须区分哈希二进制一年缓存与 manifest 五分钟缓存'],
   [nginxCache.includes('(?:S|ST)[0-9]{2}-[A-Za-z0-9]+'), 'Nginx 内容寻址路径必须同时覆盖 S01/S02 与 ST01-ST06 卡号，禁止新产品卡图落入 no-store 兜底'],
   [(nginxCache.match(/root \/opt\/legion12-test\/opcgpro-vue\/dist;/g) ?? []).length === 4, 'Nginx 的四类卡图 location 必须显式绑定当前发布目录，不能继承默认站点根目录'],

@@ -88,8 +88,6 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("march-buff-effect", "选择我方前排1张军团，本回合兵力+2000",
                     PublicTargetKeys: ["buffTarget"]),
-                new("march-kill-effect", "返还2士气：击杀对方1张兵力不高于6000的军团",
-                    "mode:kill", "morale-return", "marchCost", 2, ["killTarget"], true),
             ],
             ["S01-0119"] =
             [
@@ -559,23 +557,9 @@ public sealed partial class L12GameEngine
 
             case "S01-0118":
             {
-                var modes = new List<string> { "mode:none" };
-                var killTargets = PublicLegions(opponent).Where(card => card.Troops <= 6000)
-                    .Select(card => card.InstanceId).ToArray();
-                if (player.Morale.Count >= 2 && killTargets.Length > 0) modes.Add("mode:kill");
-                steps.Add(CompositeStep("option", "mode", "神妙行军：选择是否返还2士气，击杀对方1张兵力不高于6000的军团",
-                    modes, 1, 1, new()
-                    {
-                        ["mode:none"] = "选择我方前排1张军团，本回合兵力+2000",
-                        ["mode:kill"] = "返还2士气：击杀对方1张兵力不高于6000的军团",
-                    }));
-                steps.Add(CompositeStep("field-legion", "buffTarget", "神妙行军：预先选择本回合兵力+2000的前排军团",
+                steps.Add(CompositeStep("field-legion", "buffTarget", "神妙行军：选择我方前排1张军团，本回合兵力+2000",
                     player.Field[0].Where(card => card is not null && IsFieldLegion(card))
                         .Select(card => card!.InstanceId), 1));
-                steps.Add(CompositeStep("resource-return", "marchCost", "神妙行军：选择为击杀效果返还的2张士气",
-                    player.Morale.Select(card => card.InstanceId), 2, 2, requiredChoice: "mode:kill"));
-                steps.Add(CompositeStep("enemy-legion", "killTarget", "神妙行军：选择返还士气后击杀的目标",
-                    killTargets, 1, requiredChoice: "mode:kill"));
                 break;
             }
 
@@ -1100,12 +1084,8 @@ public sealed partial class L12GameEngine
             "S01-0014" => declared.GetValueOrDefault("disasterValue", []).SingleOrDefault()
                 is "-2" or "-1" or "0" or "1" or "2",
             "S01-0015" => declared.Count == 0,
-            "S01-0118" => (mode is "mode:none" or "mode:kill") && Own("buffTarget", target =>
-                    FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0)
-                && (mode == "mode:none" || (effectOnlyRepeat || declared.GetValueOrDefault("marchCost", []) is { Count: 2 } marchCost
-                    && marchCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 2
-                    && marchCost.All(id => player.Morale.Any(resource => resource.InstanceId == id)))
-                    && Enemy("killTarget", target => target.Troops <= 6000)),
+            "S01-0118" => Own("buffTarget", target =>
+                FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
             "S01-0119" => mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || player.MoraleDeck.Count > 0),
             "S01-0221" => declared.GetValueOrDefault("duatMode", []).SingleOrDefault() is { } duatMode

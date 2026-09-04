@@ -35,7 +35,6 @@ function Test-CachedArtifact {
         if ($manifest.commit -ne $commit) { return $false }
         foreach ($entry in @(
             @{ Path = $manifest.releaseArchive; Hash = $manifest.releaseSha256 },
-            @{ Path = $manifest.cardsArchive; Hash = $manifest.cardsSha256 },
             @{ Path = $manifest.cardAssetsArchive; Hash = $manifest.cardAssetsSha256 }
         )) {
             if (-not (Test-Path -LiteralPath $entry.Path)) { return $false }
@@ -53,7 +52,6 @@ $originalLocation = Get-Location
 $stagingDirectory = $null
 $frontendWorkspaceDirectory = $null
 $frontendBuildDirectory = $null
-$frontendCardsLink = $null
 
 try {
     Set-Location $repoRoot
@@ -134,8 +132,6 @@ try {
     New-Item -ItemType Directory -Path $isolatedServerSourceRoot -Force | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\TwelveLegions") -File -Filter "*.cs" |
         Copy-Item -Destination $isolatedServerSourceRoot -Force
-    $frontendCardsLink = Join-Path $frontendBuildDirectory "public\cards"
-    New-Item -ItemType Junction -Path $frontendCardsLink -Target (Join-Path $frontendSourceRoot "public\cards") | Out-Null
     Push-Location $frontendBuildDirectory
     try {
         Invoke-External $npmExecutable ci --prefer-offline --no-audit
@@ -191,16 +187,7 @@ try {
         throw "不含卡图的运行包异常大于 150MB，请检查发布内容是否混入多平台原生库或运行数据"
     }
 
-    $cardsHash = (& git rev-parse "$commit`:opcgpro-vue/public/cards").Trim()
-    if ($LASTEXITCODE -ne 0 -or $cardsHash -notmatch '^[0-9a-f]{40,64}$') { throw "无法读取卡图目录版本" }
-    $cardsArchive = Join-Path $OutputDirectory "l12-cards-$cardsHash.tar.gz"
-    if (-not (Test-Path -LiteralPath $cardsArchive)) {
-        Write-Host "[L12 验证] 首次生成卡图缓存包：$cardsHash"
-        Invoke-External tar -czf $cardsArchive -C ".\opcgpro-vue\public" cards
-    }
-
     $releaseSha256 = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-    $cardsSha256 = (Get-FileHash -LiteralPath $cardsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     $cardAssetsHash = [string]$cardAssetManifest.assetVersion
     $cardAssetsArchive = Join-Path $OutputDirectory "l12-card-assets-$cardAssetsHash.tar.gz"
     if (-not (Test-Path -LiteralPath $cardAssetsArchive)) {
@@ -209,14 +196,11 @@ try {
     }
     $cardAssetsSha256 = (Get-FileHash -LiteralPath $cardAssetsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     [ordered]@{
-        schema = 2
+        schema = 3
         commit = $commit
         generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
         releaseArchive = $releaseArchive
         releaseSha256 = $releaseSha256
-        cardsHash = $cardsHash
-        cardsArchive = $cardsArchive
-        cardsSha256 = $cardsSha256
         cardAssetsHash = $cardAssetsHash
         cardAssetsArchive = $cardAssetsArchive
         cardAssetsSha256 = $cardAssetsSha256
@@ -227,9 +211,6 @@ try {
 }
 finally {
     Set-Location $originalLocation
-    if ($null -ne $frontendCardsLink -and (Test-Path -LiteralPath $frontendCardsLink)) {
-        [IO.Directory]::Delete($frontendCardsLink)
-    }
     if ($null -ne $frontendWorkspaceDirectory -and (Test-Path -LiteralPath $frontendWorkspaceDirectory)) {
         $resolvedFrontendBuild = (Resolve-Path -LiteralPath $frontendWorkspaceDirectory).Path
         $resolvedOutputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path

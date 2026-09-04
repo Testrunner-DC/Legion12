@@ -144,8 +144,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Equal("pending-activation", targetPrompt.Continuation);
         Assert.Contains(buffTarget.InstanceId, targetPrompt.ValidChoices);
         Assert.DoesNotContain("mode:none", targetPrompt.ValidChoices);
-        Assert.Contains(game.State.PendingActivations, activation =>
-            activation.DeclaredValues.GetValueOrDefault("mode", []).Contains("mode:none"));
+        Assert.DoesNotContain(game.State.PendingActivations, activation =>
+            activation.DeclaredValues.ContainsKey("mode"));
     }
 
     [Theory]

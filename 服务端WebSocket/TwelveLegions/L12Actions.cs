@@ -5,6 +5,15 @@ public sealed partial class L12GameEngine
     private static bool HasOptionalSelfDamageEntryDiscount(L12CardInstance card)
         => L12StructuredCardRules.HasOptionalSelfDamageEntryDiscount(card.CardId);
 
+    private void CreateOptionalGraveEntryCostPrompt(int playerIndex, string kind, string text,
+        IReadOnlyCollection<L12CardInstance> cards, int minimum, int maximum, string continuation,
+        Dictionary<string, string> data)
+    {
+        foreach (var candidate in cards) AddPromptCardData(data, candidate);
+        CreatePrompt(playerIndex, kind, text, cards.Select(candidate => candidate.InstanceId),
+            minimum, maximum, continuation, isPrivate: true, data: data);
+    }
+
     private CommandResult PlayCard(int playerIndex, L12Command command)
     {
         if (!CanAct(playerIndex)) return CommandResult.Reject("只能在自己的主要阶段行动");
@@ -66,17 +75,38 @@ public sealed partial class L12GameEngine
             if (!canReplaceOwnCounter) return CommandResult.Reject("阵地已被占用");
         }
 
+        if (card.CardId == "ST03-01" && command.Choice?.StartsWith("sigurd:", StringComparison.Ordinal) != true)
+        {
+            var choices = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
+            if (choices.Length == 0)
+                command = command with { Choice = "sigurd:" };
+            else
+            {
+                var data = new Dictionary<string, string>
+                {
+                    ["cardInstanceId"] = card.InstanceId,
+                    ["row"] = command.Row!.Value.ToString(),
+                    ["slot"] = command.Slot!.Value.ToString(),
+                    ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
+                };
+                CreateOptionalGraveEntryCostPrompt(playerIndex, "card-select",
+                    "蛇眼西格德：可选择墓地1张牌返回牌库底部，使此军团登场费用-1",
+                    choices, 0, 1, "starter-sigurd-grave-cost", data);
+                return CommandResult.Ok();
+            }
+        }
+
         if (card.CardId == "S02-0302" && command.Choice?.StartsWith("rollo:", StringComparison.Ordinal) != true)
         {
             var choices = player.Graveyard.Where(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))
-                .Select(candidate => candidate.InstanceId).ToArray();
+                .ToArray();
             if (choices.Length == 0)
                 command = command with { Choice = "rollo:" };
             else
             {
-                CreatePrompt(playerIndex, "order", "〈步行者罗洛〉：依选择顺序将墓地最多8张【阿斯加德】卡牌返回牌库底部",
-                    choices, 0, Math.Min(8, choices.Length), "s2-rollo-grave-cost", isPrivate: true,
-                    data: new Dictionary<string, string>
+                CreateOptionalGraveEntryCostPrompt(playerIndex, "order", "〈步行者罗洛〉：依选择顺序将墓地最多8张【阿斯加德】卡牌返回牌库底部",
+                    choices, 0, Math.Min(8, choices.Length), "s2-rollo-grave-cost",
+                    new Dictionary<string, string>
                     {
                         ["cardInstanceId"] = card.InstanceId,
                         ["row"] = command.Row!.Value.ToString(),
@@ -137,11 +167,20 @@ public sealed partial class L12GameEngine
             ? ParseDeclaredRuneCount(command.Choice, player.SpecialZones.Runes)
             : 0;
         var rolloReturns = card.CardId == "S02-0302" ? ParseRolloGraveOrder(command.Choice) : [];
+        var sigurdReturnId = card.CardId == "ST03-01" && command.Choice?.StartsWith("sigurd:", StringComparison.Ordinal) == true
+            ? command.Choice["sigurd:".Length..]
+            : string.Empty;
+        var sigurdReturn = string.IsNullOrWhiteSpace(sigurdReturnId)
+            ? null
+            : player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == sigurdReturnId && CanEnterHandOrLibrary(candidate));
+        if (!string.IsNullOrWhiteSpace(sigurdReturnId) && sigurdReturn is null)
+            return CommandResult.Reject("〈蛇眼西格德〉选择的墓地卡牌已失效");
         if (rolloReturns.Length > 8 || rolloReturns.Distinct(StringComparer.OrdinalIgnoreCase).Count() != rolloReturns.Length
             || rolloReturns.Any(id => !player.Graveyard.Any(candidate => candidate.InstanceId == id
                 && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))))
             return CommandResult.Reject("〈步行者罗洛〉选择的墓地卡牌已失效或数量不合法");
-        var cost = GetPlayCost(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes, rolloReturns.Length);
+        var cost = GetPlayCostWithSigurdDiscount(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes, rolloReturns.Length,
+            useSigurdDiscount: sigurdReturn is not null);
         var compositeReservation = CompositeReservedBasePayment(compositeDeclaration);
         if (ActiveResourceCountExcluding(player, compositeReservation.ResourceIds,
                 compositeReservation.TemporaryMorale) < cost)
@@ -167,6 +206,8 @@ public sealed partial class L12GameEngine
         }
         if (rolloReturns.Length > 0)
             MoveGraveToLibraryBottom(player, rolloReturns.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
+        if (sigurdReturn is not null)
+            MoveGraveToLibraryBottom(player, [sigurdReturn]);
         if (card.CardType == "legion")
         {
             if (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2)
@@ -466,6 +507,11 @@ public sealed partial class L12GameEngine
 
     private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0,
         int rolloReturnCount = 0)
+        => GetPlayCostWithSigurdDiscount(playerIndex, card, useSelfDamageDiscount, spentRunes, rolloReturnCount,
+            useSigurdDiscount: false);
+
+    private int GetPlayCostWithSigurdDiscount(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount, int spentRunes,
+        int rolloReturnCount, bool useSigurdDiscount)
     {
         var player = State.Players[playerIndex];
         var counterTactic = card.CardType == "tactic" && IsCounterTactic(card.CardId);
@@ -502,6 +548,7 @@ public sealed partial class L12GameEngine
             modifier++;
         if (card.CardId == "S02-0622") modifier -= Math.Max(0, spentRunes) * 2;
         if (card.CardId == "S02-0302") modifier -= Math.Clamp(rolloReturnCount, 0, 8) / 2;
+        if (card.CardId == "ST03-01" && useSigurdDiscount) modifier--;
         return Math.Max(0, card.Cost + modifier);
     }
 
@@ -961,8 +1008,12 @@ public sealed partial class L12GameEngine
             {
                 DamageMaster(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻", pending.AttackerPlayer,
                     combatDamage: true);
-                if (attacker.CardId == "S01-0308" && State.Phase != L12Phase.GameOver)
-                    PushEffect(pending.AttackerPlayer, attacker, "after-damage", "【对主宰造成伤害时】效果");
+                if (L12VerifiedAtomicPrograms.Find(attacker.CardId, "after-damage") is not null
+                    && State.Phase != L12Phase.GameOver)
+                    QueueTriggerCandidates([
+                        CreateTriggerCandidate(pending.AttackerPlayer, attacker, "after-damage",
+                            "【对主宰造成伤害时】效果")
+                    ]);
             }
             foreach (var card in cards)
             {

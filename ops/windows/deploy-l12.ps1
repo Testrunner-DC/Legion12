@@ -145,17 +145,6 @@ try {
     if ((Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.releaseSha256) {
         throw "运行包校验失败"
     }
-    $cardsArchive = ""
-    if (-not [string]::IsNullOrWhiteSpace([string]$manifest.cardsArchive)) {
-        $cardsArchive = if ([IO.Path]::IsPathRooted([string]$manifest.cardsArchive)) {
-            [string]$manifest.cardsArchive
-        } else { Join-Path $manifestDirectory ([string]$manifest.cardsArchive) }
-        if ((Test-Path -LiteralPath $cardsArchive) -and -not [string]::IsNullOrWhiteSpace([string]$manifest.cardsSha256)) {
-            if ((Get-FileHash -LiteralPath $cardsArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.cardsSha256) {
-                throw "卡图包校验失败"
-            }
-        }
-    }
     $cardAssetsHashValue = if ($manifest.PSObject.Properties['cardAssetsHash']) { [string]$manifest.cardAssetsHash } else { "" }
     $cardAssetsArchiveValue = if ($manifest.PSObject.Properties['cardAssetsArchive']) { [string]$manifest.cardAssetsArchive } else { "" }
     $cardAssetsSha256Value = if ($manifest.PSObject.Properties['cardAssetsSha256']) { [string]$manifest.cardAssetsSha256 } else { "" }
@@ -177,33 +166,11 @@ try {
     $incoming = "/opt/legion12-deployment/incoming"
     $remoteBootstrap = "/tmp/deploy-l12-release-$commit.sh"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
-    $remoteCards = "$incoming/l12-cards-$($manifest.cardsHash).tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传发布工具与预构建运行包..."
     Invoke-External ssh @sshOptions $Server "mkdir -p '$incoming'"
     Invoke-External scp @sshOptions $serverScript "${Server}:$remoteBootstrap"
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
-
-    & ssh @sshOptions $Server "test -d '/opt/legion12-static/cards/$($manifest.cardsHash)'"
-    $cardsCached = $LASTEXITCODE -eq 0
-    if ($cardsCached) {
-        Write-Host "[L12 部署] 服务器复用卡图缓存：$($manifest.cardsHash)"
-        $cardsSha = "-"
-        $cardsPath = "-"
-    }
-    else {
-        Write-Host "[L12 部署] 卡图版本变化，上传一次性缓存包..."
-        if ([string]::IsNullOrWhiteSpace($cardsArchive) -or -not (Test-Path -LiteralPath $cardsArchive)) {
-            Require-Command "tar"
-            $localCardsHash = (& git rev-parse "$commit`:opcgpro-vue/public/cards").Trim()
-            if ($localCardsHash -ne $manifest.cardsHash) { throw "当前卡图目录与发布清单不一致" }
-            $cardsArchive = Join-Path $manifestDirectory "l12-cards-$($manifest.cardsHash).tar.gz"
-            Invoke-External tar -czf $cardsArchive -C ".\opcgpro-vue\public" cards
-        }
-        $cardsSha = (Get-FileHash -LiteralPath $cardsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-        Invoke-External scp @sshOptions $cardsArchive "${Server}:$remoteCards"
-        $cardsPath = $remoteCards
-    }
 
     $cardAssetsSha = "-"
     $cardAssetsPath = "-"
@@ -222,14 +189,12 @@ try {
             $cardAssetsPath = $remoteCardAssets
         }
     }
-    else {
-        Write-Warning "发布清单没有优化卡图包；保留旧 imageUrl 降级链，仅用于旧发布产物兼容。"
-    }
+    else { throw "发布清单缺少完整优化卡图包，拒绝退回旧卡图链路。" }
 
     Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && rm -f '$remoteBootstrap'"
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
-    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease $($manifest.cardsHash) $cardsSha $cardsPath $cardAssetsHash $cardAssetsSha $cardAssetsPath"
+    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath"
 
     if ($DryRun) { Write-Host "[L12 部署] 干运行成功，线上版本未改变。" }
     else { Write-Host "[L12 部署] 发布成功：https://legion-12.com/" }

@@ -1117,13 +1117,20 @@ public sealed class NewSystemsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(owner, new L12Command("playCard", march.InstanceId)).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", mode.Continuation);
-        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:kill")).Accepted);
         var buff = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", buff.Continuation);
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: buff.PromptId,
             Choice: friendly.InstanceId)).Accepted);
+        var decision = Assert.Single(game.State.PendingPrompts);
+        Assert.Single(game.State.EffectStack);
+        Assert.Equal("effect-decision", decision.Data.GetValueOrDefault("uiPattern"));
+        Assert.Equal(march.InstanceId, decision.Data.GetValueOrDefault("sourceInstanceId"));
+        Assert.Equal(march.CardId, decision.Data.GetValueOrDefault("sourceCardId"));
+        Assert.Equal(march.Name, decision.Data.GetValueOrDefault($"{march.InstanceId}:name"));
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: decision.PromptId,
+            Choice: "mode:use")).Accepted);
+        Assert.True(game.State.PendingPrompts.Count == 1,
+            $"prompts={game.State.PendingPrompts.Count}; morale={player.Morale.Count}; tapped={player.Morale.Count(card => card.Tapped)}; stack={string.Join('|', game.State.EffectStack.Select(item => item.StackItemId + ':' + item.Data.GetValueOrDefault("atomicFlow")))}; deferred={string.Join('|', game.State.DeferredEffectStack.Select(item => item.StackItemId + ':' + item.Data.GetValueOrDefault("atomicFlow")))}; events={string.Join(" || ", game.State.Events.Select(entry => entry.Text))}");
         var cost = Assert.Single(game.State.PendingPrompts);
         var returnedMorale = cost.ValidChoices.Where(choice => choice != "skip").Take(2).ToList();
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: cost.PromptId,

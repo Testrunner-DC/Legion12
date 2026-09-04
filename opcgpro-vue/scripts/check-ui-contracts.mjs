@@ -17,6 +17,8 @@ const globalStyle = read('../src/style.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
 const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
+const replayPage = read('../src/l12/ReplayPage.vue')
+const replayModel = read('../src/l12/replayModel.ts')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
 const rankings = read('../src/l12/site/RankingsPage.vue')
@@ -195,7 +197,7 @@ const contracts = [
     && !disasterPoolPicker.includes('intent="thumb"')
     && adminOperations.includes('<DisasterPoolPicker v-model="form.disasterPool.cardIds"')
     && tournamentCenter.includes('<DisasterPoolPicker v-model="form.disasterCardIds"'), '赛季与赛事天灾池必须复用公共选择器，以不旋转、不裁切的8:5横版完整卡图展示，并将卡名和卡号置于卡图外的独立信息区'],
-  [lobby.includes('class="ranked-rules-button"') && lobby.includes('>排位规则</button>') && lobby.includes('rankedRulesOpen') && lobby.includes('七曜值') && lobby.includes('段位与称号') && lobby.includes('时间限制') && lobby.includes('本赛季天灾') && lobby.includes('本赛季禁限卡'), '大厅排位区必须提供排位规则按钮，并集中说明七曜、称号段位、时限和赛季天灾/禁限卡'],
+  [lobby.includes('class="ranked-rules-button"') && lobby.includes('>排位规则</button>') && lobby.includes('rankedRulesOpen') && lobby.includes('七曜值') && lobby.includes('段位与派系称号') && lobby.includes('最强主宰规则') && lobby.includes('时间限制') && lobby.includes('本赛季天灾') && lobby.includes('本赛季禁限卡'), '大厅排位区必须提供排位规则按钮，并集中说明七曜、派系段位称号、最强主宰、时限和赛季天灾/禁限卡'],
   [lobby.includes('.ranked-rules-modal{grid-template-rows:auto minmax(0,1fr) auto') && lobby.includes('.ranked-rules-scroll{min-height:0;align-content:start;overflow-x:hidden;overflow-y:scroll'), '排位规则正文必须拥有独立纵向滚动区，在小视口中也能阅读全部内容'],
   [shell.includes('<router-link class="site-brand" to="/"') && !shell.includes('<span>LEGION 12</span>') && !shell.includes('<small>十二军团</small>') && shell.includes('.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain'), '主页侧栏品牌区必须只显示无外框的白色 Logo-Mini，不得附带中英文文字'],
   [globalBugFeedback.includes('v-model="form.bugDescription"') && globalBugFeedback.includes('v-model="form.suggestion"') && globalBugFeedback.includes('if (!bugDescription && !suggestion)') && globalBugFeedback.includes('提及卡牌的时候请勿使用俗称，最好使用卡牌编号（例：S01-0001）') && globalBugFeedback.includes('描述你希望优化的Bug、操作体验或界面效果'), '全局反馈必须分为 Bug 提交与优化建议，任填一项即可提交并保留明确填写提示'],
@@ -215,7 +217,16 @@ const contracts = [
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list')
     && prompt.includes('orderedEffectChoices') && prompt.includes('declineChoices')
     && prompt.includes('flex-wrap:nowrap') && prompt.includes('overflow-x:auto'), '效果/费用分支必须单行横向展示、窄屏滚动，且不发动固定在最后'],
-  [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && matchRecords.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
+  [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && replayModel.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
+  [!matchRecords.includes("import GameBoard from './game/GameBoard.vue'")
+    && !matchRecords.includes('selectMatch(matches.value[0])')
+    && matchRecords.includes("router.push({ name: 'match-replay'")
+    && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录与JSON均须在玩家点击播放后进入独立回放路由，不得默认加载或嵌入渲染棋盘'],
+  [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'")
+    && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" read-only />')
+    && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
+    && replayPage.includes('>下一步</button>') && replayPage.includes('>返回对局记录</button>')
+    && app.includes("route.meta.replay !== true") && board.includes('props.readOnly || !l12State.gmEnabled'), '回放必须使用与正式对战一致的独立全屏棋盘，左下提供上一步/播放/下一步，右上返回记录，并且不得被现存实时对局或沙盒控制状态污染'],
   [prompt.includes('naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)') && prompt.includes('safeChoiceFallback(id)') && !prompt.includes('const choiceLabels: Record<string, string>'), '效果选项必须优先显示服务端权威自然语言标签，并且只能用不泄露协议值的通用文案兜底'],
   [playerMat.includes('entry.enabled === false || entry.triggerOnly') && playerMat.includes('.faction-effect-actions button:disabled'), '不可发动与仅触发时发动的效果必须保留可查看文本、灰置且不可点击'],
   [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
@@ -399,7 +410,7 @@ const contracts = [
   [platform.includes("releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments')") && adminPage.includes('运行态只读快照') && adminPage.includes('WebSocket 冒烟') && adminPage.includes('发布、失败与回滚记录'), '运行态必须来自显式只读适配器快照，并展示健康、WS 冒烟、失败和回滚记录'],
   [platform.includes('disabled?: boolean') && platform.includes('/status`, {') && adminPage.includes('账号变更立即执行并完整审计') && adminPage.includes('撤销会话'), '账号禁用/启用必须直接执行、记录版本审计，并提供旧令牌与 WebSocket 会话撤销入口'],
   [platform.includes("securityStatus: () => platformRequest<SecurityStatus>('/api/admin/v1/security/status')") && platform.includes('/api/admin/v1/security/audit-archives') && adminPage.includes('高风险审计') && adminPage.includes('恢复演练'), '后台必须展示安全告警、独立审计归档 dry-run/复核与恢复演练入口'],
-  [platform.includes("mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')") && profilePage.includes('MFA：') && profilePage.includes('尚未启用') && profilePage.includes('不会收集或保存 MFA 密钥'), 'MFA 无安全凭据基础时必须明确保持关闭，前端不得伪造注册能力或收集密钥'],
+  [platform.includes("mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')") && profilePage.includes('v-if="mfa?.enrollmentEnabled"') && !profilePage.includes('不会收集或保存 MFA 密钥'), 'MFA 未开放时必须隐藏工程提示，只有服务端明确开放注册能力后才显示入口'],
   [adminPage.includes('仅服务器 CLI 可用') && adminPage.includes('发布复核离线恢复') && !platform.includes('bootstrapSecondApprover'), '受控发布恢复只能保留离线命令边界，不得新增 Web 凭据入口'],
   [platform.includes('export const tournamentApi') && platform.includes('/api/tournaments/import-legacy') && platform.includes('/matches/${encodeURIComponent(matchId)}/rulings'), '赛事中心必须通过服务端 API 完成赛事、旧数据导入与裁判写入'],
   [tournamentCenter.includes('预览导入（dry-run）') && tournamentCenter.includes('确认导入') && tournamentCenter.includes('legacyPreview.value.previewHash') && !tournamentCenter.includes('localStorage.setItem'), '本机旧赛事只能显式预览并确认导入，不得继续作为 localStorage 权威状态写回'],

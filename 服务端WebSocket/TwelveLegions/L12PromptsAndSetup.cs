@@ -162,6 +162,19 @@ public sealed partial class L12GameEngine
     private void ApplySharedPromptPresentation(int playerIndex, string kind, string playerText,
         IReadOnlyList<string> validChoices, string? stackItemId, Dictionary<string, string> data)
     {
+        var stackItem = stackItemId is null ? null : State.EffectStack.Concat(State.DeferredEffectStack)
+            .FirstOrDefault(item => item.StackItemId == stackItemId);
+        if (stackItem is not null)
+        {
+            data.TryAdd("sourceInstanceId", stackItem.SourceInstanceId);
+            data.TryAdd("sourceCardId", stackItem.SourceCardId);
+            data.TryAdd("sourceName", stackItem.SourceName);
+            data.TryAdd("effectText", stackItem.Text);
+            var source = FindSource(stackItem) ?? stackItem.SourceSnapshot;
+            if (source is not null && (!source.Hidden || stackItem.Controller == playerIndex))
+                AddPromptCardData(data, source);
+        }
+
         var choiceSet = validChoices.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var isDecision = (choiceSet.SetEquals(["yes", "no"])
                 || choiceSet.SetEquals(["mode:use", "mode:none"]))
@@ -174,14 +187,7 @@ public sealed partial class L12GameEngine
             data["no"] = "不发动";
             data["mode:none"] = "不发动";
 
-            var stackItem = stackItemId is null ? null : State.EffectStack.Concat(State.DeferredEffectStack)
-                .FirstOrDefault(item => item.StackItemId == stackItemId);
-            if (stackItem is not null)
-            {
-                data.TryAdd("sourceName", stackItem.SourceName);
-                data.TryAdd("effectText", stackItem.Text);
-            }
-            else
+            if (stackItem is null)
             {
                 var separator = playerText.IndexOf('：');
                 if (separator > 0)
@@ -736,6 +742,19 @@ public sealed partial class L12GameEngine
                 var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
                     CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
                     Choice: $"rollo:{string.Join(',', chosen)}",
+                    TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
+                        ? targetPlayerIndex : null));
+                if (!result.Accepted) return result;
+                break;
+            }
+            case "starter-sigurd-grave-cost":
+            {
+                int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
+                int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
+                var selected = chosen.FirstOrDefault() ?? string.Empty;
+                var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
+                    CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
+                    Choice: $"sigurd:{selected}",
                     TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
                         ? targetPlayerIndex : null));
                 if (!result.Accepted) return result;

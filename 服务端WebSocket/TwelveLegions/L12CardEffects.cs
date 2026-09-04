@@ -167,7 +167,23 @@ public sealed partial class L12GameEngine
             {
                 var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
                 if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, card.Name);
-                FinishStackItem(item);
+                var canContinue = CanReturnMorale(player, 2)
+                    && PublicLegions(State.Players[1 - item.Controller]).Any(candidate => candidate.Troops <= 6000);
+                if (!canContinue)
+                {
+                    FinishStackItem(item);
+                    return;
+                }
+                CreateResolutionChoicePrompt(item, "option",
+                    "神妙行军：是否返还2士气，击杀对方1张兵力不高于6000的军团？",
+                    ["mode:use", "mode:none"], "march-followup-decision", new Dictionary<string, string>
+                    {
+                        ["sourceName"] = card.Name,
+                        ["effectText"] = "返还2士气：击杀对方1张兵力不高于6000的军团。",
+                        ["uiPattern"] = "effect-decision",
+                        ["mode:use"] = "发动",
+                        ["mode:none"] = "不发动",
+                    });
                 return;
             }
             case "march-kill-effect":

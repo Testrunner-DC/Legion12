@@ -27,7 +27,7 @@ export interface CardAssetManifest {
 }
 
 export interface CardAssetSource {
-  kind: 'cdn' | 'sameOrigin' | 'legacy' | 'placeholder'
+  kind: 'cdn' | 'sameOrigin' | 'placeholder'
   lowWebp: string
   webp: string
   avif?: string
@@ -151,7 +151,7 @@ function uniqueSources(sources: Array<CardAssetSource | null>) {
 function resolvedCardAssetFromManifest(
   manifest: CardAssetManifest,
   cardId: string,
-  legacyUrl: string | undefined,
+  _legacyUrl: string | undefined,
   intent: CardImageIntent,
 ): ResolvedCardAsset | null {
   const entry = manifest.cards[cardId]
@@ -170,7 +170,6 @@ function resolvedCardAssetFromManifest(
       !explicitCdnBaseUrl && manifestCdnBaseUrl
         ? sourceFor('cdn', manifestCdnBaseUrl, entry.variants, intent)
         : null,
-      legacyUrl ? { kind: 'legacy', lowWebp: legacyUrl, webp: legacyUrl } : null,
       { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER },
     ]),
   }
@@ -185,14 +184,11 @@ export function peekCardAsset(cardId: string, legacyUrl: string | undefined, int
   return manifestValue ? resolvedCardAssetFromManifest(manifestValue, cardId, legacyUrl, intent) : null
 }
 
-export function fallbackCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
+export function fallbackCardAsset(cardId: string, _legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
   return {
     cardId,
     intent,
-    sources: uniqueSources([
-      legacyUrl ? { kind: 'legacy', lowWebp: legacyUrl, webp: legacyUrl } : null,
-      { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER },
-    ]),
+    sources: [{ kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER }],
   }
 }
 
