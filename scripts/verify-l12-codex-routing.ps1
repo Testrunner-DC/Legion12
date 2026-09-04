@@ -73,6 +73,15 @@ if (-not $codex) {
 }
 if (-not $codex) { throw "Codex CLI was not found" }
 
+foreach ($marker in @("Product test isolation", 'must not run the unfiltered `GrandUMIServer.Tests` suite', "PlatformStoreTests|ControlPlane")) {
+    if (-not $agentsRules.Contains($marker)) { throw "AGENTS.md is missing test-isolation marker: $marker" }
+}
+
+$changeGate = Read-NormalizedText (Join-Path $repoRoot "scripts\verify-l12-change.ps1")
+if ($changeGate -notmatch 'GrandUMIServer\.Tests\.csproj[\s\S]*--filter[\s\S]*PlatformStoreTests\|FullyQualifiedName~ControlPlane') {
+    throw "L12 change gate must keep GrandUMI shared-project execution filtered to platform/control-plane tests"
+}
+
 $previousErrorAction = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 try {

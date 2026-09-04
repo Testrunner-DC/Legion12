@@ -55,3 +55,11 @@ These rules apply before any implementation plan or task action.
    - `Release` only before an authorized synchronization or deployment.
 4. Prefer deterministic engine scenarios or saved sanitized replay/state fixtures over manually recreating a board. Follow `docs/REGRESSION-FIXTURES.md` and never commit passwords, tokens, room secrets, private hands from real matches, or player identifiers.
 5. Before final handoff, compare the final diff with the pre-change baseline and run the rollback-guard checks. Previously fixed UI contracts and rule invariants may not disappear from the same batch.
+
+## Product test isolation
+
+1. Legion12-only work must not run the unfiltered `GrandUMIServer.Tests` suite. That project contains another game's card-effect regressions and has a stable, separately recorded set of failures; rerunning it does not strengthen Legion12 evidence and wastes build time.
+2. When Legion12 changes shared platform, account, administration, tournament, persistence, or control-plane code, run only `PlatformStoreTests|ControlPlane` from `GrandUMIServer.Tests`, as encoded by `scripts/verify-l12-change.ps1`.
+3. Run the complete unfiltered GrandUMI suite only when the requested work explicitly concerns GrandUMI, or the diff changes GrandUMI gameplay/effect/runtime files outside the `TwelveLegions` product boundary. In that case existing failures are real failures to investigate, not an exclusion list to hide.
+4. A primary or execution agent must not add an extra “informational” full GrandUMI run after the Legion12 gate has passed. Report the last separately recorded GrandUMI baseline by reference only when it materially affects the changed shared code.
+5. `NU1900` caused solely by an unavailable NuGet vulnerability feed is recorded as an environment warning; compilation or test failures remain blocking.
