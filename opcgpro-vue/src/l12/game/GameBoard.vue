@@ -128,6 +128,7 @@ const handPlayableIds = computed(() => {
 const boardTargetPrompt = computed(() => {
   const fieldIds = new Set(props.game.players.flatMap(player => player.field.flat().filter(Boolean).map(card => card!.instanceId)))
   return props.game.prompts?.find(prompt => {
+    if (prompt.data?.choiceMode === 'mixed-board-payment') return true
     if (prompt.data?.choiceMode === 'board-target') return prompt.validChoices.filter(id => id !== 'skip').every(id => fieldIds.has(id))
     if (!['target', 'targets', 'optional-target', 'optional-targets', 'active-target'].includes(prompt.kind)) return false
     const choices = prompt.validChoices.filter(id => id !== 'skip')
@@ -151,7 +152,9 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
   || prompt.kind === 'target-morale',
 ) ?? null)
-const paymentChoiceIds = computed(() => resourceSelectionPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
+const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
+  ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
+  ?.validChoices.filter(id => id !== 'skip') ?? [])
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
   ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
 const passivePresentationPaused = computed(() => Boolean(
@@ -227,7 +230,9 @@ const boardSlotPreview = computed<Card | null>(() => {
     summonRound: 0,
   }
 })
-watch(() => boardTargetPrompt.value?.promptId, () => { boardTargetIds.value = [] })
+watch(() => boardTargetPrompt.value?.promptId, () => {
+  boardTargetIds.value = boardTargetPrompt.value?.data?.lockedChoices?.split('|').filter(Boolean) ?? []
+})
 watch(activeBoardPromptId, promptId => {
   if (!promptId) return
   graveyardPlayer.value = null
@@ -568,10 +573,13 @@ function ownSlot(row: number, slot: number, card: Card | null) {
 }
 function togglePaymentResource(instanceId: string) {
   const prompt = resourceSelectionPrompt.value
+    ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null)
   if (!prompt || !paymentChoiceIds.value.includes(instanceId)) return
-  const index = paymentResourceIds.value.indexOf(instanceId)
-  if (index >= 0) paymentResourceIds.value.splice(index, 1)
-  else if (paymentResourceIds.value.length < prompt.maxChoose) paymentResourceIds.value.push(instanceId)
+  const selected = prompt.data?.choiceMode === 'mixed-board-payment' ? boardTargetIds.value : paymentResourceIds.value
+  if (prompt.data?.lockedChoices?.split('|').includes(instanceId)) return
+  const index = selected.indexOf(instanceId)
+  if (index >= 0) selected.splice(index, 1)
+  else if (selected.length < prompt.maxChoose) selected.push(instanceId)
 }
 function confirmResourcePayment(skip = false) {
   const prompt = resourceSelectionPrompt.value
@@ -767,6 +775,7 @@ function statusTexts(card: Card) {
           <HandArea v-else hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
+              :ranked-clock="l12State.rankedClock"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
@@ -841,6 +850,7 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
+              :ranked-clock="l12State.rankedClock"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
@@ -911,7 +921,7 @@ function statusTexts(card: Card) {
       <div v-if="boardTargetPrompt && !readOnly" class="board-target-controls">
         <strong>{{ boardTargetPrompt.text }}</strong><span>已选择 {{ boardTargetIds.length }}/{{ boardTargetPrompt.maxChoose }}</span>
         <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>
-        <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">确认发动</button>
+        <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认发动' }}</button>
       </div>
       <div v-if="boardSlotPrompt && !readOnly" class="board-target-controls board-slot-controls">
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager

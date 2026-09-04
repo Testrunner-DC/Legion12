@@ -84,6 +84,17 @@ ATOMIC_REFERENCE_OVERRIDES = {
     "ST-DS03": "Ability 1\n触发 双方弃置各自战场上1张军团。",
 }
 
+# 数据库交付后由规则负责人明确勘误、但尚未回写当前工作簿的权威字段。
+# 生成器必须显式保留这些变更，避免重新导入时把已经确认的卡效回滚。
+CARD_FIELD_OVERRIDES = {
+    "ST06-M1": {
+        "effect": "我方消耗符文时，每消耗1符文，可选择我方1张【彼界】军团，本回合兵力+1000。\n"
+                  "我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃，试炼+2。",
+        "atomicReference": "Ability 1\n我方消耗符文时，每消耗1符文，可选择我方1张【彼界】军团，本回合兵力+1000。\n"
+                           "Ability 2\n我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃，试炼+2。",
+    },
+}
+
 
 def column_index(reference: str) -> int:
     letters = re.match(r"[A-Z]+", reference).group(0)
@@ -159,11 +170,17 @@ def build_card(headers: list[str], raw: list[object | None]) -> dict[str, object
         "faction": faction,
     }
     stat = row["血量/兵力"]
-    if source_type == "主宰" and stat is not None:
-        card["hp"] = int(stat)
+    if source_type == "主宰":
+        # 旧版 ST 数据表曾把主宰血量暂存在“费用”列。导入时只把它作为
+        # 血量兼容来源，绝不能让主宰获得费用维度。
+        hp_source = stat if stat is not None and normalized_text(stat) else row["费用"]
+        if hp_source is not None and normalized_text(hp_source):
+            card["hp"] = int(hp_source)
     elif source_type == "军团" and stat is not None:
         card["troops"] = int(stat)
-    for source, target in (("费用", "cost"), ("天灾等级", "disasterLevel")):
+    numeric_fields = (("天灾等级", "disasterLevel"),) if source_type == "主宰" else (
+        ("费用", "cost"), ("天灾等级", "disasterLevel"))
+    for source, target in numeric_fields:
         if row[source] is not None and normalized_text(row[source]):
             card[target] = int(row[source])
     profession = normalized_text(row["职介"])
@@ -186,6 +203,7 @@ def build_card(headers: list[str], raw: list[object | None]) -> dict[str, object
         # ST天灾没有单独维护的人工原子列时，仍以数据库效果原文建立稳定能力边界。
         # 仅补结构，不从可变展示文本推断实战规则。
         card["atomicReference"] = ATOMIC_REFERENCE_OVERRIDES[card_id]
+    card.update(CARD_FIELD_OVERRIDES.get(card_id, {}))
     return card
 
 
@@ -212,6 +230,13 @@ def main() -> None:
     trial_values = {card["id"]: card.get("trialValue") for card in cards if "trialValue" in card}
     if trial_values != {"ST06-06": 1, "ST06-07": 1, "ST06-08": 2}:
         raise ValueError(f"ST 试炼值导入不完整：{trial_values}")
+    invalid_masters = [
+        card["id"] for card in cards
+        if card["cardType"] == "master"
+        and ("hp" not in card or "cost" in card or "troops" in card)
+    ]
+    if invalid_masters:
+        raise ValueError(f"主宰必须仅登记血量，不得登记费用或兵力：{invalid_masters}")
 
     content = json.dumps(cards, ensure_ascii=False, indent=2) + "\n"
     for output in (args.server_output, args.web_output):

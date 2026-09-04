@@ -308,4 +308,66 @@ public sealed class PlatformStoreTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public void ArticleDraftPublishRevisionAndRestoreArePersistent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var store = new L12PlatformStore(path);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "赛季公告", "摘要", "第一版正文",
+                "赛季更新", "/images/season.webp", "/battle", "season-news", true, null));
+            Assert.Equal("draft", draft.Status);
+            Assert.Empty(store.PublicArticles());
+
+            var published = store.PublishArticle(admin, draft.Id);
+            Assert.Equal("published", published.Status);
+            Assert.Equal("第一版正文", Assert.Single(store.PublicArticles()).Body);
+
+            var changed = store.SaveArticleDraft(admin, new L12ArticleDraft(draft.Id, "赛季公告", "更新摘要", "第二版正文",
+                "赛季更新", "/images/season.webp", "/battle", "season-news", true, null, published.Revision));
+            Assert.True(changed.HasUnpublishedChanges);
+            Assert.Equal("第一版正文", Assert.Single(store.PublicArticles()).Body);
+            var history = store.ArticleRevisions(draft.Id);
+            Assert.True(history.Count >= 3);
+
+            var reloaded = new L12PlatformStore(path);
+            Assert.Equal("第一版正文", Assert.Single(reloaded.PublicArticles()).Body);
+            var restored = reloaded.RestoreArticleRevision(admin, draft.Id, history.Min(item => item.Revision));
+            Assert.Equal("draft", restored.Status);
+            Assert.True(restored.HasUnpublishedChanges);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void BlockingRemovesFriendshipAndPreventsNewRequests()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var first = store.Register("屏蔽甲", "password-a").Account!;
+            var second = store.Register("屏蔽乙", "password-b").Account!;
+            Assert.True(store.SendFriendRequest(first.Id, second.Id).Success);
+            Assert.True(store.ResolveFriendRequest(second.Id, first.Id, true).Success);
+
+            Assert.True(store.BlockAccount(first.Id, second.Id).Success);
+            Assert.False(store.AreFriends(first.Id, second.Id));
+            Assert.Equal(second.Id, Assert.Single(store.BlockedAccounts(first.Id)).AccountId);
+            Assert.False(store.SendFriendRequest(second.Id, first.Id).Success);
+            Assert.True(store.UnblockAccount(first.Id, second.Id));
+            Assert.True(store.SendFriendRequest(second.Id, first.Id).Success);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

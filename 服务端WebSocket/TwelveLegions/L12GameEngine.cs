@@ -600,6 +600,11 @@ public sealed partial class L12GameEngine
     private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck)
     {
         var master = _catalog.Cards[deck.MasterId];
+        // 正式主宰必须消费目录中的权威血量；少量规则单元测试会临时把普通卡
+        // 放进主宰位以隔离某项效果，继续为这种非主宰测试夹具保留10血。
+        var masterHp = master.CardType == "master"
+            ? master.Hp ?? throw new InvalidDataException($"主宰 {master.Id} 未登记血量，无法建立对局。")
+            : 10;
         var player = new L12PlayerState
         {
             PlayerIndex = index,
@@ -609,8 +614,8 @@ public sealed partial class L12GameEngine
             MasterId = master.Id,
             MasterName = master.NameZh,
             MasterImageUrl = master.ImageUrl,
-            Hp = master.Hp ?? 10,
-            MaxHp = master.Hp ?? 10,
+            Hp = masterHp,
+            MaxHp = masterHp,
         };
         player.SpecialZones.TrialCapacity = L12SpecialDeckRules.TrialCapacity(master);
         var mainDeckIndex = 0;
@@ -1605,6 +1610,28 @@ public sealed partial class L12GameEngine
         State.IsResolvingStack = false;
         State.ResponseWindow = null;
         AddEvent("game-over", winner, $"{State.Players[winner].Name} 获胜：{reason}");
+    }
+
+    internal void ConcludeByAuthority(int? winner, string reason)
+    {
+        if (State.Phase == L12Phase.GameOver) return;
+        reason = string.IsNullOrWhiteSpace(reason) ? "服务端权威裁决" : reason.Trim();
+        if (winner is 0 or 1) SetWinner(winner.Value, reason);
+        else
+        {
+            State.Winner = null;
+            State.WinnerReason = reason;
+            State.Phase = L12Phase.GameOver;
+            State.PendingDefense = null;
+            State.SuspendedCombatContexts.Clear();
+            State.PendingPrompts.Clear();
+            State.EffectStack.Clear();
+            State.DeferredEffectStack.Clear();
+            State.IsResolvingStack = false;
+            State.ResponseWindow = null;
+            AddEvent("game-invalid", null, reason);
+        }
+        State.Revision++;
     }
 
     private int? ResolveDamageSourcePlayer(int? declaredSourcePlayer, bool neutralSource)

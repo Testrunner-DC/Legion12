@@ -37,7 +37,9 @@ public sealed partial class L12GameEngine
             Text = step.Text,
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
-            MaxChoose = Math.Min(step.MaxChoose, step.ValidChoices.Count),
+            MaxChoose = step.Kind == "prospective-grave-card"
+                ? step.MaxChoose
+                : Math.Min(step.MaxChoose, step.ValidChoices.Count),
             CancellationPolicy = step.CancellationPolicy,
             AutoSelectWhenExact = step.AutoSelectWhenExact,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
@@ -56,7 +58,8 @@ public sealed partial class L12GameEngine
             SelectionConstraint = step.SelectionConstraint,
         }).ToList();
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
-                && step.RequiredDeclaredChoice is null))
+                && step.RequiredDeclaredChoice is null
+                && step.Kind != "prospective-grave-card"))
             return CommandResult.Reject("没有足够的合法目标");
         var first = steps[0];
         var activation = new L12PendingActivation
@@ -147,6 +150,8 @@ public sealed partial class L12GameEngine
         }
         var step = activation.SelectionSteps[activation.CurrentStep];
         var promptKind = step.Kind;
+        string? promptDataChoiceMode = null;
+        string? promptLockedChoices = null;
         int? targetPlayerIndex = null;
         if (step.Kind == "adjacent-slot")
         {
@@ -428,6 +433,43 @@ public sealed partial class L12GameEngine
             promptKind = "resource-payment";
             targetPlayerIndex = activation.Controller;
         }
+        else if (step.Kind == "mixed-board-payment")
+        {
+            // 费用阶段可同时选择场面资源与场上卡牌。此处只锁定选择，不改变权威状态；
+            // 后续结算对象/位置全部确认后，CommitActiveAbility 才会一次性提交费用。
+            // 因此任意后续步骤取消都天然完整返还，不会产生需要逆向补偿的离场/费用事件。
+            promptKind = "active-target";
+            promptDataChoiceMode = "mixed-board-payment";
+            targetPlayerIndex = activation.Controller;
+            var player = State.Players[activation.Controller];
+            var resourceChoices = step.ValidChoices.Where(id =>
+                player.Morale.Any(card => card.InstanceId == id && !card.Tapped)
+                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
+            if (resourceChoices.Length == 1) promptLockedChoices = resourceChoices[0];
+        }
+        else if (step.Kind == "prospective-grave-card")
+        {
+            var player = State.Players[activation.Controller];
+            var prospectiveIds = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, [])
+                : [];
+            var choices = player.Graveyard
+                .Concat(prospectiveIds.Select(id => FindOnField(player, id, out _, out _)).OfType<L12CardInstance>())
+                .Where(card => card.CardType == "legion" && card.BaseTroops <= (step.CostThreshold ?? int.MaxValue)
+                    && (step.SelectionConstraint is null
+                        || L12StructuredCardRules.HasFaction(player, card, step.SelectionConstraint)))
+                .Select(card => card.InstanceId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "费用确认后没有合法的结算对象；本次发动取消且全部费用未提交");
+                return;
+            }
+            promptKind = "grave-card";
+        }
         else if (step.Kind == "composite-desert-hand")
         {
             var player = State.Players[activation.Controller];
@@ -519,6 +561,10 @@ public sealed partial class L12GameEngine
             ["activationId"] = activation.ActivationId,
             ["activationStep"] = activation.CurrentStep.ToString(),
         };
+        if (!string.IsNullOrWhiteSpace(promptDataChoiceMode))
+            promptData["choiceMode"] = promptDataChoiceMode;
+        if (!string.IsNullOrWhiteSpace(promptLockedChoices))
+            promptData["lockedChoices"] = promptLockedChoices;
         if (step.Kind == "controller-private-card")
         {
             promptKind = "card";
@@ -652,7 +698,12 @@ public sealed partial class L12GameEngine
                 AbortEffectGeneratedFreePlay(activation, "已取消效果生成的打出声明；卡牌保留在原区域");
                 return;
             }
-            AddEvent("ability-cancelled", prompt.PlayerIndex, "已取消发动，未支付费用且未进入堆叠");
+            var hadReservedCost = activation.SelectionSteps.Take(activation.CurrentStep)
+                .Any(step => step.Kind is "mixed-board-payment" or "resource-payment" or "composite-ordinary-payment"
+                    || step.DeclarationKey?.Contains("cost", StringComparison.OrdinalIgnoreCase) == true);
+            AddEvent("ability-cancelled", prompt.PlayerIndex, hadReservedCost
+                ? "已取消结算选择，锁定的费用已全部释放，未产生费用、离场、次数或触发事件"
+                : "已取消发动，未支付费用且未进入堆叠");
             if (activation.Ability == "composite-committed-play")
             {
                 AbortCommittedCompositeEffectDeclaration(activation, "已打出的复合战术取消声明，卡牌结算至墓地");
@@ -795,8 +846,17 @@ public sealed partial class L12GameEngine
             AddEvent("ability-rejected", activation.Controller, "来源或目标已不合法，效果未支付费用也未入栈");
             return;
         }
+        IReadOnlyCollection<string>? selectedResourceIds = null;
+        if (activation.Ability == "horusRevive")
+        {
+            selectedResourceIds = activation.DeclaredValues.GetValueOrDefault("payment", [])
+                .Where(id => player.Morale.Any(card => card.InstanceId == id)
+                    || ActiveTombGuardResources(player).Any(card => card.InstanceId == id))
+                .ToArray();
+        }
         var result = CommitActiveAbility(activation.Controller, source, activation.Ability,
-            activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets));
+            activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets),
+            selectedResourceIds: selectedResourceIds);
         if (!result.Accepted) AddEvent("ability-rejected", activation.Controller, result.Error ?? "主动效果发动失败");
     }
 
@@ -927,7 +987,7 @@ public sealed partial class L12GameEngine
             if (activation?.Ability == "horusRevive")
             {
                 var occupant = State.Players[controller].Field[row][slot];
-                return occupant is null || activation.DeclaredValues.GetValueOrDefault("discardCosts", [])
+                return occupant is null || activation.DeclaredValues.GetValueOrDefault("payment", [])
                     .Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase);
             }
             return State.Players[controller].Field[row][slot] is null;

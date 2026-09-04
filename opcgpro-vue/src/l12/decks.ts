@@ -111,13 +111,19 @@ function normalizeMoraleCatalogCard(card: DeckCard): DeckCard {
     : card
 }
 
+function normalizeCardDimensions(card: DeckCard): DeckCard {
+  return card.cardType === 'master'
+    ? { ...card, cost: undefined, troops: undefined }
+    : card
+}
+
 function normalizeLookupRarity(value: string | null | undefined) {
   const rarity = value?.trim().toUpperCase()
   return rarity && ['C', 'U', 'UC', 'R', 'SR', 'L', 'SEC', 'P'].includes(rarity) ? rarity : undefined
 }
 
 function lookupDeckCard(card: LookupCard): DeckCard {
-  return normalizeMoraleCatalogCard({
+  return normalizeCardDimensions(normalizeMoraleCatalogCard({
     id: card.cardNo,
     number: card.cardNo,
     nameZh: card.name,
@@ -135,7 +141,7 @@ function lookupDeckCard(card: LookupCard): DeckCard {
     traits: card.tags ?? [],
     profession: card.subType || undefined,
     effect: card.effectText ?? undefined,
-  })
+  }))
 }
 
 let catalogPromise: Promise<DeckCard[]> | null = null
@@ -185,7 +191,9 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
     const lookup: LookupCard[] = await lookupResponse.json()
     const seasonTwo = lookup.filter(card => card.cardNo?.startsWith('S02-')).map(lookupDeckCard)
     const starterProducts: DeckCard[] = await stResponse.json()
-    return [...seasonOne, ...seasonTwo, ...starterProducts].map(normalizeMoraleCatalogCard)
+    return [...seasonOne, ...seasonTwo, ...starterProducts]
+      .map(normalizeMoraleCatalogCard)
+      .map(normalizeCardDimensions)
   })
   return catalogPromise
 }
@@ -257,6 +265,15 @@ export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]
 
 export async function ensureOfficialPrebuiltDecks() {
   const decks = await syncSavedDecksFromAccount()
+  // 登录账号的官方预组只在服务端创建账号时初始化一次。这里不得按“缺失名称”反复补齐，
+  // 否则玩家主动删除的预组会在下一次进入大厅/牌库页时重新出现。
+  if (platformState.account && platformState.token) return decks
+  const guestSeedKey = 'l12:official-presets:guest-seeded:v1'
+  if (localStorage.getItem(guestSeedKey) === 'true') return decks
+  if (Object.keys(decks).length > 0) {
+    localStorage.setItem(guestSeedKey, 'true')
+    return decks
+  }
   const presets = await loadOfficialPresetDecks()
   const configuredMasterIds = await getEffectiveOperationsPolicy()
     .then(policy => new Set(policy.defaultPresetDeckIds))
@@ -277,11 +294,7 @@ export async function ensureOfficialPrebuiltDecks() {
     changed = true
   })
   if (changed) writeSavedDecks(decks)
-  if (changed && platformState.account) {
-    await Promise.all(Object.values(decks).map(deck => platformRequest('/api/decks', {
-      method: 'PUT', body: JSON.stringify(deck),
-    }).catch(() => undefined)))
-  }
+  localStorage.setItem(guestSeedKey, 'true')
   return decks
 }
 
@@ -384,7 +397,7 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
           rarity: card.rarity ?? base.rarity,
         }
       : card
-    byId.set(archiveVersion.id, normalizeMoraleCatalogCard(archiveVersion))
+    byId.set(archiveVersion.id, normalizeCardDimensions(normalizeMoraleCatalogCard(archiveVersion)))
   })
   return [...byId.values()]
 }

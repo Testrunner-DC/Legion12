@@ -20,6 +20,8 @@ const matchRecords = read('../src/l12/MatchRecords.vue')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
 const rankings = read('../src/l12/site/RankingsPage.vue')
+const rankedTicker = read('../src/l12/site/RankedBroadcastTicker.vue')
+const rankedPlayback = read('../src/l12/site/rankedBroadcastPlayback.ts')
 const adminOperations = read('../src/l12/site/AdminOperationsPanel.vue')
 const savedDeckSelector = read('../src/l12/SavedDeckSelector.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
@@ -27,6 +29,7 @@ const gamePage = read('../src/l12/GamePage.vue')
 const app = read('../src/App.vue')
 const mainEntry = read('../src/main.ts')
 const playerMat = read('../src/l12/game/PlayerMat.vue')
+const adminIntegrity = read('../src/l12/site/AdminRankedIntegrityPanel.vue')
 const graveyardOverlay = read('../src/l12/game/GraveyardOverlay.vue')
 const masterOverlay = read('../src/l12/game/MasterOverlay.vue')
 const globalBugFeedback = read('../src/l12/site/GlobalBugFeedback.vue')
@@ -40,6 +43,8 @@ const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
+const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
+const friendsPage = read('../src/l12/site/FriendsPage.vue')
 const officialHome = read('../src/l12/site/OfficialHomePage.vue')
 const newsPage = read('../src/l12/site/NewsPage.vue')
 const homeContent = read('../src/l12/site/homeContent.ts')
@@ -106,6 +111,11 @@ const contracts = [
     && cardArchive.includes('@click="cycleVersion(-1)"') && cardArchive.includes('@click="cycleVersion(1)"')
     && cardArchive.includes(':card-id="selected.id"') && globalStyle.includes('.archive-version-arrow{')
     && globalStyle.includes('background:transparent'), '卡牌档案详情必须以左右透明三角切换逻辑卡全部版本，并由当前版本同步卡图与详情'],
+  [decks.includes('function normalizeCardDimensions(card: DeckCard)')
+    && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
+    && cardArchive.includes('function hasCostDimension(card: CatalogCard)')
+    && cardArchive.includes('hasCostDimension(entry.defaultVersion)')
+    && cardArchive.includes('hasCostDimension(selected)'), '主宰只有血量维度；卡牌档案、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
   [cardArchiveVersions.includes('identity.versionCardIds.map') && cardArchiveVersions.includes('godPowerCardId is deliberately absent')
     && !moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1'), '士气版本可按 canonical 别名聚合，但奥林匹斯神力反面不得与普通士气合并'],
   [indexHtml.includes('<link rel="icon" type="image/png" href="/favicon.png" />') && existsSync(faviconPath), '网页标签必须使用项目提供的 Logo-Mini PNG，不得回退默认 Vite 图标'],
@@ -125,7 +135,10 @@ const contracts = [
   [gamePage.includes('lastOsirisVictorySequence') && gamePage.includes('osirisSequenceMatchId') && gamePage.includes('lastOsirisVictorySequence = highest') && gamePage.includes('lastOsirisVictorySequence = Math.max(lastOsirisVictorySequence, highest)') && gamePage.includes('event.sequence > lastOsirisVictorySequence') && gamePage.includes('osirisSequenceKey.value =') && !gamePage.includes("const osirisSequenceKey = computed(() =>"), '奥西里斯胜利事件必须按 matchId+sequence 只消费一次，首快照只建立基线，重连或事件窗口截断后不得倒退序号并重播'],
   [osirisVictory.includes('playL12OsirisVictorySound()') && actionAudio.includes('playL12OsirisVictorySound') && actionAudio.includes('[196, 220, 247, 294, 330]') && actionAudio.includes('isMuted || sfxVolume <= 0'), '奥西里斯特殊胜利必须使用本地轻量专属音效并遵循静音与音效音量设置'],
   [Object.entries(confirmedS1DisasterLevels).every(([id, level]) => s1Cards.find(card => card.id === id)?.disasterLevel === level), '第一季补充天灾等级必须进入前端卡牌目录'],
-  [shell.includes('const siteBrandIcon = defaultSiteLogoUrl'), '主页入口必须引用默认网页图标'],
+  [shell.includes("const siteBrandIcon = '/favicon.png'") && shell.includes('filter:brightness(0) invert(1)'), '主页入口必须复用标签页Logo并以白色显示'],
+  [indexHtml.includes('<title>十二军团</title>') && !indexHtml.includes('十二军团 · 联网对战'), '网页标题必须统一为十二军团'],
+  [playerMat.includes('data-ui-contract="ranked-player-clock"') && playerMat.includes('总时') && playerMat.includes('本次') && playerMat.includes('重连'), '排位双方玩家区域必须显示总操作、本次操作和掉线重连倒计时'],
+  [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],
   [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)') && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"'), '在线玩家窗口必须支持直接添加好友、邀请空闲好友，并将对局中玩家替换为带权限原因的观战入口'],
   [shell.includes('friendApi.resolve(player.accountId, accept)') && shell.includes("player.friendDirection === 'incoming'") && shell.includes('resolveOnlineFriend(player, false)') && shell.includes('resolveOnlineFriend(player, true)') && shell.includes('>拒绝</button>') && shell.includes("'接受'"), '在线玩家窗口必须允许直接接受或拒绝收到的好友申请，不能只显示待处理状态'],
   [!shell.includes('/assets/l12/card-back-navy.png'), '主页入口不得回退为卡背'],
@@ -167,7 +180,10 @@ const contracts = [
   [l12Net.includes("export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'") && sandbox.includes('<option value="custom"') && !sandbox.includes('<option value="season"'), '沙盒只能使用全部、随机、自定或无天灾，不得接入赛季天灾池'],
   [lobby.includes('joinMatchmaking') && lobby.includes('七曜值') && lobby.includes('选择本赛季派系') && l12Net.includes("type: 'joinMatchmaking'") && l12Net.includes("type: 'pollMatchmaking'") && l12Net.includes("message.type === 'matchmakingRejected'") && l12Net.includes('startMatchmakingPolling()'), '公开匹配必须使用服务端权威队列、保留等待扩圈轮询并清理拒绝状态，在排位前选择赛季派系'],
   [lobby.includes('data-ui-contract="faction-totals-above-public-match"') && lobby.indexOf('data-ui-contract="faction-totals-above-public-match"') < lobby.indexOf('<section v-if="tab === \'match\'" class="mode-panel panel">'), '三派系七曜总量必须位于顶部模式标签之后、公开匹配面板之前，不能埋在公开匹配内容框内'],
-  [rankings.includes('masterChampions') && rankings.includes('主宰最强玩家') && rankings.includes('row.titles') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜与后台必须支持多称号及逐主宰最强玩家称号'],
+  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
+  [lobby.includes('class="ranked-rules-button"') && lobby.includes('>排位规则</button>') && lobby.includes('rankedRulesOpen') && lobby.includes('七曜值') && lobby.includes('段位与称号') && lobby.includes('时间限制') && lobby.includes('本赛季天灾') && lobby.includes('本赛季禁限卡'), '大厅排位区必须提供排位规则按钮，并集中说明七曜、称号段位、时限和赛季天灾/禁限卡'],
+  [board.includes("choiceMode === 'mixed-board-payment'") && board.includes("? '确认费用' : '确认发动'") && board.includes('lockedChoices'), '混合场面费用必须在同一场面直选条选择，唯一资源自动锁定且与弃置对象一并确认'],
+  [rankedTicker.includes('@animationend="complete"') && rankedTicker.includes('animation:ranked-message-once 16s linear 1 both') && rankedPlayback.includes('claimNextRankedBroadcast') && rankedPlayback.includes('completeCurrentRankedBroadcast') && rankedPlayback.includes('accountId'), '排位广播必须按账号领取，完整播放一次后确认，不得在页面内循环重播同一消息'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],
   [!board.includes('.modal-card-inspector') && !prompt.includes('.prompt-card-inspector'), '不得保留第二套弹框详情框样式'],
   [deckEditor.includes("deck.name === activeDeckName") && deckEditor.includes('.saved-list b{color:#f1eee5}') && deckEditor.includes('.saved-list span{color:#aab4b0}') && deckEditor.includes('.saved-list article.active{border-color:#86e8ee;background:#123e42'), '牌库编辑器左下牌库列表及当前牌库状态必须保持高对比'],
@@ -330,7 +346,10 @@ const contracts = [
   [platform.includes("effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms')") && platform.includes('/api/admin/effects/coverage'), '卡效后台必须从服务端权威原子注册表读取数据'],
   [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
-  [platform.includes("getPublicContentBatch") && officialHome.includes('v-if="ready"') && officialHome.includes('getPublicContentBatch') && homeContent.includes("newsContentKey = 'news.entries'") && adminPage.includes('news-editor') && newsPage.includes('parseNewsEntries'), '官网内容必须批量加载后一次呈现以避免默认文案闪烁，后台需提供结构化资讯编辑与发布入口'],
+  [platform.includes("getPublicContentBatch") && officialHome.includes('v-if="ready"') && officialHome.includes('getPublicContentBatch') && platform.includes('platformRequest<Article[]>(`/api/articles') && adminPage.includes('AdminArticlesPanel') && adminPage.includes("tab === 'articles'") && newsPage.includes('articleApi.list') && !adminPage.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
+  [adminPage.includes('✎ 资讯发布') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('正式发布') && adminArticles.includes('历史版本') && adminArticles.includes('封面图片地址') && adminArticles.includes('文章链接'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
+  [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
+  [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('friendApi.blocked()') && friendsPage.includes('selectedPresence?.canInvite') && friendsPage.includes('selectedPresence?.canSpectate'), '好友中心须支持申请、屏蔽，并按在线状态在邀请对战与观战之间切换'],
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
   [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null') && platform.includes("platformRequest<PlatformAccount>('/api/auth/me')") && platform.includes('remember(account, requestToken)') && platform.includes('if (authRefreshPromise) return authRefreshPromise'), '账号初始化与权限刷新必须去重读取 /api/auth/me，并以权威响应覆盖本地缓存'],
   [platform.includes('response.status === 401 && requestToken && platformState.token === requestToken') && platform.includes('forgetAccount(requestToken)') && platform.includes('error instanceof PlatformRequestError && error.status === 401') && platform.includes('throw error'), '任意携带当前令牌的 401 必须按请求令牌防竞态清理，网络与 5xx 则保留令牌并保持未验证'],

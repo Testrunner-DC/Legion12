@@ -25,19 +25,29 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _socketSendGates = new();
     private readonly ConcurrentDictionary<Guid, string> _socketPlatformSessions = new();
+    private readonly ConcurrentDictionary<Guid, string> _socketRankedNetworkFingerprints = new();
+    private readonly string? _rankedIntegrityHmacKey;
+    private readonly TimeSpan _rankedClockWatchdogInterval;
+    private CancellationTokenSource? _rankedClockWatchdogCancellation;
+    private Task? _rankedClockWatchdogTask;
     private WebApplication? _app;
     private IReadOnlyList<string> _addresses = [];
 
     public IReadOnlyList<string> Addresses => _addresses;
 
     public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform,
-        L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl = null)
+        L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl = null,
+        string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null)
     {
         _rooms = rooms;
         _recorder = recorder;
         _platform = platform;
         _adminCommands = new L12AdminCommandBus(platform);
         _releaseControl = releaseControl ?? new L12DisabledReleaseControlAdapter();
+        _rankedIntegrityHmacKey = rankedIntegrityHmacKey
+            ?? Environment.GetEnvironmentVariable(L12RankedNetworkPrivacy.EnvironmentKey);
+        _rankedClockWatchdogInterval = rankedClockWatchdogInterval is { } interval && interval > TimeSpan.Zero
+            ? interval : TimeSpan.FromSeconds(1);
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -122,10 +132,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var match = await _recorder.GetMatchForPlayerAsync(matchId, account.Username);
             return match is null ? Results.NotFound() : Results.Ok(match);
         });
-        _app.MapGet("/api/rankings", async (string? faction, int? limit) =>
-            Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
+        _app.MapGet("/api/rankings", async (string? faction, int? limit, string? range) =>
+        {
+            var matches = await _recorder.ListRankingMatchesAsync(20_000);
+            return Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
                 masterChampions = _platform.RankedMasterChampions(),
-                matches = await _recorder.ListRankingMatchesAsync(500) }));
+                analytics = _platform.RankedAnalytics(matches, range) });
+        });
+        _app.MapGet("/api/rankings/history", (int? limit) =>
+            Results.Ok(_platform.RankedSeasonHonors(limit ?? 500)));
         _app.MapGet("/api/ranked/me", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -141,6 +156,20 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
         });
         _app.MapGet("/api/ranked/broadcasts", (int? limit) => Results.Ok(_platform.RankedBroadcasts(limit ?? 30)));
+        _app.MapPost("/api/ranked/broadcasts/claim", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.ClaimRankedBroadcast(account.Id));
+        });
+        _app.MapPost("/api/ranked/broadcasts/{id}/complete", (HttpRequest request, string id,
+            RankedBroadcastCompleteRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            return _platform.CompleteRankedBroadcast(account.Id, id, body.ClaimToken ?? string.Empty)
+                ? Results.Ok(new { completed = true })
+                : Results.Conflict(new { message = "广播领取已失效，请重新领取" });
+        });
         _app.MapGet("/api/admin/ranked/config", (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure)) return failure;
@@ -158,6 +187,14 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                         RequestPath: request.Path.Value ?? "/api/admin/ranked/config")));
             }
             catch (L12OperationsConfigException error) { return Results.BadRequest(new { code = error.Code, message = error.Message }); }
+        });
+        _app.MapGet("/api/admin/ranked/integrity-audits", (HttpRequest request, string? accountId,
+            string? matchId, bool? reviewOnly, int? limit) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminAuditRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.RankedIntegrityAudits(authenticated.Account, accountId, matchId,
+                reviewOnly ?? false, limit ?? 200));
         });
         _app.MapDelete("/api/admin/ranked/broadcasts/{id}", (HttpRequest request, string id) =>
         {
@@ -371,6 +408,24 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             return _platform.RemoveFriend(account.Id, friendId) ? Results.Ok() : Results.NotFound();
+        });
+        _app.MapGet("/api/friends/blocked", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.BlockedAccounts(account.Id));
+        });
+        _app.MapPost("/api/friends/blocked", (HttpRequest request, FriendRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            var result = _platform.BlockAccount(account.Id, body.AccountId ?? string.Empty);
+            return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapDelete("/api/friends/blocked/{accountId}", (HttpRequest request, string accountId) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            return _platform.UnblockAccount(account.Id, accountId) ? Results.Ok() : Results.NotFound();
         });
         _app.MapGet("/api/decks", (HttpRequest request) =>
         {
@@ -1053,6 +1108,51 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return Results.Ok(new { values = keys.ToDictionary(key => key!, key => _platform.GetContent(key!), StringComparer.OrdinalIgnoreCase) });
         });
         _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
+        _app.MapGet("/api/articles", (string? category, string? search, int? limit) =>
+            Results.Ok(_platform.PublicArticles(category, search, limit ?? 100)));
+        _app.MapGet("/api/admin/articles", (HttpRequest request, string? status, string? category,
+            string? search, int? limit) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AdminArticles(status, category, search, limit ?? 300));
+        });
+        _app.MapGet("/api/admin/articles/{id}", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            var article = _platform.AdminArticle(id);
+            return article is null
+                ? ApiError(request, "article_not_found", "稿件不存在", StatusCodes.Status404NotFound)
+                : Results.Ok(article);
+        });
+        _app.MapPost("/api/admin/articles", (HttpRequest request, ArticleDraftRequest body) =>
+            SaveArticleDraftResponse(request, null, body));
+        _app.MapPut("/api/admin/articles/{id}", (HttpRequest request, string id, ArticleDraftRequest body) =>
+            SaveArticleDraftResponse(request, id, body));
+        _app.MapPost("/api/admin/articles/{id}/publish", (HttpRequest request, string id) =>
+            ArticleMutationResponse(request, L12Permission.AdminContentPublish, id, "publish",
+                (actor, context) => _platform.PublishArticle(actor, id, context)));
+        _app.MapPost("/api/admin/articles/{id}/withdraw", (HttpRequest request, string id) =>
+            ArticleMutationResponse(request, L12Permission.AdminContentPublish, id, "withdraw",
+                (actor, context) => _platform.ChangeArticleStatus(actor, id, "withdraw", context)));
+        _app.MapPost("/api/admin/articles/{id}/archive", (HttpRequest request, string id) =>
+            ArticleMutationResponse(request, L12Permission.AdminContentDraft, id, "archive",
+                (actor, context) => _platform.ChangeArticleStatus(actor, id, "archive", context)));
+        _app.MapPost("/api/admin/articles/{id}/restore", (HttpRequest request, string id) =>
+            ArticleMutationResponse(request, L12Permission.AdminContentDraft, id, "restore",
+                (actor, context) => _platform.ChangeArticleStatus(actor, id, "restore", context)));
+        _app.MapGet("/api/admin/articles/{id}/revisions", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            try { return Results.Ok(_platform.ArticleRevisions(id)); }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "article_not_found", error.Message, StatusCodes.Status404NotFound);
+            }
+        });
+        _app.MapPost("/api/admin/articles/{id}/revisions/{revision:long}/restore",
+            (HttpRequest request, string id, long revision) =>
+                ArticleMutationResponse(request, L12Permission.AdminContentDraft, id, "restore-revision",
+                    (actor, context) => _platform.RestoreArticleRevision(actor, id, revision, context)));
         _app.MapGet("/api/admin/content/{key}", (HttpRequest request, string key) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
@@ -1308,11 +1408,14 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         await _app.StartAsync();
         _addresses = _app.Services.GetRequiredService<IServer>().Features
             .Get<IServerAddressesFeature>()?.Addresses.ToArray() ?? _app.Urls.ToArray();
+        _rankedClockWatchdogCancellation = new CancellationTokenSource();
+        _rankedClockWatchdogTask = RunRankedClockWatchdogAsync(_rankedClockWatchdogCancellation.Token);
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
     public async Task StopAsync()
     {
+        await StopRankedClockWatchdogAsync();
         foreach (var socket in _sockets.Values)
         {
             try { await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "server stopped", CancellationToken.None); }
@@ -1331,6 +1434,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             socket = await context.WebSockets.AcceptWebSocketAsync();
             _sockets[sessionId] = socket;
             _socketSendGates.TryAdd(sessionId, new SemaphoreSlim(1, 1));
+            var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
+                context.Connection.RemoteIpAddress, _rankedIntegrityHmacKey);
+            if (rankedNetworkFingerprint is not null)
+                _socketRankedNetworkFingerprints[sessionId] = rankedNetworkFingerprint;
             var buffer = new byte[32 * 1024];
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
@@ -1346,6 +1453,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             _sockets.TryRemove(sessionId, out _);
             _socketPlatformSessions.TryRemove(sessionId, out _);
             await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
+            _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
             _socketSendGates.TryRemove(sessionId, out _);
             socket?.Dispose();
         }
@@ -1428,7 +1536,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return [new OutgoingMessage(sessionId, new { type = "passwordChangeRequired", message = "必须先修改临时密码" })];
         _socketPlatformSessions[sessionId] = authenticated.SessionId;
         var session = new OutgoingMessage(sessionId,
-            _rooms.Connect(sessionId, authenticated.Account.Id, authenticated.Account.Username));
+            await _rooms.ConnectAsync(sessionId, authenticated.Account.Id, authenticated.Account.Username,
+                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId)));
         return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }
             .Concat(await _rooms.RecoveryStateAsync(sessionId)).ToArray();
     }
@@ -1514,6 +1623,46 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             gate.Release();
         }
+    }
+
+    private async Task RunRankedClockWatchdogAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(_rankedClockWatchdogInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    await SendManyAsync(await _rooms.TickRankedClocksAsync(), cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception error)
+                {
+                    Console.Error.WriteLine($"Ranked clock watchdog: {error.Message}");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private async Task StopRankedClockWatchdogAsync()
+    {
+        var cancellation = _rankedClockWatchdogCancellation;
+        var task = _rankedClockWatchdogTask;
+        _rankedClockWatchdogCancellation = null;
+        _rankedClockWatchdogTask = null;
+        if (cancellation is null) return;
+        cancellation.Cancel();
+        if (task is not null)
+        {
+            try { await task; }
+            catch (OperationCanceledException) { }
+        }
+        cancellation.Dispose();
     }
 
     private static async Task<string?> ReceiveTextAsync(WebSocket socket, byte[] buffer, CancellationToken cancellationToken)
@@ -2050,6 +2199,48 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         return _platform.CaptureContentRollback(batchId);
     }
 
+    private IResult SaveArticleDraftResponse(HttpRequest request, string? id, ArticleDraftRequest body)
+    {
+        const L12Permission permission = L12Permission.AdminContentDraft;
+        if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+        try
+        {
+            var draft = new L12ArticleDraft(id, body.Title ?? string.Empty, body.Summary ?? string.Empty,
+                body.Body ?? string.Empty, body.Category ?? string.Empty, body.CoverUrl ?? string.Empty,
+                body.Link ?? string.Empty, body.Slug ?? string.Empty, body.Pinned, body.PublishAt,
+                body.ExpectedRevision);
+            return Results.Ok(_platform.SaveArticleDraft(authenticated.Account, draft,
+                RequestAuditContext(request, permission)));
+        }
+        catch (InvalidOperationException error)
+        {
+            return ApiError(request, "article_version_conflict", error.Message, StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException error)
+        {
+            return ApiError(request, "invalid_article", error.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private IResult ArticleMutationResponse(HttpRequest request, L12Permission permission, string id,
+        string action, Func<L12AccountView, L12AdminAuditContext, L12ArticleView> mutate)
+    {
+        if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+        try { return Results.Ok(mutate(authenticated.Account, RequestAuditContext(request, permission))); }
+        catch (KeyNotFoundException error)
+        {
+            return ApiError(request, "article_not_found", error.Message, StatusCodes.Status404NotFound);
+        }
+        catch (ArgumentException error)
+        {
+            return ApiError(request, $"article_{action}_invalid", error.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private L12AdminAuditContext RequestAuditContext(HttpRequest request, L12Permission permission)
+        => new(request.HttpContext.Items[L12CorrelationIds.ContextItemName]?.ToString() ?? Guid.NewGuid().ToString("N"),
+            L12Authorization.Key(permission), RequestMethod: request.Method, RequestPath: request.Path);
+
     private IResult AdminCommandResponse<TPayload, T>(HttpRequest request,
         L12AdminCommandEnvelope<TPayload> command, L12AdminCommandResult<T> outcome)
     {
@@ -2457,6 +2648,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        await StopRankedClockWatchdogAsync();
         if (_app is not null) await _app.DisposeAsync();
     }
 }
@@ -2472,6 +2664,7 @@ public sealed record FriendRequest(string? AccountId);
 public sealed record FriendResolveRequest(bool Accept);
 public sealed record RankedFactionRequest(string? Faction);
 public sealed record RankedConfigRequest(L12RankedConfigView Config, string? Reason);
+public sealed record RankedBroadcastCompleteRequest(string? ClaimToken);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
 public sealed record RoleCommandPayload(string AccountId, string Role);
@@ -2494,6 +2687,9 @@ public sealed record AuditArchiveRequest(int? RetentionDays = null, string? Idem
 public sealed record SessionCommandPayload(string AccountId, string? SessionId);
 public sealed record ContentRequest(string? Value, string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
+public sealed record ArticleDraftRequest(string? Title, string? Summary, string? Body, string? Category,
+    string? CoverUrl, string? Link, string? Slug, bool Pinned, DateTimeOffset? PublishAt,
+    long? ExpectedRevision = null);
 public sealed record ContentDraftCommandPayload(string Key, string Value);
 public sealed record ContentBatchRequest(IReadOnlyList<string>? Keys, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);

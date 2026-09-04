@@ -19,7 +19,7 @@ public sealed record L12RoomRuntimeStats(
     int RoomCount,
     int ActiveGameCount);
 
-public sealed class L12RoomManager
+public sealed partial class L12RoomManager
 {
     private sealed class Session
     {
@@ -33,6 +33,8 @@ public sealed class L12RoomManager
         public bool IsSpectator { get; set; }
         public bool IsVirtual { get; init; }
         public bool Connected { get; set; } = true;
+        public DateTimeOffset? DisconnectedAt { get; set; }
+        public string IntegrityClientKey { get; set; } = string.Empty;
     }
 
     private sealed class FriendInvitation
@@ -63,6 +65,10 @@ public sealed class L12RoomManager
         public bool TournamentResultReported { get; set; }
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
+        public bool CompletionRecorded { get; set; }
+        public RankedClockState? RankedClock { get; set; }
+        public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+        public int MeaningfulCommandCount { get; set; }
         public bool Closed { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
     }
@@ -78,46 +84,79 @@ public sealed class L12RoomManager
     private readonly ConcurrentDictionary<string, FriendInvitation> _friendInvitations = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _tournamentRoomGate = new();
     private readonly object _matchmakingGate = new();
+    private readonly SemaphoreSlim _sessionRecoveryGate = new(1, 1);
     private readonly List<MatchmakingEntry> _matchmaking = [];
+    private readonly Func<DateTimeOffset> _utcNow;
 
-    public L12RoomManager(L12Catalog catalog, MatchRecorder recorder, L12PlatformStore? platform = null)
+    public L12RoomManager(L12Catalog catalog, MatchRecorder recorder, L12PlatformStore? platform = null,
+        Func<DateTimeOffset>? utcNow = null)
     {
         _catalog = catalog;
         _recorder = recorder;
         _platform = platform;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
-    public object Connect(Guid sessionId, string accountId, string? requestedName)
+    public object Connect(Guid sessionId, string accountId, string? requestedName,
+        string? integrityClientKey = null)
+        => ConnectAsync(sessionId, accountId, requestedName, integrityClientKey).GetAwaiter().GetResult();
+
+    public async Task<object> ConnectAsync(Guid sessionId, string accountId, string? requestedName,
+        string? integrityClientKey = null)
     {
         var name = NormalizeName(requestedName);
-        var disconnected = _sessions.FirstOrDefault(pair =>
-            pair.Key != sessionId && !pair.Value.Connected && !pair.Value.IsVirtual
-            && pair.Value.RoomCode is not null
-            && string.Equals(pair.Value.AccountId, accountId, StringComparison.OrdinalIgnoreCase));
-        if (disconnected.Value is not null)
+        await _sessionRecoveryGate.WaitAsync();
+        try
         {
-            var recovered = disconnected.Value;
-            recovered.Connected = true;
-            _sessions[sessionId] = recovered;
-            if (recovered.RoomCode is not null && _rooms.TryGetValue(recovered.RoomCode, out var room))
+            var disconnected = _sessions.FirstOrDefault(pair =>
+                pair.Key != sessionId && !pair.Value.Connected && !pair.Value.IsVirtual
+                && pair.Value.RoomCode is not null
+                && string.Equals(pair.Value.AccountId, accountId, StringComparison.OrdinalIgnoreCase));
+            if (disconnected.Value is not null)
             {
-                lock (room.Sessions)
+                var recovered = disconnected.Value;
+                if (recovered.RoomCode is not null && _rooms.TryGetValue(recovered.RoomCode, out var recoveredRoom))
                 {
-                    var playerSlot = room.Sessions.IndexOf(disconnected.Key);
-                    if (playerSlot >= 0) room.Sessions[playerSlot] = sessionId;
+                    await recoveredRoom.Gate.WaitAsync();
+                    try
+                    {
+                        var now = _utcNow();
+                        // 超过重连截止时间的连接不能抢在周期看门狗前清除掉线证据。
+                        await ApplyRankedClockConclusionLockedAsync(recoveredRoom, now);
+                        recovered.Connected = true;
+                        recovered.DisconnectedAt = null;
+                        if (!string.IsNullOrWhiteSpace(integrityClientKey))
+                            recovered.IntegrityClientKey = integrityClientKey;
+                        var playerSlot = recoveredRoom.Sessions.IndexOf(disconnected.Key);
+                        if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = sessionId;
+                        var spectatorSlot = recoveredRoom.Spectators.IndexOf(disconnected.Key);
+                        if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = sessionId;
+                        if (recoveredRoom.GmControllerSessionId == disconnected.Key)
+                            recoveredRoom.GmControllerSessionId = sessionId;
+                        RefreshRankedClockActorsLocked(recoveredRoom, now);
+                    }
+                    finally { recoveredRoom.Gate.Release(); }
                 }
-                lock (room.Spectators)
+                else
                 {
-                    var spectatorSlot = room.Spectators.IndexOf(disconnected.Key);
-                    if (spectatorSlot >= 0) room.Spectators[spectatorSlot] = sessionId;
+                    recovered.Connected = true;
+                    recovered.DisconnectedAt = null;
+                    if (!string.IsNullOrWhiteSpace(integrityClientKey))
+                        recovered.IntegrityClientKey = integrityClientKey;
                 }
-                if (room.GmControllerSessionId == disconnected.Key) room.GmControllerSessionId = sessionId;
+                _sessions[sessionId] = recovered;
+                _sessions.TryRemove(disconnected.Key, out _);
+                return new { type = "session", sessionId, name, recovered = true, roomCode = recovered.RoomCode };
             }
-            _sessions.TryRemove(disconnected.Key, out _);
-            return new { type = "session", sessionId, name, recovered = true, roomCode = recovered.RoomCode };
+
+            _sessions[sessionId] = new Session
+            {
+                Id = sessionId, AccountId = accountId, Name = name,
+                IntegrityClientKey = integrityClientKey ?? string.Empty,
+            };
+            return new { type = "session", sessionId, name, recovered = false, roomCode = (string?)null };
         }
-        _sessions[sessionId] = new Session { Id = sessionId, AccountId = accountId, Name = name };
-        return new { type = "session", sessionId, name, recovered = false, roomCode = (string?)null };
+        finally { _sessionRecoveryGate.Release(); }
     }
 
     public object Connect(Guid sessionId, string? requestedName)
@@ -218,6 +257,7 @@ public sealed class L12RoomManager
         room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
             operationsPolicy: policy);
+        InitializeRankedClock(room);
         try
         {
             if (!_rooms.TryAdd(room.Code, room)) throw new InvalidOperationException("匹配房间码冲突");
@@ -435,14 +475,7 @@ public sealed class L12RoomManager
     /// WebSocket 只负责连接；权威状态仍由房间和 L12GameEngine 持有。
     /// </summary>
     public IReadOnlyList<OutgoingMessage> RecoveryState(Guid sessionId)
-    {
-        if (!_sessions.TryGetValue(sessionId, out var session)
-            || session.RoomCode is null
-            || !_rooms.TryGetValue(session.RoomCode, out var room)) return [];
-        return room.Game is null
-            ? BroadcastRoom(room)
-            : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
-    }
+        => RecoveryStateAsync(sessionId).GetAwaiter().GetResult();
 
     public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateAsync(Guid sessionId)
     {
@@ -452,6 +485,8 @@ public sealed class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
+            if (room.Game is not null)
+                await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
             if (room.TournamentId is not null)
             {
                 await StartTournamentGameIfReadyLockedAsync(room);
@@ -911,6 +946,7 @@ public sealed class L12RoomManager
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
                     playerNames, room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray(),
                     disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
+                InitializeRankedClock(room);
                 var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
                 await _recorder.StartAsync(room.Game.State, room.Options.MatchModeId,
                     startedMembers[0].AccountId, startedMembers[1].AccountId);
@@ -927,6 +963,8 @@ public sealed class L12RoomManager
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始");
+            if (await ApplyRankedClockConclusionLockedAsync(room, _utcNow()))
+                return BroadcastGame(room);
             if (room.Game.State.Phase == L12Phase.GameOver)
             {
                 var reportError = await CompleteTournamentRoomGameAsync(room);
@@ -941,10 +979,13 @@ public sealed class L12RoomManager
             }
             catch (JsonException) { return Error(sessionId, "操作格式错误"); }
             if (command is null || string.IsNullOrWhiteSpace(command.Type)) return Error(sessionId, "缺少操作类型");
+            var meaningful = IsMeaningfulRankedCommand(room.Game, command);
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
             room.CommandSequence++;
             await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex.Value, commandElement.GetRawText(), result);
             if (!result.Accepted) return Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected");
+            if (meaningful) room.MeaningfulCommandCount++;
+            RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
             if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastGame(room).ToList();
@@ -1024,10 +1065,26 @@ public sealed class L12RoomManager
     public IReadOnlyList<OutgoingMessage> Disconnect(Guid sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var session)) return [];
-        session.Connected = false;
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
-        if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room)) return [];
-        return BroadcastRoom(room);
+        if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
+        {
+            if (!session.Connected) return [];
+            session.Connected = false;
+            session.DisconnectedAt ??= _utcNow();
+            return [];
+        }
+        room.Gate.Wait();
+        try
+        {
+            if (!session.Connected) return [];
+            var now = _utcNow();
+            SettleRankedClockLocked(room, now);
+            session.Connected = false;
+            session.DisconnectedAt ??= now;
+            RefreshRankedClockActorsLocked(room, now);
+            return BroadcastRoom(room).Concat(room.Game is null ? [] : BroadcastGame(room)).ToArray();
+        }
+        finally { room.Gate.Release(); }
     }
 
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
@@ -1170,6 +1227,7 @@ public sealed class L12RoomManager
     {
         Guid[] spectators;
         lock (room.Spectators) spectators = [.. room.Spectators];
+        var rankedClock = RankedClockView(room);
         return room.Sessions.Select(id => new OutgoingMessage(id, new
         {
             type = "gameState", state = room.IsSandbox && room.GmControllerSessionId == id
@@ -1178,31 +1236,57 @@ public sealed class L12RoomManager
             gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
             tournamentMatchId = room.TournamentMatchId,
+            rankedClock,
             rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
                 ? _platform.RankedSettlement(room.Game!.State.MatchId, _sessions[id].AccountId ?? string.Empty) : null,
         })).Concat(spectators.Select(id => new OutgoingMessage(id, new
         {
             type = "gameState", spectating = true, gmEnabled = false,
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
-            tournamentMatchId = room.TournamentMatchId, state = room.Game!.SnapshotForSpectator(),
+            tournamentMatchId = room.TournamentMatchId, rankedClock,
+            state = room.Game!.SnapshotForSpectator(),
         }))).ToArray();
     }
 
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
-        if (!room.IsSandbox) await _recorder.CompleteAsync(room.Game);
-        if (room.Options.MatchModeId == "ranked" && !room.RankedResultReported && _platform is not null
-            && room.Game.State.Winner is { } rankedWinner)
+        if (!room.IsSandbox && !room.CompletionRecorded)
         {
-            room.RankedResultReported = true;
-            if (room.Game.State.Players.All(player => player.MulliganDone))
+            try
             {
-                var members = room.Sessions.Select(id => _sessions[id]).ToArray();
-                if (members.All(member => !string.IsNullOrWhiteSpace(member.AccountId)))
+                await _recorder.CompleteAsync(room.Game);
+                room.CompletionRecorded = true;
+            }
+            catch (Exception error)
+            {
+                return $"对局记录结束写入待重试：{error.Message}";
+            }
+        }
+        if (room.Options.MatchModeId == "ranked" && !room.RankedResultReported)
+        {
+            if (_platform is null) return "排位结算服务不可用，已保留对局记录待重试";
+            var members = room.Sessions.Select(id => _sessions[id]).ToArray();
+            if (members.Length != 2 || members.Any(member => string.IsNullOrWhiteSpace(member.AccountId)))
+                return "排位结算缺少玩家账号，已保留对局记录待重试";
+            var integrity = new L12RankedIntegrityContext(room.StartedAt, _utcNow(),
+                room.MeaningfulCommandCount, RankedConclusionKind(room),
+                members[0].IntegrityClientKey, members[1].IntegrityClientKey);
+            try
+            {
+                if (room.Game.State.Winner is { } rankedWinner)
                     _platform.SettleRankedMatch(room.Game.State.MatchId, members[0].AccountId!,
                         members[1].AccountId!, rankedWinner, SelectedDeck(members[0]).MasterId,
-                        SelectedDeck(members[1]).MasterId);
+                        SelectedDeck(members[1]).MasterId, integrity);
+                else
+                    _platform.RecordInvalidRankedMatch(room.Game.State.MatchId, members[0].AccountId!,
+                        members[1].AccountId!, SelectedDeck(members[0]).MasterId,
+                        SelectedDeck(members[1]).MasterId, integrity);
+                room.RankedResultReported = true;
+            }
+            catch (Exception error)
+            {
+                return $"排位结算待重试：{error.Message}";
             }
         }
         if (room.TournamentId is null || room.TournamentMatchId is null || room.TournamentResultReported)
@@ -1220,6 +1304,25 @@ public sealed class L12RoomManager
         {
             return $"赛果回写待重试：{error.Message}";
         }
+    }
+
+    private static bool IsMeaningfulRankedCommand(L12GameEngine game, L12Command command)
+    {
+        if (command.Type is "playCard" or "attack" or "resolveDefense" or "move" or "cavalryMove"
+            or "activateAbility" or "flipHidden") return true;
+        if (command.Type != "resolvePrompt" || string.IsNullOrWhiteSpace(command.PromptId)) return false;
+        var prompt = game.State.PendingPrompts.FirstOrDefault(item => item.PromptId == command.PromptId);
+        return prompt is not null && !string.Equals(prompt.Continuation, "setup-initiative",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string RankedConclusionKind(Room room)
+    {
+        if (!string.IsNullOrWhiteSpace(room.RankedClock?.ConclusionKind))
+            return room.RankedClock.ConclusionKind!;
+        var reason = room.Game?.State.WinnerReason ?? string.Empty;
+        if (reason.Contains("投降", StringComparison.OrdinalIgnoreCase)) return "surrender";
+        return "normal";
     }
 
     private L12PresetDeckDefinition SelectedDeck(Session session)

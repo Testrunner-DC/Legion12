@@ -543,12 +543,15 @@ public sealed partial class L12PlatformStore
         data.PublishedDecks ??= [];
         foreach (var deck in data.PublishedDecks) deck.LikedByAccountIds ??= [];
         data.Friends ??= [];
+        data.BlockedAccounts ??= [];
         data.BugReports ??= [];
         foreach (var bug in data.BugReports) bug.History ??= [];
         data.Content ??= new(StringComparer.OrdinalIgnoreCase);
         data.ContentEntries ??= [];
         foreach (var entry in data.ContentEntries)
             if (entry.Version < 0) entry.Version = 0;
+        data.Articles ??= [];
+        foreach (var article in data.Articles) NormalizeArticle(article);
         data.EffectReviews ??= [];
         data.AdminAudit ??= [];
         foreach (var audit in data.AdminAudit)
@@ -571,8 +574,17 @@ public sealed partial class L12PlatformStore
         NormalizeSecurityState(data.Security);
         data.RankedProfiles ??= [];
         data.RankedProfileHistory ??= [];
+        foreach (var history in data.RankedProfileHistory) history.Titles ??= [];
         data.RankedSettlements ??= [];
         data.RankedBroadcasts ??= [];
+        data.RankedBroadcastDeliveries ??= [];
+        data.RankedIntegrityAudits ??= [];
+        foreach (var audit in data.RankedIntegrityAudits)
+        {
+            audit.Signals ??= [];
+            if (string.IsNullOrWhiteSpace(audit.Enforcement)) audit.Enforcement = "none";
+            if (string.IsNullOrWhiteSpace(audit.ConclusionKind)) audit.ConclusionKind = "unknown";
+        }
         data.BusinessVersion ??= data.Version;
         return data;
     }
@@ -628,8 +640,33 @@ public sealed partial class L12PlatformStore
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedSettlements.GroupBy(row => $"{row.MatchId}|{row.AccountId}", StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedSettlements.GroupBy(row => row.MatchId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() != 2)
             || data.RankedBroadcasts.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
-                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedBroadcastDeliveries.GroupBy(row => $"{row.AccountId}|{row.BroadcastId}", StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedBroadcastDeliveries.Any(row => string.IsNullOrWhiteSpace(row.AccountId)
+                || string.IsNullOrWhiteSpace(row.BroadcastId)
+                || !data.Accounts.Any(account => account.Id == row.AccountId)
+                || !data.RankedBroadcasts.Any(broadcast => broadcast.Id == row.BroadcastId))
+            || data.RankedIntegrityAudits.GroupBy(row => row.MatchId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedIntegrityAudits.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
+                .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            || data.RankedIntegrityAudits.Any(row => string.IsNullOrWhiteSpace(row.Id)
+                || string.IsNullOrWhiteSpace(row.FirstAccountId)
+                || string.IsNullOrWhiteSpace(row.SecondAccountId)
+                || string.Equals(row.FirstAccountId, row.SecondAccountId, StringComparison.OrdinalIgnoreCase)
+                || row.Winner is not null and not (0 or 1)
+                || row.DurationMs < 0 || row.MeaningfulCommandCount < 0
+                || row.Enforcement != "none"
+                || (!string.IsNullOrEmpty(row.FirstNetworkFingerprint)
+                    && NormalizeNetworkFingerprint(row.FirstNetworkFingerprint) != row.FirstNetworkFingerprint)
+                || (!string.IsNullOrEmpty(row.SecondNetworkFingerprint)
+                    && NormalizeNetworkFingerprint(row.SecondNetworkFingerprint) != row.SecondNetworkFingerprint)
+                || !data.Accounts.Any(account => account.Id == row.FirstAccountId)
+                || !data.Accounts.Any(account => account.Id == row.SecondAccountId)))
             throw new InvalidDataException("排位档案、结算或广播标识为空/重复");
         return data;
     }

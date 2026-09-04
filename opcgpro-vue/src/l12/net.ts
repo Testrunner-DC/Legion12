@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { GameState, RoomState } from './types'
+import type { GameState, RankedClockView, RoomState } from './types'
 import type { SavedL12Deck } from './decks'
 import type { EffectiveOperationsPolicy, RankedSettlement } from './platform'
 
@@ -100,6 +100,7 @@ export const l12State = reactive({
   matchmaking: null as null | { queued: boolean; mode?: 'ranked' | 'casual'; joinedAt?: string },
   matchFound: null as null | { mode?: 'ranked' | 'casual'; roomCode: string; matchId?: string },
   rankedSettlement: null as RankedSettlement | null,
+  rankedClock: null as RankedClockView | null,
 })
 
 export function connect(): Promise<void> {
@@ -148,6 +149,7 @@ export function connect(): Promise<void> {
         l12State.room = message
         if (!message.started) {
           l12State.game = null
+          l12State.rankedClock = null
           l12State.spectating = false
           l12State.gmEnabled = false
           l12State.pendingAction = false
@@ -191,6 +193,7 @@ export function connect(): Promise<void> {
         clearMatchmakingRecovery()
         l12State.room = null
         l12State.game = null
+        l12State.rankedClock = null
         l12State.spectating = false
         l12State.leavingRoom = false
         l12State.gmEnabled = false
@@ -210,6 +213,9 @@ export function connect(): Promise<void> {
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
         if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {
           l12State.game = incoming
+          l12State.rankedClock = message.rankedClock
+            ? { ...(message.rankedClock as RankedClockView), receivedAtMs: Date.now() }
+            : null
           l12State.spectating = Boolean(message.spectating)
           l12State.gmEnabled = Boolean(message.gmEnabled)
           l12State.pendingAction = false
@@ -283,6 +289,7 @@ export function disconnect() {
   l12State.matchmaking = null
   l12State.matchFound = null
   l12State.rankedSettlement = null
+  l12State.rankedClock = null
 }
 
 export function send(payload: unknown) {

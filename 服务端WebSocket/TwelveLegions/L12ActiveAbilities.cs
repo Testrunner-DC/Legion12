@@ -120,8 +120,9 @@ public sealed partial class L12GameEngine
     private string[] ActiveAbilityReservedResourceIds(L12PlayerState player, L12CardInstance source, string ability,
         string? target, bool reserveInternalCosts)
     {
-        if (ability == "horusRevive")
-            return (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).Take(2).ToArray();
+        // 荷鲁斯的混合费用由 PendingActivation 把玩家点选的精确资源通过
+        // selectedResourceIds 交给本提交器；这里不能再把任意前两项误当成保留资源。
+        if (ability == "horusRevive") return [];
         if (L12StructuredCardSemantics.IsMedjed(source.CardId) && ability == "medjedDebuff")
         {
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);

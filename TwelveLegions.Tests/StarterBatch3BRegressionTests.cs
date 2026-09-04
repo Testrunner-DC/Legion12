@@ -369,7 +369,7 @@ public sealed class StarterBatch3BRegressionTests
         Assert.True(player.Graveyard.Contains(secondCost),
             $"grave={string.Join(',', player.Graveyard.Select(card => card.InstanceId))}; resolving={string.Join(',', player.Resolving.Select(card => card.InstanceId))}");
         Assert.Same(revive, player.Field[0][1]);
-        Assert.True(revive.Tapped);
+        Assert.True(revive.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
 
         var triggerGame = Create(20423);
         var triggerPlayer = triggerGame.State.Players[0];
@@ -386,6 +386,71 @@ public sealed class StarterBatch3BRegressionTests
         PassResponses(triggerGame);
         Assert.Empty(triggerPlayer.Morale);
         Assert.Equal(triggerAttacker.BaseTroops + 2000, triggerAttacker.Troops);
+    }
+
+    [Fact]
+    public void HorusResolutionCancellationReleasesEveryReservedCostAndCanTargetPaidLegion()
+    {
+        var game = Create(20424);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var morale = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "horus-morale" };
+        var prospectiveRevive = Card("ST02-07", "horus-prospective-revive");
+        var secondCost = Card("ST01-02", "horus-cancel-cost-2");
+        player.Morale.Add(morale);
+        player.Field[0][0] = prospectiveRevive;
+        player.Field[0][1] = secondCost;
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        var payment = Prompt(game);
+        Assert.Equal("mixed-board-payment", payment.Data.GetValueOrDefault("choiceMode"));
+        Assert.Equal(morale.InstanceId, payment.Data.GetValueOrDefault("lockedChoices"));
+        ChooseMany(game, morale.InstanceId, prospectiveRevive.InstanceId, secondCost.InstanceId);
+
+        var resolution = Prompt(game);
+        Assert.Contains(prospectiveRevive.InstanceId, resolution.ValidChoices);
+        Assert.Contains("skip", resolution.ValidChoices);
+        Choose(game, "skip");
+
+        Assert.False(morale.Tapped);
+        Assert.Same(prospectiveRevive, player.Field[0][0]);
+        Assert.Same(secondCost, player.Field[0][1]);
+        Assert.Empty(player.Graveyard);
+        Assert.Empty(player.UsedAbilities);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Contains(game.State.Events, entry => entry.Type == "ability-cancelled"
+            && entry.Text.Contains("费用已全部释放", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HorusMixedPaymentConsumesOnlyChosenResourceWithoutSecondPaymentPrompt()
+    {
+        var game = Create(20425);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var untouched = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "horus-morale-untouched" };
+        var chosen = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "horus-morale-chosen" };
+        var revive = Card("ST02-07", "horus-paid-and-revived");
+        var secondCost = Card("ST01-02", "horus-multi-cost-2");
+        player.Morale.AddRange([untouched, chosen]);
+        player.Field[0][0] = revive;
+        player.Field[0][1] = secondCost;
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        // 刻意先选两张场上军团、最后选士气，锁定协议不得依赖客户端选择顺序。
+        ChooseMany(game, revive.InstanceId, secondCost.InstanceId, chosen.InstanceId);
+        Choose(game, revive.InstanceId);
+        Choose(game, "0:0");
+
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
+        PassResponses(game);
+        Assert.False(untouched.Tapped);
+        Assert.True(chosen.Tapped);
+        Assert.Same(revive, player.Field[0][0]);
+        Assert.True(revive.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
+        Assert.Contains(secondCost, player.Graveyard);
     }
 
     [Fact]
@@ -699,7 +764,6 @@ public sealed class StarterBatch3BRegressionTests
         OrderPendingTriggers(nuadaGame);
         for (var index = 0; index < 2; index++)
         {
-            Choose(nuadaGame, "mode:use");
             Choose(nuadaGame, target.InstanceId);
             PassResponses(nuadaGame);
         }

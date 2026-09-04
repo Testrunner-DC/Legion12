@@ -15,6 +15,9 @@ public sealed record L12RankedProfileView(string AccountId, string Username, str
 public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction, int SevenValue,
     int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
     DateTimeOffset ArchivedAt);
+public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName, string Username,
+    string Faction, string Tier, int SevenValue, string DisplayValue,
+    IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
 public sealed record L12RankedSettlementComponent(string Kind, string Label, int Value);
 public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
     bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
@@ -22,11 +25,25 @@ public sealed record L12RankedSettlementView(string MatchId, string AccountId, s
     DateTimeOffset SettledAt);
 public sealed record L12RankedBroadcastView(string Id, string MatchId, string EventType,
     string Message, DateTimeOffset CreatedAt);
+public sealed record L12RankedBroadcastClaimView(L12RankedBroadcastView Broadcast,
+    string ClaimToken, DateTimeOffset LeaseExpiresAt);
 public sealed record L12RankedLeaderboardEntry(int Rank, string Username,
     string Faction, int SevenValue, string DisplayValue, string Tier, string? Title,
     IReadOnlyList<string> Titles, int Wins, int Losses, int WinStreak);
 public sealed record L12RankedMasterChampionView(string MasterId, string MasterName,
     string Username, string Title, int SevenValue, string DisplayValue, int Games, int Wins);
+public sealed record L12RankedAnalyticsSummary(int Matches, int PlacedPlayers,
+    int ActiveMasters, DateTimeOffset? UpdatedAt);
+public sealed record L12RankedMasterStatsView(int Rank, string MasterId, string MasterName,
+    string? StrongestPlayer, string? Title, int Games, int Wins, int Losses,
+    double WinRate, double UsageRate, int FirstGames, int FirstWins, double FirstWinRate,
+    int SecondGames, int SecondWins, double SecondWinRate);
+public sealed record L12RankedMatchupStatsView(string MasterId, string OpponentMasterId,
+    int Games, int Wins, double WinRate, int FirstGames, int FirstWins,
+    int SecondGames, int SecondWins);
+public sealed record L12RankedAnalyticsView(string Range, L12RankedAnalyticsSummary Summary,
+    IReadOnlyList<L12RankedMasterStatsView> Masters,
+    IReadOnlyList<L12RankedMatchupStatsView> Matchups);
 public sealed record L12RankedOverviewView(L12RankedProfileView Profile,
     IReadOnlyDictionary<string, int> FactionTotals, L12RankedConfigView Config,
     IReadOnlyList<L12RankedProfileHistoryView> History);
@@ -92,6 +109,7 @@ public sealed partial class L12PlatformStore
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string AccountId { get; set; } = string.Empty;
         public string SeasonId { get; set; } = string.Empty;
+        public string UsernameSnapshot { get; set; } = string.Empty;
         public string Faction { get; set; } = string.Empty;
         public int SevenValue { get; set; }
         public int PlacementPlayed { get; set; }
@@ -99,6 +117,10 @@ public sealed partial class L12PlatformStore
         public int Wins { get; set; }
         public int Losses { get; set; }
         public int WinStreak { get; set; }
+        public string SeasonName { get; set; } = string.Empty;
+        public string Tier { get; set; } = string.Empty;
+        public List<string> Titles { get; set; } = [];
+        public bool FinalizedSeasonAwards { get; set; }
         public DateTimeOffset ArchivedAt { get; set; } = DateTimeOffset.UtcNow;
     }
     private sealed class RankedSettlementRow
@@ -126,6 +148,14 @@ public sealed partial class L12PlatformStore
         public string Message { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
+    private sealed class RankedBroadcastDeliveryRow
+    {
+        public string AccountId { get; set; } = string.Empty;
+        public string BroadcastId { get; set; } = string.Empty;
+        public string ClaimToken { get; set; } = string.Empty;
+        public DateTimeOffset LeaseExpiresAt { get; set; }
+        public DateTimeOffset? CompletedAt { get; set; }
+    }
     private sealed class RankedMasterRecordRow
     {
         public string AccountId { get; set; } = string.Empty;
@@ -133,6 +163,27 @@ public sealed partial class L12PlatformStore
         public string MasterId { get; set; } = string.Empty;
         public int Games { get; set; }
         public int Wins { get; set; }
+    }
+    private sealed class RankedMasterStatsAccumulator
+    {
+        public required string MasterId { get; init; }
+        public int Games { get; set; }
+        public int Wins { get; set; }
+        public int FirstGames { get; set; }
+        public int FirstWins { get; set; }
+        public int SecondGames { get; set; }
+        public int SecondWins { get; set; }
+    }
+    private sealed class RankedMatchupAccumulator
+    {
+        public required string MasterId { get; init; }
+        public required string OpponentMasterId { get; init; }
+        public int Games { get; set; }
+        public int Wins { get; set; }
+        public int FirstGames { get; set; }
+        public int FirstWins { get; set; }
+        public int SecondGames { get; set; }
+        public int SecondWins { get; set; }
     }
 
     private void EnsureRankedState()
@@ -152,11 +203,19 @@ public sealed partial class L12PlatformStore
             }
             _data.RankedProfiles ??= [];
             _data.RankedProfileHistory ??= [];
+            foreach (var history in _data.RankedProfileHistory) history.Titles ??= [];
             _data.RankedSettlements ??= [];
             _data.RankedBroadcasts ??= [];
+            _data.RankedBroadcastDeliveries ??= [];
             _data.RankedMasterRecords ??= [];
             _data.RankedMasterRecordedMatchIds ??= [];
+            _data.RankedIntegrityAudits ??= [];
             _data.RankedConfig.MasterTitles ??= [];
+            if (_data.RankedBroadcastDeliveryCutover is null)
+            {
+                _data.RankedBroadcastDeliveryCutover = DateTimeOffset.UtcNow;
+                changed = true;
+            }
             foreach (var masterId in SelectableMasterIds())
             {
                 if (_data.RankedConfig.MasterTitles.Any(item => item.MasterId.Equals(masterId,
@@ -272,6 +331,24 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public IReadOnlyList<L12RankedSeasonHonorView> RankedSeasonHonors(int limit = 500)
+    {
+        lock (_gate)
+        {
+            return _data.RankedProfileHistory
+                .Where(row => row.FinalizedSeasonAwards && row.Titles.Count > 0)
+                .OrderByDescending(row => row.ArchivedAt).ThenByDescending(row => row.SevenValue)
+                .Take(Math.Clamp(limit, 1, 2000))
+                .Select(row => new L12RankedSeasonHonorView(row.SeasonId,
+                    string.IsNullOrWhiteSpace(row.SeasonName) ? row.SeasonId : row.SeasonName,
+                    string.IsNullOrWhiteSpace(row.UsernameSnapshot) ? AccountName(row.AccountId) : row.UsernameSnapshot,
+                    FactionFor(row.Faction).Name,
+                    string.IsNullOrWhiteSpace(row.Tier) ? FactionFor(row.Faction).Tiers[RankedTierIndex(row.SevenValue)].Name : row.Tier,
+                    row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.Titles.ToArray(), row.ArchivedAt))
+                .ToArray();
+        }
+    }
+
     public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 100)
     {
         lock (_gate)
@@ -306,6 +383,115 @@ public sealed partial class L12PlatformStore
                 .ToArray();
         }
     }
+
+    public L12RankedAnalyticsView RankedAnalytics(IReadOnlyList<L12RankingMatch> source, string? requestedRange)
+    {
+        lock (_gate)
+        {
+            var range = requestedRange is "7d" or "30d" ? requestedRange : "season";
+            var season = RequireOperationsConfig().Season;
+            var now = DateTimeOffset.UtcNow;
+            var seasonStart = season.StartsAt ?? DateTimeOffset.MinValue;
+            var rangeStart = range == "7d" ? now.AddDays(-7) : range == "30d" ? now.AddDays(-30) : seasonStart;
+            if (rangeStart < seasonStart) rangeStart = seasonStart;
+            var rangeEnd = season.EndsAt ?? DateTimeOffset.MaxValue;
+            var matches = source.Select(match => new
+                {
+                    Match = match,
+                    Started = DateTimeOffset.TryParse(match.StartedUtc, out var started) ? started : (DateTimeOffset?)null,
+                    Ended = DateTimeOffset.TryParse(match.EndedUtc, out var ended) ? ended : (DateTimeOffset?)null,
+                    Master0 = MasterIdByName(match.Master0),
+                    Master1 = MasterIdByName(match.Master1),
+                })
+                .Where(item => item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
+                    && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
+                .ToArray();
+            var masters = new Dictionary<string, RankedMasterStatsAccumulator>(StringComparer.OrdinalIgnoreCase);
+            var matchups = new Dictionary<string, RankedMatchupAccumulator>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in matches)
+            {
+                AddMaster(item.Master0!, item.Match.Winner == 0, item.Match.FirstPlayer == 0);
+                AddMaster(item.Master1!, item.Match.Winner == 1, item.Match.FirstPlayer == 1);
+                AddMatchup(item.Master0!, item.Master1!, item.Match.Winner == 0, item.Match.FirstPlayer == 0);
+                AddMatchup(item.Master1!, item.Master0!, item.Match.Winner == 1, item.Match.FirstPlayer == 1);
+            }
+            var champions = CurrentMasterChampions();
+            var totalAppearances = Math.Max(1, masters.Values.Sum(item => item.Games));
+            var ordered = masters.Values.OrderByDescending(item => Percentage(item.Wins, item.Games))
+                .ThenByDescending(item => item.Games).ThenBy(item => MasterName(item.MasterId), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var masterViews = ordered.Select((item, index) =>
+            {
+                champions.TryGetValue(item.MasterId, out var champion);
+                return new L12RankedMasterStatsView(index + 1, item.MasterId, MasterName(item.MasterId),
+                    champion is null ? null : AccountName(champion.AccountId),
+                    champion is null ? null : MasterTitle(item.MasterId), item.Games, item.Wins,
+                    item.Games - item.Wins, Percentage(item.Wins, item.Games),
+                    Percentage(item.Games, totalAppearances), item.FirstGames, item.FirstWins,
+                    Percentage(item.FirstWins, item.FirstGames), item.SecondGames, item.SecondWins,
+                    Percentage(item.SecondWins, item.SecondGames));
+            }).ToArray();
+            var matchupViews = matchups.Values.OrderBy(item => item.MasterId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.OpponentMasterId, StringComparer.OrdinalIgnoreCase)
+                .Select(item => new L12RankedMatchupStatsView(item.MasterId, item.OpponentMasterId,
+                    item.Games, item.Wins, Percentage(item.Wins, item.Games), item.FirstGames,
+                    item.FirstWins, item.SecondGames, item.SecondWins)).ToArray();
+            var placedPlayers = _data.RankedProfiles.Count(row => row.SeasonId == season.Id
+                && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
+                && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
+            var updatedAt = matches.Select(item => item.Ended ?? item.Started).Where(value => value is not null)
+                .Select(value => value!.Value).DefaultIfEmpty().Max();
+            return new L12RankedAnalyticsView(range,
+                new L12RankedAnalyticsSummary(matches.Length, placedPlayers, masters.Count,
+                    updatedAt == default ? null : updatedAt), masterViews, matchupViews);
+
+            void AddMaster(string masterId, bool won, bool first)
+            {
+                if (!masters.TryGetValue(masterId, out var row))
+                {
+                    row = new RankedMasterStatsAccumulator { MasterId = masterId };
+                    masters.Add(masterId, row);
+                }
+                row.Games++;
+                if (won) row.Wins++;
+                if (first)
+                {
+                    row.FirstGames++;
+                    if (won) row.FirstWins++;
+                }
+                else
+                {
+                    row.SecondGames++;
+                    if (won) row.SecondWins++;
+                }
+            }
+
+            void AddMatchup(string masterId, string opponentMasterId, bool won, bool first)
+            {
+                var key = $"{masterId}|{opponentMasterId}";
+                if (!matchups.TryGetValue(key, out var row))
+                {
+                    row = new RankedMatchupAccumulator { MasterId = masterId, OpponentMasterId = opponentMasterId };
+                    matchups.Add(key, row);
+                }
+                row.Games++;
+                if (won) row.Wins++;
+                if (first)
+                {
+                    row.FirstGames++;
+                    if (won) row.FirstWins++;
+                }
+                else
+                {
+                    row.SecondGames++;
+                    if (won) row.SecondWins++;
+                }
+            }
+        }
+    }
+
+    private static double Percentage(int numerator, int denominator)
+        => denominator <= 0 ? 0d : Math.Round(numerator * 100d / denominator, 1, MidpointRounding.AwayFromZero);
 
     public int ImportRankedMasterHistory(IReadOnlyList<L12RankingMatch> matches)
     {
@@ -359,6 +545,67 @@ public sealed partial class L12PlatformStore
             .Take(Math.Clamp(limit, 1, 100)).Select(ToView).ToArray();
     }
 
+    public L12RankedBroadcastClaimView? ClaimRankedBroadcast(string accountId)
+    {
+        lock (_gate)
+        {
+            var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Disabled && !row.Deleted)
+                ?? throw new KeyNotFoundException("账号不存在或不可用");
+            var now = DateTimeOffset.UtcNow;
+            var pending = _data.RankedBroadcastDeliveries
+                .Where(row => row.AccountId == accountId && row.CompletedAt is null)
+                .OrderBy(row => row.LeaseExpiresAt).FirstOrDefault();
+            if (pending is not null)
+            {
+                if (pending.LeaseExpiresAt > now) return null;
+                var pendingBroadcast = _data.RankedBroadcasts.FirstOrDefault(row => row.Id == pending.BroadcastId);
+                if (pendingBroadcast is not null)
+                {
+                    pending.ClaimToken = Guid.NewGuid().ToString("N");
+                    pending.LeaseExpiresAt = now.AddSeconds(45);
+                    Save();
+                    return new(ToView(pendingBroadcast), pending.ClaimToken, pending.LeaseExpiresAt);
+                }
+                _data.RankedBroadcastDeliveries.Remove(pending);
+            }
+
+            var cutoff = _data.RankedBroadcastDeliveryCutover ?? now;
+            if (account.CreatedAt > cutoff) cutoff = account.CreatedAt;
+            var delivered = _data.RankedBroadcastDeliveries.Where(row => row.AccountId == accountId)
+                .Select(row => row.BroadcastId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var next = _data.RankedBroadcasts.Where(row => row.CreatedAt >= cutoff && !delivered.Contains(row.Id))
+                .OrderBy(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+            if (next is null) return null;
+            var delivery = new RankedBroadcastDeliveryRow
+            {
+                AccountId = accountId,
+                BroadcastId = next.Id,
+                ClaimToken = Guid.NewGuid().ToString("N"),
+                LeaseExpiresAt = now.AddSeconds(45),
+            };
+            _data.RankedBroadcastDeliveries.Add(delivery);
+            Save();
+            return new(ToView(next), delivery.ClaimToken, delivery.LeaseExpiresAt);
+        }
+    }
+
+    public bool CompleteRankedBroadcast(string accountId, string broadcastId, string claimToken)
+    {
+        lock (_gate)
+        {
+            var delivery = _data.RankedBroadcastDeliveries.FirstOrDefault(row => row.AccountId == accountId
+                && row.BroadcastId == broadcastId);
+            if (delivery is null || string.IsNullOrWhiteSpace(claimToken)
+                || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.UTF8.GetBytes(delivery.ClaimToken),
+                    System.Text.Encoding.UTF8.GetBytes(claimToken))) return false;
+            if (delivery.CompletedAt is not null) return true;
+            delivery.CompletedAt = DateTimeOffset.UtcNow;
+            Save();
+            return true;
+        }
+    }
+
     public bool DeleteRankedBroadcast(L12AccountView actor, string id, L12AdminAuditContext context)
     {
         EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
@@ -367,6 +614,7 @@ public sealed partial class L12PlatformStore
             var removed = _data.RankedBroadcasts.RemoveAll(row => row.Id == id) > 0;
             if (removed)
             {
+                _data.RankedBroadcastDeliveries.RemoveAll(row => row.BroadcastId == id);
                 AddAdminAudit(actor, "operations", "ranked-broadcast-delete", $"ranked:broadcast:{id}", null, null, null, context);
                 Save();
             }
@@ -375,14 +623,14 @@ public sealed partial class L12PlatformStore
     }
 
     internal L12RankedSettlementPair SettleRankedMatch(string matchId, string firstAccountId,
-        string secondAccountId, int winner, string? firstMasterId = null, string? secondMasterId = null)
+        string secondAccountId, int winner, string? firstMasterId = null, string? secondMasterId = null,
+        L12RankedIntegrityContext? integrity = null)
     {
         lock (_gate)
         {
-            var existingFirst = _data.RankedSettlements.FirstOrDefault(row => row.MatchId == matchId && row.AccountId == firstAccountId);
-            var existingSecond = _data.RankedSettlements.FirstOrDefault(row => row.MatchId == matchId && row.AccountId == secondAccountId);
-            if (existingFirst is not null && existingSecond is not null)
-                return new(ToView(existingFirst), ToView(existingSecond), []);
+            ValidateRankedIdentity(matchId, firstAccountId, secondAccountId, winner);
+            if (TryGetRankedSettlementReplayLocked(matchId, firstAccountId, secondAccountId, winner,
+                    firstMasterId, secondMasterId, integrity, out var replay)) return replay;
 
             var first = RequireRankedProfile(firstAccountId);
             var second = RequireRankedProfile(secondAccountId);
@@ -410,12 +658,19 @@ public sealed partial class L12PlatformStore
                 _data.RankedMasterRecordedMatchIds.Add(matchId);
             _data.RankedSettlements.Add(firstSettlement);
             _data.RankedSettlements.Add(secondSettlement);
+            EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, winner,
+                firstMasterId, secondMasterId, integrity);
             var broadcasts = BuildBroadcasts(matchId, first, second, winner, beforeTitles,
                 beforeMasterChampions, firstStreakBefore, secondStreakBefore,
                 firstMasterId, secondMasterId);
             _data.RankedBroadcasts.AddRange(broadcasts);
             if (_data.RankedBroadcasts.Count > 300)
-                _data.RankedBroadcasts.RemoveRange(0, _data.RankedBroadcasts.Count - 300);
+            {
+                var removedIds = _data.RankedBroadcasts.Take(_data.RankedBroadcasts.Count - 300)
+                    .Select(row => row.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _data.RankedBroadcasts.RemoveAll(row => removedIds.Contains(row.Id));
+                _data.RankedBroadcastDeliveries.RemoveAll(row => removedIds.Contains(row.BroadcastId));
+            }
             Save();
             return new(ToView(firstSettlement), ToView(secondSettlement), broadcasts.Select(ToView).ToArray());
         }
@@ -545,13 +800,17 @@ public sealed partial class L12PlatformStore
         return row;
     }
 
-    private void ArchiveRankedProfile(RankedProfileRow row)
+    private void ArchiveRankedProfile(RankedProfileRow row, string? seasonName = null,
+        bool finalizedSeasonAwards = false, IReadOnlyList<string>? frozenTitles = null)
     {
         if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed == 0) return;
+        if (_data.RankedProfileHistory.Any(history => history.AccountId == row.AccountId
+                && history.SeasonId == row.SeasonId && history.FinalizedSeasonAwards)) return;
         _data.RankedProfileHistory.Add(new RankedProfileHistoryRow
         {
             AccountId = row.AccountId,
             SeasonId = row.SeasonId,
+            UsernameSnapshot = AccountName(row.AccountId),
             Faction = row.Faction,
             SevenValue = row.SevenValue,
             PlacementPlayed = row.PlacementPlayed,
@@ -559,7 +818,21 @@ public sealed partial class L12PlatformStore
             Wins = row.Wins,
             Losses = row.Losses,
             WinStreak = row.WinStreak,
+            SeasonName = seasonName ?? RequireOperationsConfig().Season.Name,
+            Tier = TierFor(row).Name,
+            Titles = frozenTitles?.ToList() ?? [],
+            FinalizedSeasonAwards = finalizedSeasonAwards,
         });
+    }
+
+    private void FinalizeOutgoingRankedSeason(string outgoingSeasonId, string outgoingSeasonName,
+        string incomingSeasonId)
+    {
+        if (string.Equals(outgoingSeasonId, incomingSeasonId, StringComparison.OrdinalIgnoreCase)) return;
+        var champions = CurrentMasterChampions();
+        var rows = _data.RankedProfiles.Where(row => row.SeasonId == outgoingSeasonId).ToArray();
+        foreach (var row in rows)
+            ArchiveRankedProfile(row, outgoingSeasonName, true, PlayerTitles(row, FactionRank(row), champions));
     }
 
     private L12RankedProfileView ProfileView(RankedProfileRow row)

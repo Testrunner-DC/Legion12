@@ -530,7 +530,7 @@
     "cardType": "master",
     "product": "S02",
     "faction": "taiyangcheng",
-    "cost": 2,
+    "cost": null,
     "hp": 7,
     "troops": null,
     "disasterLevel": null,

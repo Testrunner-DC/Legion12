@@ -194,6 +194,13 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    private sealed class BlockedAccountRow
+    {
+        public string AccountId { get; set; } = string.Empty;
+        public string BlockedAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     private sealed class DataFile
     {
         public long Version { get; set; }
@@ -203,9 +210,11 @@ public sealed partial class L12PlatformStore
         public List<DeckRow> Decks { get; set; } = [];
         public List<PublishedDeckRow> PublishedDecks { get; set; } = [];
         public List<FriendRow> Friends { get; set; } = [];
+        public List<BlockedAccountRow> BlockedAccounts { get; set; } = [];
         public List<BugRow> BugReports { get; set; } = [];
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public List<ContentRow> ContentEntries { get; set; } = [];
+        public List<ArticleRow> Articles { get; set; } = [];
         public List<EffectReviewRow> EffectReviews { get; set; } = [];
         public List<AdminAuditRow> AdminAudit { get; set; } = [];
         public List<AdminCommandRow> AdminCommands { get; set; } = [];
@@ -226,8 +235,11 @@ public sealed partial class L12PlatformStore
         public List<RankedProfileHistoryRow> RankedProfileHistory { get; set; } = [];
         public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
         public List<RankedBroadcastRow> RankedBroadcasts { get; set; } = [];
+        public List<RankedBroadcastDeliveryRow> RankedBroadcastDeliveries { get; set; } = [];
+        public DateTimeOffset? RankedBroadcastDeliveryCutover { get; set; }
         public List<RankedMasterRecordRow> RankedMasterRecords { get; set; } = [];
         public List<string> RankedMasterRecordedMatchIds { get; set; } = [];
+        public List<RankedIntegrityAuditRow> RankedIntegrityAudits { get; set; } = [];
     }
 
     private static readonly string[] ForbiddenNames =
@@ -267,6 +279,7 @@ public sealed partial class L12PlatformStore
         EnsureRootAdmin();
         EnsureOperationsState();
         EnsureRankedState();
+        EnsureArticleState();
     }
 
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)
@@ -452,6 +465,45 @@ public sealed partial class L12PlatformStore
             .OrderBy(row => row.Username).Take(30).Select(row => ToFriendView(accountId, row)).ToArray();
     }
 
+    public IReadOnlyList<L12FriendView> BlockedAccounts(string accountId)
+    {
+        lock (_gate) return _data.BlockedAccounts.Where(row => row.AccountId == accountId)
+            .OrderByDescending(row => row.CreatedAt)
+            .Select(row => _data.Accounts.FirstOrDefault(account => account.Id == row.BlockedAccountId))
+            .Where(row => row is not null)
+            .Select(row => new L12FriendView(row!.Id, row.Username, "blocked", "none", DateTimeOffset.UtcNow))
+            .ToArray();
+    }
+
+    public (bool Success, string Message) BlockAccount(string accountId, string blockedAccountId)
+    {
+        if (accountId == blockedAccountId) return (false, "不能屏蔽自己");
+        lock (_gate)
+        {
+            if (_data.Accounts.All(row => row.Id != blockedAccountId || row.Disabled || row.Deleted))
+                return (false, "玩家不存在");
+            if (_data.BlockedAccounts.Any(row => row.AccountId == accountId && row.BlockedAccountId == blockedAccountId))
+                return (true, "该玩家已被屏蔽");
+            var relation = FindFriendRow(accountId, blockedAccountId);
+            if (relation is not null) _data.Friends.Remove(relation);
+            _data.BlockedAccounts.Add(new BlockedAccountRow { AccountId = accountId, BlockedAccountId = blockedAccountId });
+            Save();
+            return (true, "已屏蔽该玩家");
+        }
+    }
+
+    public bool UnblockAccount(string accountId, string blockedAccountId)
+    {
+        lock (_gate)
+        {
+            var rows = _data.BlockedAccounts.Where(row => row.AccountId == accountId && row.BlockedAccountId == blockedAccountId).ToArray();
+            if (rows.Length == 0) return false;
+            foreach (var row in rows) _data.BlockedAccounts.Remove(row);
+            Save();
+            return true;
+        }
+    }
+
     public IReadOnlyList<L12FriendView> Friends(string accountId)
     {
         lock (_gate) return _data.Friends.Where(row => row.Status == "accepted"
@@ -482,6 +534,10 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             if (_data.Accounts.All(row => row.Id != targetAccountId)) return (false, "玩家不存在");
+            if (_data.BlockedAccounts.Any(row =>
+                row.AccountId == accountId && row.BlockedAccountId == targetAccountId
+                || row.AccountId == targetAccountId && row.BlockedAccountId == accountId))
+                return (false, "无法向该玩家发送好友申请");
             var existing = FindFriendRow(accountId, targetAccountId);
             if (existing?.Status == "accepted") return (false, "你们已经是好友");
             if (existing?.Status == "pending") return (false, "好友申请已存在");
@@ -1149,9 +1205,10 @@ public sealed partial class L12PlatformStore
         row.MustChangePassword, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null);
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
     {
+        var blocked = _data.BlockedAccounts.Any(item => item.AccountId == viewerId && item.BlockedAccountId == row.Id);
         var relation = FindFriendRow(viewerId, row.Id);
         var direction = relation is null ? "none" : relation.AddresseeId == viewerId ? "incoming" : "outgoing";
-        return new L12FriendView(row.Id, row.Username, relation?.Status ?? "none", direction,
+        return new L12FriendView(row.Id, row.Username, blocked ? "blocked" : relation?.Status ?? "none", blocked ? "none" : direction,
             relation?.CreatedAt ?? row.CreatedAt);
     }
 

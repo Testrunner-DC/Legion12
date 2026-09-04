@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
-import type { Card, PlayerView } from '../types'
+import type { Card, PlayerView, RankedClockView } from '../types'
 import { factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
 
@@ -39,6 +39,7 @@ const props = defineProps<{
   interactionPromptActive?: boolean
   canActivateOsiris?: boolean
   osirisVictoryDisabledReason?: string
+  rankedClock?: RankedClockView | null
 }>()
 const emit = defineEmits<{
   slot: [row: number, slot: number, card: Card | null]
@@ -97,6 +98,28 @@ function moraleLabel(card: MoraleResource | null) {
   return labels[state]
 }
 const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length)
+const clockNowMs = ref(Date.now())
+let clockTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => { clockTimer = window.setInterval(() => { clockNowMs.value = Date.now() }, 250) })
+onBeforeUnmount(() => { if (clockTimer !== null) window.clearInterval(clockTimer) })
+const rankedClockPlayer = computed(() => props.rankedClock?.players.find(entry => entry.playerIndex === props.player.playerIndex) ?? null)
+const displayedRankedClock = computed(() => {
+  const clock = rankedClockPlayer.value
+  if (!clock || !props.rankedClock) return null
+  const elapsed = Math.max(0, clockNowMs.value - props.rankedClock.receivedAtMs)
+  const ticking = clock.connected && clock.acting ? elapsed : 0
+  return {
+    total: Math.max(0, clock.totalRemainingMs - ticking),
+    operation: Math.max(0, clock.operationRemainingMs - ticking),
+    reconnect: clock.reconnectRemainingMs == null ? null : Math.max(0, clock.reconnectRemainingMs - elapsed),
+    acting: clock.acting,
+    connected: clock.connected,
+  }
+})
+function formatClock(value: number) {
+  const seconds = Math.max(0, Math.ceil(value / 1000))
+  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
+}
 const currentTrialInstanceId = computed(() => props.player.specialZones?.trials?.find(card => !card.trialCompleted)?.instanceId ?? null)
 const spendableMorale = computed(() => activeMorale.value + (props.player.temporaryMorale ?? 0))
 type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
@@ -231,8 +254,13 @@ function beginCardAbility(card: Card) {
 </script>
 
 <template>
-  <section class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active }]"
+  <section class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active, 'ranked-timed': Boolean(displayedRankedClock) }]"
     :data-player-index="player.playerIndex">
+    <div v-if="displayedRankedClock" class="ranked-clock-panel" :class="{ acting: displayedRankedClock.acting, disconnected: !displayedRankedClock.connected }" data-ui-contract="ranked-player-clock">
+      <span><small>总时</small><b>{{ formatClock(displayedRankedClock.total) }}</b></span>
+      <span v-if="displayedRankedClock.connected"><small>本次</small><b>{{ formatClock(displayedRankedClock.operation) }}</b></span>
+      <span v-else><small>重连</small><b>{{ formatClock(displayedRankedClock.reconnect ?? 0) }}</b></span>
+    </div>
     <div class="commander-zone">
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
         class="master-marker-track" :class="{ runes: player.faction === 'otherworld', canopic: Boolean(player.specialZones?.canopicTrack?.length) }">
@@ -433,6 +461,7 @@ function beginCardAbility(card: Card) {
 </template>
 
 <style scoped>
+.ranked-clock-panel{position:absolute;z-index:18;right:96px;top:5px;display:flex;gap:5px;padding:4px 6px;border:1px solid #566168;background:rgba(5,9,11,.92);box-shadow:0 5px 14px #000;color:#aab3b5;pointer-events:none}.ranked-clock-panel span{display:flex;align-items:center;gap:4px;min-width:66px}.ranked-clock-panel small{font-size:7px;font-weight:900}.ranked-clock-panel b{color:#f2eee2;font:900 11px monospace;letter-spacing:.02em}.ranked-clock-panel.acting{border-color:#d5b65f;box-shadow:0 0 10px rgba(213,182,95,.25)}.ranked-clock-panel.acting b{color:#f1d77e}.ranked-clock-panel.disconnected{border-color:#9b3e49;background:rgba(38,10,14,.94)}.ranked-clock-panel.disconnected b{color:#f1959e}.l12-player-mat.active-turn.ranked-timed::after{right:250px}
 .formation-slot.combat-attacker{z-index:8;border-color:#d35a61!important;box-shadow:0 0 0 3px #d35a61,0 0 24px rgba(211,90,97,.72)!important}
 .formation-slot.combat-target,.mini-master.combat-target{z-index:8;border-color:#e0b85a!important;box-shadow:0 0 0 3px #e0b85a,0 0 24px rgba(224,184,90,.7)!important}
 .formation-slot.combat-target :deep(.card-tile),.mini-master.combat-target{animation:l12-combat-target-cue .3s ease-out both}.card-power{transition:background-color .16s,color .16s,filter .16s}

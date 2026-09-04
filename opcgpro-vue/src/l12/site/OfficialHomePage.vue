@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { getPublicContentBatch } from '@/l12/platform'
-import { createHomeContent, homeContentFields, newsContentKey, parseNewsEntries, type NewsEntry } from './homeContent'
+import { articleApi, getPublicContentBatch, type Article } from '@/l12/platform'
+import { createHomeContent, homeContentFields } from './homeContent'
 
 const content = reactive(createHomeContent())
 const ready = ref(false)
-const news = ref<NewsEntry[]>([])
+const news = ref<Article[]>([])
 onMounted(async () => {
   try {
-    const response = await getPublicContentBatch([...homeContentFields.map(field => field.key), newsContentKey])
+    const [response, articles] = await Promise.all([
+      getPublicContentBatch(homeContentFields.map(field => field.key)),
+      articleApi.list({ limit: 5 }).catch(() => []),
+    ])
     const next = createHomeContent()
     homeContentFields.forEach(field => { if (response.values[field.key]?.trim()) next[field.id] = response.values[field.key] })
     Object.assign(content, next)
-    news.value = parseNewsEntries(response.values[newsContentKey]).filter(item => item.published && item.title.trim())
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+    news.value = articles
   } finally { ready.value = true }
 })
 const modules = computed(() => [
@@ -45,7 +47,7 @@ const latestNews = computed(() => news.value[0])
     </section>
 
     <section class="official-columns">
-      <article><header><small>OFFICIAL</small><h2>{{ content.newsTitle }}</h2></header><router-link v-if="latestNews" class="latest-news" to="/news"><b>{{ latestNews.title }}</b><span>{{ latestNews.summary || latestNews.body }}</span><small>{{ latestNews.category }} · {{ new Date(latestNews.publishedAt).toLocaleDateString() }}</small></router-link><div v-else class="empty-block"><template v-if="content.latestNews"><b>最新公告</b><span>{{ content.latestNews }}</span></template><template v-else><b>{{ content.newsEmptyTitle }}</b><span>{{ content.newsEmptyText }}</span></template></div></article>
+      <article><header><small>OFFICIAL</small><h2>{{ content.newsTitle }}</h2></header><router-link v-if="latestNews" class="latest-news" to="/news"><b>{{ latestNews.title }}</b><span>{{ latestNews.summary || latestNews.body }}</span><small>{{ latestNews.category }} · {{ new Date(latestNews.publishedAt || latestNews.updatedAt).toLocaleDateString() }}</small></router-link><div v-else class="empty-block"><template v-if="content.latestNews"><b>最新公告</b><span>{{ content.latestNews }}</span></template><template v-else><b>{{ content.newsEmptyTitle }}</b><span>{{ content.newsEmptyText }}</span></template></div></article>
       <article><header><small>RULES & FAQ</small><h2>{{ content.rulesTitle }}</h2></header><router-link to="/cards">{{ content.cardLinkLabel }} <b>→</b></router-link><a href="#" @click.prevent>{{ content.rulesLinkLabel }} <b>→</b></a><router-link to="/records">{{ content.replayLinkLabel }} <b>→</b></router-link></article>
       <article><header><small>DEVELOPMENT</small><h2>{{ content.developmentTitle }}</h2></header><div class="status-line"><span>对战框架</span><b>{{ content.battleStatus }}</b></div><div class="status-line"><span>S01 卡效</span><b>{{ content.s1Status }}</b></div><div class="status-line"><span>S02 卡效</span><b>{{ content.s2Status }}</b></div><div class="status-line"><span>移动端</span><b>{{ content.mobileStatus }}</b></div></article>
     </section>

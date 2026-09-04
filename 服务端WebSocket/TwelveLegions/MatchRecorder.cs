@@ -38,6 +38,14 @@ public sealed class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "mode_id", "TEXT NOT NULL DEFAULT 'legacy'");
         await EnsureColumnAsync(connection, "matches", "account_0", "TEXT");
         await EnsureColumnAsync(connection, "matches", "account_1", "TEXT");
+        var closeSandboxResidue = connection.CreateCommand();
+        closeSandboxResidue.CommandText = """
+            UPDATE matches SET ended_utc=$utc,
+                error=COALESCE(error,'历史沙盒对局清理关闭')
+            WHERE ended_utc IS NULL AND mode_id='sandbox';
+            """;
+        closeSandboxResidue.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+        await closeSandboxResidue.ExecuteNonQueryAsync();
     }
 
     public async Task StartAsync(L12GameState state, string modeId = "friendly",
@@ -58,7 +66,8 @@ public sealed class MatchRecorder : IAsyncDisposable
         command.Parameters.AddWithValue("$d0", state.Players[0].DeckName);
         command.Parameters.AddWithValue("$d1", state.Players[1].DeckName);
         command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$mode", string.IsNullOrWhiteSpace(modeId) ? "friendly" : modeId);
+        command.Parameters.AddWithValue("$mode", string.IsNullOrWhiteSpace(modeId)
+            ? "friendly" : modeId.Trim().ToLowerInvariant());
         command.Parameters.AddWithValue("$a0", (object?)account0 ?? DBNull.Value);
         command.Parameters.AddWithValue("$a1", (object?)account1 ?? DBNull.Value);
         await command.ExecuteNonQueryAsync();
@@ -86,17 +95,39 @@ public sealed class MatchRecorder : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task CompleteAsync(L12GameEngine engine)
+    public Task AppendAuthorityAsync(L12GameEngine engine, long sequence, string reason)
+        => AppendAsync(engine, sequence, -1,
+            JsonSerializer.Serialize(new { type = "authorityConclusion", reason }), CommandResult.Ok());
+
+    public async Task<bool> CompleteAsync(L12GameEngine engine)
     {
+        if (engine.State.Phase != L12Phase.GameOver)
+            throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
+        var finalHash = engine.ComputeStateHash();
         var command = connection.CreateCommand();
-        command.CommandText = "UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash WHERE match_id=$id";
+        command.CommandText = """
+            UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash
+            WHERE match_id=$id AND ended_utc IS NULL;
+            """;
         command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$winner", (object?)engine.State.Winner ?? DBNull.Value);
-        command.Parameters.AddWithValue("$hash", engine.ComputeStateHash());
+        command.Parameters.AddWithValue("$hash", finalHash);
         command.Parameters.AddWithValue("$id", engine.State.MatchId);
-        await command.ExecuteNonQueryAsync();
+        if (await command.ExecuteNonQueryAsync() == 1) return true;
+
+        var existing = connection.CreateCommand();
+        existing.CommandText = "SELECT winner,final_hash,ended_utc FROM matches WHERE match_id=$id;";
+        existing.Parameters.AddWithValue("$id", engine.State.MatchId);
+        await using var reader = await existing.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待结束的正式对局记录");
+        var recordedWinner = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
+        var recordedHash = reader.IsDBNull(1) ? null : reader.GetString(1);
+        if (reader.IsDBNull(2) || recordedWinner != engine.State.Winner
+            || !string.Equals(recordedHash, finalHash, StringComparison.Ordinal))
+            throw new InvalidOperationException("重复结束请求与已记录的正式赛果冲突");
+        return false;
     }
 
     public async Task<IReadOnlyList<L12MatchSummary>> ListMatchesAsync(int limit = 50)
@@ -127,6 +158,7 @@ public sealed class MatchRecorder : IAsyncDisposable
                    m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
             WHERE (m.player_0=$player OR m.player_1=$player) AND m.mode_id <> 'sandbox'
+              AND m.ended_utc IS NOT NULL
             GROUP BY m.match_id ORDER BY m.started_utc DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$player", playerName);
@@ -152,7 +184,7 @@ public sealed class MatchRecorder : IAsyncDisposable
             WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
             ORDER BY m.started_utc DESC LIMIT $limit;
             """;
-        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 2000));
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 20_000));
         var matches = new List<L12RankingMatch>();
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -220,6 +252,21 @@ public sealed class MatchRecorder : IAsyncDisposable
 
     public async Task<L12MatchDetail?> GetMatchForPlayerAsync(string matchId, string playerName)
     {
+        await using (var connection = new SqliteConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            var visible = connection.CreateCommand();
+            visible.CommandText = """
+                SELECT EXISTS(
+                    SELECT 1 FROM matches
+                    WHERE match_id=$id AND ended_utc IS NOT NULL AND mode_id <> 'sandbox'
+                      AND (player_0=$player OR player_1=$player)
+                );
+                """;
+            visible.Parameters.AddWithValue("$id", matchId);
+            visible.Parameters.AddWithValue("$player", playerName);
+            if (Convert.ToInt32(await visible.ExecuteScalarAsync()) != 1) return null;
+        }
         var detail = await GetMatchAsync(matchId);
         if (detail is null) return null;
         var viewer = string.Equals(detail.Match.Player0, playerName, StringComparison.OrdinalIgnoreCase) ? 0

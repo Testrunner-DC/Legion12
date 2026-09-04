@@ -55,7 +55,8 @@ const filtered = computed(() => {
       && (type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value)
       && (faction.value === 'all' || card.faction === faction.value)
       && (product.value === 'all' || card.product === product.value)
-      && (cost.value === 'all' || (cost.value === '7+' ? (card.cost ?? -1) >= 7 : card.cost === Number(cost.value)))
+      && (cost.value === 'all' || (hasCostDimension(card)
+        && (cost.value === '7+' ? card.cost! >= 7 : card.cost === Number(cost.value))))
       && (disaster.value === 'all'
         || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value)))
   }))
@@ -89,6 +90,10 @@ const selectedDecks = computed(() => {
       + (deck.masterId === selectedId ? 1 : 0),
   })).filter(deck => deck.copies > 0)
 })
+
+function hasCostDimension(card: CatalogCard) {
+  return card.cardType !== 'master' && card.cost !== undefined
+}
 
 function selectLogical(entry: LogicalArchiveCard) {
   selectedLogicalId.value = entry.logicalId
@@ -136,7 +141,7 @@ function resetFilters() {
           :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(entry.defaultVersion.cardType) }, `faction-${entry.defaultVersion.faction}`]" @click="selectLogical(entry)">
           <div class="archive-card-image">
             <CardImage :card-id="entry.defaultVersion.id" :legacy-url="entry.defaultVersion.imageUrl" :alt="entry.defaultVersion.nameZh" intent="thumb"/>
-            <b v-if="entry.defaultVersion.cost !== undefined" class="archive-cost">{{ entry.defaultVersion.cost }}</b>
+            <b v-if="hasCostDimension(entry.defaultVersion)" class="archive-cost">{{ entry.defaultVersion.cost }}</b>
             <b v-if="entry.defaultVersion.disasterLevel" class="archive-disaster">{{ entry.defaultVersion.disasterLevel }}</b>
             <b v-if="entry.defaultVersion.troops" class="archive-troops">{{ entry.defaultVersion.troops }}</b>
             <b v-if="entry.versions.length > 1" class="archive-version-count">{{ entry.versions.length }}</b>
@@ -159,7 +164,7 @@ function resetFilters() {
         <h2>{{ selected.nameZh }}</h2>
         <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span><span v-if="selected.rarity">{{ selected.rarity }}</span></div>
         <dl>
-          <template v-if="selected.cost !== undefined"><dt>费用</dt><dd>{{ selected.cost }}</dd></template>
+          <template v-if="hasCostDimension(selected)"><dt>费用</dt><dd>{{ selected.cost }}</dd></template>
           <template v-if="selected.troops !== undefined"><dt>兵力</dt><dd>{{ selected.troops }}</dd></template>
           <template v-if="selected.hp !== undefined"><dt>血量</dt><dd>{{ selected.hp }}</dd></template>
           <template v-if="selected.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ selected.disasterLevel }}</dd></template>

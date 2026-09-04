@@ -191,3 +191,21 @@ export interface RoomState {
   started: boolean
   sandbox?: boolean
 }
+
+export interface RankedClockPlayerView {
+  playerIndex: number
+  totalRemainingMs: number
+  operationRemainingMs: number
+  acting: boolean
+  connected: boolean
+  reconnectRemainingMs?: number | null
+}
+
+export interface RankedClockView {
+  serverUtcMs: number
+  receivedAtMs: number
+  totalLimitMs: number
+  operationLimitMs: number
+  reconnectLimitMs: number
+  players: RankedClockPlayerView[]
+}

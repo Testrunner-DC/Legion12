@@ -35,24 +35,38 @@ const source = JSON.parse(fs.readFileSync(sourcePath, 'utf8'))
 const cards = source
   .filter(card => card.cardNo?.startsWith('S02-'))
   .sort((a, b) => a.cardNo.localeCompare(b.cardNo, 'zh-CN'))
-  .map(card => ({
-    id: card.cardNo,
-    number: card.cardNo,
-    nameZh: card.name,
-    imageUrl: card.image || null,
-    cardType: typeMap.get(card.type) ?? 'token',
-    product: 'S02',
-    faction: factionMap.get(card.faction) ?? 'universal',
-    cost: card.cost ?? null,
-    hp: card.health ?? null,
-    troops: card.attack ?? null,
-    disasterLevel: null,
-    effect: card.effectText || null,
-  }))
+  .map(card => {
+    const cardType = typeMap.get(card.type) ?? 'token'
+    const isMaster = cardType === 'master'
+    return {
+      id: card.cardNo,
+      number: card.cardNo,
+      nameZh: card.name,
+      imageUrl: card.image || null,
+      cardType,
+      product: 'S02',
+      faction: factionMap.get(card.faction) ?? 'universal',
+      cost: isMaster ? null : card.cost ?? null,
+      ...(card.deckLimit !== undefined ? { deckLimit: card.deckLimit } : {}),
+      hp: card.health ?? null,
+      troops: isMaster ? null : card.attack ?? null,
+      disasterLevel: card.disasterLevel ?? null,
+      ...(card.trialValue !== undefined ? { trialValue: card.trialValue } : {}),
+      effect: card.effectText || null,
+      ...(card.tags?.length ? { traits: card.tags } : {}),
+      ...(card.subType ? { profession: card.subType }
+        : card.cardNo === 'S02-01S1' ? { profession: null } : {}),
+    }
+  })
 
 if (cards.length !== 115) throw new Error(`S2 card count mismatch: ${cards.length}`)
 const ids = new Set(cards.map(card => card.id))
 if (ids.size !== cards.length) throw new Error('S2 contains duplicate card numbers')
+const invalidMasters = cards.filter(card => card.cardType === 'master'
+  && (!Number.isFinite(card.hp) || card.cost !== null || card.troops !== null))
+if (invalidMasters.length) {
+  throw new Error(`Masters must have hp and must not expose cost/troops: ${invalidMasters.map(card => card.id).join(', ')}`)
+}
 
 fs.writeFileSync(outputPath, `${JSON.stringify(cards, null, 2)}\n`, 'utf8')
 console.log(`Wrote ${cards.length} S2 cards to ${outputPath}`)

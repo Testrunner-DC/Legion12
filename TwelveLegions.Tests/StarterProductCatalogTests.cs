@@ -42,6 +42,44 @@ public sealed class StarterProductCatalogTests
     }
 
     [Fact]
+    public void EveryMasterHasHealthAndNeverExposesCostOrTroops()
+    {
+        var masters = Catalog.Cards.Values.Where(card => card.CardType == "master").ToArray();
+
+        Assert.NotEmpty(masters);
+        Assert.All(masters, master =>
+        {
+            Assert.NotNull(master.Hp);
+            Assert.Null(master.Cost);
+            Assert.Null(master.Troops);
+        });
+    }
+
+    [Theory]
+    [InlineData("ST01-M1", 10)]
+    [InlineData("ST02-M1", 8)]
+    [InlineData("ST03-M1", 10)]
+    [InlineData("ST04-M1", 9)]
+    [InlineData("ST05-M1", 8)]
+    [InlineData("ST06-M1", 8)]
+    public void StarterMasterHealthDrivesTheActualMatchState(string masterId, int expectedHealth)
+    {
+        var baseDeck = Catalog.PresetDecks[0];
+        var deck = new L12PresetDeckDefinition
+        {
+            Name = $"{masterId} 血量验证",
+            MasterId = masterId,
+            CardIds = [.. baseDeck.CardIds],
+            MoraleIds = [.. baseDeck.MoraleIds],
+        };
+        var game = new L12GameEngine(Catalog, $"health-{masterId}", "HP01", 20260904,
+            ["甲", "乙"], [deck, deck], skipPreparation: true);
+
+        Assert.Equal(expectedHealth, game.State.Players[0].Hp);
+        Assert.Equal(expectedHealth, game.State.Players[0].MaxHp);
+    }
+
+    [Fact]
     public void StarterDatabasePreservesAuthoritativeEffectLineBreaks()
     {
         var starterEffects = Catalog.Cards.Values

@@ -381,7 +381,8 @@ public sealed partial class L12PlatformStore
                 throw new L12SecurityPolicyException("last_admin_protected", "不能删除最后一个可用管理员账号");
             var privateRecords = _data.Decks.Count(row => row.AccountId == account.Id)
                 + _data.PublishedDecks.Count(row => row.OwnerId == account.Id)
-                + _data.Friends.Count(row => row.RequesterId == account.Id || row.AddresseeId == account.Id);
+                + _data.Friends.Count(row => row.RequesterId == account.Id || row.AddresseeId == account.Id)
+                + _data.BlockedAccounts.Count(row => row.AccountId == account.Id || row.BlockedAccountId == account.Id);
             if (!apply)
             {
                 if (context.DryRun)
@@ -399,6 +400,7 @@ public sealed partial class L12PlatformStore
             _data.PublishedDecks.RemoveAll(row => row.OwnerId == account.Id);
             foreach (var deck in _data.PublishedDecks) deck.LikedByAccountIds.RemoveAll(id => id == account.Id);
             _data.Friends.RemoveAll(row => row.RequesterId == account.Id || row.AddresseeId == account.Id);
+            _data.BlockedAccounts.RemoveAll(row => row.AccountId == account.Id || row.BlockedAccountId == account.Id);
             foreach (var bug in _data.BugReports.Where(row => row.ReporterId == account.Id))
             {
                 bug.ReporterId = null;

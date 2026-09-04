@@ -35,6 +35,7 @@ public sealed class MatchRecorderTests
             var rejectedPlayer = 1 - game.State.ActivePlayer;
             var rejected = game.Handle(rejectedPlayer, new L12Command("endTurn"));
             await recorder.AppendAsync(game, 2, rejectedPlayer, "{\"type\":\"endTurn\"}", rejected);
+            game.ConcludeByAuthority(0, "测试结束");
             await recorder.CompleteAsync(game);
 
             var matches = await recorder.ListMatchesAsync();
@@ -97,6 +98,8 @@ public sealed class MatchRecorderTests
         await recorder.InitializeAsync();
         await recorder.StartAsync(game.State);
         await recorder.AppendAsync(game, 1, 0, "{\"type\":\"noop\",\"cardInstanceId\":\"first-private-hand\"}", CommandResult.Ok());
+        game.ConcludeByAuthority(0, "回放隐私测试结束");
+        await recorder.CompleteAsync(game);
 
         var firstView = Assert.IsType<L12MatchDetail>(await recorder.GetMatchForPlayerAsync("private-replay", "甲"));
         var secondView = Assert.IsType<L12MatchDetail>(await recorder.GetMatchForPlayerAsync("private-replay", "乙"));
@@ -113,5 +116,68 @@ public sealed class MatchRecorderTests
         Assert.DoesNotContain(firstSecret.CardId, secondJson);
         Assert.Contains(trojan.CardId, secondJson);
         Assert.Contains("\"IdentityKnown\":true", secondJson);
+    }
+
+    [Fact]
+    public async Task StartupClosesOnlyUnfinishedSandboxAndPlayerHistoryShowsOnlyCompletedFormalMatches()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-recorder-lifecycle", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var sandbox = new L12GameEngine(catalog, "sandbox-residue", "SAND01", 801,
+            ["甲", "乙"], [0, 0], skipPreparation: true);
+        var ranked = new L12GameEngine(catalog, "ranked-unfinished", "RANK01", 802,
+            ["甲", "乙"], [0, 0], skipPreparation: true);
+
+        await using (var seed = new MatchRecorder(path))
+        {
+            await seed.InitializeAsync();
+            await seed.StartAsync(sandbox.State, "sandbox");
+            await seed.StartAsync(ranked.State, "ranked", "account-a", "account-b");
+        }
+
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var sandboxAfterStartup = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync("sandbox-residue"));
+        var rankedAfterStartup = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync("ranked-unfinished"));
+        Assert.NotNull(sandboxAfterStartup.Match.EndedUtc);
+        Assert.Equal("历史沙盒对局清理关闭", sandboxAfterStartup.Match.Error);
+        Assert.Null(rankedAfterStartup.Match.EndedUtc);
+        Assert.Empty(await recorder.ListMatchesForPlayerAsync("甲"));
+        Assert.Null(await recorder.GetMatchForPlayerAsync("sandbox-residue", "甲"));
+        Assert.Null(await recorder.GetMatchForPlayerAsync("ranked-unfinished", "甲"));
+
+        ranked.ConcludeByAuthority(0, "测试正式结束");
+        Assert.True(await recorder.CompleteAsync(ranked));
+        Assert.False(await recorder.CompleteAsync(ranked));
+        var history = Assert.Single(await recorder.ListMatchesForPlayerAsync("甲"));
+        Assert.Equal("ranked-unfinished", history.MatchId);
+        Assert.NotNull(await recorder.GetMatchForPlayerAsync("ranked-unfinished", "甲"));
+    }
+
+    [Fact]
+    public async Task ConcurrentFormalCompletionUpdatesTheEndRecordExactlyOnce()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-recorder-complete-once", Guid.NewGuid().ToString("N"));
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var game = new L12GameEngine(catalog, "complete-once", "ONCE01", 803,
+            ["甲", "乙"], [0, 0], skipPreparation: true);
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        await recorder.StartAsync(game.State, "friendly");
+        game.ConcludeByAuthority(1, "并发结束测试");
+
+        var completions = await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => recorder.CompleteAsync(game)));
+
+        Assert.Equal(1, completions.Count(completed => completed));
+        var detail = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync("complete-once"));
+        Assert.NotNull(detail.Match.EndedUtc);
+        Assert.Equal(1, detail.Match.Winner);
+
+        var conflicting = new L12GameEngine(catalog, "complete-once", "ONCE01", 803,
+            ["甲", "乙"], [0, 0], skipPreparation: true);
+        conflicting.ConcludeByAuthority(0, "冲突重放");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.CompleteAsync(conflicting));
     }
 }

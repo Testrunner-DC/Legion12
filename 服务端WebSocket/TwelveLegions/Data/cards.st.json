@@ -164,7 +164,7 @@
     "cardType": "master",
     "product": "ST01",
     "faction": "tianting",
-    "cost": 10,
+    "hp": 10,
     "traits": [
       "天廷"
     ],
@@ -336,7 +336,7 @@
     "cardType": "master",
     "product": "ST02",
     "faction": "taiyangcheng",
-    "cost": 8,
+    "hp": 8,
     "traits": [
       "太阳城"
     ],
@@ -508,7 +508,7 @@
     "cardType": "master",
     "product": "ST03",
     "faction": "asgard",
-    "cost": 10,
+    "hp": 10,
     "traits": [
       "阿斯加德"
     ],
@@ -681,7 +681,7 @@
     "cardType": "master",
     "product": "ST04",
     "faction": "gaotianyuan",
-    "cost": 9,
+    "hp": 9,
     "traits": [
       "高天原"
     ],
@@ -854,7 +854,7 @@
     "cardType": "master",
     "product": "ST05",
     "faction": "olympus",
-    "cost": 8,
+    "hp": 8,
     "traits": [
       "奥林匹斯"
     ],
@@ -1031,7 +1031,7 @@
     "cardType": "master",
     "product": "ST06",
     "faction": "otherworld",
-    "cost": 8,
+    "hp": 8,
     "traits": [
       "彼界"
     ],

@@ -24,7 +24,7 @@ export interface AccountDeletion {
   applied: boolean; account: PlatformAccount; revokedSessions: number; removedPrivateRecords: number; cleanedMatchRecords?: number
 }
 export interface PlatformFriend {
-  accountId: string; username: string; status: 'none' | 'pending' | 'accepted'
+  accountId: string; username: string; status: 'none' | 'pending' | 'accepted' | 'blocked'
   direction: 'none' | 'incoming' | 'outgoing'; createdAt: string; online?: boolean
 }
 export interface PlatformPresence {
@@ -64,6 +64,19 @@ export interface AtomicCoverage {
 }
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
+export type ArticleStatus = 'draft' | 'published' | 'scheduled' | 'withdrawn' | 'archived'
+export interface Article {
+  id: string; title: string; summary: string; body: string; category: string; coverUrl: string; link: string; slug: string
+  pinned: boolean; status: ArticleStatus; hasUnpublishedChanges: boolean; publishAt?: string
+  createdAt: string; updatedAt: string; publishedAt?: string; author: string; updatedBy: string; publishedBy?: string; revision: number
+}
+export interface ArticleRevision {
+  revision: number; action: string; title: string; summary: string; body: string; category: string; coverUrl: string
+  link: string; slug: string; pinned: boolean; publishAt?: string; actor: string; createdAt: string
+}
+export type ArticleDraft = Pick<Article, 'title' | 'summary' | 'body' | 'category' | 'coverUrl' | 'link' | 'slug' | 'pinned'> & {
+  publishAt?: string; expectedRevision?: number
+}
 export interface EffectReview { cardId: string; abilityId?: string; status: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; note: string; reviewer: string; updatedAt: string }
 export interface AdminAudit {
   id: string; actorId: string; actorName: string; category: string; action: string; target: string; fromValue?: string; toValue?: string; comment?: string; createdAt: string
@@ -129,12 +142,33 @@ export interface RankedMasterTitleConfig { masterId: string; masterName: string;
 export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[] }
 export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[] }
 export interface RankedProfileHistory { seasonId: string; faction: string; sevenValue: number; placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number; archivedAt: string }
+export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
 export interface RankedSettlementComponent { kind: string; label: string; value: number }
 export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string }
 export interface RankedBroadcast { id: string; matchId: string; eventType: string; message: string; createdAt: string }
+export interface RankedBroadcastClaim { broadcast: RankedBroadcast; claimToken: string; leaseExpiresAt: string }
 export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; titles: string[]; wins: number; losses: number; winStreak: number }
 export interface RankedMasterChampion { masterId: string; masterName: string; username: string; title: string; sevenValue: number; displayValue: string; games: number; wins: number }
+export interface RankedAnalyticsSummary { matches: number; placedPlayers: number; activeMasters: number; updatedAt?: string }
+export interface RankedMasterStats {
+  rank: number; masterId: string; masterName: string; strongestPlayer?: string; title?: string
+  games: number; wins: number; losses: number; winRate: number; usageRate: number
+  firstGames: number; firstWins: number; firstWinRate: number; secondGames: number; secondWins: number; secondWinRate: number
+}
+export interface RankedMatchupStats {
+  masterId: string; opponentMasterId: string; games: number; wins: number; winRate: number
+  firstGames: number; firstWins: number; secondGames: number; secondWins: number
+}
+export interface RankedAnalytics { range: '7d' | '30d' | 'season'; summary: RankedAnalyticsSummary; masters: RankedMasterStats[]; matchups: RankedMatchupStats[] }
+export interface RankedIntegritySignal { code: string; label: string }
+export interface RankedIntegrityAudit {
+  id: string; matchId: string; seasonId: string
+  firstAccountId: string; firstPlayer: string; secondAccountId: string; secondPlayer: string
+  winner?: number | null; durationMs: number; meaningfulCommandCount: number; conclusionKind: string
+  networkLinked: boolean; networkCorrelationId?: string | null; signals: RankedIntegritySignal[]
+  reviewRecommended: boolean; enforcement: 'none' | string; createdAt: string
+}
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
 }
@@ -491,6 +525,11 @@ function commandBody<T extends Record<string, unknown>>(prefix: string, body: T)
 }
 
 export const adminApi = {
+  rankedIntegrityAudits: (query: { accountId?: string; matchId?: string; reviewOnly?: boolean; limit?: number } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '' && value !== false) params.set(key, String(value)) })
+    return platformRequest<RankedIntegrityAudit[]>(`/api/admin/ranked/integrity-audits${params.size ? `?${params}` : ''}`)
+  },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
   setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
@@ -512,6 +551,25 @@ export const adminApi = {
   },
   updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/v1/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
+  articles: (query: { status?: string; category?: string; search?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value) })
+    return platformRequest<Article[]>(`/api/admin/articles${params.size ? `?${params}` : ''}`)
+  },
+  saveArticle: (article: Partial<Article> & ArticleDraft) => {
+    const body = { title: article.title, summary: article.summary, body: article.body, category: article.category,
+      coverUrl: article.coverUrl, link: article.link, slug: article.slug, pinned: article.pinned,
+      publishAt: article.publishAt || null, expectedRevision: article.id ? article.revision : undefined }
+    return article.id
+      ? platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(article.id)}`, { method: 'PUT', body: JSON.stringify(body) })
+      : platformRequest<Article>('/api/admin/articles', { method: 'POST', body: JSON.stringify(body) })
+  },
+  publishArticle: (id: string) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/publish`, { method: 'POST' }),
+  withdrawArticle: (id: string) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/withdraw`, { method: 'POST' }),
+  archiveArticle: (id: string) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/archive`, { method: 'POST' }),
+  restoreArticle: (id: string) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
+  articleRevisions: (id: string) => platformRequest<ArticleRevision[]>(`/api/admin/articles/${encodeURIComponent(id)}/revisions`),
+  restoreArticleRevision: (id: string, revision: number) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/revisions/${revision}/restore`, { method: 'POST' }),
   saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value })) }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
@@ -580,8 +638,25 @@ export const adminApi = {
 export const rankedApi = {
   overview: () => platformRequest<RankedOverview>('/api/ranked/me'),
   selectFaction: (faction: 'order' | 'chaos' | 'fate') => platformRequest<RankedProfile>('/api/ranked/faction', { method: 'POST', body: JSON.stringify({ faction }) }),
-  leaderboard: (faction = '') => platformRequest<{ players: RankedLeaderboardEntry[]; masterChampions: RankedMasterChampion[]; matches: Array<Record<string, unknown>> }>(`/api/rankings${faction ? `?faction=${encodeURIComponent(faction)}` : ''}`),
+  leaderboard: (faction = '', range: '7d' | '30d' | 'season' = 'season') => {
+    const params = new URLSearchParams({ range })
+    if (faction) params.set('faction', faction)
+    return platformRequest<{ players: RankedLeaderboardEntry[]; masterChampions: RankedMasterChampion[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
+  },
+  history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
+  claimBroadcast: () => platformRequest<RankedBroadcastClaim | null>('/api/ranked/broadcasts/claim', { method: 'POST' }),
+  completeBroadcast: (id: string, claimToken: string) => platformRequest<{ completed: boolean }>(`/api/ranked/broadcasts/${encodeURIComponent(id)}/complete`, {
+    method: 'POST', body: JSON.stringify({ claimToken }),
+  }),
+}
+
+export const articleApi = {
+  list: (query: { category?: string; search?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<Article[]>(`/api/articles${params.size ? `?${params}` : ''}`)
+  },
 }
 
 export const tournamentApi = {
@@ -654,6 +729,11 @@ export const friendApi = {
     method: 'POST', body: JSON.stringify({ accept }),
   }),
   remove: (accountId: string) => platformRequest<void>(`/api/friends/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
+  blocked: () => platformRequest<PlatformFriend[]>('/api/friends/blocked'),
+  block: (accountId: string) => platformRequest<{ message: string }>('/api/friends/blocked', {
+    method: 'POST', body: JSON.stringify({ accountId }),
+  }),
+  unblock: (accountId: string) => platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
 }
 
 export const publicDeckApi = {

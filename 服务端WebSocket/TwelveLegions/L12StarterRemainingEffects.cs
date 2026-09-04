@@ -48,11 +48,36 @@ public sealed partial class L12GameEngine
                 var grave = player.Graveyard.Where(card => card.CardType == "legion" && card.BaseTroops <= 2000
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId).ToList();
-                if (field.Count < 2 || grave.Count == 0) return CommandResult.Reject("战场需要2张军团，墓地需要兵力不高于2000的太阳城军团");
+                var resources = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
+                    .Concat(ActiveTombGuardResources(player).Select(card => card.InstanceId))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
+                var visibleCost = 1 - waived;
+                var prospectiveReviveExists = grave.Count > 0 || field.Any(id =>
+                    FindOnField(player, id, out _, out _) is { } card && card.BaseTroops <= 2000
+                    && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
+                if (field.Count < 2 || resources.Count < visibleCost || !prospectiveReviveExists)
+                    return CommandResult.Reject($"需要{visibleCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场");
+                var paymentChoices = visibleCost > 0 ? resources.Concat(field).ToList() : field;
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "discardCosts", Text = "荷鲁斯：选择弃置的2张我方军团", ValidChoices = field, MinChoose = 2, MaxChoose = 2 },
-                    new L12ActivationSelectionStep { Kind = "grave-card", DeclarationKey = "entryCard", Text = "荷鲁斯：选择休整登场的太阳城军团", ValidChoices = grave, MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "mixed-board-payment", DeclarationKey = "payment",
+                        Text = visibleCost > 0
+                            ? "荷鲁斯：支付费用——消耗1士气并弃置我方战场2张军团"
+                            : "荷鲁斯：支付费用——弃置我方战场2张军团（士气费用已免除或预付）",
+                        ValidChoices = paymentChoices, MinChoose = 2 + visibleCost, MaxChoose = 2 + visibleCost,
+                        SelectionConstraint = visibleCost == 1 ? "one-resource-two-field-legions" : "zero-resource-two-field-legions",
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "prospective-grave-card", DeclarationKey = "entryCard",
+                        ReferenceDeclarationKey = "payment",
+                        Text = "荷鲁斯：选择墓地1张兵力不高于2000的【太阳城】军团休整登场（X/1）",
+                        ValidChoices = grave, MinChoose = 1, MaxChoose = 1,
+                        CostThreshold = 2000, SelectionConstraint = "taiyangcheng",
+                    },
                     new L12ActivationSelectionStep { Kind = "slot", DeclarationKey = "entrySlot", Text = "荷鲁斯：选择休整登场位置", ValidChoices = Enumerable.Range(0, 2).SelectMany(row => Enumerable.Range(0, 3).Select(slot => $"{row}:{slot}")).ToList(), MinChoose = 1, MaxChoose = 1 },
                 ]);
             }
@@ -130,17 +155,31 @@ public sealed partial class L12GameEngine
             }
             case "horusRevive":
             {
-                if (values.Length != 4 || values.Take(2).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
+                var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
+                var visibleCost = 1 - waived;
+                var paymentCount = 2 + visibleCost;
+                var payment = values.Take(paymentCount).ToArray();
+                var resourceIds = payment.Where(id => player.Morale.Any(card => card.InstanceId == id)
+                    || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
+                var costIds = payment.Where(id => !resourceIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
+                if (values.Length != paymentCount + 2 || resourceIds.Length != visibleCost || costIds.Length != 2
+                    || costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
                     return "荷鲁斯的费用、墓地军团或位置选择不完整";
-                var costs = values.Take(2).Select(id => FindOnField(player, id, out _, out _)).ToArray();
+                if (player.TemporaryMorale < 1 - waived
+                    && !CanConsumeSelectedResources(player, 1 - waived, resourceIds))
+                    return "荷鲁斯选择的士气资源已失效";
+                var costs = costIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
                 if (costs.Any(card => card is null || !IsFieldLegion(card))) return "荷鲁斯选择的弃置军团已失效";
-                if (!player.Graveyard.Any(card => card.InstanceId == values[2] && card.CardType == "legion"
-                        && card.BaseTroops <= 2000 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")))
+                var entryId = values[paymentCount];
+                var entry = player.Graveyard.FirstOrDefault(card => card.InstanceId == entryId)
+                    ?? costs.OfType<L12CardInstance>().FirstOrDefault(card => card.InstanceId == entryId);
+                if (entry is null || entry.CardType != "legion" || entry.BaseTroops > 2000
+                    || !L12StructuredCardRules.HasFaction(player, entry, "taiyangcheng"))
                     return "荷鲁斯选择的墓地军团已失效";
-                var (row, slot) = ParseSlot(values[3]);
+                var (row, slot) = ParseSlot(values[paymentCount + 1]);
                 if (row is < 0 or > 1 || slot is < 0 or > 2) return "荷鲁斯选择的登场位置无效";
                 var occupant = player.Field[row][slot];
-                if (occupant is not null && !values.Take(2).Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase))
+                if (occupant is not null && !costIds.Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase))
                     return "荷鲁斯选择的登场位置已被其他军团占用";
                 return null;
             }
@@ -197,8 +236,16 @@ public sealed partial class L12GameEngine
                 }
                 break;
             case "horusRevive":
-                if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要消耗1士气");
-                var costs = values.Take(2).Select(id => FindOnField(player, id, out _, out _)!).ToArray();
+                var waived = Math.Min(1, player.MasterMoraleWaiverCredit);
+                var visibleCost = 1 - waived;
+                var paymentCount = 2 + visibleCost;
+                var selectedResourceIds = values.Take(paymentCount).Where(id => player.Morale.Any(card => card.InstanceId == id)
+                    || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
+                string[] resourcesStillToConsume = player.TemporaryMorale >= 1 - waived ? [] : selectedResourceIds;
+                if (!TryConsumeSelectedResources(player, 1 - waived, resourcesStillToConsume)) return CommandResult.Reject("需要消耗1士气");
+                player.MasterMoraleWaiverCredit -= waived;
+                var selectedCostIds = values.Take(paymentCount).Where(id => !selectedResourceIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
+                var costs = selectedCostIds.Select(id => FindOnField(player, id, out _, out _)!).ToArray();
                 foreach (var cost in costs)
                     if (!RemoveFromField(player, cost, true, "作为荷鲁斯效果的费用弃置", leaveKind: L12FieldLeaveKind.Discard))
                         return CommandResult.Reject("荷鲁斯选择的弃置军团已失效");
@@ -288,8 +335,8 @@ public sealed partial class L12GameEngine
                 }
                 break;
             case "horusRevive":
-                _ = TrySummonFromAnyPrivateZone(player, item.Controller, values.ElementAtOrDefault(2) ?? string.Empty,
-                    values.ElementAtOrDefault(3) ?? string.Empty, tapped: true);
+                _ = TrySummonFromAnyPrivateZone(player, item.Controller, values.ElementAtOrDefault(values.Length - 2) ?? string.Empty,
+                    values.ElementAtOrDefault(values.Length - 1) ?? string.Empty, tapped: true);
                 break;
             case "sifCycle":
                 if (!Draw(player, 1)) SetWinner(1 - item.Controller, "西芙效果抽牌时牌库为空");
@@ -485,11 +532,18 @@ public sealed partial class L12GameEngine
                 var targets = PublicLegions(player)
                     .Where(card => L12StructuredCardRules.HasFaction(player, card, "otherworld"))
                     .Select(card => card.InstanceId).ToList();
-                steps.Add(StarterStep("option", "mode",
-                    "银臂努阿达：是否使我方1张【彼界】军团本回合兵力+1000？",
-                    OptionalModes(targets.Count > 0)));
-                steps.Add(StarterStep("field-legion", "buffTarget", "银臂努阿达：选择本回合兵力+1000的彼界军团",
-                    targets, requiredChoice: "mode:use"));
+                if (targets.Count == 0)
+                {
+                    CleanupPublicTriggerReservation(candidate);
+                    State.PendingTriggerStackCandidates.Remove(candidate);
+                    AddEvent("ability-cancelled", candidate.Controller,
+                        "银臂努阿达：已消耗符文，当前没有可选择的【彼界】军团");
+                    AdvanceTriggerBatches();
+                    return true;
+                }
+                steps.Add(StarterStep("field-legion", "buffTarget",
+                    "已消耗符文，可选择我方1张【彼界】军团，本回合兵力+1000。",
+                    targets));
                 break;
             }
             case "akhenaten-death-heal":

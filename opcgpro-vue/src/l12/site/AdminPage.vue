@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { adminApi, apiBase, authState, canAccessAdmin, hasPermission, platformState, refreshCurrentAccount, type AdminApproval, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type ContentBatch, type ContentBatchPreview, type ContentEntry, type EffectAtomDescriptor, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
-import { createHomeContent, createNewsEntry, homeContentFields, newsContentKey, parseNewsEntries, serializeNewsEntries, type NewsEntry } from './homeContent'
+import { createHomeContent, homeContentFields } from './homeContent'
 import CardImage from '@/l12/CardImage.vue'
+import AdminArticlesPanel from './AdminArticlesPanel.vue'
 import AdminOperationsPanel from './AdminOperationsPanel.vue'
+import AdminRankedIntegrityPanel from './AdminRankedIntegrityPanel.vue'
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'content' | 'effects' | 'releases' | 'commands' | 'audit' | 'security' | 'operations'
+type AdminTab = 'overview' | 'bugs' | 'accounts' | 'content' | 'articles' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations'
 const tab = ref<AdminTab>('overview')
 const bugs = ref<BugReport[]>([])
 const accounts = ref<PlatformAccount[]>([])
@@ -17,7 +19,6 @@ const reviewNotes = reactive<Record<string, string>>({})
 const notice = ref('')
 const content = reactive(createHomeContent())
 const ruleNotice = ref('')
-const newsEntries = ref<NewsEntry[]>([])
 const contentEntries = reactive<Record<string, ContentEntry>>({})
 const audits = ref<AdminAudit[]>([])
 const auditCategory = ref('')
@@ -32,7 +33,7 @@ const commandStatus = ref('')
 const approvalReasons = reactive<Record<string, string>>({})
 const contentPreview = ref<ContentBatchPreview | null>(null)
 const contentBatches = ref<ContentBatch[]>([])
-const managedContentKeys = [...homeContentFields.map(field => field.key), 'rules.notice', newsContentKey]
+const managedContentKeys = [...homeContentFields.map(field => field.key), 'rules.notice']
 const effectCards = ref<AtomicCardEffect[]>([])
 const effectAtoms = ref<EffectAtomDescriptor[]>([])
 const effectCoverage = ref<AtomicCoverage | null>(null)
@@ -85,7 +86,6 @@ async function loadContent() {
     try { const entry = await adminApi.getContent(field.key); contentEntries[field.key] = entry; content[field.id] = entry.draftValue || field.defaultValue } catch {}
   }
   try { const entry = await adminApi.getContent('rules.notice'); contentEntries['rules.notice'] = entry; ruleNotice.value = entry.draftValue } catch {}
-  try { const entry = await adminApi.getContent(newsContentKey); contentEntries[newsContentKey] = entry; newsEntries.value = parseNewsEntries(entry.draftValue) } catch {}
   try { contentBatches.value = await adminApi.contentBatches() } catch {}
 }
 async function saveContentDrafts(showNotice = true) {
@@ -93,7 +93,6 @@ async function saveContentDrafts(showNotice = true) {
     const entries: ContentEntry[] = []
     for (const field of homeContentFields) entries.push(await adminApi.saveContentDraft(field.key, content[field.id]))
     entries.push(await adminApi.saveContentDraft('rules.notice', ruleNotice.value))
-    entries.push(await adminApi.saveContentDraft(newsContentKey, serializeNewsEntries(newsEntries.value)))
     entries.forEach(entry => { contentEntries[entry.key] = entry })
     if (showNotice) notice.value = '草稿已保存，尚未影响官网'
     return true
@@ -128,8 +127,6 @@ async function loadControlPlane() {
     if (hasPermission('admin.content.read')) contentBatches.value = await adminApi.contentBatches()
   } catch (error) { notice.value = error instanceof Error ? error.message : '管理操作记录加载失败' }
 }
-function addNews() { newsEntries.value = [createNewsEntry(), ...newsEntries.value] }
-function removeNews(id: string) { newsEntries.value = newsEntries.value.filter(entry => entry.id !== id) }
 async function resetAccountPassword(account: PlatformAccount) {
   const reason = accountStatusReasons[account.id]?.trim()
   if (!reason) { notice.value = '请先填写账号安全操作理由'; return }
@@ -263,17 +260,18 @@ onMounted(() => { void initializeAdminPage() })
       <aside class="admin-sidebar">
         <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="tab = 'overview'">▦ 后台概览</button></nav>
         <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="tab = 'accounts'; loadAccounts()">♙ 账号与会话</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="tab = 'bugs'; loadBugs()">⚑ Bug 管理</button></nav>
-        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'; loadContent()">▤ 官网内容</button></nav>
+        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'; loadContent()">▤ 官网内容</button><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'articles' }" @click="tab = 'articles'">✎ 资讯发布</button></nav>
         <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><router-link to="/battle/tournaments">♜ 赛事中心</router-link><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
         <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="tab = 'effects'; loadEffects()">◇ 卡效原子化</button></nav>
-        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
+        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="tab = 'integrity'">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
       </aside>
       <main class="admin-content">
       <section v-if="tab === 'overview'" class="overview-grid">
         <header class="panel"><div><small>CONTROL CENTER</small><h2>运营总览</h2><p>这里只显示摘要和入口；配置编辑只在对应模块内进行。</p></div></header>
         <button class="overview-card" @click="tab='bugs'; loadBugs()"><small>用户与反馈</small><b>{{ bugs.filter(item => item.status !== 'resolved' && item.status !== 'closed').length }}</b><span>未闭环 Bug</span></button>
         <button class="overview-card" @click="tab='accounts'; loadAccounts()"><small>账号与会话</small><b>{{ accounts.length }}</b><span>平台账号</span></button>
-        <button class="overview-card" @click="tab='content'; loadContent()"><small>站点内容</small><b>{{ Object.values(contentEntries).filter(item => item.status === 'draft').length }}</b><span>未发布草稿</span></button>
+        <button class="overview-card" @click="tab='content'; loadContent()"><small>官网内容</small><b>{{ Object.values(contentEntries).filter(item => item.status === 'draft').length }}</b><span>固定文案草稿</span></button>
+        <button class="overview-card" @click="tab='articles'"><small>资讯发布</small><b>稿件</b><span>独立编辑、发布与版本恢复</span></button>
         <button class="overview-card" @click="tab='operations'"><small>游戏运营</small><b>版本化</b><span>赛季、天灾、禁限卡、模式与维护</span></button>
         <router-link class="overview-card" to="/battle/tournaments"><small>赛事运营</small><b>临时职权</b><span>主办者与裁判仅对当场赛事生效</span></router-link>
         <button class="overview-card" @click="tab='effects'; loadEffects()"><small>卡牌与规则</small><b>{{ effectCoverage?.verifiedAbilities ?? 0 }}</b><span>已验证原子能力</span></button>
@@ -289,21 +287,11 @@ onMounted(() => { void initializeAdminPage() })
       <section v-else-if="tab === 'content'" class="panel content-editor">
         <header><div><h2>官网内容</h2><p>草稿受白名单保护；正式批量发布与回滚必须由另一位审批人复核。</p></div><span class="content-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveContentDrafts()">保存草稿</button><button @click="previewContent">预览 / dry-run</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publishContent">提交批量发布</button></span></header>
         <div v-if="contentPreview" class="content-preview"><b>发布预览（未写入）</b><span v-for="item in contentPreview.items" :key="item.key"><code>{{ item.key }}</code><em>{{ item.wouldChange ? '将更新' : '无变化' }}</em><small>{{ item.publishedValue || '空' }} → {{ item.draftValue || '空' }}</small></span></div>
-        <section class="news-editor">
-          <header><div><h3>资讯发布编辑器</h3><p>编辑公告、规则勘误、赛季更新和赛事信息；与官网内容一起保存草稿、预览并发布。</p></div><button type="button" @click="addNews">＋ 新建资讯</button></header>
-          <article v-for="entry in newsEntries" :key="entry.id">
-            <div class="news-editor-row"><label>标题<input v-model="entry.title" placeholder="资讯标题"/></label><label>分类<select v-model="entry.category"><option>官方公告</option><option>规则勘误</option><option>赛季更新</option><option>赛事信息</option></select></label><label>发布时间<input v-model="entry.publishedAt" type="datetime-local"/></label></div>
-            <label>摘要<textarea v-model="entry.summary" rows="2" placeholder="用于首页与列表展示"/></label>
-            <label>正文<textarea v-model="entry.body" rows="8" placeholder="资讯正文"/></label>
-            <label>封面图片地址<input v-model="entry.coverUrl" placeholder="可选，https://…"/></label>
-            <footer><label><input v-model="entry.pinned" type="checkbox"/>置顶</label><label><input v-model="entry.published" type="checkbox"/>发布后公开</label><button class="delete" type="button" @click="removeNews(entry.id)">删除此资讯</button></footer>
-          </article>
-          <div v-if="!newsEntries.length" class="empty">暂无资讯草稿，点击“新建资讯”开始编辑。</div>
-        </section>
         <label v-for="field in homeContentFields" :key="field.key">{{ field.label }}<em :data-status="contentEntries[field.key]?.status">{{ contentEntries[field.key]?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em><textarea v-if="field.multiline" v-model="content[field.id]" :rows="field.rows ?? 4"/><input v-else v-model="content[field.id]"/></label>
         <label>规则页公告<em :data-status="contentEntries['rules.notice']?.status">{{ contentEntries['rules.notice']?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em><textarea v-model="ruleNotice" rows="5"/></label>
         <div class="content-history"><h3>发布与回滚批次</h3><article v-for="batch in contentBatches" :key="batch.id"><span><code>{{ batch.id }}</code><b>{{ batch.action }} · {{ batch.status }}</b><small>{{ batch.actorName }} · {{ new Date(batch.createdAt).toLocaleString() }} · {{ batch.items.length }} 项</small></span><button v-if="batch.action === 'publish' && batch.status === 'published' && hasPermission('admin.content.rollback')" @click="rollbackContent(batch)">提交回滚审批</button></article><div v-if="!contentBatches.length" class="empty">尚无发布批次</div></div>
       </section>
+      <AdminArticlesPanel v-else-if="tab === 'articles'"/>
       <section v-else-if="tab === 'effects'" class="effects-workbench">
         <div v-if="effectCoverage" class="coverage-strip">
           <article><small>卡牌</small><b>{{ effectCoverage.totalCards }}</b><span>{{ effectCoverage.cardsWithText }} 张含效果</span></article>
@@ -393,6 +381,7 @@ onMounted(() => { void initializeAdminPage() })
         <section class="panel security-archive"><header><div><h2>独立审计归档与恢复演练</h2><p>归档为内部派生路径的校验 JSONL；主审计事件不删除，客户端不能指定文件路径。</p></div><button @click="rehearseAuditRecovery">恢复演练</button></header><div v-if="hasPermission('admin.audit.archive')" class="archive-form"><label>保留天数<input v-model.number="auditRetentionDays" type="number" min="30" max="3650"/></label><label>归档理由<input v-model="auditArchiveReason" maxlength="500"/></label><button @click="archiveAudit(true)">dry-run（不写）</button><button class="confirm" @click="archiveAudit(false)">提交双人审批</button></div><div v-if="auditArchivePreview" class="archive-preview">可归档 {{ auditArchivePreview.eligibleEvents }} 条 · 截止 {{ new Date(auditArchivePreview.archiveBefore).toLocaleString() }} · 源事件保留</div><div v-if="auditRecovery" class="archive-recovery" :data-ok="auditRecovery.success">恢复演练 {{ auditRecovery.success ? '通过' : '失败' }} · {{ auditRecovery.segments }} 段 / {{ auditRecovery.events }} 条<small v-if="auditRecovery.error">{{ auditRecovery.error }}</small></div><article v-for="segment in auditArchives" :key="segment.id" class="archive-row"><code>{{ segment.id }}</code><span>{{ new Date(segment.from).toLocaleString() }} → {{ new Date(segment.until).toLocaleString() }}</span><b>{{ segment.eventCount }} 条</b><small>sha256 {{ segment.sha256 }}</small></article><div v-if="!auditArchives.length" class="empty">尚无审计归档段</div></section>
       </section>
       <section v-else-if="tab === 'audit'" class="panel audit-panel"><header><h2>管理与安全审计</h2><div class="audit-filters"><select v-model="auditCategory"><option value="">全部类型</option><option value="account">账号权限</option><option value="session">会话安全</option><option value="security">权限拒绝</option><option value="command">管理命令</option><option value="approval">审批</option><option value="content">内容发布</option><option value="effect">卡效确认</option><option value="release">发布编排</option></select><select v-model="auditOutcome"><option value="">全部结果</option><option value="succeeded">成功</option><option value="pending">待审批</option><option value="executed">已执行</option><option value="failed">失败</option><option value="denied">拒绝</option></select><input v-model="auditActorId" placeholder="操作者 ID"/><input v-model="auditCommandId" placeholder="命令 ID"/><input v-model="auditCorrelationId" placeholder="关联 ID"/><button @click="loadAudit">查询</button></div></header><div class="audit-head"><span>时间 / 操作者</span><span>动作 / 结果</span><span>对象</span><span>变更 / 证据</span></div><article v-for="audit in audits" :key="audit.id" class="audit-row"><span>{{ new Date(audit.createdAt).toLocaleString() }}<small>{{ audit.actorName }}</small></span><b>{{ audit.category }} · {{ audit.action }}<small>{{ audit.outcome || 'success' }}<template v-if="audit.permission"> · {{ audit.permission }}</template></small></b><code>{{ audit.target }}</code><span>{{ audit.fromValue || '无' }} → {{ audit.toValue || '无' }}<small v-if="audit.comment">{{ audit.comment }}</small><small v-if="audit.reason">原因：{{ audit.reason }}</small><code v-if="audit.correlationId">关联 ID：{{ audit.correlationId }}</code><code v-if="audit.commandId">命令：{{ audit.commandId }}</code></span></article><div v-if="!audits.length" class="empty">暂无管理操作记录</div></section>
+      <AdminRankedIntegrityPanel v-else-if="tab === 'integrity'"/>
       <AdminOperationsPanel v-else-if="tab === 'operations' && hasPermission('admin.operations.read')" @notice="notice = $event"/>
       <section v-else class="denied"><b>当前模块不可用</b><span>账号没有该模块的服务端权限，或模块尚未选择。</span></section>
       <p v-if="notice" class="notice">{{ notice }}</p>

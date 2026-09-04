@@ -167,4 +167,128 @@ public sealed class RankedPlatformTests
         Assert.Equal(5, champion.Wins);
         Assert.Equal("最强天照", champion.Title);
     }
+
+    [Fact]
+    public void SeasonSwitchFreezesHistoricalTitlesAndPlayerName()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-season-honors", Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var champion = store.Register("season-champion", "Password123!").Account!;
+        var rival = store.Register("season-rival", "Password123!").Account!;
+        store.SelectRankedFaction(champion.Id, "order");
+        store.SelectRankedFaction(rival.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"season-honor-{index}", champion.Id, rival.Id, 0,
+                "S01-04M1", "S02-03M1");
+        Assert.Contains("最强天照", store.RankedProfile(champion.Id).Titles);
+        Assert.Empty(store.RankedSeasonHonors());
+
+        var admin = store.Login("Admin", "L12master").Account!;
+        var current = store.OperationsConfig(admin);
+        store.ApplyOperationsConfig(admin, current.Config with
+        {
+            Season = new L12SeasonConfig("S-history-next", "下一赛季", "active", null, null),
+        }, current.Version, "验证赛季荣誉归档", new L12AdminAuditContext("ranked-season-honor-test"));
+
+        var honor = Assert.Single(store.RankedSeasonHonors(), item => item.Username == champion.Username);
+        Assert.Equal(current.Config.Season.Id, honor.SeasonId);
+        Assert.Equal(current.Config.Season.Name, honor.SeasonName);
+        Assert.Contains("最强天照", honor.Titles);
+        Assert.Equal($"七曜值 {honor.SevenValue:N0}", honor.DisplayValue);
+    }
+
+    [Fact]
+    public void RankedBroadcastIsClaimedAndCompletedOncePerAccountAcrossRestart()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-delivery", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "platform.json");
+        var store = new L12PlatformStore(path);
+        var first = store.Register("broadcast-first", "Password123!").Account!;
+        var second = store.Register("broadcast-second", "Password123!").Account!;
+        var viewer = store.Register("broadcast-viewer", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"broadcast-placement-{index}", first.Id, second.Id, 0);
+
+        var claimed = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewer.Id));
+        Assert.Equal("win-streak", claimed.Broadcast.EventType);
+        Assert.Null(store.ClaimRankedBroadcast(viewer.Id));
+        Assert.Equal(claimed.Broadcast.Id, store.ClaimRankedBroadcast(first.Id)!.Broadcast.Id);
+        Assert.False(store.CompleteRankedBroadcast(viewer.Id, claimed.Broadcast.Id, "wrong-token"));
+        Assert.True(store.CompleteRankedBroadcast(viewer.Id, claimed.Broadcast.Id, claimed.ClaimToken));
+        Assert.True(store.CompleteRankedBroadcast(viewer.Id, claimed.Broadcast.Id, claimed.ClaimToken));
+        Assert.Null(store.ClaimRankedBroadcast(viewer.Id));
+
+        var reloaded = new L12PlatformStore(path);
+        Assert.Null(reloaded.ClaimRankedBroadcast(viewer.Id));
+    }
+
+    [Fact]
+    public void RankedAnalyticsAggregatesMasterUsageSidesAndMatchupsWithoutRawMatches()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-analytics", Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var now = DateTimeOffset.UtcNow;
+        var matches = new[]
+        {
+            new L12RankingMatch("analytics-1", "甲", "乙", now.AddHours(-2).ToString("O"),
+                now.AddHours(-1).ToString("O"), 0, "天照大神", "西芙", 0),
+            new L12RankingMatch("analytics-2", "乙", "甲", now.AddMinutes(-40).ToString("O"),
+                now.AddMinutes(-20).ToString("O"), 0, "西芙", "天照大神", 0),
+            new L12RankingMatch("analytics-old", "甲", "乙", now.AddDays(-40).ToString("O"),
+                now.AddDays(-40).AddMinutes(10).ToString("O"), 0, "天照大神", "西芙", 0),
+        };
+
+        var analytics = store.RankedAnalytics(matches, "7d");
+
+        Assert.Equal(2, analytics.Summary.Matches);
+        Assert.Equal(2, analytics.Summary.ActiveMasters);
+        var amaterasu = Assert.Single(analytics.Masters, item => item.MasterId == "S01-04M1");
+        Assert.Equal(2, amaterasu.Games);
+        Assert.Equal(1, amaterasu.Wins);
+        Assert.Equal(1, amaterasu.FirstGames);
+        Assert.Equal(1, amaterasu.SecondGames);
+        Assert.Equal(50d, amaterasu.WinRate);
+        var versusSif = Assert.Single(analytics.Matchups,
+            item => item.MasterId == "S01-04M1" && item.OpponentMasterId == "ST03-M1");
+        Assert.Equal(2, versusSif.Games);
+        Assert.Equal(1, versusSif.Wins);
+    }
+
+    [Fact]
+    public async Task RepeatedOpponentMatchesAllSettleAndConcurrentReplayIsIdempotentButConflictsFailClosed()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-replay", Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var first = store.Register("repeat-first", "Password123!").Account!;
+        var second = store.Register("repeat-second", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+
+        for (var index = 0; index < 8; index++)
+        {
+            var result = store.SettleRankedMatch($"repeat-{index}", first.Id, second.Id, index % 2);
+            Assert.DoesNotContain(result.First.Components, component => component.Kind == "same-opponent");
+            Assert.DoesNotContain(result.Second.Components, component => component.Kind == "same-opponent");
+        }
+        Assert.Equal(8, store.RankedProfile(first.Id).Wins + store.RankedProfile(first.Id).Losses);
+        Assert.Equal(8, store.RankedProfile(second.Id).Wins + store.RankedProfile(second.Id).Losses);
+
+        var parallel = await Task.WhenAll(Enumerable.Range(0, 24).Select(_ => Task.Run(() =>
+            store.SettleRankedMatch("repeat-concurrent", first.Id, second.Id, 0))));
+        Assert.All(parallel, result => Assert.Equal("repeat-concurrent", result.First.MatchId));
+        Assert.Equal(9, store.RankedProfile(first.Id).Wins + store.RankedProfile(first.Id).Losses);
+        Assert.Throws<InvalidOperationException>(() =>
+            store.SettleRankedMatch("repeat-concurrent", first.Id, second.Id, 1));
+
+        var reloaded = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var replay = reloaded.SettleRankedMatch("repeat-concurrent", first.Id, second.Id, 0);
+        Assert.Equal("repeat-concurrent", replay.First.MatchId);
+        Assert.Equal(9, reloaded.RankedProfile(first.Id).Wins + reloaded.RankedProfile(first.Id).Losses);
+    }
 }

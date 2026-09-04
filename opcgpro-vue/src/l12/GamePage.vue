@@ -82,7 +82,7 @@ function returnToLobby() {
 
     <Transition name="fade">
       <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying" class="game-over">
-        <p>{{ game.winner === game.you ? '胜利' : '败北' }}</p>
+        <p>{{ game.winner == null ? '对局无效' : (game.winner === game.you ? '胜利' : '败北') }}</p>
         <strong>{{ game.winnerReason || '对局已结束' }}</strong>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
         <section v-if="l12State.rankedSettlement" class="ranked-result">

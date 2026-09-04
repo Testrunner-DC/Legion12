@@ -47,6 +47,11 @@ public sealed class L12Catalog
             .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
         if (duplicateIds.Length > 0)
             throw new InvalidDataException($"存在重复卡号：{string.Join(", ", duplicateIds)}");
+        var invalidMasters = cards.Where(card => card.CardType == "master"
+                && (card.Hp is null || card.Cost is not null || card.Troops is not null))
+            .Select(card => card.Id).ToArray();
+        if (invalidMasters.Length > 0)
+            throw new InvalidDataException($"主宰必须登记血量且不得登记费用或兵力：{string.Join(", ", invalidMasters)}");
         var byId = cards.ToDictionary(card => card.Id, StringComparer.OrdinalIgnoreCase);
         var moraleIdentities = L12MoraleIdentityCatalog.Load(
             Path.Combine(dataPath, "morale-identities.json"), byId);

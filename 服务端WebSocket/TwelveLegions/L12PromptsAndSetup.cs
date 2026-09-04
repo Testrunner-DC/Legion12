@@ -547,6 +547,18 @@ public sealed partial class L12GameEngine
                 || selectedCards.Select(card => card!.Name).Distinct(StringComparer.Ordinal).Count() != selectedCards.Length)
                 return CommandResult.Reject("选择的卡牌必须为非同名卡牌");
         }
+        var mixedConstraint = prompt.Data.GetValueOrDefault("selectionConstraint");
+        if (mixedConstraint is "one-resource-two-field-legions" or "zero-resource-two-field-legions")
+        {
+            var player = State.Players[playerIndex];
+            var resources = chosen.Count(id => player.Morale.Any(card => card.InstanceId == id && !card.Tapped)
+                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id));
+            var fieldLegions = chosen.Count(id => FindOnField(player, id, out _, out _) is { } card
+                && IsFieldLegion(card));
+            var requiredResources = mixedConstraint == "one-resource-two-field-legions" ? 1 : 0;
+            if (resources != requiredResources || fieldLegions != 2)
+                return CommandResult.Reject($"必须选择{requiredResources}份可用士气资源和2张我方战场军团");
+        }
 
         State.PendingPrompts.Remove(prompt);
         AddEvent("prompt-resolved", playerIndex, $"{State.Players[playerIndex].Name} 已完成选择");
