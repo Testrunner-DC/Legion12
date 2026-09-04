@@ -233,6 +233,13 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             try { return Results.Ok(_platform.SelectRankedFaction(account.Id, body.Faction ?? string.Empty)); }
             catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
         });
+        _app.MapPost("/api/ranked/title", (HttpRequest request, RankedTitleRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try { return Results.Ok(_platform.SelectRankedMasterTitle(account.Id, body.Title)); }
+            catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
+        });
         _app.MapGet("/api/ranked/broadcasts", (int? limit) => Results.Ok(_platform.RankedBroadcasts(limit ?? 30)));
         _app.MapPost("/api/ranked/broadcasts/claim", (HttpRequest request) =>
         {
@@ -2810,6 +2817,7 @@ public sealed record PasswordResetRequest(string? Token, string? NewPassword);
 public sealed record FriendRequest(string? AccountId);
 public sealed record FriendResolveRequest(bool Accept);
 public sealed record RankedFactionRequest(string? Faction);
+public sealed record RankedTitleRequest(string? Title);
 public sealed record RankedConfigRequest(L12RankedConfigView Config, string? Reason);
 public sealed record RankedBroadcastCompleteRequest(string? ClaimToken);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,

@@ -101,6 +101,8 @@ public sealed class AllCardInteractionTraversalTests
             var source = Card(definition, $"active-{definition.Id}-{ability.Id}");
             source.OwnerIndex = 0;
             source.SummonRound = -1;
+            if (definition.Id == "ST06-S1" && ability.Id == "skyCityDiscount")
+                source.TrialCompleted = true;
             var sourceId = PutActiveSourceInItsAuthoritativeZone(game, player, source, ability.Id);
 
             var visible = Invoke<List<L12AbilityView>>(game, "BuildAbilityViews", player, definition.Id, sourceId)

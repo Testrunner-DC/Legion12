@@ -427,11 +427,17 @@ public sealed class StarterMissingEffectsRegressionTests
         var activePlayer = activeGame.State.Players[0];
         var activeSword = Card("ST06-09", "light-sword-active");
         var discard = Card("ST01-05", "light-sword-discard");
+        var buffTarget = Card("ST06-02", "light-sword-buff-target");
         activePlayer.Relic = activeSword;
+        activePlayer.Field[0][0] = buffTarget;
         activePlayer.Hand.Add(discard);
         var activate = activeGame.Handle(0,
             new L12Command("activateAbility", activeSword.InstanceId, Ability: "lightSwordActive"));
         Assert.True(activate.Accepted, activate.Error);
+        var option = Assert.Single(activeGame.State.PendingPrompts);
+        Assert.Equal("主动休整 弃置1张手牌：获得1符文。", option.ChoiceLabels["mode:rune"]);
+        Assert.Equal("主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000。",
+            option.ChoiceLabels["mode:buff"]);
         Choose(activeGame, "mode:rune");
         Choose(activeGame, discard.InstanceId);
         Assert.True(activeSword.Tapped);

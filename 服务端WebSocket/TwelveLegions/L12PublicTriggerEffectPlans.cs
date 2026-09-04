@@ -909,7 +909,7 @@ public sealed partial class L12GameEngine
         }
 
         if (steps is null) return false;
-        if (steps.Count == 0)
+        if (steps.Count == 0 && !RequiresPrideMasterSurcharge(candidate.Controller, source))
         {
             candidate.Data["declaration-complete"] = "true";
             return false;

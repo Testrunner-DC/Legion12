@@ -1231,6 +1231,7 @@ public sealed partial class L12RoomManager
         Guid[] spectators;
         lock (room.Spectators) spectators = [.. room.Spectators];
         var rankedClock = RankedClockView(room);
+        var playerBadges = RankedPlayerBadges(room);
         return room.Sessions.Select(id => new OutgoingMessage(id, new
         {
             type = "gameState", state = room.IsSandbox && room.GmControllerSessionId == id
@@ -1239,6 +1240,7 @@ public sealed partial class L12RoomManager
             gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
             tournamentMatchId = room.TournamentMatchId,
+            playerBadges,
             rankedClock,
             rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
                 ? _platform.RankedSettlement(room.Game!.State.MatchId, _sessions[id].AccountId ?? string.Empty) : null,
@@ -1246,9 +1248,23 @@ public sealed partial class L12RoomManager
         {
             type = "gameState", spectating = true, gmEnabled = false,
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
-            tournamentMatchId = room.TournamentMatchId, rankedClock,
+            tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
             state = room.Game!.SnapshotForSpectator(),
         }))).ToArray();
+    }
+
+    private IReadOnlyList<L12RankedBattleIdentityView> RankedPlayerBadges(Room room)
+    {
+        if (_platform is null) return [];
+        var result = new List<L12RankedBattleIdentityView>();
+        foreach (var id in room.Sessions)
+        {
+            if (!_sessions.TryGetValue(id, out var session) || session.PlayerIndex is null
+                || string.IsNullOrWhiteSpace(session.AccountId)) continue;
+            try { result.Add(_platform.RankedBattleIdentity(session.AccountId, session.PlayerIndex.Value)); }
+            catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException) { }
+        }
+        return result;
     }
 
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)

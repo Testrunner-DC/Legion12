@@ -237,12 +237,21 @@ public sealed class AtomicReviewBatch6JARegressionTests
     public void ZhugeRevealAndDisasterAdjustmentAreIndependentStackItems()
     {
         var fixture = Arrange("S01-0111", "enter", 9971);
+        fixture.Game.State.DisasterDeck.Add(Card("S01-DS01", "zhuge-private-disaster"));
+        var revealedName = fixture.Game.State.DisasterDeck[0].Name;
         Resolve(fixture.Game, "mode:use");
         Resolve(fixture.Game, "1");
         var first = Assert.Single(fixture.Game.State.EffectStack);
         Assert.Equal("zhuge-reveal", first.Data.GetValueOrDefault("atomicFlow"));
-        first.Negated = true;
         PassResponses(fixture.Game);
+        var ownerEvent = Assert.Single(fixture.Game.SnapshotFor(0).RecentEvents,
+            entry => entry.Type == "private-disaster-reveal");
+        var opponentEvent = Assert.Single(fixture.Game.SnapshotFor(1).RecentEvents,
+            entry => entry.Type == "private-disaster-reveal");
+        Assert.Contains(ownerEvent.Cards, card => card.Name == revealedName);
+        Assert.Empty(opponentEvent.Cards);
+        Assert.DoesNotContain(revealedName, opponentEvent.Text, StringComparison.Ordinal);
+        Assert.Contains("查看了下一张天灾", opponentEvent.Text, StringComparison.Ordinal);
         var second = Assert.Single(fixture.Game.State.EffectStack);
         Assert.Equal("zhuge-disaster", second.Data.GetValueOrDefault("atomicFlow"));
     }

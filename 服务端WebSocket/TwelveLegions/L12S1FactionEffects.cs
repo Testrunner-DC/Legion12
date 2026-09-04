@@ -960,8 +960,8 @@ public sealed partial class L12GameEngine
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var debuff = declared.Length == 2 ? DeclaredEnemyTarget(playerIndex, declared[0]) : null;
                 var kill = declared.Length == 2 && declared[1] != "mode:none"
-                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => card.CurrentCost
-                        - (card.InstanceId == debuff?.InstanceId ? 1 : 0) == 0)
+                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
+                        - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
                     : null;
                 if (debuff is null || declared[1] != "mode:none" && kill is null)
                     return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");

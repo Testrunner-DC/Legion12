@@ -3085,6 +3085,34 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void AmaterasuCanDebuffAndKillTheSameAlreadyZeroCostLegion()
+    {
+        var game = CreateWithFirstMaster("S01-04M1", 632002);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var target = Card("S02-0005", "amaterasu-zero-cost-target");
+        target.CostModifier = -target.CurrentCost;
+        enemy.Field[0][0] = target;
+        AddMorale(player, 1);
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "amaterasuKill"));
+        Assert.True(activation.Accepted, activation.Error);
+        var debuff = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: debuff.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        var kill = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(target.InstanceId, kill.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: kill.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Null(enemy.Field[0][0]);
+        Assert.Contains(target, enemy.Graveyard);
+    }
+
+    [Fact]
     public void PoisonNegatesEveryMoraleReadyEventFromOneAmaterasuEffect()
     {
         var game = CreateWithFirstMaster("S01-04M1", 63201);

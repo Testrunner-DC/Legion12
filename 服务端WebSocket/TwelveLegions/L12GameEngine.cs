@@ -280,6 +280,15 @@ public sealed partial class L12GameEngine
 
     private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll)
     {
+        if (!revealAll && actionEvent.Type == "private-disaster-reveal"
+            && actionEvent.PlayerIndex != viewer)
+        {
+            var viewingPlayerName = actionEvent.PlayerIndex is >= 0 and <= 1
+                ? State.Players[actionEvent.PlayerIndex.Value].Name
+                : "玩家";
+            return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type,
+                actionEvent.PlayerIndex, $"{viewingPlayerName}查看了下一张天灾", []);
+        }
         if (revealAll || actionEvent.Type != "disaster-selected" || actionEvent.Cards.Length == 0)
             return actionEvent;
 
@@ -429,6 +438,11 @@ public sealed partial class L12GameEngine
             ?? (sourceInstanceId == $"faction-{player.PlayerIndex}" ? CreateCard(cardId, sourceInstanceId) : null);
         if (availabilitySource is not null && availabilitySource.CardType == "master")
             availabilitySource.Tapped = player.MasterTapped;
+        if (cardId == "ST06-S1" && availabilitySource is { CardType: "trial" } skyCity)
+            views = views.Where(view => skyCity.TrialCompleted
+                    ? view.Id == "skyCityDiscount"
+                    : view.Id == "completeTrial")
+                .ToList();
         if (_catalog.Cards.GetValueOrDefault(cardId) is { CardType: "legion", TrialValue: > 0 } definition
             && views.All(view => view.Id != "trialAdvance"))
         {
@@ -639,6 +653,7 @@ public sealed partial class L12GameEngine
                 // enabled state can depend on live trial/resource state and therefore
                 // cannot safely reuse the ability list captured when the card instance
                 // was created.
+                snapshot.Troops = Math.Max(0, snapshot.Troops);
                 snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
                 snapshot.StatusEffects = BuildStatusEffects(player, card, rowIndex);

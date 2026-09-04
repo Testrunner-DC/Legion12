@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card } from '../types'
 
-type Zone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'center'
+type Zone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'master' | 'center'
 type AnchorRect = { x: number; y: number; width: number; height: number }
 type Movement = {
   sequence: number
@@ -64,6 +64,7 @@ function textSource(text: string): Zone {
   if (/从牌库|牌库中|牌库顶|牌库底/.test(text)) return 'library'
   if (/从手牌|手牌中|弃置.*手牌/.test(text)) return 'hand'
   if (/从圣物区|圣物区的/.test(text)) return 'relic'
+  if (/从主宰区|主宰区的/.test(text)) return 'master'
   return 'field'
 }
 
@@ -96,7 +97,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     from = textSource(event.text); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
   } else if (event.type === 'return') {
     from = event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field'
-    to = event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
+    to = event.text.includes('主宰区') ? 'master' : event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
     label = '返回'
   } else if (event.type === 'search') {
     from = event.text.includes('墓地') ? 'graveyard' : 'library'; to = 'hand'; label = '加入手牌'

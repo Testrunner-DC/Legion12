@@ -292,7 +292,7 @@ public sealed partial class L12GameEngine
                 masterLegion.SetTroopsValue = int.Parse(item.Data["count"]) * 1000;
                 masterLegion.Troops = masterLegion.SetTroopsValue.Value;
                 player.Field[row][slot] = masterLegion;
-                AddEvent("put", item.Controller, $"孙悟空作为兵力{masterLegion.Troops}的【斗士】军团在前排活跃登场", masterLegion);
+                AddEvent("put", item.Controller, $"孙悟空从主宰区作为兵力{masterLegion.Troops}的【斗士】军团在前排活跃登场", masterLegion);
                 FinishStackItem(item); return true;
             }
             case "thorCharge" when source?.CardId == "S02-03M1":

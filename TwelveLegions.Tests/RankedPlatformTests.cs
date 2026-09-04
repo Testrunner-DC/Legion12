@@ -135,10 +135,19 @@ public sealed class RankedPlatformTests
         Assert.Equal("最强天照", champion.Title);
         Assert.Equal(amaterasu.Username, champion.Username);
         Assert.Equal(5, champion.Games);
-        Assert.Contains("最强天照", store.RankedProfile(amaterasu.Id).Titles);
+        var profile = store.RankedProfile(amaterasu.Id);
+        Assert.Contains("最强天照", profile.Titles);
+        Assert.Contains("最强天照", profile.MasterTitles);
+        var selected = store.SelectRankedMasterTitle(amaterasu.Id, "最强天照");
+        Assert.Equal("最强天照", selected.SelectedMasterTitle);
+        var battleIdentity = store.RankedBattleIdentity(amaterasu.Id, 0);
+        Assert.Equal(selected.RankLabel, battleIdentity.RankLabel);
+        Assert.Equal("最强天照", battleIdentity.MasterTitle);
+        Assert.Throws<ArgumentException>(() => store.SelectRankedMasterTitle(amaterasu.Id, "未获得的称号"));
 
         store.SelectRankedFaction(amaterasu.Id, "fate");
         Assert.DoesNotContain(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
+        Assert.Null(store.RankedProfile(amaterasu.Id).SelectedMasterTitle);
     }
 
     [Fact]

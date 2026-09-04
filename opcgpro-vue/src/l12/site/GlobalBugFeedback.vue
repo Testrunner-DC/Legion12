@@ -8,24 +8,26 @@ const route = useRoute()
 const open = ref(false)
 const busy = ref(false)
 const message = ref('')
-const form = reactive({ title: '', description: '' })
+const form = reactive({ bugDescription: '', suggestion: '' })
 
 async function submit() {
-  if (!form.description.trim()) { message.value = '请填写可以复现问题的描述'; return }
+  const bugDescription = form.bugDescription.trim()
+  const suggestion = form.suggestion.trim()
+  if (!bugDescription && !suggestion) { message.value = 'Bug提交或优化建议至少填写一项'; return }
   busy.value = true
   message.value = ''
   try {
     const report = await submitBug({
-      title: form.title,
-      description: form.description,
+      title: bugDescription && suggestion ? 'Bug与优化建议' : bugDescription ? 'Bug提交' : '优化建议',
+      description: [bugDescription ? `【Bug提交】\n${bugDescription}` : '', suggestion ? `【优化建议】\n${suggestion}` : ''].filter(Boolean).join('\n\n'),
       page: `${route.fullPath} · ${navigator.userAgent}`,
       roomCode: l12State.room?.roomCode,
       matchId: l12State.game?.matchId,
       version: String(import.meta.env.VITE_APP_VERSION || 'dev'),
     })
     message.value = `已提交：${report.id}`
-    form.title = ''
-    form.description = ''
+    form.bugDescription = ''
+    form.suggestion = ''
   } catch (error) { message.value = error instanceof Error ? error.message : '提交失败' }
   finally { busy.value = false }
 }
@@ -37,9 +39,9 @@ async function submit() {
     <div v-if="open" class="bug-feedback-mask" @click.self="open = false">
       <section class="bug-feedback-dialog" role="dialog" aria-modal="true" aria-label="反馈 Bug">
         <header><div><small>BUG REPORT</small><h2>反馈 Bug</h2></div><button @click="open = false">×</button></header>
-        <p>请写明发生步骤、预期结果和实际结果。页面、房间、对局、版本与时间会自动附带。</p>
-        <label>标题（可选）<input v-model="form.title" maxlength="100" placeholder="一句话概括问题"/></label>
-        <label>问题描述<textarea v-model="form.description" maxlength="5000" rows="8" placeholder="例如：在主要阶段点击……后，预期……，实际……"/></label>
+        <p>Bug提交和优化建议可分别填写，任意一项有内容即可提交。页面、房间、对局、版本与时间会自动附带。</p>
+        <label>Bug提交<textarea v-model="form.bugDescription" maxlength="5000" rows="6" placeholder="描述大厅或对局中触发Bug的操作和实际现象；提及卡牌的时候请勿使用俗称，最好使用卡牌编号（例：S01-0001）……提交时会自动附带当前页面信息。"/></label>
+        <label>优化建议<textarea v-model="form.suggestion" maxlength="5000" rows="5" placeholder="描述你希望优化的Bug、操作体验或界面效果"/></label>
         <div class="bug-context"><span>提交身份：{{ platformState.account?.username || '匿名玩家' }}</span><span>页面：{{ route.fullPath }}</span><span v-if="l12State.room">房间：{{ l12State.room.roomCode }}</span></div>
         <p v-if="message" class="bug-message">{{ message }}</p>
         <footer><button @click="open = false">取消</button><button class="submit" :disabled="busy" @click="submit">{{ busy ? '提交中…' : '提交反馈' }}</button></footer>

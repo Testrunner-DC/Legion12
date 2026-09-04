@@ -181,6 +181,7 @@ public sealed class StarterBatch3BRegressionTests
             ("ST04-05", "opponent-turn-lethal"), ("ST04-10", "continuous"), ("ST04-10", "play"),
             ("ST04-M1", "legion-attack-timing"), ("ST05-01", "promotion-enter"),
             ("ST05-10", "play"), ("ST05-M1", "active"),
+            ("ST06-03", "after-attack"),
             ("ST06-M1", "rune-spent"), ("ST06-M1", "active"),
             ("ST06-S1", "trial-complete"), ("ST06-S1", "active"),
         };
@@ -368,7 +369,9 @@ public sealed class StarterBatch3BRegressionTests
             $"grave={string.Join(',', player.Graveyard.Select(card => card.InstanceId))}; resolving={string.Join(',', player.Resolving.Select(card => card.InstanceId))}");
         Assert.True(player.Graveyard.Contains(secondCost),
             $"grave={string.Join(',', player.Graveyard.Select(card => card.InstanceId))}; resolving={string.Join(',', player.Resolving.Select(card => card.InstanceId))}");
-        Assert.Same(revive, player.Field[0][1]);
+        Assert.True(ReferenceEquals(revive, player.Field[0][1]),
+            string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}"))
+            + $"; prompts={string.Join(',', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Text}"))}");
         Assert.True(revive.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
 
         var triggerGame = Create(20423);
@@ -404,9 +407,9 @@ public sealed class StarterBatch3BRegressionTests
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(start.Accepted, start.Error);
         var payment = Prompt(game);
-        Assert.Equal("mixed-board-payment", payment.Data.GetValueOrDefault("choiceMode"));
-        Assert.Equal(morale.InstanceId, payment.Data.GetValueOrDefault("lockedChoices"));
-        ChooseMany(game, morale.InstanceId, prospectiveRevive.InstanceId, secondCost.InstanceId);
+        Assert.Equal("board-target", payment.Data.GetValueOrDefault("choiceMode"));
+        Assert.False(morale.Tapped);
+        ChooseMany(game, prospectiveRevive.InstanceId, secondCost.InstanceId);
 
         var resolution = Prompt(game);
         Assert.Contains(prospectiveRevive.InstanceId, resolution.ValidChoices);
@@ -439,15 +442,18 @@ public sealed class StarterBatch3BRegressionTests
 
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(start.Accepted, start.Error);
-        // 刻意先选两张场上军团、最后选士气，锁定协议不得依赖客户端选择顺序。
-        ChooseMany(game, revive.InstanceId, secondCost.InstanceId, chosen.InstanceId);
+        Choose(game, chosen.InstanceId);
+        var fieldCost = Prompt(game);
+        Assert.Equal("board-target", fieldCost.Data.GetValueOrDefault("choiceMode"));
+        ChooseMany(game, revive.InstanceId, secondCost.InstanceId);
         Choose(game, revive.InstanceId);
         Choose(game, "0:0");
 
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         PassResponses(game);
         Assert.False(untouched.Tapped);
-        Assert.True(chosen.Tapped);
+        Assert.True(chosen.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}"))
+            + $"; prompts={string.Join(',', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Text}"))}");
         Assert.Same(revive, player.Field[0][0]);
         Assert.True(revive.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
         Assert.Contains(secondCost, player.Graveyard);
@@ -533,13 +539,14 @@ public sealed class StarterBatch3BRegressionTests
         Assert.True(attack.Accepted, attack.Error);
         var choicePrompt = Prompt(game);
         Assert.Equal(["mode:morale", "mode:discard", "mode:none"], choicePrompt.ValidChoices);
-        Assert.Equal("消耗2士气", choicePrompt.ChoiceLabels["mode:morale"]);
+        Assert.Equal("消耗1士气", choicePrompt.ChoiceLabels["mode:morale"]);
         Assert.Equal("弃置1张手牌", choicePrompt.ChoiceLabels["mode:discard"]);
         Assert.Equal("不发动", choicePrompt.ChoiceLabels["mode:none"]);
         Choose(game, "mode:morale");
+        Choose(game, player.Morale[0].InstanceId);
         PassResponses(game);
 
-        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Single(player.Morale, morale => morale.Tapped);
         Assert.Equal(attacker.BaseTroops + 2000, attacker.Troops);
         Assert.True(game.State.Events.FindIndex(entry => entry.Type == "cost" && entry.Text.Contains("火之迦具土"))
             < game.State.Events.FindIndex(entry => entry.Type == "stack-push"
@@ -561,6 +568,7 @@ public sealed class StarterBatch3BRegressionTests
         Assert.True(defenseAttack.Accepted, defenseAttack.Error);
         Assert.Equal(1, Prompt(defenseGame).PlayerIndex);
         Choose(defenseGame, "mode:morale");
+        Choose(defenseGame, defender.Morale[0].InstanceId);
         PassResponses(defenseGame);
         Assert.Equal(L12CombatStage.DefenseChoice, defenseGame.State.PendingDefense?.Stage);
         var supportResult = defenseGame.Handle(1, new L12Command("resolveDefense",
@@ -569,6 +577,70 @@ public sealed class StarterBatch3BRegressionTests
         PassResponses(defenseGame);
         Assert.Equal(defendedLegion.BaseTroops + 2000, defendedLegion.Troops);
         Assert.Contains(cooperativeSupport, defender.Graveyard);
+    }
+
+    [Fact]
+    public void PrideSurchargeAlsoAppliesToTriggeredMasterEffectsBeforeTheyEnterTheStack()
+    {
+        var game = Create(204161);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST04-M1");
+        var attacker = Card("ST04-03", "pride-kagutsuchi-attacker");
+        var discard = Card("ST01-02", "pride-kagutsuchi-discard");
+        player.Field[0][0] = attacker;
+        player.Hand.Add(discard);
+        GiveMorale(player, 1, "pride-kagutsuchi");
+        game.State.ActiveDisaster = Card("S02-DS06", "pride-trigger-disaster");
+
+        var attack = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.True(attack.Accepted, attack.Error);
+        Choose(game, "mode:discard");
+        Choose(game, discard.InstanceId);
+        // 唯一合法士气沿用公共确定性费用规则自动支付，不额外制造一次选择。
+        Assert.True(player.Morale[0].Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("傲慢之罪", StringComparison.Ordinal));
+        PassResponses(game);
+
+        Assert.True(player.Morale[0].Tapped);
+        Assert.Contains(discard, player.Graveyard);
+        Assert.Equal(attacker.BaseTroops + 2000, attacker.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("傲慢之罪", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GarethOnlyReadiesAfterAConfirmedKill()
+    {
+        var game = Create(204162);
+        var player = game.State.Players[0];
+        var gareth = Card("ST06-03", "gareth-confirmed-kill");
+        gareth.Tapped = true;
+        player.Field[0][0] = gareth;
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, gareth, "after-attack", "加雷斯击杀时效果", null,
+            new Dictionary<string, string>
+            {
+                ["killed"] = "true",
+                ["combatKillConfirmed"] = "true",
+            });
+        Choose(game, "mode:use");
+        PassResponses(game);
+
+        Assert.False(gareth.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}"))
+            + $"; stack={string.Join(',', game.State.EffectStack.Select(item => $"{item.SourceName}:{item.Trigger}"))}"
+            + $"; prompts={string.Join(',', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Text}"))}");
+        Assert.Equal(gareth.BaseTroops + 2000, gareth.Troops);
+
+        var missedGame = Create(204163);
+        var missed = Card("ST06-03", "gareth-without-kill");
+        missed.Tapped = true;
+        missedGame.State.Players[0].Field[0][0] = missed;
+        Invoke(missedGame, "QueueOrPushTriggeredEffect", 0, missed, "after-attack", "加雷斯未击杀", null,
+            new Dictionary<string, string> { ["killed"] = "false" });
+        Assert.Empty(missedGame.State.PendingPrompts);
+        Assert.True(missed.Tapped);
     }
 
     [Fact]
@@ -788,5 +860,23 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Single(skyPlayer.Hand);
         Assert.Equal(3, skyGame.State.Events.Count(entry => entry.Type is "stack-push" or "stack-deferred"
             && entry.Cards.Any(card => card.InstanceId == sky.InstanceId)));
+    }
+
+    [Fact]
+    public void SkyCityOnlyExposesTheAbilityForItsCurrentTrialState()
+    {
+        var game = Create(20415);
+        var player = game.State.Players[0];
+        var sky = Card("ST06-S1", "sky-city-stateful-actions");
+        player.SpecialZones.Trials.Add(sky);
+
+        var beforeCompletion = Assert.IsType<List<L12AbilityView>>(
+            Invoke(game, "BuildAbilityViews", player, sky.CardId, sky.InstanceId));
+        Assert.Equal(["completeTrial"], beforeCompletion.Select(ability => ability.Id));
+
+        sky.TrialCompleted = true;
+        var afterCompletion = Assert.IsType<List<L12AbilityView>>(
+            Invoke(game, "BuildAbilityViews", player, sky.CardId, sky.InstanceId));
+        Assert.Equal(["skyCityDiscount"], afterCompletion.Select(ability => ability.Id));
     }
 }

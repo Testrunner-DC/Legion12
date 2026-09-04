@@ -287,7 +287,8 @@ function beginCardAbility(card: Card) {
       <div class="master-column" data-l12-zone="master">
         <button class="mini-master" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
           @mouseenter="emit('focus', masterCard)" @focus="emit('focus', masterCard)" @click="emit('master')">
-          <CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="board" eager />
+          <CardImage v-if="!player.master.deployedAsLegion" :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="board" eager />
+          <span v-else class="master-away" aria-label="主宰当前作为军团位于战场">主宰已登场</span>
           <span>{{ player.master.masterName }}</span>
           <i v-if="player.master.statusIcons?.includes('shield')" class="master-protection-icon" role="img"
             :title="player.master.statusEffects?.find(effect => effect.kind === 'shield')?.label || '主宰暂时不可被进攻'" aria-label="主宰暂时不可被进攻">🛡</i>
@@ -308,9 +309,9 @@ function beginCardAbility(card: Card) {
         <div v-if="player.faction === 'otherworld' && player.specialZones?.trials?.length" class="trial-zone" :class="{ opponent: side === 'opponent' }">
           <button v-for="trial in player.specialZones.trials" :key="trial.instanceId" type="button" class="trial-card"
             :class="{ concealed: trial.hidden, 'own-concealed': trial.hidden && side === 'my', inactive: !trial.hidden && !trial.trialCompleted }"
-            :title="trial.hidden ? '对方未揭示的试炼' : trial.name"
-            @mouseenter="!trial.hidden && emit('focus', trial)" @focus="!trial.hidden && emit('focus', trial)" @click.stop="!trial.hidden && selectZoneCard(trial)">
-            <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="试炼牌背" />
+            :title="trial.hidden && side === 'opponent' ? '对方未揭示的试炼' : trial.name"
+            @mouseenter="(!trial.hidden || side === 'my') && emit('focus', trial)" @focus="(!trial.hidden || side === 'my') && emit('focus', trial)" @click.stop="(!trial.hidden || side === 'my') && selectZoneCard(trial)">
+            <img v-if="trial.hidden && side === 'opponent'" class="trial-card-back" src="/assets/l12/trial-back.png" alt="试炼牌背" />
             <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
             <b v-if="trial.instanceId === currentTrialInstanceId">{{ trial.trialProgress ?? player.specialZones?.trialLevel ?? 0 }}</b>
           </button>

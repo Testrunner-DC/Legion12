@@ -58,6 +58,7 @@ public static partial class L12StructuredCardRules
             ("ST04-02", "death") => "kojiro-death-kill",
             ("ST04-04", "enter") => "kai-master-waiver",
             ("ST04-M1", "legion-attack-timing") => "kagutsuchi-buff",
+            ("ST06-03", "after-attack") => "gareth-kill-ready",
             ("ST02-08", "death") => "akhenaten-death-heal",
             ("ST06-09", "enter") => "light-sword-enter-kill",
             ("ST05-01", "promotion-enter") => "aeneas-promotion-search",
@@ -71,6 +72,7 @@ public static partial class L12StructuredCardRules
             or "wangzhaojun-draw" or "hidden-pass-summon" or "kane-enter-mill"
             or "change-rested-morale" or "tomb-defender-debuff" or "kojiro-discard"
             or "kojiro-death-kill" or "kai-master-waiver" or "kagutsuchi-buff"
+            or "gareth-kill-ready"
             or "aeneas-promotion-search" or "nuada-rune-buff" or "sky-city-completion"
             or "akhenaten-death-heal" or "light-sword-enter-kill";
 
@@ -153,19 +155,19 @@ public static partial class L12StructuredCardRules
                 "human-assisted", "product-database")],
             "ST04-10" =>
             [
-                new("continuous", "continuous", "「位于手牌」若我方战场有<武田信玄>，此战术费用-1。",
+                new("continuous", "continuous", "若我方战场存在<武田信玄>，此战术从手牌打出的费用-1。",
                 [
                     new(L12AtomKinds.Condition, "位于手牌且我方战场有武田信玄", "condition", new() { ["expression"] = $"source.zone=hand;controller.field.card-id={StarterTakedaShingenCardId}" }),
                     new(L12AtomKinds.SetState, "登场费用-1", "continuous", new() { ["key"] = "source.derived-cost", ["operation"] = "add", ["value"] = "-1" }),
                 ], "human-assisted", "product-database"),
-                Targeted("play", "叠放至我方1张【高天原】军团下方，该军团获得强攻。",
+                Targeted("play", "将此战术叠放至我方1张【高天原】军团下方，被叠放的军团获得强攻。（进攻对主宰造成额外1点伤害。）",
                     Select("选择我方1张高天原军团", "controller.field", "faction=gaotianyuan;legion=true"),
                     new(L12AtomKinds.MoveZone, "叠放至所选军团下方", "resolution", new() { ["to"] = "target.attached" }),
                     new(L12AtomKinds.Keyword, "获得强攻", "continuous", new() { ["keyword"] = "strong-attack" })),
             ],
-            "ST04-M1" => [Targeted("legion-attack-timing", "回合1次 我方军团进攻或被进攻时，可消耗2士气或弃置1张手牌：该军团本回合兵力+2000。",
+            "ST04-M1" => [Targeted("legion-attack-timing", "回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。",
                 new(L12AtomKinds.Optional, "可发动", "condition", new()), new(L12AtomKinds.SelectMode, "选择费用", "target", new() { ["options"] = "morale|discard" }),
-                new(L12AtomKinds.PayMorale, "消耗2士气", "cost", new() { ["amount"] = "2" }),
+                new(L12AtomKinds.PayMorale, "消耗1士气", "cost", new() { ["amount"] = "1" }),
                 new(L12AtomKinds.Discard, "或弃置1张手牌", "cost", new() { ["amount"] = "1" }), Troops(2000))],
             "ST05-01" => [Targeted("promotion-enter", "晋升登场时 可从牌库选择最多2张【远程】军团活跃登场，随后重洗牌库。",
                 new(L12AtomKinds.Optional, "可发动", "condition", new()),

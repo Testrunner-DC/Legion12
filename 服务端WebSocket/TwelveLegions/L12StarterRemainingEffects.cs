@@ -37,7 +37,7 @@ public sealed partial class L12GameEngine
                     .Select(card => card!.InstanceId).ToList();
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "光之剑：选择使我方前排1张【彼界】军团本回合兵力+2000，或获得1符文", ValidChoices = targets.Count > 0 ? ["mode:buff", "mode:rune"] : ["mode:rune"], MinChoose = 1, MaxChoose = 1, ChoiceLabels = new() { ["mode:buff"] = "我方前排1张【彼界】军团本回合兵力+2000", ["mode:rune"] = "获得1符文" } },
+                    new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "光之剑：选择1项效果", ValidChoices = targets.Count > 0 ? ["mode:buff", "mode:rune"] : ["mode:rune"], MinChoose = 1, MaxChoose = 1, ChoiceLabels = new() { ["mode:buff"] = "主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000。", ["mode:rune"] = "主动休整 弃置1张手牌：获得1符文。" } },
                     new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "光之剑：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
                     new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTarget", Text = "光之剑：选择本回合兵力+2000的我方前排【彼界】军团", ValidChoices = targets, MinChoose = 1, MaxChoose = 1, RequiredDeclaredChoice = "mode:buff" },
                 ]);
@@ -48,9 +48,7 @@ public sealed partial class L12GameEngine
                 var grave = player.Graveyard.Where(card => card.CardType == "legion" && card.BaseTroops <= 2000
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId).ToList();
-                var resources = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
-                    .Concat(ActiveTombGuardResources(player).Select(card => card.InstanceId))
-                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var resources = CompositeOrdinaryPaymentChoices(player).ToList();
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
                 var visibleCost = 1 - waived;
                 var prospectiveReviveExists = grave.Count > 0 || field.Any(id =>
@@ -58,22 +56,25 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
                 if (field.Count < 2 || resources.Count < visibleCost || !prospectiveReviveExists)
                     return CommandResult.Reject($"需要{visibleCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场");
-                var paymentChoices = visibleCost > 0 ? resources.Concat(field).ToList() : field;
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
                     new L12ActivationSelectionStep
                     {
-                        Kind = "mixed-board-payment", DeclarationKey = "payment",
-                        Text = visibleCost > 0
-                            ? "荷鲁斯：支付费用——消耗1士气并弃置我方战场2张军团"
-                            : "荷鲁斯：支付费用——弃置我方战场2张军团（士气费用已免除或预付）",
-                        ValidChoices = paymentChoices, MinChoose = 2 + visibleCost, MaxChoose = 2 + visibleCost,
-                        SelectionConstraint = visibleCost == 1 ? "one-resource-two-field-legions" : "zero-resource-two-field-legions",
+                        Kind = "composite-ordinary-payment", DeclarationKey = "moraleCost",
+                        Text = "荷鲁斯：支付费用——消耗1士气",
+                        ValidChoices = resources, MinChoose = visibleCost, MaxChoose = visibleCost,
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "field-legion-cost", DeclarationKey = "fieldCosts",
+                        ReferenceDeclarationKey = "moraleCost",
+                        Text = "荷鲁斯：支付费用——弃置我方战场2张军团（X/2）",
+                        ValidChoices = field, MinChoose = 2, MaxChoose = 2,
                     },
                     new L12ActivationSelectionStep
                     {
                         Kind = "prospective-grave-card", DeclarationKey = "entryCard",
-                        ReferenceDeclarationKey = "payment",
+                        ReferenceDeclarationKey = "fieldCosts",
                         Text = "荷鲁斯：选择墓地1张兵力不高于2000的【太阳城】军团休整登场（X/1）",
                         ValidChoices = grave, MinChoose = 1, MaxChoose = 1,
                         CostThreshold = 2000, SelectionConstraint = "taiyangcheng",
@@ -158,10 +159,8 @@ public sealed partial class L12GameEngine
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
                 var visibleCost = 1 - waived;
                 var paymentCount = 2 + visibleCost;
-                var payment = values.Take(paymentCount).ToArray();
-                var resourceIds = payment.Where(id => player.Morale.Any(card => card.InstanceId == id)
-                    || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
-                var costIds = payment.Where(id => !resourceIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
+                var resourceIds = values.Take(visibleCost).ToArray();
+                var costIds = values.Skip(visibleCost).Take(2).ToArray();
                 if (values.Length != paymentCount + 2 || resourceIds.Length != visibleCost || costIds.Length != 2
                     || costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
                     return "荷鲁斯的费用、墓地军团或位置选择不完整";
@@ -170,6 +169,8 @@ public sealed partial class L12GameEngine
                     return "荷鲁斯选择的士气资源已失效";
                 var costs = costIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
                 if (costs.Any(card => card is null || !IsFieldLegion(card))) return "荷鲁斯选择的弃置军团已失效";
+                if (resourceIds.Intersect(costIds, StringComparer.OrdinalIgnoreCase).Any())
+                    return "荷鲁斯的同一张陵墓守卫不能同时作为士气资源和弃置军团";
                 var entryId = values[paymentCount];
                 var entry = player.Graveyard.FirstOrDefault(card => card.InstanceId == entryId)
                     ?? costs.OfType<L12CardInstance>().FirstOrDefault(card => card.InstanceId == entryId);
@@ -239,12 +240,11 @@ public sealed partial class L12GameEngine
                 var waived = Math.Min(1, player.MasterMoraleWaiverCredit);
                 var visibleCost = 1 - waived;
                 var paymentCount = 2 + visibleCost;
-                var selectedResourceIds = values.Take(paymentCount).Where(id => player.Morale.Any(card => card.InstanceId == id)
-                    || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
+                var selectedResourceIds = values.Take(visibleCost).ToArray();
                 string[] resourcesStillToConsume = player.TemporaryMorale >= 1 - waived ? [] : selectedResourceIds;
                 if (!TryConsumeSelectedResources(player, 1 - waived, resourcesStillToConsume)) return CommandResult.Reject("需要消耗1士气");
                 player.MasterMoraleWaiverCredit -= waived;
-                var selectedCostIds = values.Take(paymentCount).Where(id => !selectedResourceIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
+                var selectedCostIds = values.Skip(visibleCost).Take(2).ToArray();
                 var costs = selectedCostIds.Select(id => FindOnField(player, id, out _, out _)!).ToArray();
                 foreach (var cost in costs)
                     if (!RemoveFromField(player, cost, true, "作为荷鲁斯效果的费用弃置", leaveKind: L12FieldLeaveKind.Discard))
@@ -493,7 +493,7 @@ public sealed partial class L12GameEngine
             case "kagutsuchi-buff":
             {
                 var target = FindOnField(player, candidate.Data.GetValueOrDefault("target"), out _, out _);
-                var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 2;
+                var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
                 var modes = new List<string>();
                 if (target is not null && ActiveResourceCount(player) >= moraleCost) modes.Add("mode:morale");
                 if (target is not null && player.Hand.Count > 0) modes.Add("mode:discard");
@@ -502,25 +502,35 @@ public sealed partial class L12GameEngine
                 var resources = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
                     .Concat(ActiveTombGuardResources(player).Select(card => card.InstanceId)).ToList();
                 steps.Add(StarterSelectionStep("option", "mode",
-                    target is null ? "火之迦具土：触发目标已经离场" : $"火之迦具土：是否使〈{target.Name}〉本回合兵力+2000？",
+                    target is null ? "迦具土：触发目标已经离场" : $"迦具土：是否使〈{target.Name}〉本回合兵力+2000？",
                     modes, 1, 1, labels: new()
                     {
                         ["mode:none"] = "不发动",
-                        ["mode:morale"] = moraleCost == 0 ? "无需消耗士气" : "消耗2士气",
+                        ["mode:morale"] = moraleCost == 0 ? "无需消耗士气" : "消耗1士气",
                         ["mode:discard"] = "弃置1张手牌",
                     }));
                 steps.Add(new L12ActivationSelectionStep
                 {
                     Kind = "resource-payment", DeclarationKey = "moraleCost",
-                    Text = "火之迦具土：选择用于支付2士气的资源", ValidChoices = resources,
+                    Text = "迦具土：选择用于支付1士气的资源", ValidChoices = resources,
                     MinChoose = visibleCost, MaxChoose = visibleCost, RequiredDeclaredChoice = "mode:morale",
                     AutoSelectWhenExact = resources.Count == visibleCost,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 });
-                steps.Add(StarterStep("hand-card", "discardCost", "火之迦具土：选择弃置的1张手牌",
+                steps.Add(StarterStep("hand-card", "discardCost", "迦具土：选择弃置的1张手牌",
                     player.Hand.Select(card => card.InstanceId), requiredChoice: "mode:discard"));
                 break;
             }
+            case "gareth-kill-ready":
+                if (candidate.Data.GetValueOrDefault("killed") != "true")
+                {
+                    RemoveUnstackedTriggerCandidate(candidate, "加雷斯本次进攻没有完成击杀");
+                    return true;
+                }
+                steps.Add(StarterStep("option", "mode",
+                    "加雷斯：是否将此军团转为活跃，并使其本回合兵力+2000？",
+                    OptionalModes(FindOnField(player, source.InstanceId, out _, out _) is not null)));
+                break;
             case "aeneas-promotion-search":
                 // 牌库中的具体远程军团是隐藏信息；此时只声明是否发动，身份延迟到结算。
                 steps.Add(StarterStep("option", "mode",
@@ -599,7 +609,7 @@ public sealed partial class L12GameEngine
         var optionalDeclined = plan is "zhaoyun-enter-charge" or "zhaoyun-kill-piercing" or "crossbow-ready"
                 or "wangzhaojun-draw" or "kane-enter-mill" or "hidden-pass-summon"
                 or "change-rested-morale" or "tomb-defender-debuff"
-                or "kagutsuchi-buff" or "aeneas-promotion-search" or "nuada-rune-buff"
+                or "kagutsuchi-buff" or "gareth-kill-ready" or "aeneas-promotion-search" or "nuada-rune-buff"
                 or "akhenaten-death-heal" or "light-sword-enter-kill"
             && mode == "mode:none";
         if (plan == "sky-city-completion")
@@ -660,16 +670,16 @@ public sealed partial class L12GameEngine
             case "kagutsuchi-buff":
             {
                 var target = FindOnField(player, candidate.Data.GetValueOrDefault("target"), out _, out _);
-                var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 2;
-                if (target is null) error = "火之迦具土对应的军团已离场；未支付费用且效果未入栈";
+                var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
+                if (target is null) error = "迦具土对应的军团已离场；未支付费用且效果未入栈";
                 else if (mode == "mode:morale" && !CanConsumeSelectedResources(player, moraleCost,
                              activation.DeclaredValues.GetValueOrDefault("moraleCost", [])))
-                    error = "火之迦具土选择的支付资源已失效；未支付费用且效果未入栈";
+                    error = "迦具土选择的支付资源已失效；未支付费用且效果未入栈";
                 else if (mode == "mode:discard" && !player.Hand.Any(card => card.InstanceId ==
                              activation.DeclaredValues.GetValueOrDefault("discardCost", []).SingleOrDefault()))
-                    error = "火之迦具土选择的弃牌已失效；未支付费用且效果未入栈";
+                    error = "迦具土选择的弃牌已失效；未支付费用且效果未入栈";
                 else if (mode is not ("mode:morale" or "mode:discard"))
-                    error = "火之迦具土的费用方式无效；效果未入栈";
+                    error = "迦具土的费用方式无效；效果未入栈";
                 break;
             }
             case "nuada-rune-buff":
@@ -722,7 +732,7 @@ public sealed partial class L12GameEngine
         }
         if (plan == "kagutsuchi-buff")
         {
-            var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 2;
+            var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
             if (mode == "mode:morale")
                 _ = TryConsumeSelectedResources(player, moraleCost,
                     activation.DeclaredValues.GetValueOrDefault("moraleCost", []));
@@ -734,8 +744,8 @@ public sealed partial class L12GameEngine
             }
             AddEvent("cost", candidate.Controller,
                 mode == "mode:morale"
-                    ? moraleCost == 0 ? "火之迦具土本次无需消耗士气" : "火之迦具土消耗2士气"
-                    : "火之迦具土弃置1张手牌", source);
+                    ? moraleCost == 0 ? "迦具土本次无需消耗士气" : "迦具土消耗1士气"
+                    : "迦具土弃置1张手牌", source);
         }
         else if (plan == "akhenaten-death-heal")
         {
@@ -773,7 +783,7 @@ public sealed partial class L12GameEngine
     private L12TriggerCandidate? BuildStarterKagutsuchiCandidate(int controller, L12CardInstance target)
     {
         var player = State.Players[controller];
-        var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 2;
+        var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
         if (L12StructuredCardRules.StarterRemainingPlan(player.MasterId, "legion-attack-timing")
             != "kagutsuchi-buff" || ActiveResourceCount(player) < moraleCost && player.Hand.Count == 0)
             return null;
@@ -975,7 +985,21 @@ public sealed partial class L12GameEngine
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+2000", target);
                 }
                 else AddEvent("effect-cancelled", item.Controller,
-                    "火之迦具土对应的军团已离场，本次兵力+2000未生效；已支付费用不返还");
+                    "迦具土对应的军团已离场，本次兵力+2000未生效；已支付费用不返还");
+                FinishStackItem(item);
+                return true;
+            }
+            case "gareth-kill-ready":
+            {
+                var gareth = FindOnField(player, item.SourceInstanceId, out _, out _);
+                if (gareth is not null)
+                {
+                    ReadyCardByEffect(item.Controller, gareth, gareth, "加雷斯因击杀时效果转为活跃");
+                    AddTimedModifier(gareth, 2000, 0, State.TurnSerial, item.SourceName);
+                    AddEvent("effect", item.Controller, "加雷斯本回合兵力+2000", gareth);
+                }
+                else AddEvent("effect-cancelled", item.Controller,
+                    "加雷斯已经离场，本次转为活跃及兵力+2000未生效");
                 FinishStackItem(item);
                 return true;
             }

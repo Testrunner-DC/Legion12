@@ -350,6 +350,29 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
+    public void MagatamaCavalryMoveOnlyOffersReadyFriendlyLegions()
+    {
+        var game = Create(690321, "S02-04M1");
+        var player = game.State.Players[0];
+        var magatama = Card("S02-0404", "magatama-ready-filter");
+        var ready = Card("S02-0401", "magatama-ready-legion");
+        var rested = Card("S02-0402", "magatama-rested-legion");
+        magatama.OwnerIndex = ready.OwnerIndex = rested.OwnerIndex = 0;
+        rested.Tapped = true;
+        player.Relic = magatama;
+        player.Field[0][0] = ready;
+        player.Field[0][1] = rested;
+
+        var start = game.Handle(0, new L12Command("activateAbility", magatama.InstanceId,
+            Ability: "magatamaMove"));
+
+        Assert.True(start.Accepted, start.Error);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(ready.InstanceId, targetPrompt.ValidChoices);
+        Assert.DoesNotContain(rested.InstanceId, targetPrompt.ValidChoices);
+    }
+
+    [Fact]
     public void DecliningTsukuyomiFollowMoveDoesNotConsumeItsTurnUsage()
     {
         var game = Create(69033, "S02-04M1");

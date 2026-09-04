@@ -808,6 +808,7 @@ public static class L12VerifiedAtomicPrograms
             StarterTargetedProgram("ST05-06", "active", "telemachus-top-three"),
             StarterTargetedProgram("ST05-10", "play", "hunter-gift"),
             StarterTargetedProgram("ST05-M1", "active", "athena-front-buff"),
+            StarterTargetedProgram("ST06-03", "after-attack", "gareth-kill-ready"),
             StarterTargetedProgram("ST06-M1", "rune-spent", "nuada-rune-buff"),
             StarterTargetedProgram("ST06-M1", "active", "nuada-ready-morale"),
             StarterTargetedProgram("ST06-S1", "trial-complete", "sky-city-completion"),

@@ -209,6 +209,7 @@ export function connect(): Promise<void> {
           incoming.tournamentCode = message.tournamentCode
           incoming.tournamentMatchId = message.tournamentMatchId
         }
+        incoming.playerBadges = (message.playerBadges as GameState['playerBadges']) || []
         const current = l12State.game
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
         if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {

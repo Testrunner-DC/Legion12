@@ -179,9 +179,9 @@ function writeSavedDecks(decks: Record<string, SavedL12Deck>) {
 export function loadDeckCatalog(): Promise<DeckCard[]> {
   if (catalogPromise) return catalogPromise
   catalogPromise = Promise.all([
-    fetch('/data/l12/cards.s1.json'),
-    fetch('/data/l12/cards.lookup.json'),
-    fetch('/data/l12/cards.st.json'),
+    fetch('/data/l12/cards.s1.json', { cache: 'no-store' }),
+    fetch('/data/l12/cards.lookup.json', { cache: 'no-store' }),
+    fetch('/data/l12/cards.st.json', { cache: 'no-store' }),
   ]).then(async ([s1Response, lookupResponse, stResponse]) => {
     if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
     const seasonOneRaw: DeckCard[] = await s1Response.json()
@@ -379,7 +379,7 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
 export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
   const [catalog, lookupResponse] = await Promise.all([
     loadDeckCatalog(),
-    fetch('/data/l12/cards.lookup.json'),
+    fetch('/data/l12/cards.lookup.json', { cache: 'no-store' }),
   ])
   if (!lookupResponse.ok) throw new Error('卡牌版本数据加载失败')
   const lookup: LookupCard[] = await lookupResponse.json()

@@ -433,7 +433,7 @@ public sealed partial class L12GameEngine
         if (flow == "zhuge-reveal")
         {
             var next = State.DisasterDeck.FirstOrDefault();
-            AddEvent("reveal", item.Controller, next is null ? "诸葛亮查看天灾牌库：没有下一张天灾" : $"诸葛亮查看下一张天灾：{next.Name}", next is null ? [] : [next]);
+            AddEvent("private-disaster-reveal", item.Controller, next is null ? "诸葛亮查看天灾牌库：没有下一张天灾" : $"诸葛亮查看下一张天灾：{next.Name}", next is null ? [] : [next]);
             FinishStackItem(item); return true;
         }
         if (flow == "zhuge-disaster")

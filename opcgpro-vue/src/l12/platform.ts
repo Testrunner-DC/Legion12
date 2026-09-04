@@ -189,7 +189,7 @@ export interface RankedTierConfig { name: string; minimum: number; baseDelta: nu
 export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
 export interface RankedMasterTitleConfig { masterId: string; masterName: string; title: string }
 export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[] }
-export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[] }
+export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[]; rankLabel: string; placementTitle?: string; selectedMasterTitle?: string; masterTitles: string[] }
 export interface RankedProfileHistory { seasonId: string; faction: string; sevenValue: number; placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number; archivedAt: string }
 export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
@@ -716,6 +716,7 @@ export const adminApi = {
 export const rankedApi = {
   overview: () => platformRequest<RankedOverview>('/api/ranked/me'),
   selectFaction: (faction: 'order' | 'chaos' | 'fate') => platformRequest<RankedProfile>('/api/ranked/faction', { method: 'POST', body: JSON.stringify({ faction }) }),
+  selectTitle: (title?: string) => platformRequest<RankedProfile>('/api/ranked/title', { method: 'POST', body: JSON.stringify({ title: title || null }) }),
   leaderboard: (faction = '', range: '7d' | '30d' | 'season' = 'season') => {
     const params = new URLSearchParams({ range })
     if (faction) params.set('faction', faction)

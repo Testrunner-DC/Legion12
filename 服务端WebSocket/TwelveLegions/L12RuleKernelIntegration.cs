@@ -57,6 +57,28 @@ public sealed partial class L12GameEngine
             CostThreshold = step.CostThreshold,
             SelectionConstraint = step.SelectionConstraint,
         }).ToList();
+        if (triggerCandidateId is not null && RequiresPrideMasterSurcharge(playerIndex, source))
+        {
+            var modeStep = steps.FirstOrDefault(step => step.DeclarationKey == "mode");
+            var paymentChoices = CompositeOrdinaryPaymentChoices(State.Players[playerIndex]).ToList();
+            if (paymentChoices.Count == 0 && modeStep is not null
+                && modeStep.ValidChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase))
+            {
+                modeStep.ValidChoices.RemoveAll(choice => !choice.Equals("mode:none", StringComparison.OrdinalIgnoreCase));
+            }
+            steps.Add(new L12ActivationSelectionStep
+            {
+                Kind = "composite-ordinary-payment",
+                Text = "〈傲慢之罪〉：主宰发动效果需额外支付1士气",
+                ValidChoices = paymentChoices,
+                MinChoose = 1,
+                MaxChoose = 1,
+                CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                DeclarationKey = "prideMasterSurcharge",
+                ReferenceDeclarationKey = modeStep is null ? null : "mode",
+                SkipWhenReferenceIsNone = modeStep is not null,
+            });
+        }
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
                 && step.RequiredDeclaredChoice is null
                 && step.Kind != "prospective-grave-card"))
@@ -92,6 +114,14 @@ public sealed partial class L12GameEngine
         while (activation.CurrentStep < activation.SelectionSteps.Count)
         {
             var pendingStep = activation.SelectionSteps[activation.CurrentStep];
+            if (pendingStep.MinChoose == 0 && pendingStep.MaxChoose == 0
+                && pendingStep.Kind is "resource-payment" or "composite-ordinary-payment")
+            {
+                if (!string.IsNullOrWhiteSpace(pendingStep.DeclarationKey))
+                    activation.DeclaredValues[pendingStep.DeclarationKey] = [];
+                activation.CurrentStep++;
+                continue;
+            }
             if (pendingStep.RequiredDeclaredChoice is { } requiredChoice
                 && !activation.DeclaredTargets.Contains(requiredChoice, StringComparer.OrdinalIgnoreCase))
             {
@@ -447,6 +477,24 @@ public sealed partial class L12GameEngine
                 || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
             if (resourceChoices.Length == 1) promptLockedChoices = resourceChoices[0];
         }
+        else if (step.Kind == "field-legion-cost")
+        {
+            var excluded = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, [])
+                : [];
+            var choices = step.ValidChoices.Where(id => !excluded.Contains(id,
+                StringComparer.OrdinalIgnoreCase)).ToList();
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (choices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "支付士气后可弃置的军团不足；全部费用未提交");
+                return;
+            }
+            promptKind = "active-target";
+            promptDataChoiceMode = "board-target";
+            targetPlayerIndex = activation.Controller;
+        }
         else if (step.Kind == "prospective-grave-card")
         {
             var player = State.Players[activation.Controller];
@@ -548,7 +596,7 @@ public sealed partial class L12GameEngine
                 ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
                 : null;
             var choices = PublicLegions(State.Players[1 - activation.Controller])
-                .Where(card => card.CurrentCost - (card.InstanceId == debuffTarget ? 1 : 0) == 0)
+                .Where(card => Math.Max(0, card.CurrentCost - (card.InstanceId == debuffTarget ? 1 : 0)) == 0)
                 .Select(card => card.InstanceId).ToList();
             choices.Insert(0, "mode:none");
             step.ValidChoices.Clear();
@@ -849,7 +897,7 @@ public sealed partial class L12GameEngine
         IReadOnlyCollection<string>? selectedResourceIds = null;
         if (activation.Ability == "horusRevive")
         {
-            selectedResourceIds = activation.DeclaredValues.GetValueOrDefault("payment", [])
+            selectedResourceIds = activation.DeclaredValues.GetValueOrDefault("moraleCost", [])
                 .Where(id => player.Morale.Any(card => card.InstanceId == id)
                     || ActiveTombGuardResources(player).Any(card => card.InstanceId == id))
                 .ToArray();
@@ -987,7 +1035,7 @@ public sealed partial class L12GameEngine
             if (activation?.Ability == "horusRevive")
             {
                 var occupant = State.Players[controller].Field[row][slot];
-                return occupant is null || activation.DeclaredValues.GetValueOrDefault("payment", [])
+                return occupant is null || activation.DeclaredValues.GetValueOrDefault("fieldCosts", [])
                     .Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase);
             }
             return State.Players[controller].Field[row][slot] is null;
@@ -1494,6 +1542,7 @@ public sealed partial class L12GameEngine
     {
         var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
         if (candidate is null) { AdvanceTriggerBatches(); return; }
+        if (!TryCommitPrideMasterSurcharge(candidate, activation)) return;
         if (TryCompletePublicTriggerDeclaration(candidate, activation)) return;
         var declared = activation.DeclaredTargets.ToList();
         if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
@@ -1555,6 +1604,34 @@ public sealed partial class L12GameEngine
         candidate.Data["declaredTargets"] = string.Join('|', declared);
         candidate.Data["declaration-complete"] = "true";
         AdvanceTriggerBatches();
+    }
+
+    private bool RequiresPrideMasterSurcharge(int controller, L12CardInstance source)
+        => State.ActiveDisaster?.CardId == "S02-DS06"
+           && source.CardType == "master"
+           && !source.IsMasterLegion
+           && source.CardId == State.Players[controller].MasterId;
+
+    private bool TryCommitPrideMasterSurcharge(L12TriggerCandidate candidate, L12PendingActivation activation)
+    {
+        var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
+            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        if (!RequiresPrideMasterSurcharge(candidate.Controller, source))
+            return true;
+        if (activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault()
+                ?.Equals("mode:none", StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        var player = State.Players[candidate.Controller];
+        var selected = activation.DeclaredValues.GetValueOrDefault("prideMasterSurcharge", []);
+        if (!TryConsumeSelectedResources(player, 1, selected))
+        {
+            RemoveUnstackedTriggerCandidate(candidate, "〈傲慢之罪〉使主宰效果额外需要消耗1士气");
+            return false;
+        }
+        candidate.Data["prideMasterSurchargePrepaid"] = "true";
+        AddEvent("cost", candidate.Controller, "〈傲慢之罪〉使主宰效果额外消耗1士气",
+            source);
+        return true;
     }
 
     private void RecalculateContinuousTroops()

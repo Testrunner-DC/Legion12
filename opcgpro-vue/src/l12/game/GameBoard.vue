@@ -76,6 +76,8 @@ const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value]
 // The sandbox actor may change for prompts, but the observing player's board orientation never changes.
 const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
+const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
+const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
 function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
 const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
   ? props.game.pendingDefense.target.type : null)
@@ -884,8 +886,8 @@ function statusTexts(card: Card) {
 
         <aside class="board-rail right-rail">
           <section class="grand-panel player-panel">
-            <h3>对手</h3><strong>{{ viewEnemy.name }}</strong><span>{{ viewEnemy.master.masterName }} · 血量 {{ viewEnemy.master.hp }}</span>
-            <hr/><h3>我方</h3><strong class="mine">{{ viewMe.name }}</strong><span>{{ viewMe.master.masterName }} · 血量 {{ viewMe.master.hp }}</span>
+            <h3>对手</h3><strong>{{ viewEnemy.name }}</strong><span>{{ viewEnemy.master.masterName }} · 血量 {{ viewEnemy.master.hp }}</span><small v-if="enemyBadge" class="battle-title"><b>{{ enemyBadge.rankLabel }}</b><i v-if="enemyBadge.masterTitle">{{ enemyBadge.masterTitle }}</i></small>
+            <hr/><h3>我方</h3><strong class="mine">{{ viewMe.name }}</strong><span>{{ viewMe.master.masterName }} · 血量 {{ viewMe.master.hp }}</span><small v-if="myBadge" class="battle-title"><b>{{ myBadge.rankLabel }}</b><i v-if="myBadge.masterTitle">{{ myBadge.masterTitle }}</i></small>
           </section>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <div class="event-list">
@@ -997,4 +999,5 @@ function statusTexts(card: Card) {
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:44px;line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
+.battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:8px;font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
 </style>

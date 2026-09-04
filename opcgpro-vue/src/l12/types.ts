@@ -77,7 +77,7 @@ export interface PlayerView {
   deckName: string
   faction: string
   factionEffect?: { cardId: string; name: string; imageUrl?: string; effectText: string; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
-  master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; hp: number; maxHp: number; statusIcons?: string[]; statusEffects?: CardStatusEffect[]; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
+  master: { masterId: string; masterName: string; masterImageUrl?: string; effectText?: string; tapped?: boolean; deployedAsLegion?: boolean; hp: number; maxHp: number; statusIcons?: string[]; statusEffects?: CardStatusEffect[]; abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }> }
   libraryCount: number
   libraryTop?: Card | null
   hand?: Card[]
@@ -148,6 +148,7 @@ export interface GameState {
   winner?: number | null
   winnerReason?: string | null
   players: PlayerView[]
+  playerBadges?: Array<{ playerIndex: number; rankLabel: string; masterTitle?: string }>
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]
   legalAttackTargets?: Record<string, string[]>

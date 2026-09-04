@@ -140,7 +140,7 @@ public sealed partial class L12GameEngine
             case "诸葛亮":
             {
                 var next = State.DisasterDeck.FirstOrDefault();
-                AddEvent("reveal", item.Controller, next is null ? "诸葛亮查看天灾牌库：没有下一张天灾" : $"诸葛亮查看下一张天灾：{next.Name}", next is null ? [] : [next]);
+                AddEvent("private-disaster-reveal", item.Controller, next is null ? "诸葛亮查看天灾牌库：没有下一张天灾" : $"诸葛亮查看下一张天灾：{next.Name}", next is null ? [] : [next]);
                 CreatePrompt(item.Controller, "option", "诸葛亮：可将天灾值增加或减少1点", ["-1", "0", "1"], 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "zhuge-disaster" });
                 return true;
