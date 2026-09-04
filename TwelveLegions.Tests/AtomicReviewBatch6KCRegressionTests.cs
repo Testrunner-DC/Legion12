@@ -182,7 +182,7 @@ public sealed class AtomicReviewBatch6KCRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-04M1")]
-    public void AmaterasuDeclaresMoraleTargetsAndKeepsTheFrontBuffIndependent()
+    public void AmaterasuReadyAndFrontBuffShareOneResponseAndAreNegatedTogether()
     {
         var game = Create("S01-04M1", 8303);
         var player = game.State.Players[0];
@@ -205,13 +205,15 @@ public sealed class AtomicReviewBatch6KCRegressionTests
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         var first = Assert.Single(game.State.EffectStack);
         Assert.Equal("amaterasu-ready", first.Data["atomicFlow"]);
+        Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
         first.Negated = true;
 
-        var second = PassUntilFlow(game, "amaterasu-front-buff");
+        PassResponses(game);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         Assert.Same(front, game.State.Players[0].Field[0][0]);
-        Assert.Equal(4000, front.Troops);
-        Assert.Equal("active:S01-04M1:amaterasuReady", second.Data["compositePlan"]);
+        Assert.Equal(front.BaseTroops, front.Troops);
+        Assert.DoesNotContain(game.State.EffectStack.Concat(game.State.DeferredEffectStack), item =>
+            item.Data.GetValueOrDefault("atomicFlow") == "amaterasu-front-buff");
     }
 
     [Fact]

@@ -602,10 +602,24 @@ public sealed partial class L12GameEngine
             case "gramDamage":
                 choices = player.Graveyard.Where(card => card.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).ToArray();
-                var minimumGramCards = player.Graveyard.Any(card =>
-                    L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard") >= 3) ? 2 : 4;
-                return BeginPendingActivation(playerIndex, source, ability, choices,
-                    "神剑格拉墨：依次选择可视为合计4张的阿斯加德军团返回牌库底部", minimumGramCards, 4);
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "order", DeclarationKey = "graveOrder",
+                        Text = "神剑格拉墨：依次选择返回牌库底部、合计视为4张的阿斯加德军团",
+                        ValidChoices = choices.ToList(), MinChoose = 2, MaxChoose = 4,
+                        SelectionConstraint = "grave-faction-exact", FactionConstraint = "asgard",
+                        RepresentedCount = 4, LegionCardsOnly = true,
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "grave-faction-count", DeclarationKey = "graveCopies", ReferenceDeclarationKey = "graveOrder",
+                        Text = "神剑格拉墨：选择〈渴求死亡的勇士〉本次视为几张阿斯加德军团",
+                        ValidChoices = [], MinChoose = 1, MaxChoose = 1, FactionConstraint = "asgard",
+                        RepresentedCount = 4, LegionCardsOnly = true,
+                    },
+                ]);
             case "valhallaKill":
             {
                 var graveChoices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToList();
@@ -835,12 +849,14 @@ public sealed partial class L12GameEngine
             case "gramDamage" when source.CardId == "S01-0317":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                var representation = ids.SingleOrDefault(id => id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
+                var cardIds = ids.Where(id => !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+                var cards = cardIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
                     && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard"))).ToArray();
                 if (source.Tapped || cards.Any(card => card is null)
-                    || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Length
-                    || !L12StructuredCardRules.CanRepresentGraveFactionLegionCount(player,
-                        cards.Cast<L12CardInstance>().ToArray(), "asgard", 4))
+                    || cardIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != cardIds.Length
+                    || !L12StructuredCardRules.IsExactGraveFactionRepresentation(player,
+                        cards.Cast<L12CardInstance>().ToArray(), representation, "asgard", 4, legionOnly: true))
                     return CommandResult.Reject("需要活跃的神剑格拉墨与可视为合计4张的墓地阿斯加德军团");
                 source.Tapped = true;
                 foreach (var card in cards.Cast<L12CardInstance>()) { player.Graveyard.Remove(card); player.Library.Add(card); }

@@ -3121,6 +3121,8 @@ public sealed class S2FactionRegressionTests
         player.Hand.Clear();
         player.Hand.Add(Card("S02-0003", "amaterasu-poison-discard"));
         player.Hand.Add(Card("S02-0007", "poison-forced-discard"));
+        var front = Card("S01-0404", "amaterasu-poison-front");
+        player.Field[0][0] = front;
         AddMorale(player, 2);
         foreach (var morale in player.Morale) morale.Tapped = true;
         var poison = Card("S02-0018", "amaterasu-poison-counter");
@@ -3153,6 +3155,9 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Equal(front.BaseTroops, front.Troops);
+        Assert.DoesNotContain(game.State.EffectStack.Concat(game.State.DeferredEffectStack), item =>
+            item.Data.GetValueOrDefault("atomicFlow") == "amaterasu-front-buff");
     }
 
     [Fact]

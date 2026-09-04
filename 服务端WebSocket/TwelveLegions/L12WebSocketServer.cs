@@ -944,12 +944,13 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return ReleaseRequestError(request, authenticated.Account, permission, error);
             }
         });
-        _app.MapPost("/api/bugs", (HttpRequest request, BugRequest body) =>
+        _app.MapPost("/api/bugs", async (HttpRequest request, BugRequest body) =>
         {
             if (string.IsNullOrWhiteSpace(body.Description)) return Results.BadRequest(new { message = "请填写问题描述" });
             var account = _platform.Authenticate(request.Headers.Authorization);
+            var diagnostic = await _rooms.CaptureBugDiagnosticAsync(body.MatchId, body.RoomCode);
             return Results.Ok(_platform.AddBug(account, body.Title ?? string.Empty, body.Description, body.Page ?? string.Empty,
-                body.RoomCode, body.MatchId, body.Version ?? "dev"));
+                body.RoomCode, body.MatchId, L12RuntimeBuildVersion.Resolve(body.Version), diagnostic));
         });
         _app.MapGet("/api/admin/accounts", (HttpRequest request) =>
         {
@@ -1569,46 +1570,72 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 await SendAsync(sessionId, new { type = "authenticationRequired", message = "登录会话已撤销" }, cancellationToken);
                 return;
             }
-            IReadOnlyList<OutgoingMessage> outgoing = messageType switch
+            try
             {
-                "hello" => await AuthenticateSessionAsync(sessionId, root),
-                "createRoom" => CreateRoom(sessionId, root),
-                "updateRoomOptions" => UpdateRoomOptions(sessionId, root),
-                "createSandbox" => await CreateSandboxAsync(sessionId, root),
-                "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
-                "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
-                "syncState" => await _rooms.RecoveryStateAsync(sessionId),
-                "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
-                "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
-                "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
-                    GetString(root, "tournamentId"), GetString(root, "matchId")),
-                "inviteFriend" => _rooms.InviteFriend(sessionId, GetString(root, "accountId")),
-                "resolveFriendInvitation" => _rooms.ResolveFriendInvitation(sessionId,
-                    GetString(root, "invitationId"), GetBool(root, "accept", false)),
-                "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),
-                "spectateTournamentMatch" => _rooms.SpectateTournamentMatch(sessionId,
-                    GetString(root, "tournamentId"), GetString(root, "matchId")),
-                "leaveRoom" => _rooms.LeaveRoom(sessionId),
-                "selectDeck" => _rooms.SelectDeck(sessionId, GetInt(root, "deckIndex")),
-                "selectCustomDeck" when root.TryGetProperty("deck", out var deckElement)
-                    => SelectCustomDeck(sessionId, deckElement),
-                "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
-                "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
-                "sandboxAction" when root.TryGetProperty("command", out var sandboxCommand)
-                    => await _rooms.HandleSandboxActionAsync(sessionId, GetInt(root, "actingPlayerIndex", -1), sandboxCommand),
-                "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
-                "getEffectiveOperationsPolicy" => [EffectiveOperationsPolicyMessage(sessionId)],
-                "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
-                "deploymentProbe" => [new OutgoingMessage(sessionId, new
+                IReadOnlyList<OutgoingMessage> outgoing = messageType switch
                 {
-                    type = "deploymentProbe",
-                    service = "twelve-legions",
-                    protocolVersion = 1,
-                    authentication = "token",
-                })],
-                _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
-            };
-            await SendManyAsync(outgoing, cancellationToken);
+                    "hello" => await AuthenticateSessionAsync(sessionId, root),
+                    "createRoom" => CreateRoom(sessionId, root),
+                    "updateRoomOptions" => UpdateRoomOptions(sessionId, root),
+                    "createSandbox" => await CreateSandboxAsync(sessionId, root),
+                    "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
+                    "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
+                    "syncState" => await _rooms.RecoveryStateAsync(sessionId),
+                    "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
+                    "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
+                    "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
+                        GetString(root, "tournamentId"), GetString(root, "matchId")),
+                    "inviteFriend" => _rooms.InviteFriend(sessionId, GetString(root, "accountId")),
+                    "resolveFriendInvitation" => _rooms.ResolveFriendInvitation(sessionId,
+                        GetString(root, "invitationId"), GetBool(root, "accept", false)),
+                    "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),
+                    "spectateTournamentMatch" => _rooms.SpectateTournamentMatch(sessionId,
+                        GetString(root, "tournamentId"), GetString(root, "matchId")),
+                    "leaveRoom" => _rooms.LeaveRoom(sessionId),
+                    "selectDeck" => _rooms.SelectDeck(sessionId, GetInt(root, "deckIndex")),
+                    "selectCustomDeck" when root.TryGetProperty("deck", out var deckElement)
+                        => SelectCustomDeck(sessionId, deckElement),
+                    "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
+                    "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
+                    "sandboxAction" when root.TryGetProperty("command", out var sandboxCommand)
+                        => await _rooms.HandleSandboxActionAsync(sessionId, GetInt(root, "actingPlayerIndex", -1), sandboxCommand),
+                    "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
+                    "getEffectiveOperationsPolicy" => [EffectiveOperationsPolicyMessage(sessionId)],
+                    "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
+                    "deploymentProbe" => [new OutgoingMessage(sessionId, new
+                    {
+                        type = "deploymentProbe",
+                        service = "twelve-legions",
+                        protocolVersion = 1,
+                        authentication = "token",
+                    })],
+                    _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
+                };
+                await SendManyAsync(outgoing, cancellationToken);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                var correlationId = $"ws-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..34];
+                var commandType = root.TryGetProperty("command", out var failedCommand)
+                    && failedCommand.TryGetProperty("type", out var failedCommandType)
+                    ? failedCommandType.GetString() : null;
+                Console.Error.WriteLine($"[{correlationId}] WebSocket command failed: session={sessionId}, message={messageType}, command={commandType ?? "-"}\n{error}");
+                await SendAsync(sessionId, new
+                {
+                    type = "error",
+                    code = "commandFailed",
+                    message = "本次操作处理失败，已保留连接并重新同步对局状态",
+                    correlationId,
+                }, cancellationToken);
+                try
+                {
+                    await SendManyAsync(await _rooms.RecoveryStateAsync(sessionId), cancellationToken);
+                }
+                catch (Exception recoveryError) when (recoveryError is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"[{correlationId}] WebSocket recovery snapshot failed: {recoveryError}");
+                }
+            }
         }
     }
 

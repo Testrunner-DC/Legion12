@@ -478,6 +478,35 @@ public sealed partial class L12RoomManager
     public IReadOnlyList<OutgoingMessage> RecoveryState(Guid sessionId)
         => RecoveryStateAsync(sessionId).GetAwaiter().GetResult();
 
+    /// <summary>
+    /// 为后台 Bug 记录附加最小权威快照。只记录流程标识和计数，不记录手牌、
+    /// 牌库内容或私有选择，既可定位断线/卡死，也不会向反馈接口泄露隐藏信息。
+    /// </summary>
+    public async Task<L12BugDiagnosticView?> CaptureBugDiagnosticAsync(string? matchId, string? roomCode)
+    {
+        if (string.IsNullOrWhiteSpace(matchId) && string.IsNullOrWhiteSpace(roomCode)) return null;
+        var room = _rooms.Values.FirstOrDefault(candidate =>
+            (!string.IsNullOrWhiteSpace(matchId)
+                && string.Equals(candidate.Game?.State.MatchId, matchId, StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrWhiteSpace(roomCode)
+                && string.Equals(candidate.Code, roomCode, StringComparison.OrdinalIgnoreCase)));
+        if (room?.Game is null) return null;
+
+        await room.Gate.WaitAsync();
+        try
+        {
+            var state = room.Game.State;
+            return new L12BugDiagnosticView(_utcNow(), state.MatchId, room.Code, state.Phase.ToString(), state.Round,
+                state.TurnSerial, state.ActivePlayer, state.Revision, room.CommandSequence,
+                state.EffectStack.Concat(state.DeferredEffectStack).Select(item =>
+                    $"{item.Trigger}:{item.SourceCardId}:{item.Data.GetValueOrDefault("atomicFlow", "-")}").ToArray(),
+                state.PendingPrompts.Select(prompt =>
+                    $"{prompt.Kind}:{prompt.Continuation}:{prompt.Data.GetValueOrDefault("action", "-")}").ToArray(),
+                state.Events.TakeLast(20).Select(entry => entry.Type).ToArray());
+        }
+        finally { room.Gate.Release(); }
+    }
+
     public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateAsync(Guid sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var session)

@@ -23,9 +23,13 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
     int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
+    string? Phase, int? Round, int? TurnSerial, int? ActivePlayer, long? Revision, long? CommandSequence,
+    IReadOnlyList<string> Stack, IReadOnlyList<string> Prompts, IReadOnlyList<string> RecentEventTypes);
 public sealed record L12BugReportView(string Id, string? ReporterId, string ReporterName, string Title, string Description,
     string Page, string? RoomCode, string? MatchId, string Version, string Status, string Priority, string? Assignee,
-    string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    L12BugDiagnosticView? Diagnostic = null);
 public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
     string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
 public sealed record L12AdminAuditView(string Id, string ActorId, string ActorName, string Category, string Action,
@@ -80,6 +84,7 @@ public sealed partial class L12PlatformStore
         public string Priority { get; set; } = "normal";
         public string? Assignee { get; set; }
         public string? AdminNotes { get; set; }
+        public L12BugDiagnosticView? Diagnostic { get; set; }
         public List<BugAuditRow> History { get; set; } = [];
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -739,7 +744,7 @@ public sealed partial class L12PlatformStore
         => SetRole(new L12AccountView("system", "系统", "admin", DateTimeOffset.UtcNow, false), accountId, role);
 
     public L12BugReportView AddBug(L12AccountView? account, string title, string description, string page,
-        string? roomCode, string? matchId, string version)
+        string? roomCode, string? matchId, string version, L12BugDiagnosticView? diagnostic = null)
     {
         var row = new BugRow
         {
@@ -751,6 +756,7 @@ public sealed partial class L12PlatformStore
             RoomCode = roomCode,
             MatchId = matchId,
             Version = string.IsNullOrWhiteSpace(version) ? "dev" : version.Trim(),
+            Diagnostic = diagnostic,
         };
         row.History.Add(NewBugAudit(account, "created", null, "new", "提交 Bug 反馈"));
         lock (_gate) { _data.BugReports.Insert(0, row); Save(); }
@@ -1245,7 +1251,8 @@ public sealed partial class L12PlatformStore
     }
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
         row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
-        row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt);
+        row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt,
+        row.Diagnostic);
     private static L12BugAuditView ToView(BugAuditRow row) => new(row.Id, row.ActorId, row.ActorName, row.Action,
         row.FromValue, row.ToValue, row.Comment, row.CreatedAt);
     private static L12AdminAuditView ToView(AdminAuditRow row) => new(row.Id, row.ActorId, row.ActorName,

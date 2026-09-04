@@ -547,6 +547,19 @@ public sealed partial class L12GameEngine
                 || selectedCards.Select(card => card!.Name).Distinct(StringComparer.Ordinal).Count() != selectedCards.Length)
                 return CommandResult.Reject("选择的卡牌必须为非同名卡牌");
         }
+        if (prompt.Data.GetValueOrDefault("selectionConstraint") == "grave-faction-exact")
+        {
+            var player = State.Players[playerIndex];
+            var cards = chosen.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
+                .OfType<L12CardInstance>().ToArray();
+            var representedCount = int.TryParse(prompt.Data.GetValueOrDefault("representedCount"), out var parsed)
+                ? parsed : 0;
+            var legionOnly = prompt.Data.GetValueOrDefault("legionCardsOnly") == "true";
+            if (cards.Length != chosen.Count || !L12StructuredCardRules.CanPotentiallyRepresentGraveFactionCount(
+                    player, cards, prompt.Data.GetValueOrDefault("factionConstraint", string.Empty),
+                    representedCount, legionOnly))
+                return CommandResult.Reject($"所选卡牌必须能按玩家指定张数合计视为{representedCount}张");
+        }
         var mixedConstraint = prompt.Data.GetValueOrDefault("selectionConstraint");
         if (mixedConstraint is "one-resource-two-field-legions" or "zero-resource-two-field-legions")
         {

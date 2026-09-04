@@ -20,6 +20,17 @@ internal sealed record L12CompositeEffectSegmentSpec(
 /// </summary>
 internal static partial class L12CompositeEffectPlans
 {
+    // 同一能力可以包含多个按顺序结算的子句，但只有卡面明确写成独立效果时，
+    // 才为每个子句分别开放响应。这里登记“整项能力共用一次响应”的计划，
+    // 避免再次用卡号分支散落到结算器中。
+    private static readonly HashSet<string> SingleResponseEffectPlans = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "active:S01-04M1:amaterasuReady",
+    };
+
+    internal static bool UsesSingleResponseEffect(string? planId)
+        => !string.IsNullOrWhiteSpace(planId) && SingleResponseEffectPlans.Contains(planId);
+
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> HandPlayPlans =
         new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1280,6 +1291,8 @@ public sealed partial class L12GameEngine
             ["atomicFlow"] = segments[firstIndex].Flow,
             ["atomicContinuation"] = "true",
         };
+        if (L12CompositeEffectPlans.UsesSingleResponseEffect(cardId))
+            data["compositeResponseScope"] = "single-effect";
         foreach (var pair in declared) data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
         return data;
     }
@@ -1329,6 +1342,32 @@ public sealed partial class L12GameEngine
         var planId = item.Data.GetValueOrDefault("compositePlan");
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
+        var singleResponseEffect = item.Data.GetValueOrDefault("compositeResponseScope") == "single-effect"
+            || L12CompositeEffectPlans.UsesSingleResponseEffect(planId);
+        // 整项能力只响应一次：首段被无效时，后续只是同一效果内部的结算子句，
+        // 必须一并停止，不能再创建一个看似独立的新效果。
+        if (singleResponseEffect && item.Negated) return false;
+        if (singleResponseEffect && item.Trigger != "authority-event")
+        {
+            // 若本段产生“因效果转为活跃”的权威时点，必须先让这些时点全部完成响应，
+            // 再继续同一效果的后续子句。延续载体选择延迟队列中最早创建的一项；队列
+            // 按 LIFO 处理，因此它会在同批其余时点之后最后结算。毒药发作无效任一项
+            // 时会同时标记同源兄弟，载体也随之被无效，后续子句便不会错误先行结算。
+            var continuationCarrier = State.DeferredEffectStack.FirstOrDefault(candidate =>
+                candidate.Trigger == "authority-event"
+                && candidate.Data.GetValueOrDefault("eventType") == "effect-ready"
+                && candidate.Data.GetValueOrDefault("originStackId") == item.StackItemId);
+            if (continuationCarrier is not null)
+            {
+                foreach (var pair in item.Data.Where(pair =>
+                             pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
+                             || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
+                             || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone"))
+                    continuationCarrier.Data[pair.Key] = pair.Value;
+                continuationCarrier.Data["compositeOriginTrigger"] = item.Trigger;
+                return true;
+            }
+        }
         var segments = L12CompositeEffectPlans.Segments(planId);
         for (var nextIndex = current + 1; nextIndex < segments.Count; nextIndex++)
         {
@@ -1353,10 +1392,14 @@ public sealed partial class L12GameEngine
                 ["atomicFlow"] = next.Flow,
                 ["atomicContinuation"] = "true",
             };
+            // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
+            // 对同一项能力中的单个句子另行无效。
+            if (singleResponseEffect) data["unrespondable"] = "true";
             // The Wisdom Codex reward belongs to the exact stack item whose cost was paid.
             // A semantic follow-up is a new effect and must not inherit that one-shot marker.
             data.Remove("wisdomRewards");
-            PushEffect(item.Controller, source, item.Trigger, next.Text,
+            var continuationTrigger = item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger;
+            PushEffect(item.Controller, source, continuationTrigger, next.Text,
                 CompositeSegmentTargets(next, item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
                     .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
                         .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase)), data);

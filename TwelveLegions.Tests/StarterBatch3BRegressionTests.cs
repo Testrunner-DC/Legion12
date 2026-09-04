@@ -805,6 +805,10 @@ public sealed class StarterBatch3BRegressionTests
         var gram = Card("S01-0317", "gram");
         var warrior = Card("ST03-08", "grave-warrior");
         var companion = Card("ST03-01", "grave-companion");
+        Assert.True(L12StructuredCardRules.CanRepresentGraveFactionLegionCount(player, [warrior], "asgard", 1));
+        Assert.True(L12StructuredCardRules.CanRepresentGraveFactionLegionCount(player, [warrior], "asgard", 2));
+        Assert.True(L12StructuredCardRules.CanRepresentGraveFactionLegionCount(player, [warrior], "asgard", 3));
+        Assert.False(L12StructuredCardRules.CanRepresentGraveFactionLegionCount(player, [warrior], "asgard", 4));
         player.Relic = gram;
         player.Graveyard.AddRange([warrior, companion]);
         var opponentHp = game.State.Players[1].Hp;
@@ -813,12 +817,72 @@ public sealed class StarterBatch3BRegressionTests
             new L12Command("activateAbility", gram.InstanceId, Ability: "gramDamage"));
         Assert.True(result.Accepted, result.Error);
         ChooseMany(game, warrior.InstanceId, companion.InstanceId);
+        var representation = Prompt(game);
+        var representationChoice = Assert.Single(representation.ValidChoices, choice =>
+            choice.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("视为3张", representation.ChoiceLabels[representationChoice]);
+        Choose(game, representationChoice);
         PassResponses(game);
 
         Assert.True(gram.Tapped);
         Assert.Equal([warrior.InstanceId, companion.InstanceId],
             player.Library.Select(card => card.InstanceId));
         Assert.Equal(opponentHp - 1, game.State.Players[1].Hp);
+    }
+
+    [Fact]
+    public void OneGraveWarriorAloneMayPaySifsThreeAsgardCardCost()
+    {
+        var game = Create(204221);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST03-M1");
+        var draw = Card("ST01-01", "sif-warrior-draw");
+        var warrior = Card("ST03-08", "sif-warrior-only");
+        player.Library.Add(draw);
+        player.Graveyard.Add(warrior);
+
+        var result = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "sifCycle"));
+        Assert.True(result.Accepted, result.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, prompt.MinChoose);
+        Assert.Equal(1, prompt.MaxChoose);
+        Choose(game, warrior.InstanceId);
+        var representation = Assert.Single(game.State.PendingPrompts);
+        var representationChoice = Assert.Single(representation.ValidChoices, choice =>
+            choice.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("视为3张", representation.ChoiceLabels[representationChoice]);
+        Choose(game, representationChoice);
+        PassResponses(game);
+
+        Assert.Contains(draw, player.Hand);
+        Assert.Equal(warrior.InstanceId, Assert.Single(player.Library).InstanceId);
+        Assert.DoesNotContain(warrior, player.Graveyard);
+    }
+
+    [Fact]
+    public void SifOnlyAsksForGraveWarriorCountWhenThePlayerActuallySelectedIt()
+    {
+        var game = Create(204222);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST03-M1");
+        var normalOne = Card("ST03-01", "sif-normal-one");
+        var normalTwo = Card("ST03-02", "sif-normal-two");
+        var normalThree = Card("ST03-03", "sif-normal-three");
+        var warrior = Card("ST03-08", "sif-unselected-warrior");
+        player.Graveyard.AddRange([normalOne, normalTwo, normalThree, warrior]);
+        player.Library.Add(Card("ST01-01", "sif-normal-draw"));
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "sifCycle")).Accepted);
+        ChooseMany(game, normalTwo.InstanceId, normalOne.InstanceId, normalThree.InstanceId);
+
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt =>
+            prompt.Text.Contains("渴求死亡的勇士", StringComparison.Ordinal));
+        PassResponses(game);
+        Assert.Contains(warrior, player.Graveyard);
+        Assert.Equal([normalTwo.InstanceId, normalOne.InstanceId, normalThree.InstanceId],
+            player.Library.Select(card => card.InstanceId));
     }
 
     [Fact]

@@ -37,7 +37,7 @@ public sealed partial class L12GameEngine
             Text = step.Text,
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = step.MinChoose,
-            MaxChoose = step.Kind == "prospective-grave-card"
+            MaxChoose = step.Kind is "prospective-grave-card" or "grave-faction-count"
                 ? step.MaxChoose
                 : Math.Min(step.MaxChoose, step.ValidChoices.Count),
             CancellationPolicy = step.CancellationPolicy,
@@ -56,6 +56,9 @@ public sealed partial class L12GameEngine
             TargetPlayerIndex = step.TargetPlayerIndex,
             CostThreshold = step.CostThreshold,
             SelectionConstraint = step.SelectionConstraint,
+            FactionConstraint = step.FactionConstraint,
+            RepresentedCount = step.RepresentedCount,
+            LegionCardsOnly = step.LegionCardsOnly,
         }).ToList();
         if (triggerCandidateId is not null && RequiresPrideMasterSurcharge(playerIndex, source))
         {
@@ -81,7 +84,7 @@ public sealed partial class L12GameEngine
         }
         if (steps.Count == 0 || steps.Any(step => step.ValidChoices.Count < step.MinChoose
                 && step.RequiredDeclaredChoice is null
-                && step.Kind != "prospective-grave-card"))
+                && step.Kind is not ("prospective-grave-card" or "grave-faction-count")))
             return CommandResult.Reject("没有足够的合法目标");
         var first = steps[0];
         var activation = new L12PendingActivation
@@ -518,6 +521,37 @@ public sealed partial class L12GameEngine
             }
             promptKind = "grave-card";
         }
+        else if (step.Kind == "grave-faction-count")
+        {
+            var selectedIds = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []) : [];
+            var player = State.Players[activation.Controller];
+            var selectedCards = selectedIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
+                .OfType<L12CardInstance>().ToArray();
+            var choices = L12StructuredCardRules.GraveFactionRepresentationChoices(player, selectedCards,
+                step.FactionConstraint ?? string.Empty, step.RepresentedCount ?? 0, step.LegionCardsOnly);
+            if (choices.Count == 0 && step.RepresentedCount is { } exactCount && selectedCards.All(card =>
+                    L12StructuredCardRules.StarterGraveFactionCopies(player, card,
+                        step.FactionConstraint ?? string.Empty, step.LegionCardsOnly) == 1)
+                && selectedCards.Length == exactCount)
+            {
+                if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+                    activation.DeclaredValues[step.DeclarationKey] = [];
+                activation.CurrentStep++;
+                CreateActivationStepPrompt(activation);
+                return;
+            }
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices.Keys);
+            step.ChoiceLabels.Clear();
+            foreach (var pair in choices) step.ChoiceLabels[pair.Key] = pair.Value;
+            if (step.ValidChoices.Count == 0)
+            {
+                RejectPendingActivation(activation, "所选墓地卡牌无法按玩家指定张数满足发动费用；费用未支付也未入栈");
+                return;
+            }
+            promptKind = "option";
+        }
         else if (step.Kind == "composite-desert-hand")
         {
             var player = State.Players[activation.Controller];
@@ -626,6 +660,11 @@ public sealed partial class L12GameEngine
             promptData["skip"] = "取消整次发动";
         if (!string.IsNullOrWhiteSpace(step.SelectionConstraint))
             promptData["selectionConstraint"] = step.SelectionConstraint;
+        if (!string.IsNullOrWhiteSpace(step.FactionConstraint))
+            promptData["factionConstraint"] = step.FactionConstraint;
+        if (step.RepresentedCount is { } representedCount)
+            promptData["representedCount"] = representedCount.ToString();
+        if (step.LegionCardsOnly) promptData["legionCardsOnly"] = "true";
         if (activation.Ability == "public-trigger-declaration")
         {
             var triggerSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
@@ -968,6 +1007,7 @@ public sealed partial class L12GameEngine
     {
         if (choice is "yes" or "no" or "skip" or "top" or "bottom") return true;
         if (choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)) return true;
+        if (choice.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)) return true;
         if (choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(choice.AsSpan("rune:".Length), out var runeIndex))
             return runeIndex >= 1 && runeIndex <= State.Players[controller].SpecialZones.Runes;

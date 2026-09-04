@@ -95,6 +95,84 @@ public static partial class L12StructuredCardRules
             && cards.All(card => card.CardType == "legion" && HasFaction(owner, card, faction))
             && cards.Sum(card => StarterGraveFactionLegionCopies(owner, card, faction)) >= required;
 
+    internal static int StarterGraveFactionCardCopies(L12PlayerState owner, L12CardInstance card,
+        string faction)
+    {
+        if (!HasFaction(owner, card, faction)) return 0;
+        return card.CardId == "ST03-08" && faction == "asgard" ? 3 : 1;
+    }
+
+    internal static int StarterGraveFactionCopies(L12PlayerState owner, L12CardInstance card,
+        string faction, bool legionOnly)
+        => legionOnly
+            ? StarterGraveFactionLegionCopies(owner, card, faction)
+            : StarterGraveFactionCardCopies(owner, card, faction);
+
+    internal static bool CanPotentiallyRepresentGraveFactionCount(L12PlayerState owner,
+        IReadOnlyCollection<L12CardInstance> cards, string faction, int required, bool legionOnly)
+        => required > 0 && cards.Count is > 0 && cards.Count <= required
+            && cards.All(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 0)
+            && cards.Sum(card => StarterGraveFactionCopies(owner, card, faction, legionOnly)) >= required;
+
+    internal static IReadOnlyDictionary<string, string> GraveFactionRepresentationChoices(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, string faction, int required, bool legionOnly)
+    {
+        if (!CanPotentiallyRepresentGraveFactionCount(owner, cards, faction, required, legionOnly))
+            return new Dictionary<string, string>();
+        var variables = cards.Where(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 1).ToArray();
+        if (variables.Length == 0) return new Dictionary<string, string>();
+        var fixedCount = cards.Count - variables.Length;
+        var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var counts = new int[variables.Length];
+
+        void Build(int index, int total)
+        {
+            if (index == variables.Length)
+            {
+                if (total != required) return;
+                var token = "grave-copies:" + string.Join(',', variables.Select((card, variableIndex) =>
+                    $"{card.InstanceId}={counts[variableIndex]}"));
+                var label = string.Join("；", variables.Select((card, variableIndex) =>
+                    variables.Length == 1
+                        ? $"〈{card.Name}〉本次视为{counts[variableIndex]}张"
+                        : $"第{variableIndex + 1}张〈{card.Name}〉本次视为{counts[variableIndex]}张"));
+                results[token] = label;
+                return;
+            }
+            var maximum = StarterGraveFactionCopies(owner, variables[index], faction, legionOnly);
+            for (var count = 1; count <= maximum; count++)
+            {
+                counts[index] = count;
+                Build(index + 1, total + count);
+            }
+        }
+
+        Build(0, fixedCount);
+        return results;
+    }
+
+    internal static bool IsExactGraveFactionRepresentation(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, string? representation, string faction, int required, bool legionOnly)
+    {
+        if (!CanPotentiallyRepresentGraveFactionCount(owner, cards, faction, required, legionOnly)) return false;
+        var variables = cards.Where(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 1).ToArray();
+        if (variables.Length == 0) return cards.Count == required && string.IsNullOrWhiteSpace(representation);
+        if (string.IsNullOrWhiteSpace(representation)
+            || !representation.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)) return false;
+        var declared = representation["grave-copies:".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Where(parts => parts.Length == 2 && int.TryParse(parts[1], out _))
+            .ToDictionary(parts => parts[0], parts => int.Parse(parts[1]), StringComparer.OrdinalIgnoreCase);
+        if (declared.Count != variables.Length || variables.Any(card => !declared.ContainsKey(card.InstanceId))) return false;
+        return cards.Sum(card => declared.GetValueOrDefault(card.InstanceId, 1)) == required
+            && variables.All(card => declared[card.InstanceId] is >= 1
+                && declared[card.InstanceId] <= StarterGraveFactionCopies(owner, card, faction, legionOnly));
+    }
+
+    internal static bool CanRepresentGraveFactionCardCount(L12PlayerState owner,
+        IReadOnlyCollection<L12CardInstance> cards, string faction, int required)
+        => CanPotentiallyRepresentGraveFactionCount(owner, cards, faction, required, legionOnly: false);
+
     internal static int StarterDisasterTroopsBonus(string? activeDisasterCardId, L12CardInstance card)
         => activeDisasterCardId == "ST-DS02" && card.DisasterLevel > 0 ? 1000 : 0;
 
@@ -135,7 +213,7 @@ public static partial class L12StructuredCardRules
                 Select("选择我方1张阿斯加德军团", "controller.field", "faction=asgard;legion=true"), Troops(2000),
                 new(L12AtomKinds.ModifyTroops, "墓地每3张阿斯加德军团额外+1000", "resolution", new() { ["per"] = "3", ["value"] = "1000" }))],
             "ST03-M1" => [Targeted("active", "我方 回合1次 可将墓地3张【阿斯加德】卡牌自选顺序返回牌库底部：抽取1张牌。",
-                Select("选择并排序墓地3张阿斯加德卡牌", "controller.graveyard", "faction=asgard;count=3"),
+                Select("选择并排序墓地1至3张可合计视为3张的阿斯加德卡牌", "controller.graveyard", "faction=asgard;represented-count=3"),
                 new(L12AtomKinds.MoveZone, "依序返回牌库底部", "cost", new() { ["to"] = "controller.library-bottom" }),
                 new(L12AtomKinds.Draw, "抽取1张牌", "resolution", new() { ["amount"] = "1" }))],
             "ST04-02" =>

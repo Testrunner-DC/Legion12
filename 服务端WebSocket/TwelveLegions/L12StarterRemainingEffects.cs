@@ -84,11 +84,26 @@ public sealed partial class L12GameEngine
             }
             case "sifCycle":
             {
-                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
-                        && CanEnterHandOrLibrary(card)).Select(card => card.InstanceId).ToList();
-                if (grave.Count < 3) return CommandResult.Reject("墓地需要至少3张阿斯加德卡牌");
+                var eligible = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+                        && CanEnterHandOrLibrary(card)).ToArray();
+                if (eligible.Sum(card => L12StructuredCardRules.StarterGraveFactionCardCopies(player, card, "asgard")) < 3)
+                    return CommandResult.Reject("墓地需要至少3张阿斯加德卡牌");
                 return BeginPendingActivationSequence(controller, source, ability,
-                [new L12ActivationSelectionStep { Kind = "order", DeclarationKey = "graveOrder", Text = "西芙：依序选择返回牌库底部的3张阿斯加德卡牌", ValidChoices = grave, MinChoose = 3, MaxChoose = 3 }]);
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "order", DeclarationKey = "graveOrder",
+                        Text = "西芙：依序选择返回牌库底部、合计视为3张的阿斯加德卡牌",
+                        ValidChoices = eligible.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 3,
+                        SelectionConstraint = "grave-faction-exact", FactionConstraint = "asgard", RepresentedCount = 3,
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "grave-faction-count", DeclarationKey = "graveCopies", ReferenceDeclarationKey = "graveOrder",
+                        Text = "西芙：选择〈渴求死亡的勇士〉本次视为几张阿斯加德卡牌",
+                        ValidChoices = [], MinChoose = 1, MaxChoose = 1, FactionConstraint = "asgard", RepresentedCount = 3,
+                    },
+                ]);
             }
             case "athenaFrontBuff":
                 if (player.Hand.Count == 0 || player.Morale.Count == 0)
@@ -185,10 +200,19 @@ public sealed partial class L12GameEngine
                 return null;
             }
             case "sifCycle":
-                return values.Length == 3 && values.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 3
-                    && values.All(id => player.Graveyard.Any(card => card.InstanceId == id
+            {
+                var representation = values.SingleOrDefault(value => value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
+                var cardIds = values.Where(value => !value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+                var selected = cardIds.Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
                         && L12StructuredCardRules.HasFaction(player, card, "asgard") && CanEnterHandOrLibrary(card)))
-                    ? null : "西芙选择的墓地卡牌已失效";
+                    .ToArray();
+                var selectedCards = selected.OfType<L12CardInstance>().ToArray();
+                return selectedCards.Length == cardIds.Length
+                    && L12StructuredCardRules.IsExactGraveFactionRepresentation(player, selectedCards, representation,
+                        "asgard", 3, legionOnly: false)
+                    ? null : "西芙选择的墓地卡牌无法合计视为3张阿斯加德卡牌";
+            }
             case "athenaFrontBuff":
                 if (values.Length is < 2 or > 4 || !player.Hand.Any(card => card.InstanceId == values[0])
                     || !player.Morale.Any(card => card.InstanceId == values[1])) return "雅典娜选择的弃牌费用或士气已失效";
@@ -252,8 +276,11 @@ public sealed partial class L12GameEngine
                 AddEvent("cost", controller, "荷鲁斯消耗1士气并弃置2张我方军团", [source, .. costs]);
                 break;
             case "sifCycle":
-                MoveGraveToLibraryBottom(player, values.Select(id => player.Graveyard.First(card => card.InstanceId == id)));
-                AddEvent("cost", controller, "西芙将墓地3张阿斯加德卡牌依序返回牌库底部", source);
+                var sifCardIds = values.Where(value => !value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+                MoveGraveToLibraryBottom(player, sifCardIds.Select(id => player.Graveyard.First(card => card.InstanceId == id)));
+                var sifRepresentation = values.SingleOrDefault(value => value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
+                var sifRepresentationText = sifRepresentation is null ? string.Empty : "；〈渴求死亡的勇士〉折算张数由玩家选择";
+                AddEvent("cost", controller, $"西芙将墓地{sifCardIds.Length}张实体阿斯加德卡牌依序返回牌库底部，合计视为3张{sifRepresentationText}", source);
                 break;
             case "athenaFrontBuff":
                 var discard = player.Hand.First(card => card.InstanceId == values[0]);

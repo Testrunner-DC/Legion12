@@ -592,8 +592,9 @@ public sealed partial class L12GameEngine
             if (grave.Length < minimum) return "墓地没有足够的【阿斯加德】军团";
         }
         if (ability == "sifCycle"
-            && player.Graveyard.Count(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
-                && CanEnterHandOrLibrary(card)) < 3)
+            && player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card))
+                .Sum(card => L12StructuredCardRules.StarterGraveFactionCardCopies(player, card, "asgard")) < 3)
             return "墓地需要至少3张阿斯加德卡牌";
         if (ability == "magatamaImmortal" && !ownLegions.Any(card => card.LastMovedTurn == State.TurnSerial))
             return "我方没有本回合位移过的军团";

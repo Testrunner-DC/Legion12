@@ -540,6 +540,12 @@ public sealed class L12ActivationSelectionStep
     public string? RequiredDeclaredChoice { get; init; }
     /// <summary>公共多选的跨项约束；由统一 Prompt 校验层在移除 Prompt 前拒绝非法组合。</summary>
     public string? SelectionConstraint { get; init; }
+    /// <summary>墓地数量替代类选择所要求的阵营；与具体卡号解耦。</summary>
+    public string? FactionConstraint { get; init; }
+    /// <summary>墓地数量替代类选择最终需要精确代表的张数。</summary>
+    public int? RepresentedCount { get; init; }
+    /// <summary>墓地数量替代类选择是否只接受军团。</summary>
+    public bool LegionCardsOnly { get; init; }
 }
 
 public sealed class L12TriggerCandidate
