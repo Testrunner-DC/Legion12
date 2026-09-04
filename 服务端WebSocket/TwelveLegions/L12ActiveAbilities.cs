@@ -141,6 +141,17 @@ public sealed partial class L12GameEngine
         var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
         switch ((source.CardId, ability))
         {
+            case ("S01-02C1", "sunDraw") when player.Hand.Count > 3:
+                return "我方手牌需不高于3张";
+            case ("S01-0317", "gramReady") when !source.Tapped:
+                return "神剑格拉墨需为休整";
+            case ("S01-0003", "extendedRange")
+                when FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1:
+                return "该效果只能在后排发动";
+            case ("S01-02D1", "sunBottomEnemy")
+                when DeclaredEnemyTarget(playerIndex, target,
+                    card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is null:
+                return "目标不再合法";
             case ("S01-01M2", "mengpoMorale"):
                 if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count
                     || declared.Length != 1 || !player.Hand.Any(card => card.InstanceId == declared[0]))

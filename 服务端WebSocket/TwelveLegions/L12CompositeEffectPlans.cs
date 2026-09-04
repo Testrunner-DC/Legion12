@@ -752,19 +752,29 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0621":
+            {
+                var roundTableTargets = PublicLegions(player)
+                    .Where(card => card.HasTrait("圆桌骑士"))
+                    .Select(card => card.InstanceId)
+                    .ToArray();
+                var roundTablePayments = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var roundTableModes = roundTableTargets.Length > 0 && roundTablePayments.Length > 0
+                    ? new[] { "mode:none", "mode:buff" }
+                    : ["mode:none"];
                 steps.Add(CompositeStep("option", "mode", "圆桌领域：选择是否消耗1士气使军团本回合兵力+2000",
-                    ["mode:none", "mode:buff"], 1, 1,
+                    roundTableModes, 1, 1,
                     new()
                     {
                         ["mode:none"] = "查看牌库，选择1张【圆桌骑士】军团展示并加入手牌，随后重洗牌库",
                         ["mode:buff"] = "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
                     }));
                 steps.Add(CompositeStep("field-legion", "buffTarget", "圆桌领域：选择本回合兵力+2000的【圆桌骑士】军团",
-                    PublicLegions(player).Where(card => card.HasTrait("圆桌骑士")).Select(card => card.InstanceId), 1,
+                    roundTableTargets, 1,
                     requiredChoice: "mode:buff"));
                 steps.Add(CompositeStep("composite-ordinary-payment", "buffCost", "圆桌领域：预先选择支付的1份资源",
-                    CompositeOrdinaryPaymentChoices(player), 1, requiredChoice: "mode:buff"));
+                    roundTablePayments, 1, requiredChoice: "mode:buff"));
                 break;
+            }
 
             case "S02-0207":
                 steps.Add(CompositeStep("field-legion", "discardTargets", "沙漠君临：预先选择最多3张要弃置的我方军团",

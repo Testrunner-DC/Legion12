@@ -23,6 +23,7 @@ const rankings = read('../src/l12/site/RankingsPage.vue')
 const rankedTicker = read('../src/l12/site/RankedBroadcastTicker.vue')
 const rankedPlayback = read('../src/l12/site/rankedBroadcastPlayback.ts')
 const adminOperations = read('../src/l12/site/AdminOperationsPanel.vue')
+const disasterPoolPicker = read('../src/l12/site/DisasterPoolPicker.vue')
 const savedDeckSelector = read('../src/l12/SavedDeckSelector.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
 const gamePage = read('../src/l12/GamePage.vue')
@@ -181,6 +182,15 @@ const contracts = [
   [lobby.includes('joinMatchmaking') && lobby.includes('七曜值') && lobby.includes('选择本赛季派系') && l12Net.includes("type: 'joinMatchmaking'") && l12Net.includes("type: 'pollMatchmaking'") && l12Net.includes("message.type === 'matchmakingRejected'") && l12Net.includes('startMatchmakingPolling()'), '公开匹配必须使用服务端权威队列、保留等待扩圈轮询并清理拒绝状态，在排位前选择赛季派系'],
   [lobby.includes('data-ui-contract="faction-totals-above-public-match"') && lobby.indexOf('data-ui-contract="faction-totals-above-public-match"') < lobby.indexOf('<section v-if="tab === \'match\'" class="mode-panel panel">'), '三派系七曜总量必须位于顶部模式标签之后、公开匹配面板之前，不能埋在公开匹配内容框内'],
   [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
+  [disasterPoolPicker.includes('data-ui-contract="landscape-disaster-pool-picker"')
+    && disasterPoolPicker.includes('class="pool-card-art"')
+    && disasterPoolPicker.includes('intent="detail" fit="contain"')
+    && disasterPoolPicker.includes('.pool-card-art{display:block;width:100%;aspect-ratio:8/5;overflow:hidden')
+    && disasterPoolPicker.includes('class="pool-card-copy"')
+    && disasterPoolPicker.includes('.pool-card-copy b,.pool-card-copy small{position:static')
+    && !disasterPoolPicker.includes('intent="thumb"')
+    && adminOperations.includes('<DisasterPoolPicker v-model="form.disasterPool.cardIds"')
+    && tournamentCenter.includes('<DisasterPoolPicker v-model="form.disasterCardIds"'), '赛季与赛事天灾池必须复用公共选择器，以不旋转、不裁切的8:5横版完整卡图展示，并将卡名和卡号置于卡图外的独立信息区'],
   [lobby.includes('class="ranked-rules-button"') && lobby.includes('>排位规则</button>') && lobby.includes('rankedRulesOpen') && lobby.includes('七曜值') && lobby.includes('段位与称号') && lobby.includes('时间限制') && lobby.includes('本赛季天灾') && lobby.includes('本赛季禁限卡'), '大厅排位区必须提供排位规则按钮，并集中说明七曜、称号段位、时限和赛季天灾/禁限卡'],
   [board.includes("choiceMode === 'mixed-board-payment'") && board.includes("? '确认费用' : '确认发动'") && board.includes('lockedChoices'), '混合场面费用必须在同一场面直选条选择，唯一资源自动锁定且与弃置对象一并确认'],
   [rankedTicker.includes('@animationend="complete"') && rankedTicker.includes('animation:ranked-message-once 16s linear 1 both') && rankedPlayback.includes('claimNextRankedBroadcast') && rankedPlayback.includes('completeCurrentRankedBroadcast') && rankedPlayback.includes('accountId'), '排位广播必须按账号领取，完整播放一次后确认，不得在页面内循环重播同一消息'],

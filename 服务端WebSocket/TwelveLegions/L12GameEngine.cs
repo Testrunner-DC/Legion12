@@ -419,6 +419,16 @@ public sealed partial class L12GameEngine
     private List<L12AbilityView> BuildAbilityViews(L12PlayerState player, string cardId, string sourceInstanceId)
     {
         var views = GetAbilities(cardId);
+        var availabilitySource = FindOnField(player, sourceInstanceId, out _, out _)
+            ?? (player.Relic?.InstanceId == sourceInstanceId ? player.Relic : null)
+            ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == sourceInstanceId)
+            ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == sourceInstanceId)
+            ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == sourceInstanceId)
+            ?? (sourceInstanceId == $"master-{player.PlayerIndex}" || sourceInstanceId == player.MasterId
+                ? CreateCard(player.MasterId, $"master-{player.PlayerIndex}") : null)
+            ?? (sourceInstanceId == $"faction-{player.PlayerIndex}" ? CreateCard(cardId, sourceInstanceId) : null);
+        if (availabilitySource is not null && availabilitySource.CardType == "master")
+            availabilitySource.Tapped = player.MasterTapped;
         if (_catalog.Cards.GetValueOrDefault(cardId) is { CardType: "legion", TrialValue: > 0 } definition
             && views.All(view => view.Id != "trialAdvance"))
         {
@@ -457,8 +467,9 @@ public sealed partial class L12GameEngine
             if (!L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
                 && player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
-            if (view.Id == "sunDraw" && player.Hand.Count > 3)
-                return view with { Enabled = false, DisabledReason = "我方手牌需不高于3张" };
+            if (availabilitySource is not null
+                && ActiveAbilityUnavailableReason(player, availabilitySource, view.Id) is { } availabilityReason)
+                return view with { Enabled = false, DisabledReason = availabilityReason };
             if (view.Id == "factionZeroRecovery")
                 return view with { Enabled = false, DisabledReason = "我方士气为0张时触发", TriggerOnly = true };
             if (view.Id == "godPowerDraw" && !player.Morale.Any(card => card.IsGodPower && !card.Tapped))
@@ -487,6 +498,123 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = $"需要{cost}张活跃士气" };
             return view;
         }).ToList();
+    }
+
+    /// <summary>
+    /// 主动效果按钮与权威发动入口共用同一场面事实。这里不支付费用、不建立 Prompt，
+    /// 只回答“当前是否存在一条可能完成的合法发动路径”，避免玩家点击一个看似可用的
+    /// 按钮后才得到“没有目标/状态不符”的拒绝。
+    /// </summary>
+    private string? ActiveAbilityUnavailableReason(L12PlayerState player, L12CardInstance source, string ability)
+    {
+        var enemy = State.Players[1 - player.PlayerIndex];
+        var emptySlotExists = EmptySlots(player).Any();
+        var ownLegions = PublicLegions(player).ToArray();
+
+        if (ability == "sunDraw" && player.Hand.Count > 3)
+            return "我方手牌需不高于3张";
+        if (ability == "extendedRange" && L12StructuredCardSemantics.HasBackRowExtendedRangeActive(source.CardId)
+            && (FindOnField(player, source.InstanceId, out var rangeRow, out _) is null || rangeRow != 1))
+            return "该效果只能在后排发动";
+        if (ability == "gramReady" && L12StructuredCardSemantics.IsGram(source.CardId) && !source.Tapped)
+            return "神剑格拉墨需为休整";
+        if (ability == "revealHidden" && L12StructuredCardSemantics.IsHattoriHanzo(source.CardId) && !source.Hidden)
+            return "服部半藏当前已经为正面";
+        if (ability == "kusanagi" && !L12StructuredCardSemantics.IsKusanagi(player.Relic?.CardId))
+            return "圣物区没有〈草薙剑〉";
+        if (ability == "thorCharge" && player.Hp > 3)
+            return "我方主宰血量需要不高于3";
+        if (ability == "completeTrial" && source.CardType == "trial"
+            && (source.TrialCompleted || source.TrialProgress < 8))
+            return "试炼进度达到8后才可完成试炼";
+        if (source.CardType == "trial"
+            && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover"
+            && !source.TrialCompleted)
+            return "该试炼尚未完成";
+        if (ability == "palaceReward" && player.ReturnedMoraleThisTurn <= 1)
+            return "本回合返还士气需高于1张";
+        if (ability == "mengpoMorale"
+            && (player.Morale.Count >= enemy.Morale.Count || player.Hand.Count == 0))
+            return "士气需少于对方，且需弃置1张手牌";
+        if (ability == "shennongReset")
+        {
+            var hasUsedMasterAbility = GetAbilities(player.MasterId)
+                .Any(view => player.UsedAbilities.Contains($"active:master-{player.PlayerIndex}:{view.Id}"));
+            if (!hasUsedMasterAbility) return "我方主宰没有已使用的效果次数";
+        }
+        if (ability == "sunGuard" || ability == "cleopatraGuard")
+        {
+            if (!player.Graveyard.Any(card => L12StructuredCardSemantics.IsTombGuard(card.CardId)) || !emptySlotExists)
+                return "墓地需要1张陵墓守卫且战场需要空位";
+        }
+        if (ability == "ankhReady"
+            && !ownLegions.Any(card => L12StructuredCardSemantics.IsTombGuard(card.CardId) && card.Tapped))
+            return "需要我方存在休整的陵墓守卫";
+        if (ability == "ankhDraw"
+            && !ownLegions.Any(card => L12StructuredCardSemantics.IsTombGuard(card.CardId) && !card.Tapped))
+            return "需要我方存在活跃的陵墓守卫";
+        if (ability == "scarabSummon"
+            && (!player.Graveyard.Any(card => L12StructuredCardSemantics.IsProliferatingScarab(card.CardId)) || !emptySlotExists))
+            return "墓地没有可登场的〈增殖的甲虫〉或没有空位";
+        if (ability == "alvidaSummon"
+            && (!player.Hand.Any(card => card.CardType == "legion" && card.DisasterLevel == 2) || !emptySlotExists))
+            return "手牌需要1张天灾等级2的军团且战场需要空位";
+        if (ability == "isisCanopic")
+        {
+            if (ownLegions.Count(card => L12StructuredCardSemantics.IsTombGuard(card.CardId)) < 3)
+                return "战场需要3张陵墓守卫";
+            var completed = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!player.Graveyard.Any(card => card.CardType == "artifact"
+                    && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && !completed.Contains(card.CardId)))
+                return "墓地没有可置入圣物区的卡诺匹斯圣物";
+        }
+        if (ability == "gramDamage")
+        {
+            var grave = player.Graveyard.Where(card => card.CardType == "legion"
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
+            var minimum = grave.Any(card => L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard") >= 3)
+                ? 2 : 4;
+            if (grave.Length < minimum) return "墓地没有足够的【阿斯加德】军团";
+        }
+        if (ability == "sifCycle"
+            && player.Graveyard.Count(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+                && CanEnterHandOrLibrary(card)) < 3)
+            return "墓地需要至少3张阿斯加德卡牌";
+        if (ability == "magatamaImmortal" && !ownLegions.Any(card => card.LastMovedTurn == State.TurnSerial))
+            return "我方没有本回合位移过的军团";
+        if (ability == "forgeReadyOnKill" && !ownLegions.Any(card =>
+                L12StructuredCardRules.HasFaction(player, card, "olympus") && !card.HasTrait("晋升者")))
+            return "我方战场没有【晋升者】以外的【奥林匹斯】军团";
+        if (ability == "morriganReadyOnKill" && !ownLegions.Any(card =>
+                L12StructuredCardRules.HasFaction(player, card, "otherworld")))
+            return "我方战场没有可选择的【彼界】军团";
+        if (ability == "artemisBuff")
+        {
+            if (!ownLegions.Any(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
+                    && card.CurrentCost is >= 3 and <= 6))
+                return "没有费用3至6的【奥林匹斯】军团";
+            if (!player.Morale.Any(card => card.IsGodPower && !card.Tapped) && player.Hand.Count == 0)
+                return "没有可支付的神力或手牌";
+        }
+        if (ability == "hippolytaRevive"
+            && (player.Hand.Count == 0 || !emptySlotExists
+                || !player.Graveyard.Any(card => card.CardType == "legion" && card.CurrentCost <= 4
+                    && L12StructuredCardRules.HasFaction(player, card, "olympus"))))
+            return "需要手牌、墓地中费用不高于4的【奥林匹斯】军团和空战场位置";
+        if (ability == "horusRevive")
+        {
+            var field = ownLegions;
+            var graveTarget = player.Graveyard.Any(card => card.CardType == "legion" && card.BaseTroops <= 2000
+                && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
+            var prospectiveTarget = graveTarget || field.Any(card => card.BaseTroops <= 2000
+                && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
+            var visibleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
+            var resources = player.Morale.Count(card => !card.Tapped) + ActiveTombGuardResources(player).Count();
+            if (field.Length < 2 || resources < visibleCost || !prospectiveTarget)
+                return $"需要{visibleCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场";
+        }
+        return null;
     }
 
     private L12CardInstance[] SnapshotGraveyard(L12PlayerState player)

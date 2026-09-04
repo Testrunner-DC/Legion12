@@ -287,6 +287,9 @@ public sealed class Bq20260903_01RegressionTests
         var scarab = Card("S02-0205", "scarab-mixed-usage-semantics");
         scarab.OwnerIndex = 0;
         player.Field[0][0] = scarab;
+        var summonTarget = Card("S02-0201", "scarab-mixed-usage-target");
+        summonTarget.OwnerIndex = 0;
+        player.Graveyard.Add(summonTarget);
         player.UsedAbilities.Add($"active:{scarab.InstanceId}:scarabSummon");
         player.UsedAbilities.Add($"active:{scarab.InstanceId}:scarabDebuff");
 
