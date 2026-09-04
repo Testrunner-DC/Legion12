@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "sourceWorkbookSha256": "611bd7f1d93423d9ff35fd3d07b766cebcd680fc54454ac7c44751b47fa55d90",
+  "cards": [
+    {
+      "id": "S01-0101b",
+      "baseCardId": "S01-0101",
+      "product": "ST01",
+      "products": [
+        "ST01|天廷阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0101b-吕布（牛牛N）.png"
+    },
+    {
+      "id": "S01-0104a",
+      "baseCardId": "S01-0104",
+      "product": "ST01",
+      "products": [
+        "ST01|天廷阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0104a-韩信（kuku N）.png"
+    },
+    {
+      "id": "S01-0117a",
+      "baseCardId": "S01-0117",
+      "product": "ST01",
+      "products": [
+        "ST01|天廷阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0117a-山河社稷图 噗嗤N.png"
+    },
+    {
+      "id": "S01-0118a",
+      "baseCardId": "S01-0118",
+      "product": "ST01",
+      "products": [
+        "ST01|天廷阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0118a-神妙行军 （噗嗤N）.png"
+    },
+    {
+      "id": "S01-01C1A",
+      "baseCardId": "S01-01C1",
+      "product": "S01",
+      "products": [
+        "第1季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-01C1.png",
+      "sourceKind": "retained-current"
+    },
+    {
+      "id": "S01-0208a",
+      "baseCardId": "S01-0208",
+      "product": "ST02",
+      "products": [
+        "ST02|太阳城阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0208a-阿伊（橘子N）.png"
+    },
+    {
+      "id": "S01-0210a",
+      "baseCardId": "S01-0210",
+      "product": "ST02",
+      "products": [
+        "ST02|太阳城阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0210a-尼托克丽丝（奶瓶N）.png"
+    },
+    {
+      "id": "S01-0212d",
+      "baseCardId": "S01-0212",
+      "product": "ST02",
+      "products": [
+        "ST02|太阳城阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0212d-陵墓守卫（超超N）.png"
+    },
+    {
+      "id": "S01-0214b",
+      "baseCardId": "S01-0214",
+      "product": "ST02",
+      "products": [
+        "ST02|太阳城阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0214b-克利奥帕特拉七世（奶瓶N）.png"
+    },
+    {
+      "id": "S01-0215a",
+      "baseCardId": "S01-0215",
+      "product": "ST02",
+      "products": [
+        "ST02|太阳城阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0215a-安卡神碑（超N）.png"
+    },
+    {
+      "id": "S01-02C1A",
+      "baseCardId": "S01-02C1",
+      "product": "S01",
+      "products": [
+        "第1季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-02C1.png",
+      "sourceKind": "retained-current"
+    },
+    {
+      "id": "S01-0303b",
+      "baseCardId": "S01-0303",
+      "product": "ST03",
+      "products": [
+        "ST03|阿斯加德阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0303b-传奇的拉格纳（kuku N）.png"
+    },
+    {
+      "id": "S01-0316a",
+      "baseCardId": "S01-0316",
+      "product": "ST03",
+      "products": [
+        "ST03|阿斯加德阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0316a-夺命诗人埃吉尔（weird）N.png"
+    },
+    {
+      "id": "S01-0319a",
+      "baseCardId": "S01-0319",
+      "product": "ST03",
+      "products": [
+        "ST03|阿斯加德阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0319a-猎杀时刻（kuku）N.png"
+    },
+    {
+      "id": "S01-03C1A",
+      "baseCardId": "S01-03C1",
+      "product": "S01",
+      "products": [
+        "第1季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-03C1.png",
+      "sourceKind": "retained-current"
+    },
+    {
+      "id": "S01-0404a",
+      "baseCardId": "S01-0404",
+      "product": "ST04",
+      "products": [
+        "ST04|高天原阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0404a-真田幸村（kuku N）.png"
+    },
+    {
+      "id": "S01-0417a",
+      "baseCardId": "S01-0417",
+      "product": "ST04",
+      "products": [
+        "ST04|高天原阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0417a-草雉剑 （噗嗤N）.png"
+    },
+    {
+      "id": "S01-0418a",
+      "baseCardId": "S01-0418",
+      "product": "ST04",
+      "products": [
+        "ST04|高天原阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S01-0418a-天诛 噗嗤N.png"
+    },
+    {
+      "id": "S01-04C1A",
+      "baseCardId": "S01-04C1",
+      "product": "S01",
+      "products": [
+        "第1季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-04C1.png",
+      "sourceKind": "retained-current"
+    },
+    {
+      "id": "S02-0302b",
+      "baseCardId": "S02-0302",
+      "product": "ST03",
+      "products": [
+        "ST03|阿斯加德阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0302b-步行者罗洛（KAIDO N）.png"
+    },
+    {
+      "id": "S02-0401a",
+      "baseCardId": "S02-0401",
+      "product": "ST04",
+      "products": [
+        "ST04|高天原阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0401a-武田信玄（KAIDO N）.png"
+    },
+    {
+      "id": "S02-0501c",
+      "baseCardId": "S02-0501",
+      "product": "ST05",
+      "products": [
+        "ST05|奥林匹斯阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0501c-赫拉克勒斯·晋升（backword N）.png"
+    },
+    {
+      "id": "S02-0502b",
+      "baseCardId": "S02-0502",
+      "product": "ST05",
+      "products": [
+        "ST05|奥林匹斯阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0502b-赫拉克勒斯（凯多N）.png"
+    },
+    {
+      "id": "S02-0512a",
+      "baseCardId": "S02-0512",
+      "product": "ST05",
+      "products": [
+        "ST05|奥林匹斯阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0512a-埃涅阿斯（KAIDO N）.png"
+    },
+    {
+      "id": "S02-0520a",
+      "baseCardId": "S02-0520",
+      "product": "ST05",
+      "products": [
+        "ST05|奥林匹斯阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0520a-匠神锻造炉那库拉N.png"
+    },
+    {
+      "id": "S02-0602a",
+      "baseCardId": "S02-0602",
+      "product": "ST06",
+      "products": [
+        "ST06|彼界阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0602a-兰斯洛特（望泽N）.png"
+    },
+    {
+      "id": "S02-0618b",
+      "baseCardId": "S02-0618",
+      "product": "ST06",
+      "products": [
+        "ST06|彼界阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0618b-伊丽莎白·都铎（凯多 N）.png"
+    },
+    {
+      "id": "S02-0619a",
+      "baseCardId": "S02-0619",
+      "product": "ST06",
+      "products": [
+        "ST06|彼界阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0619a-克劳迪娅 橘子N.png"
+    },
+    {
+      "id": "S02-0622a",
+      "baseCardId": "S02-0622",
+      "product": "ST06",
+      "products": [
+        "ST06|彼界阵营预组"
+      ],
+      "rarity": "N",
+      "sourceArchiveName": "S02-0622a-槲寄生符咒（噗嗤 N）.png"
+    }
+  ]
+}

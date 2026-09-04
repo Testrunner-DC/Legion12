@@ -15,11 +15,12 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
     $ProjectRoot = Split-Path -Parent (Split-Path -Parent $scriptDirectory)
 }
 $frontend = Join-Path $ProjectRoot 'opcgpro-vue'
-$catalogRoot = (Get-ChildItem -LiteralPath $ProjectRoot -Recurse -Filter 'cards.s1.json' -File |
-    Where-Object { $_.DirectoryName -like '*TwelveLegions*Data' } |
-    Select-Object -First 1).DirectoryName
-if ([string]::IsNullOrWhiteSpace($catalogRoot)) { throw '找不到 L12 权威卡牌目录。' }
+$catalogRoot = Join-Path $ProjectRoot '服务端WebSocket\TwelveLegions\Data'
+if (-not (Test-Path -LiteralPath (Join-Path $catalogRoot 'cards.s1.json') -PathType Leaf)) {
+    throw "找不到 L12 权威卡牌目录：$catalogRoot"
+}
 $catalogFiles = (@((Join-Path $catalogRoot 'cards.s1.json'), (Join-Path $catalogRoot 'cards.s2.json'), (Join-Path $catalogRoot 'cards.st.json')) -join ';')
+$presentationCatalog = Join-Path $catalogRoot 'card-archive-assets.json'
 
 if ($SourceDirectory.StartsWith('C:\', [System.StringComparison]::OrdinalIgnoreCase) -or
     $OutputDirectory.StartsWith('C:\', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -30,7 +31,8 @@ Push-Location $frontend
 try {
     $arguments = @(
         '.\scripts\build-l12-card-cdn.mjs', '--source', $SourceDirectory, '--output', $OutputDirectory,
-        '--catalog-version', $CatalogVersion, '--base-url', $BaseUrl, '--catalog-files', $catalogFiles
+        '--catalog-version', $CatalogVersion, '--base-url', $BaseUrl, '--catalog-files', $catalogFiles,
+        '--presentation-catalog', $presentationCatalog
     )
     if ($CardIds.Count -gt 0) { $arguments += @('--card-ids', ($CardIds -join ';')) }
     & node @arguments

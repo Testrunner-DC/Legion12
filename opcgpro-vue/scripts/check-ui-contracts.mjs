@@ -104,9 +104,11 @@ const contracts = [
     && moraleIdentities.find(identity => identity.faction === 'otherworld')?.canonicalCardId === 'S02-06C1'
     && decks.includes('morale-identities.json') && decks.includes('canonicalMoraleCardId')
     && cardArchive.includes('loadCardArchiveCatalog') && sandboxPicker.includes('loadDeckCatalog'), '所有页面与运行时必须共用权威阵营士气身份，ST版本不得抢占基准，奥林匹斯普通士气与神力反面必须保持分离'],
-  [decks.includes('export async function loadCardArchiveCatalog()') && decks.includes("card.cardNo?.startsWith('S01-')")
+  [decks.includes('export async function loadCardArchiveCatalog()') && decks.includes('productInclusionsByCardId.has(card.cardNo)')
+    && decks.includes('cardArchiveAssets.forEach') && decks.includes("if (card.id === 'S02-05C1') return 'S02-05C1(B)'")
     && cardArchive.includes('groupArchiveCards(cards.value)') && cardArchive.includes('entry.versions.some(card =>')
-    && cardArchive.includes('/ {{ logicalCards.length }} 张') && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌档案必须载入展示用异画、按任一版本搜索筛选，并按逻辑卡而不是物理版本计数'],
+    && cardArchive.includes('selectedProducts') && cardArchive.includes('收录产品')
+    && cardArchive.includes('/ {{ logicalCards.length }} 张') && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌档案必须按权威收录产品载入展示用异画、区分奥林匹斯士气与神力编号、按任一版本搜索筛选，并按逻辑卡而不是物理版本计数'],
   [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('productRank(a.product)')
     && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
     && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须稳定按最早产品、最低已知罕贵度及卡号排序，缺失罕贵度须有确定顺序'],
@@ -290,7 +292,7 @@ const contracts = [
     && !deckEditor.includes('activeRestrictions') && !deckLibrary.includes('activeRestrictions')
     && decks.includes('rule.masterId === masterId') && decks.includes('rule.masterId === deck.masterId'),
   '通用牌库编辑、保存、导入与公开不得全局应用运营禁限卡；显式规则作用域仍保留主宰专属解析能力'],
-  [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部卡池</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部卡池</option><option v-for="value in products"'), '卡牌档案与沙盒选择器必须从完整目录动态列出产品，不得回退为旧双卡池硬编码'],
+  [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部产品</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部卡池</option><option v-for="value in products"'), '卡牌档案必须按权威收录产品筛选，沙盒选择器仍从完整可玩目录动态列出卡池，不得回退为旧双卡池硬编码'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
   [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckLibrary.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],

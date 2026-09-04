@@ -2,11 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
-import { loadCardArchiveCatalog, loadOfficialPresetDecks, type DeckCard, type OfficialL12PresetDeck } from './decks'
+import { cardArchiveProducts, displayCardNumber, loadCardArchiveCatalog, type DeckCard } from './decks'
 import CardImage from './CardImage.vue'
 
 type CatalogCard = DeckCard
-type PresetDeck = OfficialL12PresetDeck
 
 const typeLabels: Record<string, string> = {
   legion: '军团', tactic: '战术', rune: '士气卡', artifact: '圣物',
@@ -19,7 +18,6 @@ const factionLabels: Record<string, string> = {
   olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
 }
 const cards = ref<CatalogCard[]>([])
-const decks = ref<PresetDeck[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const query = ref('')
@@ -32,11 +30,11 @@ const sort = ref<'number' | 'cost' | 'troops' | 'name'>('number')
 const selectedLogicalId = ref('')
 const selectedVersionId = ref('')
 const logicalCards = computed(() => groupArchiveCards(cards.value))
-const productOptions = computed(() => [...new Set(cards.value.map(card => card.product))].sort())
+const productOptions = computed(() => cardArchiveProducts.filter(value => cards.value.some(card => card.products?.includes(value))))
 
 onMounted(async () => {
   try {
-    ;[cards.value, decks.value] = await Promise.all([loadCardArchiveCatalog(), loadOfficialPresetDecks()])
+    cards.value = await loadCardArchiveCatalog()
     const first = logicalCards.value[0]
     if (first) selectLogical(first)
   } catch (error) {
@@ -49,12 +47,12 @@ onMounted(async () => {
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   const result = logicalCards.value.filter(entry => entry.versions.some(card => {
-    const matchesQuery = !keyword || [card.nameZh, card.number, card.product, card.rarity, card.effect, card.profession, ...(card.traits ?? [])]
+    const matchesQuery = !keyword || [card.nameZh, displayCardNumber(card), ...(card.products ?? []), card.rarity, card.effect, card.profession, ...(card.traits ?? [])]
       .some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword))
     return matchesQuery
       && (type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value)
       && (faction.value === 'all' || card.faction === faction.value)
-      && (product.value === 'all' || card.product === product.value)
+      && (product.value === 'all' || card.products?.includes(product.value))
       && (cost.value === 'all' || (hasCostDimension(card)
         && (cost.value === '7+' ? card.cost! >= 7 : card.cost === Number(cost.value))))
       && (disaster.value === 'all'
@@ -80,16 +78,7 @@ const selected = computed(() => selectedLogical.value?.versions.find(card => car
 const selectedVersionIndex = computed(() => selectedLogical.value && selected.value
   ? selectedLogical.value.versions.findIndex(card => card.id === selected.value?.id)
   : -1)
-const selectedDecks = computed(() => {
-  if (!selected.value) return []
-  const selectedId = selected.value.id
-  return decks.value.map(deck => ({
-    name: deck.name,
-    copies: deck.cardIds.filter(id => id === selectedId).length
-      + deck.moraleIds.filter(id => id === selectedId).length
-      + (deck.masterId === selectedId ? 1 : 0),
-  })).filter(deck => deck.copies > 0)
-})
+const selectedProducts = computed(() => selected.value?.products ?? [])
 
 function hasCostDimension(card: CatalogCard) {
   return card.cardType !== 'master' && card.cost !== undefined
@@ -118,7 +107,7 @@ function resetFilters() {
   <section class="card-archive grand-panel">
     <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
     <header class="archive-header">
-      <div><p class="kicker">CARD ARCHIVE · SEASON 1–2</p><h1>卡牌档案</h1></div>
+      <div><p class="kicker">CARD ARCHIVE · ALL PRODUCTS</p><h1>卡牌档案</h1></div>
       <div class="archive-count"><b>{{ filtered.length }}</b><span>/ {{ logicalCards.length }} 张</span></div>
     </header>
 
@@ -126,7 +115,7 @@ function resetFilters() {
       <label class="archive-search"><span>搜索</span><input v-model="query" type="search" placeholder="卡名、编号或效果文字"/></label>
       <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
       <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
-      <label><span>卡池</span><select v-model="product"><option value="all">全部卡池</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
+      <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
       <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
       <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
       <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
@@ -146,7 +135,7 @@ function resetFilters() {
             <b v-if="entry.defaultVersion.troops" class="archive-troops">{{ entry.defaultVersion.troops }}</b>
             <b v-if="entry.versions.length > 1" class="archive-version-count">{{ entry.versions.length }}</b>
           </div>
-          <span>{{ entry.defaultVersion.nameZh }}</span><small>{{ entry.defaultVersion.number }} · {{ cardTypeLabel(entry.defaultVersion.cardType) }}</small>
+          <span>{{ entry.defaultVersion.nameZh }}</span><small>{{ displayCardNumber(entry.defaultVersion) }} · {{ cardTypeLabel(entry.defaultVersion.cardType) }}</small>
         </button>
         <div v-if="!filtered.length" class="archive-empty">没有符合条件的卡牌。</div>
       </div>
@@ -160,7 +149,7 @@ function resetFilters() {
             <span class="archive-version-position">{{ selectedVersionIndex + 1 }} / {{ selectedLogical.versions.length }}</span>
           </template>
         </div>
-        <p class="archive-number">{{ selected.number }} · {{ selected.product }}</p>
+        <p class="archive-number">{{ displayCardNumber(selected) }} · {{ selected.product }}</p>
         <h2>{{ selected.nameZh }}</h2>
         <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span><span v-if="selected.rarity">{{ selected.rarity }}</span></div>
         <dl>
@@ -171,7 +160,7 @@ function resetFilters() {
           <template v-if="selected.trialValue !== undefined"><dt>试炼值</dt><dd>{{ selected.trialValue }}</dd></template>
         </dl>
         <section class="archive-effect"><b>效果</b><p class="l12-effect-body">{{ selected.effect || '无效果文字' }}</p></section>
-        <section v-if="selectedDecks.length" class="archive-decks"><b>收录预组</b><p v-for="deck in selectedDecks" :key="deck.name">{{ deck.name }} × {{ deck.copies }}</p></section>
+        <section v-if="selectedProducts.length" class="archive-decks"><b>收录产品</b><p v-for="name in selectedProducts" :key="name">{{ name }}</p></section>
       </aside>
     </div>
   </section>

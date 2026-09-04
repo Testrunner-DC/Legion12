@@ -78,13 +78,13 @@ const requiredVariants = {
   detailAvif: 'detail-960.avif',
 }
 
-if (manifest.schemaVersion !== 2 || manifest.complete !== true || manifest.cardCount !== 324) fail('manifest 必须是完整 schema v2 且包含 324 张卡')
+if (manifest.schemaVersion !== 3 || manifest.complete !== true || manifest.cardCount !== 353 || manifest.playableCardCount !== 324 || manifest.presentationCardCount !== 29) fail('manifest 必须是完整 schema v3 且包含 324 张可玩卡和 29 张展示版本')
 if (manifest.assetVersion !== expectedHash || !/^[0-9a-f]{64}$/.test(expectedHash)) fail('manifest 资产版本不匹配')
 if (!/^[A-Za-z0-9._-]+$/.test(manifest.catalogVersion)) fail('目录版本包含不安全字符')
 if (manifest.basePath !== '/card-assets' || manifest.missing?.length !== 0) fail('manifest 基础路径或缺失列表无效')
 const cards = manifest.cards && typeof manifest.cards === 'object' ? manifest.cards : {}
 const entries = Object.entries(cards)
-if (entries.length !== 324 || new Set(entries.map(([id]) => id)).size !== 324) fail('manifest 卡号不是 324 个唯一值')
+if (entries.length !== 353 || new Set(entries.map(([id]) => id)).size !== 353) fail('manifest 卡号不是 353 个唯一值')
 
 let totalBytes = 0
 const versionRows = []
@@ -387,7 +387,7 @@ log "验证公网 WebSocket 建连与无状态部署协议"
 timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}/ws"
 
 if [[ "$card_assets_hash" != "-" ]]; then
-  public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>{const manifest=JSON.parse(body);if(manifest.schemaVersion!==2||manifest.cardCount!==324||!manifest.cards?.['ST01-01'])process.exit(2);process.stdout.write(manifest.assetVersion||'')})")"
+  public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>{const manifest=JSON.parse(body);if(manifest.schemaVersion!==3||manifest.cardCount!==353||manifest.playableCardCount!==324||manifest.presentationCardCount!==29||!manifest.cards?.['ST01-01']||!manifest.cards?.['S01-0101b']||!manifest.cards?.['S01-01C1A'])process.exit(2);process.stdout.write(manifest.assetVersion||'')})")"
   [[ "$public_asset_version" == "$card_assets_hash" ]] || fail "公网优化卡图 manifest 版本不匹配"
   sample_asset_path="$(node - "${card_assets_target}/card-assets.manifest.json" <<'NODE'
 const manifest = require(process.argv[2])

@@ -18,7 +18,7 @@ export interface CardAssetManifestEntry {
 }
 
 export interface CardAssetManifest {
-  schemaVersion: 2
+  schemaVersion: 3
   catalogVersion: string
   assetVersion: string
   basePath: string
@@ -69,7 +69,7 @@ function configuredCdnBase() {
 function isManifest(value: unknown): value is CardAssetManifest {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Partial<CardAssetManifest>
-  return candidate.schemaVersion === 2
+  return candidate.schemaVersion === 3
     && typeof candidate.catalogVersion === 'string'
     && typeof candidate.assetVersion === 'string'
     && typeof candidate.basePath === 'string'

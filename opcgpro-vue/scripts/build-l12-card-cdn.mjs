@@ -15,11 +15,14 @@ const outputRoot = required('--output')
 const catalogVersion = args.get('--catalog-version') || new Date().toISOString().slice(0, 10).replaceAll('-', '')
 const baseUrl = (args.get('--base-url') || '/card-assets').replace(/\/$/, '')
 const catalogFiles = (args.get('--catalog-files') || '').split(';').filter(Boolean).map(file => resolve(file))
+const presentationCatalogFile = required('--presentation-catalog')
 const requestedCardIds = new Set((args.get('--card-ids') || '').split(';').filter(Boolean).map(id => id.toUpperCase()))
 const concurrency = Math.max(1, Math.min(12, Number(args.get('--concurrency') || 4)))
 const horizontalTypes = new Set(['disaster', 'destruction', 'trial'])
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif'])
-const expectedCardCount = 324
+const expectedPlayableCardCount = 324
+const expectedPresentationCardCount = 29
+const expectedAssetCount = expectedPlayableCardCount + expectedPresentationCardCount
 const maxVariantBytes = {
   originalWebp: 2_500_000,
   thumbWebp: 90_000,
@@ -43,6 +46,12 @@ async function readCatalog() {
   const cards = []
   for (const file of catalogFiles) cards.push(...JSON.parse(await readFile(file, 'utf8')))
   return cards
+}
+
+async function readPresentationCatalog() {
+  const value = JSON.parse(await readFile(presentationCatalogFile, 'utf8'))
+  if (value.schemaVersion !== 1 || !Array.isArray(value.cards)) throw new Error('卡牌档案展示资源目录格式无效')
+  return value.cards
 }
 
 function matchSource(card, files) {
@@ -92,6 +101,8 @@ async function buildCard(card, source) {
     sourceArchiveName: basename(source),
     variants: Object.fromEntries(Object.entries(files).map(([name, file]) => [name, `${keyRoot}/${file}`])),
     bytes: sizes,
+    presentationOnly: card.presentationOnly === true,
+    baseCardId: card.baseCardId || undefined,
   }
 }
 
@@ -111,9 +122,21 @@ const sourceFiles = await walk(sourceRoot)
 const completeCatalog = await readCatalog()
 const catalogIds = new Set(completeCatalog.map(card => card.id.toUpperCase()))
 if (completeCatalog.length !== catalogIds.size) throw new Error('卡牌目录存在重复卡号，拒绝生成资源清单')
-if (completeCatalog.length !== expectedCardCount) throw new Error(`完整卡牌目录必须为 ${expectedCardCount} 张，当前 ${completeCatalog.length} 张`)
+if (completeCatalog.length !== expectedPlayableCardCount) throw new Error(`完整可玩卡牌目录必须为 ${expectedPlayableCardCount} 张，当前 ${completeCatalog.length} 张`)
 if (completeCatalog.some(card => !/^(?:S\d{2}|ST\d{2}|ST)-[A-Z0-9]+$/i.test(card.id))) throw new Error('卡牌目录包含不安全卡号，拒绝生成文件路径')
-const catalog = completeCatalog.filter(card => requestedCardIds.size === 0 || requestedCardIds.has(card.id.toUpperCase()))
+const presentationCatalog = await readPresentationCatalog()
+const playableById = new Map(completeCatalog.map(card => [card.id, card]))
+if (presentationCatalog.length !== expectedPresentationCardCount) throw new Error(`卡牌档案展示资源必须为 ${expectedPresentationCardCount} 张，当前 ${presentationCatalog.length} 张`)
+const presentationCards = presentationCatalog.map(entry => {
+  const base = playableById.get(entry.baseCardId)
+  if (!base) throw new Error(`展示资源 ${entry.id} 的规则基底不存在：${entry.baseCardId}`)
+  if (catalogIds.has(entry.id.toUpperCase())) throw new Error(`展示资源不得覆盖可玩卡号：${entry.id}`)
+  return { ...base, ...entry, nameZh: base.nameZh, cardType: base.cardType, presentationOnly: true }
+})
+const assetCatalog = [...completeCatalog, ...presentationCards]
+const assetIds = new Set(assetCatalog.map(card => card.id.toUpperCase()))
+if (assetCatalog.length !== expectedAssetCount || assetIds.size !== expectedAssetCount) throw new Error(`完整资源目录必须为 ${expectedAssetCount} 个唯一卡号`)
+const catalog = assetCatalog.filter(card => requestedCardIds.size === 0 || requestedCardIds.has(card.id.toUpperCase()))
 if (requestedCardIds.size > 0) {
   const found = new Set(catalog.map(card => card.id.toUpperCase()))
   const unknown = [...requestedCardIds].filter(id => !found.has(id))
@@ -130,7 +153,7 @@ const cards = await mapLimit(jobs, concurrency, async ({ card, source }, index) 
 })
 process.stdout.write('\n')
 
-if (requestedCardIds.size === 0 && cards.length !== expectedCardCount) throw new Error(`发布资源必须完整生成 ${expectedCardCount} 张，当前 ${cards.length} 张`)
+if (requestedCardIds.size === 0 && cards.length !== expectedAssetCount) throw new Error(`发布资源必须完整生成 ${expectedAssetCount} 张，当前 ${cards.length} 张`)
 const oversized = cards.flatMap(card => Object.entries(card.bytes)
   .filter(([variant, bytes]) => bytes > maxVariantBytes[variant])
   .map(([variant, bytes]) => `${card.cardId}:${variant}=${bytes}`))
@@ -142,7 +165,7 @@ const assetVersion = createHash('sha256')
   .digest('hex')
 
 const manifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   catalogVersion,
   assetVersion,
   generatedAt: new Date().toISOString(),
@@ -150,6 +173,8 @@ const manifest = {
   cdnBaseUrl: /^https:\/\//i.test(baseUrl) ? baseUrl : '',
   complete: requestedCardIds.size === 0,
   cardCount: cards.length,
+  playableCardCount: cards.filter(card => !card.presentationOnly).length,
+  presentationCardCount: cards.filter(card => card.presentationOnly).length,
   immutableCacheControl: 'public, max-age=31536000, immutable',
   manifestCacheControl: 'public, max-age=300, must-revalidate',
   totalBytes,
@@ -160,7 +185,7 @@ const preload = {
   catalogVersion,
   generatedAt: manifest.generatedAt,
   entries: cards
-    .filter(card => ['master', 'disaster', 'destruction', 'trial'].includes(card.cardType))
+    .filter(card => !card.presentationOnly && ['master', 'disaster', 'destruction', 'trial'].includes(card.cardType))
     .map(card => ({ cardId: card.cardId, url: `/card-assets/${card.variants.thumbWebp}`, as: 'image', type: 'image/webp' })),
 }
 async function writeJsonAtomic(name, value) {

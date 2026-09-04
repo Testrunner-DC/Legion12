@@ -1,6 +1,8 @@
 import { normalizeLookupCardType } from './cardPresentation'
 import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
 import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'
+import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'
+import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'
 
 export interface DeckCard {
   id: string
@@ -21,6 +23,7 @@ export interface DeckCard {
   profession?: string
   effect?: string
   canonicalMoraleId?: string
+  products?: string[]
 }
 
 export interface MoraleIdentity {
@@ -77,6 +80,21 @@ export const MAIN_DECK_TYPES = new Set(['legion', 'tactic', 'counter-tactic', 'a
 const AUTOMATIC_EXTRA_CARD_IDS: Readonly<Record<string, readonly string[]>> = {
   'S01-02M1': ['S01-02M2'],
 }
+
+interface CardProductInclusion {
+  cardId: string
+  cardPool: string
+  products: string[]
+}
+
+interface CardArchiveAsset {
+  id: string
+  baseCardId: string
+  product: string
+  products: string[]
+  rarity: string
+  sourceArchiveName: string
+}
 const S1_COUNTER_TACTICS = new Set([
   'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
   'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
@@ -88,6 +106,10 @@ const lookupFactionMap: Record<string, string> = {
 }
 
 export const moraleIdentities = moraleIdentityData as MoraleIdentity[]
+export const cardArchiveProducts = cardProductInclusionsData.products as string[]
+const productInclusions = cardProductInclusionsData.cards as CardProductInclusion[]
+const productInclusionsByCardId = new Map(productInclusions.map(entry => [entry.cardId, entry]))
+const cardArchiveAssets = cardArchiveAssetsData.cards as CardArchiveAsset[]
 const moraleIdentityByFaction = new Map(moraleIdentities.map(identity => [identity.faction, identity]))
 const moraleIdentityByVersion = new Map(moraleIdentities.flatMap(identity =>
   identity.versionCardIds.map(cardId => [cardId, identity] as const)))
@@ -96,6 +118,17 @@ const moraleIdentityByGodPower = new Map(moraleIdentities.filter(identity => ide
 
 export function canonicalMoraleCardId(cardId: string) {
   return (moraleIdentityByVersion.get(cardId) ?? moraleIdentityByGodPower.get(cardId))?.canonicalCardId ?? cardId
+}
+
+export function displayCardNumber(card: Pick<DeckCard, 'id' | 'number'>) {
+  if (card.id === 'S02-05C1') return 'S02-05C1(B)'
+  if (card.id === 'S02-05C1A' || card.id === 'ST05-C1') return 'S02-05C1'
+  return card.number
+}
+
+function withProductInclusions(card: DeckCard): DeckCard {
+  const inclusion = productInclusionsByCardId.get(card.id)
+  return inclusion ? { ...card, products: [...inclusion.products] } : card
 }
 
 export function automaticExtraCardIdsForMaster(masterId: string | null | undefined) {
@@ -373,8 +406,9 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
 
 /**
  * The playable catalog intentionally excludes presentation-only alternate card
- * numbers. The archive may show those faces, so it adds the S01 lookup entries
- * without changing deck building, sandbox, or server card identities.
+ * numbers. The archive filters by the authoritative product directory and adds
+ * only approved presentation assets without changing deck building, sandbox,
+ * or server card identities.
  */
 export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
   const [catalog, lookupResponse] = await Promise.all([
@@ -383,8 +417,10 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
   ])
   if (!lookupResponse.ok) throw new Error('卡牌版本数据加载失败')
   const lookup: LookupCard[] = await lookupResponse.json()
-  const byId = new Map(catalog.map(card => [card.id, card]))
-  lookup.filter(card => card.cardNo?.startsWith('S01-')).map(lookupDeckCard).forEach(card => {
+  const byId = new Map(catalog
+    .filter(card => productInclusionsByCardId.has(card.id))
+    .map(card => [card.id, withProductInclusions(card)]))
+  lookup.filter(card => productInclusionsByCardId.has(card.cardNo)).map(lookupDeckCard).forEach(card => {
     if (byId.has(card.id)) return
     const base = card.id.endsWith('A') ? byId.get(card.id.slice(0, -1)) : undefined
     const archiveVersion = base && base.nameZh.trim() === card.nameZh.trim()
@@ -397,7 +433,20 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
           rarity: card.rarity ?? base.rarity,
         }
       : card
-    byId.set(archiveVersion.id, normalizeCardDimensions(normalizeMoraleCatalogCard(archiveVersion)))
+    byId.set(archiveVersion.id, withProductInclusions(normalizeCardDimensions(normalizeMoraleCatalogCard(archiveVersion))))
+  })
+  cardArchiveAssets.forEach(asset => {
+    const base = byId.get(asset.baseCardId)
+    if (!base || byId.has(asset.id)) return
+    byId.set(asset.id, {
+      ...base,
+      id: asset.id,
+      number: asset.id,
+      product: asset.product,
+      products: [...asset.products],
+      rarity: asset.rarity,
+      imageUrl: undefined,
+    })
   })
   return [...byId.values()]
 }

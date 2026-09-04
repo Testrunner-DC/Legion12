@@ -8,6 +8,8 @@ const read = path => {
 const s1 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s1.json'))
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
 const st = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.st.json'))
+const archiveAssets = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'))
+const productInclusions = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'))
 const cards = [...s1, ...s2, ...st]
 const ids = new Set(cards.map(card => card.id))
 const cardAssets = read('../src/l12/cardAssets.ts')
@@ -77,9 +79,11 @@ const contracts = [
   [gameBoard.includes('disasterRoundUrl(card.cardId, card.imageUrl)') && gameBoard.includes('destructionRoundBackUrl') && gameBoard.includes('intent="detail"'), '本局天灾圆形序列必须使用专用圆图，未知卡使用圆形卡背，详情仍使用高清完整卡面'],
   [read('../src/l12/site/deckShare.ts').includes('resolveCardAssetUrls') && read('../src/l12/site/deckShare.ts').includes('for (const url of candidates)'), 'Canvas 牌库图必须逐个尝试 resolver 候选且单图失败可回落'],
   [serviceWorker.includes("caches.delete('l12-images-v1')") && !serviceWorker.includes("request.destination !== 'image'"), '旧广域图片 Service Worker 必须退役并只清理自身缓存'],
-  [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedCardCount = 324'), '生成器必须默认同源内容寻址路径并拒绝非 324 张目录'],
+  [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedPlayableCardCount = 324') && generator.includes('expectedPresentationCardCount = 29'), '生成器必须默认同源内容寻址路径并严格区分324张可玩卡与29张展示版本'],
+  [productInclusions.cards?.length === 349 && new Set(productInclusions.cards.map(card => card.cardId)).size === 349 && productInclusions.products?.length === 13, '收录产品目录必须保持349个唯一实体编号和13项产品'],
+  [archiveAssets.cards?.length === 29 && archiveAssets.cards.every(card => (/[a-z]$/.test(card.id) || /C1A$/.test(card.id)) && ids.has(card.baseCardId)), '25张预组复刻与4张既有士气展示版本必须指向现有可玩规则基底'],
   [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']"), '旧发布清单缺失优化卡图字段时必须在 StrictMode 下安全降级'],
-  [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 324'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
+  [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 353'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
   [serverDeploy.includes('mv "$stage_card_assets_dir" "$card_assets_target"') && serverDeploy.includes('dist/card-assets') && serverDeploy.includes('nginx -T'), '服务端必须在验证完成后原子发布优化资产，并仅在 Nginx 缓存片段已接入时切换'],
   [nginxCache.includes('max-age=31536000') && nginxCache.includes('immutable') && nginxCache.includes('card-assets.manifest.json') && nginxCache.includes('max-age=300'), 'Nginx 必须区分哈希二进制一年缓存与 manifest 五分钟缓存'],
   [nginxCache.includes('(?:S|ST)[0-9]{2}-[A-Za-z0-9]+'), 'Nginx 内容寻址路径必须同时覆盖 S01/S02 与 ST01-ST06 卡号，禁止新产品卡图落入 no-store 兜底'],
