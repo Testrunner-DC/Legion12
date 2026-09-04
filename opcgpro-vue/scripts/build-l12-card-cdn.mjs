@@ -21,7 +21,7 @@ const concurrency = Math.max(1, Math.min(12, Number(args.get('--concurrency') ||
 const horizontalTypes = new Set(['disaster', 'destruction', 'trial'])
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif'])
 const expectedPlayableCardCount = 324
-const expectedPresentationCardCount = 29
+const expectedPresentationCardCount = 37
 const expectedAssetCount = expectedPlayableCardCount + expectedPresentationCardCount
 const maxVariantBytes = {
   originalWebp: 2_500_000,

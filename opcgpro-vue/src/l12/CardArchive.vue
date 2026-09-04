@@ -75,9 +75,6 @@ const selectedLogical = computed(() => logicalCards.value.find(entry => entry.lo
 const selected = computed(() => selectedLogical.value?.versions.find(card => card.id === selectedVersionId.value)
   ?? selectedLogical.value?.defaultVersion
   ?? null)
-const selectedVersionIndex = computed(() => selectedLogical.value && selected.value
-  ? selectedLogical.value.versions.findIndex(card => card.id === selected.value?.id)
-  : -1)
 const selectedProducts = computed(() => selected.value?.products ?? [])
 
 function hasCostDimension(card: CatalogCard) {
@@ -85,14 +82,25 @@ function hasCostDimension(card: CatalogCard) {
 }
 
 function selectLogical(entry: LogicalArchiveCard) {
+  if (selectedLogicalId.value === entry.logicalId) return
   selectedLogicalId.value = entry.logicalId
   selectedVersionId.value = entry.defaultVersion.id
 }
 
-function cycleVersion(direction: -1 | 1) {
-  const entry = selectedLogical.value
-  if (!entry || entry.versions.length < 2) return
-  const nextIndex = (selectedVersionIndex.value + direction + entry.versions.length) % entry.versions.length
+function displayedVersion(entry: LogicalArchiveCard) {
+  if (selectedLogicalId.value !== entry.logicalId) return entry.defaultVersion
+  return entry.versions.find(card => card.id === selectedVersionId.value) ?? entry.defaultVersion
+}
+
+function displayedVersionIndex(entry: LogicalArchiveCard) {
+  const index = entry.versions.findIndex(card => card.id === displayedVersion(entry).id)
+  return index < 0 ? 0 : index
+}
+
+function cycleVersion(entry: LogicalArchiveCard, direction: -1 | 1) {
+  if (entry.versions.length < 2) return
+  const nextIndex = (displayedVersionIndex(entry) + direction + entry.versions.length) % entry.versions.length
+  selectedLogicalId.value = entry.logicalId
   selectedVersionId.value = entry.versions[nextIndex].id
 }
 
@@ -126,28 +134,28 @@ function resetFilters() {
     <div v-else-if="loadError" class="archive-empty error">{{ loadError }}</div>
     <div v-else class="archive-workspace">
       <div class="archive-grid" role="list" aria-label="卡牌搜索结果">
-        <button v-for="entry in filtered" :key="entry.logicalId" role="listitem" class="archive-card"
-          :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(entry.defaultVersion.cardType) }, `faction-${entry.defaultVersion.faction}`]" @click="selectLogical(entry)">
+        <article v-for="entry in filtered" :key="entry.logicalId" role="listitem" tabindex="0" class="archive-card"
+          :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(displayedVersion(entry).cardType) }, `faction-${displayedVersion(entry).faction}`]"
+          @click="selectLogical(entry)" @keydown.enter="selectLogical(entry)" @keydown.space.prevent="selectLogical(entry)">
           <div class="archive-card-image">
-            <CardImage :card-id="entry.defaultVersion.id" :legacy-url="entry.defaultVersion.imageUrl" :alt="entry.defaultVersion.nameZh" intent="thumb"/>
-            <b v-if="hasCostDimension(entry.defaultVersion)" class="archive-cost">{{ entry.defaultVersion.cost }}</b>
-            <b v-if="entry.defaultVersion.disasterLevel" class="archive-disaster">{{ entry.defaultVersion.disasterLevel }}</b>
-            <b v-if="entry.defaultVersion.troops" class="archive-troops">{{ entry.defaultVersion.troops }}</b>
-            <b v-if="entry.versions.length > 1" class="archive-version-count">{{ entry.versions.length }}</b>
+            <CardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh" intent="thumb"/>
+            <b v-if="hasCostDimension(displayedVersion(entry))" class="archive-cost">{{ displayedVersion(entry).cost }}</b>
+            <b v-if="displayedVersion(entry).disasterLevel" class="archive-disaster">{{ displayedVersion(entry).disasterLevel }}</b>
+            <b v-if="displayedVersion(entry).troops" class="archive-troops">{{ displayedVersion(entry).troops }}</b>
+            <template v-if="entry.versions.length > 1">
+              <button class="archive-version-arrow previous" type="button" aria-label="上一版本" title="上一版本" @click.stop="cycleVersion(entry, -1)">‹</button>
+              <button class="archive-version-arrow next" type="button" aria-label="下一版本" title="下一版本" @click.stop="cycleVersion(entry, 1)">›</button>
+              <b class="archive-version-count">{{ displayedVersionIndex(entry) + 1 }}/{{ entry.versions.length }}</b>
+            </template>
           </div>
-          <span>{{ entry.defaultVersion.nameZh }}</span><small>{{ displayCardNumber(entry.defaultVersion) }} · {{ cardTypeLabel(entry.defaultVersion.cardType) }}</small>
-        </button>
+          <span>{{ displayedVersion(entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(entry)) }} · {{ cardTypeLabel(displayedVersion(entry).cardType) }}</small>
+        </article>
         <div v-if="!filtered.length" class="archive-empty">没有符合条件的卡牌。</div>
       </div>
 
       <aside v-if="selected" class="archive-detail">
         <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">
           <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>
-          <template v-if="selectedLogical && selectedLogical.versions.length > 1">
-            <button class="archive-version-arrow previous" type="button" aria-label="上一版本" title="上一版本" @click="cycleVersion(-1)">‹</button>
-            <button class="archive-version-arrow next" type="button" aria-label="下一版本" title="下一版本" @click="cycleVersion(1)">›</button>
-            <span class="archive-version-position">{{ selectedVersionIndex + 1 }} / {{ selectedLogical.versions.length }}</span>
-          </template>
         </div>
         <p class="archive-number">{{ displayCardNumber(selected) }} · {{ selected.product }}</p>
         <h2>{{ selected.nameZh }}</h2>

@@ -114,14 +114,15 @@ const contracts = [
   [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('productRank(a.product)')
     && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
     && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须稳定按最早产品、最低已知罕贵度及卡号排序，缺失罕贵度须有确定顺序'],
-  [cardArchive.includes('class="archive-version-arrow previous"') && cardArchive.includes('class="archive-version-arrow next"')
-    && cardArchive.includes('@click="cycleVersion(-1)"') && cardArchive.includes('@click="cycleVersion(1)"')
-    && cardArchive.includes(':card-id="selected.id"') && globalStyle.includes('.archive-version-arrow{')
-    && globalStyle.includes('background:transparent'), '卡牌档案详情必须以左右透明三角切换逻辑卡全部版本，并由当前版本同步卡图与详情'],
+  [cardArchive.includes('class="archive-card-image"') && cardArchive.includes('class="archive-version-arrow previous"')
+    && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(entry, -1)"')
+    && cardArchive.includes('@click.stop="cycleVersion(entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(entry).id"')
+    && cardArchive.includes(':card-id="selected.id"') && !cardArchive.includes('<div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">\n          <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>\n          <template')
+    && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌档案必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
   [decks.includes('function normalizeCardDimensions(card: DeckCard)')
     && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
     && cardArchive.includes('function hasCostDimension(card: CatalogCard)')
-    && cardArchive.includes('hasCostDimension(entry.defaultVersion)')
+    && cardArchive.includes('hasCostDimension(displayedVersion(entry))')
     && cardArchive.includes('hasCostDimension(selected)'), '主宰只有血量维度；卡牌档案、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
   [cardArchiveVersions.includes('identity.versionCardIds.map') && cardArchiveVersions.includes('godPowerCardId is deliberately absent')
     && !moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1'), '士气版本可按 canonical 别名聚合，但奥林匹斯神力反面不得与普通士气合并'],

@@ -40,7 +40,8 @@
         "第1季|天御·再临",
         "第1季|绝命",
         "第1季|绝命·再临",
-        "第1季|典藏版"
+        "第1季|典藏版",
+        "第2季|伟大试炼"
       ]
     },
     {
@@ -2359,6 +2360,13 @@
       ]
     },
     {
+      "cardId": "ST01-C1st",
+      "cardPool": "STS1",
+      "products": [
+        "ST01|天廷阵营预组"
+      ]
+    },
+    {
       "cardId": "ST01-M1",
       "cardPool": "STS1",
       "products": [
@@ -2458,6 +2466,13 @@
     },
     {
       "cardId": "ST02-10",
+      "cardPool": "STS1",
+      "products": [
+        "ST02|太阳城阵营预组"
+      ]
+    },
+    {
+      "cardId": "ST02-C1st",
       "cardPool": "STS1",
       "products": [
         "ST02|太阳城阵营预组"
@@ -2576,6 +2591,13 @@
       ]
     },
     {
+      "cardId": "ST03-C1st",
+      "cardPool": "STS1",
+      "products": [
+        "ST03|阿斯加德阵营预组"
+      ]
+    },
+    {
       "cardId": "ST03-M1",
       "cardPool": "STS1",
       "products": [
@@ -2675,6 +2697,13 @@
     },
     {
       "cardId": "ST04-10",
+      "cardPool": "STS1",
+      "products": [
+        "ST04|高天原阵营预组"
+      ]
+    },
+    {
+      "cardId": "ST04-C1st",
       "cardPool": "STS1",
       "products": [
         "ST04|高天原阵营预组"
@@ -2786,6 +2815,13 @@
       ]
     },
     {
+      "cardId": "ST05-C1st",
+      "cardPool": "STS1",
+      "products": [
+        "ST05|奥林匹斯阵营预组"
+      ]
+    },
+    {
       "cardId": "ST05-M1",
       "cardPool": "STS1",
       "products": [
@@ -2885,6 +2921,13 @@
     },
     {
       "cardId": "ST06-10",
+      "cardPool": "STS1",
+      "products": [
+        "ST06|彼界阵营预组"
+      ]
+    },
+    {
+      "cardId": "ST06-C1st",
       "cardPool": "STS1",
       "products": [
         "ST06|彼界阵营预组"
