@@ -64,12 +64,25 @@ function Test-AnyPath {
 }
 
 function Get-GitChangedPathStatus {
-    & git '-c' 'core.quotepath=false' 'status' '--porcelain=v1' '--untracked-files=all'
+    $statusLines = @(& git '-c' 'core.quotepath=false' 'status' '--porcelain=v1' '--untracked-files=all')
     if ($LASTEXITCODE -ne 0) { throw "Unable to read changed paths from Git" }
+    return $statusLines
+}
+
+function Get-HeadChangedPaths {
+    $headPaths = @(& git '-c' 'core.quotepath=false' 'diff-tree' '--root' '--no-commit-id' '--name-only' '-r' '-m' '--first-parent' 'HEAD')
+    if ($LASTEXITCODE -ne 0) { throw "Unable to read changed paths from HEAD" }
+    return @($headPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
 try {
     Set-Location $repoRoot
+    if ($Level -eq "Release" -and -not $DryRun) {
+        $releaseDirtyPaths = @(Get-GitChangedPathStatus)
+        if ($releaseDirtyPaths.Count -gt 0) {
+            throw "Release verification requires a clean committed tree; commit or otherwise preserve local changes first."
+        }
+    }
     $cacheInitializer = Join-Path $repoRoot "ops\windows\Initialize-L12BuildEnvironment.ps1"
     if (-not $DryRun) {
         & $cacheInitializer -CacheRoot $CacheRoot | Out-Null
@@ -84,15 +97,21 @@ try {
         # 平台变更无法命中门禁规则。统一从 porcelain 状态读取已暂存、未暂存及
         # 未跟踪文件，避免多次 Git 调用在 Windows PowerShell 5 下丢失前两次输出。
         $script:paths = @()
-        foreach ($statusLine in @(Get-GitChangedPathStatus)) {
+        $statusLines = @(Get-GitChangedPathStatus)
+        foreach ($statusLine in $statusLines) {
             if (-not $statusLine -or $statusLine.Length -le 3) { continue }
             $path = $statusLine.Substring(3)
             if ($path.Contains(" -> ")) { $path = $path.Substring($path.LastIndexOf(" -> ") + 4) }
             $script:paths += $path.Replace("\", "/")
         }
+        # Release is intentionally restricted to a clean commit. In that state the
+        # porcelain list is empty, so classify HEAD itself to retain every targeted
+        # declaration, atomic, workflow, storage, and configuration audit.
+        if ($Level -eq "Release" -and $statusLines.Count -eq 0) {
+            $script:paths = @(Get-HeadChangedPaths | ForEach-Object { $_.Replace("\", "/") })
+        }
         $script:paths = @($script:paths | Sort-Object -Unique)
     }
-    if ($LASTEXITCODE -ne 0) { throw "Unable to read changed paths from Git" }
 
     Write-Host "[L12 $Level] Changed files: $($script:paths.Count)"
     $script:paths | ForEach-Object { Write-Host "  $_" }
@@ -146,7 +165,8 @@ try {
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
     $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/verify-l12-github-workflow\.ps1$')
-    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
+    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
+    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$')
 
     # Add non-ASCII service paths without embedding them in this Windows PowerShell 5 compatible source file.
     foreach ($path in $script:paths) {
@@ -211,6 +231,13 @@ try {
     if ($storageChanged) {
         Invoke-CheckedPowerShellScript "D-drive storage budget and layout" `
             (Join-Path $repoRoot "scripts\audit-l12-storage.ps1") @{ Strict = $true }
+        Invoke-CheckedPowerShellScript "Generated-output cleanup behavior regression" `
+            (Join-Path $repoRoot "scripts\test-l12-cleanup.ps1")
+    }
+
+    if ($releaseGateChanged) {
+        Invoke-CheckedPowerShellScript "Release verification gate regression" `
+            (Join-Path $repoRoot "scripts\test-l12-release-gate.ps1")
     }
 
     if ($Level -eq "Focused") {
@@ -227,19 +254,9 @@ try {
         return
     }
 
-    if ($backendChanged) {
-        Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release")
-    }
-    if ($platformChanged -or $Level -eq "Release") {
-        $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
-    }
     if ($cardEffectChanged) {
         Invoke-CheckedPowerShellScript "Atomic runtime zero-legacy audit" `
             (Join-Path $repoRoot "scripts\audit-l12-atomic-effects.ps1") @{ RequireZero = $true }
-    }
-    if ($frontendChanged) {
-        Invoke-Checked "Frontend production build" "npm.cmd" @("run", "build") (Join-Path $repoRoot "opcgpro-vue")
     }
 
     if ($Level -eq "Release") {
@@ -248,6 +265,18 @@ try {
             $releaseArguments += @("-CacheRoot", $env:L12_WORK_CACHE)
         }
         Invoke-Checked "Commit-level release verification (no deployment)" "powershell" $releaseArguments
+        return
+    }
+
+    if ($backendChanged) {
+        Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release")
+    }
+    if ($platformChanged) {
+        $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
+    }
+    if ($frontendChanged) {
+        Invoke-Checked "Frontend production build" "npm.cmd" @("run", "build") (Join-Path $repoRoot "opcgpro-vue")
     }
 }
 finally { Set-Location $originalLocation }

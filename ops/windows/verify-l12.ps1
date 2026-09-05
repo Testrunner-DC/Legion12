@@ -27,12 +27,31 @@ function Require-Command {
     }
 }
 
+function Assert-CleanCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExpectedCommit,
+        [Parameter(Mandatory = $true)][string]$Operation
+    )
+
+    $currentCommit = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $currentCommit -ne $ExpectedCommit) {
+        throw "验证期间 HEAD 已变化，拒绝$Operation。"
+    }
+    $dirtyPaths = @(& git '-c' 'core.quotepath=false' 'status' '--porcelain=v1' '--untracked-files=all')
+    if ($LASTEXITCODE -ne 0) { throw "无法读取 Git 工作区状态，拒绝$Operation。" }
+    if ($dirtyPaths.Count -gt 0) {
+        throw "工作区存在未提交修改，拒绝$Operation；发布包只能绑定到干净提交。"
+    }
+}
+
 function Test-CachedArtifact {
     param([Parameter(Mandatory = $true)][string]$ManifestPath)
     if (-not (Test-Path -LiteralPath $ManifestPath)) { return $false }
     try {
         $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+        if ($manifest.schema -ne 3) { return $false }
         if ($manifest.commit -ne $commit) { return $false }
+        if ($manifest.cardAssetsHash -ne $cardAssetsHash) { return $false }
         foreach ($entry in @(
             @{ Path = $manifest.releaseArchive; Hash = $manifest.releaseSha256 },
             @{ Path = $manifest.cardAssetsArchive; Hash = $manifest.cardAssetsSha256 }
@@ -60,6 +79,7 @@ try {
     $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
+    Assert-CleanCommit -ExpectedCommit $commit -Operation "验证或复用发布包"
     $CardAssetDirectory = (Resolve-Path -LiteralPath $CardAssetDirectory).Path
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
@@ -69,6 +89,7 @@ try {
         [string]$cardAssetManifest.assetVersion -notmatch '^[0-9a-f]{64}$') {
         throw "优化卡图发布清单必须为完整 schema v3（324 张可玩卡 + 38 张展示版本）内容寻址版本"
     }
+    $cardAssetsHash = [string]$cardAssetManifest.assetVersion
     $catalogRoot = Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data"
     Invoke-External node ".\opcgpro-vue\scripts\audit-l12-card-cdn.mjs" --root $CardAssetDirectory --catalog-files "$catalogRoot\cards.s1.json;$catalogRoot\cards.s2.json;$catalogRoot\cards.st.json" --presentation-catalog "$catalogRoot\card-archive-assets.json"
 
@@ -77,6 +98,7 @@ try {
     New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
     $manifestPath = Join-Path $artifactDirectory "l12-release-$commit.json"
     if (-not $Force -and (Test-CachedArtifact $manifestPath)) {
+        Assert-CleanCommit -ExpectedCommit $commit -Operation "复用发布包"
         Write-Host "[L12 验证] 复用已验证提交产物：$commit"
         Write-Output $manifestPath
         exit 0
@@ -190,13 +212,13 @@ try {
     }
 
     $releaseSha256 = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-    $cardAssetsHash = [string]$cardAssetManifest.assetVersion
     $cardAssetsArchive = Join-Path $OutputDirectory "l12-card-assets-$cardAssetsHash.tar.gz"
     if (-not (Test-Path -LiteralPath $cardAssetsArchive)) {
         Write-Host "[L12 验证] 首次生成内容寻址优化卡图包：$cardAssetsHash"
         Invoke-External tar -czf $cardAssetsArchive -C $CardAssetDirectory .
     }
     $cardAssetsSha256 = (Get-FileHash -LiteralPath $cardAssetsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    Assert-CleanCommit -ExpectedCommit $commit -Operation "写入发布包清单"
     [ordered]@{
         schema = 3
         commit = $commit

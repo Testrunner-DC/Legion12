@@ -47,6 +47,7 @@ These rules apply before any implementation plan or task action.
 
 ## Change batches and validation tiers
 
+0. Start a new independent task by reading `docs/HANDOFF.md`, checking its recorded versions against Git and the requested scope, and locating only the relevant ledger/registry entries. Do not load or delegate the entire historical conversation. Update the handoff after a batch when its state changes; distinguish development, remote and deployed commits.
 1. Track every accepted change in `docs/TASK-LEDGER.md`; inserted requests are queued and do not replace an in-progress batch unless the user explicitly reprioritizes them.
 2. Each batch contains one shared root cause, its full-pool same-type migration, regression guards, one review, and one synchronization decision. Do not mix unrelated fixes merely to reduce the number of commits.
 3. Use `scripts/verify-l12-change.ps1` during development:

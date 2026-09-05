@@ -30,7 +30,9 @@ $budgets = [ordered]@{
     'git-common' = 1400MB
     'app\opcgpro-vue\public\cards' = 650MB
     'app\opcgpro-vue\node_modules' = 220MB
-    'app\opcgpro-vue\dist' = 5MB
+    # One warm production build includes ~60 MiB official playmat/card-back
+    # assets copied from public. The old 5 MiB budget counted JS/CSS only.
+    'app\opcgpro-vue\dist' = 100MB
     'artifacts\test-runs' = 500MB
     'artifacts\deploy' = 700MB
     'cache' = 1200MB
