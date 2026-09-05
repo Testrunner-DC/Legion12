@@ -266,7 +266,8 @@ public sealed class L12AdminCommandBus
         Func<L12AdminCommandEnvelope<TPayload>, L12AdminCommandResult<T>> execute,
         Func<L12AdminCommandEnvelope<TPayload>, L12AdminCommandResult<T>>? dryRun = null,
         L12AdminCommandRisk risk = L12AdminCommandRisk.Low,
-        Func<L12AccountView, bool>? scopedAuthorization = null)
+        Func<L12AccountView, bool>? scopedAuthorization = null,
+        bool requiresApproval = true)
     {
         if (!(scopedAuthorization?.Invoke(command.Actor)
               ?? L12Authorization.HasPermission(command.Actor, permission)))
@@ -332,7 +333,7 @@ public sealed class L12AdminCommandBus
 
             var stored = _platform.PersistAdminCommand(normalized, L12Authorization.Key(permission), risk,
                 signature, payloadJson, "requested");
-            if (risk == L12AdminCommandRisk.High && !normalized.DryRun)
+            if (risk == L12AdminCommandRisk.High && requiresApproval && !normalized.DryRun)
             {
                 _platform.PersistAdminApprovalRequest(stored.Id, normalized.Actor);
                 _platform.RecordCommandOutcome(normalized.Actor,

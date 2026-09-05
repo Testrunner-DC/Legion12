@@ -1577,6 +1577,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (stored?.Type is "account.role.set" or "account.status.set")
                 return ApiError(request, "account_approval_disabled", "账号权限和状态变更直接执行，不使用审批流程",
                     StatusCodes.Status409Conflict);
+            if (stored?.Type is "content.publish.batch" or "content.rollback.batch")
+                return ApiError(request, "content_approval_disabled", "站点内容发布和回滚直接执行，不使用审批流程",
+                    StatusCodes.Status409Conflict);
             var permission = stored?.Type.StartsWith("release.", StringComparison.Ordinal) == true
                     ? L12Permission.ReleaseApprovalsReview
                     : L12Permission.AdminApprovalsReview;
@@ -2685,7 +2688,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
                     error.Message, StatusCodes.Status400BadRequest);
             }
-        }, L12AdminCommandRisk.High);
+        }, L12AdminCommandRisk.High, requiresApproval: false);
 
     private L12AdminCommandResult<L12ContentBatchOperationView> ExecuteContentRollback(
         L12AdminCommandEnvelope<L12ContentRollbackCommandPayload> command, L12Permission permission)
@@ -2730,7 +2733,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
                     error.Message, StatusCodes.Status400BadRequest);
             }
-        }, L12AdminCommandRisk.High);
+        }, L12AdminCommandRisk.High, requiresApproval: false);
 
     private L12AdminCommandResult<L12EffectReviewView> ExecuteEffectReview(
         L12AdminCommandEnvelope<EffectReviewCommandPayload> command)

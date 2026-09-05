@@ -255,7 +255,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
     }
 
     [Fact]
-    public async Task V1AndLegacyRoutesUseCommandBusApprovalAndAuditContracts()
+    public async Task V1AndLegacyRoutesUseDirectContentCommandsAndAuditContracts()
     {
         var root = TempRoot();
         var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
@@ -286,35 +286,27 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
             var versionForPublish = store.Version;
-            string publishCommandId;
             using (var publish = Authorized(HttpMethod.Post, "/api/admin/v1/content/publish",
                        editorRegistration.Token!, "v1-publish-1",
                        new { keys = new[] { "home.headline" }, idempotencyKey = "v1-publish-idem-1", expectedVersion = versionForPublish }))
             using (var response = await client.SendAsync(publish))
-            {
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-                var document = await response.Content.ReadFromJsonAsync<JsonElement>();
-                publishCommandId = document.GetProperty("commandId").GetString()!;
-            }
-            Assert.NotEqual("approved-headline", store.GetContent("home.headline"));
-            Assert.Equal(versionForPublish, store.Version);
-
-            using (var invalidApproval = Authorized(HttpMethod.Post,
-                       $"/api/admin/v1/approvals/{publishCommandId}", reviewerRegistration.Token!,
-                       "v1-invalid-approval-1", new { reason = "missing decision" }))
-            using (var response = await client.SendAsync(invalidApproval))
-            {
-                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-                var error = await response.Content.ReadFromJsonAsync<L12ApiError>();
-                Assert.Equal("invalid_approval_decision", error!.Code);
-            }
-
-            using (var approval = Authorized(HttpMethod.Post,
-                       $"/api/admin/v1/approvals/{publishCommandId}", reviewerRegistration.Token!,
-                       "v1-approve-1", new { decision = "approve", reason = "content verified" }))
-            using (var response = await client.SendAsync(approval))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var publishCommand = Assert.Single(store.AdminCommands(type: "content.publish.batch"),
+                item => item.IdempotencyKey == "v1-publish-idem-1");
+            var publishCommandId = publishCommand.Id;
+            Assert.Equal("executed", publishCommand.Status);
             Assert.Equal("approved-headline", store.GetContent("home.headline"));
+            Assert.DoesNotContain(store.AdminApprovals(status: null), item => item.CommandId == publishCommandId);
+
+            using (var legacyApproval = Authorized(HttpMethod.Post,
+                       $"/api/admin/v1/approvals/{publishCommandId}", reviewerRegistration.Token!,
+                       "v1-content-approval-disabled-1", new { decision = "approve" }))
+            using (var response = await client.SendAsync(legacyApproval))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                var error = await response.Content.ReadFromJsonAsync<L12ApiError>();
+                Assert.Equal("content_approval_disabled", error!.Code);
+            }
 
             var publishBatch = Assert.Single(store.ContentBatches(), item => item.Action == "publish");
             var batchCountAfterPublish = store.ContentBatches().Count;
@@ -329,21 +321,15 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             Assert.Equal(batchCountAfterPublish, store.ContentBatches().Count);
 
             var versionForRollback = store.Version;
-            string rollbackCommandId;
             using (var rollback = Authorized(HttpMethod.Post, "/api/admin/v1/content/rollback",
                        editorRegistration.Token!, "v1-rollback-1",
                        new { batchId = publishBatch.Id, idempotencyKey = "v1-rollback-idem-1", expectedVersion = versionForRollback }))
             using (var response = await client.SendAsync(rollback))
-            {
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-                var document = await response.Content.ReadFromJsonAsync<JsonElement>();
-                rollbackCommandId = document.GetProperty("commandId").GetString()!;
-            }
-            using (var approval = Authorized(HttpMethod.Post,
-                       $"/api/admin/v1/approvals/{rollbackCommandId}", reviewerRegistration.Token!,
-                       "v1-rollback-approve-1", new { decision = "approve", reason = "rollback verified" }))
-            using (var response = await client.SendAsync(approval))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var rollbackCommand = Assert.Single(store.AdminCommands(type: "content.rollback.batch"),
+                item => item.IdempotencyKey == "v1-rollback-idem-1");
+            Assert.Equal("executed", rollbackCommand.Status);
+            Assert.DoesNotContain(store.AdminApprovals(status: null), item => item.CommandId == rollbackCommand.Id);
             Assert.Equal("rolled-back", store.ContentBatches().Single(item => item.Id == publishBatch.Id).Status);
 
             var batchCountAfterRollback = store.ContentBatches().Count;
@@ -387,8 +373,8 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             using (var legacyPublish = Authorized(HttpMethod.Post, "/api/admin/content/rules.notice/publish",
                        admin.Token!, "legacy-publish-1", null, "legacy-publish-idem-1", store.Version))
             using (var response = await client.SendAsync(legacyPublish))
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-            Assert.NotEqual("legacy-publish-pending", store.GetContent("rules.notice"));
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("legacy-publish-pending", store.GetContent("rules.notice"));
 
             using (var auditRequest = Authorized(HttpMethod.Get,
                        $"/api/admin/v1/audit?commandId={publishCommandId}", admin.Token!, "v1-audit-filter-1"))
@@ -397,7 +383,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
                 var audit = await response.Content.ReadFromJsonAsync<L12AdminAuditView[]>();
                 Assert.Contains(audit!, item => item.CommandId == publishCommandId && item.Category == "content");
-                Assert.Contains(audit!, item => item.CommandId == publishCommandId && item.Category == "approval");
+                Assert.DoesNotContain(audit!, item => item.CommandId == publishCommandId && item.Category == "approval");
             }
         }
         finally

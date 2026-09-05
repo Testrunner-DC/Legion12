@@ -109,15 +109,15 @@ async function preview(keys: string[], saver: (show?: boolean) => Promise<boolea
 async function publish(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
   if (!(await saver(false))) return
   try {
-    const result = await adminApi.publishContent(keys)
-    showNotice('commandId' in result ? `内容发布已提交双人审批（命令 ${result.commandId}）` : '站点内容已正式发布')
+    await adminApi.publishContent(keys)
+    showNotice('站点内容已正式发布')
     contentBatches.value = await adminApi.contentBatches()
   } catch (error) { showNotice(error instanceof Error ? error.message : '内容发布失败') }
 }
 async function rollback(batch: ContentBatch) {
   try {
-    const result = await adminApi.rollbackContent(batch.id)
-    showNotice('commandId' in result ? `回滚已提交双人审批（命令 ${result.commandId}）` : '内容已回滚')
+    await adminApi.rollbackContent(batch.id)
+    showNotice('内容已回滚')
   } catch (error) { showNotice(error instanceof Error ? error.message : '回滚失败') }
 }
 async function deleteMedia(item: SiteMedia) {
@@ -162,7 +162,7 @@ onMounted(load)
 
 <template>
   <section class="site-content-admin">
-    <header class="site-content-head"><div><small>SITE CONTENT</small><h2>站点内容</h2><p>素材、首页、资讯、视频、商品、分类与法务共用既有权限、发布审批、审计和持久化边界。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新全部' }}</button></header>
+    <header class="site-content-head"><div><small>SITE CONTENT</small><h2>站点内容</h2><p>素材、首页、资讯、视频、商品、分类与法务由管理员直接维护，并保留权限、审计和持久化边界。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新全部' }}</button></header>
     <nav class="site-content-nav" aria-label="站点内容模块"><button v-for="item in sections" :key="item.id" :class="{ active: section === item.id }" @click="section = item.id">{{ item.label }}</button></nav>
 
     <section v-if="section === 'media'" class="content-panel media-library">
@@ -172,7 +172,7 @@ onMounted(load)
     </section>
 
     <section v-else-if="section === 'hero'" class="content-panel home-compose">
-      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button @click="addSlide">＋ 轮播</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button @click="addSlide">＋ 轮播</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <h4>轮播主视觉 <em :data-status="contentEntries[homeCompositionKey]?.status">{{ contentEntries[homeCompositionKey]?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em></h4>
       <article v-for="(slide, index) in composition.heroSlides" :key="slide.id" class="compose-row hero-compose-row">
         <div class="compose-order"><button @click="move(composition.heroSlides, index, -1)">↑</button><b>{{ index + 1 }}</b><button @click="move(composition.heroSlides, index, 1)">↓</button></div>
@@ -189,23 +189,23 @@ onMounted(load)
     </section>
 
     <section v-else-if="section === 'notices'" class="content-panel home-compose">
-      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button @click="addNotice">＋ 通知按钮</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button @click="addNotice">＋ 通知按钮</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知显示文字"><select v-model="item.href" @change="syncNoticeLabel(item)"><option value="">选择一篇已发布资讯</option><option v-for="article in publishedNews" :key="article.id" :value="`/news#article-${article.id}`">{{ article.title }}</option></select><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
       <p v-if="!composition.notices.length" class="empty">暂无通知按钮；点击“＋ 通知按钮”新增。</p>
     </section>
 
     <section v-else-if="section === 'home-news'" class="content-panel home-compose">
-      <header><div><h3>资讯区外观</h3><p>只控制主页资讯区标题与说明；已发布资讯在“资讯稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <header><div><h3>资讯区外观</h3><p>只控制主页资讯区标题与说明；已发布资讯在“资讯稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <div class="section-copy-grid"><label>英文标题<input v-model="composition.newsEyebrow"></label><label>中文标题<input v-model="composition.newsTitle"></label></div>
     </section>
 
     <section v-else-if="section === 'home-product'" class="content-panel home-compose">
-      <header><div><h3>产品上新区外观</h3><p>只控制主页产品上新区标题与说明；已发布产品在“产品稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <header><div><h3>产品上新区外观</h3><p>只控制主页产品上新区标题与说明；已发布产品在“产品稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <div class="section-copy-grid"><label>英文标题<input v-model="composition.productEyebrow"></label><label>中文标题<input v-model="composition.productTitle"></label></div>
     </section>
 
     <section v-else-if="section === 'home-video'" class="content-panel home-compose">
-      <header><div><h3>最新视频区外观</h3><p>只控制主页视频区标题与说明；已发布视频在“视频稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <header><div><h3>最新视频区外观</h3><p>只控制主页视频区标题与说明；已发布视频在“视频稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <div class="section-copy-grid"><label>英文标题<input v-model="composition.videoEyebrow"></label><label>中文标题<input v-model="composition.videoTitle"></label></div>
     </section>
 
@@ -220,9 +220,9 @@ onMounted(load)
     </section>
 
     <section v-else class="content-panel legal-editor">
-      <header><div><h3>页尾与法务</h3><p>版权、商标、备案与联系信息独立于首页结构；与规则页公告同批可预览和审批发布。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveLegal()">保存草稿</button><button @click="preview([siteLegalKey, 'rules.notice'], saveLegal)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([siteLegalKey, 'rules.notice'], saveLegal)">提交发布</button></div></header>
+      <header><div><h3>页尾与法务</h3><p>版权、商标、备案与联系信息独立于首页结构；与规则页公告同批预览并直接发布。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveLegal()">保存草稿</button><button @click="preview([siteLegalKey, 'rules.notice'], saveLegal)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([siteLegalKey, 'rules.notice'], saveLegal)">直接发布</button></div></header>
       <label>版权行<input v-model="legal.copyright" maxlength="300"></label><label>商标与权利声明<textarea v-model="legal.trademark" rows="5" maxlength="1200"></textarea></label><label>备案 / 登记信息<input v-model="legal.registration" maxlength="200"></label><label>联系标签<input v-model="legal.contactLabel" maxlength="100"></label><label>联系链接<input v-model="legal.contactHref" maxlength="2000" placeholder="mailto: 不允许；使用站内页或 https://"></label><label>规则页公告<textarea v-model="ruleNotice" rows="5"></textarea></label>
-      <details class="batch-history"><summary>发布与回滚批次（{{ contentBatches.length }}）</summary><article v-for="batch in contentBatches" :key="batch.id"><span><code>{{ batch.id }}</code><b>{{ batch.action }} · {{ batch.status }}</b><small>{{ batch.actorName }} · {{ new Date(batch.createdAt).toLocaleString() }} · {{ batch.items.length }} 项</small></span><button v-if="batch.action === 'publish' && batch.status === 'published' && hasPermission('admin.content.rollback')" @click="rollback(batch)">提交回滚审批</button></article></details>
+      <details class="batch-history"><summary>发布与回滚批次（{{ contentBatches.length }}）</summary><article v-for="batch in contentBatches" :key="batch.id"><span><code>{{ batch.id }}</code><b>{{ batch.action }} · {{ batch.status }}</b><small>{{ batch.actorName }} · {{ new Date(batch.createdAt).toLocaleString() }} · {{ batch.items.length }} 项</small></span><button v-if="batch.action === 'publish' && batch.status === 'published' && hasPermission('admin.content.rollback')" @click="rollback(batch)">直接回滚</button></article></details>
     </section>
   </section>
 </template>

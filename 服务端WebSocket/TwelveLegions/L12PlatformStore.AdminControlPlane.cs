@@ -222,7 +222,8 @@ public sealed partial class L12PlatformStore
 
     private static bool IsDirectExecutionCommandType(string type)
         => type.StartsWith("tournament.", StringComparison.Ordinal)
-           || type is "account.role.set" or "account.status.set";
+           || type is "account.role.set" or "account.status.set"
+           or "content.publish.batch" or "content.rollback.batch";
 
     internal L12StoredAdminApproval? AdminApproval(string commandId)
     {
