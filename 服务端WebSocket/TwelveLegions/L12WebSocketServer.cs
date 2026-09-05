@@ -1267,20 +1267,23 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapPost("/api/admin/site/media", async (HttpRequest request) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             if (!request.HasFormContentType)
                 return ApiError(request, "media_form_required", "素材上传必须使用 multipart/form-data",
                     StatusCodes.Status415UnsupportedMediaType);
+            if (request.ContentLength is > 29 * 1024 * 1024)
+                return ApiError(request, "media_upload_too_large", "素材上传请求不能超过 29MB",
+                    StatusCodes.Status413PayloadTooLarge);
             try
             {
                 var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
                 var original = await ReadRequiredFormFile(form, "original", 16 * 1024 * 1024,
                     request.HttpContext.RequestAborted);
-                var desktop = await ReadRequiredFormFile(form, "desktop", 8 * 1024 * 1024,
+                var desktop = await ReadRequiredFormFile(form, "desktop", 5 * 1024 * 1024,
                     request.HttpContext.RequestAborted);
-                var mobile = await ReadRequiredFormFile(form, "mobile", 8 * 1024 * 1024,
+                var mobile = await ReadRequiredFormFile(form, "mobile", 5 * 1024 * 1024,
                     request.HttpContext.RequestAborted);
-                var thumbnail = await ReadRequiredFormFile(form, "thumbnail", 3 * 1024 * 1024,
+                var thumbnail = await ReadRequiredFormFile(form, "thumbnail", 2 * 1024 * 1024,
                     request.HttpContext.RequestAborted);
                 var focalX = ParseFiniteDouble(form["focalX"], .5);
                 var focalY = ParseFiniteDouble(form["focalY"], .5);
@@ -1302,7 +1305,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapDelete("/api/admin/site/media/{id}", (HttpRequest request, string id) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             try
             {
                 _platform.DeleteSiteMedia(authenticated.Account, id, RequestAuditContext(request, permission));
@@ -1330,7 +1333,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             SiteCategoryOrderRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             try
             {
                 return Results.Ok(_platform.ReorderSiteCategories(authenticated.Account, kind, body.Ids ?? [],
@@ -1344,7 +1347,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapDelete("/api/admin/site/categories/{id}", (HttpRequest request, string id, string? migrateTo) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             try
             {
                 _platform.DeleteSiteCategory(authenticated.Account, id, migrateTo,
@@ -2508,7 +2511,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private IResult SaveArticleDraftResponse(HttpRequest request, string? id, ArticleDraftRequest body)
     {
         const L12Permission permission = L12Permission.AdminContentDraft;
-        if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+        if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
         try
         {
             var draft = new L12ArticleDraft(id, body.Title ?? string.Empty, body.Summary ?? string.Empty,
@@ -2532,7 +2535,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private IResult ArticleMutationResponse(HttpRequest request, L12Permission permission, string id,
         string action, Func<L12AccountView, L12AdminAuditContext, L12ArticleView> mutate)
     {
-        if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+        if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
         try { return Results.Ok(mutate(authenticated.Account, RequestAuditContext(request, permission))); }
         catch (KeyNotFoundException error)
         {
@@ -2547,7 +2550,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private IResult SaveSiteCategoryResponse(HttpRequest request, string? id, SiteCategoryRequest body)
     {
         const L12Permission permission = L12Permission.AdminContentDraft;
-        if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+        if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
         try
         {
             var result = _platform.SaveSiteCategory(authenticated.Account, new L12SiteCategoryDraft(id,

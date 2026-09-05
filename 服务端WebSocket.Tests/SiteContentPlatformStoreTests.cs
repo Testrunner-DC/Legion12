@@ -1,6 +1,10 @@
 using System.Buffers.Binary;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -58,6 +62,8 @@ public sealed class SiteContentPlatformStoreTests
             var admin = store.Login("Admin", "L12master").Account!;
             var source = store.SaveSiteCategory(admin, new L12SiteCategoryDraft(null, "product", "限定商品", "limited", 90, true));
             var target = store.SaveSiteCategory(admin, new L12SiteCategoryDraft(null, "product", "常规商品", "regular", 91, true));
+            Assert.Throws<ArgumentException>(() => store.SaveSiteCategory(admin,
+                new L12SiteCategoryDraft(null, "unknown", "错误分类", "invalid", 92, true)));
             var media = Upload(store, admin, "product");
             var draft = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "测试商品", "摘要", "商品正文",
                 source.Name, "", "/cards", "test-product", false, null, Kind: "product",
@@ -71,8 +77,13 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Equal(target.Name, published.Category);
             Assert.DoesNotContain(store.AdminSiteCategories("product"), item => item.Id == source.Id);
 
-            var disabled = store.SaveSiteCategory(admin, new L12SiteCategoryDraft(target.Id, target.Kind,
-                target.Name, target.Slug, target.SortOrder, false, target.Version));
+            var renamed = store.SaveSiteCategory(admin, new L12SiteCategoryDraft(target.Id, target.Kind,
+                "常规商品（更新）", target.Slug, target.SortOrder, true, target.Version));
+            Assert.Equal(renamed.Name, Assert.Single(store.PublicArticles(kind: "product")).Category);
+            Assert.All(store.ArticleRevisions(draft.Id), revision => Assert.Equal(renamed.Name, revision.Category));
+
+            var disabled = store.SaveSiteCategory(admin, new L12SiteCategoryDraft(renamed.Id, renamed.Kind,
+                renamed.Name, renamed.Slug, renamed.SortOrder, false, renamed.Version));
             Assert.False(disabled.Active);
             var changed = store.SaveArticleDraft(admin, new L12ArticleDraft(draft.Id, "测试商品", "摘要", "修改正文",
                 target.Name, "", "/cards", "test-product", false, null, published.Revision, "product",
@@ -106,9 +117,69 @@ public sealed class SiteContentPlatformStoreTests
                 Original = Webp(800, 600), DesktopWebp = Webp(800, 600),
             };
             Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, wrongDesktop));
+
+            var metadataDesktop = wrongDesktop with
+            {
+                DesktopWebp = WebpWithMetadata(policy.DesktopWidth, policy.DesktopHeight),
+            };
+            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, metadataDesktop));
         }
         finally
         {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task SiteContentHttpMutationsRejectPlayerTokensAndAcceptAdminPermission()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-site-http-{Guid.NewGuid():N}");
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            var player = store.Register("SitePlayer", "password-123");
+            var admin = store.Login("Admin", "L12master");
+
+            using (var request = Authorized(HttpMethod.Post, "/api/admin/articles", player.Token!,
+                       new { title = "越权稿件", body = "不应保存", category = "官方公告", kind = "news" }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var request = Authorized(HttpMethod.Post, "/api/admin/site/categories", player.Token!,
+                       new { kind = "news", name = "越权分类", slug = "forbidden", sortOrder = 90, active = true }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var request = Authorized(HttpMethod.Post, "/api/admin/site/media", player.Token!, null))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var request = Authorized(HttpMethod.Post, "/api/admin/site/categories", admin.Token!,
+                       new { kind = "news", name = "HTTP 分类", slug = "http-category", sortOrder = 90, active = true }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
@@ -134,5 +205,24 @@ public sealed class SiteContentPlatformStoreTests
         bytes[24] = (byte)encodedWidth; bytes[25] = (byte)(encodedWidth >> 8); bytes[26] = (byte)(encodedWidth >> 16);
         bytes[27] = (byte)encodedHeight; bytes[28] = (byte)(encodedHeight >> 8); bytes[29] = (byte)(encodedHeight >> 16);
         return bytes;
+    }
+
+    private static byte[] WebpWithMetadata(int width, int height)
+    {
+        var source = Webp(width, height);
+        var bytes = new byte[source.Length + 8];
+        source.CopyTo(bytes, 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), (uint)(bytes.Length - 8));
+        Encoding.ASCII.GetBytes("EXIF").CopyTo(bytes, source.Length);
+        return bytes;
+    }
+
+    private static HttpRequestMessage Authorized(HttpMethod method, string path, string token, object? body)
+    {
+        var request = new HttpRequestMessage(method, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add(L12CorrelationIds.HeaderName, $"site-{Guid.NewGuid():N}");
+        if (body is not null) request.Content = JsonContent.Create(body);
+        return request;
     }
 }

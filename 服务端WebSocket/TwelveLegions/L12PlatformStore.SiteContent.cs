@@ -130,7 +130,9 @@ public sealed partial class L12PlatformStore
 
             foreach (var article in _data.Articles)
             {
-                article.Kind = NormalizeSiteKind(article.Kind);
+                var normalizedArticleKind = NormalizeSiteKind(article.Kind);
+                if (article.Kind != normalizedArticleKind) changed = true;
+                article.Kind = normalizedArticleKind;
                 var category = FindCategory(article.Kind, article.CategoryId, article.Category, true);
                 if (category is not null)
                 {
@@ -140,22 +142,30 @@ public sealed partial class L12PlatformStore
                 }
                 if (article.Published is { } published)
                 {
-                    published.Kind = NormalizeSiteKind(published.Kind);
+                    var normalizedPublishedKind = NormalizeSiteKind(published.Kind);
+                    if (published.Kind != normalizedPublishedKind) changed = true;
+                    published.Kind = normalizedPublishedKind;
                     var publishedCategory = FindCategory(published.Kind, published.CategoryId,
                         published.Category, true) ?? category;
                     if (publishedCategory is not null)
                     {
+                        if (published.CategoryId != publishedCategory.Id ||
+                            published.Category != publishedCategory.Name) changed = true;
                         published.CategoryId = publishedCategory.Id;
                         published.Category = publishedCategory.Name;
                     }
                 }
                 foreach (var revision in article.Revisions)
                 {
-                    revision.Kind = NormalizeSiteKind(revision.Kind);
+                    var normalizedRevisionKind = NormalizeSiteKind(revision.Kind);
+                    if (revision.Kind != normalizedRevisionKind) changed = true;
+                    revision.Kind = normalizedRevisionKind;
                     var revisionCategory = FindCategory(revision.Kind, revision.CategoryId,
                         revision.Category, true) ?? category;
                     if (revisionCategory is not null)
                     {
+                        if (revision.CategoryId != revisionCategory.Id ||
+                            revision.Category != revisionCategory.Name) changed = true;
                         revision.CategoryId = revisionCategory.Id;
                         revision.Category = revisionCategory.Name;
                     }
@@ -192,7 +202,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var kind = NormalizeSiteKind(draft.Kind);
+            var kind = RequireSiteKind(draft.Kind);
             var name = LimitSiteText(draft.Name, 40);
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("分类名称不能为空");
             var slug = NormalizeSiteSlug(draft.Slug, name);
@@ -211,11 +221,14 @@ public sealed partial class L12PlatformStore
                 row = new SiteCategoryRow { Kind = kind };
                 _data.SiteCategories.Add(row);
             }
+            var previousName = row.Name;
             row.Name = name;
             row.Slug = slug;
             row.SortOrder = Math.Clamp(draft.SortOrder, 0, 10_000);
             row.Active = draft.Active;
             row.Version++;
+            if (!string.Equals(previousName, row.Name, StringComparison.Ordinal))
+                RefreshCategoryReferenceNames(row);
             var result = ToSiteCategoryView(row);
             AddAdminAudit(actor, "site-category", previous is null ? "create" : "update", row.Id,
                 previous, JsonSerializer.Serialize(result), null, context);
@@ -229,7 +242,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var normalizedKind = NormalizeSiteKind(kind);
+            var normalizedKind = RequireSiteKind(kind);
             var rows = _data.SiteCategories.Where(item => item.Kind == normalizedKind)
                 .OrderBy(item => item.SortOrder).ThenBy(item => item.Name).ToArray();
             if (ids.Count != rows.Length || ids.Distinct(StringComparer.Ordinal).Count() != rows.Length ||
@@ -280,9 +293,9 @@ public sealed partial class L12PlatformStore
         var kind = NormalizeMediaKind(upload.Kind);
         var policy = MediaPolicies[kind];
         ValidateUploadBytes(upload.Original, "原图", 16 * 1024 * 1024);
-        ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", 8 * 1024 * 1024);
-        ValidateUploadBytes(upload.MobileWebp, "移动 WebP", 8 * 1024 * 1024);
-        ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP", 3 * 1024 * 1024);
+        ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", 5 * 1024 * 1024);
+        ValidateUploadBytes(upload.MobileWebp, "移动 WebP", 5 * 1024 * 1024);
+        ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP", 2 * 1024 * 1024);
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");
@@ -496,6 +509,13 @@ public sealed partial class L12PlatformStore
         return normalized is "news" or "video" or "product" ? normalized : "news";
     }
 
+    internal static string RequireSiteKind(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized is "news" or "video" or "product" ? normalized :
+            throw new ArgumentException("内容类型必须是 news、video 或 product");
+    }
+
     private static string NormalizeMediaKind(string? value)
     {
         var normalized = value?.Trim().ToLowerInvariant();
@@ -542,6 +562,17 @@ public sealed partial class L12PlatformStore
                 revision.CategoryId = target.Id;
                 revision.Category = target.Name;
             }
+        }
+    }
+
+    private void RefreshCategoryReferenceNames(SiteCategoryRow category)
+    {
+        foreach (var row in _data.Articles)
+        {
+            if (row.CategoryId == category.Id) row.Category = category.Name;
+            if (row.Published?.CategoryId == category.Id) row.Published.Category = category.Name;
+            foreach (var revision in row.Revisions.Where(item => item.CategoryId == category.Id))
+                revision.Category = category.Name;
         }
     }
 
@@ -620,9 +651,30 @@ public sealed partial class L12PlatformStore
     private static void RequireWebpDimensions(byte[] bytes, int expectedWidth, int expectedHeight, string label)
     {
         if (DetectImageFormat(bytes) != "image/webp") throw new ArgumentException($"{label}必须是真实 WebP 文件");
+        ValidateWebpContainer(bytes, label);
         var dimensions = ReadWebpDimensions(bytes);
         if (dimensions.Width != expectedWidth || dimensions.Height != expectedHeight)
             throw new ArgumentException($"{label}尺寸必须为 {expectedWidth}×{expectedHeight}，实际为 {dimensions.Width}×{dimensions.Height}");
+    }
+
+    private static void ValidateWebpContainer(ReadOnlySpan<byte> bytes, string label)
+    {
+        var declaredLength = (long)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(4, 4)) + 8;
+        if (declaredLength != bytes.Length) throw new ArgumentException($"{label}的 RIFF 长度无效");
+        var offset = 12;
+        while (offset < bytes.Length)
+        {
+            if (offset + 8 > bytes.Length) throw new ArgumentException($"{label}的 WebP 区块头不完整");
+            var chunk = bytes.Slice(offset, 4);
+            var chunkLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset + 4, 4));
+            var next = (long)offset + 8 + chunkLength + (chunkLength & 1);
+            if (next > bytes.Length) throw new ArgumentException($"{label}的 WebP 区块长度无效");
+            if (chunk.SequenceEqual("EXIF"u8) || chunk.SequenceEqual("XMP "u8) ||
+                chunk.SequenceEqual("ICCP"u8) || chunk.SequenceEqual("ANIM"u8) ||
+                chunk.SequenceEqual("ANMF"u8))
+                throw new ArgumentException($"{label}不得携带元数据、色彩配置或动画区块");
+            offset = checked((int)next);
+        }
     }
 
     private static (int Width, int Height) ReadWebpDimensions(ReadOnlySpan<byte> bytes)

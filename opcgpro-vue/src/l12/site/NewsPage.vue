@@ -23,7 +23,7 @@ onMounted(async () => {
 
 <template>
   <div class="news-page">
-    <header><div><small>NEWS</small><h1>资讯</h1><p>官方公告、规则勘误、赛季更新与赛事信息的统一入口。</p></div><input v-model="search" placeholder="搜索资讯"></header>
+    <header><div><small>NEWS</small><h1>资讯</h1><p>官方资讯与站点更新的统一入口，栏目由后台动态维护。</p></div><input v-model="search" placeholder="搜索资讯"></header>
     <nav class="category-tabs"><button :class="{ active: !category }" @click="category = ''">全部资讯</button><button v-for="item in categories" :key="item.id" :class="{ active: category === item.id }" @click="category = item.id">{{ item.name }}<span>{{ categoryCounts[item.id] || 0 }}</span></button></nav>
     <main class="news-list">
       <article v-for="entry in visible" :key="entry.id" :class="{ pinned: entry.pinned }">

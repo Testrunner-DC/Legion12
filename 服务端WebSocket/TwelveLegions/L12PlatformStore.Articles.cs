@@ -257,7 +257,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var kind = NormalizeSiteKind(draft.Kind);
+            var kind = RequireSiteKind(draft.Kind);
             var row = string.IsNullOrWhiteSpace(draft.Id) ? null : FindArticle(draft.Id);
             if (row is null)
             {
