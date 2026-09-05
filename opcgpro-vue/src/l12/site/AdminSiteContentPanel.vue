@@ -54,7 +54,7 @@ function heroLineHint(value: string, recommended: number, multiline = false) {
 function addNotice() { composition.notices.push(createHomeNotice()) }
 function removeNotice(index: number) { composition.notices.splice(index, 1) }
 function syncNoticeLabel(item: HomeNotice) {
-  const article = publishedNews.value.find(row => item.href === `/news#article-${row.id}`)
+  const article = publishedNews.value.find(row => item.href === `/news/${row.id}` || item.href === `/news#article-${row.id}`)
   if (article && !item.label.trim()) item.label = article.title
 }
 function mediaUrl(id?: string, variant: 'desktopUrl' | 'thumbnailUrl' = 'thumbnailUrl') {
@@ -190,7 +190,7 @@ onMounted(load)
 
     <section v-else-if="section === 'notices'" class="content-panel home-compose">
       <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button @click="addNotice">＋ 通知按钮</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
-      <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知显示文字"><select v-model="item.href" @change="syncNoticeLabel(item)"><option value="">选择一篇已发布资讯</option><option v-for="article in publishedNews" :key="article.id" :value="`/news#article-${article.id}`">{{ article.title }}</option></select><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
+      <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知显示文字"><select v-model="item.href" @change="syncNoticeLabel(item)"><option value="">选择一篇已发布资讯</option><option v-for="article in publishedNews" :key="article.id" :value="`/news/${article.id}`">{{ article.title }}</option></select><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
       <p v-if="!composition.notices.length" class="empty">暂无通知按钮；点击“＋ 通知按钮”新增。</p>
     </section>
 

@@ -138,6 +138,13 @@ public sealed class SiteContentPlatformStoreTests
             };
             Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, wrongDesktop));
 
+            var articlePolicy = policies.Single(item => item.Kind == "article");
+            Assert.True(articlePolicy.FlexibleDimensions);
+            var flexible = store.UploadSiteMedia(admin, new L12SiteMediaUpload("article", "inline.webp", "image/webp",
+                Webp(997, 331), Webp(997, 331), Webp(421, 777), Webp(137, 59), "任意比例正文插图", .5, .5));
+            Assert.Equal((997, 331, 421, 777, 137, 59), (flexible.DesktopWidth, flexible.DesktopHeight,
+                flexible.MobileWidth, flexible.MobileHeight, flexible.ThumbnailWidth, flexible.ThumbnailHeight));
+
         }
         finally
         {
@@ -247,8 +254,9 @@ public sealed class SiteContentPlatformStoreTests
                 format = "l12-blocks", version = 1,
                 blocks = new object[]
                 {
-                    new { id = "heading", type = "h2", text = "正式标题", marks = Array.Empty<object>() },
-                    new { id = "paragraph", type = "paragraph", text = "访问官网", marks = new[] { new { type = "bold", from = 0, to = 2, href = (string?)null }, new { type = "link", from = 2, to = 4, href = (string?)"https://example.com" } } },
+                    new { id = "heading", type = "h2", text = "正式标题", align = "center", marks = Array.Empty<object>() },
+                    new { id = "paragraph", type = "paragraph", text = "访问官网", align = "justify", marks = new[] { new { type = "bold", from = 0, to = 2, href = (string?)null }, new { type = "underline", from = 0, to = 2, href = (string?)null }, new { type = "strikethrough", from = 1, to = 2, href = (string?)null }, new { type = "link", from = 2, to = 4, href = (string?)"https://example.com" } } },
+                    new { id = "divider", type = "divider" },
                     new { id = "image", type = "image", mediaAssetId = media.Id, alt = "正文插图内容", caption = "图片说明" },
                 },
             });
@@ -266,6 +274,9 @@ public sealed class SiteContentPlatformStoreTests
             });
             Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
                 "非法链接", "", unsafeLink, "官方公告", "", "", "unsafe-link", false, null)));
+            var invalidAlign = "{\"format\":\"l12-blocks\",\"version\":1,\"blocks\":[{\"id\":\"align\",\"type\":\"paragraph\",\"text\":\"正文\",\"align\":\"absolute\",\"marks\":[]}]}";
+            Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "非法对齐", "", invalidAlign, "官方公告", "", "", "unsafe-align", false, null)));
             var htmlBlock = "{\"format\":\"l12-blocks\",\"version\":1,\"blocks\":[{\"id\":\"html\",\"type\":\"html\",\"text\":\"<script>alert(1)</script>\",\"marks\":[]}]}";
             Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
                 "非法 HTML 块", "", htmlBlock, "官方公告", "", "", "unsafe-html", false, null)));
@@ -488,9 +499,12 @@ public sealed class SiteContentPlatformStoreTests
     private static L12SiteMediaView Upload(L12PlatformStore store, L12AccountView admin, string kind)
     {
         var policy = L12PlatformStore.SiteMediaPolicies().Single(item => item.Kind == kind);
+        var desktop = policy.FlexibleDimensions ? (Width: 997, Height: 331) : (Width: policy.DesktopWidth, Height: policy.DesktopHeight);
+        var mobile = policy.FlexibleDimensions ? (Width: 421, Height: 777) : (Width: policy.MobileWidth, Height: policy.MobileHeight);
+        var thumbnail = policy.FlexibleDimensions ? (Width: 137, Height: 59) : (Width: policy.ThumbnailWidth, Height: policy.ThumbnailHeight);
         return store.UploadSiteMedia(admin, new L12SiteMediaUpload(kind, $"{kind}.webp", "image/webp",
-            Webp(policy.DesktopWidth, policy.DesktopHeight), Webp(policy.DesktopWidth, policy.DesktopHeight),
-            Webp(policy.MobileWidth, policy.MobileHeight), Webp(policy.ThumbnailWidth, policy.ThumbnailHeight),
+            Webp(desktop.Width, desktop.Height), Webp(desktop.Width, desktop.Height),
+            Webp(mobile.Width, mobile.Height), Webp(thumbnail.Width, thumbnail.Height),
             $"{policy.Label}测试图", .5, .5, $"{policy.Label}桌面测试图", $"{policy.Label}移动测试图",
             $"{policy.Label}缩略测试图", kind == "hero"));
     }

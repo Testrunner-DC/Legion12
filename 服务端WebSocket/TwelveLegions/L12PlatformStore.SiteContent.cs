@@ -7,7 +7,7 @@ namespace TwelveLegions.Server;
 
 public sealed record L12SiteMediaPolicyView(string Kind, string Label, int DesktopWidth, int DesktopHeight,
     int MobileWidth, int MobileHeight, int ThumbnailWidth, int ThumbnailHeight, string SafeArea,
-    IReadOnlyList<string> AcceptedOriginalFormats);
+    IReadOnlyList<string> AcceptedOriginalFormats, bool FlexibleDimensions = false);
 
 public sealed record L12SiteMediaUpload(string Kind, string OriginalFileName, string OriginalContentType,
     byte[] Original, byte[] DesktopWebp, byte[] MobileWebp, byte[] ThumbnailWebp, string AltText,
@@ -104,9 +104,9 @@ public sealed partial class L12PlatformStore
             ["news"] = new("news", "资讯封面", 1600, 900, 1280, 720, 480, 270,
                 "全端固定 16:9；建议原图 1600×900 或更高同等比例，标题与主体保持在中央 76% × 76%",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["article"] = new("article", "资讯正文图片", 1600, 1000, 1080, 1350, 600, 375,
-                "正文主体保持在中央 84% × 82%，重要文字与人物面部不得贴边",
-                ["image/jpeg", "image/png", "image/webp", "image/avif"]),
+            ["article"] = new("article", "资讯正文图片", 0, 0, 0, 0, 0, 0,
+                "不限固定尺寸与长宽比；生成交付图时完整保留原图构图，不裁切、不拉伸",
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["video"] = new("video", "视频封面", 1280, 720, 1280, 720, 480, 270,
                 "全端固定 16:9；建议原图 1280×720 或更高同等比例，播放主体避开四角控件区域",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
@@ -318,12 +318,21 @@ public sealed partial class L12PlatformStore
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");
-        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, policy.DesktopWidth, policy.DesktopHeight,
+        int? expectedDesktopWidth = policy.FlexibleDimensions ? null : policy.DesktopWidth;
+        int? expectedDesktopHeight = policy.FlexibleDimensions ? null : policy.DesktopHeight;
+        int? expectedMobileWidth = policy.FlexibleDimensions ? null : policy.MobileWidth;
+        int? expectedMobileHeight = policy.FlexibleDimensions ? null : policy.MobileHeight;
+        int? expectedThumbnailWidth = policy.FlexibleDimensions ? null : policy.ThumbnailWidth;
+        int? expectedThumbnailHeight = policy.FlexibleDimensions ? null : policy.ThumbnailHeight;
+        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, expectedDesktopWidth, expectedDesktopHeight,
             "桌面 WebP");
-        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, policy.MobileWidth, policy.MobileHeight,
+        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, expectedMobileWidth, expectedMobileHeight,
             "移动 WebP");
-        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, policy.ThumbnailWidth,
-            policy.ThumbnailHeight, "缩略图 WebP");
+        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, expectedThumbnailWidth,
+            expectedThumbnailHeight, "缩略图 WebP");
+        var desktopDimensions = ReadWebpDimensions(desktopWebp);
+        var mobileDimensions = ReadWebpDimensions(mobileWebp);
+        var thumbnailDimensions = ReadWebpDimensions(thumbnailWebp);
         if (!double.IsFinite(upload.FocalX) || !double.IsFinite(upload.FocalY) ||
             upload.FocalX is < 0 or > 1 || upload.FocalY is < 0 or > 1)
             throw new ArgumentException("裁切焦点必须位于图片范围内");
@@ -380,12 +389,12 @@ public sealed partial class L12PlatformStore
                 MobileHash = mobileHash,
                 ThumbnailFile = stored.Files[3],
                 ThumbnailHash = thumbnailHash,
-                DesktopWidth = policy.DesktopWidth,
-                DesktopHeight = policy.DesktopHeight,
-                MobileWidth = policy.MobileWidth,
-                MobileHeight = policy.MobileHeight,
-                ThumbnailWidth = policy.ThumbnailWidth,
-                ThumbnailHeight = policy.ThumbnailHeight,
+                DesktopWidth = desktopDimensions.Width,
+                DesktopHeight = desktopDimensions.Height,
+                MobileWidth = mobileDimensions.Width,
+                MobileHeight = mobileDimensions.Height,
+                ThumbnailWidth = thumbnailDimensions.Width,
+                ThumbnailHeight = thumbnailDimensions.Height,
                 OriginalBytes = upload.Original.LongLength,
                 DeliveryBytes = desktopWebp.LongLength + mobileWebp.LongLength + thumbnailWebp.LongLength,
                 CreatedByAccountId = actor.Id,
@@ -764,12 +773,13 @@ public sealed partial class L12PlatformStore
         return "application/octet-stream";
     }
 
-    private static byte[] SanitizeDeliveryWebp(byte[] bytes, int expectedWidth, int expectedHeight, string label)
+    private static byte[] SanitizeDeliveryWebp(byte[] bytes, int? expectedWidth, int? expectedHeight, string label)
     {
         if (DetectImageFormat(bytes) != "image/webp") throw new ArgumentException($"{label}必须是真实 WebP 文件");
         var sanitized = StripWebpMetadata(bytes, label);
         var dimensions = ReadWebpDimensions(sanitized);
-        if (dimensions.Width != expectedWidth || dimensions.Height != expectedHeight)
+        if (expectedWidth.HasValue && expectedHeight.HasValue &&
+            (dimensions.Width != expectedWidth.Value || dimensions.Height != expectedHeight.Value))
             throw new ArgumentException($"{label}尺寸必须为 {expectedWidth}×{expectedHeight}，实际为 {dimensions.Width}×{dimensions.Height}");
         return sanitized;
     }

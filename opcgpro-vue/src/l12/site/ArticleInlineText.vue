@@ -10,6 +10,8 @@ export default defineComponent({
       let content: VNodeChild = run.text
       if (run.bold) content = h('strong', content)
       if (run.italic) content = h('em', content)
+      if (run.underline) content = h('u', content)
+      if (run.strikethrough) content = h('s', content)
       if (run.href) {
         const external = /^https?:\/\//i.test(run.href)
         content = h('a', { href: run.href, target: external ? '_blank' : undefined, rel: external ? 'noopener' : undefined }, content)

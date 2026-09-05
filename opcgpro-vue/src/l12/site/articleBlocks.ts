@@ -1,6 +1,7 @@
 export type ArticleTextBlockType = 'paragraph' | 'h2' | 'h3' | 'bulletList' | 'orderedList' | 'quote'
-export type ArticleBlockType = ArticleTextBlockType | 'image'
-export type ArticleMarkType = 'bold' | 'italic' | 'link'
+export type ArticleBlockType = ArticleTextBlockType | 'image' | 'divider'
+export type ArticleMarkType = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'link'
+export type ArticleTextAlign = 'left' | 'center' | 'right' | 'justify'
 
 export interface ArticleMark {
   type: ArticleMarkType
@@ -14,6 +15,7 @@ export interface ArticleTextBlock {
   type: ArticleTextBlockType
   text: string
   marks: ArticleMark[]
+  align: ArticleTextAlign
 }
 
 export interface ArticleImageBlock {
@@ -24,25 +26,29 @@ export interface ArticleImageBlock {
   caption: string
 }
 
-export type ArticleBlock = ArticleTextBlock | ArticleImageBlock
+export interface ArticleDividerBlock { id: string; type: 'divider' }
+export type ArticleBlock = ArticleTextBlock | ArticleImageBlock | ArticleDividerBlock
 export interface ArticleBodyDocument { format: 'l12-blocks'; version: 1; blocks: ArticleBlock[] }
-export interface ArticleInlineRun { text: string; bold: boolean; italic: boolean; href: string }
+export interface ArticleInlineRun { text: string; bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean; href: string }
 export interface ArticleListItem { text: string; from: number; to: number }
 
 const textTypes = new Set<ArticleTextBlockType>(['paragraph', 'h2', 'h3', 'bulletList', 'orderedList', 'quote'])
-const markTypes = new Set<ArticleMarkType>(['bold', 'italic', 'link'])
+const markTypes = new Set<ArticleMarkType>(['bold', 'italic', 'underline', 'strikethrough', 'link'])
+const alignTypes = new Set<ArticleTextAlign>(['left', 'center', 'right', 'justify'])
 
 export function articleBlockId() {
   return globalThis.crypto?.randomUUID?.() ?? `block-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 export function newArticleTextBlock(type: ArticleTextBlockType = 'paragraph', text = ''): ArticleTextBlock {
-  return { id: articleBlockId(), type, text, marks: [] }
+  return { id: articleBlockId(), type, text, marks: [], align: 'left' }
 }
 
 export function newArticleImageBlock(): ArticleImageBlock {
   return { id: articleBlockId(), type: 'image', mediaAssetId: '', alt: '', caption: '' }
 }
+
+export function newArticleDividerBlock(): ArticleDividerBlock { return { id: articleBlockId(), type: 'divider' } }
 
 function cleanMarks(value: unknown, textLength: number): ArticleMark[] {
   if (!Array.isArray(value)) return []
@@ -69,9 +75,11 @@ function cleanStructuredBlock(value: unknown): ArticleBlock | null {
       alt: String(block.alt || '').slice(0, 180), caption: String(block.caption || '').slice(0, 500),
     }
   }
+  if (block.type === 'divider') return { id, type: 'divider' }
   if (!textTypes.has(block.type as ArticleTextBlockType)) return null
   const text = String(block.text || '').slice(0, 20_000)
-  return { id, type: block.type as ArticleTextBlockType, text, marks: cleanMarks(block.marks, text.length) }
+  const align = alignTypes.has(block.align as ArticleTextAlign) ? block.align as ArticleTextAlign : 'left'
+  return { id, type: block.type as ArticleTextBlockType, text, marks: cleanMarks(block.marks, text.length), align }
 }
 
 export function parseArticleBody(value?: string | null): ArticleBodyDocument {
@@ -100,7 +108,7 @@ export function serializeArticleBody(document: ArticleBodyDocument) {
 }
 
 export function articleBodyText(value?: string | null, limit = 260) {
-  const text = parseArticleBody(value).blocks.map(block => block.type === 'image' ? block.caption : block.text)
+  const text = parseArticleBody(value).blocks.map(block => block.type === 'image' ? block.caption : block.type === 'divider' ? '' : block.text)
     .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
   return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text
 }
@@ -126,6 +134,8 @@ export function articleInlineRuns(text: string, marks: ArticleMark[], from = 0, 
     return {
       text: text.slice(boundary, next), bold: covering.some(mark => mark.type === 'bold'),
       italic: covering.some(mark => mark.type === 'italic'),
+      underline: covering.some(mark => mark.type === 'underline'),
+      strikethrough: covering.some(mark => mark.type === 'strikethrough'),
       href: covering.find(mark => mark.type === 'link')?.href || '',
     }
   }).filter(run => run.text)

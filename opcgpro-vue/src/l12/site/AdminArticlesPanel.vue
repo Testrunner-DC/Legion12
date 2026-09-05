@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleRevision, type SiteCategory, type SiteContentKind, type SiteMedia } from '@/l12/platform'
-import ArticleBlockEditor from './ArticleBlockEditor.vue'
+import ArticleDocumentEditor from './ArticleDocumentEditor.vue'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
 
@@ -173,7 +173,7 @@ onMounted(load)
             <label>发布时间<input v-model="selected.publishAt" type="datetime-local"><small>留空则发布时立即公开；未来时间到点自动公开。公开排序只使用置顶与此时间。</small></label>
             <label v-if="props.kind === 'video'" class="wide">作者名（新视频发布必填）<input v-model="selected.videoAuthorName" maxlength="80" placeholder="视频作者或频道名"><small>最多 80 字符，不接受换行或控制字符；旧视频可保留为空。</small></label>
             <label v-if="props.kind !== 'video'" class="wide">{{ copy.summary }}<textarea v-model="selected.summary" rows="3" maxlength="600"></textarea></label>
-            <ArticleBlockEditor v-if="props.kind === 'news'" v-model="selected.body" :media="media" @media-uploaded="inlineMediaUploaded" @notice="showNotice"/>
+            <ArticleDocumentEditor v-if="props.kind === 'news'" v-model="selected.body" :media="media" @media-uploaded="inlineMediaUploaded" @notice="showNotice"/>
             <label v-else-if="props.kind === 'product'" class="wide">{{ copy.body }}<textarea v-model="selected.body" rows="12" maxlength="100000"></textarea></label>
             <label class="wide">{{ copy.link }}<input v-model="selected.link" maxlength="2000" :placeholder="props.kind === 'video' ? '必填：站内 /path 或 https://；前台整卡直接跳转' : '站内 /path 或 https://' "></label>
             <label v-if="props.kind !== 'video'" class="check"><input v-model="selected.pinned" type="checkbox"> 首页置顶</label>

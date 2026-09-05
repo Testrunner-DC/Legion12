@@ -32,6 +32,7 @@ const heroStatuses = reactive<Record<HeroVariantKey, string>>({ desktop: '尚未
 const heroInputVersion = ref(0)
 const policy = computed(() => policies.value.find(item => item.kind === props.kind))
 const isHero = computed(() => props.kind === 'hero')
+const isFlexible = computed(() => Boolean(policy.value?.flexibleDimensions))
 const ORIGINAL_MAX_BYTES = 16 * 1024 * 1024
 const DESKTOP_MAX_BYTES = 5 * 1024 * 1024
 const MOBILE_MAX_BYTES = 5 * 1024 * 1024
@@ -52,6 +53,7 @@ function greatestCommonDivisor(left: number, right: number): number {
   return right ? greatestCommonDivisor(right, left % right) : left
 }
 function ratio(width: number, height: number) {
+  if (width <= 0 || height <= 0) return '不限比例'
   const divisor = greatestCommonDivisor(width, height)
   return `${width / divisor}:${height / divisor}`
 }
@@ -130,6 +132,19 @@ async function renderVariant(bitmap: ImageBitmap, width: number, height: number,
   context.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height)
   return canvasBlob(canvas, 'image/webp', quality)
 }
+async function renderFlexibleVariant(bitmap: ImageBitmap, maxEdge: number, quality: number) {
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
+  const width = Math.max(1, Math.round(bitmap.width * scale))
+  const height = Math.max(1, Math.round(bitmap.height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width; canvas.height = height
+  const context = canvas.getContext('2d', { alpha: false })
+  if (!context) throw new Error('浏览器图片处理不可用')
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.drawImage(bitmap, 0, 0, width, height)
+  return canvasBlob(canvas, 'image/webp', quality)
+}
 function validateIndependentSource(bitmap: ImageBitmap, spec: HeroVariantSpec) {
   if (bitmap.width < spec.width || bitmap.height < spec.height) {
     throw new Error(`${spec.label}方向归一后至少 ${spec.width}×${spec.height}px`)
@@ -169,14 +184,18 @@ async function upload() {
     assertAcceptedSource(file.value)
     bitmap = await createOrientedBitmap(file.value)
     const current = policy.value
-    if (bitmap.width < minimumWidth.value || bitmap.height < minimumHeight.value) {
+    if (!current.flexibleDimensions && (bitmap.width < minimumWidth.value || bitmap.height < minimumHeight.value)) {
       throw new Error(`原图方向归一后至少建议 ${minimumWidth.value}×${minimumHeight.value}px；当前仅 ${bitmap.width}×${bitmap.height}px，继续放大会明显失真`)
     }
-    const [desktop, mobile, thumbnail] = await Promise.all([
-      renderVariant(bitmap, current.desktopWidth, current.desktopHeight, .87),
-      renderVariant(bitmap, current.mobileWidth, current.mobileHeight, .86),
-      renderVariant(bitmap, current.thumbnailWidth, current.thumbnailHeight, .8),
-    ])
+    const [desktop, mobile, thumbnail] = current.flexibleDimensions
+      ? await Promise.all([
+        renderFlexibleVariant(bitmap, 2400, .87), renderFlexibleVariant(bitmap, 1280, .86), renderFlexibleVariant(bitmap, 600, .8),
+      ])
+      : await Promise.all([
+        renderVariant(bitmap, current.desktopWidth, current.desktopHeight, .87),
+        renderVariant(bitmap, current.mobileWidth, current.mobileHeight, .86),
+        renderVariant(bitmap, current.thumbnailWidth, current.thumbnailHeight, .8),
+      ])
     validateOutputSizes(desktop, mobile, thumbnail)
     const estimatedRequestBytes = file.value.size + desktop.size + mobile.size + thumbnail.size + 64 * 1024
     if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('图片上传总量超过 32MB，请压缩原图后重试')
@@ -278,26 +297,33 @@ async function uploadHeroGroup() {
   </div>
 
   <div v-else class="media-upload-field">
-    <img v-if="previewUrl" :src="previewUrl" :alt="altText || '当前素材预览'">
+    <img v-if="previewUrl" :class="{ contain: isFlexible }" :src="previewUrl" :alt="altText || '当前素材预览'">
     <div class="media-upload-copy">
       <label>上传原图<input type="file" accept="image/jpeg,image/png,image/webp,image/avif" @change="choose"></label>
       <label>替代文字<input v-model="altText" maxlength="180" placeholder="描述图片内容，供无障碍与图片异常时使用"></label>
-      <div class="focal-controls">
+      <div v-if="!isFlexible" class="focal-controls">
         <label>水平焦点 {{ focalX }}%<input v-model.number="focalX" type="range" min="0" max="100"></label>
         <label>垂直焦点 {{ focalY }}%<input v-model.number="focalY" type="range" min="0" max="100"></label>
       </div>
       <aside v-if="policy" class="media-spec" aria-label="图片上传尺寸参考">
         <b>{{ policy.label }} · 上传尺寸参考</b>
-        <span>用途：{{ policy.label }}；桌面推荐 {{ desktopRatio }}（{{ policy.desktopWidth }}×{{ policy.desktopHeight }}px），移动推荐 {{ mobileRatio }}（{{ policy.mobileWidth }}×{{ policy.mobileHeight }}px）。</span>
-        <span>缩略图：{{ policy.thumbnailWidth }}×{{ policy.thumbnailHeight }}px；原图最低建议 {{ minimumWidth }}×{{ minimumHeight }}px。</span>
-        <span>安全区与裁切：{{ policy.safeArea }}。系统按原图方向纠正像素后依据下方焦点分别裁切，不会拉伸。</span>
+        <template v-if="isFlexible">
+          <span>正文插图不限制像素尺寸和长宽比，横图、竖图与长图都可直接上传。</span>
+          <span>系统完整保留原图构图，仅等比例生成网页交付版本，不裁切、不拉伸；桌面最长边最多 2400px，移动 1280px，缩略图 600px。</span>
+        </template>
+        <template v-else>
+          <span>用途：{{ policy.label }}；桌面推荐 {{ desktopRatio }}（{{ policy.desktopWidth }}×{{ policy.desktopHeight }}px），移动推荐 {{ mobileRatio }}（{{ policy.mobileWidth }}×{{ policy.mobileHeight }}px）。</span>
+          <span>缩略图：{{ policy.thumbnailWidth }}×{{ policy.thumbnailHeight }}px；原图最低建议 {{ minimumWidth }}×{{ minimumHeight }}px。</span>
+          <span>安全区与裁切：{{ policy.safeArea }}。系统按原图方向纠正像素后依据下方焦点分别裁切，不会拉伸。</span>
+        </template>
       </aside>
       <p>接受 JPEG / PNG / WebP / AVIF；原图可保留常见 EXIF、ICC 与 Orientation，≤16MB，整次请求 ≤32MB。服务端复核真实签名、精确像素与权限，并权威剥离交付WebP元数据。</p>
-      <button :disabled="busy || !file || !policy" @click="upload">{{ busy ? '正在生成并上传…' : '生成 WebP 三规格并上传' }}</button>
+      <button :disabled="busy || !file || !policy" @click="upload">{{ busy ? '正在生成并上传…' : isFlexible ? '生成等比例 WebP 并上传' : '生成 WebP 三规格并上传' }}</button>
     </div>
   </div>
 </template>
 
 <style scoped>
 .media-upload-field{display:grid;grid-template-columns:190px minmax(0,1fr);gap:22px;padding:20px;border:1px solid #34434b;background:#091016}.media-upload-field>img{width:190px;height:142px;object-fit:cover;border:1px solid #52616a}.media-upload-copy{display:grid;gap:14px}.media-upload-copy label,.hero-upload-field label{display:grid;gap:7px;color:#c0c8ca;font-size:14px;font-weight:800;line-height:1.45}.media-upload-copy input,.hero-upload-field input{box-sizing:border-box;width:100%;min-height:42px;padding:9px 11px;border:1px solid #46545d;background:#050a0e;color:#fff;font-size:14px}.media-upload-copy input[type="range"]{min-height:28px;padding:0}.focal-controls{display:grid;grid-template-columns:1fr 1fr;gap:18px}.media-upload-copy p,.upload-security{margin:0;color:#96a2a7;font-size:12px;line-height:1.7}.media-spec{display:grid;gap:6px;padding:13px 15px;border-left:3px solid #d9bd69;background:#141a1d;color:#aeb8bb;font-size:12px;line-height:1.6}.media-spec b{color:#ead07a;font-size:14px}.media-upload-copy button,.upload-button{justify-self:start;min-height:42px;padding:10px 16px;border:1px solid #b99b45;background:#2c240e;color:#f0d477;font-size:14px;font-weight:900}.media-upload-copy button:disabled,.upload-button:disabled{opacity:.45}.hero-upload-field{display:grid;gap:18px;padding:20px;border:1px solid #34434b;background:#091016}.current-hero-preview{display:grid;grid-template-columns:180px minmax(0,1fr);align-items:center;gap:14px;padding:12px;border:1px solid #39474e}.current-hero-preview span{color:#b8c1c4;font-size:13px;font-weight:800}.current-hero-preview img{grid-column:1;width:180px;aspect-ratio:600/351;object-fit:cover}.hero-variant-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.hero-variant{display:grid;align-content:start;gap:12px;min-width:0;padding:15px;border:1px solid #3d4b53;background:#0e171e}.hero-variant header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}.hero-variant header b{color:#e9cf78;font-size:14px}.hero-variant header span{color:#9fa9ad;font-size:12px}.variant-preview{display:grid;place-items:center;overflow:hidden;width:100%;background:#05090c;color:#7f8c91;font-size:12px}.variant-preview img{display:block;width:100%;height:100%;object-fit:contain}.hero-variant p{margin:0;color:#98a4a9;font-size:12px;line-height:1.55}.hero-variant p.valid{color:#76d5a0}.hero-variant p.invalid{color:#f29aa4}@media(max-width:980px){.hero-variant-grid{grid-template-columns:1fr 1fr}.hero-variant:last-child{grid-column:1/-1}}@media(max-width:720px){.media-upload-field{grid-template-columns:1fr;padding:16px}.media-upload-field>img{width:100%;height:180px}.focal-controls,.hero-variant-grid{grid-template-columns:1fr}.hero-variant:last-child{grid-column:auto}.hero-upload-field{padding:16px}.current-hero-preview{grid-template-columns:1fr}.current-hero-preview img{grid-column:auto;width:100%}}
+.media-upload-field>img.contain{object-fit:contain;background:#03070a}
 </style>

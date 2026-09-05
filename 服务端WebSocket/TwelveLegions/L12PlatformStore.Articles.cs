@@ -586,13 +586,22 @@ public sealed partial class L12PlatformStore
                     continue;
                 }
 
+                if (type == "divider")
+                {
+                    RequireOnlyProperties(block, "id", "type");
+                    continue;
+                }
+
                 if (type is not ("paragraph" or "h2" or "h3" or "bulletList" or "orderedList" or "quote"))
                     throw new ArgumentException($"正文内容块类型不在白名单中：{type}");
-                RequireOnlyProperties(block, "id", "type", "text", "marks");
+                RequireOnlyProperties(block, "id", "type", "text", "marks", "align");
                 var text = JsonString(block, "text");
                 if (text.Length > 20_000 || HasUnsafeControlCharacters(text))
                     throw new ArgumentException("正文文本块超过 20000 字或包含非法控制字符");
                 hasContent |= !string.IsNullOrWhiteSpace(text);
+                var align = JsonString(block, "align");
+                if (!string.IsNullOrWhiteSpace(align) && align is not ("left" or "center" or "right" or "justify"))
+                    throw new ArgumentException($"正文对齐方式不在白名单中：{align}");
                 if (!block.TryGetProperty("marks", out var marks)) continue;
                 if (marks.ValueKind != JsonValueKind.Array || marks.GetArrayLength() > 200)
                     throw new ArgumentException("单个正文块的格式标记不能超过 200 个");
@@ -601,7 +610,7 @@ public sealed partial class L12PlatformStore
                     if (mark.ValueKind != JsonValueKind.Object) throw new ArgumentException("正文格式标记必须是对象");
                     RequireOnlyProperties(mark, "type", "from", "to", "href");
                     var markType = JsonString(mark, "type");
-                    if (markType is not ("bold" or "italic" or "link"))
+                    if (markType is not ("bold" or "italic" or "underline" or "strikethrough" or "link"))
                         throw new ArgumentException($"正文格式标记不在白名单中：{markType}");
                     if (!mark.TryGetProperty("from", out var fromValue) || !fromValue.TryGetInt32(out var from) ||
                         !mark.TryGetProperty("to", out var toValue) || !toValue.TryGetInt32(out var to) ||

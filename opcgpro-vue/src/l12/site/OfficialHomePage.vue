@@ -44,7 +44,7 @@ const productCategories = computed(() => {
 
 const isInternal = (href?: string) => Boolean(href?.startsWith('/') && !href.startsWith('//'))
 const mediaFor = (article?: Article) => media.value.find(item => item.id === article?.mediaAssetId)
-const articleHref = (article: Article, fallback: string) => article.link || fallback
+const articleHref = (article: Article, fallback: string) => fallback === '/news' ? `/news/${article.id}` : article.link || fallback
 const dateLabel = (article: Article) => new Date(article.publishedAt || article.publishAt || article.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 
 function showSlide(index: number, restart = true) {

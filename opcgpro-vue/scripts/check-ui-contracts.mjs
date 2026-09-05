@@ -51,6 +51,7 @@ const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
 const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
 const articleBlockEditor = read('../src/l12/site/ArticleBlockEditor.vue')
+const articleDocumentEditor = read('../src/l12/site/ArticleDocumentEditor.vue')
 const articleBlockModel = read('../src/l12/site/articleBlocks.ts')
 const articleRenderer = read('../src/l12/site/ArticleContentRenderer.vue')
 const adminMatches = read('../src/l12/site/AdminMatchesPanel.vue')
@@ -114,7 +115,7 @@ const confirmedS1DisasterLevels = {
   'S01-0308': 1,
   'S01-0406': 1,
 }
-const siteWorkbenchSources = [adminSiteContent, adminArticles, mediaUploadField, articleBlockEditor]
+const siteWorkbenchSources = [adminSiteContent, adminArticles, mediaUploadField, articleDocumentEditor]
 const hasUndersizedSiteWorkbenchText = siteWorkbenchSources.some(source =>
   /font-size\s*:\s*(?:[0-9]|1[01])px|font\s*:[^;{}]*\s(?:[0-9]|1[01])px/.test(source))
 
@@ -492,29 +493,37 @@ const contracts = [
     && siteContentStore.includes('new PendingMediaFile(desktopWebp')
     && siteContentStore.includes('row.ContentHash = string.IsNullOrWhiteSpace(row.ContentHash) ? row.OriginalHash')
     && adminSiteContent.includes('独立三版本') && adminSiteContent.includes('三个版本统一保护、统一软删除'), '轮播素材必须以桌面、移动、缩略三个独立构图文件和各自替代文字一次原子提交；原图按方向解码，服务端按RIFF区块净化交付WebP并按单一素材组哈希、引用与软删除，旧素材仍可读'],
-  [articleBlockEditor.includes('结构化正文编辑器') && articleBlockEditor.includes("addText('h2')")
-    && articleBlockEditor.includes("addText('h3')") && articleBlockEditor.includes("addText('bulletList')")
-    && articleBlockEditor.includes("addText('orderedList')") && articleBlockEditor.includes("applyMark(block, 'bold')")
-    && articleBlockEditor.includes("applyMark(block, 'italic')") && articleBlockEditor.includes("applyMark(block, 'link')")
-    && articleBlockEditor.includes('↶ 撤销') && articleBlockEditor.includes('↷ 重做')
-    && articleBlockEditor.includes('block.text = text') && articleBlockEditor.includes('updateImageTextField')
-    && articleBlockEditor.includes('MediaUploadField kind="article"') && articleBlockEditor.includes('正文预览')
+  [articleDocumentEditor.includes('contenteditable="true"') && articleDocumentEditor.includes('class="editor-canvas"')
+    && articleDocumentEditor.includes("command('bold')") && articleDocumentEditor.includes("command('italic')")
+    && articleDocumentEditor.includes("command('underline')") && articleDocumentEditor.includes("command('strikeThrough')")
+    && articleDocumentEditor.includes("setAlignment('left')") && articleDocumentEditor.includes("setAlignment('center')")
+    && articleDocumentEditor.includes("setAlignment('right')") && articleDocumentEditor.includes("setAlignment('justify')")
+    && articleDocumentEditor.includes("command('insertUnorderedList')") && articleDocumentEditor.includes("command('insertOrderedList')")
+    && articleDocumentEditor.includes('↶ 撤销') && articleDocumentEditor.includes('↷ 重做')
+    && articleDocumentEditor.includes('MediaUploadField kind="article"') && articleDocumentEditor.includes('预览文章')
+    && !articleDocumentEditor.includes('class="editor-block"') && !articleDocumentEditor.includes('<textarea')
     && articleBlockModel.includes("format: 'l12-blocks'") && articleBlockModel.includes('safeArticleHref')
-    && articleRenderer.includes('<blockquote') && articleRenderer.includes('<figure') && !articleRenderer.includes('v-html')
-    && adminArticles.includes('<ArticleBlockEditor') && newsPage.includes('<ArticleContentRenderer')
+    && articleBlockModel.includes("'underline'") && articleBlockModel.includes("'strikethrough'") && articleBlockModel.includes('ArticleTextAlign')
+    && articleRenderer.includes('<blockquote') && articleRenderer.includes('<figure') && articleRenderer.includes('alignStyle') && !articleRenderer.includes('v-html')
+    && adminArticles.includes('<ArticleDocumentEditor') && newsPage.includes('<ArticleContentRenderer')
     && articleStore.includes('RequireOnlyProperties') && articleStore.includes('正文内容块类型不在白名单中')
-    && articleStore.includes('NormalizeOptionalUrl(href, "正文链接", allowRelative: true)'), '资讯正文必须使用可撤销预览的结构化块编辑器、严格服务端白名单和固定 Vue 节点渲染，并兼容旧纯文本而不开放任意 HTML'],
-  [!articleBlockEditor.includes('window.prompt')
-    && articleBlockEditor.includes('class="link-panel"') && articleBlockEditor.includes('已选择：<q>{{ linkPanel.selectedText }}</q>')
-    && articleBlockEditor.includes('@click="applyLink"') && articleBlockEditor.includes('@click="removeLink"')
-    && articleBlockEditor.includes('@click="closeLinkPanel()"') && articleBlockEditor.includes('safeArticleHref(linkHref.value)')
-    && articleBlockEditor.includes("key === 'b' || key === 'i' || key === 'k'")
-    && articleBlockEditor.includes('HISTORY_DEBOUNCE_MS = 700')
-    && articleBlockEditor.includes('historyTimer = setTimeout(flushPendingHistory, HISTORY_DEBOUNCE_MS)')
-    && articleBlockEditor.includes('@blur="flushPendingHistory"')
-    && /function updateText[\s\S]*?scheduleHistory\(\)\n}/.test(articleBlockEditor)
-    && articleBlockEditor.includes('class="format-feedback"') && articleBlockEditor.includes(':aria-pressed="selectionHasMark')
-    && articleBlockEditor.includes('class="selected-image-preview"'), '正文编辑器必须以内嵌链接面板替代浏览器 prompt，支持 B/I/K 快捷键、合并式输入历史、格式状态和所选正文图片预览；结构操作仍立即进入撤销历史'],
+    && articleStore.includes('NormalizeOptionalUrl(href, "正文链接", allowRelative: true)'), '资讯正文必须使用单一连续稿纸、完整排版工具栏、结构化白名单和固定 Vue 节点渲染，兼容旧纯文本且不开放任意 HTML'],
+  [!articleDocumentEditor.includes('window.prompt') && articleDocumentEditor.includes('class="editor-dialog"')
+    && articleDocumentEditor.includes('@click="applyLink"') && articleDocumentEditor.includes('@click="removeLink"')
+    && articleDocumentEditor.includes('safeArticleHref(linkHref.value)') && articleDocumentEditor.includes("key === 'k'")
+    && articleDocumentEditor.includes('HISTORY_DEBOUNCE_MS = 700')
+    && articleDocumentEditor.includes('historyTimer = setTimeout(flushHistory, HISTORY_DEBOUNCE_MS)')
+    && articleDocumentEditor.includes('@blur="flushHistory"') && articleDocumentEditor.includes('function syncCanvas()')
+    && articleDocumentEditor.includes('点击图片可再次编辑'), '正文编辑器必须提供非浏览器prompt的链接/图片面板、快捷键、合并式输入历史及正文图片就地再编辑'],
+  [mediaUploadField.includes('current.flexibleDimensions') && mediaUploadField.includes('renderFlexibleVariant')
+    && mediaUploadField.includes('正文插图不限制像素尺寸和长宽比') && mediaUploadField.includes('不裁切、不拉伸')
+    && platform.includes('flexibleDimensions: boolean')
+    && siteContentStore.includes('FlexibleDimensions = false') && siteContentStore.includes('"article", "资讯正文图片", 0, 0, 0, 0, 0, 0')
+    && siteContentStore.includes('policy.FlexibleDimensions ? null'), '资讯正文插图必须允许任意像素与长宽比，完整保留构图并仅等比例生成交付WebP；封面和轮播继续执行各自固定规格'],
+  [router.includes("path: '/news/:articleId'") && newsPage.includes('showingNewsDetail')
+    && newsPage.includes('← 返回资讯一览') && newsPage.includes(':to="kind === \'news\' ? `/news/${entry.id}`')
+    && !newsPage.includes('<details v-if="entry.body"') && officialHome.includes("fallback === '/news' ? `/news/${article.id}`")
+    && adminSiteContent.includes(':value="`/news/${article.id}`"'), '每篇资讯必须从一览页或首页进入独立详情页，详情页右上角可返回资讯一览；通知按钮新建链接也必须指向单篇详情'],
   [articleStore.includes('row.Summary = kind == "video" ? string.Empty')
     && articleStore.includes('row.Body = kind == "video" ? string.Empty')
     && articleStore.includes('VideoAuthorRequired') && articleStore.includes('新视频发布前必须填写作者名')
@@ -560,7 +569,7 @@ const contracts = [
     && siteContentStore.includes("character is not ('\\r' or '\\n')"), '轮播前台和后台预览必须只按管理员输入的换行符断行，不得随视口自动折行；后台须逐字段提示最长单行并保留内部换行'],
   [!hasUndersizedSiteWorkbenchText && adminSiteContent.includes('font-size:14px')
     && adminArticles.includes('font-size:14px') && mediaUploadField.includes('font-size:14px')
-    && articleBlockEditor.includes('font-size:14px'), '站点内容工作台、素材上传与正文编辑器不得恢复 9–11px 密集排版；正文和控件应为 14px，辅助文字至少 12px并保留分组间距'],
+    && articleDocumentEditor.includes('font-size:16px'), '站点内容工作台、素材上传与正文编辑器不得恢复 9–11px 密集排版；正文画布应为16px，控件与辅助文字至少12px并保留分组间距'],
   [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
     && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
     && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],

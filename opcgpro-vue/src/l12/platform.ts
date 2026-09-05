@@ -70,7 +70,7 @@ export type SiteMediaKind = 'hero' | 'article' | SiteContentKind
 export interface SiteMediaPolicy {
   kind: SiteMediaKind; label: string; desktopWidth: number; desktopHeight: number
   mobileWidth: number; mobileHeight: number; thumbnailWidth: number; thumbnailHeight: number
-  safeArea: string; acceptedOriginalFormats: string[]
+  safeArea: string; acceptedOriginalFormats: string[]; flexibleDimensions: boolean
 }
 export interface SiteMedia {
   id: string; kind: SiteMediaKind; altText: string; focalX: number; focalY: number
