@@ -32,6 +32,7 @@ const gamePage = read('../src/l12/GamePage.vue')
 const app = read('../src/App.vue')
 const mainEntry = read('../src/main.ts')
 const playerMat = read('../src/l12/game/PlayerMat.vue')
+const playerTurnClock = read('../src/l12/game/PlayerTurnClock.vue')
 const adminIntegrity = read('../src/l12/site/AdminRankedIntegrityPanel.vue')
 const graveyardOverlay = read('../src/l12/game/GraveyardOverlay.vue')
 const masterOverlay = read('../src/l12/game/MasterOverlay.vue')
@@ -209,7 +210,9 @@ const contracts = [
   [Object.entries(confirmedS1DisasterLevels).every(([id, level]) => s1Cards.find(card => card.id === id)?.disasterLevel === level), '第一季补充天灾等级必须进入前端卡牌目录'],
   [shell.includes("const siteBrandIcon = '/favicon.png'") && shell.includes('filter:brightness(0) invert(1)'), '主页入口必须复用标签页Logo并以白色显示'],
   [indexHtml.includes('<title>十二军团</title>') && !indexHtml.includes('十二军团 · 联网对战'), '网页标题必须统一为十二军团'],
-  [playerMat.includes('data-ui-contract="ranked-player-clock"') && playerMat.includes('总时') && playerMat.includes('本次') && playerMat.includes('重连'), '排位双方玩家区域必须显示总操作、本次操作和掉线重连倒计时'],
+  [board.includes('opponent-player-clock') && board.includes('my-player-clock') && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"') && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与计时必须固定在棋盘右侧的上下玩家位置，当前回合只能控制高亮'],
+  [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连') && playerTurnClock.includes('无时限') && !playerTurnClock.includes('v-if="active"'), '双方玩家计时必须常驻；排位显示总操作、本次操作或重连倒计时，非计时模式显示无时限'],
+  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('未知主宰') && board.includes('未定级') && board.includes('无主宰称号') && board.includes('状态同步中') && board.includes('<dt>主宰</dt>') && board.includes('<dt>血量</dt>') && board.includes('<dt>阵营</dt>') && board.includes('overflow:visible!important') && board.includes('overflow-wrap:anywhere') && !globalStyle.includes('.player-panel{height:150px'), '对局右栏双方玩家摘要必须强制显示身份、主宰、完整血量、阵营、段位/称号与连接状态，缺失字段有明确占位且不得固定高度裁切'],
   [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],
   [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)') && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"'), '在线玩家窗口必须支持直接添加好友、邀请空闲好友，并将对局中玩家替换为带权限原因的观战入口'],
   [shell.includes('friendApi.resolve(player.accountId, accept)') && shell.includes("player.friendDirection === 'incoming'") && shell.includes('resolveOnlineFriend(player, false)') && shell.includes('resolveOnlineFriend(player, true)') && shell.includes('>拒绝</button>') && shell.includes("'接受'"), '在线玩家窗口必须允许直接接受或拒绝收到的好友申请，不能只显示待处理状态'],
@@ -267,7 +270,7 @@ const contracts = [
   [lobby.includes('.ranked-rules-modal{grid-template-rows:auto minmax(0,1fr) auto') && lobby.includes('.ranked-rules-scroll{min-height:0;align-content:start;overflow-x:hidden;overflow-y:scroll'), '排位规则正文必须拥有独立纵向滚动区，在小视口中也能阅读全部内容'],
   [shell.includes('<router-link class="site-brand" to="/"') && !shell.includes('<span>LEGION 12</span>') && !shell.includes('<small>十二军团</small>') && shell.includes('.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain'), '主页侧栏品牌区必须只显示无外框的白色 Logo-Mini，不得附带中英文文字'],
   [globalBugFeedback.includes('v-model="form.bugDescription"') && globalBugFeedback.includes('v-model="form.suggestion"') && globalBugFeedback.includes('if (!bugDescription && !suggestion)') && globalBugFeedback.includes('提及卡牌的时候请勿使用俗称，最好使用卡牌编号（例：S01-0001）') && globalBugFeedback.includes('描述你希望优化的Bug、操作体验或界面效果'), '全局反馈必须分为 Bug 提交与优化建议，任填一项即可提交并保留明确填写提示'],
-  [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('enemyBadge.rankLabel') && board.includes('myBadge.masterTitle'), '个人页必须可选择已获得的最强主宰称号，对战右上玩家框须显示权威段位/派系排名称号与所选主宰称号'],
+  [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('enemyBadge?.rankLabel') && board.includes('myBadge?.masterTitle'), '个人页必须可选择已获得的最强主宰称号，对战右上玩家框须显示权威段位/派系排名称号与所选主宰称号'],
   [board.includes("choiceMode === 'mixed-board-payment'") && board.includes("? '确认费用' : '确认发动'") && board.includes('lockedChoices'), '混合场面费用必须在同一场面直选条选择，唯一资源自动锁定且与弃置对象一并确认'],
   [rankedTicker.includes('@animationend="complete"') && rankedTicker.includes('animation:ranked-message-once 16s linear 1 both') && rankedPlayback.includes('claimNextRankedBroadcast') && rankedPlayback.includes('completeCurrentRankedBroadcast') && rankedPlayback.includes('accountId'), '排位广播必须按账号领取，完整播放一次后确认，不得在页面内循环重播同一消息'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],

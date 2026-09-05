@@ -13,10 +13,12 @@ import HandArea from './HandArea.vue'
 import MasterOverlay from './MasterOverlay.vue'
 import PhaseTrack from './PhaseTrack.vue'
 import PlayerMat from './PlayerMat.vue'
+import PlayerTurnClock from './PlayerTurnClock.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
 import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 import CardImage from '../CardImage.vue'
+import { getFactionPresentation } from '../factionPresentation'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -78,6 +80,16 @@ const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
 const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
 const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
+const playerConnection = (playerIndex: number) => {
+  const timed = l12State.rankedClock?.players.find(player => player.playerIndex === playerIndex)
+  if (timed) return timed.connected
+  return l12State.room?.players.find(player => player.playerIndex === playerIndex)?.connected ?? null
+}
+const connectionLabel = (playerIndex: number) => {
+  const connected = playerConnection(playerIndex)
+  return connected === null ? (props.readOnly ? '记录快照' : '状态同步中') : connected ? '在线' : '已断开'
+}
+const factionLabel = (faction: string) => getFactionPresentation(faction).label
 function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
 const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
   ? props.game.pendingDefense.target.type : null)
@@ -768,6 +780,8 @@ function statusTexts(card: Card) {
         </aside>
 
         <main class="board-center" data-l12-game-stage>
+          <PlayerTurnClock class="board-player-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
+            :active="game.activePlayer === viewEnemy.playerIndex" :ranked-clock="l12State.rankedClock" />
           <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
@@ -776,7 +790,6 @@ function statusTexts(card: Card) {
           <HandArea v-else hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
-              :ranked-clock="l12State.rankedClock"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
@@ -851,7 +864,6 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
-              :ranked-clock="l12State.rankedClock"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
@@ -881,12 +893,33 @@ function statusTexts(card: Card) {
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
+          <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
+            :active="game.activePlayer === viewMe.playerIndex" :ranked-clock="l12State.rankedClock" />
         </main>
 
         <aside class="board-rail right-rail">
-          <section class="grand-panel player-panel">
-            <h3>对手</h3><strong>{{ viewEnemy.name }}</strong><span>{{ viewEnemy.master.masterName }} · 血量 {{ viewEnemy.master.hp }}</span><small v-if="enemyBadge" class="battle-title"><b>{{ enemyBadge.rankLabel }}</b><i v-if="enemyBadge.masterTitle">{{ enemyBadge.masterTitle }}</i></small>
-            <hr/><h3>我方</h3><strong class="mine">{{ viewMe.name }}</strong><span>{{ viewMe.master.masterName }} · 血量 {{ viewMe.master.hp }}</span><small v-if="myBadge" class="battle-title"><b>{{ myBadge.rankLabel }}</b><i v-if="myBadge.masterTitle">{{ myBadge.masterTitle }}</i></small>
+          <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
+            <article class="player-summary opponent-summary">
+              <header><h3>对手</h3><span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span></header>
+              <strong>{{ viewEnemy.name || '未命名玩家' }}</strong>
+              <dl>
+                <div><dt>主宰</dt><dd>{{ viewEnemy.master.masterName || '未知主宰' }}</dd></div>
+                <div><dt>血量</dt><dd>{{ viewEnemy.master.hp }}/{{ viewEnemy.master.maxHp }}</dd></div>
+                <div><dt>阵营</dt><dd>{{ factionLabel(viewEnemy.faction) }}</dd></div>
+              </dl>
+              <small class="battle-title"><b>{{ enemyBadge?.rankLabel || '未定级' }}</b><i>{{ enemyBadge?.masterTitle || '无主宰称号' }}</i></small>
+            </article>
+            <hr/>
+            <article class="player-summary my-summary">
+              <header><h3>我方</h3><span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span></header>
+              <strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong>
+              <dl>
+                <div><dt>主宰</dt><dd>{{ viewMe.master.masterName || '未知主宰' }}</dd></div>
+                <div><dt>血量</dt><dd>{{ viewMe.master.hp }}/{{ viewMe.master.maxHp }}</dd></div>
+                <div><dt>阵营</dt><dd>{{ factionLabel(viewMe.faction) }}</dd></div>
+              </dl>
+              <small class="battle-title"><b>{{ myBadge?.rankLabel || '未定级' }}</b><i>{{ myBadge?.masterTitle || '无主宰称号' }}</i></small>
+            </article>
           </section>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <div class="event-list">
@@ -955,6 +988,13 @@ function statusTexts(card: Card) {
   grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr);
   align-items:stretch;
 }
+.board-player-clock{position:absolute;right:5px;z-index:38}.opponent-player-clock{top:4px}.my-player-clock{bottom:4px}
+.player-panel{box-sizing:border-box;height:auto!important;min-height:286px;flex:none;overflow:visible!important}
+.player-summary{display:grid;min-width:0;gap:6px}.player-summary header{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:8px}.player-summary header h3{margin:0}.player-summary strong{max-width:none!important;overflow:visible!important;white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.35!important}
+.player-summary dl{display:grid;gap:3px;margin:0}.player-summary dl>div{display:grid;grid-template-columns:31px minmax(0,1fr);gap:5px;align-items:start}.player-summary dt{color:#687270;font-size:8px;font-weight:900}.player-summary dd{min-width:0;margin:0;color:#c8ccc8;font-size:9px;font-weight:800;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:8px!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.player-panel>hr{margin:9px 0!important}.player-summary .battle-title{display:flex;min-width:0;flex-wrap:wrap;gap:4px;margin-top:1px}.player-summary .battle-title b,.player-summary .battle-title i{max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}
 .battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch}
 .battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
 .battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
