@@ -18,6 +18,9 @@ public sealed record L12SiteMediaView(string Id, string Kind, string AltText, do
     int ThumbnailHeight, long OriginalBytes, long DeliveryBytes, string CreatedBy, DateTimeOffset CreatedAt,
     int ReferenceCount);
 
+public sealed record L12SiteMediaEmbedView(string Id, string AltText, string DesktopUrl, string MobileUrl,
+    string ThumbnailUrl, int DesktopWidth, int DesktopHeight, int MobileWidth, int MobileHeight);
+
 public sealed record L12SiteMediaFile(string Path, string ContentType, string Hash, string FileName);
 
 public sealed record L12SiteCategoryDraft(string? Id, string Kind, string Name, string Slug, int SortOrder,
@@ -36,6 +39,11 @@ public sealed partial class L12PlatformStore
 {
     public const string HomeCompositionContentKey = "home.composition";
     public const string SiteLegalContentKey = "site.footer";
+    public const int SiteMediaOriginalMaxBytes = 16 * 1024 * 1024;
+    public const int SiteMediaDesktopMaxBytes = 5 * 1024 * 1024;
+    public const int SiteMediaMobileMaxBytes = 5 * 1024 * 1024;
+    public const int SiteMediaThumbnailMaxBytes = 2 * 1024 * 1024;
+    public const long SiteMediaRequestMaxBytes = 32L * 1024 * 1024;
 
     private sealed class SiteMediaRow
     {
@@ -85,14 +93,17 @@ public sealed partial class L12PlatformStore
             ["hero"] = new("hero", "首页轮播", 2460, 1440, 1080, 1440, 600, 351,
                 "桌面中央 70% × 70%；移动端中央 76% × 78%，标题与人物主体不得贴边",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["news"] = new("news", "资讯封面", 1600, 900, 1080, 1350, 600, 338,
-                "桌面中央 76% × 76%；移动端中央 82% × 72%",
+            ["news"] = new("news", "资讯封面", 1600, 900, 1280, 720, 480, 270,
+                "全端固定 16:9；建议原图 1600×900 或更高同等比例，标题与主体保持在中央 76% × 76%",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["video"] = new("video", "视频封面", 1280, 720, 1080, 1350, 480, 270,
-                "桌面中央 72% × 72%；播放主体避开四角控件区域",
+            ["article"] = new("article", "资讯正文图片", 1600, 1000, 1080, 1350, 600, 375,
+                "正文主体保持在中央 84% × 82%，重要文字与人物面部不得贴边",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["product"] = new("product", "商品图片", 1200, 900, 1080, 1350, 480, 360,
-                "商品主体保持在中央 78% × 78%，包装文字不得贴边",
+            ["video"] = new("video", "视频封面", 1280, 720, 1280, 720, 480, 270,
+                "全端固定 16:9；建议原图 1280×720 或更高同等比例，播放主体避开四角控件区域",
+                ["image/jpeg", "image/png", "image/webp", "image/avif"]),
+            ["product"] = new("product", "商品图片", 1600, 1200, 1200, 900, 480, 360,
+                "全端固定 4:3；建议原图 1600×1200 或更高同等比例，商品主体保持在中央 78% × 78%，包装文字不得贴边",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
         };
 
@@ -292,10 +303,10 @@ public sealed partial class L12PlatformStore
     {
         var kind = NormalizeMediaKind(upload.Kind);
         var policy = MediaPolicies[kind];
-        ValidateUploadBytes(upload.Original, "原图", 16 * 1024 * 1024);
-        ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", 5 * 1024 * 1024);
-        ValidateUploadBytes(upload.MobileWebp, "移动 WebP", 5 * 1024 * 1024);
-        ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP", 2 * 1024 * 1024);
+        ValidateUploadBytes(upload.Original, "原图", SiteMediaOriginalMaxBytes);
+        ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", SiteMediaDesktopMaxBytes);
+        ValidateUploadBytes(upload.MobileWebp, "移动 WebP", SiteMediaMobileMaxBytes);
+        ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP", SiteMediaThumbnailMaxBytes);
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");
@@ -450,9 +461,10 @@ public sealed partial class L12PlatformStore
                 foreach (var slide in slides.EnumerateArray())
                 {
                     ValidateJsonString(slide, "id", 80);
-                    ValidateJsonString(slide, "title", 180);
-                    ValidateJsonString(slide, "summary", 600);
-                    ValidateJsonString(slide, "footer", 180);
+                    ValidateHeroCopyString(slide, "eyebrow", 80);
+                    ValidateHeroCopyString(slide, "title", 180);
+                    ValidateHeroCopyString(slide, "summary", 600);
+                    ValidateHeroCopyString(slide, "footer", 180);
                     ValidateOptionalSiteUrl(JsonString(slide, "href"), "轮播链接");
                     var enabled = !slide.TryGetProperty("enabled", out var enabledValue) || enabledValue.ValueKind != JsonValueKind.False;
                     var mediaId = JsonString(slide, "mediaAssetId");
@@ -531,7 +543,7 @@ public sealed partial class L12PlatformStore
     {
         var normalized = value?.Trim().ToLowerInvariant();
         return MediaPolicies.ContainsKey(normalized ?? string.Empty) ? normalized! :
-            throw new ArgumentException("素材类型必须是 hero、news、video 或 product");
+            throw new ArgumentException("素材类型必须是 hero、news、article、video 或 product");
     }
 
     private L12SiteCategoryView ToSiteCategoryView(SiteCategoryRow row) => new(row.Id, row.Kind, row.Name,
@@ -544,6 +556,11 @@ public sealed partial class L12PlatformStore
             row.ThumbnailHeight, row.OriginalBytes, row.DeliveryBytes, ArticleAccountName(row.CreatedByAccountId),
             row.CreatedAt, SiteMediaReferenceCount(row.Id));
 
+    private L12SiteMediaEmbedView ToSiteMediaEmbedView(SiteMediaRow row)
+        => new(row.Id, row.AltText, SiteMediaUrl(row.Id), SiteMediaUrl(row.Id, "mobile"),
+            SiteMediaUrl(row.Id, "thumbnail"), row.DesktopWidth, row.DesktopHeight,
+            row.MobileWidth, row.MobileHeight);
+
     private int SiteCategoryReferenceCount(string id)
         => _data.Articles.Sum(row => (row.CategoryId == id ? 1 : 0) + (row.Published?.CategoryId == id ? 1 : 0) +
             row.Revisions.Count(revision => revision.CategoryId == id));
@@ -551,7 +568,9 @@ public sealed partial class L12PlatformStore
     private int SiteMediaReferenceCount(string id)
     {
         var count = _data.Articles.Sum(row => (row.MediaAssetId == id ? 1 : 0) +
-            (row.Published?.MediaAssetId == id ? 1 : 0) + row.Revisions.Count(revision => revision.MediaAssetId == id));
+            CountJsonString(row.Body, id) + (row.Published?.MediaAssetId == id ? 1 : 0) +
+            CountJsonString(row.Published?.Body, id) + row.Revisions.Sum(revision =>
+                (revision.MediaAssetId == id ? 1 : 0) + CountJsonString(revision.Body, id)));
         count += _data.ContentEntries.Sum(entry => CountJsonString(entry.DraftValue, id) +
             CountJsonString(entry.PublishedValue, id));
         count += _data.ContentVersions.Sum(version => CountJsonString(version.Value, id));
@@ -714,6 +733,14 @@ public sealed partial class L12PlatformStore
         if (!element.TryGetProperty(property, out var value)) return;
         if (value.ValueKind != JsonValueKind.String || (value.GetString()?.Length ?? 0) > maxLength)
             throw new ArgumentException($"字段 {property} 必须是长度不超过 {maxLength} 的文本");
+    }
+
+    private static void ValidateHeroCopyString(JsonElement element, string property, int maxLength)
+    {
+        ValidateJsonString(element, property, maxLength);
+        var value = JsonString(element, property);
+        if (value.Any(character => char.IsControl(character) && character is not ('\r' or '\n')))
+            throw new ArgumentException($"轮播字段 {property} 只能使用可见字符和手动换行");
     }
 
     private static string JsonString(JsonElement element, string property)

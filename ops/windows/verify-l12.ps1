@@ -112,6 +112,8 @@ try {
         @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
         @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" },
         @{ Source = "ops\server\deploy-l12-release.sh"; Target = "ops\server\deploy-l12-release.sh" },
+        @{ Source = "ops\server\legion12-testrun.nginx"; Target = "ops\server\legion12-testrun.nginx" },
+        @{ Source = "ops\server\legion12-testrun-http.nginx"; Target = "ops\server\legion12-testrun-http.nginx" },
         @{ Source = "ops\server\nginx-l12-card-assets.conf"; Target = "ops\server\nginx-l12-card-assets.conf" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },

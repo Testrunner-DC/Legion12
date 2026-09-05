@@ -49,6 +49,10 @@ const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
 const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
+const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
+const articleBlockEditor = read('../src/l12/site/ArticleBlockEditor.vue')
+const articleBlockModel = read('../src/l12/site/articleBlocks.ts')
+const articleRenderer = read('../src/l12/site/ArticleContentRenderer.vue')
 const adminMatches = read('../src/l12/site/AdminMatchesPanel.vue')
 const adminCardAnalytics = read('../src/l12/site/AdminCardAnalyticsPanel.vue')
 const friendsPage = read('../src/l12/site/FriendsPage.vue')
@@ -68,6 +72,8 @@ const legacyLobby = read('../src/l12/LobbyPage.vue')
 const tournamentCenter = read('../src/l12/site/TournamentCenterPage.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
+const siteContentStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
+const articleStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Articles.cs')
 const l12PromptModel = read('../../服务端WebSocket/TwelveLegions/Models.cs')
 const l12PromptSetup = read('../../服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs')
 const l12GameEngine = read('../../服务端WebSocket/TwelveLegions/L12GameEngine.cs')
@@ -87,6 +93,8 @@ const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.
 const windowsVerify = read('../../ops/windows/verify-l12.ps1')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
+const nginxSite = read('../../ops/server/legion12-testrun.nginx')
+const nginxHttpSite = read('../../ops/server/legion12-testrun-http.nginx')
 const bugQueue = read('../../ops/windows/Get-L12BugQueue.ps1')
 const s1Cards = JSON.parse(read('../public/data/l12/cards.s1.json'))
 const starterCards = JSON.parse(read('../public/data/l12/cards.st.json'))
@@ -106,6 +114,9 @@ const confirmedS1DisasterLevels = {
   'S01-0308': 1,
   'S01-0406': 1,
 }
+const siteWorkbenchSources = [adminSiteContent, adminArticles, mediaUploadField, articleBlockEditor]
+const hasUndersizedSiteWorkbenchText = siteWorkbenchSources.some(source =>
+  /font-size\s*:\s*(?:[0-9]|1[01])px|font\s*:[^;{}]*\s(?:[0-9]|1[01])px/.test(source))
 
 const contracts = [
   [moraleIdentities.length === 6
@@ -442,6 +453,83 @@ const contracts = [
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
   [platform.includes('siteContentApi') && officialHome.includes('v-if="ready"') && officialHome.includes('siteContentApi.home()') && platform.includes('platformRequest<Article[]>(`/api/articles') && adminPage.includes('AdminSiteContentPanel') && adminPage.includes("tab === 'content'") && newsPage.includes('articleApi.list') && !adminPage.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
   [adminPage.includes('站点内容工作台') && adminSiteContent.includes('<AdminArticlesPanel') && adminSiteContent.includes('kind="news"') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('发布 / 安排发布') && adminArticles.includes('历史版本') && adminArticles.includes('MediaUploadField') && adminArticles.includes('v-model="selected.link"'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
+  [mediaUploadField.includes('ORIGINAL_MAX_BYTES = 16 * 1024 * 1024')
+    && mediaUploadField.includes('REQUEST_MAX_BYTES = 32 * 1024 * 1024')
+    && mediaUploadField.includes('class="media-spec" aria-label="图片上传尺寸参考"')
+    && mediaUploadField.includes('用途：') && mediaUploadField.includes('安全区与裁切：')
+    && platform.includes("response.status === 413 && path === '/api/admin/site/media'")
+    && wsServer.includes('IHttpMaxRequestBodySizeFeature') && wsServer.includes('SiteMediaRequestMaxBytes')
+    && nginxSite.includes('client_max_body_size 1m;')
+    && [nginxSite, nginxHttpSite].every(source => source.includes('location = /api/admin/site/media')
+      && source.includes('client_max_body_size 32m;') && source.includes('media_upload_too_large'))
+    && serverDeploy.includes("grep -Fq 'location = /api/admin/site/media'")
+    && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须在浏览器、Nginx 精确路由和 ASP.NET 端统一执行 16MB 原图/32MB 请求边界，并在控件近旁显示用途、比例、像素和裁切安全区'],
+  [articleBlockEditor.includes('结构化正文编辑器') && articleBlockEditor.includes("addText('h2')")
+    && articleBlockEditor.includes("addText('h3')") && articleBlockEditor.includes("addText('bulletList')")
+    && articleBlockEditor.includes("addText('orderedList')") && articleBlockEditor.includes("applyMark(block, 'bold')")
+    && articleBlockEditor.includes("applyMark(block, 'italic')") && articleBlockEditor.includes("applyMark(block, 'link')")
+    && articleBlockEditor.includes('↶ 撤销') && articleBlockEditor.includes('↷ 重做')
+    && articleBlockEditor.includes('block.text = text') && articleBlockEditor.includes('updateImageTextField')
+    && articleBlockEditor.includes('MediaUploadField kind="article"') && articleBlockEditor.includes('正文预览')
+    && articleBlockModel.includes("format: 'l12-blocks'") && articleBlockModel.includes('safeArticleHref')
+    && articleRenderer.includes('<blockquote') && articleRenderer.includes('<figure') && !articleRenderer.includes('v-html')
+    && adminArticles.includes('<ArticleBlockEditor') && newsPage.includes('<ArticleContentRenderer')
+    && articleStore.includes('RequireOnlyProperties') && articleStore.includes('正文内容块类型不在白名单中')
+    && articleStore.includes('NormalizeOptionalUrl(href, "正文链接", allowRelative: true)'), '资讯正文必须使用可撤销预览的结构化块编辑器、严格服务端白名单和固定 Vue 节点渲染，并兼容旧纯文本而不开放任意 HTML'],
+  [!articleBlockEditor.includes('window.prompt')
+    && articleBlockEditor.includes('class="link-panel"') && articleBlockEditor.includes('已选择：<q>{{ linkPanel.selectedText }}</q>')
+    && articleBlockEditor.includes('@click="applyLink"') && articleBlockEditor.includes('@click="removeLink"')
+    && articleBlockEditor.includes('@click="closeLinkPanel()"') && articleBlockEditor.includes('safeArticleHref(linkHref.value)')
+    && articleBlockEditor.includes("key === 'b' || key === 'i' || key === 'k'")
+    && articleBlockEditor.includes('HISTORY_DEBOUNCE_MS = 700')
+    && articleBlockEditor.includes('historyTimer = setTimeout(flushPendingHistory, HISTORY_DEBOUNCE_MS)')
+    && articleBlockEditor.includes('@blur="flushPendingHistory"')
+    && /function updateText[\s\S]*?scheduleHistory\(\)\n}/.test(articleBlockEditor)
+    && articleBlockEditor.includes('class="format-feedback"') && articleBlockEditor.includes(':aria-pressed="selectionHasMark')
+    && articleBlockEditor.includes('class="selected-image-preview"'), '正文编辑器必须以内嵌链接面板替代浏览器 prompt，支持 B/I/K 快捷键、合并式输入历史、格式状态和所选正文图片预览；结构操作仍立即进入撤销历史'],
+  [articleStore.includes('row.Summary = kind == "video" ? string.Empty')
+    && articleStore.includes('row.Body = kind == "video" ? string.Empty')
+    && articleStore.includes('VideoAuthorRequired') && articleStore.includes('新视频发布前必须填写作者名')
+    && articleStore.includes('视频发布前必须填写播放链接')
+    && adminArticles.includes("props.kind === 'video'") && adminArticles.includes('selected.videoAuthorName')
+    && adminArticles.includes("summary: props.kind === 'video' ? ''") && adminArticles.includes("body: props.kind === 'video' ? ''")
+    && officialHome.includes('v-if="item.videoAuthorName"') && officialHome.includes('isInternal(item.link)')
+    && newsPage.includes('entry.videoAuthorName') && newsPage.includes(':href="entry.link || undefined"'), '视频内容必须只暴露封面、标题、作者名和整卡跳转链接，新稿作者与链接发布必填，旧空作者不显示占位'],
+  [siteContentStore.includes('["news"] = new("news", "资讯封面", 1600, 900, 1280, 720, 480, 270')
+    && siteContentStore.includes('["video"] = new("video", "视频封面", 1280, 720, 1280, 720, 480, 270')
+    && siteContentStore.includes('["product"] = new("product", "商品图片", 1600, 1200, 1200, 900, 480, 360')
+    && officialHome.includes('news.value.slice(0, 5)') && officialHome.includes('videos.value.slice(0, 5)')
+    && (officialHome.match(/class="featured-editorial-layout"/g)?.length ?? 0) === 2
+    && officialHome.includes('资讯一主四辅布局占位范例') && officialHome.includes('视频一主四辅布局占位范例')
+    && officialHome.includes('class="featured-editorial-support"') && officialHome.includes('grid-template-columns:repeat(2,minmax(0,1fr))')
+    && officialHome.includes('<small>{{ dateLabel(item) }} · {{ item.category }}</small><b>{{ item.title }}</b></span></component></div>')
+    && officialHome.includes('.home-editorial-card{display:flex;min-width:0;flex-direction:column;border:0;background:transparent;box-shadow:none')
+    && officialHome.includes('.home-card-copy{display:flex;min-width:0;flex-direction:column;gap:8px;padding:14px 0 16px;border-bottom:1px solid')
+    && officialHome.includes('.home-editorial-card:hover>picture img,.home-editorial-card:hover>img')
+    && officialHome.includes('@media(max-width:1100px){.featured-editorial-layout{grid-template-columns:1fr}.featured-editorial-support{grid-template-columns:repeat(2,minmax(0,1fr))}}')
+    && officialHome.includes('@media(max-width:650px){.featured-editorial-layout,.featured-editorial-support{grid-template-columns:1fr')
+    && !officialHome.includes('.home-editorial-card:hover{border-color:')
+    && officialHome.includes('aspect-ratio:16/9') && officialHome.includes('aspect-ratio:4/3')
+    && newsPage.includes("'product-list': kind === 'product'") && newsPage.includes('.news-list.product-list article>img{aspect-ratio:4/3}')
+    && newsPage.includes('grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))'), '首页资讯与视频必须共用开放式 16:9 一主四辅响应式布局，不得恢复卡片套盒；资讯/视频/商品衍生图和列表分别稳定为 16:9、16:9、4:3，窄宽度自动换列且不挤压'],
+  [articleStore.includes('.OrderByDescending(row => row.Published!.Pinned)\n                .ThenByDescending(row => row.Published!.PublishedAt)\n                .ThenBy(row => row.Id)')
+    && !articleStore.includes('.ThenBy(row => row.Published!.SortOrder)')
+    && articleStore.includes('.OrderByDescending(row => row.Pinned)\n                .ThenByDescending(row => row.PublishAt ?? DateTimeOffset.MinValue)\n                .ThenBy(row => row.Id)')
+    && !articleStore.includes('.OrderBy(row => row.SortOrder).ThenByDescending(row => row.UpdatedAt)')
+    && articleStore.includes('row.Status == "scheduled" && row.PublishAt <= now')
+    && adminArticles.includes('未来时间到点自动公开') && adminArticles.includes('公开排序只使用置顶与此时间')
+    && adminArticles.includes("'尚未设置发布时间'") && !adminArticles.includes('new Date(article.updatedAt)')
+    && !adminArticles.includes('排序值<input'), '资讯、视频和商品的公开顺序及后台预览列表必须统一为置顶优先、发布时间倒序、ID 稳定并列；未来发布时间到点自动公开，编辑时间和人工排序不得参与'],
+  [officialHome.includes('.hero-copy>small,.hero-copy h1,.hero-copy p,.hero-copy strong{white-space:pre;overflow-wrap:normal;word-break:normal}')
+    && adminSiteContent.includes('longestHeroLine') && adminSiteContent.includes('前台不会自动换行')
+    && adminSiteContent.includes('aria-label="轮播文案手动换行预览"')
+    && adminSiteContent.includes('.hero-copy-preview>*{display:block;width:max-content;max-width:none;margin:0 0 8px;white-space:pre;overflow-wrap:normal;word-break:normal}')
+    && homeContent.includes("summary: String(item.summary ?? '')")
+    && siteContentStore.includes('ValidateHeroCopyString(slide, "eyebrow", 80)')
+    && siteContentStore.includes("character is not ('\\r' or '\\n')"), '轮播前台和后台预览必须只按管理员输入的换行符断行，不得随视口自动折行；后台须逐字段提示最长单行并保留内部换行'],
+  [!hasUndersizedSiteWorkbenchText && adminSiteContent.includes('font-size:14px')
+    && adminArticles.includes('font-size:14px') && mediaUploadField.includes('font-size:14px')
+    && articleBlockEditor.includes('font-size:14px'), '站点内容工作台、素材上传与正文编辑器不得恢复 9–11px 密集排版；正文和控件应为 14px，辅助文字至少 12px并保留分组间距'],
   [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
     && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
     && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],

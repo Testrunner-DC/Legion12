@@ -17,7 +17,8 @@ public sealed record L12ArticleDraft(
     string Kind = "news",
     string? CategoryId = null,
     string? MediaAssetId = null,
-    int SortOrder = 0);
+    int SortOrder = 0,
+    string VideoAuthorName = "");
 
 public sealed record L12ArticleView(
     string Id,
@@ -42,7 +43,9 @@ public sealed record L12ArticleView(
     string Kind = "news",
     string? CategoryId = null,
     string? MediaAssetId = null,
-    int SortOrder = 0);
+    int SortOrder = 0,
+    IReadOnlyList<L12SiteMediaEmbedView>? BodyMedia = null,
+    string VideoAuthorName = "");
 
 public sealed record L12ArticleRevisionView(
     long Revision,
@@ -61,7 +64,8 @@ public sealed record L12ArticleRevisionView(
     string Kind = "news",
     string? CategoryId = null,
     string? MediaAssetId = null,
-    int SortOrder = 0);
+    int SortOrder = 0,
+    string VideoAuthorName = "");
 
 public sealed partial class L12PlatformStore
 {
@@ -82,6 +86,7 @@ public sealed partial class L12PlatformStore
         public string? CategoryId { get; set; }
         public string? MediaAssetId { get; set; }
         public int SortOrder { get; set; }
+        public string VideoAuthorName { get; set; } = string.Empty;
     }
 
     private sealed class ArticleRevisionRow
@@ -103,6 +108,7 @@ public sealed partial class L12PlatformStore
         public string? CategoryId { get; set; }
         public string? MediaAssetId { get; set; }
         public int SortOrder { get; set; }
+        public string VideoAuthorName { get; set; } = string.Empty;
     }
 
     private sealed class ArticleRow
@@ -130,6 +136,8 @@ public sealed partial class L12PlatformStore
         public string? CategoryId { get; set; }
         public string? MediaAssetId { get; set; }
         public int SortOrder { get; set; }
+        public string VideoAuthorName { get; set; } = string.Empty;
+        public bool VideoAuthorRequired { get; set; }
     }
 
     private void EnsureArticleState()
@@ -216,8 +224,8 @@ public sealed partial class L12PlatformStore
                     string.Equals(row.Published!.CategoryId, category.Trim(), StringComparison.OrdinalIgnoreCase))
                 .Where(row => MatchesArticleSearch(row.Published!, search))
                 .OrderByDescending(row => row.Published!.Pinned)
-                .ThenBy(row => row.Published!.SortOrder)
                 .ThenByDescending(row => row.Published!.PublishedAt)
+                .ThenBy(row => row.Id)
                 .Take(Math.Clamp(limit, 1, 200))
                 .Select(ToPublicArticleView)
                 .ToArray();
@@ -236,7 +244,9 @@ public sealed partial class L12PlatformStore
                 .Where(row => string.IsNullOrWhiteSpace(category) || row.Category == category.Trim() ||
                     row.CategoryId == category.Trim())
                 .Where(row => MatchesArticleSearch(row, search))
-                .OrderBy(row => row.SortOrder).ThenByDescending(row => row.UpdatedAt)
+                .OrderByDescending(row => row.Pinned)
+                .ThenByDescending(row => row.PublishAt ?? DateTimeOffset.MinValue)
+                .ThenBy(row => row.Id)
                 .Take(Math.Clamp(limit, 1, 500))
                 .Select(ToAdminArticleView)
                 .ToArray();
@@ -267,6 +277,7 @@ public sealed partial class L12PlatformStore
                     Kind = kind,
                     CreatedAt = DateTimeOffset.UtcNow,
                     CreatedByAccountId = actor.Id,
+                    VideoAuthorRequired = kind == "video",
                 };
                 _data.Articles.Add(row);
             }
@@ -287,8 +298,10 @@ public sealed partial class L12PlatformStore
                 throw new ArgumentException("封面不能填写图片链接，请通过站点素材上传");
 
             row.Title = Limit(draft.Title, 180);
-            row.Summary = Limit(draft.Summary, 600);
-            row.Body = Limit(draft.Body, 100_000);
+            row.Summary = kind == "video" ? string.Empty : Limit(draft.Summary, 600);
+            row.Body = kind == "video" ? string.Empty : Limit(draft.Body, 100_000);
+            row.VideoAuthorName = kind == "video" ? NormalizeVideoAuthorName(draft.VideoAuthorName) : string.Empty;
+            if (kind == "news") ValidateStructuredArticleBody(row.Body, publishing: false);
             row.Kind = kind;
             row.CategoryId = category.Id;
             row.Category = category.Name;
@@ -318,7 +331,13 @@ public sealed partial class L12PlatformStore
         {
             var row = FindArticle(id) ?? throw new KeyNotFoundException("稿件不存在");
             if (string.IsNullOrWhiteSpace(row.Title)) throw new ArgumentException("发布前必须填写标题");
-            if (string.IsNullOrWhiteSpace(row.Body)) throw new ArgumentException("发布前必须填写正文");
+            if (row.Kind != "video" && string.IsNullOrWhiteSpace(row.Body))
+                throw new ArgumentException("发布前必须填写正文");
+            if (row.Kind == "news") ValidateStructuredArticleBody(row.Body, publishing: true);
+            if (row.Kind == "video" && string.IsNullOrWhiteSpace(row.Link))
+                throw new ArgumentException("视频发布前必须填写播放链接");
+            if (row.Kind == "video" && row.VideoAuthorRequired && string.IsNullOrWhiteSpace(row.VideoAuthorName))
+                throw new ArgumentException("新视频发布前必须填写作者名");
             var category = FindCategory(row.Kind, row.CategoryId, row.Category, false)
                 ?? throw new ArgumentException("发布前必须选择启用的分类");
             row.CategoryId = category.Id;
@@ -372,7 +391,7 @@ public sealed partial class L12PlatformStore
             return row.Revisions.OrderByDescending(item => item.Revision).Select(item => new L12ArticleRevisionView(
                 item.Revision, item.Action, item.Title, item.Summary, item.Body, item.Category, item.CoverUrl,
                 item.Link, item.Slug, item.Pinned, item.PublishAt, ArticleAccountName(item.ActorAccountId), item.CreatedAt,
-                item.Kind, item.CategoryId, item.MediaAssetId, item.SortOrder)).ToArray();
+                item.Kind, item.CategoryId, item.MediaAssetId, item.SortOrder, item.VideoAuthorName)).ToArray();
         }
     }
 
@@ -397,6 +416,7 @@ public sealed partial class L12PlatformStore
             row.CategoryId = snapshot.CategoryId;
             row.MediaAssetId = snapshot.MediaAssetId;
             row.SortOrder = snapshot.SortOrder;
+            row.VideoAuthorName = snapshot.VideoAuthorName;
             row.CoverUrl = string.IsNullOrWhiteSpace(snapshot.MediaAssetId)
                 ? snapshot.CoverUrl : SiteMediaUrl(snapshot.MediaAssetId);
             row.Status = "draft";
@@ -418,7 +438,8 @@ public sealed partial class L12PlatformStore
         row.Link, row.Slug, row.Pinned, row.Status, row.HasUnpublishedChanges,
         row.PublishAt, row.CreatedAt, row.UpdatedAt, row.Published?.PublishedAt, ArticleAccountName(row.CreatedByAccountId),
         ArticleAccountName(row.UpdatedByAccountId), row.Published is null ? null : ArticleAccountName(row.Published.PublishedByAccountId),
-        row.Revision, row.Kind, row.CategoryId, row.MediaAssetId, row.SortOrder);
+        row.Revision, row.Kind, row.CategoryId, row.MediaAssetId, row.SortOrder,
+        ArticleBodyMedia(row.Body), row.VideoAuthorName);
 
     private L12ArticleView ToPublicArticleView(ArticleRow row)
     {
@@ -428,7 +449,7 @@ public sealed partial class L12PlatformStore
             value.Link, value.Slug, value.Pinned, "published", false, value.PublishedAt, row.CreatedAt,
             value.PublishedAt, value.PublishedAt, ArticleAccountName(row.CreatedByAccountId), ArticleAccountName(value.PublishedByAccountId),
             ArticleAccountName(value.PublishedByAccountId), row.Revision, value.Kind, value.CategoryId,
-            value.MediaAssetId, value.SortOrder);
+            value.MediaAssetId, value.SortOrder, ArticleBodyMedia(value.Body), value.VideoAuthorName);
     }
 
     private string ArticleAccountName(string accountId) => string.IsNullOrWhiteSpace(accountId) ? "系统迁移"
@@ -453,6 +474,7 @@ public sealed partial class L12PlatformStore
             CategoryId = row.CategoryId,
             MediaAssetId = row.MediaAssetId,
             SortOrder = row.SortOrder,
+            VideoAuthorName = row.VideoAuthorName,
             ActorAccountId = actorId,
             CreatedAt = DateTimeOffset.UtcNow,
         });
@@ -476,6 +498,7 @@ public sealed partial class L12PlatformStore
         CategoryId = row.CategoryId,
         MediaAssetId = row.MediaAssetId,
         SortOrder = row.SortOrder,
+        VideoAuthorName = row.VideoAuthorName,
     };
 
     private static bool MatchesPublished(ArticleRow row) => row.Published is { } value
@@ -483,15 +506,147 @@ public sealed partial class L12PlatformStore
         && row.Category == value.Category && row.CoverUrl == value.CoverUrl && row.Link == value.Link
         && row.Slug == value.Slug && row.Pinned == value.Pinned && row.PublishAt == value.PublishedAt
         && row.Kind == value.Kind && row.CategoryId == value.CategoryId && row.MediaAssetId == value.MediaAssetId
-        && row.SortOrder == value.SortOrder;
+        && row.SortOrder == value.SortOrder && row.VideoAuthorName == value.VideoAuthorName;
 
     private static bool MatchesArticleSearch(ArticleRow row, string? search)
-        => string.IsNullOrWhiteSpace(search) || new[] { row.Title, row.Summary, row.Body, row.Category, row.Slug }
+        => string.IsNullOrWhiteSpace(search) || new[] { row.Title, row.Summary, row.Body, row.Category, row.Slug, row.VideoAuthorName }
             .Any(value => value.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private static bool MatchesArticleSearch(ArticlePublishedRow row, string? search)
-        => string.IsNullOrWhiteSpace(search) || new[] { row.Title, row.Summary, row.Body, row.Category, row.Slug }
+        => string.IsNullOrWhiteSpace(search) || new[] { row.Title, row.Summary, row.Body, row.Category, row.Slug, row.VideoAuthorName }
             .Any(value => value.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizeVideoAuthorName(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length > 80) throw new ArgumentException("视频作者名不能超过 80 个字符");
+        if (normalized.Any(char.IsControl)) throw new ArgumentException("视频作者名不能包含换行或控制字符");
+        return normalized;
+    }
+
+    private IReadOnlyList<L12SiteMediaEmbedView> ArticleBodyMedia(string? body)
+        => ArticleBodyMediaIds(body).Select(ActiveMedia).Where(row => row is not null)
+            .Select(row => ToSiteMediaEmbedView(row!)).ToArray();
+
+    private static IReadOnlyList<string> ArticleBodyMediaIds(string? body)
+    {
+        if (!TryParseStructuredArticleBody(body, out var document)) return [];
+        using (document)
+        {
+            if (!document.RootElement.TryGetProperty("blocks", out var blocks) ||
+                blocks.ValueKind != JsonValueKind.Array) return [];
+            return blocks.EnumerateArray()
+                .Where(block => JsonString(block, "type") == "image")
+                .Select(block => JsonString(block, "mediaAssetId"))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+    }
+
+    private void ValidateStructuredArticleBody(string? body, bool publishing)
+    {
+        if (!TryParseStructuredArticleBody(body, out var document)) return;
+        using (document)
+        {
+            var root = document.RootElement;
+            foreach (var property in root.EnumerateObject())
+                if (property.Name is not ("format" or "version" or "blocks"))
+                    throw new ArgumentException($"结构化正文包含未允许的根字段：{property.Name}");
+            if (!root.TryGetProperty("version", out var version) || !version.TryGetInt32(out var schema) || schema != 1)
+                throw new ArgumentException("结构化正文版本必须为 1");
+            if (!root.TryGetProperty("blocks", out var blocks) || blocks.ValueKind != JsonValueKind.Array ||
+                blocks.GetArrayLength() > 200)
+                throw new ArgumentException("结构化正文必须包含不超过 200 个内容块");
+
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            var hasContent = false;
+            foreach (var block in blocks.EnumerateArray())
+            {
+                if (block.ValueKind != JsonValueKind.Object) throw new ArgumentException("正文内容块必须是对象");
+                var id = JsonString(block, "id");
+                if (string.IsNullOrWhiteSpace(id) || id.Length > 80 || !ids.Add(id))
+                    throw new ArgumentException("正文内容块必须具有唯一且不超过 80 字符的标识");
+                var type = JsonString(block, "type");
+                if (type == "image")
+                {
+                    RequireOnlyProperties(block, "id", "type", "mediaAssetId", "alt", "caption");
+                    var mediaId = JsonString(block, "mediaAssetId");
+                    var alt = JsonString(block, "alt");
+                    var caption = JsonString(block, "caption");
+                    if (alt.Length > 180 || caption.Length > 500 || HasUnsafeControlCharacters(alt) ||
+                        HasUnsafeControlCharacters(caption))
+                        throw new ArgumentException("正文图片替代文字或说明超过限制或包含控制字符");
+                    var media = ActiveMedia(mediaId);
+                    if (!string.IsNullOrWhiteSpace(mediaId) && (media is null || media.Kind != "article"))
+                        throw new ArgumentException("正文图片必须引用已上传的资讯正文素材");
+                    if (publishing && (media is null || string.IsNullOrWhiteSpace(alt)))
+                        throw new ArgumentException("发布前每个正文图片块都必须上传图片并填写替代文字");
+                    hasContent |= media is not null;
+                    continue;
+                }
+
+                if (type is not ("paragraph" or "h2" or "h3" or "bulletList" or "orderedList" or "quote"))
+                    throw new ArgumentException($"正文内容块类型不在白名单中：{type}");
+                RequireOnlyProperties(block, "id", "type", "text", "marks");
+                var text = JsonString(block, "text");
+                if (text.Length > 20_000 || HasUnsafeControlCharacters(text))
+                    throw new ArgumentException("正文文本块超过 20000 字或包含非法控制字符");
+                hasContent |= !string.IsNullOrWhiteSpace(text);
+                if (!block.TryGetProperty("marks", out var marks)) continue;
+                if (marks.ValueKind != JsonValueKind.Array || marks.GetArrayLength() > 200)
+                    throw new ArgumentException("单个正文块的格式标记不能超过 200 个");
+                foreach (var mark in marks.EnumerateArray())
+                {
+                    if (mark.ValueKind != JsonValueKind.Object) throw new ArgumentException("正文格式标记必须是对象");
+                    RequireOnlyProperties(mark, "type", "from", "to", "href");
+                    var markType = JsonString(mark, "type");
+                    if (markType is not ("bold" or "italic" or "link"))
+                        throw new ArgumentException($"正文格式标记不在白名单中：{markType}");
+                    if (!mark.TryGetProperty("from", out var fromValue) || !fromValue.TryGetInt32(out var from) ||
+                        !mark.TryGetProperty("to", out var toValue) || !toValue.TryGetInt32(out var to) ||
+                        from < 0 || to <= from || to > text.Length)
+                        throw new ArgumentException("正文格式标记范围无效");
+                    var href = JsonString(mark, "href");
+                    if (markType == "link")
+                    {
+                        if (string.IsNullOrWhiteSpace(href)) throw new ArgumentException("链接标记必须填写地址");
+                        _ = NormalizeOptionalUrl(href, "正文链接", allowRelative: true);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(href))
+                        throw new ArgumentException("只有链接标记可以包含地址");
+                }
+            }
+            if (publishing && !hasContent) throw new ArgumentException("发布前正文至少需要一个非空内容块");
+        }
+    }
+
+    private static bool TryParseStructuredArticleBody(string? body, out JsonDocument document)
+    {
+        document = null!;
+        if (string.IsNullOrWhiteSpace(body) || !body.TrimStart().StartsWith('{')) return false;
+        JsonDocument parsed;
+        try { parsed = JsonDocument.Parse(body); }
+        catch (JsonException) { return false; }
+        if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
+            JsonString(parsed.RootElement, "format") != "l12-blocks")
+        {
+            parsed.Dispose();
+            return false;
+        }
+        document = parsed;
+        return true;
+    }
+
+    private static void RequireOnlyProperties(JsonElement element, params string[] allowed)
+    {
+        foreach (var property in element.EnumerateObject())
+            if (!allowed.Contains(property.Name, StringComparer.Ordinal))
+                throw new ArgumentException($"结构化正文包含未允许字段：{property.Name}");
+    }
+
+    private static bool HasUnsafeControlCharacters(string value)
+        => value.Any(character => char.IsControl(character) && character is not ('\r' or '\n' or '\t'));
 
     private string UniqueArticleSlug(string articleId, string slug)
     {

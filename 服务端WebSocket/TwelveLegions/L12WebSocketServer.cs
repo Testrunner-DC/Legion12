@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -1268,22 +1269,25 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (bodySize is { IsReadOnly: false })
+                bodySize.MaxRequestBodySize = L12PlatformStore.SiteMediaRequestMaxBytes;
             if (!request.HasFormContentType)
                 return ApiError(request, "media_form_required", "素材上传必须使用 multipart/form-data",
                     StatusCodes.Status415UnsupportedMediaType);
-            if (request.ContentLength is > 29 * 1024 * 1024)
-                return ApiError(request, "media_upload_too_large", "素材上传请求不能超过 29MB",
+            if (request.ContentLength is > L12PlatformStore.SiteMediaRequestMaxBytes)
+                return ApiError(request, "media_upload_too_large", "图片上传总量不能超过 32MB，请压缩原图后重试",
                     StatusCodes.Status413PayloadTooLarge);
             try
             {
                 var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
-                var original = await ReadRequiredFormFile(form, "original", 16 * 1024 * 1024,
+                var original = await ReadRequiredFormFile(form, "original", L12PlatformStore.SiteMediaOriginalMaxBytes,
                     request.HttpContext.RequestAborted);
-                var desktop = await ReadRequiredFormFile(form, "desktop", 5 * 1024 * 1024,
+                var desktop = await ReadRequiredFormFile(form, "desktop", L12PlatformStore.SiteMediaDesktopMaxBytes,
                     request.HttpContext.RequestAborted);
-                var mobile = await ReadRequiredFormFile(form, "mobile", 5 * 1024 * 1024,
+                var mobile = await ReadRequiredFormFile(form, "mobile", L12PlatformStore.SiteMediaMobileMaxBytes,
                     request.HttpContext.RequestAborted);
-                var thumbnail = await ReadRequiredFormFile(form, "thumbnail", 2 * 1024 * 1024,
+                var thumbnail = await ReadRequiredFormFile(form, "thumbnail", L12PlatformStore.SiteMediaThumbnailMaxBytes,
                     request.HttpContext.RequestAborted);
                 var focalX = ParseFiniteDouble(form["focalX"], .5);
                 var focalY = ParseFiniteDouble(form["focalY"], .5);
@@ -1297,9 +1301,19 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             {
                 return ApiError(request, "media_upload_invalid", error.Message, StatusCodes.Status400BadRequest);
             }
+            catch (SiteMediaUploadTooLargeException error)
+            {
+                return ApiError(request, "media_upload_too_large", error.Message,
+                    StatusCodes.Status413PayloadTooLarge);
+            }
             catch (InvalidDataException error)
             {
                 return ApiError(request, "media_upload_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+            catch (BadHttpRequestException error) when (error.StatusCode == StatusCodes.Status413PayloadTooLarge)
+            {
+                return ApiError(request, "media_upload_too_large", "图片上传总量不能超过 32MB，请压缩原图后重试",
+                    StatusCodes.Status413PayloadTooLarge);
             }
         });
         _app.MapDelete("/api/admin/site/media/{id}", (HttpRequest request, string id) =>
@@ -2518,7 +2532,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 body.Body ?? string.Empty, body.Category ?? string.Empty, body.CoverUrl ?? string.Empty,
                 body.Link ?? string.Empty, body.Slug ?? string.Empty, body.Pinned, body.PublishAt,
                 body.ExpectedRevision, body.Kind ?? "news", body.CategoryId, body.MediaAssetId,
-                body.SortOrder);
+                body.SortOrder, body.VideoAuthorName ?? string.Empty);
             return Results.Ok(_platform.SaveArticleDraft(authenticated.Account, draft,
                 RequestAuditContext(request, permission)));
         }
@@ -2569,16 +2583,18 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     }
 
     private sealed record UploadedFormFile(string FileName, string ContentType, byte[] Bytes);
+    private sealed class SiteMediaUploadTooLargeException(string message) : Exception(message);
 
     private static async Task<UploadedFormFile> ReadRequiredFormFile(IFormCollection form, string name,
         int maxBytes, CancellationToken cancellationToken)
     {
         var file = form.Files.GetFile(name) ?? throw new InvalidDataException($"缺少素材文件：{name}");
-        if (file.Length <= 0 || file.Length > maxBytes)
-            throw new InvalidDataException($"素材文件 {name} 大小无效或超过 {maxBytes / 1024 / 1024}MB 限制");
+        if (file.Length <= 0) throw new InvalidDataException($"素材文件 {name} 不能为空");
+        if (file.Length > maxBytes)
+            throw new SiteMediaUploadTooLargeException($"素材文件 {name} 超过 {maxBytes / 1024 / 1024}MB 限制");
         await using var stream = new MemoryStream((int)file.Length);
         await file.CopyToAsync(stream, cancellationToken);
-        if (stream.Length > maxBytes) throw new InvalidDataException($"素材文件 {name} 超过大小限制");
+        if (stream.Length > maxBytes) throw new SiteMediaUploadTooLargeException($"素材文件 {name} 超过大小限制");
         return new UploadedFormFile(Path.GetFileName(file.FileName), file.ContentType, stream.ToArray());
     }
 
@@ -3061,7 +3077,7 @@ public sealed record ContentRequest(string? Value, string? IdempotencyKey = null
 public sealed record ArticleDraftRequest(string? Title, string? Summary, string? Body, string? Category,
     string? CoverUrl, string? Link, string? Slug, bool Pinned, DateTimeOffset? PublishAt,
     long? ExpectedRevision = null, string? Kind = null, string? CategoryId = null,
-    string? MediaAssetId = null, int SortOrder = 0);
+    string? MediaAssetId = null, int SortOrder = 0, string? VideoAuthorName = null);
 public sealed record SiteCategoryRequest(string? Kind, string? Name, string? Slug, int SortOrder,
     bool Active = true, long? ExpectedVersion = null);
 public sealed record SiteCategoryOrderRequest(IReadOnlyList<string>? Ids);

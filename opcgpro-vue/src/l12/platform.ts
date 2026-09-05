@@ -66,7 +66,7 @@ export interface AtomicCoverage {
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
 export type SiteContentKind = 'news' | 'video' | 'product'
-export type SiteMediaKind = 'hero' | SiteContentKind
+export type SiteMediaKind = 'hero' | 'article' | SiteContentKind
 export interface SiteMediaPolicy {
   kind: SiteMediaKind; label: string; desktopWidth: number; desktopHeight: number
   mobileWidth: number; mobileHeight: number; thumbnailWidth: number; thumbnailHeight: number
@@ -79,6 +79,10 @@ export interface SiteMedia {
   thumbnailWidth: number; thumbnailHeight: number; originalBytes: number; deliveryBytes: number
   createdBy: string; createdAt: string; referenceCount: number
 }
+export interface SiteMediaEmbed {
+  id: string; altText: string; desktopUrl: string; mobileUrl: string; thumbnailUrl: string
+  desktopWidth: number; desktopHeight: number; mobileWidth: number; mobileHeight: number
+}
 export interface SiteCategory {
   id: string; kind: SiteContentKind; name: string; slug: string; sortOrder: number
   active: boolean; version: number; itemCount: number
@@ -88,7 +92,8 @@ export interface Article {
   id: string; title: string; summary: string; body: string; category: string; coverUrl: string; link: string; slug: string
   pinned: boolean; status: ArticleStatus; hasUnpublishedChanges: boolean; publishAt?: string
   createdAt: string; updatedAt: string; publishedAt?: string; author: string; updatedBy: string; publishedBy?: string; revision: number
-  kind: SiteContentKind; categoryId?: string; mediaAssetId?: string; sortOrder: number
+  kind: SiteContentKind; categoryId?: string; mediaAssetId?: string; sortOrder: number; bodyMedia?: SiteMediaEmbed[]
+  videoAuthorName?: string
 }
 export interface ArticleRevision {
   revision: number; action: string; title: string; summary: string; body: string; category: string; coverUrl: string
@@ -439,7 +444,10 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
-    const message = `${payload.message || `请求失败（${response.status}）`}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
+    const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
+      ? '图片上传总量超过 32MB，请压缩原图后重试'
+      : `请求失败（${response.status}）`
+    const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
     // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
     if (response.status === 401 && requestToken && platformState.token === requestToken) forgetAccount(requestToken)
     // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
@@ -664,7 +672,8 @@ export const adminApi = {
       coverUrl: article.coverUrl, link: article.link, slug: article.slug, pinned: article.pinned,
       publishAt: article.publishAt || null, expectedRevision: article.id ? article.revision : undefined,
       kind: article.kind || 'news', categoryId: article.categoryId || null,
-      mediaAssetId: article.mediaAssetId || null, sortOrder: article.sortOrder || 0 }
+      mediaAssetId: article.mediaAssetId || null, sortOrder: article.sortOrder || 0,
+      videoAuthorName: article.videoAuthorName || '' }
     return article.id
       ? platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(article.id)}`, { method: 'PUT', body: JSON.stringify(body) })
       : platformRequest<Article>('/api/admin/articles', { method: 'POST', body: JSON.stringify(body) })

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleRevision, type SiteCategory, type SiteContentKind, type SiteMedia } from '@/l12/platform'
+import ArticleBlockEditor from './ArticleBlockEditor.vue'
+import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
 
 type EditableArticle = Partial<Article> & ArticleDraft
@@ -9,7 +11,7 @@ const props = withDefaults(defineProps<{ kind?: SiteContentKind }>(), { kind: 'n
 const emit = defineEmits<{ notice: [value: string] }>()
 const kindCopy = {
   news: { en: 'NEWSROOM', title: '资讯中心', singular: '资讯', summary: '摘要', body: '正文', link: '相关链接' },
-  video: { en: 'VIDEO', title: '最新视频', singular: '视频', summary: '视频简介', body: '视频说明', link: '视频播放链接' },
+  video: { en: 'VIDEO', title: '最新视频', singular: '视频', summary: '', body: '', link: '整卡跳转链接' },
   product: { en: 'PRODUCTS', title: '产品上新', singular: '商品', summary: '商品摘要', body: '商品说明', link: '商品详情链接' },
 } as const
 const copy = computed(() => kindCopy[props.kind])
@@ -30,6 +32,7 @@ const notice = ref('')
 const preview = ref(false)
 
 const activeCategories = computed(() => categories.value.filter(item => item.active))
+const coverMedia = computed(() => media.value.filter(item => item.kind === props.kind))
 const selectedIsSaved = computed(() => Boolean(selected.value?.id))
 const selectedPreview = computed(() => {
   const uploaded = media.value.find(item => item.id === selected.value?.mediaAssetId)
@@ -41,8 +44,8 @@ function emptyArticle(): EditableArticle {
   const first = activeCategories.value[0]
   return {
     title: '', summary: '', body: '', category: first?.name || '', categoryId: first?.id,
-    coverUrl: '', mediaAssetId: '', link: '', slug: '', pinned: false, publishAt: '',
-    kind: props.kind, sortOrder: articles.value.length,
+    coverUrl: '', mediaAssetId: '', link: '', slug: '', pinned: false, publishAt: '', videoAuthorName: '',
+    kind: props.kind, sortOrder: 0,
   }
 }
 function dateTimeLocal(value?: string) {
@@ -66,13 +69,16 @@ function mediaUploaded(value: SiteMedia) {
   media.value = [value, ...media.value.filter(item => item.id !== value.id)]
   if (selected.value) selected.value.mediaAssetId = value.id
 }
+function inlineMediaUploaded(value: SiteMedia) {
+  media.value = [value, ...media.value.filter(item => item.id !== value.id)]
+}
 
 async function load() {
   busy.value = true; notice.value = ''
   try {
     const [items, nextCategories, nextMedia] = await Promise.all([
       adminApi.articles({ kind: props.kind, status: status.value, category: category.value, search: search.value.trim() }),
-      adminApi.siteCategories(props.kind), adminApi.siteMedia(props.kind),
+      adminApi.siteCategories(props.kind), adminApi.siteMedia(),
     ])
     articles.value = items; categories.value = nextCategories; media.value = nextMedia
     if (selected.value?.id) {
@@ -90,6 +96,8 @@ async function save() {
   try {
     const saved = await adminApi.saveArticle({
       ...selected.value, kind: props.kind, category: categoryRow.name, categoryId: categoryRow.id,
+      summary: props.kind === 'video' ? '' : selected.value.summary,
+      body: props.kind === 'video' ? '' : selected.value.body,
       coverUrl: '', publishAt: selected.value.publishAt ? new Date(selected.value.publishAt).toISOString() : undefined,
     })
     selected.value = { ...saved, publishAt: dateTimeLocal(saved.publishAt) }
@@ -142,14 +150,14 @@ onMounted(load)
     <div class="article-layout">
       <aside class="article-list">
         <div class="article-filters">
-          <input v-model="search" placeholder="搜索标题、摘要或正文" @keyup.enter="load">
+          <input v-model="search" :placeholder="props.kind === 'video' ? '搜索标题或作者名' : '搜索标题、摘要或正文'" @keyup.enter="load">
           <select v-model="status" @change="load"><option v-for="item in statuses" :key="item.id" :value="item.id">{{ item.name }}</option></select>
           <select v-model="category" @change="load"><option value="">全部分类</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}{{ item.active ? '' : '（停用）' }}</option></select>
           <button @click="load">刷新</button>
         </div>
         <button v-for="article in articles" :key="article.id" class="article-list-row" :class="{ active: selected?.id === article.id }" @click="selectArticle(article)">
           <img v-if="article.coverUrl" :src="article.coverUrl" :alt="article.title">
-          <span><small>{{ article.category }} · {{ statusLabel(article.status) }}</small><b>{{ article.title || '未命名稿件' }}</b><em v-if="article.hasUnpublishedChanges">有未发布修改</em><time>{{ new Date(article.updatedAt).toLocaleString() }}</time></span>
+          <span><small>{{ article.category }} · {{ statusLabel(article.status) }}</small><b>{{ article.title || '未命名稿件' }}</b><em v-if="article.hasUnpublishedChanges">有未发布修改</em><time>{{ article.publishAt ? new Date(article.publishAt).toLocaleString() : '尚未设置发布时间' }}</time></span>
         </button>
         <div v-if="!articles.length" class="article-empty">{{ busy ? '正在加载…' : `暂无${copy.singular}稿件` }}</div>
       </aside>
@@ -161,17 +169,19 @@ onMounted(load)
           <div class="editor-grid">
             <label class="wide">标题<input v-model="selected.title" maxlength="180"></label>
             <label>动态分类<select v-model="selected.categoryId" @change="categoryChanged"><option v-for="item in categories" :key="item.id" :value="item.id" :disabled="!item.active">{{ item.name }}{{ item.active ? '' : '（已停用）' }}</option></select></label>
-            <label>排序值<input v-model.number="selected.sortOrder" type="number" min="0" max="100000"></label>
-            <label>链接标识<input v-model="selected.slug" maxlength="100" placeholder="留空自动生成"></label>
-            <label>定时发布<input v-model="selected.publishAt" type="datetime-local"></label>
-            <label class="wide">{{ copy.summary }}<textarea v-model="selected.summary" rows="3" maxlength="600"></textarea></label>
-            <label class="wide">{{ copy.body }}<textarea v-model="selected.body" rows="12" maxlength="100000"></textarea></label>
-            <label class="wide">{{ copy.link }}<input v-model="selected.link" maxlength="2000" placeholder="站内 /path 或 https://"></label>
-            <label class="check"><input v-model="selected.pinned" type="checkbox"> 首页置顶</label>
+            <label v-if="props.kind !== 'video'">链接标识<input v-model="selected.slug" maxlength="100" placeholder="留空自动生成"></label>
+            <label>发布时间<input v-model="selected.publishAt" type="datetime-local"><small>留空则发布时立即公开；未来时间到点自动公开。公开排序只使用置顶与此时间。</small></label>
+            <label v-if="props.kind === 'video'" class="wide">作者名（新视频发布必填）<input v-model="selected.videoAuthorName" maxlength="80" placeholder="视频作者或频道名"><small>最多 80 字符，不接受换行或控制字符；旧视频可保留为空。</small></label>
+            <label v-if="props.kind !== 'video'" class="wide">{{ copy.summary }}<textarea v-model="selected.summary" rows="3" maxlength="600"></textarea></label>
+            <ArticleBlockEditor v-if="props.kind === 'news'" v-model="selected.body" :media="media" @media-uploaded="inlineMediaUploaded" @notice="showNotice"/>
+            <label v-else-if="props.kind === 'product'" class="wide">{{ copy.body }}<textarea v-model="selected.body" rows="12" maxlength="100000"></textarea></label>
+            <label class="wide">{{ copy.link }}<input v-model="selected.link" maxlength="2000" :placeholder="props.kind === 'video' ? '必填：站内 /path 或 https://；前台整卡直接跳转' : '站内 /path 或 https://' "></label>
+            <label v-if="props.kind !== 'video'" class="check"><input v-model="selected.pinned" type="checkbox"> 首页置顶</label>
+            <label v-else class="check"><input v-model="selected.pinned" type="checkbox"> 置顶视频</label>
           </div>
 
           <section class="cover-manager">
-            <header><div><b>{{ props.kind === 'product' ? '商品图' : '封面素材' }}</b><small>禁止粘贴图片地址；选择已上传素材或上传新原图。</small></div><select v-model="selected.mediaAssetId"><option value="">不使用封面</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }} · 引用 {{ item.referenceCount }}</option></select></header>
+            <header><div><b>{{ props.kind === 'product' ? '商品图' : '封面素材' }}</b><small>禁止粘贴图片地址；选择已上传素材或上传新原图。视频/商品发布时封面必填。</small></div><select v-model="selected.mediaAssetId"><option value="">不使用封面（仅草稿）</option><option v-for="item in coverMedia" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }} · 引用 {{ item.referenceCount }}</option></select></header>
             <MediaUploadField v-model="selected.mediaAssetId" :kind="props.kind" :preview-url="selectedPreview" :initial-alt="selected.title" @uploaded="mediaUploaded" @notice="showNotice"/>
           </section>
 
@@ -183,7 +193,7 @@ onMounted(load)
             <button v-if="selectedIsSaved && selected.status === 'archived'" @click="mutate('restore')">恢复草稿</button>
             <button v-else-if="selectedIsSaved" class="archive" @click="mutate('archive')">归档</button>
           </div>
-          <article v-if="preview" class="article-preview"><img v-if="selectedPreview" :src="selectedPreview" :alt="selected.title"><small>{{ selected.category }}</small><h2>{{ selected.title || '未填写标题' }}</h2><p>{{ selected.summary }}</p><div>{{ selected.body }}</div></article>
+          <article v-if="preview" class="article-preview"><img v-if="selectedPreview" :src="selectedPreview" :alt="selected.title"><small>{{ selected.category }} · {{ selected.publishAt ? new Date(selected.publishAt).toLocaleString() : '发布时立即公开' }}</small><h2>{{ selected.title || '未填写标题' }}</h2><b v-if="props.kind === 'video' && selected.videoAuthorName" class="video-author">作者：{{ selected.videoAuthorName }}</b><p v-if="props.kind !== 'video'">{{ selected.summary }}</p><ArticleContentRenderer v-if="props.kind === 'news'" :body="selected.body" :media="media"/><div v-else-if="props.kind === 'product'">{{ selected.body }}</div><a v-if="selected.link" :href="selected.link">{{ props.kind === 'video' ? '点击视频卡片将直接跳转到此链接' : '相关链接' }}</a></article>
           <p v-if="notice" class="article-notice">{{ notice }}</p>
           <details v-if="selectedIsSaved" class="revision-list"><summary>历史版本（{{ revisions.length }}）</summary><article v-for="revision in revisions" :key="revision.revision"><span><b>v{{ revision.revision }} · {{ revision.action }}</b><small>{{ revision.actor }} · {{ new Date(revision.createdAt).toLocaleString() }}</small></span><button @click="restoreRevision(revision.revision)">恢复为草稿</button></article></details>
         </template>
@@ -193,5 +203,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.article-workbench{min-width:0}.article-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px;padding:20px;border:1px solid #35424a;background:#101821}.article-page-head small{color:#55c6cd;font:900 9px monospace;letter-spacing:.18em}.article-page-head h2{margin:5px 0;font-size:24px}.article-page-head p{margin:0;color:#7d898f;font-size:10px}.new-button,.article-filters button,.editor-actions button,.revision-list button{padding:10px 13px;border:1px solid #4d5b63;background:#0a1117;color:#fff;font-weight:900}.new-button{border-color:#d5b65e!important;color:#efd37b!important}.article-layout{display:grid;grid-template-columns:minmax(270px,.72fr) minmax(520px,1.45fr);min-height:650px;border:1px solid #35424a;background:#0d151c}.article-list{border-right:1px solid #35424a}.article-filters{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px;border-bottom:1px solid #35424a}.article-filters input{grid-column:1/-1}.article-filters input,.article-filters select,.cover-manager select,.editor-grid input,.editor-grid select,.editor-grid textarea{box-sizing:border-box;width:100%;padding:9px;border:1px solid #48565e;background:#070d12;color:#fff}.article-list-row{display:grid;width:100%;grid-template-columns:72px 1fr;gap:10px;padding:12px;border:0;border-bottom:1px solid #2d3940;background:transparent;color:#fff;text-align:left}.article-list-row:hover,.article-list-row.active{background:#172229}.article-list-row.active{box-shadow:inset 3px 0 #d4b55d}.article-list-row>img{width:72px;height:54px;object-fit:cover}.article-list-row>span{display:flex;min-width:0;flex-direction:column;gap:4px}.article-list-row small,.article-list-row time{color:#718087;font-size:8px}.article-list-row b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.article-list-row em{color:#e2c36c;font-size:8px;font-style:normal}.article-editor{min-width:0;padding:20px}.editor-head,.cover-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #344149}.editor-head small{color:#54c5cc;font:900 8px monospace}.editor-head h3{margin:5px 0}.editor-head>span{padding:6px 9px;border:1px solid #59656c;color:#aeb6b9;font-size:9px;font-weight:900}.editor-head>span[data-status="published"]{border-color:#2f745a;color:#7edfb4}.editor-head>span[data-status="scheduled"]{border-color:#8a6b30;color:#e8cd7a}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:15px}.editor-grid label{display:grid;gap:6px;color:#aeb7ba;font-size:9px;font-weight:900}.editor-grid .wide{grid-column:1/-1}.editor-grid textarea{resize:vertical;line-height:1.65}.editor-grid .check{display:flex;align-items:center}.editor-grid .check input{width:auto}.cover-manager{margin-top:16px;padding:13px;border:1px solid #3a4850;background:#0a1117}.cover-manager>header{margin-bottom:12px}.cover-manager>header div{display:flex;flex-direction:column;gap:3px}.cover-manager>header small{color:#7b888e}.cover-manager>header select{width:min(360px,48%)}.editor-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}.editor-actions .publish{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.editor-actions .withdraw,.editor-actions .archive{border-color:#84424b;background:#291116;color:#ef8994}.article-preview{margin-top:16px;padding:22px;border:1px solid #6d5b2c;background:#f1ecdc;color:#1d2426}.article-preview>img{width:100%;max-height:320px;object-fit:cover}.article-preview small{display:block;margin-top:13px;color:#9b2632}.article-preview p{color:#62686a}.article-preview div{white-space:pre-wrap;line-height:1.8}.article-notice{padding:10px;border-left:3px solid #d2b35f;background:#261e0c;color:#edd37b!important}.revision-list{margin-top:16px}.revision-list summary{cursor:pointer;color:#d9bd69;font-size:10px;font-weight:900}.revision-list article{display:flex;align-items:center;justify-content:space-between;padding:9px;border-bottom:1px solid #303c43}.revision-list span{display:flex;flex-direction:column}.revision-list small{color:#748188}.article-empty{padding:36px;color:#75838a;text-align:center}.editor-empty{display:grid;min-height:500px;place-items:center}@media(max-width:1100px){.article-layout{grid-template-columns:1fr}.article-list{max-height:390px;overflow:auto;border-right:0;border-bottom:1px solid #35424a}}@media(max-width:700px){.article-page-head{align-items:flex-start;flex-direction:column}.editor-grid{grid-template-columns:1fr}.editor-grid .wide{grid-column:auto}.cover-manager>header{align-items:stretch;flex-direction:column}.cover-manager>header select{width:100%}.article-editor{padding:12px}}
+.article-workbench{min-width:0;font-size:14px;line-height:1.55}.article-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:18px;padding:26px 28px;border:1px solid #35424a;background:#101821}.article-page-head small{color:#55c6cd;font:900 12px monospace;letter-spacing:.18em}.article-page-head h2{margin:7px 0;font-size:28px}.article-page-head p{margin:0;color:#9aa5a9;font-size:13px;line-height:1.65}.new-button,.article-filters button,.editor-actions button,.revision-list button{min-height:42px;padding:10px 15px;border:1px solid #4d5b63;background:#0a1117;color:#fff;font-size:13px;font-weight:900}.new-button{border-color:#d5b65e!important;color:#efd37b!important}.article-layout{display:grid;grid-template-columns:minmax(320px,.72fr) minmax(620px,1.6fr);min-height:700px;border:1px solid #35424a;background:#0d151c}.article-list{border-right:1px solid #35424a}.article-filters{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:18px;border-bottom:1px solid #35424a}.article-filters input{grid-column:1/-1}.article-filters input,.article-filters select,.cover-manager select,.editor-grid input,.editor-grid select,.editor-grid textarea{box-sizing:border-box;width:100%;min-height:42px;padding:10px 12px;border:1px solid #48565e;background:#070d12;color:#fff;font-size:14px}.article-list-row{display:grid;width:100%;grid-template-columns:92px 1fr;gap:14px;padding:16px;border:0;border-bottom:1px solid #2d3940;background:transparent;color:#fff;font-size:14px;text-align:left}.article-list-row:hover,.article-list-row.active{background:#172229}.article-list-row.active{box-shadow:inset 3px 0 #d4b55d}.article-list-row>img{width:92px;height:69px;object-fit:cover}.article-list-row>span{display:flex;min-width:0;flex-direction:column;gap:6px}.article-list-row small,.article-list-row time{color:#8e9ba0;font-size:12px}.article-list-row b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.article-list-row em{color:#e2c36c;font-size:12px;font-style:normal}.article-editor{min-width:0;padding:28px}.editor-head,.cover-manager>header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-bottom:16px;border-bottom:1px solid #344149}.editor-head small{color:#54c5cc;font:900 12px monospace}.editor-head h3{margin:7px 0;font-size:21px}.editor-head>span{padding:7px 11px;border:1px solid #59656c;color:#aeb6b9;font-size:12px;font-weight:900}.editor-head>span[data-status="published"]{border-color:#2f745a;color:#7edfb4}.editor-head>span[data-status="scheduled"]{border-color:#8a6b30;color:#e8cd7a}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}.editor-grid label{display:grid;align-content:start;gap:8px;color:#c2c9cb;font-size:13px;font-weight:900}.editor-grid label>small{color:#8f9ba0;font-size:12px;font-weight:500;line-height:1.55}.editor-grid .wide{grid-column:1/-1}.editor-grid textarea{resize:vertical;line-height:1.7}.editor-grid .check{display:flex;align-items:center;gap:8px}.editor-grid .check input{width:auto;min-height:auto}.cover-manager{margin-top:22px;padding:18px;border:1px solid #3a4850;background:#0a1117}.cover-manager>header{margin-bottom:16px}.cover-manager>header div{display:flex;flex-direction:column;gap:5px}.cover-manager>header b{font-size:15px}.cover-manager>header small{color:#939fa4;font-size:12px;line-height:1.5}.cover-manager>header select{width:min(430px,52%)}.editor-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}.editor-actions .publish{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.editor-actions .withdraw,.editor-actions .archive{border-color:#84424b;background:#291116;color:#ef8994}.article-preview{margin-top:22px;padding:clamp(24px,4vw,48px);border:1px solid #6d5b2c;background:#f1ecdc;color:#1d2426}.article-preview>img{width:100%;max-height:420px;object-fit:cover}.article-preview small{display:block;margin-top:15px;color:#9b2632;font-size:12px}.article-preview p{color:#62686a}.article-preview>div{white-space:pre-wrap;line-height:1.8}.article-preview>a{display:inline-block;margin-top:16px;color:#217c85}.video-author{display:block;margin:8px 0;color:#667174}.article-notice{padding:12px 14px;border-left:3px solid #d2b35f;background:#261e0c;color:#edd37b!important;font-size:13px}.revision-list{margin-top:22px}.revision-list summary{cursor:pointer;color:#d9bd69;font-size:13px;font-weight:900}.revision-list article{display:flex;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid #303c43}.revision-list span{display:flex;flex-direction:column;gap:4px}.revision-list small{color:#8d999e;font-size:12px}.article-empty{padding:42px;color:#8c999f;font-size:14px;text-align:center}.editor-empty{display:grid;min-height:500px;place-items:center}@media(max-width:1180px){.article-layout{grid-template-columns:1fr}.article-list{max-height:420px;overflow:auto;border-right:0;border-bottom:1px solid #35424a}}@media(max-width:700px){.article-page-head{align-items:flex-start;flex-direction:column}.editor-grid{grid-template-columns:1fr}.editor-grid .wide{grid-column:auto}.cover-manager>header{align-items:stretch;flex-direction:column}.cover-manager>header select{width:100%}.article-editor{padding:16px}}
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { siteContentApi, type Article, type SiteMedia } from '@/l12/platform'
+import { articleBodyText } from './articleBlocks'
 import { defaultHomeComposition, defaultSiteLegal, parseHomeComposition, parseSiteLegal, type HomeHeroSlide } from './homeContent'
 
 const ready = ref(false)
@@ -19,7 +20,7 @@ const carouselDuration = 6500
 const enabledSlides = computed<HomeHeroSlide[]>(() => {
   const configured = composition.value.heroSlides.filter(item => item.enabled)
   return configured.length ? configured : Array.from({ length: 3 }, (_, index) => ({
-    id: `brand-fallback-${index + 1}`, eyebrow: `STC-${String(index + 1).padStart(2, '0')}`, title: `主视觉标题范例 ${index + 1}`, summary: '这里显示该张轮播图单独设置的副标题或说明文本。', footer: '2026年00月00日【周X】发布信息占位',
+    id: `brand-fallback-${index + 1}`, eyebrow: `STC-${String(index + 1).padStart(2, '0')}`, title: `主视觉标题范例 ${index + 1}`, summary: '轮播副标题范例\n可在后台输入换行', footer: '2026.00.00 发布',
     href: '', linkLabel: '', mediaAssetId: '', enabled: true,
   }))
 })
@@ -28,10 +29,8 @@ const activeMedia = computed(() => media.value.find(item => item.id === activeSl
 const activeSlideLabel = computed(() => activeSlide.value.title.trim() || activeSlide.value.summary.trim() || '首页轮播图')
 const hasSlideCopy = computed(() => Boolean(activeSlide.value.eyebrow.trim() || activeSlide.value.title.trim() || activeSlide.value.summary.trim() || activeSlide.value.footer.trim()))
 const activeNotices = computed(() => composition.value.notices.filter(item => item.enabled && item.label.trim() && item.href.trim()))
-const leadNews = computed(() => news.value[0])
-const moreNews = computed(() => news.value.slice(1, 7))
-const leadVideo = computed(() => videos.value[0])
-const moreVideos = computed(() => videos.value.slice(1, 7))
+const homeNews = computed(() => news.value.slice(0, 5))
+const homeVideos = computed(() => videos.value.slice(0, 5))
 const featuredProduct = computed(() => products.value[0])
 const newsHeading = computed(() => ['', '最新资讯'].includes(composition.value.newsTitle.trim()) ? '资讯一览' : composition.value.newsTitle.trim())
 const videoEyebrow = computed(() => ['', 'COMMUNITY MOVIE'].includes(composition.value.videoEyebrow.trim()) ? 'VIDEO' : composition.value.videoEyebrow.trim())
@@ -46,7 +45,7 @@ const productCategories = computed(() => {
 const isInternal = (href?: string) => Boolean(href?.startsWith('/') && !href.startsWith('//'))
 const mediaFor = (article?: Article) => media.value.find(item => item.id === article?.mediaAssetId)
 const articleHref = (article: Article, fallback: string) => article.link || fallback
-const dateLabel = (article: Article) => new Date(article.publishedAt || article.publishAt || article.updatedAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+const dateLabel = (article: Article) => new Date(article.publishedAt || article.publishAt || article.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 
 function showSlide(index: number, restart = true) {
   activeIndex.value = (index + enabledSlides.value.length) % enabledSlides.value.length
@@ -96,14 +95,11 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 
     <section id="news" class="news-section">
       <header class="section-heading"><div><small>{{ composition.newsEyebrow || 'NEWS' }}</small><h2>{{ newsHeading }}</h2></div><router-link to="/news">更多 <b>→</b></router-link></header>
-      <div v-if="leadNews" class="news-stream">
-        <component :is="isInternal(articleHref(leadNews, '/news')) ? 'router-link' : 'a'" class="lead-news" :to="isInternal(articleHref(leadNews, '/news')) ? articleHref(leadNews, '/news') : undefined" :href="isInternal(articleHref(leadNews, '/news')) ? undefined : articleHref(leadNews, '/news')" :target="isInternal(articleHref(leadNews, '/news')) ? undefined : '_blank'" rel="noopener">
-          <picture v-if="mediaFor(leadNews)"><source media="(max-width: 760px)" :srcset="mediaFor(leadNews)?.mobileUrl"><img :src="mediaFor(leadNews)?.desktopUrl" :alt="leadNews.title"></picture><img v-else-if="leadNews.coverUrl" :src="leadNews.coverUrl" :alt="leadNews.title"><div class="news-placeholder" v-else><span>L12</span></div>
-          <div><small>{{ leadNews.category }} · {{ dateLabel(leadNews) }}</small><h3>{{ leadNews.title }}</h3><p>{{ leadNews.summary || leadNews.body }}</p><b>READ MORE →</b></div>
-        </component>
-        <div class="news-lines"><component :is="isInternal(articleHref(item, '/news')) ? 'router-link' : 'a'" v-for="item in moreNews" :key="item.id" :to="isInternal(articleHref(item, '/news')) ? articleHref(item, '/news') : undefined" :href="isInternal(articleHref(item, '/news')) ? undefined : articleHref(item, '/news')" :target="isInternal(articleHref(item, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(item)"><img :src="mediaFor(item)?.thumbnailUrl" :alt="item.title"></picture><img v-else-if="item.coverUrl" :src="item.coverUrl" :alt="item.title"><div v-else class="news-tile-placeholder">L12</div><span><time>{{ dateLabel(item) }}</time><em>{{ item.category }}</em><b>{{ item.title }}</b></span></component></div>
+      <div v-if="homeNews.length" class="featured-editorial-layout">
+        <component :is="isInternal(articleHref(homeNews[0]!, '/news')) ? 'router-link' : 'a'" class="home-editorial-card featured-editorial-main" data-kind="news" :to="isInternal(articleHref(homeNews[0]!, '/news')) ? articleHref(homeNews[0]!, '/news') : undefined" :href="isInternal(articleHref(homeNews[0]!, '/news')) ? undefined : articleHref(homeNews[0]!, '/news')" :target="isInternal(articleHref(homeNews[0]!, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(homeNews[0])"><source media="(max-width: 760px)" :srcset="mediaFor(homeNews[0])?.mobileUrl"><img :src="mediaFor(homeNews[0])?.desktopUrl" :alt="homeNews[0]!.title"></picture><img v-else-if="homeNews[0]!.coverUrl" :src="homeNews[0]!.coverUrl" :alt="homeNews[0]!.title"><div v-else class="editorial-placeholder">NEWS</div><span class="home-card-copy"><small>{{ homeNews[0]!.category }} · {{ dateLabel(homeNews[0]!) }}</small><b>{{ homeNews[0]!.title }}</b><p>{{ homeNews[0]!.summary || articleBodyText(homeNews[0]!.body) }}</p></span></component>
+        <div v-if="homeNews.length > 1" class="featured-editorial-support"><component :is="isInternal(articleHref(item, '/news')) ? 'router-link' : 'a'" v-for="item in homeNews.slice(1)" :key="item.id" class="home-editorial-card" data-kind="news" :to="isInternal(articleHref(item, '/news')) ? articleHref(item, '/news') : undefined" :href="isInternal(articleHref(item, '/news')) ? undefined : articleHref(item, '/news')" :target="isInternal(articleHref(item, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(item)"><source media="(max-width: 760px)" :srcset="mediaFor(item)?.mobileUrl"><img :src="mediaFor(item)?.desktopUrl" :alt="item.title"></picture><img v-else-if="item.coverUrl" :src="item.coverUrl" :alt="item.title"><div v-else class="editorial-placeholder">NEWS</div><span class="home-card-copy"><small>{{ dateLabel(item) }} · {{ item.category }}</small><b>{{ item.title }}</b></span></component></div>
       </div>
-      <div v-else class="news-stream placeholder-example" aria-label="资讯布局占位范例"><div class="lead-news placeholder-card"><div class="placeholder-image"><span>NEWS 01</span></div><div><small>分类 · 日期</small><h3>资讯标题占位</h3><p>发布正式资讯后，此处将显示摘要内容。</p></div></div><div class="news-lines"><div v-for="index in 4" :key="index" class="placeholder-news-tile"><div class="placeholder-image">NEWS {{ String(index + 1).padStart(2, '0') }}</div><span><time>0000.00.00</time><em>分类</em><b>资讯标题占位</b></span></div></div></div>
+      <div v-else class="featured-editorial-layout placeholder-example" aria-label="资讯一主四辅布局占位范例"><div class="home-editorial-card featured-editorial-main placeholder-card"><div class="editorial-placeholder">NEWS 01</div><span class="home-card-copy"><small>分类 · 发布时间</small><b>资讯主标题占位</b><p>发布正式资讯后，此处显示摘要。</p></span></div><div class="featured-editorial-support"><div v-for="index in 4" :key="index" class="home-editorial-card placeholder-card"><div class="editorial-placeholder">NEWS {{ String(index + 1).padStart(2, '0') }}</div><span class="home-card-copy"><small>发布时间 · 分类</small><b>资讯标题占位 {{ index }}</b></span></div></div></div>
     </section>
 
     <section id="products" class="products-section">
@@ -118,11 +114,11 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 
     <section id="community-videos" class="community-video-section">
       <header class="section-heading inverse"><div><small>{{ videoEyebrow }}</small><h2>{{ videoHeading }}</h2></div><router-link to="/videos">更多 <b>→</b></router-link></header>
-      <div v-if="leadVideo" class="video-editorial">
-        <component :is="isInternal(articleHref(leadVideo, '/news')) ? 'router-link' : 'a'" class="lead-video" :to="isInternal(articleHref(leadVideo, '/news')) ? articleHref(leadVideo, '/news') : undefined" :href="isInternal(articleHref(leadVideo, '/news')) ? undefined : articleHref(leadVideo, '/news')" :target="isInternal(articleHref(leadVideo, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(leadVideo)"><source media="(max-width: 760px)" :srcset="mediaFor(leadVideo)?.mobileUrl"><img :src="mediaFor(leadVideo)?.desktopUrl" :alt="leadVideo.title"></picture><img v-else-if="leadVideo.coverUrl" :src="leadVideo.coverUrl" :alt="leadVideo.title"><div v-else class="video-placeholder"/><i>▶</i><span><small>{{ leadVideo.category }}</small><b>{{ leadVideo.title }}</b><em>{{ leadVideo.summary }}</em></span></component>
-        <div class="video-tiles"><component :is="isInternal(articleHref(item, '/news')) ? 'router-link' : 'a'" v-for="item in moreVideos" :key="item.id" :to="isInternal(articleHref(item, '/news')) ? articleHref(item, '/news') : undefined" :href="isInternal(articleHref(item, '/news')) ? undefined : articleHref(item, '/news')" :target="isInternal(articleHref(item, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(item)"><img :src="mediaFor(item)?.thumbnailUrl" :alt="item.title"></picture><img v-else-if="item.coverUrl" :src="item.coverUrl" :alt="item.title"><div v-else class="video-placeholder"/><i>▶</i><span><small>{{ item.category }}</small><b>{{ item.title }}</b></span></component></div>
+      <div v-if="homeVideos.length" class="featured-editorial-layout">
+        <component :is="!homeVideos[0]!.link ? 'div' : isInternal(homeVideos[0]!.link) ? 'router-link' : 'a'" class="home-editorial-card featured-editorial-main" data-kind="video" :to="isInternal(homeVideos[0]!.link) ? homeVideos[0]!.link : undefined" :href="homeVideos[0]!.link && !isInternal(homeVideos[0]!.link) ? homeVideos[0]!.link : undefined" :target="homeVideos[0]!.link && !isInternal(homeVideos[0]!.link) ? '_blank' : undefined" rel="noopener"><picture v-if="mediaFor(homeVideos[0])"><source media="(max-width: 760px)" :srcset="mediaFor(homeVideos[0])?.mobileUrl"><img :src="mediaFor(homeVideos[0])?.desktopUrl" :alt="homeVideos[0]!.title"></picture><img v-else-if="homeVideos[0]!.coverUrl" :src="homeVideos[0]!.coverUrl" :alt="homeVideos[0]!.title"><div v-else class="editorial-placeholder">VIDEO</div><span class="home-card-copy"><b>{{ homeVideos[0]!.title }}</b><small v-if="homeVideos[0]!.videoAuthorName">作者：{{ homeVideos[0]!.videoAuthorName }}</small></span></component>
+        <div v-if="homeVideos.length > 1" class="featured-editorial-support"><component :is="!item.link ? 'div' : isInternal(item.link) ? 'router-link' : 'a'" v-for="item in homeVideos.slice(1)" :key="item.id" class="home-editorial-card" data-kind="video" :to="isInternal(item.link) ? item.link : undefined" :href="item.link && !isInternal(item.link) ? item.link : undefined" :target="item.link && !isInternal(item.link) ? '_blank' : undefined" rel="noopener"><picture v-if="mediaFor(item)"><source media="(max-width: 760px)" :srcset="mediaFor(item)?.mobileUrl"><img :src="mediaFor(item)?.desktopUrl" :alt="item.title"></picture><img v-else-if="item.coverUrl" :src="item.coverUrl" :alt="item.title"><div v-else class="editorial-placeholder">VIDEO</div><span class="home-card-copy"><b>{{ item.title }}</b><small v-if="item.videoAuthorName">作者：{{ item.videoAuthorName }}</small></span></component></div>
       </div>
-      <div v-else class="video-editorial placeholder-example" aria-label="社群视频布局占位范例"><div class="lead-video placeholder-card"><div class="video-placeholder"/><i>▶</i><span><small>社群视频</small><b>主视频标题占位</b><em>视频摘要占位</em></span></div><div class="video-tiles"><div v-for="index in 4" :key="index" class="placeholder-video-tile"><div class="video-placeholder"/><i>▶</i><span><small>视频分类</small><b>视频标题占位 {{ index }}</b></span></div></div></div>
+      <div v-else class="featured-editorial-layout placeholder-example" aria-label="视频一主四辅布局占位范例"><div class="home-editorial-card featured-editorial-main placeholder-card"><div class="editorial-placeholder">VIDEO 01</div><span class="home-card-copy"><b>视频主标题占位</b><small>作者名</small></span></div><div class="featured-editorial-support"><div v-for="index in 4" :key="index" class="home-editorial-card placeholder-card"><div class="editorial-placeholder">VIDEO {{ String(index + 1).padStart(2, '0') }}</div><span class="home-card-copy"><b>视频标题占位 {{ index }}</b><small>作者名</small></span></div></div></div>
     </section>
 
     <footer class="official-footer"><div class="footer-brand"><img src="/favicon.png" alt="十二军团"><span>LEGION 12</span></div><div><p>{{ legal.trademark }}</p><a v-if="legal.contactHref" :href="legal.contactHref" target="_blank" rel="noopener">{{ legal.contactLabel || '联系我们' }}</a><small>{{ legal.copyright }}<template v-if="legal.registration"> · {{ legal.registration }}</template></small></div></footer>
@@ -142,6 +138,7 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 .hero-copy>small::before{display:none}
 .hero-copy h1{margin:8px 0 0;font-size:clamp(26px,4vw,58px);line-height:1.08}
 .hero-copy p{margin:12px 0 0;color:#d3d9d7;font-size:clamp(12px,1.1vw,16px)}
+.hero-copy>small,.hero-copy h1,.hero-copy p,.hero-copy strong{white-space:pre;overflow-wrap:normal;word-break:normal}
 .news-section,.products-section{background:var(--paper)}
 .products-section{background:var(--surface)}
 .section-heading p,.lead-news p,.product-track p{color:var(--muted)}
@@ -155,7 +152,7 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 .section-empty{border-color:var(--line);color:var(--muted)}
 .section-empty b{color:var(--ink)}
 .official-footer{border-top:1px solid var(--line);background:#070b0e}
-@media(max-width:760px){.hero-copy{right:18px;bottom:108px;left:18px;max-width:none;padding:14px 16px}.hero-copy h1{font-size:32px}.product-track picture,.product-track picture img,.product-track>a>img,.product-placeholder{aspect-ratio:4/5}}
+@media(max-width:760px){.hero-copy{right:18px;bottom:108px;left:18px;max-width:none;padding:14px 16px}.hero-copy h1{font-size:32px}.product-track picture,.product-track picture img,.product-track>a>img,.product-placeholder{aspect-ratio:4/3}}
 .hero-stage{min-height:0;aspect-ratio:2460/1440}
 .hero-copy{min-height:0}
 .news-stream{grid-template-columns:minmax(360px,1.05fr) minmax(0,1.5fr);gap:28px}
@@ -174,24 +171,24 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 .product-category-index{display:flex;flex-direction:column;border-top:1px solid var(--line)}
 .product-category-index>a{display:grid;grid-template-columns:1fr 76px;align-items:center;gap:20px;min-height:96px;padding:12px 0;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none}
 .product-category-index span{display:flex;flex-direction:column;gap:7px}.product-category-index b{font-size:20px}.product-category-index small{color:var(--muted)}
-.product-category-index picture,.product-category-index img,.product-category-index i{width:76px;height:70px;object-fit:cover}
+.product-category-index picture,.product-category-index img,.product-category-index i{width:76px;height:auto;aspect-ratio:4/3;object-fit:cover}
 .product-category-index i{display:grid;place-items:center;background:var(--surface-2);color:var(--gold);font-style:normal}
-.featured-product{position:relative;display:block;overflow:hidden;min-height:430px;color:#fff;text-decoration:none}
+.featured-product{position:relative;display:block;overflow:hidden;min-height:0;aspect-ratio:4/3;color:#fff;text-decoration:none}
 .featured-product>picture,.featured-product>picture img,.featured-product>img,.featured-product>.product-placeholder{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .featured-product::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,8,10,.88),transparent 58%)}
 .featured-product>span{position:absolute;z-index:2;right:26px;bottom:24px;left:26px;display:flex;flex-direction:column;gap:8px}
 .featured-product>span small{color:var(--gold)}.featured-product>span b{font-size:clamp(22px,3vw,38px)}
 .product-track{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;gap:24px}
 .product-track>a{min-width:0}.product-track h3{font-size:17px}
-.video-editorial{display:grid;grid-template-columns:minmax(360px,1.05fr) minmax(0,1.5fr);gap:28px}
-.lead-video,.video-tiles>a{position:relative;display:block;overflow:hidden;color:#fff;text-decoration:none}
-.lead-video{min-height:470px}.video-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}.video-tiles>a{min-height:218px}
-.lead-video>picture,.lead-video>picture img,.lead-video>img,.lead-video>.video-placeholder,.video-tiles picture,.video-tiles picture img,.video-tiles>a>img,.video-tiles .video-placeholder{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.lead-video::after,.video-tiles>a::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,8,10,.9),transparent 62%)}
+.video-editorial{display:grid;grid-template-columns:minmax(320px,1.05fr) minmax(0,1.5fr);gap:28px}.video-editorial>*{min-width:0}
+.lead-video,.video-tiles>*{position:relative;display:block;overflow:hidden;aspect-ratio:16/9;color:#fff;text-decoration:none}
+.lead-video{min-height:0}.video-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));align-content:start;gap:26px}.video-tiles>*{min-width:0;min-height:0}
+.lead-video>picture,.lead-video>picture img,.lead-video>img,.lead-video>.video-placeholder,.video-tiles picture,.video-tiles picture img,.video-tiles>*>img,.video-tiles .video-placeholder{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.lead-video::after,.video-tiles>*::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,8,10,.9),transparent 62%)}
 .lead-video>i,.video-tiles i{position:absolute;z-index:2;top:18px;left:18px;display:grid;width:42px;height:42px;place-items:center;border:1px solid var(--gold);border-radius:50%;background:rgba(5,9,11,.7);color:var(--gold);font-style:normal}
-.lead-video>span,.video-tiles a>span{position:absolute;z-index:2;right:20px;bottom:18px;left:20px;display:flex;flex-direction:column;gap:6px}.lead-video small,.video-tiles small{color:var(--gold)}.lead-video b{font-size:clamp(22px,3vw,38px)}.lead-video em{color:#b8c1c3;font-style:normal}
+.lead-video>span,.video-tiles>*>span{position:absolute;z-index:2;right:20px;bottom:18px;left:20px;display:flex;min-width:0;flex-direction:column;gap:6px}.lead-video small,.video-tiles small,.lead-video em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lead-video small,.video-tiles small{color:var(--gold)}.lead-video b,.video-tiles b{display:-webkit-box;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}.lead-video b{font-size:clamp(22px,3vw,38px)}.lead-video em{color:#b8c1c3;font-style:normal}
 @media(max-width:1000px){.news-stream,.products-feature,.video-editorial{grid-template-columns:1fr}.product-track{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.hero-stage{min-height:0;aspect-ratio:1080/1440}.news-lines,.video-tiles,.product-track{grid-template-columns:1fr}.lead-video{min-height:360px}.video-tiles>a{min-height:260px}.products-heading{align-items:flex-start;flex-direction:column}.products-heading h2{font-size:40px}.featured-product{min-height:360px}}
+@media(max-width:760px){.hero-stage{min-height:0;aspect-ratio:1080/1440}.news-lines,.video-tiles,.product-track{grid-template-columns:1fr}.lead-video,.video-tiles>*{min-height:0;aspect-ratio:16/9}.products-heading{align-items:flex-start;flex-direction:column}.products-heading h2{font-size:40px}.featured-product{min-height:0;aspect-ratio:4/3}}
 .community-video-section::before{content:'VIDEO'}
 .hero-stage[data-fallback-index="1"] .hero-fallback{background:radial-gradient(circle at 30% 45%,rgba(212,180,81,.24),transparent 24%),linear-gradient(145deg,#10191e 0 52%,#3e171d 52% 70%,#080d10 70%)}
 .hero-stage[data-fallback-index="2"] .hero-fallback{background:radial-gradient(circle at 68% 32%,rgba(168,38,50,.3),transparent 27%),linear-gradient(125deg,#080d10 0 42%,#24323a 42% 67%,#151015 67%)}
@@ -201,7 +198,7 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 .placeholder-news-tile{display:block}.placeholder-news-tile>span{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;padding:12px 0;border-bottom:1px solid var(--line)}.placeholder-news-tile b{grid-column:1/-1}
 .product-category-index>div{display:grid;grid-template-columns:1fr 76px;align-items:center;gap:20px;min-height:96px;padding:12px 0;border-bottom:1px solid var(--line)}
 .placeholder-product-card{color:var(--ink)}.placeholder-product-card small{display:block;margin-top:14px;color:var(--gold)}.placeholder-product-card h3{margin:7px 0;font-size:17px}
-.placeholder-video-tile{position:relative;min-height:218px;overflow:hidden}.placeholder-video-tile::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,8,10,.9),transparent 62%)}.placeholder-video-tile>i{position:absolute;z-index:2;top:18px;left:18px;display:grid;width:42px;height:42px;place-items:center;border:1px solid var(--gold);border-radius:50%;color:var(--gold);font-style:normal}.placeholder-video-tile>span{position:absolute;z-index:2;right:20px;bottom:18px;left:20px;display:flex;flex-direction:column;gap:6px}.placeholder-video-tile small{color:var(--gold)}
+.placeholder-video-tile{position:relative;min-width:0;min-height:0;overflow:hidden;aspect-ratio:16/9}.placeholder-video-tile::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,8,10,.9),transparent 62%)}.placeholder-video-tile>i{position:absolute;z-index:2;top:18px;left:18px;display:grid;width:42px;height:42px;place-items:center;border:1px solid var(--gold);border-radius:50%;color:var(--gold);font-style:normal}.placeholder-video-tile>span{position:absolute;z-index:2;right:20px;bottom:18px;left:20px;display:flex;min-width:0;flex-direction:column;gap:6px}.placeholder-video-tile small{color:var(--gold)}
 .news-stream>*{min-width:0}.lead-news,.news-lines,.news-lines a,.placeholder-news-tile{min-width:0;overflow:hidden}.lead-news img,.news-lines img{display:block;max-width:100%;object-fit:cover}
 .hero-notices{right:auto;bottom:24px;left:50%;width:min(560px,68vw);flex-direction:column-reverse;gap:8px;padding:0;background:transparent;transform:translateX(-50%);backdrop-filter:none}
 .hero-notices a{box-sizing:border-box;width:100%;min-width:0;justify-content:center;padding:13px 24px;border:1px solid rgba(212,180,81,.5);border-radius:999px;background:rgba(9,14,18,.9);text-align:center;box-shadow:0 7px 22px rgba(0,0,0,.28)}
@@ -233,6 +230,27 @@ onBeforeUnmount(() => window.clearTimeout(carouselTimer))
 .hero-copy{top:auto;bottom:96px;left:clamp(26px,5vw,78px);width:min(390px,32vw)}
 @media(max-width:760px){.hero-copy{top:auto;right:18px;bottom:230px;left:18px;width:auto}}
 .official-footer>.footer-brand{display:flex;align-items:center;gap:13px;color:#fff;font:900 13px monospace;letter-spacing:.16em}
+.featured-editorial-layout{display:grid;grid-template-columns:minmax(340px,1.05fr) minmax(0,1.5fr);align-items:start;gap:clamp(28px,4vw,58px)}
+.featured-editorial-layout>*{min-width:0}
+.featured-editorial-layout>.featured-editorial-main:only-child{grid-column:1/-1}
+.featured-editorial-support{display:grid;min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;column-gap:24px;row-gap:30px}
+.featured-editorial-support>.home-editorial-card:only-child{grid-column:1/-1}
+.home-editorial-card{display:flex;min-width:0;flex-direction:column;border:0;background:transparent;box-shadow:none;color:var(--ink);text-decoration:none}
+.home-editorial-card>picture,.home-editorial-card>img,.editorial-placeholder{display:block;width:100%;overflow:hidden;aspect-ratio:16/9}
+.home-editorial-card>picture img,.home-editorial-card>img{display:block;width:100%;height:100%;object-fit:cover;transition:filter .2s ease,transform .25s ease}
+.editorial-placeholder{display:grid;place-items:center;background:linear-gradient(135deg,#142129,#431820);color:var(--gold);font:900 20px monospace;letter-spacing:.12em}
+.home-card-copy{display:flex;min-width:0;flex-direction:column;gap:8px;padding:14px 0 16px;border-bottom:1px solid color-mix(in srgb,var(--line) 78%,transparent)}
+.featured-editorial-main .home-card-copy{padding:18px 0 20px}
+.home-card-copy small{overflow:hidden;color:var(--gold);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.home-card-copy b{display:-webkit-box;overflow:hidden;overflow-wrap:anywhere;font-size:17px;line-height:1.45;transition:color .2s ease;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.featured-editorial-main .home-card-copy b{font-size:clamp(20px,2.2vw,30px)}
+.home-card-copy p{display:-webkit-box;overflow:hidden;margin:0;color:var(--muted);font-size:13px;line-height:1.6;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.home-editorial-card[data-kind="video"] .home-card-copy{padding-bottom:16px}
+.home-editorial-card[data-kind="video"] .home-card-copy small{color:#b8c1c3}
+.home-editorial-card:hover>picture img,.home-editorial-card:hover>img{filter:brightness(1.08);transform:scale(1.012)}
+.home-editorial-card:hover .home-card-copy b{color:var(--gold)}
+@media(max-width:1100px){.featured-editorial-layout{grid-template-columns:1fr}.featured-editorial-support{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.featured-editorial-layout,.featured-editorial-support{grid-template-columns:1fr;gap:22px}.featured-editorial-support{row-gap:22px}.home-card-copy,.featured-editorial-main .home-card-copy{padding-right:0;padding-left:0}}
 .hero-notices{right:clamp(26px,5vw,78px);left:auto;transform:none}
 .hero-notices a{border-radius:0}
 .hero-notices a{background:rgba(9,14,18,.4)}

@@ -81,7 +81,10 @@ export function parseHomeComposition(value?: string): HomeComposition {
     return {
       ...fallback, ...source, version: 1,
       heroSlides: Array.isArray(source.heroSlides) ? source.heroSlides.map((item, index) => ({
-        ...createHomeHeroSlide(), ...item, id: String(item.id || `hero-${index}`), mediaAssetId: String(item.mediaAssetId || ''),
+        ...createHomeHeroSlide(), ...item, id: String(item.id || `hero-${index}`),
+        eyebrow: String(item.eyebrow ?? ''), title: String(item.title ?? ''), summary: String(item.summary ?? ''),
+        footer: String(item.footer ?? ''), href: String(item.href ?? ''), linkLabel: String(item.linkLabel ?? ''),
+        mediaAssetId: String(item.mediaAssetId || ''),
         enabled: item.enabled !== false,
       })) : [],
       notices: Array.isArray(source.notices) ? source.notices.map((item, index) => ({

@@ -31,6 +31,11 @@ self_test() {
   id "$web_user" >/dev/null 2>&1 || fail "找不到 Nginx 账号：${web_user}"
   systemctl cat "$service_name" >/dev/null
   nginx -t >/dev/null
+  local nginx_dump
+  nginx_dump="$(nginx -T 2>&1)"
+  grep -Fq 'location = /api/admin/site/media' <<<"$nginx_dump" || fail "Nginx 未为站点素材上传配置精确路由"
+  grep -Fq 'client_max_body_size 32m' <<<"$nginx_dump" || fail "Nginx 站点素材上传上限不是 32m"
+  grep -Fq 'media_upload_too_large' <<<"$nginx_dump" || fail "Nginx 站点素材 413 未返回可识别 JSON"
   log "服务器快速发布环境检查通过"
 }
 
