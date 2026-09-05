@@ -247,7 +247,7 @@ public sealed class AtomicReviewBatch6LBRegressionTests
         Assert.True(begin.Accepted, begin.Error);
         var costPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", costPrompt.Continuation);
-        Assert.Equal("grave-card", costPrompt.Kind);
+        Assert.Equal("order", costPrompt.Kind);
         Assert.DoesNotContain(hammer.InstanceId, costPrompt.ValidChoices);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "graveyard-active-confirm");
         Assert.Empty(game.State.EffectStack);

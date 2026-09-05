@@ -133,11 +133,12 @@ public sealed partial class L12GameEngine
             }
             case ("S01-03M2", "lokiHeal"):
             {
-                var grave = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToList();
-                if (grave.Count < 2) return CommandResult.Reject("墓地需要至少2张可返回牌库的卡牌");
+                var grave = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
+                if (grave.Sum(L12StructuredCardRules.StarterGraveCardCopies) < 2)
+                    return CommandResult.Reject("墓地卡牌合计需能视为2张");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
-                [PublicActiveStep("cards", "graveCards", "洛基：预先选择墓地2张返回牌库底部的卡牌",
-                    grave, min: 2, max: 2)]);
+                [GraveCostSelectionStep(player, "洛基：选择合计视为2张、返回牌库底部的墓地卡牌",
+                    "graveCards", grave, required: 2)]);
             }
             case ("S01-01D1", "palaceExchange"):
             {

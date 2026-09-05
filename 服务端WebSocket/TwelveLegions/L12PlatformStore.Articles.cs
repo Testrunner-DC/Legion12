@@ -13,7 +13,11 @@ public sealed record L12ArticleDraft(
     string Slug,
     bool Pinned,
     DateTimeOffset? PublishAt,
-    long? ExpectedRevision = null);
+    long? ExpectedRevision = null,
+    string Kind = "news",
+    string? CategoryId = null,
+    string? MediaAssetId = null,
+    int SortOrder = 0);
 
 public sealed record L12ArticleView(
     string Id,
@@ -34,7 +38,11 @@ public sealed record L12ArticleView(
     string Author,
     string UpdatedBy,
     string? PublishedBy,
-    long Revision);
+    long Revision,
+    string Kind = "news",
+    string? CategoryId = null,
+    string? MediaAssetId = null,
+    int SortOrder = 0);
 
 public sealed record L12ArticleRevisionView(
     long Revision,
@@ -49,11 +57,14 @@ public sealed record L12ArticleRevisionView(
     bool Pinned,
     DateTimeOffset? PublishAt,
     string Actor,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string Kind = "news",
+    string? CategoryId = null,
+    string? MediaAssetId = null,
+    int SortOrder = 0);
 
 public sealed partial class L12PlatformStore
 {
-    private static readonly string[] ArticleCategories = ["官方公告", "规则勘误", "赛季更新", "赛事信息"];
 
     private sealed class ArticlePublishedRow
     {
@@ -67,6 +78,10 @@ public sealed partial class L12PlatformStore
         public bool Pinned { get; set; }
         public DateTimeOffset PublishedAt { get; set; }
         public string PublishedByAccountId { get; set; } = string.Empty;
+        public string Kind { get; set; } = "news";
+        public string? CategoryId { get; set; }
+        public string? MediaAssetId { get; set; }
+        public int SortOrder { get; set; }
     }
 
     private sealed class ArticleRevisionRow
@@ -84,6 +99,10 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? PublishAt { get; set; }
         public string ActorAccountId { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public string Kind { get; set; } = "news";
+        public string? CategoryId { get; set; }
+        public string? MediaAssetId { get; set; }
+        public int SortOrder { get; set; }
     }
 
     private sealed class ArticleRow
@@ -107,6 +126,10 @@ public sealed partial class L12PlatformStore
         public long Revision { get; set; }
         public ArticlePublishedRow? Published { get; set; }
         public List<ArticleRevisionRow> Revisions { get; set; } = [];
+        public string Kind { get; set; } = "news";
+        public string? CategoryId { get; set; }
+        public string? MediaAssetId { get; set; }
+        public int SortOrder { get; set; }
     }
 
     private void EnsureArticleState()
@@ -145,7 +168,8 @@ public sealed partial class L12PlatformStore
                 row.Title = Limit(LegacyString(element, "title"), 180);
                 row.Summary = Limit(LegacyString(element, "summary"), 600);
                 row.Body = Limit(LegacyString(element, "body"), 100_000);
-                row.Category = NormalizeCategory(LegacyString(element, "category"));
+                row.Kind = "news";
+                row.Category = NormalizeLegacyArticleCategory(LegacyString(element, "category"));
                 row.CoverUrl = NormalizeOptionalUrl(LegacyString(element, "coverUrl"), "封面图片地址", allowRelative: true);
                 row.Pinned = LegacyBool(element, "pinned");
                 row.PublishAt = LegacyDate(element, "publishedAt");
@@ -176,18 +200,23 @@ public sealed partial class L12PlatformStore
         catch (JsonException) { return false; }
     }
 
-    public IReadOnlyList<L12ArticleView> PublicArticles(string? category = null, string? search = null, int limit = 100)
+    public IReadOnlyList<L12ArticleView> PublicArticles(string? category = null, string? search = null,
+        int limit = 100, string kind = "news")
     {
         lock (_gate)
         {
             var now = DateTimeOffset.UtcNow;
+            var normalizedKind = NormalizeSiteKind(kind);
             return _data.Articles
                 .Where(row => row.Published is not null &&
                     (row.Status == "published" || row.Status == "scheduled" && row.PublishAt <= now))
+                .Where(row => row.Published!.Kind == normalizedKind)
                 .Where(row => string.IsNullOrWhiteSpace(category) ||
-                    string.Equals(row.Published!.Category, category.Trim(), StringComparison.OrdinalIgnoreCase))
+                    string.Equals(row.Published!.Category, category.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(row.Published!.CategoryId, category.Trim(), StringComparison.OrdinalIgnoreCase))
                 .Where(row => MatchesArticleSearch(row.Published!, search))
                 .OrderByDescending(row => row.Published!.Pinned)
+                .ThenBy(row => row.Published!.SortOrder)
                 .ThenByDescending(row => row.Published!.PublishedAt)
                 .Take(Math.Clamp(limit, 1, 200))
                 .Select(ToPublicArticleView)
@@ -196,17 +225,22 @@ public sealed partial class L12PlatformStore
     }
 
     public IReadOnlyList<L12ArticleView> AdminArticles(string? status = null, string? category = null,
-        string? search = null, int limit = 300)
+        string? search = null, int limit = 300, string kind = "news")
     {
         lock (_gate)
+        {
+            var normalizedKind = NormalizeSiteKind(kind);
             return _data.Articles
+                .Where(row => row.Kind == normalizedKind)
                 .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status.Trim())
-                .Where(row => string.IsNullOrWhiteSpace(category) || row.Category == category.Trim())
+                .Where(row => string.IsNullOrWhiteSpace(category) || row.Category == category.Trim() ||
+                    row.CategoryId == category.Trim())
                 .Where(row => MatchesArticleSearch(row, search))
-                .OrderByDescending(row => row.UpdatedAt)
+                .OrderBy(row => row.SortOrder).ThenByDescending(row => row.UpdatedAt)
                 .Take(Math.Clamp(limit, 1, 500))
                 .Select(ToAdminArticleView)
                 .ToArray();
+        }
     }
 
     public L12ArticleView? AdminArticle(string id)
@@ -223,12 +257,14 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            var kind = NormalizeSiteKind(draft.Kind);
             var row = string.IsNullOrWhiteSpace(draft.Id) ? null : FindArticle(draft.Id);
             if (row is null)
             {
                 row = new ArticleRow
                 {
                     Id = Guid.NewGuid().ToString("N"),
+                    Kind = kind,
                     CreatedAt = DateTimeOffset.UtcNow,
                     CreatedByAccountId = actor.Id,
                 };
@@ -236,15 +272,32 @@ public sealed partial class L12PlatformStore
             }
             else if (draft.ExpectedRevision is not null && row.Revision != draft.ExpectedRevision)
                 throw new InvalidOperationException("稿件已被其他操作更新，请刷新后重试");
+            else if (row.Kind != kind)
+                throw new ArgumentException("稿件建立后不能改变内容类型");
+
+            var category = FindCategory(kind, draft.CategoryId, draft.Category, true)
+                ?? throw new ArgumentException("所选分类不存在");
+            SiteMediaRow? media = null;
+            if (!string.IsNullOrWhiteSpace(draft.MediaAssetId))
+            {
+                media = ActiveMedia(draft.MediaAssetId) ?? throw new ArgumentException("所选封面素材不存在或已删除");
+                if (media.Kind != kind) throw new ArgumentException("封面素材类型与稿件类型不一致");
+            }
+            else if (!string.IsNullOrWhiteSpace(draft.CoverUrl))
+                throw new ArgumentException("封面不能填写图片链接，请通过站点素材上传");
 
             row.Title = Limit(draft.Title, 180);
             row.Summary = Limit(draft.Summary, 600);
             row.Body = Limit(draft.Body, 100_000);
-            row.Category = NormalizeCategory(draft.Category);
-            row.CoverUrl = NormalizeOptionalUrl(draft.CoverUrl, "封面图片地址", allowRelative: true);
+            row.Kind = kind;
+            row.CategoryId = category.Id;
+            row.Category = category.Name;
+            row.MediaAssetId = media?.Id;
+            row.CoverUrl = media is null ? string.Empty : SiteMediaUrl(media.Id);
             row.Link = NormalizeOptionalUrl(draft.Link, "文章链接", allowRelative: true);
             row.Slug = UniqueArticleSlug(row.Id, draft.Slug);
             row.Pinned = draft.Pinned;
+            row.SortOrder = Math.Clamp(draft.SortOrder, 0, 100_000);
             row.PublishAt = draft.PublishAt;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             row.UpdatedByAccountId = actor.Id;
@@ -266,6 +319,12 @@ public sealed partial class L12PlatformStore
             var row = FindArticle(id) ?? throw new KeyNotFoundException("稿件不存在");
             if (string.IsNullOrWhiteSpace(row.Title)) throw new ArgumentException("发布前必须填写标题");
             if (string.IsNullOrWhiteSpace(row.Body)) throw new ArgumentException("发布前必须填写正文");
+            var category = FindCategory(row.Kind, row.CategoryId, row.Category, false)
+                ?? throw new ArgumentException("发布前必须选择启用的分类");
+            row.CategoryId = category.Id;
+            row.Category = category.Name;
+            if (row.Kind is "video" or "product" && ActiveMedia(row.MediaAssetId) is null)
+                throw new ArgumentException(row.Kind == "video" ? "视频发布前必须上传封面" : "商品发布前必须上传商品图");
             var publishAt = row.PublishAt ?? DateTimeOffset.UtcNow;
             row.PublishAt = publishAt;
             row.Published = PublishedSnapshot(row, publishAt, actor.Id);
@@ -312,7 +371,8 @@ public sealed partial class L12PlatformStore
             var row = FindArticle(id) ?? throw new KeyNotFoundException("稿件不存在");
             return row.Revisions.OrderByDescending(item => item.Revision).Select(item => new L12ArticleRevisionView(
                 item.Revision, item.Action, item.Title, item.Summary, item.Body, item.Category, item.CoverUrl,
-                item.Link, item.Slug, item.Pinned, item.PublishAt, ArticleAccountName(item.ActorAccountId), item.CreatedAt)).ToArray();
+                item.Link, item.Slug, item.Pinned, item.PublishAt, ArticleAccountName(item.ActorAccountId), item.CreatedAt,
+                item.Kind, item.CategoryId, item.MediaAssetId, item.SortOrder)).ToArray();
         }
     }
 
@@ -333,6 +393,12 @@ public sealed partial class L12PlatformStore
             row.Slug = UniqueArticleSlug(row.Id, snapshot.Slug);
             row.Pinned = snapshot.Pinned;
             row.PublishAt = snapshot.PublishAt;
+            row.Kind = snapshot.Kind;
+            row.CategoryId = snapshot.CategoryId;
+            row.MediaAssetId = snapshot.MediaAssetId;
+            row.SortOrder = snapshot.SortOrder;
+            row.CoverUrl = string.IsNullOrWhiteSpace(snapshot.MediaAssetId)
+                ? snapshot.CoverUrl : SiteMediaUrl(snapshot.MediaAssetId);
             row.Status = "draft";
             row.HasUnpublishedChanges = true;
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -348,17 +414,21 @@ public sealed partial class L12PlatformStore
     private ArticleRow? FindArticle(string id) => _data.Articles.FirstOrDefault(item => item.Id == id.Trim());
 
     private L12ArticleView ToAdminArticleView(ArticleRow row) => new(row.Id, row.Title, row.Summary, row.Body,
-        row.Category, row.CoverUrl, row.Link, row.Slug, row.Pinned, row.Status, row.HasUnpublishedChanges,
+        row.Category, string.IsNullOrWhiteSpace(row.MediaAssetId) ? row.CoverUrl : SiteMediaUrl(row.MediaAssetId),
+        row.Link, row.Slug, row.Pinned, row.Status, row.HasUnpublishedChanges,
         row.PublishAt, row.CreatedAt, row.UpdatedAt, row.Published?.PublishedAt, ArticleAccountName(row.CreatedByAccountId),
-        ArticleAccountName(row.UpdatedByAccountId), row.Published is null ? null : ArticleAccountName(row.Published.PublishedByAccountId), row.Revision);
+        ArticleAccountName(row.UpdatedByAccountId), row.Published is null ? null : ArticleAccountName(row.Published.PublishedByAccountId),
+        row.Revision, row.Kind, row.CategoryId, row.MediaAssetId, row.SortOrder);
 
     private L12ArticleView ToPublicArticleView(ArticleRow row)
     {
         var value = row.Published!;
-        return new L12ArticleView(row.Id, value.Title, value.Summary, value.Body, value.Category, value.CoverUrl,
+        var coverUrl = string.IsNullOrWhiteSpace(value.MediaAssetId) ? value.CoverUrl : SiteMediaUrl(value.MediaAssetId);
+        return new L12ArticleView(row.Id, value.Title, value.Summary, value.Body, value.Category, coverUrl,
             value.Link, value.Slug, value.Pinned, "published", false, value.PublishedAt, row.CreatedAt,
             value.PublishedAt, value.PublishedAt, ArticleAccountName(row.CreatedByAccountId), ArticleAccountName(value.PublishedByAccountId),
-            ArticleAccountName(value.PublishedByAccountId), row.Revision);
+            ArticleAccountName(value.PublishedByAccountId), row.Revision, value.Kind, value.CategoryId,
+            value.MediaAssetId, value.SortOrder);
     }
 
     private string ArticleAccountName(string accountId) => string.IsNullOrWhiteSpace(accountId) ? "系统迁移"
@@ -379,6 +449,10 @@ public sealed partial class L12PlatformStore
             Slug = row.Slug,
             Pinned = row.Pinned,
             PublishAt = row.PublishAt,
+            Kind = row.Kind,
+            CategoryId = row.CategoryId,
+            MediaAssetId = row.MediaAssetId,
+            SortOrder = row.SortOrder,
             ActorAccountId = actorId,
             CreatedAt = DateTimeOffset.UtcNow,
         });
@@ -398,12 +472,18 @@ public sealed partial class L12PlatformStore
         Pinned = row.Pinned,
         PublishedAt = publishedAt,
         PublishedByAccountId = actorId,
+        Kind = row.Kind,
+        CategoryId = row.CategoryId,
+        MediaAssetId = row.MediaAssetId,
+        SortOrder = row.SortOrder,
     };
 
     private static bool MatchesPublished(ArticleRow row) => row.Published is { } value
         && row.Title == value.Title && row.Summary == value.Summary && row.Body == value.Body
         && row.Category == value.Category && row.CoverUrl == value.CoverUrl && row.Link == value.Link
-        && row.Slug == value.Slug && row.Pinned == value.Pinned && row.PublishAt == value.PublishedAt;
+        && row.Slug == value.Slug && row.Pinned == value.Pinned && row.PublishAt == value.PublishedAt
+        && row.Kind == value.Kind && row.CategoryId == value.CategoryId && row.MediaAssetId == value.MediaAssetId
+        && row.SortOrder == value.SortOrder;
 
     private static bool MatchesArticleSearch(ArticleRow row, string? search)
         => string.IsNullOrWhiteSpace(search) || new[] { row.Title, row.Summary, row.Body, row.Category, row.Slug }
@@ -426,14 +506,14 @@ public sealed partial class L12PlatformStore
         return normalized;
     }
 
-    private static string NormalizeCategory(string? category)
-        => ArticleCategories.Contains(category?.Trim(), StringComparer.Ordinal) ? category!.Trim() : "官方公告";
+    private static string NormalizeLegacyArticleCategory(string? category)
+        => string.IsNullOrWhiteSpace(category) ? "官方公告" : Limit(category, 40);
 
     private static string NormalizeOptionalUrl(string? value, string label, bool allowRelative = false)
     {
         var normalized = Limit(value, 2000);
         if (string.IsNullOrWhiteSpace(normalized)) return string.Empty;
-        if (allowRelative && normalized.StartsWith('/')) return normalized;
+        if (allowRelative && normalized.StartsWith('/') && !normalized.StartsWith("//", StringComparison.Ordinal)) return normalized;
         if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             throw new ArgumentException($"{label}必须是 http(s) 地址{(allowRelative ? "或站内路径" : string.Empty)}");
         return normalized;
@@ -458,12 +538,31 @@ public sealed partial class L12PlatformStore
         row.Title ??= string.Empty;
         row.Summary ??= string.Empty;
         row.Body ??= string.Empty;
-        row.Category = NormalizeCategory(row.Category);
+        row.Kind = NormalizeSiteKind(row.Kind);
+        row.Category = NormalizeLegacyArticleCategory(row.Category);
         row.CoverUrl ??= string.Empty;
+        row.MediaAssetId = string.IsNullOrWhiteSpace(row.MediaAssetId) ? null : row.MediaAssetId.Trim();
+        row.CategoryId = string.IsNullOrWhiteSpace(row.CategoryId) ? null : row.CategoryId.Trim();
         row.Link ??= string.Empty;
         row.Slug = string.IsNullOrWhiteSpace(row.Slug) ? $"article-{row.Id[..Math.Min(12, row.Id.Length)]}" : row.Slug;
         row.Status = row.Status is "draft" or "published" or "scheduled" or "withdrawn" or "archived" ? row.Status : "draft";
         row.Revisions ??= [];
+        foreach (var revision in row.Revisions)
+        {
+            revision.Kind = NormalizeSiteKind(revision.Kind);
+            revision.Category = NormalizeLegacyArticleCategory(revision.Category);
+            revision.CoverUrl ??= string.Empty;
+            revision.MediaAssetId = string.IsNullOrWhiteSpace(revision.MediaAssetId) ? null : revision.MediaAssetId.Trim();
+            revision.CategoryId = string.IsNullOrWhiteSpace(revision.CategoryId) ? null : revision.CategoryId.Trim();
+        }
+        if (row.Published is { } published)
+        {
+            published.Kind = NormalizeSiteKind(published.Kind);
+            published.Category = NormalizeLegacyArticleCategory(published.Category);
+            published.CoverUrl ??= string.Empty;
+            published.MediaAssetId = string.IsNullOrWhiteSpace(published.MediaAssetId) ? null : published.MediaAssetId.Trim();
+            published.CategoryId = string.IsNullOrWhiteSpace(published.CategoryId) ? null : published.CategoryId.Trim();
+        }
         if (row.CreatedAt == default) row.CreatedAt = DateTimeOffset.UtcNow;
         if (row.UpdatedAt == default) row.UpdatedAt = row.CreatedAt;
     }

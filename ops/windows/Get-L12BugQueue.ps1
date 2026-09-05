@@ -33,8 +33,9 @@ $query = [System.Collections.Generic.List[string]]::new()
 if ($Status) { $query.Add("status=$([Uri]::EscapeDataString($Status))") }
 if ($Priority) { $query.Add("priority=$([Uri]::EscapeDataString($Priority))") }
 if ($Search) { $query.Add("search=$([Uri]::EscapeDataString($Search))") }
-$uri = "$base/api/admin/bugs"
-if ($query.Count -gt 0) { $uri += "?" + ($query -join "&") }
+$uriBuilder = [UriBuilder]::new([Uri]::new("$base/api/admin/bugs"))
+if ($query.Count -gt 0) { $uriBuilder.Query = $query -join "&" }
+$uri = $uriBuilder.Uri.AbsoluteUri
 
 $reports = Invoke-RestMethod -Method Get -Uri $uri -Headers @{ Authorization = "Bearer $($login.token)" }
 $json = ConvertTo-Json -InputObject @($reports) -Depth 12

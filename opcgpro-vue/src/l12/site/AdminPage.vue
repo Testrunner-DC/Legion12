@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { adminApi, authState, canAccessAdmin, hasPermission, platformState, refreshCurrentAccount, type AdminApproval, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type ContentBatch, type ContentBatchPreview, type ContentEntry, type EffectAtomDescriptor, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
-import { createHomeContent, homeContentFields } from './homeContent'
+import { useRoute } from 'vue-router'
+import { adminApi, authState, canAccessAdmin, hasPermission, platformState, refreshCurrentAccount, type AdminApproval, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type EffectAtomDescriptor, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
 import CardImage from '@/l12/CardImage.vue'
-import AdminArticlesPanel from './AdminArticlesPanel.vue'
+import AdminSiteContentPanel from './AdminSiteContentPanel.vue'
 import AdminOperationsPanel from './AdminOperationsPanel.vue'
 import AdminRankedIntegrityPanel from './AdminRankedIntegrityPanel.vue'
 import AdminMatchesPanel from './AdminMatchesPanel.vue'
 import AdminCardAnalyticsPanel from './AdminCardAnalyticsPanel.vue'
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'matches' | 'card-analytics' | 'content' | 'articles' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations'
-const tab = ref<AdminTab>('overview')
-const adminMatchId = ref('')
+type AdminTab = 'overview' | 'bugs' | 'accounts' | 'matches' | 'card-analytics' | 'content' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations'
+const route = useRoute()
+const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
+const adminMatchId = ref(typeof route.query.matchId === 'string' ? route.query.matchId : '')
 const bugs = ref<BugReport[]>([])
 const accounts = ref<PlatformAccount[]>([])
 const statusFilter = ref('')
@@ -20,9 +21,6 @@ const bugSearch = ref('')
 const bugComments = reactive<Record<string, string>>({})
 const reviewNotes = reactive<Record<string, string>>({})
 const notice = ref('')
-const content = reactive(createHomeContent())
-const ruleNotice = ref('')
-const contentEntries = reactive<Record<string, ContentEntry>>({})
 const audits = ref<AdminAudit[]>([])
 const auditCategory = ref('')
 const auditOutcome = ref('')
@@ -34,9 +32,6 @@ const approvals = ref<AdminApproval[]>([])
 const selectedCommand = ref<AdminCommand | null>(null)
 const commandStatus = ref('')
 const approvalReasons = reactive<Record<string, string>>({})
-const contentPreview = ref<ContentBatchPreview | null>(null)
-const contentBatches = ref<ContentBatch[]>([])
-const managedContentKeys = [...homeContentFields.map(field => field.key), 'rules.notice']
 const effectCards = ref<AtomicCardEffect[]>([])
 const effectAtoms = ref<EffectAtomDescriptor[]>([])
 const effectCoverage = ref<AtomicCoverage | null>(null)
@@ -84,50 +79,12 @@ async function setAccountStatus(account: PlatformAccount) {
     await loadAccounts(); await loadSecurity()
   } catch (error) { notice.value = error instanceof Error ? error.message : '账号状态命令提交失败' }
 }
-async function loadContent() {
-  for (const field of homeContentFields) {
-    try { const entry = await adminApi.getContent(field.key); contentEntries[field.key] = entry; content[field.id] = entry.draftValue || field.defaultValue } catch {}
-  }
-  try { const entry = await adminApi.getContent('rules.notice'); contentEntries['rules.notice'] = entry; ruleNotice.value = entry.draftValue } catch {}
-  try { contentBatches.value = await adminApi.contentBatches() } catch {}
-}
-async function saveContentDrafts(showNotice = true) {
-  try {
-    const entries: ContentEntry[] = []
-    for (const field of homeContentFields) entries.push(await adminApi.saveContentDraft(field.key, content[field.id]))
-    entries.push(await adminApi.saveContentDraft('rules.notice', ruleNotice.value))
-    entries.forEach(entry => { contentEntries[entry.key] = entry })
-    if (showNotice) notice.value = '草稿已保存，尚未影响官网'
-    return true
-  } catch (error) { notice.value = error instanceof Error ? error.message : '保存失败'; return false }
-}
-async function previewContent() {
-  try { if (hasPermission('admin.content.draft') && !(await saveContentDrafts(false))) return; contentPreview.value = await adminApi.previewContent(managedContentKeys); notice.value = '预览完成，未修改已发布内容' }
-  catch (error) { notice.value = error instanceof Error ? error.message : '预览失败' }
-}
-async function publishContent() {
-  try {
-    if (!(await saveContentDrafts(false))) return
-    const result = await adminApi.publishContent(managedContentKeys)
-    if ('commandId' in result) notice.value = `批量发布已提交双人审批（命令 ${result.commandId}）`
-    else notice.value = result.applied ? '官网内容已发布' : '干运行完成'
-    await loadControlPlane()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '发布失败' }
-}
-async function rollbackContent(batch: ContentBatch) {
-  try {
-    const result = await adminApi.rollbackContent(batch.id)
-    notice.value = 'commandId' in result ? `回滚已提交双人审批（命令 ${result.commandId}）` : '内容已回滚'
-    await loadControlPlane()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '回滚失败' }
-}
 async function reviewAbility(ability: AtomicAbility, status: string, note = '') { if (!selectedEffect.value) return; try { await adminApi.reviewEffect(selectedEffect.value.cardId, { abilityId: ability.abilityId, status, note }); selectedEffect.value = await adminApi.effect(selectedEffect.value.cardId); effectCards.value = effectCards.value.map(card => card.cardId === selectedEffect.value?.cardId ? selectedEffect.value : card); notice.value = `${selectedEffect.value.cardId} ABILITY ${ability.sequence} 审查状态已记录` } catch (error) { notice.value = error instanceof Error ? error.message : '审查记录失败' } }
 async function loadAudit() { try { audits.value = await adminApi.audit({ category: auditCategory.value, outcome: auditOutcome.value, actorId: auditActorId.value, commandId: auditCommandId.value, correlationId: auditCorrelationId.value }) } catch (error) { notice.value = error instanceof Error ? error.message : '审计日志加载失败' } }
 async function loadControlPlane() {
   try {
     if (hasPermission('admin.commands.read')) commands.value = await adminApi.commands({ status: commandStatus.value })
     if (hasPermission('admin.approvals.read')) approvals.value = await adminApi.approvals('requested')
-    if (hasPermission('admin.content.read')) contentBatches.value = await adminApi.contentBatches()
   } catch (error) { notice.value = error instanceof Error ? error.message : '管理操作记录加载失败' }
 }
 async function resetAccountPassword(account: PlatformAccount) {
@@ -152,7 +109,7 @@ async function deleteAccount(account: PlatformAccount) {
 }
 async function showCommand(id: string) { try { selectedCommand.value = await adminApi.command(id) } catch (error) { notice.value = error instanceof Error ? error.message : '命令详情加载失败' } }
 async function reviewCommand(commandId: string, decision: 'approve' | 'reject') {
-  try { selectedCommand.value = await adminApi.reviewApproval(commandId, decision, approvalReasons[commandId] || ''); notice.value = decision === 'approve' ? '受控命令已审批并执行' : '受控命令已拒绝'; await loadControlPlane(); if (hasPermission('admin.content.read')) await loadContent(); if (hasPermission('releases.read') || hasPermission('releases.runtime.read')) await loadReleases() }
+  try { selectedCommand.value = await adminApi.reviewApproval(commandId, decision, approvalReasons[commandId] || ''); notice.value = decision === 'approve' ? '受控命令已审批并执行' : '受控命令已拒绝'; await loadControlPlane(); if (hasPermission('releases.read') || hasPermission('releases.runtime.read')) await loadReleases() }
   catch (error) { notice.value = error instanceof Error ? error.message : '审批失败' }
 }
 function availableReleaseArtifacts() { return releaseArtifacts.value.filter(item => item.environments.includes(selectedReleaseEnvironment.value)) }
@@ -241,7 +198,6 @@ async function initializeAdminPage() {
   try { await refreshCurrentAccount() }
   catch { return }
   if (!canAccessAdmin.value) return
-  if (hasPermission('admin.content.read')) loadContent()
   if (hasPermission('admin.effects.read')) loadEffects()
   if (hasPermission('admin.bugs.read')) loadBugs()
   if (hasPermission('admin.accounts.read')) loadAccounts()
@@ -264,7 +220,7 @@ onMounted(() => { void initializeAdminPage() })
         <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="tab = 'overview'">▦ 后台概览</button></nav>
         <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="tab = 'accounts'; loadAccounts()">♙ 账号与会话</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="tab = 'bugs'; loadBugs()">⚑ Bug 管理</button></nav>
         <nav><small>对局与数据</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="adminMatchId = ''; tab = 'matches'">▣ 对局档案</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="tab = 'card-analytics'">◈ 单卡分析</button></nav>
-        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'; loadContent()">▤ 官网内容</button><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'articles' }" @click="tab = 'articles'">✎ 资讯发布</button></nav>
+        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'">▤ 站点内容工作台</button></nav>
         <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><router-link to="/battle/tournaments">♜ 赛事中心</router-link><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
         <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="tab = 'effects'; loadEffects()">◇ 卡效原子化</button></nav>
         <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="tab = 'integrity'">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
@@ -276,8 +232,7 @@ onMounted(() => { void initializeAdminPage() })
         <button class="overview-card" @click="tab='accounts'; loadAccounts()"><small>账号与会话</small><b>{{ accounts.length }}</b><span>平台账号</span></button>
         <button v-if="hasPermission('admin.matches.read')" class="overview-card" @click="adminMatchId=''; tab='matches'"><small>对局与数据</small><b>档案</b><span>最近对局、玩家与构筑联查</span></button>
         <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='card-analytics'"><small>平衡分析</small><b>单卡</b><span>入组、使用、结算与胜负关联</span></button>
-        <button class="overview-card" @click="tab='content'; loadContent()"><small>官网内容</small><b>{{ Object.values(contentEntries).filter(item => item.status === 'draft').length }}</b><span>固定文案草稿</span></button>
-        <button class="overview-card" @click="tab='articles'"><small>资讯发布</small><b>稿件</b><span>独立编辑、发布与版本恢复</span></button>
+        <button class="overview-card" @click="tab='content'"><small>站点内容</small><b>7 模块</b><span>素材、首页、资讯、视频、商品、分类与法务</span></button>
         <button class="overview-card" @click="tab='operations'"><small>游戏运营</small><b>版本化</b><span>赛季、天灾、禁限卡、模式与维护</span></button>
         <router-link class="overview-card" to="/battle/tournaments"><small>赛事运营</small><b>临时职权</b><span>主办者与裁判仅对当场赛事生效</span></router-link>
         <button class="overview-card" @click="tab='effects'; loadEffects()"><small>卡牌与规则</small><b>{{ effectCoverage?.verifiedAbilities ?? 0 }}</b><span>已验证原子能力</span></button>
@@ -292,14 +247,7 @@ onMounted(() => { void initializeAdminPage() })
       <AdminMatchesPanel v-else-if="tab === 'matches' && hasPermission('admin.matches.read')" :initial-match-id="adminMatchId" @notice="notice = $event"/>
       <AdminCardAnalyticsPanel v-else-if="tab === 'card-analytics' && hasPermission('admin.analytics.read')" @notice="notice = $event" @open-match="openAdminMatch"/>
       <section v-else-if="tab === 'accounts'" class="panel"><header><div><h2>账号、权限与会话</h2><p>账号变更立即执行并完整审计；状态、密码重置与逻辑删除均撤销相关会话，根 Admin 与操作者自身受保护。</p></div><button @click="loadAccounts(); loadSecurity()">刷新</button></header><div class="account-row head"><b>用户名 / 状态</b><span>建立时间</span><span>长期身份</span><span>有效权限</span><span>操作</span></div><div v-for="account in accounts" :key="account.id" class="account-row"><b>{{ account.username }}<small :data-disabled="account.disabled">{{ account.deleted ? '已逻辑删除' : account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangePassword"> · 必须修改密码</template><template v-if="account.emailVerified"> · 邮箱 {{ account.emailMasked }}</template><template v-if="account.disabledReason"> · {{ account.disabledReason }}</template></small></b><span>{{ new Date(account.createdAt).toLocaleString() }}</span><select v-model="account.role" :disabled="account.username === 'Admin' || account.deleted"><option value="player">玩家</option><option value="admin">管理员</option></select><small :title="account.permissions?.join('\n')">{{ account.permissions?.length ?? 0 }} 项</small><span class="account-actions"><input v-if="hasPermission('admin.accounts.status.write') && !account.deleted" v-model="accountStatusReasons[account.id]" placeholder="状态 / 重置 / 删除理由"/><button :disabled="account.username === 'Admin' || account.deleted" @click="setRole(account)">保存身份</button><button v-if="hasPermission('admin.accounts.status.write') && !account.deleted" class="status" :data-disabled="account.disabled" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="setAccountStatus(account)">{{ account.disabled ? '启用账号' : '禁用账号' }}</button><button v-if="!account.deleted" class="revoke" @click="revokeAccountSessions(account)">撤销会话</button><button v-if="hasPermission('admin.accounts.status.write') && !account.deleted" class="reset" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="resetAccountPassword(account)">重置密码</button><button v-if="hasPermission('admin.accounts.status.write') && !account.deleted" class="delete" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="deleteAccount(account)">删除与清理</button></span></div></section>
-      <section v-else-if="tab === 'content'" class="panel content-editor">
-        <header><div><h2>官网内容</h2><p>草稿受白名单保护；正式批量发布与回滚必须由另一位审批人复核。</p></div><span class="content-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveContentDrafts()">保存草稿</button><button @click="previewContent">预览 / dry-run</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publishContent">提交批量发布</button></span></header>
-        <div v-if="contentPreview" class="content-preview"><b>发布预览（未写入）</b><span v-for="item in contentPreview.items" :key="item.key"><code>{{ item.key }}</code><em>{{ item.wouldChange ? '将更新' : '无变化' }}</em><small>{{ item.publishedValue || '空' }} → {{ item.draftValue || '空' }}</small></span></div>
-        <label v-for="field in homeContentFields" :key="field.key">{{ field.label }}<em :data-status="contentEntries[field.key]?.status">{{ contentEntries[field.key]?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em><textarea v-if="field.multiline" v-model="content[field.id]" :rows="field.rows ?? 4"/><input v-else v-model="content[field.id]"/></label>
-        <label>规则页公告<em :data-status="contentEntries['rules.notice']?.status">{{ contentEntries['rules.notice']?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em><textarea v-model="ruleNotice" rows="5"/></label>
-        <div class="content-history"><h3>发布与回滚批次</h3><article v-for="batch in contentBatches" :key="batch.id"><span><code>{{ batch.id }}</code><b>{{ batch.action }} · {{ batch.status }}</b><small>{{ batch.actorName }} · {{ new Date(batch.createdAt).toLocaleString() }} · {{ batch.items.length }} 项</small></span><button v-if="batch.action === 'publish' && batch.status === 'published' && hasPermission('admin.content.rollback')" @click="rollbackContent(batch)">提交回滚审批</button></article><div v-if="!contentBatches.length" class="empty">尚无发布批次</div></div>
-      </section>
-      <AdminArticlesPanel v-else-if="tab === 'articles'"/>
+      <AdminSiteContentPanel v-else-if="tab === 'content'" @notice="notice = $event"/>
       <section v-else-if="tab === 'effects'" class="effects-workbench">
         <div v-if="effectCoverage" class="coverage-strip">
           <article><small>卡牌</small><b>{{ effectCoverage.totalCards }}</b><span>{{ effectCoverage.cardsWithText }} 张含效果</span></article>

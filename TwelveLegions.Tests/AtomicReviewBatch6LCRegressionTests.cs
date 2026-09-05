@@ -19,7 +19,7 @@ public sealed class AtomicReviewBatch6LCRegressionTests
             ["S02-0513"] = 3, ["S02-0514"] = 2, ["S02-0515"] = 3, ["S02-0516"] = 3,
             ["S02-0517"] = 3, ["S02-0518"] = 3, ["S02-0519"] = 2, ["S02-0520"] = 4,
             ["S02-0521"] = 2, ["S02-0522"] = 2, ["S02-0523"] = 2, ["S02-05M1"] = 4,
-            ["S02-05M2"] = 1, ["S02-05C1"] = 2, ["S02-05C1A"] = 1, ["S02-05D1"] = 3,
+            ["S02-05M2"] = 1, ["S02-05C1"] = 3, ["S02-05C1A"] = 3, ["S02-05D1"] = 3,
         };
 
     private static L12GameEngine Create(int seed = 8601, string firstMaster = "S02-05M1")
@@ -131,7 +131,7 @@ public sealed class AtomicReviewBatch6LCRegressionTests
     public void S2TakamagaharaAndOlympusAuditFreezesEveryCardAndAbility()
     {
         Assert.Equal(35, AuditedAbilityCounts.Count);
-        Assert.Equal(101, AuditedAbilityCounts.Values.Sum());
+        Assert.Equal(104, AuditedAbilityCounts.Values.Sum());
         Assert.All(AuditedAbilityCounts, pair =>
         {
             var card = Assert.Contains(pair.Key, Catalog.Cards);

@@ -10,6 +10,8 @@ public sealed class L12MoraleIdentityDefinition
     public required List<string> VersionCardIds { get; init; }
     public string? GodPowerCardId { get; init; }
     public string? GodPowerDisplayName { get; init; }
+    public string? GodPowerDisplayNumber { get; init; }
+    public string? GodPowerEffectText { get; init; }
 }
 
 public sealed class L12MoraleIdentityCatalog
@@ -64,6 +66,11 @@ public sealed class L12MoraleIdentityCatalog
             if (identity.GodPowerCardId is { Length: > 0 } powerId
                 && (!cards.TryGetValue(powerId, out var power) || power.CardType != "rune" || power.Faction != identity.Faction))
                 throw new InvalidDataException($"{identity.Faction} 的神力反面无效：{powerId}");
+            if (identity.GodPowerCardId is { Length: > 0 }
+                && (string.IsNullOrWhiteSpace(identity.GodPowerDisplayName)
+                    || string.IsNullOrWhiteSpace(identity.GodPowerDisplayNumber)
+                    || string.IsNullOrWhiteSpace(identity.GodPowerEffectText)))
+                throw new InvalidDataException($"{identity.Faction} 的神力展示元数据不完整。");
         }
         return new L12MoraleIdentityCatalog(definitions);
     }

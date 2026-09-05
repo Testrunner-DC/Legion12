@@ -552,6 +552,10 @@ public sealed partial class L12PlatformStore
             if (entry.Version < 0) entry.Version = 0;
         data.Articles ??= [];
         foreach (var article in data.Articles) NormalizeArticle(article);
+        data.SiteMedia ??= [];
+        foreach (var media in data.SiteMedia) NormalizeSiteMedia(media);
+        data.SiteCategories ??= [];
+        foreach (var category in data.SiteCategories) NormalizeSiteCategory(category);
         data.EffectReviews ??= [];
         data.AdminAudit ??= [];
         foreach (var audit in data.AdminAudit)

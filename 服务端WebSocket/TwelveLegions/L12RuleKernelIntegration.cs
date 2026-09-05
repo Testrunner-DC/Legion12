@@ -2,6 +2,26 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private static L12ActivationSelectionStep GraveCostSelectionStep(L12PlayerState owner,
+        string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
+        int required, string faction = "", bool legionOnly = false,
+        string? requiredDeclaredChoice = null)
+        => new()
+        {
+            Kind = "order",
+            DeclarationKey = declarationKey,
+            Text = text,
+            ValidChoices = candidates.Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            MinChoose = L12StructuredCardRules.MinimumPhysicalGraveCardsForCount(owner, candidates, faction,
+                required, legionOnly),
+            MaxChoose = required,
+            RequiredDeclaredChoice = requiredDeclaredChoice,
+            SelectionConstraint = "grave-faction-exact",
+            FactionConstraint = faction,
+            RepresentedCount = required,
+            LegionCardsOnly = legionOnly,
+        };
+
     private CommandResult BeginPendingActivation(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<string> choices, string text, int min = 1, int max = 1)
         => BeginPendingActivationSequence(playerIndex, source, ability,
@@ -60,6 +80,28 @@ public sealed partial class L12GameEngine
             RepresentedCount = step.RepresentedCount,
             LegionCardsOnly = step.LegionCardsOnly,
         }).ToList();
+        for (var index = steps.Count - 1; index >= 0; index--)
+        {
+            var graveCost = steps[index];
+            if (graveCost.SelectionConstraint?.Equals("grave-faction-exact", StringComparison.OrdinalIgnoreCase) != true
+                || graveCost.RepresentedCount is null
+                || string.IsNullOrWhiteSpace(graveCost.DeclarationKey)) continue;
+            steps.Insert(index + 1, new L12ActivationSelectionStep
+            {
+                Kind = "grave-faction-count",
+                DeclarationKey = $"{graveCost.DeclarationKey}Copies",
+                ReferenceDeclarationKey = graveCost.DeclarationKey,
+                Text = $"墓地费用：选择〈渴求死亡的勇士〉本次视为几张{(graveCost.LegionCardsOnly ? "军团" : "卡牌")}",
+                ValidChoices = [],
+                MinChoose = 1,
+                MaxChoose = 1,
+                CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                RequiredDeclaredChoice = graveCost.RequiredDeclaredChoice,
+                FactionConstraint = graveCost.FactionConstraint,
+                RepresentedCount = graveCost.RepresentedCount,
+                LegionCardsOnly = graveCost.LegionCardsOnly,
+            });
+        }
         if (triggerCandidateId is not null && RequiresPrideMasterSurcharge(playerIndex, source))
         {
             var modeStep = steps.FirstOrDefault(step => step.DeclarationKey == "mode");
@@ -1540,12 +1582,15 @@ public sealed partial class L12GameEngine
         else if (candidate.SourceCardId == "S01-0305")
         {
             var graveCards = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
-                    && CanEnterHandOrLibrary(card)).Select(card => card.InstanceId).ToList();
-            steps.Add(TriggerStep("order", "勇士比约恩：选择墓地4张牌并决定返回牌库底部的顺序；完成声明后主宰受到1点伤害",
-                graveCards, 4, 4));
+                    && CanEnterHandOrLibrary(card)).ToArray();
+            if (graveCards.Sum(L12StructuredCardRules.StarterGraveCardCopies) < 4) return false;
+            steps.Add(GraveCostSelectionStep(player,
+                "勇士比约恩：选择合计视为4张的墓地卡牌并决定返回牌库底部的顺序；完成声明后主宰受到1点伤害",
+                "graveCost", graveCards, required: 4));
             steps.Add(new L12ActivationSelectionStep
             {
-                Kind = "unused-slot", Text = "选择〈勇士比约恩〉休整登场的位置", ValidChoices = EmptySlots(player).ToList(),
+                Kind = "unused-slot", DeclarationKey = "entrySlot",
+                Text = "选择〈勇士比约恩〉休整登场的位置", ValidChoices = EmptySlots(player).ToList(),
                 MinChoose = 1, MaxChoose = 1,
             });
         }
@@ -1614,16 +1659,16 @@ public sealed partial class L12GameEngine
             }
             declared.Clear();
         }
-        else if (candidate.SourceCardId == "S01-0305" && declared.Count == 5)
+        else if (candidate.SourceCardId == "S01-0305")
         {
             var player = State.Players[candidate.Controller];
-            var costIds = declared.Take(4).ToArray();
-            var costs = costIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
-                    && card.InstanceId != candidate.SourceInstanceId && CanEnterHandOrLibrary(card)))
-                .ToArray();
-            var slot = declared[4];
-            if (costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 4
-                || costs.Any(card => card is null)
+            var costValues = activation.DeclaredValues.GetValueOrDefault("graveCost", [])
+                .Concat(activation.DeclaredValues.GetValueOrDefault("graveCostCopies", [])).ToArray();
+            var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
+            if (!L12StructuredCardRules.TryResolveGraveCostDeclaration(player, costValues, 4,
+                    string.Empty, legionOnly: false, out var costs, out _)
+                || costs.Any(card => card.InstanceId == candidate.SourceInstanceId)
+                || slot is null
                 || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
             {
                 State.PendingTriggerStackCandidates.Remove(candidate);
@@ -1633,12 +1678,12 @@ public sealed partial class L12GameEngine
                 return;
             }
             DamageMaster(candidate.Controller, 1, "勇士比约恩阵亡效果");
-            MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>());
-            candidate.Data["declaredGraveOrder"] = string.Join('|', costIds);
+            MoveGraveToLibraryBottom(player, costs);
+            candidate.Data["declaredGraveOrder"] = string.Join('|', costs.Select(card => card.InstanceId));
             candidate.Data["declaredSlot"] = slot;
             candidate.Data["bjornCostsPrepaid"] = "true";
             AddEvent("cost", candidate.Controller,
-                "勇士比约恩对主宰造成1点伤害，并将墓地4张牌依声明顺序置于牌库底部作为阵亡效果费用");
+                $"勇士比约恩对主宰造成1点伤害，并将墓地{costs.Length}张实体卡牌依声明顺序置于牌库底部，合计视为4张作为阵亡效果费用");
             declared.Clear();
         }
         candidate.Data["declaredTargets"] = string.Join('|', declared);

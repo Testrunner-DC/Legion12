@@ -367,15 +367,20 @@ public sealed partial class L12GameEngine
             && _catalog.Cards.TryGetValue(identity.CanonicalCardId, out var moraleFace)
             && _catalog.Cards.TryGetValue(godPowerCardId, out var godPowerFace))
         {
-            var abilities = BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}")
-                .Concat(BuildAbilityViews(player, godPowerFace.Id, $"faction-{player.PlayerIndex}"))
-                .ToArray();
+            var samePrintedCard = moraleFace.Id.Equals(godPowerFace.Id, StringComparison.OrdinalIgnoreCase);
+            var abilities = samePrintedCard
+                ? BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}").ToArray()
+                : BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}")
+                    .Concat(BuildAbilityViews(player, godPowerFace.Id, $"faction-{player.PlayerIndex}"))
+                    .ToArray();
             return new
             {
                 cardId = moraleFace.Id,
                 name = $"{identity.DisplayName} / {identity.GodPowerDisplayName}",
                 imageUrl = moraleFace.ImageUrl,
-                effectText = $"{moraleFace.Effect}\n{godPowerFace.Effect}",
+                effectText = samePrintedCard
+                    ? $"{moraleFace.Effect}\n{identity.GodPowerEffectText}"
+                    : $"{moraleFace.Effect}\n{godPowerFace.Effect}",
                 abilities,
             };
         }
@@ -411,6 +416,7 @@ public sealed partial class L12GameEngine
         {
             card.InstanceId,
             cardId = _catalog.MoraleIdentities.ForFaction("olympus").GodPowerCardId,
+            number = _catalog.MoraleIdentities.ForFaction("olympus").GodPowerDisplayNumber,
             name = _catalog.MoraleIdentities.ForFaction("olympus").GodPowerDisplayName,
             cardType = "rune",
             faction = "olympus",
@@ -1691,7 +1697,10 @@ public sealed partial class L12GameEngine
                 ? Math.Min(State.Players[playerIndex].SpecialZones.Runes, (card.Cost + 1) / 2)
                 : 0;
             var rolloReturns = card.CardId == "S02-0302"
-                ? Math.Min(8, State.Players[playerIndex].Graveyard.Count(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
+                ? Math.Min(8, State.Players[playerIndex].Graveyard
+                    .Where(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))
+                    .Sum(candidate => L12StructuredCardRules.StarterGraveFactionCardCopies(
+                        State.Players[playerIndex], candidate, "asgard")))
                 : 0;
             snapshot.PlayCost = GetPlayCost(playerIndex, card);
             var canUseSigurdDiscount = card.CardId == "ST03-01"

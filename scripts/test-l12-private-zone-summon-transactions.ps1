@@ -67,9 +67,9 @@ foreach ($cardId in @(
     Assert-Contains $tests $cardId "Batch 6E regression coverage is missing card $cardId."
 }
 
-Assert-Contains $kernel '&& CanEnterHandOrLibrary(card)).Select(card => card.InstanceId).ToList();' `
+Assert-Contains $kernel 'var graveCards = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId' `
     'Bjorn declarations must offer only cards that can pay the library-bottom cost.'
-Assert-Contains $kernel 'MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>())' `
+Assert-Contains $kernel 'MoveGraveToLibraryBottom(player, costs);' `
     'Bjorn must pay its four-card library-bottom cost before stack entry.'
 Assert-Contains $kernel 'candidate.Data["bjornCostsPrepaid"] = "true"' `
     'Bjorn needs an immutable marker preventing duplicate cost payment at resolution.'

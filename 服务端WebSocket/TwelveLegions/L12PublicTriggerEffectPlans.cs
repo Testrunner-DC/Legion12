@@ -79,7 +79,9 @@ public sealed partial class L12GameEngine
             "lubu-ready" => sourceOnField && CanReturnMorale(player, 4),
             "mulan-lock-morale" => State.ActivePlayer != candidate.Controller
                 && opponent.Morale.Any(card => card.Tapped),
-            "gustav-ready" => sourceOnField && player.Graveyard.Count >= 2,
+            "gustav-ready" => sourceOnField
+                && player.Graveyard.Where(CanEnterHandOrLibrary)
+                    .Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
             "exorcist-return" => sourceOnField,
             "prayer-private" => State.DisasterDeck.Count > 0 && ActiveResourceCount(player) >= 1,
             "wukong-return-morale" => player.Morale.Count < opponent.Morale.Count && player.MoraleDeck.Count > 0,
@@ -329,13 +331,14 @@ public sealed partial class L12GameEngine
         }
         else if (batch6JBPlan == "gustav-ready")
         {
+            var graveCards = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
             steps =
             [
                 PublicTriggerStep("option", "mode", "古斯塔夫一世：预先声明是否将墓地2张牌置于牌库底部并转为活跃",
                     ["mode:none", "mode:use"]),
-                PublicTriggerStep("order", "graveCost", "古斯塔夫一世：依声明顺序选择置于牌库底部的2张墓地卡牌",
-                    player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId),
-                    min: 2, max: 2, requiredChoice: "mode:use"),
+                GraveCostSelectionStep(player,
+                    "古斯塔夫一世：依声明顺序选择合计视为2张、置于牌库底部的墓地卡牌",
+                    "graveCost", graveCards, required: 2, requiredDeclaredChoice: "mode:use"),
             ];
         }
         else if (batch6JBPlan is "exorcist-return" or "wukong-return-morale" or "faction-zero-recovery")
@@ -1088,15 +1091,19 @@ public sealed partial class L12GameEngine
         }
         else if (batch6JBPlan == "gustav-ready")
         {
-            var costs = activation.DeclaredValues.GetValueOrDefault("graveCost", []);
+            var costValues = activation.DeclaredValues.GetValueOrDefault("graveCost", [])
+                .Concat(activation.DeclaredValues.GetValueOrDefault("graveCostCopies", [])).ToArray();
             if (mode == "mode:use" && (FindOnField(player, candidate.SourceInstanceId, out _, out _) is null
-                || costs.Count != 2 || costs.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
-                || costs.Any(id => !player.Graveyard.Any(card => card.InstanceId == id && CanEnterHandOrLibrary(card)))))
+                || !L12StructuredCardRules.TryResolveGraveCostDeclaration(player, costValues, 2,
+                    string.Empty, legionOnly: false, out _, out _)))
                 error = "古斯塔夫一世声明的墓地费用或来源已失效；未支付费用且效果未入栈";
             else if (mode == "mode:use")
             {
-                MoveGraveToLibraryBottom(player, costs.Select(id => player.Graveyard.First(card => card.InstanceId == id)));
-                AddEvent("cost", candidate.Controller, "古斯塔夫一世在入栈前将墓地2张卡牌依声明顺序置于牌库底部",
+                _ = L12StructuredCardRules.TryResolveGraveCostDeclaration(player, costValues, 2,
+                    string.Empty, legionOnly: false, out var physicalCosts, out _);
+                MoveGraveToLibraryBottom(player, physicalCosts);
+                AddEvent("cost", candidate.Controller,
+                    $"古斯塔夫一世在入栈前将墓地{physicalCosts.Length}张实体卡牌依声明顺序置于牌库底部，合计视为2张",
                     declaredSource);
             }
         }

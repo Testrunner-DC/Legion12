@@ -1,6 +1,7 @@
 import { computed, reactive } from 'vue'
 import { disconnect, l12State } from './net'
 import type { SavedL12Deck } from './decks'
+import type { RecordedCommand } from './replayModel'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
@@ -64,18 +65,42 @@ export interface AtomicCoverage {
 }
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
+export type SiteContentKind = 'news' | 'video' | 'product'
+export type SiteMediaKind = 'hero' | SiteContentKind
+export interface SiteMediaPolicy {
+  kind: SiteMediaKind; label: string; desktopWidth: number; desktopHeight: number
+  mobileWidth: number; mobileHeight: number; thumbnailWidth: number; thumbnailHeight: number
+  safeArea: string; acceptedOriginalFormats: string[]
+}
+export interface SiteMedia {
+  id: string; kind: SiteMediaKind; altText: string; focalX: number; focalY: number
+  originalFormat: string; contentHash: string; desktopUrl: string; mobileUrl: string; thumbnailUrl: string
+  desktopWidth: number; desktopHeight: number; mobileWidth: number; mobileHeight: number
+  thumbnailWidth: number; thumbnailHeight: number; originalBytes: number; deliveryBytes: number
+  createdBy: string; createdAt: string; referenceCount: number
+}
+export interface SiteCategory {
+  id: string; kind: SiteContentKind; name: string; slug: string; sortOrder: number
+  active: boolean; version: number; itemCount: number
+}
 export type ArticleStatus = 'draft' | 'published' | 'scheduled' | 'withdrawn' | 'archived'
 export interface Article {
   id: string; title: string; summary: string; body: string; category: string; coverUrl: string; link: string; slug: string
   pinned: boolean; status: ArticleStatus; hasUnpublishedChanges: boolean; publishAt?: string
   createdAt: string; updatedAt: string; publishedAt?: string; author: string; updatedBy: string; publishedBy?: string; revision: number
+  kind: SiteContentKind; categoryId?: string; mediaAssetId?: string; sortOrder: number
 }
 export interface ArticleRevision {
   revision: number; action: string; title: string; summary: string; body: string; category: string; coverUrl: string
   link: string; slug: string; pinned: boolean; publishAt?: string; actor: string; createdAt: string
+  kind: SiteContentKind; categoryId?: string; mediaAssetId?: string; sortOrder: number
 }
 export type ArticleDraft = Pick<Article, 'title' | 'summary' | 'body' | 'category' | 'coverUrl' | 'link' | 'slug' | 'pinned'> & {
-  publishAt?: string; expectedRevision?: number
+  publishAt?: string; expectedRevision?: number; kind?: SiteContentKind; categoryId?: string
+  mediaAssetId?: string; sortOrder?: number
+}
+export interface SiteHomePayload {
+  composition: string; legal: string; news: Article[]; videos: Article[]; products: Article[]; media: SiteMedia[]
 }
 export interface EffectReview { cardId: string; abilityId?: string; status: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; note: string; reviewer: string; updatedAt: string }
 export interface AdminAudit {
@@ -110,7 +135,7 @@ export interface AdminAnalyticsCoverage {
 }
 export interface AdminMatchDetail {
   summary: AdminMatchSummary; participants: AdminMatchParticipant[]
-  replay?: Record<string, unknown> | null; cardFacts: AdminMatchCardFact[]
+  replay: RecordedCommand[]; cardFacts: AdminMatchCardFact[]
   coverage: AdminAnalyticsCoverage
 }
 export interface AdminCardAnalyticsItem {
@@ -401,7 +426,7 @@ export function apiBase() {
 
 export async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
+  if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
   const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
@@ -586,7 +611,7 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/matches${params.size ? `?${params}` : ''}`)
   },
-  match: (matchId: string) => platformRequest<AdminMatchDetail>(`/api/admin/matches/${encodeURIComponent(matchId)}`),
+  match: (matchId: string, includeReplay = false) => platformRequest<AdminMatchDetail>(`/api/admin/matches/${encodeURIComponent(matchId)}${includeReplay ? '?includeReplay=true' : ''}`),
   playerMatches: (accountId: string, query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
@@ -629,7 +654,7 @@ export const adminApi = {
   },
   updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/v1/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
-  articles: (query: { status?: string; category?: string; search?: string } = {}) => {
+  articles: (query: { status?: string; category?: string; search?: string; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value) })
     return platformRequest<Article[]>(`/api/admin/articles${params.size ? `?${params}` : ''}`)
@@ -637,7 +662,9 @@ export const adminApi = {
   saveArticle: (article: Partial<Article> & ArticleDraft) => {
     const body = { title: article.title, summary: article.summary, body: article.body, category: article.category,
       coverUrl: article.coverUrl, link: article.link, slug: article.slug, pinned: article.pinned,
-      publishAt: article.publishAt || null, expectedRevision: article.id ? article.revision : undefined }
+      publishAt: article.publishAt || null, expectedRevision: article.id ? article.revision : undefined,
+      kind: article.kind || 'news', categoryId: article.categoryId || null,
+      mediaAssetId: article.mediaAssetId || null, sortOrder: article.sortOrder || 0 }
     return article.id
       ? platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(article.id)}`, { method: 'PUT', body: JSON.stringify(body) })
       : platformRequest<Article>('/api/admin/articles', { method: 'POST', body: JSON.stringify(body) })
@@ -648,6 +675,20 @@ export const adminApi = {
   restoreArticle: (id: string) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
   articleRevisions: (id: string) => platformRequest<ArticleRevision[]>(`/api/admin/articles/${encodeURIComponent(id)}/revisions`),
   restoreArticleRevision: (id: string, revision: number) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/revisions/${revision}/restore`, { method: 'POST' }),
+  siteMediaPolicies: () => platformRequest<SiteMediaPolicy[]>('/api/admin/site/media/policies'),
+  siteMedia: (kind?: SiteMediaKind) => platformRequest<SiteMedia[]>(`/api/admin/site/media${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
+  uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
+  deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  siteCategories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/admin/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
+  saveSiteCategory: (category: Partial<SiteCategory> & Pick<SiteCategory, 'kind' | 'name' | 'slug' | 'sortOrder' | 'active'>) => {
+    const body = { kind: category.kind, name: category.name, slug: category.slug, sortOrder: category.sortOrder,
+      active: category.active, expectedVersion: category.id ? category.version : undefined }
+    return category.id
+      ? platformRequest<SiteCategory>(`/api/admin/site/categories/${encodeURIComponent(category.id)}`, { method: 'PUT', body: JSON.stringify(body) })
+      : platformRequest<SiteCategory>('/api/admin/site/categories', { method: 'POST', body: JSON.stringify(body) })
+  },
+  reorderSiteCategories: (kind: SiteContentKind, ids: string[]) => platformRequest<SiteCategory[]>(`/api/admin/site/categories/order/${kind}`, { method: 'PUT', body: JSON.stringify({ ids }) }),
+  deleteSiteCategory: (id: string, migrateTo?: string) => platformRequest<void>(`/api/admin/site/categories/${encodeURIComponent(id)}${migrateTo ? `?migrateTo=${encodeURIComponent(migrateTo)}` : ''}`, { method: 'DELETE' }),
   saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value })) }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
@@ -731,11 +772,16 @@ export const rankedApi = {
 }
 
 export const articleApi = {
-  list: (query: { category?: string; search?: string; limit?: number } = {}) => {
+  list: (query: { category?: string; search?: string; limit?: number; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<Article[]>(`/api/articles${params.size ? `?${params}` : ''}`)
   },
+}
+
+export const siteContentApi = {
+  home: () => platformRequest<SiteHomePayload>('/api/site/home'),
+  categories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
 }
 
 export const tournamentApi = {

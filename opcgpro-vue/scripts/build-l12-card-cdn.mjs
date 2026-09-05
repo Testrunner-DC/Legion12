@@ -21,7 +21,7 @@ const concurrency = Math.max(1, Math.min(12, Number(args.get('--concurrency') ||
 const horizontalTypes = new Set(['disaster', 'destruction', 'trial'])
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif'])
 const expectedPlayableCardCount = 324
-const expectedPresentationCardCount = 37
+const expectedPresentationCardCount = 38
 const expectedAssetCount = expectedPlayableCardCount + expectedPresentationCardCount
 const maxVariantBytes = {
   originalWebp: 2_500_000,
@@ -131,7 +131,7 @@ const presentationCards = presentationCatalog.map(entry => {
   const base = playableById.get(entry.baseCardId)
   if (!base) throw new Error(`展示资源 ${entry.id} 的规则基底不存在：${entry.baseCardId}`)
   if (catalogIds.has(entry.id.toUpperCase())) throw new Error(`展示资源不得覆盖可玩卡号：${entry.id}`)
-  return { ...base, ...entry, nameZh: base.nameZh, cardType: base.cardType, presentationOnly: true }
+  return { ...base, ...entry, nameZh: entry.nameZh || base.nameZh, cardType: base.cardType, presentationOnly: true }
 })
 const assetCatalog = [...completeCatalog, ...presentationCards]
 const assetIds = new Set(assetCatalog.map(card => card.id.toUpperCase()))

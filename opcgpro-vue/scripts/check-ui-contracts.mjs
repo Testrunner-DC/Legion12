@@ -47,6 +47,7 @@ const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
+const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const adminMatches = read('../src/l12/site/AdminMatchesPanel.vue')
 const adminCardAnalytics = read('../src/l12/site/AdminCardAnalyticsPanel.vue')
 const friendsPage = read('../src/l12/site/FriendsPage.vue')
@@ -101,13 +102,14 @@ const confirmedS1DisasterLevels = {
 const contracts = [
   [moraleIdentities.length === 6
     && moraleIdentities.every(identity => identity.displayName.startsWith('士气·') && !identity.canonicalCardId.startsWith('ST'))
-    && moraleIdentities.find(identity => identity.faction === 'olympus')?.canonicalCardId === 'S02-05C1A'
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.canonicalCardId === 'S02-05C1'
     && moraleIdentities.find(identity => identity.faction === 'olympus')?.godPowerCardId === 'S02-05C1'
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.godPowerDisplayNumber === 'S02-05C1(B)'
     && moraleIdentities.find(identity => identity.faction === 'otherworld')?.canonicalCardId === 'S02-06C1'
     && decks.includes('morale-identities.json') && decks.includes('canonicalMoraleCardId')
     && cardArchive.includes('loadCardArchiveCatalog') && sandboxPicker.includes('loadDeckCatalog'), '所有页面与运行时必须共用权威阵营士气身份，ST版本不得抢占基准，奥林匹斯普通士气与神力反面必须保持分离'],
   [decks.includes('export async function loadCardArchiveCatalog()') && decks.includes('productInclusionsByCardId.has(card.cardNo)')
-    && decks.includes('cardArchiveAssets.forEach') && decks.includes("if (card.id === 'S02-05C1') return 'S02-05C1(B)'")
+    && decks.includes('cardArchiveAssets.forEach') && !decks.includes("if (card.id === 'S02-05C1') return 'S02-05C1(B)'")
     && cardArchive.includes('groupArchiveCards(cards.value)') && cardArchive.includes('entry.versions.some(card =>')
     && cardArchive.includes('selectedProducts') && cardArchive.includes('收录产品')
     && cardArchive.includes('/ {{ logicalCards.length }} 张') && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌档案必须按权威收录产品载入展示用异画、区分奥林匹斯士气与神力编号、按任一版本搜索筛选，并按逻辑卡而不是物理版本计数'],
@@ -124,8 +126,9 @@ const contracts = [
     && cardArchive.includes('function hasCostDimension(card: CatalogCard)')
     && cardArchive.includes('hasCostDimension(displayedVersion(entry))')
     && cardArchive.includes('hasCostDimension(selected)'), '主宰只有血量维度；卡牌档案、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
-  [cardArchiveVersions.includes('identity.versionCardIds.map') && cardArchiveVersions.includes('godPowerCardId is deliberately absent')
-    && !moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1'), '士气版本可按 canonical 别名聚合，但奥林匹斯神力反面不得与普通士气合并'],
+  [cardArchiveVersions.includes('identity.versionCardIds.map')
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1')
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1A'), '奥林匹斯默认士气与A异画必须归入同一士气版本组'],
   [indexHtml.includes('<link rel="icon" type="image/png" href="/favicon.png" />') && existsSync(faviconPath), '网页标签必须使用项目提供的 Logo-Mini PNG，不得回退默认 Vite 图标'],
   [board.includes("import ActionPresentationLayer from './ActionPresentationLayer.vue'") && board.includes('<ActionPresentationLayer :events="game.recentEvents ?? []"') && actionLayer.includes('data-ui-contract="authoritative-action-presentation"'), 'L12 对局必须消费服务端 recentEvents 播放统一阶段变化条'],
   [actionPresentation.includes("event.type === 'turn-start'") && actionPresentation.includes("event.text === '进入主要阶段'") && actionPresentation.includes("event.text === '执行结束阶段'") && !actionPresentation.includes("执行抽牌阶段") && !actionPresentation.includes("执行士气阶段") && !actionPresentation.includes("event.type === 'play'") && !actionPresentation.includes("event.type === 'attack'"), '通用动作条只能呈现回合开始、主要阶段和回合结束，不得承载其他阶段或卡牌动作'],
@@ -161,7 +164,8 @@ const contracts = [
     && l12ServerSources.includes('return RecoveryStateAsync(sessionId);'), '排位与休闲匹配成功后必须进入显式建局加载态，忽略迟到的未排队消息并主动恢复房间/对局快照；服务端发送必须按会话串行化'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
   [board.includes('data-ui-contract="persistent-board-safe-layout"') && board.includes('data-ui-contract="phase-safe-track"') && board.includes('--l12-board-seam-safe-height:76px') && board.includes('grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr)') && board.includes('class="battlefield-half opponent-half"') && board.includes('class="battlefield-half my-half"'), '双方战场与中央阶段栏必须使用明确三轨安全布局，常驻 UI 不得依赖绝对定位互相覆盖'],
-  [board.includes('.battlefield-half::before') && board.includes('.battlefield-half.my-half::before') && board.includes('box-sizing:border-box;width:100%'), '双方战场外框必须覆盖各自完整战场轨道，不得缩入我方后排'],
+  [board.includes('.battlefield-half::before') && board.includes('.battlefield-half.my-half::before{bottom:-10px;')
+    && board.includes('box-sizing:border-box;width:100%') && board.includes('.battlefield-half.my-half{grid-row:3}'), '双方战场外框必须覆盖各自完整战场轨道；仅向下延展我方外框，不得缩入我方后排或挤压其他常驻UI'],
   [l12Types.includes("'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'") && l12Types.includes('statusIcons?: string[]') && l12Types.includes('statusEffects?: CardStatusEffect[]'), '卡牌投影视图必须提供结构化 statusEffects/statusIcons 状态契约并兼容旧快照缺省'],
   [cardTile.includes('props.card.statusEffects ?? []') && cardTile.includes('props.card.statusIcons ?? []') && cardTile.includes('statusLabel(effect, kind)') && cardTile.includes(':title="status.label"') && cardTile.includes(':aria-label="status.label"') && cardTile.includes('card-status-icons') && cardTile.includes('has-status-effects .card-keyword-stack') && !cardTile.includes('modifier.costDelta'), '卡牌状态图标必须按结构化状态渲染准确提示、避让关键词，费用修正不得重复为状态图标'],
   [board.split("&& !(mode === 'attack' && selectedId)").length - 1 === 2 && playerMat.includes("targetable: Boolean(player.field[row][slot])") && playerMat.includes("source: isSelected(player.field[row][slot]?.instanceId)"), '进攻选目标时不得高亮整块玩家区域，只能标记进攻者与合法或已选目标'],
@@ -217,17 +221,32 @@ const contracts = [
   [board.includes('data-ui-contract="dice-event-animation"') && board.includes("event.type === 'dice'") && board.includes("dice: '掷骰'") && board.includes('@keyframes l12-dice-roll') && board.includes('.dice-reveal-animation{z-index:904}'), '普通掷骰事件必须在交互层下方播放非阻塞动画并保留可读日志'],
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list')
     && prompt.includes('orderedEffectChoices') && prompt.includes('declineChoices')
-    && prompt.includes('flex-wrap:nowrap') && prompt.includes('overflow-x:auto'), '效果/费用分支必须单行横向展示、窄屏滚动，且不发动固定在最后'],
+    && prompt.includes('.prompt-choices.effect-option-list{display:grid')
+    && prompt.includes('grid-template-columns:repeat(auto-fit,minmax(150px,1fr))')
+    && prompt.includes('overflow:visible'), '效果/费用分支必须按原顺序自适应同屏排列，三项不得依赖横向拖动，且不发动固定在最后'],
   [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && replayModel.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
   [!matchRecords.includes("import GameBoard from './game/GameBoard.vue'")
     && !matchRecords.includes('selectMatch(matches.value[0])')
     && matchRecords.includes("router.push({ name: 'match-replay'")
     && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录与JSON均须在玩家点击播放后进入独立回放路由，不得默认加载或嵌入渲染棋盘'],
-  [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'")
+  [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
     && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" read-only />')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
-    && replayPage.includes('>下一步</button>') && replayPage.includes('>返回对局记录</button>')
+    && replayPage.includes('>下一步</button>') && replayPage.includes("isAdminReplay.value ? '返回后台对局档案' : '返回对局记录'")
     && app.includes("route.meta.replay !== true") && board.includes('props.readOnly || !l12State.gmEnabled'), '回放必须使用与正式对战一致的独立全屏棋盘，左下提供上一步/播放/下一步，右上返回记录，并且不得被现存实时对局或沙盒控制状态污染'],
+  [replayPage.includes('const playbackSpeed = ref<1 | 2 | 3>(1)')
+    && replayPage.includes('const interval = 2700 / playbackSpeed.value')
+    && replayPage.includes('([1, 2, 3] as const)') && replayPage.includes('{{ speed.toFixed(1) }}')
+    && replayPage.includes('if (atLast.value) stop()') && replayPage.includes('class="replay-result"')
+    && replayPage.includes("detail.value.match.winner ?? currentGame.value.winner")
+    && replayPage.includes("result: winner === 0 ? '胜' : '负'") && replayPage.includes("result: winner === 1 ? '胜' : '负'"), '三类共用回放必须默认1倍速并提供1.0/2.0/3.0切换；旧0.9秒节奏作为3倍速，抵达最后一步立即停止并显示双方赛果'],
+  [adminMatches.includes("name: 'admin-match-replay'")
+    && replayPage.includes('adminReplayDetail(await adminApi.match(matchId, true))')
+    && adminMatches.includes('view: view.value') && replayPage.includes("query: { ...route.query, section: 'matches'")
+    && replayModel.includes('export function adminReplayDetail')
+    && platform.includes("includeReplay ? '?includeReplay=true' : ''")
+    && l12ServerSources.includes('includeReplay ? "read-replay" : "read-detail"')
+    && !adminMatches.includes('technical-replay') && !adminMatches.includes('JSON.stringify(detail.replay'), '玩家记录、JSON与后台对局档案必须共用同一个全屏回放播放器；后台仅点击播放后读取命令，并清除旧原始JSON渲染'],
   [prompt.includes('naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)') && prompt.includes('safeChoiceFallback(id)') && !prompt.includes('const choiceLabels: Record<string, string>'), '效果选项必须优先显示服务端权威自然语言标签，并且只能用不泄露协议值的通用文案兜底'],
   [playerMat.includes('entry.enabled === false || entry.triggerOnly') && playerMat.includes('.faction-effect-actions button:disabled'), '不可发动与仅触发时发动的效果必须保留可查看文本、灰置且不可点击'],
   [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
@@ -334,6 +353,7 @@ const contracts = [
     && prompt.includes('function cardName(id: string)') && prompt.includes('function cardMeta(id: string)')
     && prompt.includes("? '匿名手牌' : ''") && prompt.includes(':name="cardName(choice)" :meta="cardMeta(choice)"')
     && promptCardCandidate.includes('<div') && promptCardCandidate.includes('<button v-if="removable"') && !promptCardCandidate.includes('<i v-if="removable"')
+    && prompt.includes(':badge="selectionHint(choice)"') && promptCardCandidate.includes('prompt-card-candidate__badge')
     && prompt.includes("prompt.value?.data?.cardSelection === 'true'") && prompt.includes(':unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"')
     && prompt.includes("'prompt-card-strip': hasCardChoices") && prompt.includes('overflow-x:auto;overflow-y:hidden')
     && !prompt.includes('card-grid') && !prompt.includes('placement-mini-card') && !prompt.includes('prompt-featured-card'), '普通选卡、非法灰置、回顶回底排序与调度必须复用同一卡牌候选组件，卡图在上卡名在下且超出横向滚动'],
@@ -376,8 +396,8 @@ const contracts = [
   [platform.includes("effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms')") && platform.includes('/api/admin/effects/coverage'), '卡效后台必须从服务端权威原子注册表读取数据'],
   [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
-  [platform.includes("getPublicContentBatch") && officialHome.includes('v-if="ready"') && officialHome.includes('getPublicContentBatch') && platform.includes('platformRequest<Article[]>(`/api/articles') && adminPage.includes('AdminArticlesPanel') && adminPage.includes("tab === 'articles'") && newsPage.includes('articleApi.list') && !adminPage.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
-  [adminPage.includes('✎ 资讯发布') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('正式发布') && adminArticles.includes('历史版本') && adminArticles.includes('封面图片地址') && adminArticles.includes('文章链接'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
+  [platform.includes('siteContentApi') && officialHome.includes('v-if="ready"') && officialHome.includes('siteContentApi.home()') && platform.includes('platformRequest<Article[]>(`/api/articles') && adminPage.includes('AdminSiteContentPanel') && adminPage.includes("tab === 'content'") && newsPage.includes('articleApi.list') && !adminPage.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
+  [adminPage.includes('站点内容工作台') && adminSiteContent.includes('<AdminArticlesPanel') && adminSiteContent.includes('kind="news"') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('发布 / 安排发布') && adminArticles.includes('历史版本') && adminArticles.includes('MediaUploadField') && adminArticles.includes('v-model="selected.link"'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
   [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
     && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
     && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],
@@ -403,8 +423,8 @@ const contracts = [
   [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('revokeAccountSessions') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],
   [platform.includes("headers.set('X-Correlation-ID'") && platform.includes('PlatformRequestError') && adminPage.includes('关联 ID：'), 'HTTP 请求、错误提示与管理审计必须贯通关联 ID'],
   [platform.includes('/api/admin/v1/commands') && platform.includes('/api/admin/v1/approvals') && adminPage.includes('管理操作记录') && adminPage.includes('受控发布待复核') && adminPage.includes('失败：'), '后台必须提供持久命令、受控发布复核、命令详情与失败原因入口'],
-  [platform.includes('/api/admin/v1/content/publish') && platform.includes('/api/admin/v1/content/rollback') && adminPage.includes('提交批量发布') && adminPage.includes('提交回滚审批'), '官网内容必须通过服务端批量发布与回滚命令，不得恢复前端逐键发布'],
-  [adminPage.includes('预览 / dry-run') && adminPage.includes('发布预览（未写入）') && adminPage.includes('wouldChange'), '内容后台必须展示不写入的发布预览与变化摘要'],
+  [platform.includes('/api/admin/v1/content/publish') && platform.includes('/api/admin/v1/content/rollback') && adminSiteContent.includes('提交发布') && adminSiteContent.includes('提交回滚审批'), '官网内容必须通过服务端批量发布与回滚命令，不得恢复前端逐键发布'],
+  [adminSiteContent.includes('previewContent') && adminSiteContent.includes('发布预览完成') && adminSiteContent.includes('wouldChange') && adminSiteContent.includes('未写入线上内容'), '内容后台必须展示不写入的发布预览与变化摘要'],
   [adminPage.includes('auditCommandId') && adminPage.includes('auditCorrelationId') && adminPage.includes('auditOutcome'), '审计页必须可按结果、命令 ID 与关联 ID 筛选'],
   [platform.includes("releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts')") && !platform.includes('registerReleaseArtifact') && adminPage.includes('Web 端没有注册入口'), '发布后台只能读取适配器提供的已验证工件，不得提供客户端工件注册或自报 verified 入口'],
   [platform.includes('/api/admin/v1/releases/deploy') && platform.includes('/api/admin/v1/releases/rollback') && adminPage.includes('发布 dry-run') && adminPage.includes('提交双人审批') && adminPage.includes('提交回滚审批'), '发布与回滚必须支持 dry-run、环境版本和双人审批入口'],

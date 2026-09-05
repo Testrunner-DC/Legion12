@@ -739,6 +739,21 @@ public sealed partial class L12GameEngine
             {
                 int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
                 int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
+                var player = State.Players[prompt.PlayerIndex];
+                var selectedCards = chosen.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                        && card.Faction == "asgard" && CanEnterHandOrLibrary(card)))
+                    .OfType<L12CardInstance>().ToArray();
+                if (selectedCards.Any(card => L12StructuredCardRules.StarterGraveFactionCardCopies(player, card, "asgard") > 1))
+                {
+                    var data = new Dictionary<string, string>(prompt.Data, StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["orderedIds"] = string.Join(',', chosen),
+                    };
+                    if (!TryCreateGraveRepresentationPrompt(prompt.PlayerIndex, selectedCards, "asgard",
+                            selectedCards.Length, 8, legionOnly: false, "s2-rollo-grave-count", data))
+                        return CommandResult.Reject("〈步行者罗洛〉所选卡牌无法合计视为1至8张");
+                    break;
+                }
                 var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
                     CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
                     Choice: $"rollo:{string.Join(',', chosen)}",
@@ -755,6 +770,18 @@ public sealed partial class L12GameEngine
                 var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
                     CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
                     Choice: $"sigurd:{selected}",
+                    TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
+                        ? targetPlayerIndex : null));
+                if (!result.Accepted) return result;
+                break;
+            }
+            case "s2-rollo-grave-count":
+            {
+                int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
+                int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
+                var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
+                    CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Row: row, Slot: slot,
+                    Choice: $"rollo:{prompt.Data.GetValueOrDefault("orderedIds")}|{chosen.Single()}",
                     TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
                         ? targetPlayerIndex : null));
                 if (!result.Accepted) return result;

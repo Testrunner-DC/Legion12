@@ -11,7 +11,7 @@ if (!catalogFiles.length) throw new Error('缺少 --catalog-files 权威卡牌�
 const presentationCatalogFile = resolve(args.get('--presentation-catalog') || '')
 if (!args.get('--presentation-catalog')) throw new Error('缺少 --presentation-catalog 卡牌档案展示资源目录')
 const expectedPlayableCardCount = 324
-const expectedPresentationCardCount = 37
+const expectedPresentationCardCount = 38
 const expectedAssetCount = expectedPlayableCardCount + expectedPresentationCardCount
 
 const manifest = JSON.parse(await readFile(join(root, 'card-assets.manifest.json'), 'utf8'))

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import {
@@ -13,17 +14,23 @@ import {
 
 const props = withDefaults(defineProps<{ initialMatchId?: string }>(), { initialMatchId: '' })
 const emit = defineEmits<{ notice: [message: string] }>()
+const route = useRoute()
+const router = useRouter()
 
-const view = ref<'recent' | 'player'>('recent')
+function queryText(key: string) { return typeof route.query[key] === 'string' ? String(route.query[key]) : '' }
+
+const view = ref<'recent' | 'player'>(queryText('view') === 'player' ? 'player' : 'recent')
 const page = ref<AdminMatchPage>({ items: [], total: 0 })
 const detail = ref<AdminMatchDetail | null>(null)
 const accounts = ref<PlatformAccount[]>([])
 const cards = ref<DeckCard[]>([])
-const selectedAccountId = ref('')
+const selectedAccountId = ref(queryText('accountId'))
 const loading = ref(false)
 const detailLoading = ref(false)
-const replayExpanded = ref(false)
-const filters = ref({ from: '', to: '', mode: '', status: 'completed', player: '', masterId: '' })
+const filters = ref({
+  from: queryText('from'), to: queryText('to'), mode: queryText('mode'), status: queryText('status') || 'completed',
+  player: queryText('player'), masterId: queryText('masterId'),
+})
 
 const cardById = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const visibleMatches = computed(() => page.value.items)
@@ -110,8 +117,7 @@ async function loadMatches(reset = true) {
       : await adminApi.matches(query)
     page.value = reset ? next : { ...next, items: [...page.value.items, ...next.items] }
     if (reset) {
-      const requested = props.initialMatchId && next.items.some(item => item.matchId === props.initialMatchId)
-        ? props.initialMatchId : next.items[0]?.matchId
+      const requested = props.initialMatchId || next.items[0]?.matchId
       if (requested) await selectMatch(requested)
       else detail.value = null
     }
@@ -121,7 +127,6 @@ async function loadMatches(reset = true) {
 }
 async function selectMatch(matchId: string) {
   detailLoading.value = true
-  replayExpanded.value = false
   try { detail.value = await adminApi.match(matchId) }
   catch (error) { emit('notice', error instanceof Error ? error.message : '对局详情加载失败') }
   finally { detailLoading.value = false }
@@ -132,7 +137,18 @@ async function changeView(next: 'recent' | 'player') {
   await loadMatches(true)
 }
 async function selectPlayer() { await loadMatches(true) }
-function toggleReplay(event: Event) { replayExpanded.value = (event.currentTarget as HTMLDetailsElement).open }
+function playReplay() {
+  if (!detail.value || detail.value.summary.status !== 'completed' || detail.value.summary.commandCount < 1) return
+  router.push({
+    name: 'admin-match-replay', params: { matchId: detail.value.summary.matchId },
+    query: {
+      view: view.value, accountId: selectedAccountId.value || undefined,
+      from: filters.value.from || undefined, to: filters.value.to || undefined,
+      mode: filters.value.mode || undefined, status: filters.value.status || undefined,
+      player: filters.value.player || undefined, masterId: filters.value.masterId || undefined,
+    },
+  })
+}
 
 watch(() => props.initialMatchId, async matchId => {
   if (!matchId) return
@@ -210,7 +226,7 @@ onMounted(async () => {
             <div v-else class="empty compact">旧记录尚无结构化卡牌事实；仍可查看赛果和构筑覆盖状态。</div>
           </section>
 
-          <details v-if="detail.replay" class="technical-replay" @toggle="toggleReplay"><summary>技术审计／回放数据</summary><p>原始数据只在管理员主动展开时渲染，不参与列表查询。</p><pre v-if="replayExpanded">{{ JSON.stringify(detail.replay, null, 2) }}</pre></details>
+          <section class="replay-launch"><div><h3>对局回放</h3><p>完整命令只在点击播放后读取，并使用玩家对局记录与 JSON 回放共用的全屏播放器。</p></div><button :disabled="detail.summary.status !== 'completed' || detail.summary.commandCount < 1" @click="playReplay">播放回放</button></section>
         </template>
         <div v-else class="empty">选择一场对局查看玩家、构筑和时间线</div>
       </section>
@@ -219,7 +235,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.match-admin{display:grid;gap:12px}.module-header,.filter-panel,.metric-strip,.panel-shell{border:1px solid #35424a;background:#101821}.module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px}.module-header h2{margin:4px 0}.module-header p{margin:0}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{border:1px solid #4c5961;background:#080e13;color:#fff;padding:9px;font:700 11px 'Microsoft YaHei'}.view-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid #35424a;background:#080e13}.view-tabs button{padding:13px;border:0;border-bottom:3px solid transparent;background:transparent;color:#87949a;font-weight:900}.view-tabs button.active{border-bottom-color:#d4b65d;background:#201b10;color:#f0d579}.filter-panel{display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(5,minmax(125px,1fr)) auto;align-items:end;gap:8px;padding:12px}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:5px;color:#87949a;font-size:9px;font-weight:900}.filter-panel input,.filter-panel select{box-sizing:border-box;min-width:0;width:100%}.filter-panel .query{border-color:#91752e;background:#2b220d;color:#f1d471}.metric-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#35424a}.metric-strip article{display:flex;min-height:82px;flex-direction:column;justify-content:flex-end;gap:3px;padding:13px;background:#0c141a}.metric-strip b{font-size:21px}.metric-strip span{color:#77858b;font-size:9px}.match-workspace{display:grid;grid-template-columns:minmax(400px,.82fr) minmax(560px,1.18fr);gap:12px;align-items:start}.panel-shell{min-width:0}.match-list{max-height:calc(100vh - 185px);overflow:auto}.match-list>header{position:sticky;z-index:2;top:0;display:flex;justify-content:space-between;padding:13px;background:#0b1218;border-bottom:1px solid #35424a}.match-list>header span{color:#738087;font-size:9px}.match-row{display:grid;width:100%;grid-template-columns:minmax(190px,1fr) 100px;gap:9px;padding:13px;border:0;border-bottom:1px solid #29353c;background:transparent;color:#fff;text-align:left}.match-row:hover,.match-row.selected{background:#172129}.match-row.selected{box-shadow:inset 3px 0 #d0ae4f}.match-identity{display:flex;min-width:0;flex-direction:column;gap:4px}.match-identity small,.match-result small{color:#76848a;font-size:8px}.match-identity b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.match-identity b em{color:#c8aa52;font-style:normal}.match-identity code{color:#587179;font-size:8px}.match-result{text-align:right}.match-result b,.match-result small{display:block}.match-players{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:5px}.match-players i{display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:6px;padding:5px;border:1px solid #2f3b42;background:#0a1116;font-style:normal}.match-players .l12-card-image{width:25px;height:34px}.match-players em{overflow:hidden;color:#929da0;font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.match-players i[data-result="win"] b{color:#72d1a7}.match-players i[data-result="loss"] b{color:#e7848e}.load-more{width:100%;padding:12px;border:0;background:#182229;color:#d5b85e;font-weight:900}.match-detail{padding:17px}.detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:13px;border-bottom:1px solid #35424a}.detail-header h3{margin:5px 0;font-size:18px}.detail-header p{margin:0}.detail-header code{max-width:240px;color:#6e858e;font-size:8px;overflow-wrap:anywhere}.participant-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.participant-card{min-width:0;padding:12px;border:1px solid #35424a;background:#0a1117}.participant-card>header{display:flex;align-items:center;gap:9px}.participant-card>header .l12-card-image{flex:none;width:42px;height:58px}.participant-card>header span{display:flex;min-width:0;flex-direction:column}.participant-card>header em{color:#829096;font-size:9px;font-style:normal}.deck-cards{display:grid;max-height:310px;gap:4px;margin-top:10px;overflow:auto}.deck-cards>article{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:7px;padding:5px;border:1px solid #29363d;background:#0d171d}.deck-cards .l12-card-image{width:30px;height:41px}.deck-cards span{display:flex;min-width:0;flex-direction:column}.deck-cards span b{overflow:hidden;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.deck-cards span small{color:#66767d!important;letter-spacing:0!important}.deck-cards strong{color:#e2c66f}.privacy-note{padding:15px;border:1px dashed #435159;color:#87949a}.fact-timeline{margin-top:12px;padding:12px;border:1px solid #35424a;background:#0a1117}.fact-timeline>header{display:flex;align-items:center;justify-content:space-between}.fact-timeline h3{margin:0}.fact-timeline p{margin:3px 0}.fact-timeline>header>b{color:#d8ba63}.fact-timeline ol{max-height:360px;overflow:auto;margin:10px 0 0;padding:0;list-style:none}.fact-timeline li{display:grid;grid-template-columns:50px minmax(120px,.8fr) minmax(150px,1fr) auto;align-items:center;gap:8px;padding:7px;border-top:1px solid #263239}.fact-timeline li>code{color:#6e858e}.fact-timeline li>span{display:flex;min-width:0;align-items:center;gap:7px}.fact-timeline li>span:nth-child(2){align-items:flex-start;flex-direction:column;gap:1px}.fact-timeline li small{color:#66767d!important;letter-spacing:0!important}.fact-timeline li .l12-card-image{flex:none;width:26px;height:36px}.fact-timeline li em{overflow:hidden;font-size:9px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.fact-timeline li>strong{color:#e5c76c}.technical-replay{margin-top:12px;padding:12px;border:1px solid #39474e;background:#080e13}.technical-replay summary{cursor:pointer;color:#d6bd70;font-weight:900}.technical-replay pre{max-height:380px;overflow:auto;color:#aeb9b9;font-size:8px;white-space:pre-wrap}.empty{display:grid;min-height:170px;place-items:center;color:#718087}.empty.compact{min-height:90px}.privacy-note{font-size:9px}.match-admin small{color:#d5b85e;font:900 9px monospace;letter-spacing:.12em}
+.match-admin{display:grid;gap:12px}.module-header,.filter-panel,.metric-strip,.panel-shell{border:1px solid #35424a;background:#101821}.module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px}.module-header h2{margin:4px 0}.module-header p{margin:0}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{border:1px solid #4c5961;background:#080e13;color:#fff;padding:9px;font:700 11px 'Microsoft YaHei'}.view-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid #35424a;background:#080e13}.view-tabs button{padding:13px;border:0;border-bottom:3px solid transparent;background:transparent;color:#87949a;font-weight:900}.view-tabs button.active{border-bottom-color:#d4b65d;background:#201b10;color:#f0d579}.filter-panel{display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(5,minmax(125px,1fr)) auto;align-items:end;gap:8px;padding:12px}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:5px;color:#87949a;font-size:9px;font-weight:900}.filter-panel input,.filter-panel select{box-sizing:border-box;min-width:0;width:100%}.filter-panel .query{border-color:#91752e;background:#2b220d;color:#f1d471}.metric-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#35424a}.metric-strip article{display:flex;min-height:82px;flex-direction:column;justify-content:flex-end;gap:3px;padding:13px;background:#0c141a}.metric-strip b{font-size:21px}.metric-strip span{color:#77858b;font-size:9px}.match-workspace{display:grid;grid-template-columns:minmax(400px,.82fr) minmax(560px,1.18fr);gap:12px;align-items:start}.panel-shell{min-width:0}.match-list{max-height:calc(100vh - 185px);overflow:auto}.match-list>header{position:sticky;z-index:2;top:0;display:flex;justify-content:space-between;padding:13px;background:#0b1218;border-bottom:1px solid #35424a}.match-list>header span{color:#738087;font-size:9px}.match-row{display:grid;width:100%;grid-template-columns:minmax(190px,1fr) 100px;gap:9px;padding:13px;border:0;border-bottom:1px solid #29353c;background:transparent;color:#fff;text-align:left}.match-row:hover,.match-row.selected{background:#172129}.match-row.selected{box-shadow:inset 3px 0 #d0ae4f}.match-identity{display:flex;min-width:0;flex-direction:column;gap:4px}.match-identity small,.match-result small{color:#76848a;font-size:8px}.match-identity b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.match-identity b em{color:#c8aa52;font-style:normal}.match-identity code{color:#587179;font-size:8px}.match-result{text-align:right}.match-result b,.match-result small{display:block}.match-players{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:5px}.match-players i{display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:6px;padding:5px;border:1px solid #2f3b42;background:#0a1116;font-style:normal}.match-players .l12-card-image{width:25px;height:34px}.match-players em{overflow:hidden;color:#929da0;font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.match-players i[data-result="win"] b{color:#72d1a7}.match-players i[data-result="loss"] b{color:#e7848e}.load-more{width:100%;padding:12px;border:0;background:#182229;color:#d5b85e;font-weight:900}.match-detail{padding:17px}.detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:13px;border-bottom:1px solid #35424a}.detail-header h3{margin:5px 0;font-size:18px}.detail-header p{margin:0}.detail-header code{max-width:240px;color:#6e858e;font-size:8px;overflow-wrap:anywhere}.participant-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.participant-card{min-width:0;padding:12px;border:1px solid #35424a;background:#0a1117}.participant-card>header{display:flex;align-items:center;gap:9px}.participant-card>header .l12-card-image{flex:none;width:42px;height:58px}.participant-card>header span{display:flex;min-width:0;flex-direction:column}.participant-card>header em{color:#829096;font-size:9px;font-style:normal}.deck-cards{display:grid;max-height:310px;gap:4px;margin-top:10px;overflow:auto}.deck-cards>article{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:7px;padding:5px;border:1px solid #29363d;background:#0d171d}.deck-cards .l12-card-image{width:30px;height:41px}.deck-cards span{display:flex;min-width:0;flex-direction:column}.deck-cards span b{overflow:hidden;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.deck-cards span small{color:#66767d!important;letter-spacing:0!important}.deck-cards strong{color:#e2c66f}.privacy-note{padding:15px;border:1px dashed #435159;color:#87949a}.fact-timeline{margin-top:12px;padding:12px;border:1px solid #35424a;background:#0a1117}.fact-timeline>header{display:flex;align-items:center;justify-content:space-between}.fact-timeline h3{margin:0}.fact-timeline p{margin:3px 0}.fact-timeline>header>b{color:#d8ba63}.fact-timeline ol{max-height:360px;overflow:auto;margin:10px 0 0;padding:0;list-style:none}.fact-timeline li{display:grid;grid-template-columns:50px minmax(120px,.8fr) minmax(150px,1fr) auto;align-items:center;gap:8px;padding:7px;border-top:1px solid #263239}.fact-timeline li>code{color:#6e858e}.fact-timeline li>span{display:flex;min-width:0;align-items:center;gap:7px}.fact-timeline li>span:nth-child(2){align-items:flex-start;flex-direction:column;gap:1px}.fact-timeline li small{color:#66767d!important;letter-spacing:0!important}.fact-timeline li .l12-card-image{flex:none;width:26px;height:36px}.fact-timeline li em{overflow:hidden;font-size:9px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.fact-timeline li>strong{color:#e5c76c}.replay-launch{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:12px;padding:12px;border:1px solid #39474e;background:#080e13}.replay-launch h3{margin:0;color:#d6bd70}.replay-launch p{margin:4px 0 0;color:#7f8d91;font-size:9px}.replay-launch button{flex:none;padding:10px 18px;border:1px solid #b79c4e;background:#2c2612;color:#f4dda0;font-weight:900}.replay-launch button:disabled{cursor:not-allowed;opacity:.35}.empty{display:grid;min-height:170px;place-items:center;color:#718087}.empty.compact{min-height:90px}.privacy-note{font-size:9px}.match-admin small{color:#d5b85e;font:900 9px monospace;letter-spacing:.12em}
 @media(max-width:1450px){.filter-panel{grid-template-columns:repeat(4,minmax(130px,1fr))}.match-workspace{grid-template-columns:minmax(360px,.75fr) minmax(520px,1.25fr)}}
 @media(max-width:1050px){.match-workspace{grid-template-columns:1fr}.match-list{max-height:520px}.metric-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:720px){.filter-panel{grid-template-columns:1fr 1fr}.participant-grid{grid-template-columns:1fr}.metric-strip{grid-template-columns:1fr 1fr}.detail-header{flex-direction:column}.fact-timeline li{grid-template-columns:42px 1fr}.fact-timeline li>span:nth-child(3){grid-column:2}.match-players{grid-template-columns:1fr}}

@@ -28,7 +28,7 @@ const { join } = require('node:path')
 const [root, expected] = process.argv.slice(2)
 const manifest = JSON.parse(readFileSync(join(root, 'card-assets.manifest.json'), 'utf8'))
 if (manifest.schemaVersion !== 3 || manifest.complete !== true || manifest.assetVersion !== expected ||
-    manifest.cardCount !== 361 || manifest.playableCardCount !== 324 || manifest.presentationCardCount !== 37 ||
+    manifest.cardCount !== 362 || manifest.playableCardCount !== 324 || manifest.presentationCardCount !== 38 ||
     !manifest.cards?.['ST01-01'] || !manifest.cards?.['S01-0101b'] || !manifest.cards?.['S01-01C1A'] ||
     !manifest.cards?.['S02-06C1A'] || !manifest.cards?.['ST01-C1st']) process.exit(2)
 NODE

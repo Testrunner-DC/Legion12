@@ -64,10 +64,10 @@ try {
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
     $cardAssetManifest = Get-Content -LiteralPath $cardAssetManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
-    if ($cardAssetManifest.schemaVersion -ne 3 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 361 -or
-        $cardAssetManifest.playableCardCount -ne 324 -or $cardAssetManifest.presentationCardCount -ne 37 -or
+    if ($cardAssetManifest.schemaVersion -ne 3 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 362 -or
+        $cardAssetManifest.playableCardCount -ne 324 -or $cardAssetManifest.presentationCardCount -ne 38 -or
         [string]$cardAssetManifest.assetVersion -notmatch '^[0-9a-f]{64}$') {
-        throw "优化卡图发布清单必须为完整 schema v3（324 张可玩卡 + 37 张展示版本）内容寻址版本"
+        throw "优化卡图发布清单必须为完整 schema v3（324 张可玩卡 + 38 张展示版本）内容寻址版本"
     }
     $catalogRoot = Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data"
     Invoke-External node ".\opcgpro-vue\scripts\audit-l12-card-cdn.mjs" --root $CardAssetDirectory --catalog-files "$catalogRoot\cards.s1.json;$catalogRoot\cards.s2.json;$catalogRoot\cards.st.json" --presentation-catalog "$catalogRoot\card-archive-assets.json"

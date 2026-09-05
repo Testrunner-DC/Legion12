@@ -33,6 +33,8 @@ export interface MoraleIdentity {
   versionCardIds: string[]
   godPowerCardId?: string
   godPowerDisplayName?: string
+  godPowerDisplayNumber?: string
+  godPowerEffectText?: string
 }
 
 export interface SavedL12Deck {
@@ -90,6 +92,9 @@ interface CardProductInclusion {
 interface CardArchiveAsset {
   id: string
   baseCardId: string
+  number?: string
+  nameZh?: string
+  effect?: string
   product: string
   products: string[]
   rarity: string
@@ -121,8 +126,6 @@ export function canonicalMoraleCardId(cardId: string) {
 }
 
 export function displayCardNumber(card: Pick<DeckCard, 'id' | 'number'>) {
-  if (card.id === 'S02-05C1') return 'S02-05C1(B)'
-  if (card.id === 'S02-05C1A' || card.id === 'ST05-C1') return 'S02-05C1'
   return card.number
 }
 
@@ -441,7 +444,9 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
     byId.set(asset.id, {
       ...base,
       id: asset.id,
-      number: asset.id,
+      number: asset.number ?? asset.id,
+      nameZh: asset.nameZh ?? base.nameZh,
+      effect: asset.effect ?? base.effect,
       product: asset.product,
       products: [...asset.products],
       rarity: asset.rarity,

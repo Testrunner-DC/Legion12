@@ -112,6 +112,7 @@ public sealed partial class L12PlatformStore
         "home.latestNews", "home.newsEmptyTitle", "home.newsEmptyText", "home.rulesTitle", "home.cardLinkLabel",
         "home.rulesLinkLabel", "home.replayLinkLabel", "home.developmentTitle", "home.battleStatus",
         "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice", "news.entries",
+        HomeCompositionContentKey, SiteLegalContentKey,
         // 兼容旧 platform.json 和既有平台持久化测试中的早期首页键。
         "home.hero.title",
     };
@@ -537,6 +538,7 @@ public sealed partial class L12PlatformStore
             var currentVersion = row?.Version ?? 0;
             if (currentVersion != item.EntryVersion || currentDraft != item.DraftValue)
                 throw new L12ContentStateConflictException($"内容 {item.Key} 的草稿已变化，请重新预览");
+            ValidateSiteContentValue(item.Key, item.DraftValue, true);
         }
     }
 
@@ -550,6 +552,7 @@ public sealed partial class L12PlatformStore
         NormalizeContentKeys(payload.Items.Select(item => item.Key));
         foreach (var item in payload.Items)
         {
+            ValidateSiteContentValue(item.Key, item.TargetValue, true);
             var sourceItem = source.Items.FirstOrDefault(candidate => string.Equals(candidate.Key, item.Key,
                 StringComparison.OrdinalIgnoreCase));
             if (sourceItem is null || item.ExpectedPublishedVersionId != sourceItem.PublishedVersionId

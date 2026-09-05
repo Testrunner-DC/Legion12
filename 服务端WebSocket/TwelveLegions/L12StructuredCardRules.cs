@@ -164,8 +164,9 @@ public static partial class L12StructuredCardRules
     {
         // 〈猎杀时刻〉冒号前的“将墓地4张卡牌返回牌库底部”是发动费用，
         // 必须在支付士气、移出手牌和入栈之前完成合法性校验。
-        if (card.CardId == "S01-0319" && controller.Graveyard.Count < 4)
-            return "〈猎杀时刻〉需要墓地至少有4张卡牌作为发动费用";
+        if (card.CardId == "S01-0319"
+            && controller.Graveyard.Sum(StarterGraveCardCopies) < 4)
+            return "〈猎杀时刻〉需要墓地卡牌合计能视为4张，才可支付发动费用";
         if (card.CardType != "artifact") return null;
         var artifactZone = controller.Relic is null
             ? controller.ExtraRelics
@@ -460,8 +461,8 @@ public static partial class L12StructuredCardRules
             "S02-0523" => TrojanHorseAbilities(),
             "S02-05M1" => ArtemisAbilities(),
             "S02-05M2" => PrometheusAbilities(),
-            "S02-05C1" => GodPowerAbilities(),
-            "S02-05C1A" => OlympusMoraleAbilities(),
+            "S02-05C1" => OlympusResourceAbilities(),
+            "S02-05C1A" => OlympusResourceAbilities(),
             "S02-01M1" => WukongAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
@@ -1157,6 +1158,12 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
         ]),
     ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> OlympusResourceAbilities() =>
+    [
+        .. OlympusMoraleAbilities(),
+        .. GodPowerAbilities(),
+    ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> OlympusMoraleAbilities() => Confirmed(
     [

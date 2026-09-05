@@ -10,8 +10,28 @@ public sealed partial class L12GameEngine
         Dictionary<string, string> data)
     {
         foreach (var candidate in cards) AddPromptCardData(data, candidate);
-        CreatePrompt(playerIndex, kind, text, cards.Select(candidate => candidate.InstanceId),
-            minimum, maximum, continuation, isPrivate: true, data: data);
+        CreateMappedChoicePrompt(playerIndex, kind, text, cards.Select(candidate => candidate.InstanceId),
+            minimum, maximum, continuation, data, isPrivate: true);
+    }
+
+    private void CreateMappedChoicePrompt(int playerIndex, string kind, string text,
+        IEnumerable<string> choices, int minimum, int maximum, string continuation,
+        Dictionary<string, string> data, bool isPrivate = false)
+        => CreatePrompt(playerIndex, kind, text, choices, minimum, maximum, continuation,
+            isPrivate: isPrivate, data: data);
+
+    private bool TryCreateGraveRepresentationPrompt(int playerIndex,
+        IReadOnlyList<L12CardInstance> selectedCards, string faction, int minimum, int maximum,
+        bool legionOnly, string continuation, Dictionary<string, string> data)
+    {
+        var choices = L12StructuredCardRules.GraveRepresentationChoices(State.Players[playerIndex], selectedCards,
+            faction, minimum, maximum, legionOnly);
+        if (choices.Count == 0) return false;
+        foreach (var pair in choices) data[pair.Key] = pair.Value;
+        CreateMappedChoicePrompt(playerIndex, "option",
+            $"墓地费用：选择〈渴求死亡的勇士〉本次视为几张{(legionOnly ? "军团" : "卡牌")}",
+            choices.Keys, 1, 1, continuation, data, isPrivate: true);
+        return true;
     }
 
     private CommandResult PlayCard(int playerIndex, L12Command command)
@@ -167,6 +187,7 @@ public sealed partial class L12GameEngine
             ? ParseDeclaredRuneCount(command.Choice, player.SpecialZones.Runes)
             : 0;
         var rolloReturns = card.CardId == "S02-0302" ? ParseRolloGraveOrder(command.Choice) : [];
+        var rolloRepresentation = card.CardId == "S02-0302" ? ParseRolloGraveRepresentation(command.Choice) : null;
         var sigurdReturnId = card.CardId == "ST03-01" && command.Choice?.StartsWith("sigurd:", StringComparison.Ordinal) == true
             ? command.Choice["sigurd:".Length..]
             : string.Empty;
@@ -175,11 +196,19 @@ public sealed partial class L12GameEngine
             : player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == sigurdReturnId && CanEnterHandOrLibrary(candidate));
         if (!string.IsNullOrWhiteSpace(sigurdReturnId) && sigurdReturn is null)
             return CommandResult.Reject("〈蛇眼西格德〉选择的墓地卡牌已失效");
+        var rolloCards = rolloReturns.Select(id => player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == id
+                && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
+            .ToArray();
+        var representedRolloCount = 0;
         if (rolloReturns.Length > 8 || rolloReturns.Distinct(StringComparer.OrdinalIgnoreCase).Count() != rolloReturns.Length
             || rolloReturns.Any(id => !player.Graveyard.Any(candidate => candidate.InstanceId == id
-                && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))))
+                && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
+            || rolloReturns.Length > 0 && (!L12StructuredCardRules.TryGetGraveRepresentationCount(player,
+                    rolloCards.OfType<L12CardInstance>().ToArray(), rolloRepresentation, "asgard", legionOnly: false,
+                    out representedRolloCount) || representedRolloCount > 8))
             return CommandResult.Reject("〈步行者罗洛〉选择的墓地卡牌已失效或数量不合法");
-        var cost = GetPlayCostWithSigurdDiscount(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes, rolloReturns.Length,
+        var rolloReturnCount = rolloReturns.Length == 0 ? 0 : representedRolloCount;
+        var cost = GetPlayCostWithSigurdDiscount(playerIndex, card, usedAsgardSelfDamageDiscount, mistletoeRunes, rolloReturnCount,
             useSigurdDiscount: sigurdReturn is not null);
         var compositeReservation = CompositeReservedBasePayment(compositeDeclaration);
         if (ActiveResourceCountExcluding(player, compositeReservation.ResourceIds,
@@ -502,8 +531,14 @@ public sealed partial class L12GameEngine
     private static string[] ParseRolloGraveOrder(string? choice)
     {
         if (choice?.StartsWith("rollo:", StringComparison.Ordinal) != true) return [];
-        return choice["rollo:".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+        return choice["rollo:".Length..].Split('|', 2)[0]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries);
     }
+
+    private static string? ParseRolloGraveRepresentation(string? choice)
+        => choice?.StartsWith("rollo:", StringComparison.Ordinal) == true
+            ? choice["rollo:".Length..].Split('|', 2).Skip(1).FirstOrDefault()
+            : null;
 
     private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0,
         int rolloReturnCount = 0)

@@ -958,7 +958,7 @@ function statusTexts(card: Card) {
 .battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch}
 .battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
 .battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
-.battlefield-half.my-half::before{border-color:rgba(57,171,181,.4)}
+.battlefield-half.my-half::before{bottom:-10px;border-color:rgba(57,171,181,.4)}
 .battlefield-half.opponent-half{grid-row:1}
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
 .battlefield-half.my-half{grid-row:3}

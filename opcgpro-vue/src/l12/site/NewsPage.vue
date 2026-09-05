@@ -1,39 +1,30 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { articleApi, getPublicContentBatch, type Article } from '@/l12/platform'
-import { newsContentKey, parseNewsEntries } from './homeContent'
+import { articleApi, siteContentApi, type Article, type SiteCategory } from '@/l12/platform'
 
-const categories = ['全部资讯', '官方公告', '规则勘误', '赛季更新', '赛事信息']
+const categories = ref<SiteCategory[]>([])
 const entries = ref<Article[]>([])
-const category = ref('全部资讯')
+const category = ref('')
 const search = ref('')
 const loading = ref(true)
 const visible = computed(() => entries.value.filter(item => {
-  const categoryMatch = category.value === '全部资讯' || item.category === category.value
+  const categoryMatch = !category.value || item.categoryId === category.value
   const query = search.value.trim().toLocaleLowerCase()
   return categoryMatch && (!query || `${item.title} ${item.summary} ${item.body}`.toLocaleLowerCase().includes(query))
 }))
-const categoryCounts = computed(() => Object.fromEntries(categories.slice(1).map(item => [item, entries.value.filter(entry => entry.category === item).length])))
+const categoryCounts = computed(() => Object.fromEntries(categories.value.map(item => [item.id, entries.value.filter(entry => entry.categoryId === item.id).length])))
 
 onMounted(async () => {
-  try { entries.value = await articleApi.list({ limit: 200 }) }
-  catch {
-    try {
-      const legacy = await getPublicContentBatch([newsContentKey])
-      entries.value = parseNewsEntries(legacy.values[newsContentKey]).filter(item => item.published).map(item => ({
-        ...item, link: '', slug: item.id, status: 'published', hasUnpublishedChanges: false,
-        publishAt: item.publishedAt, createdAt: item.publishedAt, updatedAt: item.publishedAt,
-        author: '官方', updatedBy: '官方', revision: 1,
-      }))
-    } catch { entries.value = [] }
-  } finally { loading.value = false }
+  try { [entries.value, categories.value] = await Promise.all([articleApi.list({ kind: 'news', limit: 200 }), siteContentApi.categories('news')]) }
+  catch { entries.value = []; categories.value = [] }
+  finally { loading.value = false }
 })
 </script>
 
 <template>
   <div class="news-page">
     <header><div><small>NEWS</small><h1>资讯</h1><p>官方公告、规则勘误、赛季更新与赛事信息的统一入口。</p></div><input v-model="search" placeholder="搜索资讯"></header>
-    <nav class="category-tabs"><button v-for="item in categories" :key="item" :class="{ active: category === item }" @click="category = item">{{ item }}<span v-if="item !== '全部资讯'">{{ categoryCounts[item] || 0 }}</span></button></nav>
+    <nav class="category-tabs"><button :class="{ active: !category }" @click="category = ''">全部资讯</button><button v-for="item in categories" :key="item.id" :class="{ active: category === item.id }" @click="category = item.id">{{ item.name }}<span>{{ categoryCounts[item.id] || 0 }}</span></button></nav>
     <main class="news-list">
       <article v-for="entry in visible" :key="entry.id" :class="{ pinned: entry.pinned }">
         <img v-if="entry.coverUrl" :src="entry.coverUrl" :alt="entry.title">

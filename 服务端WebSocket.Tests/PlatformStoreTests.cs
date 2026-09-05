@@ -319,7 +319,7 @@ public sealed class PlatformStoreTests
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
             var draft = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "赛季公告", "摘要", "第一版正文",
-                "赛季更新", "/images/season.webp", "/battle", "season-news", true, null));
+                "赛季更新", "", "/battle", "season-news", true, null));
             Assert.Equal("draft", draft.Status);
             Assert.Empty(store.PublicArticles());
 
@@ -328,7 +328,7 @@ public sealed class PlatformStoreTests
             Assert.Equal("第一版正文", Assert.Single(store.PublicArticles()).Body);
 
             var changed = store.SaveArticleDraft(admin, new L12ArticleDraft(draft.Id, "赛季公告", "更新摘要", "第二版正文",
-                "赛季更新", "/images/season.webp", "/battle", "season-news", true, null, published.Revision));
+                "赛季更新", "", "/battle", "season-news", true, null, published.Revision));
             Assert.True(changed.HasUnpublishedChanges);
             Assert.Equal("第一版正文", Assert.Single(store.PublicArticles()).Body);
             var history = store.ArticleRevisions(draft.Id);

@@ -2821,13 +2821,13 @@
   },
   {
     "id": "s2-002",
-    "name": "神力·奥林匹斯",
+    "name": "士气·奥林匹斯",
     "alias": [
       "002"
     ],
     "series": "S2彼界&奥林匹斯",
     "cardNo": "S02-05C1",
-    "image": "/cards/faces/奥林匹斯/神力.png",
+    "image": "/cards/faces/奥林匹斯/士气.png",
     "type": "士气卡",
     "subType": "",
     "faction": "奥林匹斯",
@@ -2836,12 +2836,12 @@
     "attack": null,
     "health": null,
     "tags": [],
-    "effectText": "规则上，此卡可视为1张士气。\n我方 回合1次 可消耗并翻转1神力：抽取1张牌。",
+    "effectText": "我方 回合1次 可消耗1士气：翻转1张士气。",
     "flavorText": "",
     "faqIds": [],
-    "searchText": "神力 奥林匹斯 士气卡 规则上，此卡可视为1张士气。\n我方 回合1次 可消耗并翻转1神力：抽取1张牌。",
+    "searchText": "士气 奥林匹斯 士气卡 我方 回合1次 可消耗1士气：翻转1张士气。",
     "source": {
-      "file": "牌面/奥林匹斯/神力.png",
+      "file": "牌面/奥林匹斯/士气.png",
       "code": "S02-05C1"
     },
     "verified": true

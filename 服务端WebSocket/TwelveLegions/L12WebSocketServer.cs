@@ -154,8 +154,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             const L12Permission permission = L12Permission.AdminMatchesRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             request.HttpContext.Response.Headers.CacheControl = "no-store";
-            var match = await _recorder.GetAdminMatchAsync(matchId);
-            _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-detail", matchId,
+            var includeReplay = string.Equals(request.Query["includeReplay"], "true",
+                StringComparison.OrdinalIgnoreCase);
+            var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
+            _platform.RecordAdminRead(authenticated.Account, permission, "match",
+                includeReplay ? "read-replay" : "read-detail", matchId,
                 AuditContext(request, permission));
             return match is null ? Results.NotFound() : Results.Ok(match);
         });
@@ -1194,13 +1197,25 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return Results.Ok(new { values = keys.ToDictionary(key => key!, key => _platform.GetContent(key!), StringComparer.OrdinalIgnoreCase) });
         });
         _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
-        _app.MapGet("/api/articles", (string? category, string? search, int? limit) =>
-            Results.Ok(_platform.PublicArticles(category, search, limit ?? 100)));
+        _app.MapGet("/api/site/home", () => Results.Ok(_platform.PublicSiteHome()));
+        _app.MapGet("/api/site/categories", (string? kind) => Results.Ok(_platform.PublicSiteCategories(kind)));
+        _app.MapGet("/api/site/media/{id}/{variant}/{fileName}", (HttpRequest request, string id,
+            string variant, string fileName) =>
+        {
+            var file = _platform.ResolveSiteMediaFile(id, variant, fileName);
+            if (file is null) return Results.NotFound();
+            request.HttpContext.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+            request.HttpContext.Response.Headers.ETag = $"\"{file.Hash}\"";
+            request.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return Results.File(file.Path, file.ContentType, enableRangeProcessing: false);
+        });
+        _app.MapGet("/api/articles", (string? category, string? search, int? limit, string? kind) =>
+            Results.Ok(_platform.PublicArticles(category, search, limit ?? 100, kind ?? "news")));
         _app.MapGet("/api/admin/articles", (HttpRequest request, string? status, string? category,
-            string? search, int? limit) =>
+            string? search, int? limit, string? kind) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
-            return Results.Ok(_platform.AdminArticles(status, category, search, limit ?? 300));
+            return Results.Ok(_platform.AdminArticles(status, category, search, limit ?? 300, kind ?? "news"));
         });
         _app.MapGet("/api/admin/articles/{id}", (HttpRequest request, string id) =>
         {
@@ -1239,6 +1254,116 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             (HttpRequest request, string id, long revision) =>
                 ArticleMutationResponse(request, L12Permission.AdminContentDraft, id, "restore-revision",
                     (actor, context) => _platform.RestoreArticleRevision(actor, id, revision, context)));
+        _app.MapGet("/api/admin/site/media/policies", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(L12PlatformStore.SiteMediaPolicies());
+        });
+        _app.MapGet("/api/admin/site/media", (HttpRequest request, string? kind, int? limit) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AdminSiteMedia(kind, limit ?? 500));
+        });
+        _app.MapPost("/api/admin/site/media", async (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!request.HasFormContentType)
+                return ApiError(request, "media_form_required", "素材上传必须使用 multipart/form-data",
+                    StatusCodes.Status415UnsupportedMediaType);
+            try
+            {
+                var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
+                var original = await ReadRequiredFormFile(form, "original", 16 * 1024 * 1024,
+                    request.HttpContext.RequestAborted);
+                var desktop = await ReadRequiredFormFile(form, "desktop", 8 * 1024 * 1024,
+                    request.HttpContext.RequestAborted);
+                var mobile = await ReadRequiredFormFile(form, "mobile", 8 * 1024 * 1024,
+                    request.HttpContext.RequestAborted);
+                var thumbnail = await ReadRequiredFormFile(form, "thumbnail", 3 * 1024 * 1024,
+                    request.HttpContext.RequestAborted);
+                var focalX = ParseFiniteDouble(form["focalX"], .5);
+                var focalY = ParseFiniteDouble(form["focalY"], .5);
+                var result = _platform.UploadSiteMedia(authenticated.Account, new L12SiteMediaUpload(
+                    form["kind"].ToString(), original.FileName, original.ContentType, original.Bytes,
+                    desktop.Bytes, mobile.Bytes, thumbnail.Bytes, form["altText"].ToString(), focalX, focalY),
+                    RequestAuditContext(request, permission));
+                return Results.Ok(result);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "media_upload_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidDataException error)
+            {
+                return ApiError(request, "media_upload_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapDelete("/api/admin/site/media/{id}", (HttpRequest request, string id) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                _platform.DeleteSiteMedia(authenticated.Account, id, RequestAuditContext(request, permission));
+                return Results.NoContent();
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "media_not_found", error.Message, StatusCodes.Status404NotFound);
+            }
+            catch (L12SiteContentConflictException error)
+            {
+                return ApiError(request, "media_referenced", error.Message, StatusCodes.Status409Conflict);
+            }
+        });
+        _app.MapGet("/api/admin/site/categories", (HttpRequest request, string? kind) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AdminSiteCategories(kind));
+        });
+        _app.MapPost("/api/admin/site/categories", (HttpRequest request, SiteCategoryRequest body) =>
+            SaveSiteCategoryResponse(request, null, body));
+        _app.MapPut("/api/admin/site/categories/{id}", (HttpRequest request, string id, SiteCategoryRequest body) =>
+            SaveSiteCategoryResponse(request, id, body));
+        _app.MapPut("/api/admin/site/categories/order/{kind}", (HttpRequest request, string kind,
+            SiteCategoryOrderRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.ReorderSiteCategories(authenticated.Account, kind, body.Ids ?? [],
+                    RequestAuditContext(request, permission)));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "category_order_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapDelete("/api/admin/site/categories/{id}", (HttpRequest request, string id, string? migrateTo) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                _platform.DeleteSiteCategory(authenticated.Account, id, migrateTo,
+                    RequestAuditContext(request, permission));
+                return Results.NoContent();
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "category_not_found", error.Message, StatusCodes.Status404NotFound);
+            }
+            catch (L12SiteContentConflictException error)
+            {
+                return ApiError(request, "category_not_empty", error.Message, StatusCodes.Status409Conflict);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "category_delete_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
         _app.MapGet("/api/admin/content/{key}", (HttpRequest request, string key) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
@@ -2389,7 +2514,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var draft = new L12ArticleDraft(id, body.Title ?? string.Empty, body.Summary ?? string.Empty,
                 body.Body ?? string.Empty, body.Category ?? string.Empty, body.CoverUrl ?? string.Empty,
                 body.Link ?? string.Empty, body.Slug ?? string.Empty, body.Pinned, body.PublishAt,
-                body.ExpectedRevision);
+                body.ExpectedRevision, body.Kind ?? "news", body.CategoryId, body.MediaAssetId,
+                body.SortOrder);
             return Results.Ok(_platform.SaveArticleDraft(authenticated.Account, draft,
                 RequestAuditContext(request, permission)));
         }
@@ -2417,6 +2543,46 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return ApiError(request, $"article_{action}_invalid", error.Message, StatusCodes.Status400BadRequest);
         }
     }
+
+    private IResult SaveSiteCategoryResponse(HttpRequest request, string? id, SiteCategoryRequest body)
+    {
+        const L12Permission permission = L12Permission.AdminContentDraft;
+        if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+        try
+        {
+            var result = _platform.SaveSiteCategory(authenticated.Account, new L12SiteCategoryDraft(id,
+                body.Kind ?? string.Empty, body.Name ?? string.Empty, body.Slug ?? string.Empty,
+                body.SortOrder, body.Active, body.ExpectedVersion), RequestAuditContext(request, permission));
+            return Results.Ok(result);
+        }
+        catch (L12SiteContentConflictException error)
+        {
+            return ApiError(request, "category_version_conflict", error.Message, StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException error)
+        {
+            return ApiError(request, "category_invalid", error.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private sealed record UploadedFormFile(string FileName, string ContentType, byte[] Bytes);
+
+    private static async Task<UploadedFormFile> ReadRequiredFormFile(IFormCollection form, string name,
+        int maxBytes, CancellationToken cancellationToken)
+    {
+        var file = form.Files.GetFile(name) ?? throw new InvalidDataException($"缺少素材文件：{name}");
+        if (file.Length <= 0 || file.Length > maxBytes)
+            throw new InvalidDataException($"素材文件 {name} 大小无效或超过 {maxBytes / 1024 / 1024}MB 限制");
+        await using var stream = new MemoryStream((int)file.Length);
+        await file.CopyToAsync(stream, cancellationToken);
+        if (stream.Length > maxBytes) throw new InvalidDataException($"素材文件 {name} 超过大小限制");
+        return new UploadedFormFile(Path.GetFileName(file.FileName), file.ContentType, stream.ToArray());
+    }
+
+    private static double ParseFiniteDouble(string? value, double fallback)
+        => double.TryParse(value, System.Globalization.NumberStyles.Float,
+               System.Globalization.CultureInfo.InvariantCulture, out var parsed) && double.IsFinite(parsed)
+            ? parsed : fallback;
 
     private L12AdminAuditContext RequestAuditContext(HttpRequest request, L12Permission permission)
         => new(request.HttpContext.Items[L12CorrelationIds.ContextItemName]?.ToString() ?? Guid.NewGuid().ToString("N"),
@@ -2467,6 +2633,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_version_conflict",
                     error.Message, StatusCodes.Status409Conflict);
             }
+            catch (ArgumentException error)
+            {
+                return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
+                    error.Message, StatusCodes.Status400BadRequest);
+            }
         }, current =>
         {
             try
@@ -2479,6 +2650,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             {
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_version_conflict",
                     error.Message, StatusCodes.Status409Conflict);
+            }
+            catch (ArgumentException error)
+            {
+                return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
+                    error.Message, StatusCodes.Status400BadRequest);
             }
         }, L12AdminCommandRisk.High);
 
@@ -2502,6 +2678,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_batch_not_found",
                     error.Message, StatusCodes.Status404NotFound);
             }
+            catch (ArgumentException error)
+            {
+                return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
+                    error.Message, StatusCodes.Status400BadRequest);
+            }
         }, current =>
         {
             try
@@ -2514,6 +2695,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             {
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_version_conflict",
                     error.Message, StatusCodes.Status409Conflict);
+            }
+            catch (ArgumentException error)
+            {
+                return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
+                    error.Message, StatusCodes.Status400BadRequest);
             }
         }, L12AdminCommandRisk.High);
 
@@ -2871,7 +3057,11 @@ public sealed record ContentRequest(string? Value, string? IdempotencyKey = null
     bool DryRun = false, string? Reason = null);
 public sealed record ArticleDraftRequest(string? Title, string? Summary, string? Body, string? Category,
     string? CoverUrl, string? Link, string? Slug, bool Pinned, DateTimeOffset? PublishAt,
-    long? ExpectedRevision = null);
+    long? ExpectedRevision = null, string? Kind = null, string? CategoryId = null,
+    string? MediaAssetId = null, int SortOrder = 0);
+public sealed record SiteCategoryRequest(string? Kind, string? Name, string? Slug, int SortOrder,
+    bool Active = true, long? ExpectedVersion = null);
+public sealed record SiteCategoryOrderRequest(IReadOnlyList<string>? Ids);
 public sealed record ContentDraftCommandPayload(string Key, string Value);
 public sealed record ContentBatchRequest(IReadOnlyList<string>? Keys, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);

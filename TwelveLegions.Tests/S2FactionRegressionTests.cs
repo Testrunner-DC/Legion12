@@ -1534,7 +1534,7 @@ public sealed class S2FactionRegressionTests
             Ability: "thorHammerRevive"));
         Assert.True(begin.Accepted, begin.Error);
         var costPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("grave-card", costPrompt.Kind);
+        Assert.Equal("order", costPrompt.Kind);
         Assert.Equal("pending-activation", costPrompt.Continuation);
         Assert.DoesNotContain(hammer.InstanceId, costPrompt.ValidChoices);
         Assert.Empty(game.State.EffectStack);

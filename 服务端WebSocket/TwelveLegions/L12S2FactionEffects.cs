@@ -914,7 +914,7 @@ public sealed partial class L12GameEngine
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
-        if (ability == "olympusMoraleFlip" && source.CardId == "S02-05C1A")
+        if (ability == "olympusMoraleFlip" && source.CardId is "S02-05C1" or "S02-05C1A")
         {
             var onceKey = $"active:{source.InstanceId}:{ability}";
             if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
@@ -1451,7 +1451,7 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
             return CommandResult.Ok();
         }
-        if (ability == "olympusMoraleFlip" && source.CardId == "S02-05C1A")
+        if (ability == "olympusMoraleFlip" && source.CardId is "S02-05C1" or "S02-05C1A")
         {
             if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
             player.UsedAbilities.Add(onceKey);
@@ -1562,7 +1562,7 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
-        if (ability == "olympusMoraleFlip" && source?.CardId == "S02-05C1A")
+        if (ability == "olympusMoraleFlip" && source?.CardId is "S02-05C1" or "S02-05C1A")
             return PromptS2FlipMorale(item, source);
         if (ability == "prometheusTopThree" && source?.CardId == "S02-05M2")
         {

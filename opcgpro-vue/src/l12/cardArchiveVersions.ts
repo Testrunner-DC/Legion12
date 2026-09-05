@@ -75,8 +75,8 @@ export function compareArchiveVersions(a: DeckCard, b: DeckCard) {
 
 function logicalIdentity(card: DeckCard) {
   const moraleId = moraleVersionIdentity.get(card.id)
-  // godPowerCardId is deliberately absent from versionCardIds: the Olympus
-  // morale front and god-power reverse have different rules and stay separate.
+  // Printed morale variants share one archive identity. The Olympus god-power
+  // reverse is a runtime state of S02-05C1, not the canonical identity of its A art.
   return moraleId ? `morale:${moraleId}` : `rules:${ruleIdentity(card)}`
 }
 

@@ -71,7 +71,7 @@ public sealed partial class MatchRecorder
         return ListAdminMatchesAsync(query with { AccountId = accountId.Trim(), Player = null });
     }
 
-    public async Task<L12AdminMatchDetail?> GetAdminMatchAsync(string matchId)
+    public async Task<L12AdminMatchDetail?> GetAdminMatchAsync(string matchId, bool includeReplay = false)
     {
         if (string.IsNullOrWhiteSpace(matchId)) return null;
         await using var connection = new SqliteConnection(_connectionString);
@@ -97,7 +97,7 @@ public sealed partial class MatchRecorder
                 EmptyCoverage(privateDuringActiveMatch: true));
         }
 
-        var replay = (await GetMatchAsync(matchId))?.Commands ?? [];
+        var replay = includeReplay ? (await GetMatchAsync(matchId))?.Commands ?? [] : [];
         var facts = await ReadCardFactsAsync(connection, matchId);
         var coverage = await ReadCoverageAsync(connection, matchId, privateDuringActiveMatch: false);
         return new L12AdminMatchDetail(summary, participants, replay, facts, coverage);

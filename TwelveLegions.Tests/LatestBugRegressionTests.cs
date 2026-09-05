@@ -192,11 +192,11 @@ public sealed class LatestBugRegressionTests
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var blockedCard = Assert.Single(blockedSnapshot.GetProperty("players")[0]
             .GetProperty("hand").EnumerateArray());
-        Assert.Contains("墓地至少有4张", blockedCard.GetProperty("playBlockedReason").GetString());
+        Assert.Contains("合计能视为4张", blockedCard.GetProperty("playBlockedReason").GetString());
 
         var rejected = game.Handle(0, new L12Command("playCard", huntingMoment.InstanceId));
         Assert.False(rejected.Accepted);
-        Assert.Contains("墓地至少有4张", rejected.Error);
+        Assert.Contains("合计能视为4张", rejected.Error);
         Assert.Contains(huntingMoment, player.Hand);
         Assert.Equal(3, player.Morale.Count(card => !card.Tapped));
         Assert.Empty(player.Resolving);
@@ -990,7 +990,7 @@ public sealed class LatestBugRegressionTests
         player.Morale.Add(new L12MoraleCard
         {
             InstanceId = "ordinary-olympus-morale",
-            CardId = "S02-05C1A",
+            CardId = "S02-05C1",
             Tapped = false,
             IsGodPower = false,
         });
@@ -999,7 +999,7 @@ public sealed class LatestBugRegressionTests
 
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(game.SnapshotFor(0)));
         var effect = document.RootElement.GetProperty("Players")[0].GetProperty("factionEffect");
-        Assert.Equal("S02-05C1A", effect.GetProperty("cardId").GetString());
+        Assert.Equal("S02-05C1", effect.GetProperty("cardId").GetString());
         var abilities = effect.GetProperty("abilities");
         Assert.Equal("olympusMoraleFlip", abilities[0].GetProperty("Id").GetString());
         Assert.True(abilities[0].GetProperty("Enabled").GetBoolean());

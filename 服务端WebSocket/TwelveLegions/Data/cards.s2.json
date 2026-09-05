@@ -1180,8 +1180,8 @@
   {
     "id": "S02-05C1",
     "number": "S02-05C1",
-    "nameZh": "神力·奥林匹斯",
-    "imageUrl": "/cards/faces/奥林匹斯/神力.png",
+    "nameZh": "士气·奥林匹斯",
+    "imageUrl": "/cards/faces/奥林匹斯/士气.png",
     "cardType": "rune",
     "product": "S02",
     "faction": "olympus",
@@ -1189,7 +1189,7 @@
     "hp": null,
     "troops": null,
     "disasterLevel": null,
-    "effect": "规则上，此卡可视为1张士气。\n我方 回合1次 可消耗并翻转1神力：抽取1张牌。"
+    "effect": "我方 回合1次 可消耗1士气：翻转1张士气。"
   },
   {
     "id": "S02-05C1A",

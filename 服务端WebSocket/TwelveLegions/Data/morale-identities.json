@@ -26,10 +26,12 @@
   {
     "faction": "olympus",
     "displayName": "士气·奥林匹斯",
-    "canonicalCardId": "S02-05C1A",
-    "versionCardIds": ["S02-05C1A", "ST05-C1"],
+    "canonicalCardId": "S02-05C1",
+    "versionCardIds": ["S02-05C1", "S02-05C1A", "ST05-C1"],
     "godPowerCardId": "S02-05C1",
-    "godPowerDisplayName": "神力·奥林匹斯"
+    "godPowerDisplayName": "神力·奥林匹斯",
+    "godPowerDisplayNumber": "S02-05C1(B)",
+    "godPowerEffectText": "规则上，此卡可视为1张士气。\n我方 回合1次 可消耗并翻转1神力：抽取1张牌。"
   },
   {
     "faction": "otherworld",

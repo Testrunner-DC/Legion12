@@ -38,7 +38,7 @@ foreach ($ability in @(
 }
 
 Assert-Contains $s2 'new L12ActivationSelectionStep { Kind = "slot"' 'Thor Hammer slot must be declared before its graveyard cost is committed.'
-Assert-Contains $s2 '["ability"] = ability, ["slot"] = declared[3]' 'Thor Hammer committed stack data must retain the declared slot.'
+Assert-Contains $s2 '["ability"] = ability, ["slot"] = slot' 'Thor Hammer committed stack data must retain the declared slot.'
 Assert-Contains $composite 'for (var nextIndex = current + 1; nextIndex < segments.Count; nextIndex++)' 'Composite segment queue must continue after an invalid independent segment.'
 Assert-Contains $composite 'AddEvent("effect-cancelled"' 'Composite invalid-segment cancellation must preserve later independent segments.'
 foreach ($cardId in @('S02-0307', 'S02-0206', 'S02-0406')) {

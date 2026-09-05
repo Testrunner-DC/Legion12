@@ -87,6 +87,7 @@ public sealed class MatchAnalyticsTests
         await recorder.AppendAuthorityAsync(game, 2, "事实测试结束");
         await recorder.CompleteAsync(game);
         detail = Assert.IsType<L12AdminMatchDetail>(await recorder.GetAdminMatchAsync("fact-match"));
+        Assert.Empty(detail.Replay);
         Assert.NotEmpty(detail.Participants[0].DeckCards);
         Assert.Equal("exact", detail.Participants[0].DeckSnapshotCoverage);
         Assert.Contains(detail.CardFacts, fact => fact.Kind == "deck-included");
@@ -95,6 +96,8 @@ public sealed class MatchAnalyticsTests
         Assert.Equal(1, draw.CommandSequence);
         Assert.Equal("Mulligan", draw.Phase);
         Assert.True(draw.Round > 0);
+        var replayDetail = Assert.IsType<L12AdminMatchDetail>(await recorder.GetAdminMatchAsync("fact-match", includeReplay: true));
+        Assert.NotEmpty(replayDetail.Replay);
 
         await using var connection = new SqliteConnection($"Data Source={path}");
         await connection.OpenAsync();
@@ -239,6 +242,20 @@ public sealed class MatchAnalyticsTests
                 var page = await response.Content.ReadFromJsonAsync<L12AdminMatchPage>();
                 Assert.Contains(page!.Items, match => match.MatchId == "api-match");
             }
+            using (var detailRequest = Authorized(HttpMethod.Get, "/api/admin/matches/api-match", adminLogin.Token!))
+            using (var response = await client.SendAsync(detailRequest))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var detail = await response.Content.ReadFromJsonAsync<L12AdminMatchDetail>();
+                Assert.Empty(detail!.Replay);
+            }
+            using (var replayRequest = Authorized(HttpMethod.Get, "/api/admin/matches/api-match?includeReplay=true", adminLogin.Token!))
+            using (var response = await client.SendAsync(replayRequest))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var detail = await response.Content.ReadFromJsonAsync<L12AdminMatchDetail>();
+                Assert.NotEmpty(detail!.Replay);
+            }
             var targetCard = decks[0].CardIds[0];
             var cardName = catalog.Cards[targetCard].NameZh;
             using (var search = Authorized(HttpMethod.Get,
@@ -257,6 +274,9 @@ public sealed class MatchAnalyticsTests
             Assert.Contains(platform.AdminAudit(category: "match"), audit =>
                 audit.ActorId == adminLogin.Account!.Id && audit.Action == "read-list"
                 && audit.Permission == "admin.matches.read");
+            Assert.Contains(platform.AdminAudit(category: "match"), audit =>
+                audit.ActorId == adminLogin.Account!.Id && audit.Action == "read-replay"
+                && audit.Permission == "admin.matches.read" && audit.Target == "api-match");
             Assert.Contains(platform.AdminAudit(category: "analytics"), audit =>
                 audit.ActorId == adminLogin.Account!.Id && audit.Action == "read-card-list"
                 && audit.Permission == "admin.analytics.read");

@@ -13,7 +13,7 @@ public sealed class MoraleIdentityRegressionTests
         { "taiyangcheng", "S01-02C1", "士气·太阳城", null },
         { "asgard", "S01-03C1", "士气·阿斯加德", null },
         { "gaotianyuan", "S01-04C1", "士气·高天原", null },
-        { "olympus", "S02-05C1A", "士气·奥林匹斯", "S02-05C1" },
+        { "olympus", "S02-05C1", "士气·奥林匹斯", "S02-05C1" },
         { "otherworld", "S02-06C1", "士气·彼界", null },
     };
 
@@ -30,7 +30,11 @@ public sealed class MoraleIdentityRegressionTests
         Assert.False(identity.CanonicalCardId.StartsWith("ST", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(displayName, Catalog.Cards[canonicalId].NameZh);
         if (godPowerId is not null)
-            Assert.Equal("神力·奥林匹斯", Catalog.Cards[godPowerId].NameZh);
+        {
+            Assert.Equal("神力·奥林匹斯", identity.GodPowerDisplayName);
+            Assert.Equal("S02-05C1(B)", identity.GodPowerDisplayNumber);
+            Assert.Contains("消耗并翻转1神力", identity.GodPowerEffectText);
+        }
     }
 
     [Theory]
@@ -83,7 +87,7 @@ public sealed class MoraleIdentityRegressionTests
 
         Assert.All(game.State.Players[0].MoraleDeck, card =>
         {
-            Assert.Equal("S02-05C1A", card.CardId);
+            Assert.Equal("S02-05C1", card.CardId);
             Assert.False(card.IsGodPower);
         });
         Assert.All(game.State.Players[1].MoraleDeck, card => Assert.Equal("S02-06C1", card.CardId));

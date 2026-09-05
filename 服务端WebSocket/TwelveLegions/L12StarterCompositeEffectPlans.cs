@@ -50,10 +50,17 @@ public sealed partial class L12GameEngine
                     EmptySlots(player), 1));
                 break;
             case "legendary-bloodline":
+            {
+                var targets = PublicLegions(player)
+                    .Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
+                var currentBonus = 2000 + player.Graveyard.Sum(card =>
+                    L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard")) / 3 * 1000;
                 steps.Add(CompositeStep("field-legion", "buffTarget", "传奇的血脉：选择我方1张【阿斯加德】军团",
-                    PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard"))
-                        .Select(card => card.InstanceId), 1));
+                    targets.Select(card => card.InstanceId), 1, 1,
+                    targets.ToDictionary(card => card.InstanceId, _ => $"当前加{currentBonus}",
+                        StringComparer.OrdinalIgnoreCase)));
                 break;
+            }
             case "invasion-fire":
                 steps.Add(CompositeStep("field-legion", "attachTarget", "侵略如火：选择我方1张【高天原】军团",
                     PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))

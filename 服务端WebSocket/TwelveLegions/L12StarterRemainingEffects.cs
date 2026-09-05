@@ -90,19 +90,9 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("墓地需要至少3张阿斯加德卡牌");
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
-                    new L12ActivationSelectionStep
-                    {
-                        Kind = "order", DeclarationKey = "graveOrder",
-                        Text = "西芙：依序选择返回牌库底部、合计视为3张的阿斯加德卡牌",
-                        ValidChoices = eligible.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 3,
-                        SelectionConstraint = "grave-faction-exact", FactionConstraint = "asgard", RepresentedCount = 3,
-                    },
-                    new L12ActivationSelectionStep
-                    {
-                        Kind = "grave-faction-count", DeclarationKey = "graveCopies", ReferenceDeclarationKey = "graveOrder",
-                        Text = "西芙：选择〈渴求死亡的勇士〉本次视为几张阿斯加德卡牌",
-                        ValidChoices = [], MinChoose = 1, MaxChoose = 1, FactionConstraint = "asgard", RepresentedCount = 3,
-                    },
+                    GraveCostSelectionStep(player,
+                        "西芙：依序选择返回牌库底部、合计视为3张的阿斯加德卡牌",
+                        "graveOrder", eligible, required: 3, faction: "asgard"),
                 ]);
             }
             case "athenaFrontBuff":

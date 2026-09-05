@@ -611,11 +611,15 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S01-0319":
-                steps.Add(CompositeStep("order", "graveCost", "猎杀时刻：预先选择并排序置于牌库底部的4张墓地卡牌",
-                    player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId), 4, 4));
+            {
+                var graveCards = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
+                steps.Add(GraveCostSelectionStep(player,
+                    "猎杀时刻：选择并排序可合计视为4张、置于牌库底部的墓地卡牌",
+                    "graveCost", graveCards, required: 4));
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "猎杀时刻：预先选择击杀目标",
                     PublicLegions(opponent).Where(card => card.Troops <= 6000).Select(card => card.InstanceId), 1));
                 break;
+            }
 
             case "S01-0419":
             {
@@ -1097,9 +1101,13 @@ public sealed partial class L12GameEngine
             "S01-0318" => (effectOnlyRepeat || declared.GetValueOrDefault("masterDamageCost", []).SingleOrDefault() == "cost:master-damage")
                 && Grave("entryCard", target => target.CardType == "legion" && target.CurrentCost <= 5
                     && L12StructuredCardRules.HasFaction(player, target, "asgard")) && OwnSlot("entrySlot"),
-            "S01-0319" => (effectOnlyRepeat || declared.GetValueOrDefault("graveCost", []) is { Count: 4 } graveCost
-                && graveCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 4
-                && graveCost.All(id => player.Graveyard.Any(target => target.InstanceId == id && CanEnterHandOrLibrary(target))))
+            "S01-0319" => (effectOnlyRepeat || declared.GetValueOrDefault("graveCost", []) is { Count: >= 2 and <= 4 } graveCost
+                && graveCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == graveCost.Count
+                && graveCost.Select(id => player.Graveyard.FirstOrDefault(target => target.InstanceId == id
+                        && CanEnterHandOrLibrary(target))).OfType<L12CardInstance>().ToArray() is { } graveCards
+                && graveCards.Length == graveCost.Count
+                && L12StructuredCardRules.IsExactGraveCardRepresentation(player, graveCards,
+                    declared.GetValueOrDefault("graveCostCopies", []).SingleOrDefault(), 4))
                 && Enemy("killTarget", target => target.Troops <= 6000),
             "S01-0419" => mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || declared.GetValueOrDefault("moraleTarget", []).SingleOrDefault() is { } moraleTarget
@@ -1485,10 +1493,16 @@ public sealed partial class L12GameEngine
             {
                 var costs = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
                     && CanEnterHandOrLibrary(card))).ToArray();
-                if (costs.Length != segment.Cost || costs.Any(card => card is null)
-                    || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != segment.Cost) return false;
+                var representation = declared.GetValueOrDefault($"{segment.CostKey}Copies", []).SingleOrDefault();
+                if (costs.Length == 0 || costs.Any(card => card is null)
+                    || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Length
+                    || !L12StructuredCardRules.IsExactGraveCardRepresentation(player,
+                        costs.Cast<L12CardInstance>().ToArray(), representation, segment.Cost)) return false;
                 MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>());
-                AddEvent("cost", controller, $"〈{source.Name}〉将墓地{segment.Cost}张卡牌依声明顺序置于牌库底部", source);
+                var physicalText = costs.Length == segment.Cost
+                    ? $"{segment.Cost}张卡牌"
+                    : $"{costs.Length}张实体卡牌（按效果合计视为{segment.Cost}张）";
+                AddEvent("cost", controller, $"〈{source.Name}〉将墓地{physicalText}依声明顺序置于牌库底部", source);
                 return true;
             }
             default:

@@ -33,6 +33,19 @@ export interface MatchDetail {
   viewerPlayerIndex?: number | null
 }
 
+export interface AdminReplaySource {
+  summary: {
+    matchId: string
+    status: string
+    players: Array<{ displayName: string; deckName?: string; result?: string }>
+    startedUtc: string
+    endedUtc?: string | null
+    commandCount: number
+    error?: string | null
+  }
+  replay: RecordedCommand[]
+}
+
 let importedReplay: MatchDetail | null = null
 
 export function rememberImportedReplay(detail: MatchDetail) { importedReplay = detail }
@@ -49,6 +62,31 @@ export function parseReplayPayload(raw: unknown): MatchDetail {
 
 export function exportReplayPayload(detail: MatchDetail) {
   return { format: 'legion12-replay', version: 1, exportedAt: new Date().toISOString(), detail }
+}
+
+export function adminReplayDetail(source: AdminReplaySource): MatchDetail {
+  if (source.summary.status !== 'completed') throw new Error('进行中或无效对局不能播放回放')
+  if (!Array.isArray(source.replay)) throw new Error('后台对局缺少有效的回放命令')
+  const firstState = source.replay[0]?.state
+  const winner = source.summary.players.findIndex(player => player.result === 'win')
+  return {
+    match: {
+      matchId: source.summary.matchId,
+      roomCode: value(firstState, 'RoomCode', 'roomCode', ''),
+      player0: source.summary.players[0]?.displayName || '玩家1',
+      player1: source.summary.players[1]?.displayName || '玩家2',
+      deck0: source.summary.players[0]?.deckName || '',
+      deck1: source.summary.players[1]?.deckName || '',
+      startedUtc: source.summary.startedUtc,
+      endedUtc: source.summary.endedUtc,
+      winner: winner >= 0 ? winner : null,
+      finalHash: source.replay.at(-1)?.stateHash || null,
+      error: source.summary.error,
+      commandCount: source.replay.length,
+    },
+    commands: source.replay,
+    viewerPlayerIndex: 0,
+  }
 }
 
 function value<T>(raw: any, pascal: string, camel: string, fallback: T): T {

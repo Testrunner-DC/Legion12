@@ -104,9 +104,29 @@ public static partial class L12StructuredCardRules
 
     internal static int StarterGraveFactionCopies(L12PlayerState owner, L12CardInstance card,
         string faction, bool legionOnly)
-        => legionOnly
+        => string.IsNullOrWhiteSpace(faction)
+            ? StarterGraveCardCopies(card)
+            : legionOnly
             ? StarterGraveFactionLegionCopies(owner, card, faction)
             : StarterGraveFactionCardCopies(owner, card, faction);
+
+    internal static int StarterGraveCardCopies(L12CardInstance card)
+        => card.CardId == "ST03-08" ? 3 : 1;
+
+    internal static int MinimumPhysicalGraveCardsForCount(L12PlayerState owner,
+        IReadOnlyCollection<L12CardInstance> cards, string faction, int required, bool legionOnly)
+    {
+        var represented = 0;
+        var physical = 0;
+        foreach (var copies in cards.Select(card => StarterGraveFactionCopies(owner, card, faction, legionOnly))
+                     .Where(copies => copies > 0).OrderByDescending(copies => copies))
+        {
+            represented += copies;
+            physical++;
+            if (represented >= required) return physical;
+        }
+        return required + 1;
+    }
 
     internal static bool CanPotentiallyRepresentGraveFactionCount(L12PlayerState owner,
         IReadOnlyCollection<L12CardInstance> cards, string faction, int required, bool legionOnly)
@@ -116,8 +136,15 @@ public static partial class L12StructuredCardRules
 
     internal static IReadOnlyDictionary<string, string> GraveFactionRepresentationChoices(L12PlayerState owner,
         IReadOnlyList<L12CardInstance> cards, string faction, int required, bool legionOnly)
+        => GraveRepresentationChoices(owner, cards, faction, required, required, legionOnly);
+
+    internal static IReadOnlyDictionary<string, string> GraveRepresentationChoices(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, string faction, int minimum, int maximum, bool legionOnly)
     {
-        if (!CanPotentiallyRepresentGraveFactionCount(owner, cards, faction, required, legionOnly))
+        if (cards.Count == 0 || minimum < 0 || maximum < minimum
+            || cards.Any(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) == 0)
+            || cards.Count > maximum
+            || cards.Sum(card => StarterGraveFactionCopies(owner, card, faction, legionOnly)) < minimum)
             return new Dictionary<string, string>();
         var variables = cards.Where(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 1).ToArray();
         if (variables.Length == 0) return new Dictionary<string, string>();
@@ -129,7 +156,7 @@ public static partial class L12StructuredCardRules
         {
             if (index == variables.Length)
             {
-                if (total != required) return;
+                if (total < minimum || total > maximum) return;
                 var token = "grave-copies:" + string.Join(',', variables.Select((card, variableIndex) =>
                     $"{card.InstanceId}={counts[variableIndex]}"));
                 var label = string.Join("；", variables.Select((card, variableIndex) =>
@@ -139,8 +166,8 @@ public static partial class L12StructuredCardRules
                 results[token] = label;
                 return;
             }
-            var maximum = StarterGraveFactionCopies(owner, variables[index], faction, legionOnly);
-            for (var count = 1; count <= maximum; count++)
+            var cardMaximum = StarterGraveFactionCopies(owner, variables[index], faction, legionOnly);
+            for (var count = 1; count <= cardMaximum; count++)
             {
                 counts[index] = count;
                 Build(index + 1, total + count);
@@ -151,12 +178,20 @@ public static partial class L12StructuredCardRules
         return results;
     }
 
-    internal static bool IsExactGraveFactionRepresentation(L12PlayerState owner,
-        IReadOnlyList<L12CardInstance> cards, string? representation, string faction, int required, bool legionOnly)
+    internal static bool TryGetGraveRepresentationCount(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, string? representation, string faction, bool legionOnly,
+        out int representedCount)
     {
-        if (!CanPotentiallyRepresentGraveFactionCount(owner, cards, faction, required, legionOnly)) return false;
+        representedCount = 0;
+        if (cards.Count == 0
+            || cards.Any(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) == 0)) return false;
         var variables = cards.Where(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 1).ToArray();
-        if (variables.Length == 0) return cards.Count == required && string.IsNullOrWhiteSpace(representation);
+        if (variables.Length == 0)
+        {
+            if (!string.IsNullOrWhiteSpace(representation)) return false;
+            representedCount = cards.Count;
+            return true;
+        }
         if (string.IsNullOrWhiteSpace(representation)
             || !representation.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)) return false;
         var declared = representation["grave-copies:".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -164,9 +199,39 @@ public static partial class L12StructuredCardRules
             .Where(parts => parts.Length == 2 && int.TryParse(parts[1], out _))
             .ToDictionary(parts => parts[0], parts => int.Parse(parts[1]), StringComparer.OrdinalIgnoreCase);
         if (declared.Count != variables.Length || variables.Any(card => !declared.ContainsKey(card.InstanceId))) return false;
-        return cards.Sum(card => declared.GetValueOrDefault(card.InstanceId, 1)) == required
-            && variables.All(card => declared[card.InstanceId] is >= 1
-                && declared[card.InstanceId] <= StarterGraveFactionCopies(owner, card, faction, legionOnly));
+        if (variables.Any(card => declared[card.InstanceId] is < 1
+                || declared[card.InstanceId] > StarterGraveFactionCopies(owner, card, faction, legionOnly))) return false;
+        representedCount = cards.Sum(card => declared.GetValueOrDefault(card.InstanceId, 1));
+        return true;
+    }
+
+    internal static bool IsExactGraveFactionRepresentation(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, string? representation, string faction, int required, bool legionOnly)
+    {
+        if (!CanPotentiallyRepresentGraveFactionCount(owner, cards, faction, required, legionOnly)) return false;
+        return TryGetGraveRepresentationCount(owner, cards, representation, faction, legionOnly,
+            out var representedCount) && representedCount == required;
+    }
+
+    internal static bool IsExactGraveCardRepresentation(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, string? representation, int required)
+        => IsExactGraveFactionRepresentation(owner, cards, representation, string.Empty, required, legionOnly: false);
+
+    internal static bool TryResolveGraveCostDeclaration(L12PlayerState owner,
+        IEnumerable<string> declaredValues, int required, string faction, bool legionOnly,
+        out L12CardInstance[] physicalCards, out string? representation)
+    {
+        var values = declaredValues.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        representation = values.SingleOrDefault(value =>
+            value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
+        physicalCards = values.Where(value => !value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase))
+            .Select(value => owner.Graveyard.FirstOrDefault(card => card.InstanceId == value
+                && StarterGraveFactionCopies(owner, card, faction, legionOnly) > 0))
+            .OfType<L12CardInstance>().ToArray();
+        var declaredPhysicalIds = values.Where(value => !value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)
+            && owner.Graveyard.Any(card => card.InstanceId == value)).ToArray();
+        return physicalCards.Length == declaredPhysicalIds.Length
+            && IsExactGraveFactionRepresentation(owner, physicalCards, representation, faction, required, legionOnly);
     }
 
     internal static bool CanRepresentGraveFactionCardCount(L12PlayerState owner,

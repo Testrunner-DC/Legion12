@@ -220,6 +220,8 @@ public sealed partial class L12PlatformStore
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public List<ContentRow> ContentEntries { get; set; } = [];
         public List<ArticleRow> Articles { get; set; } = [];
+        public List<SiteMediaRow> SiteMedia { get; set; } = [];
+        public List<SiteCategoryRow> SiteCategories { get; set; } = [];
         public List<EffectReviewRow> EffectReviews { get; set; } = [];
         public List<AdminAuditRow> AdminAudit { get; set; } = [];
         public List<AdminCommandRow> AdminCommands { get; set; } = [];
@@ -285,6 +287,7 @@ public sealed partial class L12PlatformStore
         EnsureOperationsState();
         EnsureRankedState();
         EnsureArticleState();
+        EnsureSiteContentState();
     }
 
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)
@@ -867,6 +870,7 @@ public sealed partial class L12PlatformStore
         {
             if (!IsContentKeyAllowed(key)) throw new ArgumentException($"内容键不在白名单中：{key}");
             var canonical = ContentKeys().First(item => string.Equals(item, key.Trim(), StringComparison.OrdinalIgnoreCase));
+            ValidateSiteContentValue(canonical, value, false);
             var row = EnsureContentEntry(canonical);
             var previous = row.DraftValue;
             row.DraftValue = value;

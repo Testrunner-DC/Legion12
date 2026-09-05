@@ -66,7 +66,7 @@ Assert-Contains $plans 'PrepareBatch6JBPublicTriggerCandidate' 'Batch 6J-B publi
 Assert-Contains $kernel '.Where(PrepareBatch6JBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6J-B candidates before ordering.'
 Assert-Contains $kernel 'activation.TriggerCandidateId == candidate.CandidateId' 'A trigger candidate with an open declaration must not create duplicate PendingActivations.'
 Assert-Contains $plans 'PublicTriggerStep("target-morale", "returnCost"' 'Lu Bu must declare the exact four-morale cost before stack entry.'
-Assert-Contains $plans 'MoveGraveToLibraryBottom(player, costs.Select' 'Gustav must commit his ordered grave cost before stack entry.'
+Assert-Contains $plans 'MoveGraveToLibraryBottom(player, physicalCosts)' 'Gustav must commit his ordered grave cost before stack entry.'
 Assert-Contains $plans 'PublicTriggerStep("target-morale", "moraleTarget"' 'Mulan must declare the opponent morale target before stack entry.'
 Assert-Contains $plans 'new L12CompositeEffectSegmentSpec("prayer-private"' 'Prayer private preview must reuse the shared ordinary-payment transaction.'
 Assert-Contains $cardEffects 'PublicTriggerDeclared(item, "moraleTarget")' 'Mulan resolution must consume only the immutable declared morale target.'

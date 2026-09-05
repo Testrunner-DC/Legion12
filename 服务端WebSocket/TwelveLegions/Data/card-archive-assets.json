@@ -358,7 +358,7 @@
     },
     {
       "id": "ST05-C1st",
-      "baseCardId": "S02-05C1A",
+      "baseCardId": "S02-05C1",
       "product": "ST05",
       "products": [
         "ST05|奥林匹斯阵营预组"
@@ -375,6 +375,20 @@
       ],
       "rarity": "",
       "sourceArchiveName": "ST06C1st.png"
+    },
+    {
+      "id": "S02-05C1B",
+      "baseCardId": "S02-05C1",
+      "number": "S02-05C1(B)",
+      "nameZh": "神力·奥林匹斯",
+      "effect": "规则上，此卡可视为1张士气。\n我方 回合1次 可消耗并翻转1神力：抽取1张牌。",
+      "product": "S02",
+      "products": [
+        "第2季|伟大试炼",
+        "第2季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S02-05C1B.png"
     }
   ]
 }

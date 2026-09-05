@@ -40,7 +40,7 @@ $unexpected = @($auditCards | Where-Object { $expectedCards -notcontains $_ })
 if ($expectedCards.Count -ne 35 -or $auditCards.Count -ne 35 -or $missing.Count -gt 0 -or $unexpected.Count -gt 0) {
     throw "Batch 6L-C audit inventory drifted (expected=$($expectedCards.Count), actual=$($auditCards.Count), missing=$($missing -join ','), unexpected=$($unexpected -join ','))."
 }
-Assert-Contains $tests 'Assert.Equal(101, AuditedAbilityCounts.Values.Sum())' 'Batch 6L-C ability inventory must remain frozen at 101.'
+Assert-Contains $tests 'Assert.Equal(104, AuditedAbilityCounts.Values.Sum())' 'The current S02 Takamagahara and Olympus ability inventory must remain frozen at 104.'
 
 Assert-Contains $remaining '["ability"] = "tsukuyomiFrontAttackBuff"' 'Tsukuyomi back-to-front movement must create a TriggerCandidate.'
 Assert-Contains $remaining 'case "tsukuyomiFrontAttackBuff"' 'Tsukuyomi back-to-front trigger resolver is missing.'
@@ -79,4 +79,4 @@ $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatu
 if ($fixedCount -ne 16 -or $passedCount -ne 19 -or $questionCount -ne 0) {
     throw "Batch 6L-C status totals drifted (passed=$passedCount, fixed=$fixedCount, question=$questionCount)."
 }
-Write-Host 'S02 Takamagahara + Olympus per-ability audit guard passed (35 cards / 101 abilities).'
+Write-Host 'S02 Takamagahara + Olympus per-ability audit guard passed (35 cards / 104 abilities).'

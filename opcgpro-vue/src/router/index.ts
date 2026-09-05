@@ -17,6 +17,7 @@ export const router = createRouter({
     { path: '/me', name: 'me', component: () => import('@/l12/site/ProfilePage.vue') },
     { path: '/auth/recovery', name: 'account-recovery', component: () => import('@/l12/site/AccountRecoveryPage.vue') },
     { path: '/admin', name: 'admin', component: () => import('@/l12/site/AdminPage.vue'), meta: { requiresAdmin: true } },
+    { path: '/admin/matches/:matchId/replay', name: 'admin-match-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAdmin: true } },
     { path: '/battle/records', name: 'records', component: () => import('@/l12/MatchRecords.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/battle/records/replay/json', name: 'json-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
     { path: '/battle/records/replay/:matchId', name: 'match-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },

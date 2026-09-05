@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleRevision } from '@/l12/platform'
+import { computed, onMounted, ref, watch } from 'vue'
+import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleRevision, type SiteCategory, type SiteContentKind, type SiteMedia } from '@/l12/platform'
+import MediaUploadField from './MediaUploadField.vue'
 
 type EditableArticle = Partial<Article> & ArticleDraft
 
-const categories = ['官方公告', '规则勘误', '赛季更新', '赛事信息']
+const props = withDefaults(defineProps<{ kind?: SiteContentKind }>(), { kind: 'news' })
+const emit = defineEmits<{ notice: [value: string] }>()
+const kindCopy = {
+  news: { en: 'NEWSROOM', title: '资讯中心', singular: '资讯', summary: '摘要', body: '正文', link: '相关链接' },
+  video: { en: 'COMMUNITY MOVIE', title: '社群视频', singular: '视频', summary: '视频简介', body: '视频说明', link: '视频播放链接' },
+  product: { en: 'PRODUCTS', title: '商品情报', singular: '商品', summary: '商品摘要', body: '商品说明', link: '商品详情链接' },
+} as const
+const copy = computed(() => kindCopy[props.kind])
 const statuses = [
   { id: '', name: '全部状态' }, { id: 'draft', name: '草稿' }, { id: 'published', name: '已发布' },
-  { id: 'scheduled', name: '定时发布' }, { id: 'withdrawn', name: '已撤回' }, { id: 'archived', name: '已归档' },
+  { id: 'scheduled', name: '定时发布' }, { id: 'withdrawn', name: '已停用' }, { id: 'archived', name: '已归档' },
 ]
 const articles = ref<Article[]>([])
+const categories = ref<SiteCategory[]>([])
+const media = ref<SiteMedia[]>([])
 const selected = ref<EditableArticle | null>(null)
 const revisions = ref<ArticleRevision[]>([])
 const search = ref('')
@@ -19,48 +29,78 @@ const busy = ref(false)
 const notice = ref('')
 const preview = ref(false)
 
-const statusLabel = (value?: string) => statuses.find(item => item.id === value)?.name || '未保存'
+const activeCategories = computed(() => categories.value.filter(item => item.active))
 const selectedIsSaved = computed(() => Boolean(selected.value?.id))
+const selectedPreview = computed(() => {
+  const uploaded = media.value.find(item => item.id === selected.value?.mediaAssetId)
+  return uploaded?.thumbnailUrl || selected.value?.coverUrl || ''
+})
+const statusLabel = (value?: string) => statuses.find(item => item.id === value)?.name || '未保存'
 
 function emptyArticle(): EditableArticle {
-  return { title: '', summary: '', body: '', category: '官方公告', coverUrl: '', link: '', slug: '', pinned: false, publishAt: '' }
+  const first = activeCategories.value[0]
+  return {
+    title: '', summary: '', body: '', category: first?.name || '', categoryId: first?.id,
+    coverUrl: '', mediaAssetId: '', link: '', slug: '', pinned: false, publishAt: '',
+    kind: props.kind, sortOrder: articles.value.length,
+  }
 }
 function dateTimeLocal(value?: string) {
   if (!value) return ''
   const date = new Date(value)
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
 function selectArticle(article: Article) {
   selected.value = { ...article, publishAt: dateTimeLocal(article.publishAt) }
+  preview.value = false
   void loadRevisions(article.id)
 }
 function createArticle() { selected.value = emptyArticle(); revisions.value = []; preview.value = false }
+function showNotice(value: string) { notice.value = value; emit('notice', value) }
+function categoryChanged() {
+  if (!selected.value) return
+  const match = categories.value.find(item => item.id === selected.value?.categoryId)
+  if (match) selected.value.category = match.name
+}
+function mediaUploaded(value: SiteMedia) {
+  media.value = [value, ...media.value.filter(item => item.id !== value.id)]
+  if (selected.value) selected.value.mediaAssetId = value.id
+}
+
 async function load() {
   busy.value = true; notice.value = ''
   try {
-    articles.value = await adminApi.articles({ status: status.value, category: category.value, search: search.value.trim() })
+    const [items, nextCategories, nextMedia] = await Promise.all([
+      adminApi.articles({ kind: props.kind, status: status.value, category: category.value, search: search.value.trim() }),
+      adminApi.siteCategories(props.kind), adminApi.siteMedia(props.kind),
+    ])
+    articles.value = items; categories.value = nextCategories; media.value = nextMedia
     if (selected.value?.id) {
-      const fresh = articles.value.find(item => item.id === selected.value?.id)
+      const fresh = items.find(item => item.id === selected.value?.id)
       if (fresh) selectArticle(fresh)
     }
-  } catch (error) { notice.value = error instanceof Error ? error.message : '稿件列表加载失败' }
+  } catch (error) { showNotice(error instanceof Error ? error.message : `${copy.value.title}加载失败`) }
   finally { busy.value = false }
 }
 async function save() {
   if (!selected.value) return
+  const categoryRow = categories.value.find(item => item.id === selected.value?.categoryId)
+  if (!categoryRow) { showNotice('请选择后台分类管理中存在的分类'); return }
   busy.value = true; notice.value = ''
   try {
-    const saved = await adminApi.saveArticle({ ...selected.value, publishAt: selected.value.publishAt ? new Date(selected.value.publishAt).toISOString() : undefined })
+    const saved = await adminApi.saveArticle({
+      ...selected.value, kind: props.kind, category: categoryRow.name, categoryId: categoryRow.id,
+      coverUrl: '', publishAt: selected.value.publishAt ? new Date(selected.value.publishAt).toISOString() : undefined,
+    })
     selected.value = { ...saved, publishAt: dateTimeLocal(saved.publishAt) }
-    notice.value = '草稿已保存，线上文章未改变'
+    showNotice(`${copy.value.singular}草稿已保存，线上内容未改变`)
     await load(); await loadRevisions(saved.id)
-  } catch (error) { notice.value = error instanceof Error ? error.message : '稿件保存失败' }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '稿件保存失败') }
   finally { busy.value = false }
 }
 async function mutate(action: 'publish' | 'withdraw' | 'archive' | 'restore') {
-  if (!selected.value?.id) { notice.value = '请先保存稿件'; return }
-  if (action === 'archive' && !window.confirm('归档后文章不再公开展示，确认继续？')) return
+  if (!selected.value?.id) { showNotice('请先保存稿件'); return }
+  if (action === 'archive' && !window.confirm('归档后内容不再公开展示，确认继续？')) return
   busy.value = true; notice.value = ''
   try {
     const id = selected.value.id
@@ -68,15 +108,14 @@ async function mutate(action: 'publish' | 'withdraw' | 'archive' | 'restore') {
       : action === 'withdraw' ? await adminApi.withdrawArticle(id)
         : action === 'archive' ? await adminApi.archiveArticle(id) : await adminApi.restoreArticle(id)
     selected.value = { ...updated, publishAt: dateTimeLocal(updated.publishAt) }
-    notice.value = action === 'publish' ? (updated.status === 'scheduled' ? '稿件已安排定时发布' : '稿件已正式发布')
-      : action === 'withdraw' ? '文章已撤回' : action === 'archive' ? '稿件已归档' : '稿件已恢复为草稿'
+    showNotice(action === 'publish' ? (updated.status === 'scheduled' ? '已安排定时发布' : '已正式发布')
+      : action === 'withdraw' ? '内容已停用' : action === 'archive' ? '稿件已归档' : '稿件已恢复为草稿')
     await load(); await loadRevisions(id)
-  } catch (error) { notice.value = error instanceof Error ? error.message : '稿件状态更新失败' }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '稿件状态更新失败') }
   finally { busy.value = false }
 }
 async function loadRevisions(id: string) {
-  try { revisions.value = await adminApi.articleRevisions(id) }
-  catch { revisions.value = [] }
+  try { revisions.value = await adminApi.articleRevisions(id) } catch { revisions.value = [] }
 }
 async function restoreRevision(revision: number) {
   if (!selected.value?.id || !window.confirm(`将版本 ${revision} 恢复为新的草稿？`)) return
@@ -84,78 +123,75 @@ async function restoreRevision(revision: number) {
   try {
     const restored = await adminApi.restoreArticleRevision(selected.value.id, revision)
     selected.value = { ...restored, publishAt: dateTimeLocal(restored.publishAt) }
-    notice.value = `版本 ${revision} 已恢复为草稿，尚未影响线上文章`
+    showNotice(`版本 ${revision} 已恢复为草稿，尚未影响线上内容`)
     await load(); await loadRevisions(restored.id)
-  } catch (error) { notice.value = error instanceof Error ? error.message : '历史版本恢复失败' }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '历史版本恢复失败') }
   finally { busy.value = false }
 }
+
+watch(() => props.kind, () => { selected.value = null; void load() })
 onMounted(load)
 </script>
 
 <template>
   <section class="article-workbench">
     <header class="article-page-head">
-      <div><small>EDITORIAL DESK</small><h2>资讯发布</h2><p>逐篇管理稿件、封面、链接、发布状态和历史版本；与官网固定文案完全分开。</p></div>
-      <button v-if="hasPermission('admin.content.draft')" class="new-button" @click="createArticle">＋ 新建稿件</button>
+      <div><small>{{ copy.en }}</small><h2>{{ copy.title }}</h2><p>复用统一稿件、草稿、发布、停用、审计和历史恢复链路；封面只能从后台素材库上传或选择。</p></div>
+      <button v-if="hasPermission('admin.content.draft')" class="new-button" @click="createArticle">＋ 新建{{ copy.singular }}</button>
     </header>
     <div class="article-layout">
       <aside class="article-list">
         <div class="article-filters">
           <input v-model="search" placeholder="搜索标题、摘要或正文" @keyup.enter="load">
           <select v-model="status" @change="load"><option v-for="item in statuses" :key="item.id" :value="item.id">{{ item.name }}</option></select>
-          <select v-model="category" @change="load"><option value="">全部分类</option><option v-for="item in categories" :key="item">{{ item }}</option></select>
-          <button :disabled="busy" @click="load">{{ busy ? '读取中' : '查询' }}</button>
+          <select v-model="category" @change="load"><option value="">全部分类</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}{{ item.active ? '' : '（停用）' }}</option></select>
+          <button @click="load">刷新</button>
         </div>
-        <div class="article-scroll">
-          <button v-for="article in articles" :key="article.id" class="article-item" :class="{ active: selected?.id === article.id }" @click="selectArticle(article)">
-            <img v-if="article.coverUrl" :src="article.coverUrl" alt="">
-            <span v-else class="cover-empty">NEWS</span>
-            <span class="article-item-copy"><b>{{ article.title || '未命名稿件' }}</b><small>{{ article.category }} · {{ statusLabel(article.status) }}</small><em>{{ new Date(article.updatedAt).toLocaleString() }}<template v-if="article.hasUnpublishedChanges"> · 有未发布修改</template></em></span>
-          </button>
-          <div v-if="!articles.length" class="article-empty">当前筛选下没有稿件</div>
-        </div>
+        <button v-for="article in articles" :key="article.id" class="article-list-row" :class="{ active: selected?.id === article.id }" @click="selectArticle(article)">
+          <img v-if="article.coverUrl" :src="article.coverUrl" :alt="article.title">
+          <span><small>{{ article.category }} · {{ statusLabel(article.status) }}</small><b>{{ article.title || '未命名稿件' }}</b><em v-if="article.hasUnpublishedChanges">有未发布修改</em><time>{{ new Date(article.updatedAt).toLocaleString() }}</time></span>
+        </button>
+        <div v-if="!articles.length" class="article-empty">{{ busy ? '正在加载…' : `暂无${copy.singular}稿件` }}</div>
       </aside>
 
-      <main v-if="selected" class="article-editor">
-        <header><div><small>{{ selected.id ? `稿件 ${selected.id.slice(0, 10)}` : 'NEW ARTICLE' }}</small><h3>{{ selected.title || '新建稿件' }}</h3></div><span class="status-chip" :data-status="selected.status || 'draft'">{{ statusLabel(selected.status) }}</span></header>
-        <div class="editor-grid">
-          <label class="wide">标题<input v-model="selected.title" maxlength="180" placeholder="输入资讯标题"></label>
-          <label>分类<select v-model="selected.category"><option v-for="item in categories" :key="item">{{ item }}</option></select></label>
-          <label>发布时间<input v-model="selected.publishAt" type="datetime-local"></label>
-          <label class="wide">摘要<textarea v-model="selected.summary" maxlength="600" rows="3" placeholder="用于首页和资讯列表展示"></textarea></label>
-          <label>封面图片地址<input v-model="selected.coverUrl" placeholder="https://… 或 /assets/…"></label>
-          <label>文章链接<input v-model="selected.link" placeholder="可选：站内路径或 https://…"></label>
-          <label class="wide">链接标识<input v-model="selected.slug" maxlength="100" placeholder="留空时由系统生成"></label>
-          <label class="wide body-field">正文<textarea v-model="selected.body" maxlength="100000" rows="18" placeholder="输入完整正文；保留换行"></textarea></label>
-        </div>
-        <div class="article-options"><label><input v-model="selected.pinned" type="checkbox"> 置顶文章</label><span>{{ selected.body.length.toLocaleString() }} 字符</span></div>
-        <figure v-if="selected.coverUrl" class="cover-preview"><img :src="selected.coverUrl" alt="封面预览"><figcaption>封面预览</figcaption></figure>
-        <footer class="editor-actions">
-          <button @click="preview = !preview">{{ preview ? '关闭预览' : '预览稿件' }}</button>
-          <button v-if="hasPermission('admin.content.draft')" :disabled="busy" @click="save">保存草稿</button>
-          <button v-if="selectedIsSaved && hasPermission('admin.content.publish') && selected.status !== 'withdrawn' && selected.status !== 'archived'" class="publish" :disabled="busy" @click="mutate('publish')">{{ selected.publishAt && new Date(selected.publishAt) > new Date() ? '安排发布' : '正式发布' }}</button>
-          <button v-if="selectedIsSaved && hasPermission('admin.content.publish') && (selected.status === 'published' || selected.status === 'scheduled')" class="warning" @click="mutate('withdraw')">撤回</button>
-          <button v-if="selectedIsSaved && selected.status !== 'archived'" class="danger" @click="mutate('archive')">归档</button>
-          <button v-if="selectedIsSaved && selected.status === 'archived'" @click="mutate('restore')">恢复为草稿</button>
-        </footer>
+      <main class="article-editor">
+        <div v-if="!selected" class="article-empty editor-empty">选择一篇稿件，或新建{{ copy.singular }}。</div>
+        <template v-else>
+          <header class="editor-head"><div><small>{{ selected.id ? selected.id : 'NEW DRAFT' }}</small><h3>{{ selected.title || `未命名${copy.singular}` }}</h3></div><span :data-status="selected.status || 'draft'">{{ statusLabel(selected.status) }}</span></header>
+          <div class="editor-grid">
+            <label class="wide">标题<input v-model="selected.title" maxlength="180"></label>
+            <label>动态分类<select v-model="selected.categoryId" @change="categoryChanged"><option v-for="item in categories" :key="item.id" :value="item.id" :disabled="!item.active">{{ item.name }}{{ item.active ? '' : '（已停用）' }}</option></select></label>
+            <label>排序值<input v-model.number="selected.sortOrder" type="number" min="0" max="100000"></label>
+            <label>链接标识<input v-model="selected.slug" maxlength="100" placeholder="留空自动生成"></label>
+            <label>定时发布<input v-model="selected.publishAt" type="datetime-local"></label>
+            <label class="wide">{{ copy.summary }}<textarea v-model="selected.summary" rows="3" maxlength="600"></textarea></label>
+            <label class="wide">{{ copy.body }}<textarea v-model="selected.body" rows="12" maxlength="100000"></textarea></label>
+            <label class="wide">{{ copy.link }}<input v-model="selected.link" maxlength="2000" placeholder="站内 /path 或 https://"></label>
+            <label class="check"><input v-model="selected.pinned" type="checkbox"> 首页置顶</label>
+          </div>
 
-        <article v-if="preview" class="article-preview">
-          <img v-if="selected.coverUrl" :src="selected.coverUrl" alt="">
-          <small>{{ selected.category }}</small><h2>{{ selected.title || '未填写标题' }}</h2><p class="summary">{{ selected.summary }}</p><p class="body">{{ selected.body || '尚未填写正文' }}</p>
-        </article>
+          <section class="cover-manager">
+            <header><div><b>{{ props.kind === 'product' ? '商品图' : '封面素材' }}</b><small>禁止粘贴图片地址；选择已上传素材或上传新原图。</small></div><select v-model="selected.mediaAssetId"><option value="">不使用封面</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }} · 引用 {{ item.referenceCount }}</option></select></header>
+            <MediaUploadField v-model="selected.mediaAssetId" :kind="props.kind" :preview-url="selectedPreview" :initial-alt="selected.title" @uploaded="mediaUploaded" @notice="showNotice"/>
+          </section>
 
-        <details v-if="selectedIsSaved" class="revision-history">
-          <summary>历史版本（{{ revisions.length }}）</summary>
-          <div v-for="item in revisions" :key="item.revision"><span><b>版本 {{ item.revision }} · {{ item.action }}</b><small>{{ item.actor }} · {{ new Date(item.createdAt).toLocaleString() }}</small></span><button @click="restoreRevision(item.revision)">恢复为草稿</button></div>
-        </details>
+          <div class="editor-actions">
+            <button v-if="hasPermission('admin.content.draft')" :disabled="busy" @click="save">保存草稿</button>
+            <button :class="{ active: preview }" @click="preview = !preview">{{ preview ? '关闭预览' : '预览' }}</button>
+            <button v-if="selectedIsSaved && hasPermission('admin.content.publish')" class="publish" :disabled="busy" @click="mutate('publish')">发布 / 安排发布</button>
+            <button v-if="selectedIsSaved && (selected.status === 'published' || selected.status === 'scheduled')" class="withdraw" :disabled="busy" @click="mutate('withdraw')">停用</button>
+            <button v-if="selectedIsSaved && selected.status === 'archived'" @click="mutate('restore')">恢复草稿</button>
+            <button v-else-if="selectedIsSaved" class="archive" @click="mutate('archive')">归档</button>
+          </div>
+          <article v-if="preview" class="article-preview"><img v-if="selectedPreview" :src="selectedPreview" :alt="selected.title"><small>{{ selected.category }}</small><h2>{{ selected.title || '未填写标题' }}</h2><p>{{ selected.summary }}</p><div>{{ selected.body }}</div></article>
+          <p v-if="notice" class="article-notice">{{ notice }}</p>
+          <details v-if="selectedIsSaved" class="revision-list"><summary>历史版本（{{ revisions.length }}）</summary><article v-for="revision in revisions" :key="revision.revision"><span><b>v{{ revision.revision }} · {{ revision.action }}</b><small>{{ revision.actor }} · {{ new Date(revision.createdAt).toLocaleString() }}</small></span><button @click="restoreRevision(revision.revision)">恢复为草稿</button></article></details>
+        </template>
       </main>
-      <main v-else class="article-editor article-welcome"><b>选择一篇稿件开始编辑</b><span>也可以新建稿件。发布与撤回均会写入后台审计记录。</span></main>
     </div>
-    <p v-if="notice" class="article-notice">{{ notice }}</p>
   </section>
 </template>
 
 <style scoped>
-.article-workbench{min-width:0}.article-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:20px;border:1px solid #35424a;background:#101821}.article-page-head small,.article-editor header small{color:#d5b85e;font:900 9px monospace;letter-spacing:.16em}.article-page-head h2{margin:5px 0}.article-page-head p{margin:0;color:#7d898e;font-size:11px}.new-button,.article-workbench button,.article-workbench input,.article-workbench select,.article-workbench textarea{box-sizing:border-box;border:1px solid #4c5961;background:#080e13;color:#fff;font:700 11px 'Microsoft YaHei';padding:9px}.new-button{border-color:#d3b65e!important;background:#d3b65e!important;color:#101214!important}.article-layout{display:grid;grid-template-columns:minmax(280px,.72fr) minmax(520px,1.5fr);gap:12px;margin-top:12px}.article-list,.article-editor{min-width:0;border:1px solid #35424a;background:#101821}.article-filters{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px;border-bottom:1px solid #35424a}.article-filters input{grid-column:1/-1}.article-scroll{max-height:calc(100vh - 280px);min-height:620px;overflow-y:auto}.article-item{display:grid;width:100%;grid-template-columns:62px 1fr;align-items:center;gap:10px;padding:10px!important;border-width:0 0 1px!important;border-color:#2e3a42!important;background:#0b1218!important;text-align:left}.article-item.active{background:#222012!important;box-shadow:inset 3px 0 #d5b85e}.article-item img,.cover-empty{display:grid;width:62px;height:44px;place-items:center;object-fit:cover;border:1px solid #46535a;background:#151d23;color:#7e8a8f;font:900 9px monospace}.article-item-copy{display:flex;min-width:0;flex-direction:column;gap:4px}.article-item-copy b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.article-item-copy small{color:#d3b65e}.article-item-copy em{color:#738188;font-size:8px;font-style:normal}.article-empty,.article-welcome{display:grid;min-height:260px;place-content:center;color:#75838a;text-align:center}.article-welcome span{margin-top:7px;font-size:10px}.article-editor{padding:18px}.article-editor>header{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #35424a}.article-editor h3{margin:4px 0 0;font-size:20px}.status-chip{padding:5px 8px;border:1px solid #705b2d;background:#251d0d;color:#e2c56e;font-size:9px;font-weight:900}.status-chip[data-status="published"]{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.status-chip[data-status="scheduled"]{border-color:#346b80;background:#0b2028;color:#77cfe6}.status-chip[data-status="withdrawn"],.status-chip[data-status="archived"]{border-color:#7d4149;background:#281217;color:#e8a3aa}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.editor-grid label{color:#b8c0c1;font-size:10px;font-weight:900}.editor-grid label.wide{grid-column:1/-1}.editor-grid input,.editor-grid select,.editor-grid textarea{display:block;width:100%;margin-top:6px;resize:vertical}.body-field textarea{line-height:1.75}.article-options{display:flex;align-items:center;justify-content:space-between;margin-top:12px;color:#87949a;font-size:10px}.article-options label{color:#d6c58c;font-weight:900}.article-options input{width:auto;margin-right:5px}.cover-preview{margin:14px 0 0}.cover-preview img{display:block;width:min(520px,100%);max-height:240px;object-fit:cover;border:1px solid #46535a}.cover-preview figcaption{margin-top:5px;color:#738188;font-size:9px}.editor-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid #35424a}.editor-actions .publish{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.editor-actions .warning{border-color:#8a6b32;background:#20190d;color:#e6cb7b}.editor-actions .danger{margin-left:auto;border-color:#7e3c45;background:#2b1116;color:#eab5bb}.article-preview{margin-top:16px;padding:22px;border:1px solid #4b5960;background:#081016}.article-preview>img{width:100%;max-height:280px;object-fit:cover}.article-preview>small{display:block;margin-top:14px;color:#d4b75f}.article-preview h2{margin:7px 0;font-size:28px}.article-preview .summary{color:#a8b2b4;font-weight:900}.article-preview .body{color:#c5cdca;line-height:1.9;white-space:pre-wrap}.revision-history{margin-top:16px;border-top:1px solid #35424a;padding-top:12px}.revision-history summary{cursor:pointer;color:#d6bd70;font-size:10px;font-weight:900}.revision-history>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #2e3940}.revision-history span,.revision-history small{display:block}.revision-history small{margin-top:3px;color:#748188}.article-notice{position:sticky;z-index:5;bottom:12px;padding:11px;border-left:3px solid #d1b25c;background:#241c0a;color:#edd584;font-size:10px}
-@media(max-width:1100px){.article-layout{grid-template-columns:1fr}.article-scroll{min-height:0;max-height:320px}.article-editor{min-height:520px}}@media(max-width:650px){.article-page-head{align-items:stretch;flex-direction:column}.editor-grid,.article-filters{grid-template-columns:1fr}.editor-grid label.wide,.article-filters input{grid-column:auto}.editor-actions .danger{margin-left:0}.article-item{grid-template-columns:52px 1fr}.article-item img,.cover-empty{width:52px;height:40px}}
+.article-workbench{min-width:0}.article-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px;padding:20px;border:1px solid #35424a;background:#101821}.article-page-head small{color:#55c6cd;font:900 9px monospace;letter-spacing:.18em}.article-page-head h2{margin:5px 0;font-size:24px}.article-page-head p{margin:0;color:#7d898f;font-size:10px}.new-button,.article-filters button,.editor-actions button,.revision-list button{padding:10px 13px;border:1px solid #4d5b63;background:#0a1117;color:#fff;font-weight:900}.new-button{border-color:#d5b65e!important;color:#efd37b!important}.article-layout{display:grid;grid-template-columns:minmax(270px,.72fr) minmax(520px,1.45fr);min-height:650px;border:1px solid #35424a;background:#0d151c}.article-list{border-right:1px solid #35424a}.article-filters{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px;border-bottom:1px solid #35424a}.article-filters input{grid-column:1/-1}.article-filters input,.article-filters select,.cover-manager select,.editor-grid input,.editor-grid select,.editor-grid textarea{box-sizing:border-box;width:100%;padding:9px;border:1px solid #48565e;background:#070d12;color:#fff}.article-list-row{display:grid;width:100%;grid-template-columns:72px 1fr;gap:10px;padding:12px;border:0;border-bottom:1px solid #2d3940;background:transparent;color:#fff;text-align:left}.article-list-row:hover,.article-list-row.active{background:#172229}.article-list-row.active{box-shadow:inset 3px 0 #d4b55d}.article-list-row>img{width:72px;height:54px;object-fit:cover}.article-list-row>span{display:flex;min-width:0;flex-direction:column;gap:4px}.article-list-row small,.article-list-row time{color:#718087;font-size:8px}.article-list-row b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.article-list-row em{color:#e2c36c;font-size:8px;font-style:normal}.article-editor{min-width:0;padding:20px}.editor-head,.cover-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #344149}.editor-head small{color:#54c5cc;font:900 8px monospace}.editor-head h3{margin:5px 0}.editor-head>span{padding:6px 9px;border:1px solid #59656c;color:#aeb6b9;font-size:9px;font-weight:900}.editor-head>span[data-status="published"]{border-color:#2f745a;color:#7edfb4}.editor-head>span[data-status="scheduled"]{border-color:#8a6b30;color:#e8cd7a}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:15px}.editor-grid label{display:grid;gap:6px;color:#aeb7ba;font-size:9px;font-weight:900}.editor-grid .wide{grid-column:1/-1}.editor-grid textarea{resize:vertical;line-height:1.65}.editor-grid .check{display:flex;align-items:center}.editor-grid .check input{width:auto}.cover-manager{margin-top:16px;padding:13px;border:1px solid #3a4850;background:#0a1117}.cover-manager>header{margin-bottom:12px}.cover-manager>header div{display:flex;flex-direction:column;gap:3px}.cover-manager>header small{color:#7b888e}.cover-manager>header select{width:min(360px,48%)}.editor-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}.editor-actions .publish{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.editor-actions .withdraw,.editor-actions .archive{border-color:#84424b;background:#291116;color:#ef8994}.article-preview{margin-top:16px;padding:22px;border:1px solid #6d5b2c;background:#f1ecdc;color:#1d2426}.article-preview>img{width:100%;max-height:320px;object-fit:cover}.article-preview small{display:block;margin-top:13px;color:#9b2632}.article-preview p{color:#62686a}.article-preview div{white-space:pre-wrap;line-height:1.8}.article-notice{padding:10px;border-left:3px solid #d2b35f;background:#261e0c;color:#edd37b!important}.revision-list{margin-top:16px}.revision-list summary{cursor:pointer;color:#d9bd69;font-size:10px;font-weight:900}.revision-list article{display:flex;align-items:center;justify-content:space-between;padding:9px;border-bottom:1px solid #303c43}.revision-list span{display:flex;flex-direction:column}.revision-list small{color:#748188}.article-empty{padding:36px;color:#75838a;text-align:center}.editor-empty{display:grid;min-height:500px;place-items:center}@media(max-width:1100px){.article-layout{grid-template-columns:1fr}.article-list{max-height:390px;overflow:auto;border-right:0;border-bottom:1px solid #35424a}}@media(max-width:700px){.article-page-head{align-items:flex-start;flex-direction:column}.editor-grid{grid-template-columns:1fr}.editor-grid .wide{grid-column:auto}.cover-manager>header{align-items:stretch;flex-direction:column}.cover-manager>header select{width:100%}.article-editor{padding:12px}}
 </style>

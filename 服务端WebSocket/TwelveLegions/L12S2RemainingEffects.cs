@@ -12,13 +12,14 @@ public sealed partial class L12GameEngine
                 if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source))
                     return CommandResult.Reject("仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果");
                 var otherGraveCards = player.Graveyard.Where(card => card.InstanceId != source.InstanceId && CanEnterHandOrLibrary(card))
-                    .Select(card => card.InstanceId).ToList();
+                    .ToArray();
                 var slots = EmptySlots(player).ToList();
-                if (otherGraveCards.Count < 3 || slots.Count == 0)
-                    return CommandResult.Reject("需要墓地中另有3张卡牌且战场存在空位");
+                if (otherGraveCards.Sum(L12StructuredCardRules.StarterGraveCardCopies) < 3 || slots.Count == 0)
+                    return CommandResult.Reject("需要墓地中其他卡牌合计能视为3张，且战场存在空位");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "grave-card", Text = "雷神之锤：依次选择返回牌库底部的3张其他墓地卡牌", ValidChoices = otherGraveCards, MinChoose = 3, MaxChoose = 3 },
+                    GraveCostSelectionStep(player, "雷神之锤：依次选择合计视为3张、返回牌库底部的其他墓地卡牌",
+                        "graveCost", otherGraveCards, required: 3),
                     new L12ActivationSelectionStep { Kind = "slot", Text = "雷神之锤：预先选择活跃登场的位置", ValidChoices = slots },
                 ]);
             }
@@ -109,18 +110,17 @@ public sealed partial class L12GameEngine
             case "thorHammerRevive" when source.CardId == "S02-0301":
             {
                 var declared = SplitDeclared(target);
-                if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source)
-                    || declared.Length != 4 || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
-                    || declared.Take(3).Any(id => id == source.InstanceId) || !EmptySlots(player).Contains(declared[3]))
+                var slot = declared.SingleOrDefault(value => EmptySlots(player).Contains(value));
+                if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source) || slot is null
+                    || !L12StructuredCardRules.TryResolveGraveCostDeclaration(player,
+                        declared.Where(value => value != slot), 3, string.Empty, legionOnly: false,
+                        out var costs, out _)
+                    || costs.Any(card => card.InstanceId == source.InstanceId))
                     return CommandResult.Reject("墓地卡牌或可用战场位置已失效");
-                var costs = declared.Take(3)
-                    .Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card)))
-                    .ToArray();
-                if (costs.Any(card => card is null)) return CommandResult.Reject("选择的墓地卡牌已失效");
-                MoveGraveToLibraryBottom(player, costs.Cast<L12CardInstance>());
+                MoveGraveToLibraryBottom(player, costs);
                 player.UsedAbilities.Add(onceKey);
                 PushEffect(playerIndex, source, "active", "主动效果",
-                    data: new Dictionary<string, string> { ["ability"] = ability, ["slot"] = declared[3] });
+                    data: new Dictionary<string, string> { ["ability"] = ability, ["slot"] = slot });
                 return CommandResult.Ok();
             }
             case "wukongTransform" when source.CardId == "S02-01M1":

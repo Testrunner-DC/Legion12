@@ -395,9 +395,9 @@ public sealed partial class L12GameEngine
                             declaredBjornSlot, tapped: true);
                     FinishStackItem(item); return true;
                 }
-                if (player.Graveyard.Count < 4 || !EmptySlots(player).Any()) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "optional", "勇士比约恩阵亡：是否令主宰受到1点伤害并将墓地4张牌返回牌库底部，使其休整登场？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "bjorn-revive-choice" }); return true;
+                AddEvent("effect-cancelled", item.Controller,
+                    "勇士比约恩缺少公共墓地费用声明；效果不进入旧式补选流程", card);
+                FinishStackItem(item); return true;
             case "奥拉夫二世":
                 if (PublicTriggerDeclared(item, "mode") != "mode:use") { FinishStackItem(item); return true; }
                 Draw(player, 2); PromptDiscard(item, item.Controller, 1, "奥拉夫二世：抽牌后弃置1张手牌", "death-cycle-discard"); return true;
@@ -530,19 +530,6 @@ public sealed partial class L12GameEngine
             case "festival-grave": ContinuePharaohFestivalGrave(item, chosen[0]); return true;
             case "festival-bottom-order": CompletePharaohFestivalOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
             case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
-            case "bjorn-revive-choice":
-                if (chosen[0] == "no") { FinishStackItem(item); return true; }
-                var candidates = player.Graveyard.Where(card => card.InstanceId != source?.InstanceId).Select(card => card.InstanceId).ToArray();
-                if (candidates.Length < 4) { FinishStackItem(item); return true; }
-                DamageMaster(item.Controller, 1, "勇士比约恩阵亡效果");
-                CreatePrompt(item.Controller, "order", "勇士比约恩：选择墓地4张牌，依选择顺序返回牌库底部", candidates, 4, 4,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "bjorn-revive-return" });
-                return true;
-            case "bjorn-revive-return":
-                MoveGraveToLibraryBottom(player, chosen.Select(id => player.Graveyard.First(card => card.InstanceId == id)).ToArray());
-                if (source is null) FinishStackItem(item);
-                else BeginQueuedSummons(item, [source.InstanceId], tapped: true, "勇士比约恩：选择其休整登场的位置");
-                return true;
             case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true,
                 FindSource(item) ?? item.SourceSnapshot); FinishStackItem(item); return true;
             case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]); FinishStackItem(item); return true;
@@ -600,39 +587,25 @@ public sealed partial class L12GameEngine
                 choices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId).ToArray();
                 return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神碑：选择转为休整的陵墓守卫");
             case "gramDamage":
-                choices = player.Graveyard.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).Select(card => card.InstanceId).ToArray();
+                var gramCandidates = player.Graveyard.Where(card => card.CardType == "legion"
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep
-                    {
-                        Kind = "order", DeclarationKey = "graveOrder",
-                        Text = "神剑格拉墨：依次选择返回牌库底部、合计视为4张的阿斯加德军团",
-                        ValidChoices = choices.ToList(), MinChoose = 2, MaxChoose = 4,
-                        SelectionConstraint = "grave-faction-exact", FactionConstraint = "asgard",
-                        RepresentedCount = 4, LegionCardsOnly = true,
-                    },
-                    new L12ActivationSelectionStep
-                    {
-                        Kind = "grave-faction-count", DeclarationKey = "graveCopies", ReferenceDeclarationKey = "graveOrder",
-                        Text = "神剑格拉墨：选择〈渴求死亡的勇士〉本次视为几张阿斯加德军团",
-                        ValidChoices = [], MinChoose = 1, MaxChoose = 1, FactionConstraint = "asgard",
-                        RepresentedCount = 4, LegionCardsOnly = true,
-                    },
+                    GraveCostSelectionStep(player,
+                        "神剑格拉墨：依次选择返回牌库底部、合计视为4张的阿斯加德军团",
+                        "graveOrder", gramCandidates, required: 4, faction: "asgard", legionOnly: true),
                 ]);
             case "valhallaKill":
             {
-                var graveChoices = player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId).ToList();
-                if (graveChoices.Count < 2) return CommandResult.Reject("墓地需要至少2张可返回牌库的卡牌");
+                var graveChoices = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
+                if (graveChoices.Sum(L12StructuredCardRules.StarterGraveCardCopies) < 2)
+                    return CommandResult.Reject("墓地卡牌合计需能视为2张");
                 var lowTargets = PublicLegions(enemy).Where(card => card.Troops <= 1000).Select(card => card.InstanceId).ToList();
                 var broadTargets = PublicLegions(enemy).Where(card => card.Troops <= 5000).Select(card => card.InstanceId).ToList();
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep
-                    {
-                        Kind = "card", Text = "英灵殿：依次选择墓地2张卡牌返回牌库底部",
-                        ValidChoices = graveChoices, MinChoose = 2, MaxChoose = 2,
-                    },
+                    GraveCostSelectionStep(player, "英灵殿：依次选择合计视为2张、返回牌库底部的墓地卡牌",
+                        "graveCost", graveChoices, required: 2),
                     new L12ActivationSelectionStep
                     {
                         Kind = "enemy-unselected-required", Text = "英灵殿：选择对方1张兵力不高于1000的军团",
@@ -907,13 +880,15 @@ public sealed partial class L12GameEngine
             case "valhallaKill" when source.CardId == "S01-03D1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (source.Tapped || ids.Length != 4) return CommandResult.Reject("英灵殿需为活跃并完成全部对象声明");
-                var graveCards = ids.Take(2).Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card))).ToArray();
-                if (graveCards.Any(card => card is null) || graveCards.Select(card => card!.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
-                    return CommandResult.Reject("需要选择墓地2张不同的合法卡牌");
-                var lowTarget = ids[2] == "mode:none" ? null : DeclaredEnemyTarget(playerIndex, ids[2], card => card.Troops <= 1000);
-                var broadTarget = ids[3] == "mode:none" ? null : DeclaredEnemyTarget(playerIndex, ids[3], card => card.Troops <= 5000);
-                if (ids[2] != "mode:none" && lowTarget is null || ids[3] != "mode:none" && broadTarget is null
+                if (source.Tapped || !L12StructuredCardRules.TryResolveGraveCostDeclaration(player, ids,
+                        2, string.Empty, legionOnly: false, out var graveCards, out var representation))
+                    return CommandResult.Reject("英灵殿需为活跃并完成合计2张墓地费用声明");
+                var targetIds = ids.Where(id => !graveCards.Any(card => card.InstanceId == id)
+                    && !id.Equals(representation, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (targetIds.Length != 2) return CommandResult.Reject("英灵殿需完成两个击杀目标声明");
+                var lowTarget = targetIds[0] == "mode:none" ? null : DeclaredEnemyTarget(playerIndex, targetIds[0], card => card.Troops <= 1000);
+                var broadTarget = targetIds[1] == "mode:none" ? null : DeclaredEnemyTarget(playerIndex, targetIds[1], card => card.Troops <= 5000);
+                if (targetIds[0] != "mode:none" && lowTarget is null || targetIds[1] != "mode:none" && broadTarget is null
                     || lowTarget is not null && broadTarget?.InstanceId == lowTarget.InstanceId)
                     return CommandResult.Reject("英灵殿声明的击杀目标不再合法");
                 if (lowTarget is null && PublicLegions(State.Players[1 - playerIndex]).Any(card => card.Troops <= 1000)
@@ -921,7 +896,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("仍存在必须选择的合法击杀目标");
                 source.Tapped = true;
                 player.MasterTapped = true;
-                MoveGraveToLibraryBottom(player, graveCards.Cast<L12CardInstance>());
+                MoveGraveToLibraryBottom(player, graveCards);
                 break;
             }
             case "valkyrieRecover" when source.CardId == "S01-03M1":
@@ -943,9 +918,9 @@ public sealed partial class L12GameEngine
             case "lokiHeal" when source.CardId == "S01-03M2":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (ids.Length != 2 || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
-                    || ids.Any(id => !player.Graveyard.Any(card => card.InstanceId == id && CanEnterHandOrLibrary(card))))
-                    return CommandResult.Reject("洛基声明的2张墓地卡牌已失效");
+                if (!L12StructuredCardRules.TryResolveGraveCostDeclaration(player, ids, 2, string.Empty,
+                        legionOnly: false, out _, out _))
+                    return CommandResult.Reject("洛基声明的合计2张墓地费用已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
                 player.UsedAbilities.Add(onceKey);
                 break;
@@ -1216,10 +1191,13 @@ public sealed partial class L12GameEngine
             case "valhallaKill":
             {
                 var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
-                if (ids.Length == 4)
+                var graveIds = ids.Where(id => player.Library.Any(card => card.InstanceId == id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var targets = ids.Where(id => !graveIds.Contains(id)
+                    && !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (targets.Length == 2)
                 {
-                    if (ids[2] != "mode:none") KillTarget(item, ids[2], "被英灵殿击杀");
-                    if (ids[3] != "mode:none") KillTarget(item, ids[3], "被英灵殿击杀");
+                    if (targets[0] != "mode:none") KillTarget(item, targets[0], "被英灵殿击杀");
+                    if (targets[1] != "mode:none") KillTarget(item, targets[1], "被英灵殿击杀");
                 }
                 FinishStackItem(item); return true;
             }
@@ -1242,11 +1220,12 @@ public sealed partial class L12GameEngine
             case "lokiHeal":
             {
                 var ids = item.Data.GetValueOrDefault("target", string.Empty)
-                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(id => !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
                 var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
                         && CanEnterHandOrLibrary(card)))
                     .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
-                if (cards.Length == 2)
+                if (cards.Length > 0)
                 {
                     MoveGraveToLibraryBottom(player, cards);
                     HealMaster(item.Controller, 1, "洛基主宰效果");

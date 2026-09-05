@@ -144,8 +144,10 @@ public sealed partial class L12GameEngine
                         player.Graveyard.Select(card => card.InstanceId), requiredChoice: required));
                     break;
                 case "grave-bottom-two":
-                    steps.Add(PublicTriggerStep("order", "cost", "古斯塔夫一世：预先选择并排序返回牌库底部的墓地2张牌",
-                        player.Graveyard.Select(card => card.InstanceId), min: 2, max: 2, requiredChoice: required));
+                    steps.Add(GraveCostSelectionStep(player,
+                        "古斯塔夫一世：选择并排序合计视为2张、返回牌库底部的墓地卡牌",
+                        "cost", player.Graveyard.Where(CanEnterHandOrLibrary).ToArray(), required: 2,
+                        requiredDeclaredChoice: required));
                     break;
                 case "show-hand-tactic":
                     steps.Add(PublicTriggerStep("hand-card", "cost", "奥德修斯：预先选择并展示手牌中的1张战术",
@@ -231,7 +233,7 @@ public sealed partial class L12GameEngine
             "ordinary-morale" => ActiveResourceCount(player) > 0,
             "master-damage" => player.Hp > 1,
             "grave-bottom-one" => player.Graveyard.Count > 0,
-            "grave-bottom-two" => player.Graveyard.Count >= 2,
+            "grave-bottom-two" => player.Graveyard.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
             "show-hand-tactic" => player.Hand.Any(card => card.CardType == "tactic"),
             "god-power" => player.Morale.Any(card => card.IsGodPower && !card.Tapped),
             "discard-hand" => player.Hand.Count > 0,
@@ -281,6 +283,7 @@ public sealed partial class L12GameEngine
 
         var source = FindOnField(player, candidate.SourceInstanceId, out _, out _);
         var costIds = activation.DeclaredValues.GetValueOrDefault("cost", []);
+        var graveCostValues = costIds.Concat(activation.DeclaredValues.GetValueOrDefault("costCopies", [])).ToArray();
         var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
         var hondaTargetId = activation.DeclaredValues.GetValueOrDefault("killTarget", []).SingleOrDefault();
         string? error = null;
@@ -333,9 +336,8 @@ public sealed partial class L12GameEngine
                     "grave-bottom-one" when costIds.Count != 1
                         || !player.Graveyard.Any(card => card.InstanceId == costIds[0])
                         => "奥拉夫二世声明的墓地费用已失效；未支付费用且效果未入栈",
-                    "grave-bottom-two" when costIds.Count != 2
-                        || costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
-                        || costIds.Any(id => !player.Graveyard.Any(card => card.InstanceId == id))
+                    "grave-bottom-two" when !L12StructuredCardRules.TryResolveGraveCostDeclaration(player,
+                        graveCostValues, 2, string.Empty, legionOnly: false, out _, out _)
                         => "古斯塔夫一世声明的墓地费用已失效；未支付费用且效果未入栈",
                     "show-hand-tactic" when costIds.Count != 1
                         || !player.Hand.Any(card => card.InstanceId == costIds[0] && card.CardType == "tactic")
@@ -429,10 +431,17 @@ public sealed partial class L12GameEngine
                 DamageMaster(candidate.Controller, 1, "贝奥武夫进攻效果费用");
                 break;
             case "grave-bottom-one":
-            case "grave-bottom-two":
                 MoveGraveToLibraryBottom(player, costIds.Select(id => player.Graveyard.First(card =>
                     card.InstanceId == id)).ToArray());
                 break;
+            case "grave-bottom-two":
+            {
+                var values = costIds.Concat(activation.DeclaredValues.GetValueOrDefault("costCopies", [])).ToArray();
+                if (L12StructuredCardRules.TryResolveGraveCostDeclaration(player, values, 2, string.Empty,
+                        legionOnly: false, out var physicalCosts, out _))
+                    MoveGraveToLibraryBottom(player, physicalCosts);
+                break;
+            }
             case "show-hand-tactic":
                 if (player.Hand.FirstOrDefault(card => card.InstanceId == costIds[0]) is { } shown)
                     AddEvent("reveal", candidate.Controller, $"奥德修斯展示手牌中的〈{shown.Name}〉作为进攻效果费用", shown);
