@@ -82,16 +82,16 @@ public sealed partial class L12PlatformStore
     private static readonly IReadOnlyDictionary<string, L12SiteMediaPolicyView> MediaPolicies =
         new Dictionary<string, L12SiteMediaPolicyView>(StringComparer.OrdinalIgnoreCase)
         {
-            ["hero"] = new("hero", "首页轮播", 1920, 900, 840, 1120, 480, 270,
+            ["hero"] = new("hero", "首页轮播", 2460, 1440, 1080, 1440, 600, 351,
                 "桌面中央 70% × 70%；移动端中央 76% × 78%，标题与人物主体不得贴边",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["news"] = new("news", "资讯封面", 1200, 675, 750, 900, 480, 270,
+            ["news"] = new("news", "资讯封面", 1600, 900, 1080, 1350, 600, 338,
                 "桌面中央 76% × 76%；移动端中央 82% × 72%",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["video"] = new("video", "视频封面", 1280, 720, 750, 900, 480, 270,
+            ["video"] = new("video", "视频封面", 1280, 720, 1080, 1350, 480, 270,
                 "桌面中央 72% × 72%；播放主体避开四角控件区域",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
-            ["product"] = new("product", "商品图片", 1000, 1000, 750, 950, 360, 360,
+            ["product"] = new("product", "商品图片", 1200, 900, 1080, 1350, 480, 360,
                 "商品主体保持在中央 78% × 78%，包装文字不得贴边",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
         };
@@ -452,6 +452,7 @@ public sealed partial class L12PlatformStore
                     ValidateJsonString(slide, "id", 80);
                     ValidateJsonString(slide, "title", 180);
                     ValidateJsonString(slide, "summary", 600);
+                    ValidateJsonString(slide, "footer", 180);
                     ValidateOptionalSiteUrl(JsonString(slide, "href"), "轮播链接");
                     var enabled = !slide.TryGetProperty("enabled", out var enabledValue) || enabledValue.ValueKind != JsonValueKind.False;
                     var mediaId = JsonString(slide, "mediaAssetId");
@@ -470,7 +471,17 @@ public sealed partial class L12PlatformStore
                 foreach (var notice in notices.EnumerateArray())
                 {
                     ValidateJsonString(notice, "label", 80);
-                    ValidateOptionalSiteUrl(JsonString(notice, "href"), "通知按钮链接");
+                    var href = JsonString(notice, "href");
+                    ValidateOptionalSiteUrl(href, "通知按钮链接");
+                    var enabled = !notice.TryGetProperty("enabled", out var enabledValue) || enabledValue.ValueKind != JsonValueKind.False;
+                    if (!publishing || !enabled) continue;
+                    const string prefix = "/news#article-";
+                    if (!href.StartsWith(prefix, StringComparison.Ordinal) || href.Length <= prefix.Length)
+                        throw new ArgumentException("启用的首页通知按钮必须选择一篇已发布资讯");
+                    var articleId = href[prefix.Length..];
+                    var article = _data.Articles.FirstOrDefault(row => row.Id == articleId && row.Published is not null &&
+                        row.Published.Kind == "news" && row.Status == "published");
+                    if (article is null) throw new ArgumentException("首页通知按钮引用的资讯不存在或尚未发布");
                 }
             }
         }

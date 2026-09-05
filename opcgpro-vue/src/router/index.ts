@@ -6,6 +6,8 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: () => import('@/l12/site/OfficialHomePage.vue') },
     { path: '/news', name: 'news', component: () => import('@/l12/site/NewsPage.vue') },
+    { path: '/products', name: 'products', component: () => import('@/l12/site/NewsPage.vue') },
+    { path: '/videos', name: 'videos', component: () => import('@/l12/site/NewsPage.vue') },
     { path: '/rules', name: 'rules', component: () => import('@/l12/site/RuleCenterPage.vue') },
     { path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/battle/lobby', redirect: '/battle' },

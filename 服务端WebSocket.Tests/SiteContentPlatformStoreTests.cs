@@ -30,11 +30,15 @@ public sealed class SiteContentPlatformStoreTests
             Assert.NotNull(file);
             Assert.True(File.Exists(file!.Path));
 
+            var noticeArticle = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "首页通知资讯", "摘要", "正文",
+                "官方公告", "", "", "home-notice", false, null));
+            store.PublishArticle(admin, noticeArticle.Id);
+
             var composition = JsonSerializer.Serialize(new
             {
                 version = 1,
                 heroSlides = new[] { new { id = "launch", title = "启航", summary = "测试", href = "/battle", mediaAssetId = media.Id, enabled = true } },
-                notices = new[] { new { id = "notice", label = "公告", href = "/news", enabled = true } },
+                notices = new[] { new { id = "notice", label = "公告", href = $"/news#article-{noticeArticle.Id}", enabled = true } },
             });
             store.SaveContentDraft(admin, L12PlatformStore.HomeCompositionContentKey, composition);
             Assert.Throws<L12SiteContentConflictException>(() => store.DeleteSiteMedia(admin, media.Id));

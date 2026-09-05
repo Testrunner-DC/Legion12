@@ -6,6 +6,7 @@ export type HomeHeroSlide = {
   eyebrow: string
   title: string
   summary: string
+  footer: string
   href: string
   linkLabel: string
   mediaAssetId: string
@@ -46,7 +47,7 @@ export type SiteLegalContent = {
 const id = (prefix: string) => globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 
 export function createHomeHeroSlide(): HomeHeroSlide {
-  return { id: id('hero'), eyebrow: 'LEGION 12', title: '', summary: '', href: '/battle', linkLabel: '了解更多', mediaAssetId: '', enabled: true }
+  return { id: id('hero'), eyebrow: '', title: '', summary: '', footer: '', href: '', linkLabel: '', mediaAssetId: '', enabled: true }
 }
 
 export function createHomeNotice(): HomeNotice {
@@ -58,16 +59,16 @@ export function defaultHomeComposition(): HomeComposition {
     version: 1,
     heroSlides: [],
     notices: [],
-    newsEyebrow: 'NEWS', newsTitle: '最新资讯', newsDescription: '规则、赛季、赛事与官方网站的重要更新。',
-    videoEyebrow: 'COMMUNITY MOVIE', videoTitle: '社群视频', videoDescription: '对局精选、规则教学与玩家社群动态。',
-    productEyebrow: 'PRODUCTS', productTitle: '商品情报', productDescription: '十二军团卡牌系列、预组套牌与官方周边。',
+    newsEyebrow: 'NEWS', newsTitle: '资讯一览', newsDescription: '',
+    videoEyebrow: 'VIDEO', videoTitle: '最新视频', videoDescription: '',
+    productEyebrow: 'PRODUCTS', productTitle: '产品上新', productDescription: '',
   }
 }
 
 export function defaultSiteLegal(): SiteLegalContent {
   return {
-    copyright: `© ${new Date().getFullYear()} 十二军团 Twelve Legions.`,
-    trademark: '“十二军团”及相关标识为其权利人所有。本网站所示卡牌、规则与线上对战内容仅用于官方产品与社群服务。',
+    copyright: `© 2024–${new Date().getFullYear()} Cynic Games. All rights reserved.`,
+    trademark: '《十二军团》及相关名称、标志、卡牌图像、规则文本与数字内容的全部权利归 Cynic Games 所有。',
     registration: '', contactLabel: '', contactHref: '',
   }
 }

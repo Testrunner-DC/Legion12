@@ -9,8 +9,8 @@ const props = withDefaults(defineProps<{ kind?: SiteContentKind }>(), { kind: 'n
 const emit = defineEmits<{ notice: [value: string] }>()
 const kindCopy = {
   news: { en: 'NEWSROOM', title: '资讯中心', singular: '资讯', summary: '摘要', body: '正文', link: '相关链接' },
-  video: { en: 'COMMUNITY MOVIE', title: '社群视频', singular: '视频', summary: '视频简介', body: '视频说明', link: '视频播放链接' },
-  product: { en: 'PRODUCTS', title: '商品情报', singular: '商品', summary: '商品摘要', body: '商品说明', link: '商品详情链接' },
+  video: { en: 'VIDEO', title: '最新视频', singular: '视频', summary: '视频简介', body: '视频说明', link: '视频播放链接' },
+  product: { en: 'PRODUCTS', title: '产品上新', singular: '商品', summary: '商品摘要', body: '商品说明', link: '商品详情链接' },
 } as const
 const copy = computed(() => kindCopy[props.kind])
 const statuses = [

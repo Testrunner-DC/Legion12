@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { adminApi, hasPermission, type ContentBatch, type ContentEntry, type SiteCategory, type SiteContentKind, type SiteMedia, type SiteMediaKind } from '@/l12/platform'
+import { adminApi, hasPermission, type Article, type ContentBatch, type ContentEntry, type SiteCategory, type SiteContentKind, type SiteMedia, type SiteMediaKind } from '@/l12/platform'
 import AdminArticlesPanel from './AdminArticlesPanel.vue'
 import MediaUploadField from './MediaUploadField.vue'
-import { createHomeHeroSlide, createHomeNotice, defaultHomeComposition, defaultSiteLegal, homeCompositionKey, parseHomeComposition, parseSiteLegal, serializeHomeComposition, serializeSiteLegal, siteLegalKey, type HomeComposition, type SiteLegalContent } from './homeContent'
+import { createHomeHeroSlide, createHomeNotice, defaultHomeComposition, defaultSiteLegal, homeCompositionKey, parseHomeComposition, parseSiteLegal, serializeHomeComposition, serializeSiteLegal, siteLegalKey, type HomeComposition, type HomeNotice, type SiteLegalContent } from './homeContent'
 
-type SiteSection = 'media' | 'home' | 'news' | 'video' | 'product' | 'categories' | 'legal'
+type SiteSection = 'media' | 'hero' | 'notices' | 'home-news' | 'home-product' | 'home-video' | 'news' | 'video' | 'product' | 'categories' | 'legal'
 const emit = defineEmits<{ notice: [value: string] }>()
 const section = ref<SiteSection>('media')
 const composition = reactive<HomeComposition>(defaultHomeComposition())
@@ -16,14 +16,17 @@ const contentBatches = ref<ContentBatch[]>([])
 const media = ref<SiteMedia[]>([])
 const mediaKind = ref<SiteMediaKind>('hero')
 const categories = ref<SiteCategory[]>([])
+const publishedNews = ref<Article[]>([])
 const categoryKind = ref<SiteContentKind>('news')
 const categoryMigration = reactive<Record<string, string>>({})
 const newCategory = reactive({ name: '', slug: '', active: true })
 const busy = ref(false)
 
 const sections: { id: SiteSection; label: string }[] = [
-  { id: 'media', label: '素材库' }, { id: 'home', label: '首页编排' }, { id: 'news', label: '资讯中心' },
-  { id: 'video', label: '社群视频' }, { id: 'product', label: '商品情报' },
+  { id: 'media', label: '素材库' }, { id: 'hero', label: '轮播图' }, { id: 'notices', label: '通知按钮' },
+  { id: 'home-news', label: '资讯区外观' }, { id: 'news', label: '资讯稿件' },
+  { id: 'home-product', label: '产品区外观' }, { id: 'product', label: '产品稿件' },
+  { id: 'home-video', label: '视频区外观' }, { id: 'video', label: '视频稿件' },
   { id: 'categories', label: '分类管理' }, { id: 'legal', label: '页尾与法务' },
 ]
 const mediaByKind = computed(() => media.value.filter(item => item.kind === mediaKind.value))
@@ -42,6 +45,10 @@ function addSlide() { composition.heroSlides.push(createHomeHeroSlide()) }
 function removeSlide(index: number) { composition.heroSlides.splice(index, 1) }
 function addNotice() { composition.notices.push(createHomeNotice()) }
 function removeNotice(index: number) { composition.notices.splice(index, 1) }
+function syncNoticeLabel(item: HomeNotice) {
+  const article = publishedNews.value.find(row => item.href === `/news#article-${row.id}`)
+  if (article && !item.label.trim()) item.label = article.title
+}
 function mediaUrl(id?: string, variant: 'desktopUrl' | 'thumbnailUrl' = 'thumbnailUrl') {
   return media.value.find(item => item.id === id)?.[variant] || ''
 }
@@ -53,15 +60,15 @@ function mediaUploaded(item: SiteMedia, targetSlide?: number) {
 async function load() {
   busy.value = true
   try {
-    const [home, footer, rules, nextMedia, nextCategories, batches] = await Promise.all([
+    const [home, footer, rules, nextMedia, nextCategories, batches, nextPublishedNews] = await Promise.all([
       adminApi.getContent(homeCompositionKey), adminApi.getContent(siteLegalKey), adminApi.getContent('rules.notice'),
-      adminApi.siteMedia(), adminApi.siteCategories(), adminApi.contentBatches(),
+      adminApi.siteMedia(), adminApi.siteCategories(), adminApi.contentBatches(), adminApi.articles({ status: 'published', kind: 'news' }),
     ])
     contentEntries[homeCompositionKey] = home; contentEntries[siteLegalKey] = footer; contentEntries['rules.notice'] = rules
     Object.assign(composition, parseHomeComposition(home.draftValue))
     Object.assign(legal, parseSiteLegal(footer.draftValue))
     ruleNotice.value = rules.draftValue
-    media.value = nextMedia; categories.value = nextCategories; contentBatches.value = batches
+    media.value = nextMedia; categories.value = nextCategories; contentBatches.value = batches; publishedNews.value = nextPublishedNews
   } catch (error) { showNotice(error instanceof Error ? error.message : '站点内容加载失败') }
   finally { busy.value = false }
 }
@@ -156,17 +163,35 @@ onMounted(load)
       <div class="media-grid"><article v-for="item in mediaByKind" :key="item.id"><img :src="item.thumbnailUrl" :alt="item.altText"><div><b>{{ item.altText || '未填写替代文字' }}</b><code>{{ item.contentHash }}</code><small>{{ item.originalFormat }} · 原图 {{ Math.ceil(item.originalBytes / 1024) }}KB · 交付 {{ Math.ceil(item.deliveryBytes / 1024) }}KB</small><small>焦点 {{ Math.round(item.focalX * 100) }}% / {{ Math.round(item.focalY * 100) }}% · 引用 {{ item.referenceCount }}</small><button :disabled="item.referenceCount > 0" @click="deleteMedia(item)">{{ item.referenceCount ? '被引用，禁止删除' : '软删除素材' }}</button></div></article><p v-if="!mediaByKind.length" class="empty">此类型尚无上传素材。</p></div>
     </section>
 
-    <section v-else-if="section === 'home'" class="content-panel home-compose">
-      <header><div><h3>首页编排</h3><p>轮播与通知按钮数量不限于固定模板；启用的轮播发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button @click="addSlide">＋ 轮播</button><button @click="addNotice">＋ 通知按钮</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+    <section v-else-if="section === 'hero'" class="content-panel home-compose">
+      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button @click="addSlide">＋ 轮播</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
       <h4>轮播主视觉 <em :data-status="contentEntries[homeCompositionKey]?.status">{{ contentEntries[homeCompositionKey]?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em></h4>
       <article v-for="(slide, index) in composition.heroSlides" :key="slide.id" class="compose-row hero-compose-row">
         <div class="compose-order"><button @click="move(composition.heroSlides, index, -1)">↑</button><b>{{ index + 1 }}</b><button @click="move(composition.heroSlides, index, 1)">↓</button></div>
-        <div class="compose-fields"><label>眉题<input v-model="slide.eyebrow" maxlength="80"></label><label>标题<input v-model="slide.title" maxlength="180"></label><label class="wide">说明<textarea v-model="slide.summary" rows="3" maxlength="600"></textarea></label><label>跳转<input v-model="slide.href" placeholder="/news 或 https://"></label><label>按钮文字<input v-model="slide.linkLabel" maxlength="40"></label><label class="check"><input v-model="slide.enabled" type="checkbox"> 启用</label></div>
+        <div class="compose-fields"><label>第一行：系列/编号（可空）<input v-model="slide.eyebrow" maxlength="80"></label><label>第二行：主标题（可空）<input v-model="slide.title" maxlength="180"></label><label class="wide">第三行：副标题/说明（可空）<textarea v-model="slide.summary" rows="3" maxlength="600"></textarea></label><label class="wide">第四行：日期/发布信息（可空）<input v-model="slide.footer" maxlength="180"></label><label class="wide">整张轮播图点击链接（可空）<input v-model="slide.href" placeholder="留空不跳转；可填 /news 或 https://"></label><label class="check"><input v-model="slide.enabled" type="checkbox"> 启用</label></div>
         <div class="compose-media"><select v-model="slide.mediaAssetId"><option value="">请选择轮播素材</option><option v-for="asset in heroMedia" :key="asset.id" :value="asset.id">{{ asset.altText || asset.contentHash.slice(0, 12) }}</option></select><MediaUploadField v-model="slide.mediaAssetId" kind="hero" :preview-url="mediaUrl(slide.mediaAssetId)" :initial-alt="slide.title" @uploaded="mediaUploaded($event, index)" @notice="showNotice"/><button class="danger" @click="removeSlide(index)">删除轮播</button></div>
-      </article><p v-if="!composition.heroSlides.length" class="empty">暂无轮播；公开首页将显示品牌占位主视觉，添加并上传图片后再发布。</p>
-      <h4>轮播通知按钮组</h4>
-      <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知文字"><input v-model="item.href" placeholder="/news 或 https://"><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
-      <h4>四段首页标题</h4><div class="section-copy-grid"><label>资讯眉题<input v-model="composition.newsEyebrow"></label><label>资讯标题<input v-model="composition.newsTitle"></label><label>资讯说明<textarea v-model="composition.newsDescription" rows="2"></textarea></label><label>视频眉题<input v-model="composition.videoEyebrow"></label><label>视频标题<input v-model="composition.videoTitle"></label><label>视频说明<textarea v-model="composition.videoDescription" rows="2"></textarea></label><label>商品眉题<input v-model="composition.productEyebrow"></label><label>商品标题<input v-model="composition.productTitle"></label><label>商品说明<textarea v-model="composition.productDescription" rows="2"></textarea></label></div>
+      </article><p v-if="!composition.heroSlides.length" class="empty">暂无轮播；公开首页只显示无文案的基础主视觉，添加并上传图片后再发布。</p>
+    </section>
+
+    <section v-else-if="section === 'notices'" class="content-panel home-compose">
+      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button @click="addNotice">＋ 通知按钮</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知显示文字"><select v-model="item.href" @change="syncNoticeLabel(item)"><option value="">选择一篇已发布资讯</option><option v-for="article in publishedNews" :key="article.id" :value="`/news#article-${article.id}`">{{ article.title }}</option></select><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
+      <p v-if="!composition.notices.length" class="empty">暂无通知按钮；点击“＋ 通知按钮”新增。</p>
+    </section>
+
+    <section v-else-if="section === 'home-news'" class="content-panel home-compose">
+      <header><div><h3>资讯区外观</h3><p>只控制主页资讯区标题与说明；已发布资讯在“资讯稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <div class="section-copy-grid"><label>英文标题<input v-model="composition.newsEyebrow"></label><label>中文标题<input v-model="composition.newsTitle"></label></div>
+    </section>
+
+    <section v-else-if="section === 'home-product'" class="content-panel home-compose">
+      <header><div><h3>产品上新区外观</h3><p>只控制主页产品上新区标题与说明；已发布产品在“产品稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <div class="section-copy-grid"><label>英文标题<input v-model="composition.productEyebrow"></label><label>中文标题<input v-model="composition.productTitle"></label></div>
+    </section>
+
+    <section v-else-if="section === 'home-video'" class="content-panel home-compose">
+      <header><div><h3>最新视频区外观</h3><p>只控制主页视频区标题与说明；已发布视频在“视频稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">提交发布</button></div></header>
+      <div class="section-copy-grid"><label>英文标题<input v-model="composition.videoEyebrow"></label><label>中文标题<input v-model="composition.videoTitle"></label></div>
     </section>
 
     <AdminArticlesPanel v-else-if="section === 'news'" kind="news" @notice="showNotice"/>
