@@ -159,7 +159,12 @@ try {
     Push-Location $frontendBuildDirectory
     try {
         Invoke-External $npmExecutable ci --prefer-offline --no-audit
-        Invoke-External $npmExecutable run build
+        $previousClientRelease = $env:VITE_APP_VERSION
+        try {
+            $env:VITE_APP_VERSION = $commit
+            Invoke-External $npmExecutable run build
+        }
+        finally { $env:VITE_APP_VERSION = $previousClientRelease }
     }
     finally { Pop-Location }
 

@@ -276,7 +276,14 @@ try {
         Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
     }
     if ($frontendChanged) {
-        Invoke-Checked "Frontend production build" "npm.cmd" @("run", "build") (Join-Path $repoRoot "opcgpro-vue")
+        $clientRelease = (& git -C $repoRoot rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or $clientRelease -notmatch '^[0-9a-f]{40}$') { throw "无法读取前端构建提交版本" }
+        $previousClientRelease = $env:VITE_APP_VERSION
+        try {
+            $env:VITE_APP_VERSION = $clientRelease
+            Invoke-Checked "Frontend production build" "npm.cmd" @("run", "build") (Join-Path $repoRoot "opcgpro-vue")
+        }
+        finally { $env:VITE_APP_VERSION = $previousClientRelease }
     }
 }
 finally { Set-Location $originalLocation }

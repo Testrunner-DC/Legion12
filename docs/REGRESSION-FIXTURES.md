@@ -176,3 +176,11 @@
 - `skip`取消必须同时清理Prompt和Activation，不休整安卡、不弃牌、不恢复或消费事务两次；来源离开其合法主动区域时，下一命令前取消并允许结束回合。合法Prompt+Activation必须继续阻止回合；Prompt-only、Activation-only、重复ActivationId或绑定冲突必须在一次对账中自愈，不得留下第二次操作才能解锁的孤儿。
 - UI静态契约必须同时锁定`GameBoard.hasBlockingPrompt`、同步清理普通交互状态、中央命令门禁、手牌/战场入口门禁以及`PromptOverlay`/棋盘直选的六字段回显。Prompt是否最小化不得改变阻塞信号。
 - 全池回归除精确夹具外，必须覆盖公开主动、触发声明、响应声明、匿名对手手牌、复合手牌打出、效果生成打出和重复效果；对账不能因当前revision、轮次或来源合法离开后仍由candidate/stack/committed-parent承载而误清。
+
+## Bug版本诊断与WebSocket generation恢复样例
+
+- `BugDiagnosticPersistenceTests`固定临时`platform.json`：新报告必须分别持久化client/server/engine版本，engine不得回退静态`1.0.0(.0)`，旧客户端省略版本得到`unknown-client`，旧数据缺新增字段仍可读取。`WebSocketConnectionGenerationTests.HealthAndLegacyBugSubmissionExposeAuthoritativeBuildsAndWhitelistDiagnostics`通过临时HTTP服务把恶意哨兵同时放入扩展`token/privateHand/ip`字段和合法HTTP/API/WS/恢复/认证/维护/close reason字段；服务端须把非法枚举与reason归一为`unknown`且哨兵不得进入持久化文件，`/health`须提供服务端与可追溯L12引擎版本；测试不得访问生产API或真实报告文件。
+- `WebSocketConnectionGenerationTests.NewSocketGenerationFencesTheOlderLiveSocketWithoutRestartingTheServer`使用两个真实`ClientWebSocket`和同一账号：第二连接generation必须严格递增，认领决定为`fenced-active-session`，旧连接先收到`sessionSuperseded/newer-connection-generation`再关闭；接管后旧socket尝试`createRoom`不得改变权威状态，新socket同步仍无房并可正常建房，服务端诊断同时保留成功decision与`older-connection-fenced`原因。`GmSandboxTests.ConnectedSecondTabAtomicallyFencesTheOldSessionAndKeepsTheAuthoritativeRoom`另锁定活连接房间原子换座和旧session迟到命令失败。
+- `GmSandboxTests.DisconnectDuringPromptRestoresTheOwnersPrivatePromptBeforeRecoveryAck`按实际掷骰方断线：新session的`gameState.state.prompts`必须先恢复私密Prompt，随后ack的generation/revision一致且`pendingPrompt=true`。既有断线恢复夹具改走`RecoveryStateWithAckAsync`，排位夹具同时断言`gameState.rankedClock`和`rankedClockRestored=true`。
+- 排位断线期限继续是内存权威4分钟：3分59秒重连继续、恰好4分钟与4分钟+1毫秒均先完成权威判负再返回恢复状态；本夹具不声称服务进程重启后时钟持久化。客户端UI契约必须要求只有`snapshot-acknowledged`才能从任意站点路由进入`/game`，并锁定close code/reason、heartbeat/pong、retry、generation/恢复阶段、三端版本展示和禁止`navigator.userAgent`。
+- `check-client-release-version.mjs`固定开发空版本=`dev`、正式commit/semver合法、正式空值或`dev`抛错；`vite.config.ts`必须实际调用同一helper。所有正式构建入口都必须注入权威commit，不能在表单层继续用fallback掩盖构建配置错误。

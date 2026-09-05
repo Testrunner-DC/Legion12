@@ -1,5 +1,5 @@
 import { computed, reactive } from 'vue'
-import { disconnect, l12State } from './net'
+import { disconnect, l12State, type BugClientConnectionDiagnostic } from './net'
 import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
 
@@ -40,7 +40,18 @@ export interface PublishedDeck {
 }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
-  version: string; status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
+  version: string; clientVersion?: string; serverVersion?: string; engineVersion?: string
+  status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
+  diagnostic?: BugRuntimeDiagnostic; clientDiagnostic?: BugClientConnectionDiagnostic
+  connectionDiagnostic?: BugConnectionClaimDiagnostic
+}
+export interface BugRuntimeDiagnostic {
+  capturedAt: string; matchId?: string; roomCode?: string; phase?: string; round?: number; turnSerial?: number
+  activePlayer?: number; revision?: number; commandSequence?: number; stack: string[]; prompts: string[]; recentEventTypes: string[]
+}
+export interface BugConnectionClaimDiagnostic {
+  capturedAt: string; decision: string; connectionGeneration: number; previousConnectionGeneration?: number
+  roomCode?: string; matchId?: string; recoveryRevision?: number; rejectionReason?: string
 }
 export interface BugAudit { id: string; actorName: string; action: string; fromValue?: string; toValue?: string; comment?: string; createdAt: string }
 export interface EffectAtomDescriptor {
@@ -579,7 +590,7 @@ export const resetPassword = (token: string, newPassword: string) => platformReq
   method: 'POST', body: JSON.stringify({ token, newPassword }),
 })
 
-export async function submitBug(input: { title: string; description: string; page: string; roomCode?: string; matchId?: string; version: string }) {
+export async function submitBug(input: { title: string; description: string; page: string; roomCode?: string; matchId?: string; version: string; clientDiagnostic?: BugClientConnectionDiagnostic }) {
   return platformRequest<BugReport>('/api/bugs', { method: 'POST', body: JSON.stringify(input) })
 }
 

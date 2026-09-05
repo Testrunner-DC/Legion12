@@ -26,10 +26,20 @@ public sealed record L12PublishedDeckView(string Id, string OwnerId, string Auth
 public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
     string? Phase, int? Round, int? TurnSerial, int? ActivePlayer, long? Revision, long? CommandSequence,
     IReadOnlyList<string> Stack, IReadOnlyList<string> Prompts, IReadOnlyList<string> RecentEventTypes);
+public sealed record L12ClientConnectionDiagnosticView(DateTimeOffset CapturedAt, string CurrentRoute,
+    string HttpStatus, int? HttpStatusCode, string ApiStatus, int? ApiStatusCode, string WebSocketReadyState,
+    int? CloseCode, string? CloseReason, DateTimeOffset? LastHeartbeatAt, DateTimeOffset? LastPongAt,
+    int RetryCount, string? RoomCode, string? MatchId, long? ConnectionGeneration, string RecoveryPhase,
+    string AuthenticationState, string MaintenanceState);
+public sealed record L12ConnectionClaimDiagnosticView(DateTimeOffset CapturedAt, string Decision,
+    long ConnectionGeneration, long? PreviousConnectionGeneration, string? RoomCode, string? MatchId,
+    long? RecoveryRevision, string? RejectionReason);
 public sealed record L12BugReportView(string Id, string? ReporterId, string ReporterName, string Title, string Description,
     string Page, string? RoomCode, string? MatchId, string Version, string Status, string Priority, string? Assignee,
     string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
-    L12BugDiagnosticView? Diagnostic = null);
+    L12BugDiagnosticView? Diagnostic = null, string? ClientVersion = null, string? ServerVersion = null,
+    string? EngineVersion = null, L12ClientConnectionDiagnosticView? ClientDiagnostic = null,
+    L12ConnectionClaimDiagnosticView? ConnectionDiagnostic = null);
 public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
     string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
 public sealed record L12AdminAuditView(string Id, string ActorId, string ActorName, string Category, string Action,
@@ -80,11 +90,16 @@ public sealed partial class L12PlatformStore
         public string? RoomCode { get; set; }
         public string? MatchId { get; set; }
         public string Version { get; set; } = "dev";
+        public string? ClientVersion { get; set; }
+        public string? ServerVersion { get; set; }
+        public string? EngineVersion { get; set; }
         public string Status { get; set; } = "new";
         public string Priority { get; set; } = "normal";
         public string? Assignee { get; set; }
         public string? AdminNotes { get; set; }
         public L12BugDiagnosticView? Diagnostic { get; set; }
+        public L12ClientConnectionDiagnosticView? ClientDiagnostic { get; set; }
+        public L12ConnectionClaimDiagnosticView? ConnectionDiagnostic { get; set; }
         public List<BugAuditRow> History { get; set; } = [];
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -760,8 +775,12 @@ public sealed partial class L12PlatformStore
         => SetRole(new L12AccountView("system", "系统", "admin", DateTimeOffset.UtcNow, false), accountId, role);
 
     public L12BugReportView AddBug(L12AccountView? account, string title, string description, string page,
-        string? roomCode, string? matchId, string version, L12BugDiagnosticView? diagnostic = null)
+        string? roomCode, string? matchId, string version, L12BugDiagnosticView? diagnostic = null,
+        L12ClientConnectionDiagnosticView? clientDiagnostic = null,
+        L12ConnectionClaimDiagnosticView? connectionDiagnostic = null)
     {
+        var clientVersion = L12RuntimeBuildVersion.NormalizeClient(version);
+        var build = L12RuntimeBuildVersion.Capture();
         var row = new BugRow
         {
             ReporterId = account?.Id,
@@ -771,8 +790,13 @@ public sealed partial class L12PlatformStore
             Page = page.Trim()[..Math.Min(page.Trim().Length, 300)],
             RoomCode = roomCode,
             MatchId = matchId,
-            Version = string.IsNullOrWhiteSpace(version) ? "dev" : version.Trim(),
+            Version = clientVersion,
+            ClientVersion = clientVersion,
+            ServerVersion = build.ServerRelease,
+            EngineVersion = build.EngineVersion,
             Diagnostic = diagnostic,
+            ClientDiagnostic = NormalizeClientDiagnostic(clientDiagnostic, page, roomCode, matchId),
+            ConnectionDiagnostic = connectionDiagnostic,
         };
         row.History.Add(NewBugAudit(account, "created", null, "new", "提交 Bug 反馈"));
         lock (_gate) { _data.BugReports.Insert(0, row); Save(); }
@@ -1269,7 +1293,57 @@ public sealed partial class L12PlatformStore
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
         row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
         row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt,
-        row.Diagnostic);
+        row.Diagnostic, row.ClientVersion ?? row.Version, row.ServerVersion ?? "legacy-unknown",
+        row.EngineVersion ?? "legacy-unknown", row.ClientDiagnostic, row.ConnectionDiagnostic);
+
+    private static L12ClientConnectionDiagnosticView? NormalizeClientDiagnostic(
+        L12ClientConnectionDiagnosticView? value, string page, string? roomCode, string? matchId)
+    {
+        if (value is null) return null;
+        static string Text(string? input, int limit, string fallback = "unknown")
+        {
+            var normalized = input?.Trim();
+            return string.IsNullOrWhiteSpace(normalized) ? fallback : normalized[..Math.Min(limit, normalized.Length)];
+        }
+        static string State(string? input, params string[] allowed)
+        {
+            var normalized = input?.Trim().ToLowerInvariant();
+            return normalized is not null && allowed.Contains(normalized, StringComparer.Ordinal)
+                ? normalized : "unknown";
+        }
+        static string? CloseReason(string? input)
+        {
+            var normalized = input?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalized)) return null;
+            return normalized switch
+            {
+                "authentication rejected" or "authentication-rejected" => "authentication-rejected",
+                "connection rejected" or "connection-rejected" => "connection-rejected",
+                "password-change-required" => "password-change-required",
+                "duplicate-hello" => "duplicate-hello",
+                "connection superseded" or "connection-superseded" => "connection-superseded",
+                "server stopped" or "server-stopped" => "server-stopped",
+                _ => "unknown",
+            };
+        }
+        return new L12ClientConnectionDiagnosticView(value.CapturedAt,
+            Text(page, 300, "/"), State(value.HttpStatus, "ok", "maintenance", "unreachable", "unknown"),
+            value.HttpStatusCode is >= 100 and <= 599 ? value.HttpStatusCode : null,
+            State(value.ApiStatus, "authenticated", "missing-token", "rejected", "unknown-response", "unreachable", "unknown"),
+            value.ApiStatusCode is >= 100 and <= 599 ? value.ApiStatusCode : null,
+            State(value.WebSocketReadyState, "connecting", "open", "closing", "closed", "absent", "unknown"),
+            value.CloseCode is >= 1000 and <= 4999 ? value.CloseCode : null, CloseReason(value.CloseReason),
+            value.LastHeartbeatAt, value.LastPongAt, Math.Clamp(value.RetryCount, 0, 1000),
+            string.IsNullOrWhiteSpace(roomCode) ? null : Text(roomCode, 32, string.Empty),
+            string.IsNullOrWhiteSpace(matchId) ? null : Text(matchId, 100, string.Empty),
+            value.ConnectionGeneration is >= 0 ? value.ConnectionGeneration : null,
+            State(value.RecoveryPhase, "idle", "opening-websocket", "authenticating", "session-claimed",
+                "snapshot-received", "snapshot-mismatch", "snapshot-acknowledged", "authentication-rejected",
+                "superseded", "disconnected", "unknown"),
+            State(value.AuthenticationState, "authenticated", "missing-token", "rejected", "unknown-response",
+                "unreachable", "unknown"),
+            State(value.MaintenanceState, "active", "inactive", "unknown"));
+    }
     private static L12BugAuditView ToView(BugAuditRow row) => new(row.Id, row.ActorId, row.ActorName, row.Action,
         row.FromValue, row.ToValue, row.Comment, row.CreatedAt);
     private static L12AdminAuditView ToView(AdminAuditRow row) => new(row.Id, row.ActorId, row.ActorName,

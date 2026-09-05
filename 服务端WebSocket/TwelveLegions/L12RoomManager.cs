@@ -19,6 +19,10 @@ public sealed record L12RoomRuntimeStats(
     int RoomCount,
     int ActiveGameCount);
 
+public sealed record L12SessionClaimResult(string Type, Guid SessionId, string Name, bool Recovered,
+    string? RoomCode, long ConnectionGeneration, string ClaimDecision, long? PreviousConnectionGeneration,
+    Guid? ReplacedSessionId, long? RecoveryRevision, string? RejectionReason = null);
+
 public sealed partial class L12RoomManager
 {
     private sealed class Session
@@ -35,6 +39,7 @@ public sealed partial class L12RoomManager
         public bool Connected { get; set; } = true;
         public DateTimeOffset? DisconnectedAt { get; set; }
         public string IntegrityClientKey { get; set; } = string.Empty;
+        public long ConnectionGeneration { get; set; }
     }
 
     private sealed class FriendInvitation
@@ -80,6 +85,10 @@ public sealed partial class L12RoomManager
     private readonly MatchRecorder _recorder;
     private readonly L12PlatformStore? _platform;
     private readonly ConcurrentDictionary<Guid, Session> _sessions = new();
+    private readonly ConcurrentDictionary<string, long> _accountConnectionGenerations =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, L12ConnectionClaimDiagnosticView> _connectionClaimDiagnostics =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Room> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FriendInvitation> _friendInvitations = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _tournamentRoomGate = new();
@@ -99,23 +108,67 @@ public sealed partial class L12RoomManager
 
     public object Connect(Guid sessionId, string accountId, string? requestedName,
         string? integrityClientKey = null)
-        => ConnectAsync(sessionId, accountId, requestedName, integrityClientKey).GetAwaiter().GetResult();
+    {
+        var claim = ConnectAsync(sessionId, accountId, requestedName, integrityClientKey).GetAwaiter().GetResult();
+        // Keep the historical lower-camel wire shape for direct/legacy callers that serialize with default options.
+        return new
+        {
+            type = claim.Type, sessionId = claim.SessionId, name = claim.Name, recovered = claim.Recovered,
+            roomCode = claim.RoomCode, connectionGeneration = claim.ConnectionGeneration,
+            claimDecision = claim.ClaimDecision, previousConnectionGeneration = claim.PreviousConnectionGeneration,
+            replacedSessionId = claim.ReplacedSessionId, recoveryRevision = claim.RecoveryRevision,
+            rejectionReason = claim.RejectionReason,
+        };
+    }
 
-    public async Task<object> ConnectAsync(Guid sessionId, string accountId, string? requestedName,
+    public async Task<L12SessionClaimResult> ConnectAsync(Guid sessionId, string accountId, string? requestedName,
         string? integrityClientKey = null)
     {
         var name = NormalizeName(requestedName);
         await _sessionRecoveryGate.WaitAsync();
         try
         {
-            var disconnected = _sessions.FirstOrDefault(pair =>
-                pair.Key != sessionId && !pair.Value.Connected && !pair.Value.IsVirtual
-                && pair.Value.RoomCode is not null
-                && string.Equals(pair.Value.AccountId, accountId, StringComparison.OrdinalIgnoreCase));
-            if (disconnected.Value is not null)
+            var existing = _sessions.Where(pair => pair.Key != sessionId && !pair.Value.IsVirtual
+                    && string.Equals(pair.Value.AccountId, accountId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(pair => pair.Value.RoomCode is not null
+                    && _rooms.ContainsKey(pair.Value.RoomCode))
+                .ThenByDescending(pair => pair.Value.ConnectionGeneration)
+                .ToArray();
+            var previous = existing.FirstOrDefault();
+            var hasPrevious = previous.Value is not null;
+            var previousGeneration = existing.Length == 0 ? (long?)null
+                : existing.Max(pair => pair.Value.ConnectionGeneration);
+            var knownGeneration = _accountConnectionGenerations.GetValueOrDefault(accountId);
+            var generation = Math.Max(knownGeneration, previousGeneration ?? 0) + 1;
+            _accountConnectionGenerations[accountId] = generation;
+
+            string? roomCode = null;
+            string? matchId = null;
+            long? recoveryRevision = null;
+            var recovered = false;
+            var decision = "new-session";
+            Session replacement;
+            if (hasPrevious)
             {
-                var recovered = disconnected.Value;
-                if (recovered.RoomCode is not null && _rooms.TryGetValue(recovered.RoomCode, out var recoveredRoom))
+                var source = previous.Value!;
+                replacement = new Session
+                {
+                    Id = sessionId,
+                    AccountId = source.AccountId,
+                    Name = name,
+                    RoomCode = source.RoomCode,
+                    PlayerIndex = source.PlayerIndex,
+                    SelectedDeckIndex = source.SelectedDeckIndex,
+                    CustomDeck = source.CustomDeck,
+                    IsSpectator = source.IsSpectator,
+                    IsVirtual = false,
+                    Connected = true,
+                    DisconnectedAt = null,
+                    IntegrityClientKey = string.IsNullOrWhiteSpace(integrityClientKey)
+                        ? source.IntegrityClientKey : integrityClientKey,
+                    ConnectionGeneration = generation,
+                };
+                if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom))
                 {
                     await recoveredRoom.Gate.WaitAsync();
                     try
@@ -123,44 +176,75 @@ public sealed partial class L12RoomManager
                         var now = _utcNow();
                         // 超过重连截止时间的连接不能抢在周期看门狗前清除掉线证据。
                         await ApplyRankedClockConclusionLockedAsync(recoveredRoom, now);
-                        recovered.Connected = true;
-                        recovered.DisconnectedAt = null;
-                        if (!string.IsNullOrWhiteSpace(integrityClientKey))
-                            recovered.IntegrityClientKey = integrityClientKey;
-                        var playerSlot = recoveredRoom.Sessions.IndexOf(disconnected.Key);
+                        var playerSlot = recoveredRoom.Sessions.IndexOf(previous.Key);
                         if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = sessionId;
-                        var spectatorSlot = recoveredRoom.Spectators.IndexOf(disconnected.Key);
+                        var spectatorSlot = recoveredRoom.Spectators.IndexOf(previous.Key);
                         if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = sessionId;
-                        if (recoveredRoom.GmControllerSessionId == disconnected.Key)
+                        if (recoveredRoom.GmControllerSessionId == previous.Key)
                             recoveredRoom.GmControllerSessionId = sessionId;
+                        roomCode = recoveredRoom.Code;
+                        matchId = recoveredRoom.Game?.State.MatchId;
+                        recoveryRevision = recoveredRoom.Game?.State.Revision;
+                        recovered = true;
+                        decision = source.Connected
+                            ? "fenced-active-room-session" : "reclaimed-disconnected-room";
+                        _sessions[sessionId] = replacement;
                         RefreshRankedClockActorsLocked(recoveredRoom, now);
                     }
                     finally { recoveredRoom.Gate.Release(); }
                 }
                 else
                 {
-                    recovered.Connected = true;
-                    recovered.DisconnectedAt = null;
-                    if (!string.IsNullOrWhiteSpace(integrityClientKey))
-                        recovered.IntegrityClientKey = integrityClientKey;
+                    replacement.RoomCode = null;
+                    replacement.PlayerIndex = null;
+                    replacement.IsSpectator = false;
+                    decision = source.Connected ? "fenced-active-session" : "reclaimed-disconnected-session";
+                    _sessions[sessionId] = replacement;
                 }
-                _sessions[sessionId] = recovered;
-                _sessions.TryRemove(disconnected.Key, out _);
-                return new { type = "session", sessionId, name, recovered = true, roomCode = recovered.RoomCode };
+                foreach (var candidate in existing) _sessions.TryRemove(candidate.Key, out _);
+            }
+            else
+            {
+                replacement = new Session
+                {
+                    Id = sessionId, AccountId = accountId, Name = name,
+                    IntegrityClientKey = integrityClientKey ?? string.Empty,
+                    ConnectionGeneration = generation,
+                };
+                _sessions[sessionId] = replacement;
             }
 
-            _sessions[sessionId] = new Session
-            {
-                Id = sessionId, AccountId = accountId, Name = name,
-                IntegrityClientKey = integrityClientKey ?? string.Empty,
-            };
-            return new { type = "session", sessionId, name, recovered = false, roomCode = (string?)null };
+            var capturedAt = _utcNow();
+            _connectionClaimDiagnostics[accountId] = new L12ConnectionClaimDiagnosticView(capturedAt,
+                decision, generation, previousGeneration, roomCode, matchId, recoveryRevision, null);
+            return new L12SessionClaimResult("session", sessionId, name, recovered, roomCode, generation,
+                decision, previousGeneration, hasPrevious ? previous.Key : null, recoveryRevision);
         }
         finally { _sessionRecoveryGate.Release(); }
     }
 
     public object Connect(Guid sessionId, string? requestedName)
         => Connect(sessionId, $"legacy:{NormalizeName(requestedName).ToLowerInvariant()}", requestedName);
+
+    public bool IsCurrentConnection(Guid sessionId, string accountId, long generation)
+        => _sessions.TryGetValue(sessionId, out var session) && session.Connected
+            && session.ConnectionGeneration == generation
+            && string.Equals(session.AccountId, accountId, StringComparison.OrdinalIgnoreCase);
+
+    public L12ConnectionClaimDiagnosticView? CaptureConnectionClaimDiagnostic(string? accountId)
+        => string.IsNullOrWhiteSpace(accountId) ? null
+            : _connectionClaimDiagnostics.GetValueOrDefault(accountId);
+
+    public void RecordConnectionClaimRejection(string? accountId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(accountId)) return;
+        var previous = _connectionClaimDiagnostics.GetValueOrDefault(accountId);
+        _connectionClaimDiagnostics[accountId] = new L12ConnectionClaimDiagnosticView(_utcNow(),
+            previous?.Decision ?? "rejected",
+            previous?.ConnectionGeneration ?? _accountConnectionGenerations.GetValueOrDefault(accountId),
+            previous?.PreviousConnectionGeneration, previous?.RoomCode, previous?.MatchId,
+            previous?.RecoveryRevision, NormalizeDiagnosticReason(reason));
+    }
 
     public bool IsAccountOnline(string accountId)
         => _sessions.Values.Any(session => session.Connected && !session.IsVirtual && session.AccountId == accountId);
@@ -527,6 +611,50 @@ public sealed partial class L12RoomManager
                 : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
         }
         finally { room.Gate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateWithAckAsync(Guid sessionId,
+        bool recovered = false)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
+        if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
+            return [RecoveryComplete(session, recovered, null)];
+        await room.Gate.WaitAsync();
+        try
+        {
+            if (room.Game is not null)
+                await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+            if (room.TournamentId is not null)
+            {
+                await StartTournamentGameIfReadyLockedAsync(room);
+                if (room.Game?.State.Phase == L12Phase.GameOver)
+                    await CompleteTournamentRoomGameAsync(room);
+            }
+            var messages = (room.Game is null ? BroadcastRoom(room)
+                : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray()).ToList();
+            messages.Add(RecoveryComplete(session, recovered, room));
+            return messages;
+        }
+        finally { room.Gate.Release(); }
+    }
+
+    private OutgoingMessage RecoveryComplete(Session session, bool recovered, Room? room)
+        => new(session.Id, new
+        {
+            type = "recoveryComplete",
+            connectionGeneration = session.ConnectionGeneration,
+            recovered,
+            roomCode = room?.Code,
+            matchId = room?.Game?.State.MatchId,
+            recoveryRevision = room?.Game?.State.Revision,
+            pendingPrompt = room?.Game?.State.PendingPrompts.Any(prompt => prompt.PlayerIndex == session.PlayerIndex) == true,
+            rankedClockRestored = room?.RankedClock is not null,
+        });
+
+    private static string NormalizeDiagnosticReason(string reason)
+    {
+        var value = string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason.Trim();
+        return value[..Math.Min(value.Length, 160)];
     }
 
     public IReadOnlyList<OutgoingMessage> CreateRoom(Guid sessionId, L12RoomOptions? options = null)

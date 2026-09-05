@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { l12State } from '@/l12/net'
+import { captureBugClientDiagnostic, l12State } from '@/l12/net'
 import { platformState, submitBug } from '@/l12/platform'
 
 const route = useRoute()
@@ -17,13 +17,15 @@ async function submit() {
   busy.value = true
   message.value = ''
   try {
+    const clientDiagnostic = await captureBugClientDiagnostic(route.path)
     const report = await submitBug({
       title: bugDescription && suggestion ? 'Bug与优化建议' : bugDescription ? 'Bug提交' : '优化建议',
       description: [bugDescription ? `【Bug提交】\n${bugDescription}` : '', suggestion ? `【优化建议】\n${suggestion}` : ''].filter(Boolean).join('\n\n'),
-      page: `${route.fullPath} · ${navigator.userAgent}`,
+      page: route.path,
       roomCode: l12State.room?.roomCode,
       matchId: l12State.game?.matchId,
       version: String(import.meta.env.VITE_APP_VERSION || 'dev'),
+      clientDiagnostic,
     })
     message.value = `已提交：${report.id}`
     form.bugDescription = ''

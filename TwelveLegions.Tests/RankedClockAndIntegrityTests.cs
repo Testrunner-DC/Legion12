@@ -110,6 +110,12 @@ public sealed class RankedClockAndIntegrityTests
             var session = JsonSerializer.SerializeToElement(await fixture.Manager.ConnectAsync(replacement,
                 actingAccount.Id, actingAccount.Username), WebJson);
             Assert.True(session.GetProperty("recovered").GetBoolean());
+            var recovery = await fixture.Manager.RecoveryStateWithAckAsync(replacement, recovered: true);
+            var ownPayloads = recovery.Where(message => message.SessionId == replacement).Select(MessageJson).ToArray();
+            Assert.Equal(JsonValueKind.Object, ownPayloads.Single(payload =>
+                payload.GetProperty("type").GetString() == "gameState").GetProperty("rankedClock").ValueKind);
+            Assert.True(ownPayloads.Single(payload => payload.GetProperty("type").GetString() == "recoveryComplete")
+                .GetProperty("rankedClockRestored").GetBoolean());
             fixture.Clock.UtcNow += TimeSpan.FromSeconds(2);
 
             Assert.Empty(await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow));
@@ -128,6 +134,23 @@ public sealed class RankedClockAndIntegrityTests
             var detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
             Assert.Equal(1 - fixture.ActingPlayer, detail.Match.Winner);
             Assert.NotNull(detail.Match.EndedUtc);
+        }
+
+        await using (var fixture = await RankedFixture.CreateAsync("reconnect-exact-boundary"))
+        {
+            var actingSession = fixture.SessionFor(fixture.ActingPlayer);
+            var actingAccount = fixture.AccountFor(fixture.ActingPlayer);
+            fixture.Manager.Disconnect(actingSession);
+            fixture.Clock.UtcNow += TimeSpan.FromMinutes(4);
+
+            var claim = JsonSerializer.SerializeToElement(await fixture.Manager.ConnectAsync(Guid.NewGuid(),
+                actingAccount.Id, actingAccount.Username), WebJson);
+
+            Assert.Equal("reclaimed-disconnected-room", claim.GetProperty("claimDecision").GetString());
+            var detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+            Assert.Equal(1 - fixture.ActingPlayer, detail.Match.Winner);
+            Assert.Contains("掉线超过4分钟", detail.Commands.Last().State
+                .GetProperty("WinnerReason").GetString());
         }
     }
 

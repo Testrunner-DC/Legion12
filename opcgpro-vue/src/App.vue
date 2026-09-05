@@ -9,8 +9,9 @@ import GlobalBugFeedback from '@/l12/site/GlobalBugFeedback.vue'
 const route = useRoute()
 const router = useRouter()
 const immersive = computed(() => route.meta.immersive === true)
-watch(() => l12State.game, (game) => {
-  if (game && !l12State.leavingRoom && route.path !== '/game' && route.meta.replay !== true) router.push('/game')
+watch(() => [l12State.game, l12State.recoveryPhase] as const, ([game, recoveryPhase]) => {
+  if (game && recoveryPhase === 'snapshot-acknowledged' && !l12State.leavingRoom
+    && route.path !== '/game' && route.meta.replay !== true) router.push('/game')
 })
 watch(() => [platformState.token, authState.verified] as const, ([token, verified]) => {
   if (token && verified) startAutomaticConnection()

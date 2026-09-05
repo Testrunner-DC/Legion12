@@ -56,7 +56,14 @@ const onlinePlayers = ref<PlatformPresence[]>([])
 const onlineCount = computed(() => onlinePlayers.value.length)
 const onlineActionBusy = ref('')
 const onlineNotice = ref('')
-const connectionLabel = computed(() => ({ online: '连接正常', connecting: '连接中', offline: '未连接' }[l12State.status]))
+const connectionLabel = computed(() => {
+  if (l12State.connectionIssue === 'authentication') return '登录状态失效'
+  if (l12State.connectionIssue === 'superseded') return '已由其他页面接管'
+  if (l12State.connectionIssue === 'maintenance') return '维护中 · 连接正常'
+  if (l12State.status === 'connecting') return l12State.recoveryPhase === 'snapshot-received' ? '快照确认中' : '连接恢复中'
+  if (l12State.status === 'online') return '连接正常'
+  return l12State.connectionIssue === 'websocket' ? '对战连接中断' : '未连接'
+})
 
 watch(() => route.fullPath, () => { mobileOpen.value = false })
 watch(settings, value => localStorage.setItem('l12-site-settings-v1', JSON.stringify(value)), { deep: true })

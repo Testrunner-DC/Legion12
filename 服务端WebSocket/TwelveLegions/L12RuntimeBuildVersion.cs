@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace TwelveLegions.Server;
@@ -7,7 +8,25 @@ internal static partial class L12RuntimeBuildVersion
     [GeneratedRegex("^[0-9a-fA-F]{7,64}$", RegexOptions.CultureInvariant)]
     private static partial Regex CommitPattern();
 
-    internal static string Resolve(string? clientReportedVersion)
+    internal sealed record BuildIdentity(string ServerRelease, string EngineVersion);
+
+    internal static string NormalizeClient(string? clientReportedVersion)
+    {
+        var reported = clientReportedVersion?.Trim();
+        return string.IsNullOrWhiteSpace(reported)
+            ? "unknown-client"
+            : reported[..Math.Min(reported.Length, 100)];
+    }
+
+    internal static BuildIdentity Capture()
+    {
+        var informationalCommit = ResolveInformationalCommit();
+        var serverRelease = ResolveServerRelease(informationalCommit);
+        var engineIdentity = informationalCommit ?? (IsVersion(serverRelease) ? serverRelease : "dev");
+        return new BuildIdentity(serverRelease, $"l12-engine/{engineIdentity}");
+    }
+
+    private static string ResolveServerRelease(string? informationalCommit)
     {
         var configured = Environment.GetEnvironmentVariable("L12_RELEASE_VERSION");
         if (IsVersion(configured)) return configured!.Trim();
@@ -30,13 +49,21 @@ internal static partial class L12RuntimeBuildVersion
                 }
                 catch (UnauthorizedAccessException)
                 {
-                    // Fall through to the client version when the marker is not readable.
+                    // Fall through to the assembly identity when the marker is not readable.
                 }
             }
         }
 
-        var reported = clientReportedVersion?.Trim();
-        return string.IsNullOrWhiteSpace(reported) ? "dev" : reported[..Math.Min(reported.Length, 100)];
+        return informationalCommit ?? "dev";
+    }
+
+    private static string? ResolveInformationalCommit()
+    {
+        var informational = typeof(L12GameEngine).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Trim();
+        if (string.IsNullOrWhiteSpace(informational)) return null;
+        return informational.Split(['+', '.', '-'], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(candidate => CommitPattern().IsMatch(candidate));
     }
 
     private static bool IsVersion(string? value)

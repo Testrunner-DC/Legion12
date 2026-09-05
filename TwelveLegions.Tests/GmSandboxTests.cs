@@ -513,7 +513,7 @@ public sealed class GmSandboxTests
         Assert.True(sessionPayload.GetProperty("recovered").GetBoolean());
         Assert.Equal(roomCode, sessionPayload.GetProperty("roomCode").GetString());
 
-        var recovery = manager.RecoveryState(replacementHost);
+        var recovery = await manager.RecoveryStateWithAckAsync(replacementHost, recovered: true);
         var room = recovery.Where(message => message.SessionId == replacementHost)
             .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
             .Single(payload => payload.GetProperty("type").GetString() == "roomState");
@@ -524,11 +524,95 @@ public sealed class GmSandboxTests
             .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
             .Single(payload => payload.GetProperty("type").GetString() == "gameState");
         Assert.True(game.GetProperty("state").GetProperty("revision").GetInt64() >= 0);
+        var ack = recovery.Where(message => message.SessionId == replacementHost)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .Single(payload => payload.GetProperty("type").GetString() == "recoveryComplete");
+        Assert.Equal(game.GetProperty("state").GetProperty("revision").GetInt64(),
+            ack.GetProperty("recoveryRevision").GetInt64());
+        Assert.Equal(sessionPayload.GetProperty("connectionGeneration").GetInt64(),
+            ack.GetProperty("connectionGeneration").GetInt64());
+        Assert.True(ack.GetProperty("recovered").GetBoolean());
 
         var staleAction = await manager.HandleActionAsync(originalHost,
             JsonSerializer.SerializeToElement(new { type = "passResponse" }));
         var stalePayload = JsonSerializer.SerializeToElement(Assert.Single(staleAction).Payload, WebJson);
         Assert.Equal("error", stalePayload.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task ConnectedSecondTabAtomicallyFencesTheOldSessionAndKeepsTheAuthoritativeRoom()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-room-second-tab", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var accountId = $"account-{Guid.NewGuid():N}";
+        var first = Guid.NewGuid();
+        var firstClaim = JsonSerializer.SerializeToElement(
+            await manager.ConnectAsync(first, accountId, "二标签玩家"), WebJson);
+        var roomCode = JsonSerializer.SerializeToElement(manager.CreateRoom(first)[0].Payload, WebJson)
+            .GetProperty("roomCode").GetString();
+
+        var second = Guid.NewGuid();
+        var secondClaim = JsonSerializer.SerializeToElement(
+            await manager.ConnectAsync(second, accountId, "二标签玩家"), WebJson);
+
+        Assert.Equal(firstClaim.GetProperty("connectionGeneration").GetInt64() + 1,
+            secondClaim.GetProperty("connectionGeneration").GetInt64());
+        Assert.Equal("fenced-active-room-session", secondClaim.GetProperty("claimDecision").GetString());
+        Assert.True(secondClaim.GetProperty("recovered").GetBoolean());
+        Assert.Equal(roomCode, secondClaim.GetProperty("roomCode").GetString());
+        var restored = await manager.RecoveryStateWithAckAsync(second, recovered: true);
+        Assert.Contains(restored.Where(message => message.SessionId == second).Select(message =>
+                JsonSerializer.SerializeToElement(message.Payload, WebJson)),
+            payload => payload.GetProperty("type").GetString() == "roomState");
+
+        var stale = manager.CreateRoom(first);
+        Assert.Equal("error", JsonSerializer.SerializeToElement(Assert.Single(stale).Payload, WebJson)
+            .GetProperty("type").GetString());
+        var diagnostic = Assert.IsType<L12ConnectionClaimDiagnosticView>(
+            manager.CaptureConnectionClaimDiagnostic(accountId));
+        Assert.Equal("fenced-active-room-session", diagnostic.Decision);
+        Assert.Equal(secondClaim.GetProperty("connectionGeneration").GetInt64(), diagnostic.ConnectionGeneration);
+        Assert.Equal(roomCode, diagnostic.RoomCode);
+    }
+
+    [Fact]
+    public async Task DisconnectDuringPromptRestoresTheOwnersPrivatePromptBeforeRecoveryAck()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-room-prompt-recovery", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var sessions = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var accountIds = new[] { $"prompt-a-{Guid.NewGuid():N}", $"prompt-b-{Guid.NewGuid():N}" };
+        manager.Connect(sessions[0], accountIds[0], "提示甲");
+        manager.Connect(sessions[1], accountIds[1], "提示乙");
+        var roomCode = JsonSerializer.SerializeToElement(manager.CreateRoom(sessions[0])[0].Payload, WebJson)
+            .GetProperty("roomCode").GetString();
+        manager.JoinRoom(sessions[1], roomCode);
+        await manager.SetReadyAsync(sessions[0], true);
+        var started = await manager.SetReadyAsync(sessions[1], true);
+        var anyState = started.Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
+            .First(payload => payload.GetProperty("type").GetString() == "gameState")
+            .GetProperty("state");
+        var promptOwner = anyState.GetProperty("diceWinner").GetInt32();
+        manager.Disconnect(sessions[promptOwner]);
+
+        var replacement = Guid.NewGuid();
+        var claim = await manager.ConnectAsync(replacement, accountIds[promptOwner],
+            promptOwner == 0 ? "提示甲" : "提示乙");
+        var recovery = await manager.RecoveryStateWithAckAsync(replacement, recovered: true);
+        var ownerMessages = recovery.Where(message => message.SessionId == replacement)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        var game = ownerMessages.Single(payload => payload.GetProperty("type").GetString() == "gameState");
+        var ack = ownerMessages.Single(payload => payload.GetProperty("type").GetString() == "recoveryComplete");
+
+        Assert.NotEmpty(game.GetProperty("state").GetProperty("prompts").EnumerateArray());
+        Assert.True(ack.GetProperty("pendingPrompt").GetBoolean());
+        Assert.Equal(game.GetProperty("state").GetProperty("revision").GetInt64(),
+            ack.GetProperty("recoveryRevision").GetInt64());
+        Assert.Equal(claim.ConnectionGeneration, ack.GetProperty("connectionGeneration").GetInt64());
     }
 
     [Fact]

@@ -15,6 +15,9 @@ namespace TwelveLegions.Server;
 
 public sealed class L12WebSocketServer : IAsyncDisposable
 {
+    private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
+        long ConnectionGeneration);
+
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly L12RoomManager _rooms;
     private readonly MatchRecorder _recorder;
@@ -25,7 +28,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly int _cardCount;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _socketSendGates = new();
-    private readonly ConcurrentDictionary<Guid, string> _socketPlatformSessions = new();
+    private readonly ConcurrentDictionary<Guid, SocketPlatformBinding> _socketPlatformSessions = new();
+    private readonly ConcurrentDictionary<string, Guid> _activeAccountSockets =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _socketClaimGate = new(1, 1);
     private readonly ConcurrentDictionary<Guid, string> _socketRankedNetworkFingerprints = new();
     private readonly string? _rankedIntegrityHmacKey;
     private readonly TimeSpan _rankedClockWatchdogInterval;
@@ -112,7 +118,19 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         });
         _app.UseRouting();
         _app.UseWebSockets();
-        _app.MapGet("/health", () => Results.Ok(new { service = "twelve-legions", cards = _cardCount }));
+        _app.MapGet("/health", () =>
+        {
+            var build = L12RuntimeBuildVersion.Capture();
+            var maintenance = _platform.EffectiveOperationsPolicy().Maintenance;
+            return Results.Ok(new
+            {
+                service = "twelve-legions", cards = _cardCount,
+                status = maintenance.Active ? "maintenance" : "ok",
+                maintenance = maintenance.Active,
+                serverVersion = build.ServerRelease,
+                engineVersion = build.EngineVersion,
+            });
+        });
         _app.MapGet("/api/operations/effective-policy", (HttpRequest request) =>
         {
             var policy = _platform.EffectiveOperationsPolicy();
@@ -960,7 +978,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             var diagnostic = await _rooms.CaptureBugDiagnosticAsync(body.MatchId, body.RoomCode);
             return Results.Ok(_platform.AddBug(account, body.Title ?? string.Empty, body.Description, body.Page ?? string.Empty,
-                body.RoomCode, body.MatchId, L12RuntimeBuildVersion.Resolve(body.Version), diagnostic));
+                body.RoomCode, body.MatchId, body.Version ?? string.Empty, diagnostic, body.ClientDiagnostic,
+                _rooms.CaptureConnectionClaimDiagnostic(account?.Id)));
         });
         _app.MapGet("/api/admin/accounts", (HttpRequest request) =>
         {
@@ -1692,7 +1711,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         finally
         {
             _sockets.TryRemove(sessionId, out _);
-            _socketPlatformSessions.TryRemove(sessionId, out _);
+            if (_socketPlatformSessions.TryRemove(sessionId, out var binding)
+                && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
+                && active == sessionId)
+                _activeAccountSockets.TryRemove(binding.AccountId, out _);
             await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
             _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
             _socketSendGates.TryRemove(sessionId, out _);
@@ -1718,12 +1740,35 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return;
             }
             var messageType = typeElement.GetString();
-            if (messageType != "hello" && _socketPlatformSessions.TryGetValue(sessionId, out var platformSessionId)
-                && !_platform.IsSessionActive(platformSessionId))
+            if (messageType is not ("hello" or "deploymentProbe"))
             {
-                _socketPlatformSessions.TryRemove(sessionId, out _);
-                await SendAsync(sessionId, new { type = "authenticationRequired", message = "登录会话已撤销" }, cancellationToken);
-                return;
+                if (!_socketPlatformSessions.TryGetValue(sessionId, out var binding))
+                {
+                    await SendAsync(sessionId, new
+                    {
+                        type = "authenticationRequired", reason = "authentication-required",
+                        message = "请先登录账号",
+                    }, cancellationToken);
+                    return;
+                }
+                if (!_platform.IsSessionActive(binding.PlatformSessionId))
+                {
+                    _socketPlatformSessions.TryRemove(sessionId, out _);
+                    _rooms.RecordConnectionClaimRejection(binding.AccountId, "platform-session-revoked");
+                    await SendAsync(sessionId, new
+                    {
+                        type = "authenticationRequired", reason = "platform-session-revoked",
+                        message = "登录会话已撤销",
+                    }, cancellationToken);
+                    return;
+                }
+                if (!_activeAccountSockets.TryGetValue(binding.AccountId, out var currentSocket)
+                    || currentSocket != sessionId
+                    || !_rooms.IsCurrentConnection(sessionId, binding.AccountId, binding.ConnectionGeneration))
+                {
+                    await SupersedeSocketAsync(sessionId, binding.AccountId, cancellationToken);
+                    return;
+                }
             }
             try
             {
@@ -1735,7 +1780,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     "createSandbox" => await CreateSandboxAsync(sessionId, root),
                     "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
                     "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
-                    "syncState" => await _rooms.RecoveryStateAsync(sessionId),
+                    "syncState" => await _rooms.RecoveryStateWithAckAsync(sessionId, recovered: true),
                     "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
                     "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                     "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
@@ -1796,17 +1841,79 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 
     private async Task<IReadOnlyList<OutgoingMessage>> AuthenticateSessionAsync(Guid sessionId, JsonElement root)
     {
+        if (_socketPlatformSessions.TryGetValue(sessionId, out var currentBinding))
+        {
+            _rooms.RecordConnectionClaimRejection(currentBinding.AccountId, "duplicate-hello");
+            return [new OutgoingMessage(sessionId, new
+            {
+                type = "connectionRejected", reason = "duplicate-hello", message = "连接已经完成身份认证",
+            })];
+        }
         var authenticated = _platform.AuthenticateTokenSession(GetString(root, "authToken"));
         if (authenticated is null)
-            return [new OutgoingMessage(sessionId, new { type = "authenticationRequired", message = "请先登录账号" })];
+            return [new OutgoingMessage(sessionId, new
+            {
+                type = "authenticationRequired", reason = "authentication-required", message = "请先登录账号",
+            })];
         if (authenticated.Account.MustChangePassword)
-            return [new OutgoingMessage(sessionId, new { type = "passwordChangeRequired", message = "必须先修改临时密码" })];
-        _socketPlatformSessions[sessionId] = authenticated.SessionId;
-        var session = new OutgoingMessage(sessionId,
-            await _rooms.ConnectAsync(sessionId, authenticated.Account.Id, authenticated.Account.Username,
-                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId)));
-        return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }
-            .Concat(await _rooms.RecoveryStateAsync(sessionId)).ToArray();
+        {
+            _rooms.RecordConnectionClaimRejection(authenticated.Account.Id, "password-change-required");
+            return [new OutgoingMessage(sessionId, new
+            {
+                type = "passwordChangeRequired", reason = "password-change-required",
+                message = "必须先修改临时密码",
+            })];
+        }
+
+        L12SessionClaimResult claim;
+        Guid? previousSocket;
+        IReadOnlyList<OutgoingMessage> recovery;
+        await _socketClaimGate.WaitAsync();
+        try
+        {
+            previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
+            claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id, authenticated.Account.Username,
+                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId));
+            _socketPlatformSessions[sessionId] = new SocketPlatformBinding(authenticated.SessionId,
+                authenticated.Account.Id, claim.ConnectionGeneration);
+            _activeAccountSockets[authenticated.Account.Id] = sessionId;
+            recovery = await _rooms.RecoveryStateWithAckAsync(sessionId, claim.Recovered);
+        }
+        finally { _socketClaimGate.Release(); }
+
+        var replaced = claim.ReplacedSessionId ?? previousSocket;
+        if (replaced is { } oldSessionId && oldSessionId != sessionId)
+            await SupersedeSocketAsync(oldSessionId, authenticated.Account.Id, CancellationToken.None);
+
+        var session = new OutgoingMessage(sessionId, new
+        {
+            type = "session", sessionId, name = claim.Name, claim.Recovered, claim.RoomCode,
+            claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
+            claim.RecoveryRevision,
+        });
+        return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }.Concat(recovery).ToArray();
+    }
+
+    private async Task SupersedeSocketAsync(Guid sessionId, string accountId,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync(sessionId, new
+        {
+            type = "sessionSuperseded", reason = "newer-connection-generation",
+            message = "此账号已由更新的连接接管",
+        }, cancellationToken);
+        _rooms.RecordConnectionClaimRejection(accountId, "older-connection-fenced");
+        if (!_sockets.TryGetValue(sessionId, out var socket) || socket.State != WebSocketState.Open) return;
+        try
+        {
+            await socket.CloseOutputAsync((WebSocketCloseStatus)4002, "connection superseded",
+                cancellationToken);
+        }
+        catch (Exception error) when (error is WebSocketException or OperationCanceledException
+            or ObjectDisposedException)
+        {
+            socket.Abort();
+        }
     }
 
     private OutgoingMessage EffectiveOperationsPolicyMessage(Guid sessionId)
@@ -3037,9 +3144,13 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private void HandlePlatformSessionsRevoked(IReadOnlyList<string> sessionIds)
     {
         var revoked = sessionIds.ToHashSet(StringComparer.Ordinal);
-        foreach (var mapping in _socketPlatformSessions.Where(item => revoked.Contains(item.Value)).ToArray())
+        foreach (var mapping in _socketPlatformSessions.Where(item => revoked.Contains(item.Value.PlatformSessionId)).ToArray())
         {
-            _socketPlatformSessions.TryRemove(mapping.Key, out _);
+            if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding)
+                && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
+                && active == mapping.Key)
+                _activeAccountSockets.TryRemove(binding.AccountId, out _);
+            _rooms.RecordConnectionClaimRejection(mapping.Value.AccountId, "platform-session-revoked");
             if (_sockets.TryGetValue(mapping.Key, out var socket)) socket.Abort();
         }
     }
@@ -3102,7 +3213,8 @@ public sealed record ContentRollbackRequest(string? BatchId, string? Idempotency
 public sealed record EffectReviewRequest(string? AbilityId, string? Status, string? Note,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record EffectReviewCommandPayload(string CardId, string? AbilityId, string Status, string? Note);
-public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode, string? MatchId, string? Version);
+public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode,
+    string? MatchId, string? Version, L12ClientConnectionDiagnosticView? ClientDiagnostic = null);
 public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes,
     string? Comment, string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false,
     string? Reason = null);

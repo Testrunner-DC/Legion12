@@ -621,6 +621,16 @@ const contracts = [
   [playerMat.includes("emit('cardAction', 'freeMove'") && playerMat.includes("unit?.cardId === 'S02-0510' && unit.tapped") && board.includes("mode.value === 'freeMove' ? 'move'"), '希波吕忒休整时必须提供独立的免费前后位移入口，并复用规则内移动命令'],
   [wsSmoke.includes("ws.send(JSON.stringify({ type: 'deploymentProbe' }))") && !wsSmoke.includes("wait(m => m.type === 'session')"), '发布烟雾测试必须先执行无状态 WebSocket 探针，不得恢复为认证前等待 session'],
   [wsServer.includes('"deploymentProbe" =>') && wsServer.includes('protocolVersion = 1') && wsServer.includes('authentication = "token"'), '服务端必须保留无需账号且不写运行数据的发布探针协议'],
+  [l12Net.includes("message.type === 'recoveryComplete'") && l12Net.includes("message.type === 'pong'")
+    && l12Net.includes('connectionGeneration') && l12Net.includes('lastCloseCode')
+    && l12Net.includes('lastHeartbeatAt') && l12Net.includes('lastPongAt')
+    && l12Net.includes("l12State.recoveryPhase = 'snapshot-acknowledged'")
+    && app.includes('l12State.recoveryPhase') && app.includes("route.path !== '/game'"), '断线恢复必须等完整权威快照确认后再返回对局，并记录连接代次、心跳、Pong与关闭原因'],
+  [globalBugFeedback.includes('captureBugClientDiagnostic(route.path)')
+    && !globalBugFeedback.includes('navigator.userAgent')
+    && platform.includes('clientDiagnostic?: BugClientConnectionDiagnostic')
+    && adminPage.includes('item.clientVersion') && adminPage.includes('item.serverVersion')
+    && adminPage.includes('item.engineVersion'), 'Bug反馈只能附带白名单连接诊断，后台必须分别展示客户端、服务端与规则引擎版本'],
   [cacheEnvironment.includes('D:\\GPT\\Legion12\\cache\\primary') && cacheEnvironment.includes('NUGET_PACKAGES') && cacheEnvironment.includes('npm_config_cache') && cacheEnvironment.includes('DOTNET_CLI_HOME') && cacheEnvironment.includes('COREPACK_HOME'), 'Windows 构建必须统一使用可覆盖的 D 盘缓存根目录'],
   [windowsVerify.includes('Initialize-L12BuildEnvironment.ps1') && windowsDeploy.includes('Initialize-L12BuildEnvironment.ps1') && windowsDeploy.includes('"-CacheRoot", $resolvedCacheRoot'), '完整验证和部署子进程必须共用同一缓存根目录'],
   [serverDeploy.includes('readonly public_host="legion-12.com"') && serverDeploy.includes('readonly public_base="https://${public_host}"') && serverDeploy.includes('"wss://${public_host}/ws"') && serverDeploy.includes('域名：${public_host}') && !serverDeploy.includes('wss://legion12.grand-umi.com/ws') && windowsDeploy.includes('[string]$Server = "root@legion-12.com"') && windowsDeploy.includes('发布成功：https://legion-12.com/') && bugQueue.includes('[string]$ApiBase = "https://legion-12.com"'), '主站、SSH、API 与发布后 HTTP/WS 探针必须统一使用 legion-12.com，不得回退旧主站域名'],
