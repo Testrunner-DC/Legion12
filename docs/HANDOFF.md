@@ -5,8 +5,8 @@
 ## 工作区与线上
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，分支 `codex/deploy-verify-20260821`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
-- 当前已提交开发基线（development commit）：`9e1d2b6103ede4d9d9b776aef483ea1f7e563c14`；其上还有尚未提交的`BUG-20260906-247`网络诊断/恢复批次，不能描述为已同步或已部署。
-- GitHub `origin/main`：`db9c9eca7428c8e5dcd2df3cbd4057ae9090be3c`。本地因`9e1d2b6`尚未推送而领先远端1个已提交变更；后续仍须用`git fetch origin main`和`git rev-list --left-right --count HEAD...origin/main`复核，不能假定本地已同步。
+- 当前功能开发提交（development commit）：`a40057154679548f8e896f47569e0336a1066290`，包含`BUG-20260906-247`正式版本诊断与WebSocket权威恢复；该提交仅在本地，不能描述为已同步或已部署。
+- GitHub `origin/main`：`db9c9eca7428c8e5dcd2df3cbd4057ae9090be3c`。本地功能提交链包含尚未推送的`9e1d2b6`和`a400571`；后续仍须用`git fetch origin main`和`git rev-list --left-right --count HEAD...origin/main`复核，不能假定本地已同步。
 - 线上已部署提交（deployed commit）仍为`8ba286b85958b192380ffbe82f1404559a6e7c99`，本轮没有部署授权。
 - 线上活动：`8ba286b85958b192380ffbe82f1404559a6e7c99-20260905T105254Z`；上一回滚：`9af7b28a295e041aff1940452a30ff9b588a3266-20260905T083230Z`。
 - 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-8ba286b85958-20260905T105254Z.tar.gz`；由服务器管理，不纳入本地清理。
@@ -20,7 +20,7 @@
 - UI-20260905-243 已同步：双方计时/回合状态移至棋盘右侧上下常驻HUD；右栏玩家摘要强制完整显示并让对局记录区独立滚动。提交级Release通过；本批未部署。
 - BUG-20260905-244 已同步：连续文章编辑器在每次DOM解析与序列化时统一修复空白、超长和重复正文块ID，并回写画布；服务端错误拆分为缺少、过长、重复三类。提交`34210c6`的Batch与Release均通过；本批未部署。
 - BUG-20260905-245 已同步到`origin/main`的`db9c9ec`但未部署；BUG-20260905-246 已提交为本地`9e1d2b6`，尚未推送也未部署。
-- BUG-20260906-247 当前处于提交前主审：正式版本盖章、无敏感诊断、账号generation fencing和完整快照ack已通过Focused/Batch规则2278/2278、平台71/71、UI246/246；不得把该未提交批次写成已同步或已部署。
+- BUG-20260906-247 已通过主审并提交为本地`a400571`：正式版本盖章、无敏感诊断、账号generation fencing和完整快照ack已通过Focused/Batch规则2278/2278、平台71/71、UI246/246；提交绑定Release待本交接状态入库后执行，仍不得写成已同步或已部署。
 - 已部署应用证据：规则2261/2261、平台71/71、UI240、卡图40/324、生产构建；HTTP/WS通过、service active/running，NRestarts=0。
 - 长期授权：完成批次验证且无冲突后可提交推送main；生产部署须本批明确授权。本次维护不包含新一轮服务部署。
 - 不自行新增产品规则，不把完整卡效文本改成概括，不让插入任务覆盖此前需求。详情按ID查 `TASK-LEDGER.md`、`BUGFIX-REGISTRY.md`。
