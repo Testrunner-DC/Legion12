@@ -54,7 +54,7 @@ public sealed partial class L12GameEngine
         switch (item.Trigger)
         {
             case "enter":
-            case "enter-followup": ResolveEnterEffect(item); break;
+                ResolveEnterEffect(item); break;
             case "promotion-enter": ResolveS2PromotionEnter(item); break;
             case "play": ResolveTacticEffect(item); break;
             case "attack": ResolveAttackEffect(item); break;

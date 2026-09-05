@@ -235,6 +235,25 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
+    public void LustDisasterDoesNotChargeAttackersWithoutDisasterLevel()
+    {
+        var game = Create(204011);
+        var player = game.State.Players[0];
+        var attacker = Card("ST01-08", "lust-level-zero-attacker");
+        player.Field[0][0] = attacker;
+        game.State.ActiveDisaster = Card("ST-DS02", "lust-level-zero-disaster");
+
+        var result = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.True(attacker.Tapped);
+        Assert.NotNull(game.State.PendingDefense);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "cost" && entry.Text.Contains("色欲之罪"));
+    }
+
+    [Fact]
     public void ChangeAndTombDefenderUseAuthoritativeResourceAndMovementEvents()
     {
         var changeGame = Create(20402);

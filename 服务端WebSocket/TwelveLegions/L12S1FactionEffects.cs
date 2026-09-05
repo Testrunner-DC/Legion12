@@ -505,7 +505,11 @@ public sealed partial class L12GameEngine
             case "ankh-ready-target": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "canopic-search":
             {
-                var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]); player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"{selected.Name}因效果加入手牌"); ShuffleLibrary(player, "卡诺匹斯箱检索结算");
+                var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]);
+                player.Library.Remove(selected);
+                PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                    $"卡诺匹斯箱展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌");
+                ShuffleLibrary(player, "卡诺匹斯箱检索结算");
                 FinishStackItem(item); return true;
             }
             case "canopic-one":
@@ -1524,7 +1528,13 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
-        if (selected is not null) { player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"法老王的庆典将{selected.Name}加入手牌"); AddEvent("search", item.Controller, $"法老王的庆典将 {selected.Name} 加入手牌", selected); }
+        if (selected is not null)
+        {
+            player.Library.Remove(selected);
+            PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                $"法老王的庆典展示〈{selected.Name}〉并加入手牌",
+                $"法老王的庆典将{selected.Name}加入手牌");
+        }
         var eligible = FestivalCardsStillInLibrary(item, player).Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").ToArray();
         if (eligible.Length == 0) { PromptPharaohFestivalOrder(item); return; }
         CreateFestivalCardPrompt(item, "festival-grave", "法老王的庆典：选择另1张【太阳城】卡牌置入墓地", eligible);
@@ -1579,6 +1589,8 @@ public sealed partial class L12GameEngine
     private void BeginFactionTopSearch(L12StackItem item, int count, string faction, string excluded, string context)
     {
         var player = State.Players[item.Controller]; var top = player.Library.Take(count).ToArray(); item.Data["faction-search-top"] = string.Join('|', top.Select(card => card.InstanceId)); item.Data["faction-search-context"] = context;
+        if (context == "sun-divinity" && top.Length > 0)
+            AddEvent("reveal", item.Controller, "众神之乡公开牌库顶部3张牌", top);
         const int max = 1;
         var choices = top.Where(card => L12StructuredCardRules.HasFaction(player, card, faction)
             && card.CardId != excluded).Select(card => card.InstanceId).ToArray();
@@ -1599,7 +1611,13 @@ public sealed partial class L12GameEngine
     private void CompleteFactionTopSearch(L12StackItem item, List<string> chosen)
     {
         var player = State.Players[item.Controller];
-        foreach (var id in chosen) { var card = player.Library.First(candidate => candidate.InstanceId == id); player.Library.Remove(card); AddCardToHandByEffect(player, card, "library", $"{card.Name}因效果加入手牌"); }
+        foreach (var id in chosen)
+        {
+            var card = player.Library.First(candidate => candidate.InstanceId == id);
+            player.Library.Remove(card);
+            PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+                $"〈{item.SourceName}〉展示〈{card.Name}〉并加入手牌", $"{card.Name}因效果加入手牌");
+        }
         var remaining = item.Data["faction-search-top"].Split('|').Where(id => player.Library.Any(card => card.InstanceId == id)).ToList();
         PromptFactionSearchOrder(item, remaining);
     }

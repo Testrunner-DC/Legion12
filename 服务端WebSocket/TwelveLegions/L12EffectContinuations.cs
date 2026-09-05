@@ -457,7 +457,9 @@ public sealed partial class L12GameEngine
         {
             var card = player.Library.First(candidate => candidate.InstanceId == choice);
             player.Library.Remove(card);
-            AddCardToHandByEffect(player, card, "library", $"花魁的馈赠将〈{card.Name}〉加入手牌");
+            PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+                $"花魁的馈赠展示〈{card.Name}〉并加入手牌",
+                $"花魁的馈赠将〈{card.Name}〉加入手牌");
             AddEvent("search", item.Controller, $"花魁的馈赠将〈{card.Name}〉加入手牌", card);
         }
         var remaining = item.Data["oiran-cards"].Split('|').Where(id => id != choice).ToList();

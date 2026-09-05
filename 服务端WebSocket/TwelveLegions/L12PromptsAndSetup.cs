@@ -1555,15 +1555,12 @@ public sealed partial class L12GameEngine
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);
         var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
-        var queueBatch6JATakeda = !queuedCompositeContinuation
-            && item.Data.GetValueOrDefault("batch6JAFollowup") == "takeda" && completedSource is not null;
         var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction" or "s2-reaction";
         var queueExorcistReturn = !queuedCompositeContinuation && !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";
         State.EffectStack.Remove(item);
-        if (queueBatch6JATakeda) QueueBatch6JATakedaFollowup(item.Controller, completedSource!);
         var owner = State.Players[item.Controller];
         var resolving = owner.Resolving.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId);
         if (resolving is not null && !queuedCompositeContinuation && !IsPendingCombatDeath(resolving.InstanceId)

@@ -374,7 +374,8 @@ public sealed partial class L12GameEngine
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library",
+                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                            $"寻找圣杯之旅展示〈{selected.Name}〉并加入手牌",
                             "寻找圣杯之旅将彼界军团展示并加入手牌");
                     }
                 }

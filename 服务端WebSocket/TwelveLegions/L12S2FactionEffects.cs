@@ -794,8 +794,11 @@ public sealed partial class L12GameEngine
                     && candidate.CardType == "legion" && candidate.HasTrait("晋升者"));
                 if (target is not null)
                 {
-                    AddEvent("reveal", item.Controller, $"忒修斯展示墓地的〈{target.Name}〉并加入手牌", target);
-                    MoveGraveToHand(player, target.InstanceId);
+                    player.Graveyard.Remove(target);
+                    PubliclyRevealThenAddCardToHandByEffect(player, target, "graveyard",
+                        $"忒修斯展示墓地的〈{target.Name}〉并加入手牌",
+                        $"忒修斯将〈{target.Name}〉加入手牌");
+                    AddEvent("return", item.Controller, $"{target.Name}从墓地回到手牌", target);
                 }
                 else AddEvent("effect-cancelled", item.Controller,
                     "忒修斯已声明的【晋升者】目标失效；效果取消", card);
@@ -1783,8 +1786,8 @@ public sealed partial class L12GameEngine
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
-                    AddCardToHandByEffect(player, selected, "library", "梅林检索主动战术");
-                    AddEvent("reveal", item.Controller, $"梅林展示〈{selected.Name}〉并加入手牌", selected);
+                    PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                        $"梅林展示〈{selected.Name}〉并加入手牌", "梅林检索主动战术");
                 }
                 ShuffleLibrary(player, "梅林检索结算");
                 FinishStackItem(item);
@@ -1851,7 +1854,9 @@ public sealed partial class L12GameEngine
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library", "普罗米修斯将奥林匹斯卡牌加入手牌");
+                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                            $"普罗米修斯展示〈{selected.Name}〉并加入手牌",
+                            "普罗米修斯将奥林匹斯卡牌加入手牌");
                     }
                 }
                 var remaining = topIds.Where(id => player.Library.Any(card => card.InstanceId == id)).ToArray();
@@ -1881,12 +1886,13 @@ public sealed partial class L12GameEngine
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library", "武田信玄检索高天原军团");
+                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                            $"武田信玄展示〈{selected.Name}〉并加入手牌",
+                            "武田信玄检索高天原军团");
                     }
                 }
                 ShuffleLibrary(player, "武田信玄检索结算");
-                FinishStackItem(item);
-                return true;
+                return BeginTakedaFollowupWithinStack(item);
             }
             case "s2-takeda-sanada":
                 if (chosen[0] == "skip")
@@ -1900,8 +1906,14 @@ public sealed partial class L12GameEngine
             case "s2-takeda-sanada-slot":
             {
                 var sanadaId = item.Data.GetValueOrDefault("takeda-sanada");
-                if (!string.IsNullOrWhiteSpace(sanadaId))
-                    SummonFromAnyPrivateZone(player, sanadaId, chosen[0], tapped: false);
+                var summoned = !string.IsNullOrWhiteSpace(sanadaId)
+                    && TrySummonFromAnyPrivateZone(player, player.PlayerIndex, sanadaId,
+                        chosen[0], tapped: false);
+                if (!summoned)
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
                 var restedMorale = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
                 if (restedMorale.Length == 0)
                 {
@@ -2092,8 +2104,9 @@ public sealed partial class L12GameEngine
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
-                    AddCardToHandByEffect(player, selected, "library", "符文之力将【彼界】卡牌加入手牌");
-                    AddEvent("reveal", item.Controller, $"〈符文之力〉展示〈{selected.Name}〉并加入手牌", selected);
+                    PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                        $"〈符文之力〉展示〈{selected.Name}〉并加入手牌",
+                        "符文之力将【彼界】卡牌加入手牌");
                 }
                 PromptRunePowerBottomOrder(item, ids);
                 return true;
@@ -2136,7 +2149,9 @@ public sealed partial class L12GameEngine
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
-                    AddCardToHandByEffect(player, selected, "library", "圆桌领域将【圆桌骑士】军团加入手牌");
+                    PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                        $"圆桌领域展示〈{selected.Name}〉并加入手牌",
+                        "圆桌领域将【圆桌骑士】军团加入手牌");
                 }
                 ShuffleLibrary(player, "圆桌领域检索结算");
                 FinishStackItem(item);
@@ -2153,8 +2168,9 @@ public sealed partial class L12GameEngine
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library", "八尺琼勾玉将【高天原】的【骑兵】军团加入手牌");
-                        AddEvent("reveal", item.Controller, $"八尺琼勾玉展示〈{selected.Name}〉", selected);
+                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                            $"八尺琼勾玉展示〈{selected.Name}〉并加入手牌",
+                            "八尺琼勾玉将【高天原】的【骑兵】军团加入手牌");
                     }
                 }
                 ShuffleLibrary(player, "八尺琼勾玉检索结算");
@@ -2168,8 +2184,9 @@ public sealed partial class L12GameEngine
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
-                    AddCardToHandByEffect(player, selected, "library", "荣耀之路将【奥林匹斯】卡牌加入手牌");
-                    AddEvent("reveal", item.Controller, $"〈荣耀之路〉展示〈{selected.Name}〉并加入手牌", selected);
+                    PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                        $"〈荣耀之路〉展示〈{selected.Name}〉并加入手牌",
+                        "荣耀之路将【奥林匹斯】卡牌加入手牌");
                 }
                 ShuffleLibrary(player, "荣耀之路检索结算");
                 FinishStackItem(item);
@@ -2278,6 +2295,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var top = player.Library.Take(5).ToArray();
         item.Data["s2-fortune-cards"] = string.Join('|', top.Select(card => card.InstanceId));
+        if (top.Length > 0)
+            AddEvent("reveal", item.Controller, "〈武运在天 铠甲在前〉展示牌库顶部5张牌", top);
         var artifacts = top.Where(card => card.CardType == "artifact").ToArray();
         if (artifacts.Length == 0)
         {
@@ -2324,8 +2343,9 @@ public sealed partial class L12GameEngine
         if (valid)
         {
             player.Library.Remove(selected!);
-            AddCardToHandByEffect(player, selected!, "library", $"〈武运在天 铠甲在前〉将〈{selected!.Name}〉加入手牌");
-            AddEvent("search", item.Controller, $"〈武运在天 铠甲在前〉将〈{selected.Name}〉加入手牌", selected);
+            PubliclyRevealThenAddCardToHandByEffect(player, selected!, "library",
+                $"〈武运在天 铠甲在前〉确认将〈{selected!.Name}〉加入手牌",
+                $"〈武运在天 铠甲在前〉将〈{selected.Name}〉加入手牌");
         }
 
         if (stage == "artifact") PromptS2FortuneUesugi(item);

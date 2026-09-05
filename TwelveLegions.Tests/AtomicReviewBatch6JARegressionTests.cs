@@ -329,17 +329,61 @@ public sealed class AtomicReviewBatch6JARegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "entry:batch6ja-takeda-no-empty-search-stack")]
-    public void TakedaDecliningSearchStartsWithTheIndependentFollowupDeclaration()
+    [Trait("L12Evidence", "entry:batch6ja-takeda-decline-stops-whole-effect")]
+    public void TakedaDecliningWholeAbilityCreatesNoStackOrFollowupPrompt()
     {
         var fixture = Arrange("S02-0401", "enter", 9975);
 
         Resolve(fixture.Game, "mode:none");
 
-        var followup = OnlyPrompt(fixture.Game);
-        Assert.Equal("pending-activation", followup.Continuation);
-        Assert.Contains("随后", followup.Text);
+        Assert.Empty(fixture.Game.State.PendingPrompts);
+        Assert.Empty(fixture.Game.State.PendingActivations);
         Assert.Empty(fixture.Game.State.EffectStack);
+        Assert.Contains(fixture.Game.State.Players[0].Hand,
+            card => card.InstanceId == "batch6ja-sanada");
+        Assert.True(fixture.Game.State.Players[0].Morale.Single(
+            card => card.InstanceId == "batch6ja-morale-5").Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:batch6ja-takeda-search-skip-same-stack")]
+    public void TakedaUsingAbilityAndSkippingSearchContinuesWithinTheSameStackItem()
+    {
+        var fixture = Arrange("S02-0401", "enter", 99750);
+        Resolve(fixture.Game, "mode:use");
+        var item = Assert.Single(fixture.Game.State.EffectStack);
+        var stackItemId = item.StackItemId;
+        PassResponses(fixture.Game);
+
+        var search = OnlyPrompt(fixture.Game);
+        Assert.Equal("s2-takeda-search", search.Data["action"]);
+        Assert.Equal(stackItemId, search.StackItemId);
+        Resolve(fixture.Game, "skip");
+
+        var sanada = OnlyPrompt(fixture.Game);
+        Assert.Equal("s2-takeda-sanada", sanada.Data["action"]);
+        Assert.Equal(stackItemId, sanada.StackItemId);
+        Assert.Equal(stackItemId, Assert.Single(fixture.Game.State.EffectStack).StackItemId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:batch6ja-takeda-negated-stops-whole-effect")]
+    public void NegatingTakedaWholeEffectStopsSearchSummonAndMoraleFollowup()
+    {
+        var fixture = Arrange("S02-0401", "enter", 99751);
+        Resolve(fixture.Game, "mode:use");
+        var item = Assert.Single(fixture.Game.State.EffectStack);
+        item.Negated = true;
+
+        PassResponses(fixture.Game);
+
+        Assert.Empty(fixture.Game.State.EffectStack);
+        Assert.Empty(fixture.Game.State.PendingPrompts);
+        Assert.Contains(fixture.Game.State.Players[0].Hand,
+            card => card.InstanceId == "batch6ja-sanada");
+        Assert.DoesNotContain(fixture.Game.State.Players[0].Hand,
+            card => card.InstanceId == "batch6ja-universal-search");
+        Assert.True(fixture.Game.State.Players[0].Morale.Single(card => card.InstanceId == "batch6ja-morale-5").Tapped);
     }
 
     [Fact]

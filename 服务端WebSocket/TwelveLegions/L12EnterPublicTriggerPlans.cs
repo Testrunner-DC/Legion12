@@ -21,7 +21,7 @@ public sealed partial class L12GameEngine
         ["S01-0417|enter"] = "kusanagi", ["S02-0003|enter"] = "court-magician",
         ["S02-0008|enter"] = "ring", ["S02-0204|enter"] = "imhotep",
         ["S02-0303|enter"] = "canute", ["S02-0401|enter"] = "takeda-search",
-        ["S02-0401|enter-followup"] = "takeda-followup", ["S02-0402|enter"] = "ii-naotora",
+        ["S02-0402|enter"] = "ii-naotora",
         ["S02-0404|enter"] = "magatama-search", ["S02-0501|enter"] = "heracles-promoted-entry",
         ["S02-0501|promotion-enter"] = "heracles-promotion", ["S02-0502|enter"] = "heracles",
         ["S02-0505|promotion-enter"] = "perseus-promotion", ["S02-0506|enter"] = "perseus",
@@ -238,19 +238,6 @@ public sealed partial class L12GameEngine
                     enemy.Select(card => card.InstanceId), "mode:use"); break;
             case "richard": Optional("狮心王理查一世：预先声明是否叠放1张侍从骑士"); break;
             case "magatama-search" or "takeda-search": Optional($"〈{source.Name}〉：预先声明是否查看牌库并检索"); break;
-            case "takeda-followup":
-            {
-                var sanadas = player.Hand.Where(card => card.CardId == "S01-0404").Select(card => card.InstanceId).ToArray();
-                var slots = EmptySlots(player).ToArray();
-                var morale = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
-                if (sanadas.Length == 0 || slots.Length == 0) break;
-                Optional("武田信玄：预先声明是否发动随后真田幸村登场段");
-                One("hand-card", "entryCard", "武田信玄：私密选择手牌中的真田幸村", sanadas, "mode:use");
-                One("field-slot", "entrySlot", "武田信玄：预先选择公开登场位置", slots, "mode:use");
-                if (morale.Length > 0)
-                    One("target-morale", "moraleTarget", "武田信玄：预先选择随后转为活跃的休整士气", morale, "mode:use");
-                break;
-            }
             case "canute":
             {
                 var targets = own.Concat(player.Graveyard).Where(card => card.CardType == "legion"
@@ -318,12 +305,6 @@ public sealed partial class L12GameEngine
             ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var preserve = plan is "zhuge" or "richard";
-        if (plan == "takeda-search" && mode == "mode:none")
-        {
-            State.PendingTriggerStackCandidates.Remove(candidate);
-            QueueBatch6JATakedaFollowup(candidate.Controller, source);
-            return true;
-        }
         if (mode == "mode:none" && !preserve)
         {
             State.PendingTriggerStackCandidates.Remove(candidate);
@@ -405,7 +386,6 @@ public sealed partial class L12GameEngine
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0217:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
         else if (plan == "canopic-four")
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0220:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
-        if (plan == "takeda-search") candidate.Data["batch6JAFollowup"] = "takeda";
         candidate.Data.Remove("declaration-committing");
         candidate.Data["declaration-complete"] = "true";
         AdvanceTriggerBatches();
@@ -418,10 +398,6 @@ public sealed partial class L12GameEngine
         if (plan is null && !AtomicFlowKey(item, source).StartsWith("batch6ja-", StringComparison.OrdinalIgnoreCase)) return false;
         return ResolveBatch6JAEnterEffect(item, source, plan);
     }
-
-    private void QueueBatch6JATakedaFollowup(int controller, L12CardInstance source)
-        => QueueOrPushTriggeredEffect(controller, source, "enter-followup",
-            "武田信玄：随后选择将手牌1张〈真田幸村〉活跃登场，并将1张士气转为活跃");
 
     private bool ResolveBatch6JAEnterEffect(L12StackItem item, L12CardInstance source, string? plan)
     {
@@ -565,18 +541,16 @@ public sealed partial class L12GameEngine
             }
             case "takeda-search":
             {
+                if (One("mode") != "mode:use")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
                 var choices = player.Library.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
                         && card.CardType == "legion" && card.BaseTroops <= 5000)
                     .Select(card => card.InstanceId).Append("skip").ToArray();
                 CreatePrompt(item.Controller, "optional-card", "武田信玄：选择符合条件的高天原军团展示并加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: new() { ["action"] = "s2-takeda-search" }); return true;
-            }
-            case "takeda-followup":
-            {
-                var summoned = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, One("entryCard"), One("entrySlot"), tapped: false);
-                if (summoned && player.Morale.FirstOrDefault(card => card.InstanceId == One("moraleTarget") && card.Tapped) is { } readyMorale)
-                    ReadyMoraleByEffect(item.Controller, source, readyMorale, "武田信玄使1张士气转为活跃");
-                break;
             }
             case "canute":
             {
@@ -612,6 +586,28 @@ public sealed partial class L12GameEngine
                 break;
         }
         FinishStackItem(item);
+        return true;
+    }
+
+    private bool BeginTakedaFollowupWithinStack(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var sanadas = player.Hand.Where(card => card.CardId == "S01-0404").ToArray();
+        if (sanadas.Length == 0 || !EmptySlots(player).Any())
+        {
+            FinishStackItem(item);
+            return true;
+        }
+
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "s2-takeda-sanada",
+            ["skip"] = "不发动真田幸村登场与士气转活跃",
+        };
+        foreach (var sanada in sanadas) AddPromptCardData(data, sanada);
+        CreatePrompt(item.Controller, "optional-card", "武田信玄：可选择手牌1张〈真田幸村〉活跃登场，并将1张士气转为活跃",
+            sanadas.Select(card => card.InstanceId).Append("skip"), 1, 1,
+            "card-effect", item.StackItemId, data: data);
         return true;
     }
 }

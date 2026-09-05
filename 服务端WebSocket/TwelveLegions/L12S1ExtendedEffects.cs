@@ -813,7 +813,10 @@ public sealed partial class L12GameEngine
         var topIds = item.Data["camp-top"].Split('|', StringSplitOptions.RemoveEmptyEntries);
         if (choice != "skip")
         {
-            var selected = player.Library.First(card => card.InstanceId == choice); player.Library.Remove(selected); AddCardToHandByEffect(player, selected, "library", $"{selected.Name}因效果加入手牌");
+            var selected = player.Library.First(card => card.InstanceId == choice);
+            player.Library.Remove(selected);
+            PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌");
         }
         var remaining = topIds.Where(id => id != choice && player.Library.Any(card => card.InstanceId == id)).ToArray();
         if (remaining.Length <= 1)

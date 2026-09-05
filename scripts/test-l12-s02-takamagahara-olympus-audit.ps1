@@ -76,7 +76,7 @@ $questionStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus) + ' \|').Count
-if ($fixedCount -ne 16 -or $passedCount -ne 19 -or $questionCount -ne 0) {
+if ($fixedCount -ne 17 -or $passedCount -ne 18 -or $questionCount -ne 0) {
     throw "Batch 6L-C status totals drifted (passed=$passedCount, fixed=$fixedCount, question=$questionCount)."
 }
 Write-Host 'S02 Takamagahara + Olympus per-ability audit guard passed (35 cards / 104 abilities).'

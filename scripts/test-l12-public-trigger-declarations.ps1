@@ -286,12 +286,16 @@ foreach ($contract in @(
     'PrepareBatch6JAEnterCandidate', 'TryBeginBatch6JAEnterDeclaration',
     'TryCompleteBatch6JAEnterDeclaration', 'TryResolveBatch6JAEnterEffect',
     'ReturnSelectedMoraleById', 'L12S2ZoneOps.SpendRunes', 'MoveHandToGrave',
-    'batch6JAFollowup', 'takeda-followup'
+    'BeginTakedaFollowupWithinStack'
 )) {
     Assert-Contains $entryPlans $contract "Batch 6J-A public entry contract is missing: $contract"
 }
 Assert-Contains $kernel '.Where(PrepareBatch6JAEnterCandidate)' 'Every TriggerBatch entry must filter Batch 6J-A enter candidates.'
-Assert-Contains $cardEffects 'case "enter-followup"' 'Takeda independent follow-up needs an explicit stack dispatch.'
+foreach ($obsoleteTakedaSplit in @('batch6JAFollowup', 'takeda-followup', 'case "enter-followup"')) {
+    if ($allRuntime.IndexOf($obsoleteTakedaSplit, [StringComparison]::Ordinal) -ge 0) {
+        throw "Takeda must resolve as one stack item; obsolete split route returned: $obsoleteTakedaSplit"
+    }
+}
 Assert-Contains $composite '["trigger:S01-0111:enter"]' 'Zhuge reveal and disaster adjustment must remain independent stack segments.'
 Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One target and discard must remain independent stack segments.'
 Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four target and discard must remain independent stack segments.'

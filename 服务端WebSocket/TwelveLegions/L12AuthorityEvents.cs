@@ -226,6 +226,13 @@ public sealed partial class L12GameEngine
         NotifyCardAddedToHandByEffect(player, card, originZone, reason);
     }
 
+    private void PubliclyRevealThenAddCardToHandByEffect(L12PlayerState player, L12CardInstance card,
+        string originZone, string revealText, string handAddReason)
+    {
+        AddEvent("reveal", player.PlayerIndex, revealText, card);
+        AddCardToHandByEffect(player, card, originZone, handAddReason);
+    }
+
     private bool MoveLibraryCardToHandByEffect(L12PlayerState player, string instanceId, string reason)
     {
         var index = player.Library.FindIndex(card => card.InstanceId == instanceId);
@@ -234,6 +241,15 @@ public sealed partial class L12GameEngine
         player.Library.RemoveAt(index);
         AddCardToHandByEffect(player, card, "library", reason);
         return true;
+    }
+
+    private bool PubliclyRevealThenMoveLibraryCardToHandByEffect(L12PlayerState player,
+        string instanceId, string revealText, string handAddReason)
+    {
+        var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
+        if (card is null) return false;
+        AddEvent("reveal", player.PlayerIndex, revealText, card);
+        return MoveLibraryCardToHandByEffect(player, instanceId, handAddReason);
     }
 
     private static string ZoneLabel(string zone) => zone switch

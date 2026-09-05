@@ -463,9 +463,8 @@ public sealed partial class L12GameEngine
                 if (recover is not null)
                 {
                     player.Graveyard.Remove(recover);
-                    AddEvent("reveal", item.Controller,
-                        $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌", recover);
-                    AddCardToHandByEffect(player, recover, "graveyard",
+                    PubliclyRevealThenAddCardToHandByEffect(player, recover, "graveyard",
+                        $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌",
                         $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌");
                 }
                 else AddEvent("effect-cancelled", item.Controller,

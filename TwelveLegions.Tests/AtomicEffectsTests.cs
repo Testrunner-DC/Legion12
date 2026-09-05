@@ -122,7 +122,7 @@ public sealed class AtomicEffectsTests
     {
         var catalog = Catalog;
         var catalogMappedRoutes = 0;
-        Assert.Equal(179, L12RuntimeEffectRoutes.AllPrograms.Count);
+        Assert.Equal(180, L12RuntimeEffectRoutes.AllPrograms.Count);
         foreach (var program in L12RuntimeEffectRoutes.AllPrograms)
         {
             Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
@@ -143,7 +143,19 @@ public sealed class AtomicEffectsTests
         // 部分内部路由时机（例如天灾结算、S02 响应窗口）与卡面能力的展示时机不同；
         // 它们仍由同一注册表驱动实战，但不能用展示层 Trigger 名称强行判等。
         Assert.True(catalogMappedRoutes >= 150,
-            $"预期绝大多数实战路由可直接映射到卡面能力，实际为 {catalogMappedRoutes}/178。");
+            $"预期绝大多数实战路由可直接映射到卡面能力，实际为 {catalogMappedRoutes}/{L12RuntimeEffectRoutes.AllPrograms.Count}。");
+    }
+
+    [Theory]
+    [InlineData("S01-0308")]
+    [InlineData("ST03-04")]
+    public void EveryPrintedAfterMasterDamageEffectHasAnExecutableAfterDamageRoute(string cardId)
+    {
+        var program = Assert.IsType<L12VerifiedAtomicProgram>(
+            L12VerifiedAtomicPrograms.Find(cardId, "after-damage"));
+        Assert.Contains(program.Atoms, atom => atom.Kind == L12AtomKinds.Trigger
+            && atom.Parameters.GetValueOrDefault("timing") == "after-damage");
+        Assert.All(program.Atoms, atom => Assert.True(atom.RuntimeExecutable));
     }
 
     [Fact]

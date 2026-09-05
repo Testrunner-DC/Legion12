@@ -1262,9 +1262,8 @@ public sealed partial class L12GameEngine
                         || selected.CardType is "tactic" or "counter-tactic"
                             && L12StructuredCardRules.HasFaction(player, selected, "olympus")))
                 {
-                    AddEvent("reveal", item.Controller,
-                        $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌", selected);
-                    _ = MoveLibraryCardToHandByEffect(player, selected.InstanceId,
+                    _ = PubliclyRevealThenMoveLibraryCardToHandByEffect(player, selected.InstanceId,
+                        $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌",
                         $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌");
                 }
                 var remaining = topIds.Where(id => !string.Equals(id, chosenId,

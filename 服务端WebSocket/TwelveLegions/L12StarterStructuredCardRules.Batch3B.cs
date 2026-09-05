@@ -76,8 +76,8 @@ public static partial class L12StructuredCardRules
             or "aeneas-promotion-search" or "nuada-rune-buff" or "sky-city-completion"
             or "akhenaten-death-heal" or "light-sword-enter-kill";
 
-    internal static bool RequiresStarterDisasterAttackDiscard(string? cardId)
-        => cardId == "ST-DS02";
+    internal static bool RequiresStarterDisasterAttackDiscard(string? cardId, L12CardInstance attacker)
+        => cardId == "ST-DS02" && attacker.DisasterLevel > 0;
 
     internal static bool IsStarterKondoReplacementSource(string cardId)
         => cardId == "ST04-05";

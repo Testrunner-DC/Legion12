@@ -9,11 +9,11 @@
   "legacyEffectTextInferenceOccurrences": 0,
   "fineGrainedVerifiedPrograms": 57,
   "fineGrainedVerifiedCards": 52,
-  "compositeTransitionRoutes": 179,
+  "compositeTransitionRoutes": 180,
   "compositeTransitionCards": 148,
   "catalogOnlyPendingCards": 139,
   "unroutedWithAuthoritativeRuntimeCards": 102,
   "noRuntimeEntranceCards": 30,
   "unroutedWithTestEvidenceCards": 102,
-  "rule": "Runtime card-id case dispatch and EffectText runtime inference must remain zero. The 2026-09-02 baseline adds 76 ST product cards and records the intentionally pending runtime batches; every later batch must reduce or preserve pending/no-entry counts while increasing verified coverage. Cards with printed no-effect text do not require a runtime entrance. Card identity references and composite routes may only decrease; fine-grained verified card coverage may not decrease."
+  "rule": "Runtime card-id case dispatch and EffectText runtime inference must remain zero. The 2026-09-02 baseline adds 76 ST product cards and records the intentionally pending runtime batches; every later batch must reduce or preserve pending/no-entry counts while increasing verified coverage. Cards with printed no-effect text do not require a runtime entrance. Card identity references may only decrease; composite routes may grow only with an explicit printed-effect resolver/route completeness regression and a reviewed baseline update; fine-grained verified card coverage may not decrease."
 }

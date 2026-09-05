@@ -655,7 +655,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject(attackError);
         var defender = State.Players[1 - playerIndex];
 
-        if (L12StructuredCardRules.RequiresStarterDisasterAttackDiscard(State.ActiveDisaster?.CardId))
+        if (L12StructuredCardRules.RequiresStarterDisasterAttackDiscard(State.ActiveDisaster?.CardId, attacker))
         {
             var selected = command.CardInstanceIds?.ToArray();
             if (selected is null)

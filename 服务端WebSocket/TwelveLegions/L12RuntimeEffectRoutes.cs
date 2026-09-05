@@ -89,6 +89,7 @@ public static class L12RuntimeEffectRoutes
         new("S01-0306", "attack", "奥拉夫二世"),
         new("S01-0306", "death", "奥拉夫二世"),
         new("S01-0307", "death", "阿尔维达"),
+        new("S01-0308", "after-damage", "血斧艾瑞克"),
         new("S01-0308", "death", "血斧艾瑞克"),
         new("S01-0309", "enter", "布伦希尔德"),
         new("S01-0310", "attack", "齐格鲁德"),

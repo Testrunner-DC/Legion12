@@ -77,7 +77,7 @@ $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YC
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus)).Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
-if ($fixedCount -ne 8 -or $questionCount -ne 0 -or $passedCount -ne 45) {
+if ($fixedCount -ne 9 -or $questionCount -ne 0 -or $passedCount -ne 44) {
     throw "Batch 6K-B status totals drifted (passed=$passedCount, fixed=$fixedCount, questions=$questionCount)."
 }
 Write-Host 'S01 Sun City + Asgard per-ability audit guard passed (53 cards / 124 abilities).'

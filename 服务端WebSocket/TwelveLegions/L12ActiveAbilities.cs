@@ -596,8 +596,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var card = player.Library.First(candidate => candidate.InstanceId == cardId);
         player.Library.Remove(card);
-        AddCardToHandByEffect(player, card, "library", $"刘备将{card.Name}加入手牌");
-        AddEvent("search", item.Controller, $"刘备将 {card.Name} 加入手牌", card);
+        PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+            $"刘备展示〈{card.Name}〉并加入手牌", $"刘备将{card.Name}加入手牌");
         FinishStackItem(item);
     }
 
@@ -606,8 +606,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var card = player.Library.First(candidate => candidate.InstanceId == cardId);
         player.Library.Remove(card);
-        AddCardToHandByEffect(player, card, "library", $"山河社稷图将{card.Name}加入手牌");
-        AddEvent("search", item.Controller, $"山河社稷图将 {card.Name} 加入手牌", card);
+        PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+            $"山河社稷图展示〈{card.Name}〉并加入手牌", $"山河社稷图将{card.Name}加入手牌");
         var remaining = item.Data["shanhe-top"].Split('|').Where(id => id != cardId).ToArray();
         if (remaining.Length == 0) { FinishStackItem(item); return; }
         BeginAllTopBottomReorder(item, "shanhe", remaining,

@@ -125,6 +125,35 @@ public sealed class Bq20260904_03RegressionTests
     }
 
     [Fact]
+    public void ErikUsesGenericAfterDamageRouteAndDiscardsExactlyOnce()
+    {
+        var game = Create(9040331);
+        var erik = Card("S01-0308", "erik-after-damage");
+        var first = Card("ST01-04", "erik-discard-first");
+        var second = Card("ST01-05", "erik-discard-second");
+        game.State.Players[0].Field[0][0] = erik;
+        game.State.Players[1].Hand.AddRange([first, second]);
+
+        var attack = game.Handle(0, new L12Command("attack", erik.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.True(attack.Accepted, attack.Error);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, prompt.PlayerIndex);
+        Assert.Equal("erik-discard", prompt.Data.GetValueOrDefault("action"));
+        var submit = new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [first.InstanceId]);
+        Assert.True(game.Handle(1, submit).Accepted);
+        Assert.Single(game.State.Players[1].Hand);
+        Assert.Contains(first, game.State.Players[1].Graveyard);
+
+        Assert.False(game.Handle(1, submit).Accepted);
+        Assert.Single(game.State.Players[1].Hand);
+        Assert.DoesNotContain(second, game.State.Players[1].Graveyard);
+    }
+
+    [Fact]
     public void SigurdOffersOptionalGraveReturnThenUsesTheDiscountOnlyAfterSelection()
     {
         var game = Create(904034);

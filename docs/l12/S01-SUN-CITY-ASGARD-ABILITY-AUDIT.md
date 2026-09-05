@@ -1,12 +1,12 @@
 # S01 太阳城与阿斯加德逐卡独立语义审计（Batch 6K-B）
 
-更新日期：2026-09-02
+更新日期：2026-09-05
 
 ## 范围与结论
 
 - 固定范围为 `cards.s1.json` 的 29 张 `taiyangcheng` 卡与 24 张 `asgard` 卡（含主宰、士气、阵营、Token/特殊牌），共 53 张、124 项能力；不重复 S01 通用、天廷或天灾。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。每行均独立核对时点、费用/目标声明、区域、数值层、公开与私密信息、目标失效、来源 LKI、多实例次数与响应无效。
-- 唯一结论：45 张通过、8 张明确错误并修复、有疑点 0；缺少测试 0、未实现 0。霍列姆赫布与托勒密十三世已按 2026-09-02 玩家裁定闭环。
+- 唯一结论：44 张通过、9 张明确错误并修复、有疑点 0；缺少测试 0、未实现 0。霍列姆赫布与托勒密十三世已按 2026-09-02 玩家裁定闭环；艾瑞克 `after-damage` 路由于2026-09-05补齐。
 
 ## 太阳城（29 张 / 69 项能力）
 
@@ -53,7 +53,7 @@
 | S01-0305 勇士比约恩 | 2 | 低血减费；阵亡时伤害及有序4张墓地费用、公开位置全部预付/声明，位置失效不退款且不覆盖。 | `L12PublicTriggerEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6ERegressionTests` | 通过 |
 | S01-0306 奥拉夫二世 | 3 | 低血减费；进攻有序墓地费用预付；阵亡抽2后弃1的具体手牌身份合法延迟。 | `L12AttackPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 通过 |
 | S01-0307 阿尔维达 | 2 | 主动弃自身不是阵亡，伤害与私密手牌军团/公开位置先提交；阵亡公开墓地回收目标前置。 | `L12PublicActiveEffectPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`LatestBugRegressionTests` | 通过 |
-| S01-0308 血斧艾瑞克 | 3 | 自伤减费；造成主宰伤害后由受影响对手私密弃牌；阵亡公开墓地军团/位置前置并 Try 登场。 | `L12S1FactionEffects`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6ERegressionTests`、`LatestBugRegressionTests` | 通过 |
+| S01-0308 血斧艾瑞克 | 3 | 自伤减费；真实进攻对主宰造成伤害后经已验证 `after-damage` 路由恰一次令受影响对手私密弃牌，重复提交不能再次消费；阵亡公开墓地军团/位置前置并 Try 登场。 | `L12RuntimeEffectRoutes`、`L12Actions`、`L12S1FactionEffects` | `Bq20260904_03RegressionTests`、`AtomicEffectsTests`、`AtomicReviewBatch6ERegressionTests` | 明确错误→已修复 |
 | S01-0309 布伦希尔德 | 3 | 远程静态；登场自伤费用与齐格鲁德/位置预付预声明；阵亡抽牌可选条件在候选建立时锁定。 | `L12PublicTriggerEffectPlans`、`L12EnterPublicTriggerPlans` | `AtomicReviewBatch6IARegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
 | S01-0310 齐格鲁德 | 3 | 自伤减费；位移回合1次；进攻时仅在格拉墨仍存在时获得本回合兵力层。 | `L12Actions`、`L12S1FactionEffects` | `GameEngineTests`、`LatestBugRegressionTests` | 通过 |
 | S01-0311 古斯塔夫一世 | 2 | 进攻与进攻后各自独立时点；各自2张有序墓地费用入栈前预付，后者使用 pending→final 回合1次。 | `L12AttackPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JBRegressionTests` | 通过 |
