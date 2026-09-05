@@ -6,6 +6,7 @@
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，分支 `codex/deploy-verify-20260821`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
 - 本次维护前 GitHub main 和 app HEAD：`8ba286b85958b192380ffbe82f1404559a6e7c99`。维护工具的后续提交可能领先线上，用 `git log -1` 与 `git status --short` 核实。
+- 维护工具提交 `4719d59f9a3ce1f2067ac238870debd3f92baf15` 已通过新版Release并推送main；其后文档提交只补记证据。规则2261、平台71、UI240、卡图40/324、隔离前端构建及publish通过，每项仅一轮。该维护批次未部署。
 - 线上活动：`8ba286b85958b192380ffbe82f1404559a6e7c99-20260905T105254Z`；上一回滚：`9af7b28a295e041aff1940452a30ff9b588a3266-20260905T083230Z`。
 - 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-8ba286b85958-20260905T105254Z.tar.gz`；由服务器管理，不纳入本地清理。
 - 卡图资源版本：`910b3449455cd1505cc787eaf3412a4412c09d2e373c5450d85cd6c9994a5cc3`，原图及当前内容寻址图库保留。
