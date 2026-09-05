@@ -75,8 +75,10 @@ export function compareArchiveVersions(a: DeckCard, b: DeckCard) {
 
 function logicalIdentity(card: DeckCard) {
   const moraleId = moraleVersionIdentity.get(card.id)
+    ?? moraleVersionIdentity.get(card.archiveBaseCardId ?? '')
   // Printed morale variants share one archive identity. The Olympus god-power
   // reverse is a runtime state of S02-05C1, not the canonical identity of its A art.
+  // Presentation-only `st` cards inherit the identity of their direct STxx-C1 base.
   return moraleId ? `morale:${moraleId}` : `rules:${ruleIdentity(card)}`
 }
 

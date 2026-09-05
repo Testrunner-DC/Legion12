@@ -161,7 +161,12 @@ if (oversized.length) throw new Error(`卡图变体超过体积门禁：${oversi
 const totalBytes = cards.reduce((sum, card) => sum + Object.values(card.bytes).reduce((cardSum, bytes) => cardSum + bytes, 0), 0)
 if (totalBytes > maxTotalBytes) throw new Error(`优化卡图总量 ${totalBytes} 超过门禁 ${maxTotalBytes}`)
 const assetVersion = createHash('sha256')
-  .update(cards.map(card => `${card.cardId}:${card.contentHash}`).sort().join('\n'))
+  .update(cards.map(card => [
+    card.cardId,
+    card.contentHash,
+    card.presentationOnly ? 'presentation' : 'playable',
+    card.baseCardId || '',
+  ].join(':')).sort().join('\n'))
   .digest('hex')
 
 const manifest = {

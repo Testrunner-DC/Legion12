@@ -318,7 +318,7 @@
     },
     {
       "id": "ST01-C1st",
-      "baseCardId": "S01-01C1",
+      "baseCardId": "ST01-C1",
       "product": "ST01",
       "products": [
         "ST01|天廷阵营预组"
@@ -328,7 +328,7 @@
     },
     {
       "id": "ST02-C1st",
-      "baseCardId": "S01-02C1",
+      "baseCardId": "ST02-C1",
       "product": "ST02",
       "products": [
         "ST02|太阳城阵营预组"
@@ -338,7 +338,7 @@
     },
     {
       "id": "ST03-C1st",
-      "baseCardId": "S01-03C1",
+      "baseCardId": "ST03-C1",
       "product": "ST03",
       "products": [
         "ST03|阿斯加德阵营预组"
@@ -348,7 +348,7 @@
     },
     {
       "id": "ST04-C1st",
-      "baseCardId": "S01-04C1",
+      "baseCardId": "ST04-C1",
       "product": "ST04",
       "products": [
         "ST04|高天原阵营预组"
@@ -358,7 +358,7 @@
     },
     {
       "id": "ST05-C1st",
-      "baseCardId": "S02-05C1",
+      "baseCardId": "ST05-C1",
       "product": "ST05",
       "products": [
         "ST05|奥林匹斯阵营预组"
@@ -368,7 +368,7 @@
     },
     {
       "id": "ST06-C1st",
-      "baseCardId": "S02-06C1",
+      "baseCardId": "ST06-C1",
       "product": "ST06",
       "products": [
         "ST06|彼界阵营预组"

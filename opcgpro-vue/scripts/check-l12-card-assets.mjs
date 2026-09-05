@@ -19,6 +19,9 @@ const specialAssets = read('../src/l12/specialAssets.ts')
 const gameBoard = read('../src/l12/game/GameBoard.vue')
 const serviceWorker = read('../public/sw.js')
 const generator = read('./build-l12-card-cdn.mjs')
+const auditor = read('./audit-l12-card-cdn.mjs')
+const decks = read('../src/l12/decks.ts')
+const archiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
 const nginxCache = read('../../ops/server/nginx-l12-card-assets.conf')
@@ -58,12 +61,12 @@ const disasterRoundIds = [
 ]
 const starterMasterProfileIds = ['ST01-M1', 'ST02-M1', 'ST03-M1', 'ST04-M1', 'ST05-M1', 'ST06-M1']
 const starterMoraleVersions = [
-  ['ST01-C1st', 'ST01|天廷阵营预组', 'S01-01C1'],
-  ['ST02-C1st', 'ST02|太阳城阵营预组', 'S01-02C1'],
-  ['ST03-C1st', 'ST03|阿斯加德阵营预组', 'S01-03C1'],
-  ['ST04-C1st', 'ST04|高天原阵营预组', 'S01-04C1'],
-  ['ST05-C1st', 'ST05|奥林匹斯阵营预组', 'S02-05C1'],
-  ['ST06-C1st', 'ST06|彼界阵营预组', 'S02-06C1'],
+  ['ST01-C1st', 'ST01|天廷阵营预组', 'ST01-C1'],
+  ['ST02-C1st', 'ST02|太阳城阵营预组', 'ST02-C1'],
+  ['ST03-C1st', 'ST03|阿斯加德阵营预组', 'ST03-C1'],
+  ['ST04-C1st', 'ST04|高天原阵营预组', 'ST04-C1'],
+  ['ST05-C1st', 'ST05|奥林匹斯阵营预组', 'ST05-C1'],
+  ['ST06-C1st', 'ST06|彼界阵营预组', 'ST06-C1'],
 ]
 const newlyCompletedPresentationVersions = [
   ['S02-05C1B', 'S02-05C1'],
@@ -98,8 +101,11 @@ const contracts = [
   [productInclusions.cards.find(card => card.cardId === 'S01-0002')?.products.includes('第2季|伟大试炼'), '佣兵部队必须收录于第2季|伟大试炼'],
   [starterMoraleVersions.every(([id, product]) => productInclusions.cards.find(card => card.cardId === id)?.products.includes(product)), '六张st后缀士气必须分别映射到对应阵营预组，且不改写无后缀默认士气'],
   [starterMoraleVersions.every(([id]) => !productInclusions.cards.some(card => card.cardId === id.slice(0, -2))), '六张st后缀预组士气必须与无st后缀的默认士气保持独立实体编号'],
+  [starterMoraleVersions.every(([id, , baseCardId]) => baseCardId === id.slice(0, -2) && ids.has(baseCardId)), '六张st后缀展示卡必须以去掉st后的ST士气为直接异画基底'],
   [archiveAssets.cards?.length === 38 && archiveAssets.cards.every(card => ids.has(card.baseCardId)), '38张卡查展示版本必须全部指向现有可玩规则基底'],
   [newlyCompletedPresentationVersions.every(([id, baseCardId]) => archiveAssets.cards.some(card => card.id === id && card.baseCardId === baseCardId)), '新增典藏与预组士气展示版本必须使用正确规则基底'],
+  [decks.includes('archiveBaseCardId?: string') && decks.includes('archiveBaseCardId: asset.baseCardId') && archiveVersions.includes("moraleVersionIdentity.get(card.archiveBaseCardId ?? '')"), '卡查必须按展示版本的直接基底归并异画，不得把st版本渲染为独立逻辑卡'],
+  [generator.includes("card.presentationOnly ? 'presentation' : 'playable'") && generator.includes("card.baseCardId || ''") && auditor.includes('entry.baseCardId !== presentationDefinition.baseCardId') && auditor.includes("entry.presentationOnly ? 'presentation' : 'playable'") && auditor.includes("entry.baseCardId || ''"), '卡图资源版本与审计必须包含展示身份和baseCardId，禁止映射变化时复用旧manifest'],
   [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']") && windowsDeploy.includes('拒绝退回旧卡图链路'), '发布清单必须显式包含完整优化卡图，禁止退回旧 imageUrl 链路'],
   [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 362'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
   [serverDeploy.includes('mv "$stage_card_assets_dir" "$card_assets_target"') && serverDeploy.includes('dist/card-assets') && serverDeploy.includes('nginx -T'), '服务端必须在验证完成后原子发布优化资产，并仅在 Nginx 缓存片段已接入时切换'],

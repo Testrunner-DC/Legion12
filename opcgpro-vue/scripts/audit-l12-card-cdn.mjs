@@ -22,6 +22,7 @@ if (manifest.schemaVersion !== 3 || manifest.complete !== true || manifest.cardC
 const catalog = (await Promise.all(catalogFiles.map(async file => JSON.parse(await readFile(file, 'utf8'))))).flat()
 const presentationCatalog = JSON.parse(await readFile(presentationCatalogFile, 'utf8'))
 const presentation = presentationCatalog.cards ?? []
+const presentationById = new Map(presentation.map(card => [card.id, card]))
 const expectedIds = new Set([...catalog.map(card => card.id), ...presentation.map(card => card.id)])
 const entries = Object.entries(manifest.cards ?? {})
 if (catalog.length !== expectedPlayableCardCount || presentation.length !== expectedPresentationCardCount
@@ -31,6 +32,13 @@ const allowedNames = new Set(['original.webp', 'thumb-240.webp', 'board-480.webp
 let totalBytes = 0
 for (const [cardId, entry] of entries) {
   if (!expectedIds.has(cardId) || entry.cardId !== cardId) throw new Error(`资源清单含未知或错配卡号：${cardId}`)
+  const presentationDefinition = presentationById.get(cardId)
+  if (presentationDefinition) {
+    if (entry.presentationOnly !== true || entry.baseCardId !== presentationDefinition.baseCardId)
+      throw new Error(`${cardId} 的展示基底与权威目录不一致`)
+  } else if (entry.presentationOnly === true || entry.baseCardId) {
+    throw new Error(`${cardId} 被错误标记为展示版本`)
+  }
   const hashShort = entry.contentHash?.slice(0, 20)
   if (!/^[0-9a-f]{20}$/.test(hashShort)) throw new Error(`${cardId} 内容哈希无效`)
   for (const [variant, relative] of Object.entries(entry.variants ?? {})) {
@@ -47,7 +55,12 @@ for (const [cardId, entry] of entries) {
 
 if (totalBytes !== manifest.totalBytes || totalBytes > 400 * 1024 * 1024) throw new Error(`优化资源总量门禁失败：${totalBytes}`)
 const calculatedVersion = createHash('sha256')
-  .update(entries.map(([cardId, entry]) => `${cardId}:${entry.contentHash}`).sort().join('\n'))
+  .update(entries.map(([cardId, entry]) => [
+    cardId,
+    entry.contentHash,
+    entry.presentationOnly ? 'presentation' : 'playable',
+    entry.baseCardId || '',
+  ].join(':')).sort().join('\n'))
   .digest('hex')
 if (calculatedVersion !== manifest.assetVersion) throw new Error(`assetVersion 与 ${expectedAssetCount} 张内容哈希不一致`)
 console.log(`L12 优化卡图审计通过：${expectedPlayableCardCount} 张可玩卡 + ${expectedPresentationCardCount} 张展示版本，${totalBytes} 字节，版本 ${manifest.assetVersion}`)

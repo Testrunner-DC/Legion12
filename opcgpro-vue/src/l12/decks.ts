@@ -23,6 +23,7 @@ export interface DeckCard {
   profession?: string
   effect?: string
   canonicalMoraleId?: string
+  archiveBaseCardId?: string
   products?: string[]
 }
 
@@ -451,6 +452,7 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
       products: [...asset.products],
       rarity: asset.rarity,
       imageUrl: undefined,
+      archiveBaseCardId: asset.baseCardId,
     })
   })
   return [...byId.values()]
