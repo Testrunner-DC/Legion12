@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace TwelveLegions.Server;
@@ -10,13 +11,15 @@ public sealed record L12SiteMediaPolicyView(string Kind, string Label, int Deskt
 
 public sealed record L12SiteMediaUpload(string Kind, string OriginalFileName, string OriginalContentType,
     byte[] Original, byte[] DesktopWebp, byte[] MobileWebp, byte[] ThumbnailWebp, string AltText,
-    double FocalX, double FocalY);
+    double FocalX, double FocalY, string? DesktopAltText = null, string? MobileAltText = null,
+    string? ThumbnailAltText = null, bool IndependentVariants = false);
 
 public sealed record L12SiteMediaView(string Id, string Kind, string AltText, double FocalX, double FocalY,
     string OriginalFormat, string ContentHash, string DesktopUrl, string MobileUrl, string ThumbnailUrl,
     int DesktopWidth, int DesktopHeight, int MobileWidth, int MobileHeight, int ThumbnailWidth,
     int ThumbnailHeight, long OriginalBytes, long DeliveryBytes, string CreatedBy, DateTimeOffset CreatedAt,
-    int ReferenceCount);
+    int ReferenceCount, string DesktopAltText, string MobileAltText, string ThumbnailAltText,
+    bool IndependentVariants);
 
 public sealed record L12SiteMediaEmbedView(string Id, string AltText, string DesktopUrl, string MobileUrl,
     string ThumbnailUrl, int DesktopWidth, int DesktopHeight, int MobileWidth, int MobileHeight);
@@ -50,12 +53,17 @@ public sealed partial class L12PlatformStore
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string Kind { get; set; } = "news";
         public string AltText { get; set; } = string.Empty;
+        public string DesktopAltText { get; set; } = string.Empty;
+        public string MobileAltText { get; set; } = string.Empty;
+        public string ThumbnailAltText { get; set; } = string.Empty;
+        public bool IndependentVariants { get; set; }
         public double FocalX { get; set; } = .5;
         public double FocalY { get; set; } = .5;
         public string OriginalFileName { get; set; } = string.Empty;
         public string OriginalFormat { get; set; } = "image/webp";
         public string OriginalFile { get; set; } = string.Empty;
         public string OriginalHash { get; set; } = string.Empty;
+        public string ContentHash { get; set; } = string.Empty;
         public string DesktopFile { get; set; } = string.Empty;
         public string DesktopHash { get; set; } = string.Empty;
         public string MobileFile { get; set; } = string.Empty;
@@ -310,43 +318,67 @@ public sealed partial class L12PlatformStore
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");
-        RequireWebpDimensions(upload.DesktopWebp, policy.DesktopWidth, policy.DesktopHeight, "桌面 WebP");
-        RequireWebpDimensions(upload.MobileWebp, policy.MobileWidth, policy.MobileHeight, "移动 WebP");
-        RequireWebpDimensions(upload.ThumbnailWebp, policy.ThumbnailWidth, policy.ThumbnailHeight, "缩略图 WebP");
+        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, policy.DesktopWidth, policy.DesktopHeight,
+            "桌面 WebP");
+        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, policy.MobileWidth, policy.MobileHeight,
+            "移动 WebP");
+        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, policy.ThumbnailWidth,
+            policy.ThumbnailHeight, "缩略图 WebP");
         if (!double.IsFinite(upload.FocalX) || !double.IsFinite(upload.FocalY) ||
             upload.FocalX is < 0 or > 1 || upload.FocalY is < 0 or > 1)
             throw new ArgumentException("裁切焦点必须位于图片范围内");
 
+        var altText = LimitSiteText(upload.AltText, 180);
+        var desktopAltText = LimitSiteText(string.IsNullOrWhiteSpace(upload.DesktopAltText) ? altText : upload.DesktopAltText, 180);
+        var mobileAltText = LimitSiteText(string.IsNullOrWhiteSpace(upload.MobileAltText) ? altText : upload.MobileAltText, 180);
+        var thumbnailAltText = LimitSiteText(string.IsNullOrWhiteSpace(upload.ThumbnailAltText) ? altText : upload.ThumbnailAltText, 180);
+        if (kind == "hero")
+        {
+            if (!upload.IndependentVariants)
+                throw new ArgumentException("新轮播素材必须同时提交桌面、移动和缩略三个独立构图版本");
+            if (string.IsNullOrWhiteSpace(desktopAltText) || string.IsNullOrWhiteSpace(mobileAltText) ||
+                string.IsNullOrWhiteSpace(thumbnailAltText))
+                throw new ArgumentException("轮播桌面、移动和缩略版本都必须填写替代文字");
+        }
+
         var originalHash = ContentHash(upload.Original);
-        var desktopHash = ContentHash(upload.DesktopWebp);
-        var mobileHash = ContentHash(upload.MobileWebp);
-        var thumbnailHash = ContentHash(upload.ThumbnailWebp);
+        var desktopHash = ContentHash(desktopWebp);
+        var mobileHash = ContentHash(mobileWebp);
+        var thumbnailHash = ContentHash(thumbnailWebp);
+        var groupHash = ContentHash(Encoding.UTF8.GetBytes(
+            $"l12-site-media-v2\n{kind}\n{originalHash}\n{desktopHash}\n{mobileHash}\n{thumbnailHash}"));
         var originalExtension = originalFormat switch
         {
             "image/jpeg" => ".jpg", "image/png" => ".png", "image/avif" => ".avif", _ => ".webp",
         };
-        var originalFile = StoreImmutableMedia(upload.Original, originalHash, originalExtension);
-        var desktopFile = StoreImmutableMedia(upload.DesktopWebp, desktopHash, ".webp");
-        var mobileFile = StoreImmutableMedia(upload.MobileWebp, mobileHash, ".webp");
-        var thumbnailFile = StoreImmutableMedia(upload.ThumbnailWebp, thumbnailHash, ".webp");
 
         lock (_gate)
         {
+            var stored = StoreImmutableMediaGroup(
+                new PendingMediaFile(upload.Original, originalHash, originalExtension),
+                new PendingMediaFile(desktopWebp, desktopHash, ".webp"),
+                new PendingMediaFile(mobileWebp, mobileHash, ".webp"),
+                new PendingMediaFile(thumbnailWebp, thumbnailHash, ".webp"));
             var row = new SiteMediaRow
             {
                 Kind = kind,
-                AltText = LimitSiteText(upload.AltText, 180),
+                AltText = desktopAltText,
+                DesktopAltText = desktopAltText,
+                MobileAltText = mobileAltText,
+                ThumbnailAltText = thumbnailAltText,
+                IndependentVariants = kind == "hero" && upload.IndependentVariants,
                 FocalX = upload.FocalX,
                 FocalY = upload.FocalY,
                 OriginalFileName = LimitSiteText(Path.GetFileName(upload.OriginalFileName), 180),
                 OriginalFormat = originalFormat,
-                OriginalFile = originalFile,
+                OriginalFile = stored.Files[0],
                 OriginalHash = originalHash,
-                DesktopFile = desktopFile,
+                ContentHash = groupHash,
+                DesktopFile = stored.Files[1],
                 DesktopHash = desktopHash,
-                MobileFile = mobileFile,
+                MobileFile = stored.Files[2],
                 MobileHash = mobileHash,
-                ThumbnailFile = thumbnailFile,
+                ThumbnailFile = stored.Files[3],
                 ThumbnailHash = thumbnailHash,
                 DesktopWidth = policy.DesktopWidth,
                 DesktopHeight = policy.DesktopHeight,
@@ -355,15 +387,24 @@ public sealed partial class L12PlatformStore
                 ThumbnailWidth = policy.ThumbnailWidth,
                 ThumbnailHeight = policy.ThumbnailHeight,
                 OriginalBytes = upload.Original.LongLength,
-                DeliveryBytes = upload.DesktopWebp.LongLength + upload.MobileWebp.LongLength +
-                    upload.ThumbnailWebp.LongLength,
+                DeliveryBytes = desktopWebp.LongLength + mobileWebp.LongLength + thumbnailWebp.LongLength,
                 CreatedByAccountId = actor.Id,
             };
-            _data.SiteMedia.Add(row);
-            AddAdminAudit(actor, "site-media", "upload", row.Id, null,
-                $"{row.Kind}:{row.OriginalHash}", $"desktop={desktopHash};mobile={mobileHash};thumb={thumbnailHash}", context);
-            Save();
-            return ToSiteMediaView(row);
+            try
+            {
+                _data.SiteMedia.Add(row);
+                AddAdminAudit(actor, "site-media", "upload", row.Id, null,
+                    $"{row.Kind}:{row.ContentHash}",
+                    $"desktop={desktopHash};mobile={mobileHash};thumb={thumbnailHash};independent={row.IndependentVariants}", context);
+                Save();
+                return ToSiteMediaView(row);
+            }
+            catch
+            {
+                _data.SiteMedia.Remove(row);
+                RollBackNewMediaFiles(stored.CreatedFiles);
+                throw;
+            }
         }
     }
 
@@ -550,11 +591,12 @@ public sealed partial class L12PlatformStore
         row.Slug, row.SortOrder, row.Active, row.Version, SiteCategoryReferenceCount(row.Id));
 
     private L12SiteMediaView ToSiteMediaView(SiteMediaRow row)
-        => new(row.Id, row.Kind, row.AltText, row.FocalX, row.FocalY, row.OriginalFormat, row.OriginalHash,
+        => new(row.Id, row.Kind, row.AltText, row.FocalX, row.FocalY, row.OriginalFormat, row.ContentHash,
             SiteMediaUrl(row.Id), SiteMediaUrl(row.Id, "mobile"), SiteMediaUrl(row.Id, "thumbnail"),
             row.DesktopWidth, row.DesktopHeight, row.MobileWidth, row.MobileHeight, row.ThumbnailWidth,
             row.ThumbnailHeight, row.OriginalBytes, row.DeliveryBytes, ArticleAccountName(row.CreatedByAccountId),
-            row.CreatedAt, SiteMediaReferenceCount(row.Id));
+            row.CreatedAt, SiteMediaReferenceCount(row.Id), row.DesktopAltText, row.MobileAltText,
+            row.ThumbnailAltText, row.IndependentVariants);
 
     private L12SiteMediaEmbedView ToSiteMediaEmbedView(SiteMediaRow row)
         => new(row.Id, row.AltText, SiteMediaUrl(row.Id), SiteMediaUrl(row.Id, "mobile"),
@@ -642,17 +684,61 @@ public sealed partial class L12PlatformStore
         catch (JsonException) { return []; }
     }
 
-    private string StoreImmutableMedia(byte[] bytes, string hash, string extension)
+    private sealed record PendingMediaFile(byte[] Bytes, string Hash, string Extension);
+    private sealed record StoredMediaGroup(IReadOnlyList<string> Files, IReadOnlyList<string> CreatedFiles);
+
+    private StoredMediaGroup StoreImmutableMediaGroup(params PendingMediaFile[] inputs)
     {
         Directory.CreateDirectory(SiteMediaRoot);
-        var fileName = hash + extension;
-        var path = Path.Combine(SiteMediaRoot, fileName);
-        if (File.Exists(path)) return fileName;
-        var temp = Path.Combine(SiteMediaRoot, $".{Guid.NewGuid():N}.upload");
-        File.WriteAllBytes(temp, bytes);
-        try { File.Move(temp, path, false); }
-        catch (IOException) when (File.Exists(path)) { File.Delete(temp); }
-        return fileName;
+        var fileNames = inputs.Select(item => item.Hash + item.Extension).ToArray();
+        var pending = new List<(string Temp, string Destination, string FileName)>();
+        var created = new List<string>();
+        try
+        {
+            foreach (var item in inputs.GroupBy(item => item.Hash + item.Extension, StringComparer.Ordinal)
+                         .Select(group => group.First()))
+            {
+                var fileName = item.Hash + item.Extension;
+                var destination = Path.Combine(SiteMediaRoot, fileName);
+                if (File.Exists(destination)) continue;
+                var temp = Path.Combine(SiteMediaRoot, $".{Guid.NewGuid():N}.upload");
+                File.WriteAllBytes(temp, item.Bytes);
+                pending.Add((temp, destination, fileName));
+            }
+            foreach (var item in pending)
+            {
+                try
+                {
+                    File.Move(item.Temp, item.Destination, false);
+                    created.Add(item.FileName);
+                }
+                catch (IOException) when (File.Exists(item.Destination))
+                {
+                    File.Delete(item.Temp);
+                }
+            }
+            return new StoredMediaGroup(fileNames, created);
+        }
+        catch
+        {
+            foreach (var item in pending)
+                if (File.Exists(item.Temp)) File.Delete(item.Temp);
+            RollBackNewMediaFiles(created);
+            throw;
+        }
+    }
+
+    private void RollBackNewMediaFiles(IEnumerable<string> fileNames)
+    {
+        foreach (var fileName in fileNames.Distinct(StringComparer.Ordinal))
+        {
+            var referenced = _data.SiteMedia.Any(row => row.OriginalFile == fileName || row.DesktopFile == fileName ||
+                row.MobileFile == fileName || row.ThumbnailFile == fileName);
+            if (referenced) continue;
+            var path = Path.GetFullPath(Path.Combine(SiteMediaRoot, fileName));
+            var root = Path.GetFullPath(SiteMediaRoot) + Path.DirectorySeparatorChar;
+            if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(path)) File.Delete(path);
+        }
     }
 
     private static string ContentHash(byte[] bytes)
@@ -678,33 +764,61 @@ public sealed partial class L12PlatformStore
         return "application/octet-stream";
     }
 
-    private static void RequireWebpDimensions(byte[] bytes, int expectedWidth, int expectedHeight, string label)
+    private static byte[] SanitizeDeliveryWebp(byte[] bytes, int expectedWidth, int expectedHeight, string label)
     {
         if (DetectImageFormat(bytes) != "image/webp") throw new ArgumentException($"{label}必须是真实 WebP 文件");
-        ValidateWebpContainer(bytes, label);
-        var dimensions = ReadWebpDimensions(bytes);
+        var sanitized = StripWebpMetadata(bytes, label);
+        var dimensions = ReadWebpDimensions(sanitized);
         if (dimensions.Width != expectedWidth || dimensions.Height != expectedHeight)
             throw new ArgumentException($"{label}尺寸必须为 {expectedWidth}×{expectedHeight}，实际为 {dimensions.Width}×{dimensions.Height}");
+        return sanitized;
     }
 
-    private static void ValidateWebpContainer(ReadOnlySpan<byte> bytes, string label)
+    private static byte[] StripWebpMetadata(ReadOnlySpan<byte> bytes, string label)
     {
+        if (bytes.Length < 20) throw new ArgumentException($"{label}的 WebP 文件头不完整");
         var declaredLength = (long)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(4, 4)) + 8;
         if (declaredLength != bytes.Length) throw new ArgumentException($"{label}的 RIFF 长度无效");
+        var chunks = new List<(string Type, byte[] Payload)>();
         var offset = 12;
         while (offset < bytes.Length)
         {
             if (offset + 8 > bytes.Length) throw new ArgumentException($"{label}的 WebP 区块头不完整");
-            var chunk = bytes.Slice(offset, 4);
+            var chunk = Encoding.ASCII.GetString(bytes.Slice(offset, 4));
             var chunkLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset + 4, 4));
             var next = (long)offset + 8 + chunkLength + (chunkLength & 1);
             if (next > bytes.Length) throw new ArgumentException($"{label}的 WebP 区块长度无效");
-            if (chunk.SequenceEqual("EXIF"u8) || chunk.SequenceEqual("XMP "u8) ||
-                chunk.SequenceEqual("ICCP"u8) || chunk.SequenceEqual("ANIM"u8) ||
-                chunk.SequenceEqual("ANMF"u8))
-                throw new ArgumentException($"{label}不得携带元数据、色彩配置或动画区块");
+            if (chunk is "ANIM" or "ANMF") throw new ArgumentException($"{label}不能是动画 WebP");
+            if (chunk is not ("EXIF" or "XMP " or "ICCP"))
+            {
+                var payload = bytes.Slice(offset + 8, checked((int)chunkLength)).ToArray();
+                if (chunk == "VP8X")
+                {
+                    if (payload.Length != 10) throw new ArgumentException($"{label}的 VP8X 区块长度无效");
+                    if ((payload[0] & 0x02) != 0) throw new ArgumentException($"{label}不能是动画 WebP");
+                    payload[0] &= 0x10; // 只保留透明通道标志；ICC、EXIF、XMP 与保留位全部归零。
+                }
+                if (chunk is "VP8X" or "ALPH" or "VP8 " or "VP8L") chunks.Add((chunk, payload));
+            }
             offset = checked((int)next);
         }
+        if (chunks.Count == 0) throw new ArgumentException($"{label}不包含可识别的 WebP 图像区块");
+
+        var resultLength = 12 + chunks.Sum(chunk => 8 + chunk.Payload.Length + (chunk.Payload.Length & 1));
+        var result = new byte[resultLength];
+        "RIFF"u8.CopyTo(result);
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4, 4), checked((uint)(result.Length - 8)));
+        "WEBP"u8.CopyTo(result.AsSpan(8, 4));
+        var resultOffset = 12;
+        foreach (var chunk in chunks)
+        {
+            Encoding.ASCII.GetBytes(chunk.Type).CopyTo(result, resultOffset);
+            BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(resultOffset + 4, 4),
+                checked((uint)chunk.Payload.Length));
+            chunk.Payload.CopyTo(result, resultOffset + 8);
+            resultOffset += 8 + chunk.Payload.Length + (chunk.Payload.Length & 1);
+        }
+        return result;
     }
 
     private static (int Width, int Height) ReadWebpDimensions(ReadOnlySpan<byte> bytes)
@@ -775,10 +889,14 @@ public sealed partial class L12PlatformStore
         row.Id = string.IsNullOrWhiteSpace(row.Id) ? Guid.NewGuid().ToString("N") : row.Id;
         row.Kind = row.Kind is { } kind && MediaPolicies.ContainsKey(kind) ? kind : "news";
         row.AltText ??= string.Empty;
+        row.DesktopAltText = string.IsNullOrWhiteSpace(row.DesktopAltText) ? row.AltText : row.DesktopAltText;
+        row.MobileAltText = string.IsNullOrWhiteSpace(row.MobileAltText) ? row.AltText : row.MobileAltText;
+        row.ThumbnailAltText = string.IsNullOrWhiteSpace(row.ThumbnailAltText) ? row.AltText : row.ThumbnailAltText;
         row.OriginalFileName ??= string.Empty;
         row.OriginalFormat ??= "image/webp";
         row.OriginalFile ??= string.Empty;
         row.OriginalHash ??= string.Empty;
+        row.ContentHash = string.IsNullOrWhiteSpace(row.ContentHash) ? row.OriginalHash : row.ContentHash;
         row.DesktopFile ??= string.Empty;
         row.DesktopHash ??= string.Empty;
         row.MobileFile ??= string.Empty;

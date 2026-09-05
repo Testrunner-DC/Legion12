@@ -136,9 +136,10 @@ const contracts = [
     && cardArchive.includes('selectedProducts') && cardArchive.includes('收录产品')
     && cardArchive.includes('page.value === \'gallery\' ? galleryCards.value.length : logicalCards.value.length')
     && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌图鉴必须按权威收录产品载入展示用异画、区分奥林匹斯士气与神力编号、按任一版本搜索筛选，并按当前子页口径计数'],
-  [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('productRank(a.product)')
+  [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('Number(Boolean(a.archiveBaseCardId)) - Number(Boolean(b.archiveBaseCardId))')
+    && cardArchiveVersions.includes('productRank(a.product)')
     && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
-    && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须稳定按最早产品、最低已知罕贵度及卡号排序，缺失罕贵度须有确定顺序'],
+    && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须先选无异画基底的规则卡，再稳定按最早产品、最低已知罕贵度及卡号排序；异画不得抢占默认卡图'],
   [cardArchive.includes('class="archive-card-image"') && cardArchive.includes('class="archive-version-arrow previous"')
     && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(entry, -1)"')
     && cardArchive.includes('@click.stop="cycleVersion(entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(entry).id"')
@@ -166,8 +167,12 @@ const contracts = [
     && cardArchive.includes('modalCard.troops !== undefined') && cardArchive.includes('modalCard.hp !== undefined')
     && cardArchive.includes('modalCard.disasterLevel !== undefined') && cardArchive.includes('modalCard.trialValue !== undefined')
     && cardArchive.includes('<p class="l12-effect-body">{{ modalCard.effect')
+    && cardArchive.includes('modalVersions.value = versions.length > 1 ? [...versions] : []')
+    && cardArchive.includes('class="archive-modal-version-arrow previous"')
+    && cardArchive.includes('class="archive-modal-version-arrow next"')
+    && cardArchive.includes('@click="cycleModalVersion(-1)"') && cardArchive.includes('@click="cycleModalVersion(1)"')
     && globalStyle.includes('.archive-modal{') && globalStyle.includes('.archive-modal-image.horizontal{')
-    && globalStyle.includes('aspect-ratio:8/5'), '全卡池与画廊必须支持双击卡图或聚焦卡位按Enter打开同一L12详情模态框，Space只选择且版本箭头不得冒泡误开；详情按卡类显示真实维度、保留效果换行和横版方向，并支持关闭、遮罩、Esc与焦点恢复'],
+    && globalStyle.includes('aspect-ratio:8/5'), '全卡池与画廊必须支持双击卡图或聚焦卡位按Enter打开同一L12详情模态框；全卡池多版本大图保留左右三角并同步全部详情，Space只选择且版本箭头不得冒泡误开；详情按卡类显示真实维度、保留效果换行和横版方向，并支持关闭、遮罩、Esc与焦点恢复'],
   [cardArchive.includes('<h1>卡牌图鉴</h1>') && legacyLobby.includes('<h2>卡牌图鉴</h2>')
     && cardArchive.includes('aria-label="卡牌图鉴子页"') && cardArchive.includes('>全卡池</button>') && cardArchive.includes('>画廊</button>')
     && ![cardArchive, legacyLobby, sandboxPicker, gmPanel, adminCardAnalytics, ruleCenter].some(source => source.includes('卡牌档案')), '全站用户可见名称必须统一为“卡牌图鉴”，主标题保持“卡牌图鉴”，子页签必须为“全卡池／画廊”，不得残留旧称“卡牌档案”'],
@@ -350,6 +355,14 @@ const contracts = [
   [decks.includes("构筑时不计入卡组数量") && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
   [deckEditor.includes('publicDeckApi.publish') && deckEditor.includes("publicationId.value = ''") && deckEditor.includes("preservePublication = false"), '牌库编辑器须支持公开/更新公开牌库，并在新建、另存或切换本地牌库时隔离公开版本身份'],
   [deckLibrary.includes('publicDeckApi.list') && deckLibrary.includes('编辑公开牌库') && deckLibrary.includes('删除公开牌库') && deckLibrary.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
+  [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
+    && wsServer.includes('/api/public-decks/{id}/view') && deckLibrary.includes('publicDeckApi.recordView(entry.id)')
+    && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.likes - a.likes')
+    && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.updatedAt.localeCompare(a.updatedAt)')
+    && deckLibrary.includes('浏览量 {{ entry.views ?? 0 }}') && deckLibrary.includes('符合本赛季')
+    && deckLibrary.includes('不符合本赛季') && deckLibrary.includes('查看构筑')
+    && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
+    && deckLibrary.includes('color:#c7cecd;font-size:12px'), '公开牌库浏览量须持久化；热门排序固定为浏览量、点赞、复制、最新时间，信息条按浏览量/点赞/复制/赛季要求/查看构筑排列，并使用低亮度阵营底色与可读高对比文字'],
   [deckEditor.includes('masterProfileUrl(selectedMaster.id') && lobby.includes('border-radius:2px'), '主宰头像必须使用官方正方形资源'],
   [cardArchive.includes('trialValue') && cardArchive.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
@@ -464,6 +477,21 @@ const contracts = [
       && source.includes('client_max_body_size 32m;') && source.includes('media_upload_too_large'))
     && serverDeploy.includes("grep -Fq 'location = /api/admin/site/media'")
     && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须在浏览器、Nginx 精确路由和 ASP.NET 端统一执行 16MB 原图/32MB 请求边界，并在控件近旁显示用途、比例、像素和裁切安全区'],
+  [mediaUploadField.includes("createImageBitmap(source, { imageOrientation: 'from-image' })")
+    && mediaUploadField.includes('v-if="isHero" class="hero-upload-field"')
+    && mediaUploadField.includes("type HeroVariantKey = 'desktop' | 'mobile' | 'thumbnail'")
+    && mediaUploadField.includes('heroStatuses[spec.key].startsWith(\'已通过\')')
+    && mediaUploadField.includes('三个版本均为必填') && mediaUploadField.includes('仅缩放、不裁切')
+    && mediaUploadField.includes("form.append('independentVariants', 'true')")
+    && mediaUploadField.includes("form.append('desktopAltText'") && mediaUploadField.includes("form.append('mobileAltText'")
+    && mediaUploadField.includes("form.append('thumbnailAltText'")
+    && platform.includes('desktopAltText: string; mobileAltText: string; thumbnailAltText: string; independentVariants: boolean')
+    && siteContentStore.includes('SanitizeDeliveryWebp') && siteContentStore.includes('StripWebpMetadata')
+    && siteContentStore.includes('chunk is not ("EXIF" or "XMP " or "ICCP")')
+    && siteContentStore.includes('payload[0] &= 0x10') && siteContentStore.includes('StoreImmutableMediaGroup')
+    && siteContentStore.includes('new PendingMediaFile(desktopWebp')
+    && siteContentStore.includes('row.ContentHash = string.IsNullOrWhiteSpace(row.ContentHash) ? row.OriginalHash')
+    && adminSiteContent.includes('独立三版本') && adminSiteContent.includes('三个版本统一保护、统一软删除'), '轮播素材必须以桌面、移动、缩略三个独立构图文件和各自替代文字一次原子提交；原图按方向解码，服务端按RIFF区块净化交付WebP并按单一素材组哈希、引用与软删除，旧素材仍可读'],
   [articleBlockEditor.includes('结构化正文编辑器') && articleBlockEditor.includes("addText('h2')")
     && articleBlockEditor.includes("addText('h3')") && articleBlockEditor.includes("addText('bulletList')")
     && articleBlockEditor.includes("addText('orderedList')") && articleBlockEditor.includes("applyMark(block, 'bold')")

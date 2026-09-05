@@ -64,10 +64,12 @@ function rarityValue(rarity: string | undefined) {
   return rarityRank[rarity.trim().toUpperCase()] ?? 99
 }
 
-/** Earliest product wins; within it, the lowest known rarity wins. Missing or
+/** The canonical playable printing wins before presentation-only alternates.
+ * Within each class, earliest product then lowest known rarity wins. Missing or
  * unknown rarity sorts after known rarities, then card number makes ties stable. */
 export function compareArchiveVersions(a: DeckCard, b: DeckCard) {
-  return compareTuple(productRank(a.product), productRank(b.product))
+  return Number(Boolean(a.archiveBaseCardId)) - Number(Boolean(b.archiveBaseCardId))
+    || compareTuple(productRank(a.product), productRank(b.product))
     || rarityValue(a.rarity) - rarityValue(b.rarity)
     || a.number.localeCompare(b.number, 'zh-CN', { numeric: true })
     || a.id.localeCompare(b.id, 'zh-CN', { numeric: true })

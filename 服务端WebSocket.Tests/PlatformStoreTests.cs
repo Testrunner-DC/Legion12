@@ -153,6 +153,8 @@ public sealed class PlatformStoreTests
             }, published.Id));
             Assert.False(store.DeletePublishedDeck(reader.Id, published.Id));
             Assert.True(store.TogglePublishedDeckLike(reader.Id, published.Id)!.Liked);
+            Assert.Equal(1, store.RecordPublishedDeckView(published.Id, reader.Id)!.Views);
+            Assert.Equal(2, store.RecordPublishedDeckView(published.Id, null)!.Views);
             Assert.Equal(1, store.RecordPublishedDeckCopy(published.Id, reader.Id)!.Copies);
 
             var updated = store.PublishDeck(owner.Id, new L12PresetDeckDefinition
@@ -164,6 +166,7 @@ public sealed class PlatformStoreTests
             var reloaded = new L12PlatformStore(path);
             var persisted = Assert.Single(reloaded.PublishedDecks(reader.Id));
             Assert.Equal(1, persisted.Likes);
+            Assert.Equal(2, persisted.Views);
             Assert.Equal(1, persisted.Copies);
             Assert.True(persisted.Liked);
             Assert.True(reloaded.DeletePublishedDeck(owner.Id, persisted.Id));

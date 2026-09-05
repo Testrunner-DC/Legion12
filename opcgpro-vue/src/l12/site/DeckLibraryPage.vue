@@ -4,7 +4,7 @@ import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode 
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
 import { compareDeckCardIds } from '../deckOrdering'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { platformState, publicDeckApi, type PublishedDeck } from '@/l12/platform'
+import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type EffectiveOperationsPolicy, type PublishedDeck } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import DeckProfile from '@/l12/DeckProfile.vue'
@@ -13,6 +13,7 @@ const tab = ref<'mine' | 'plaza'>('mine')
 const catalog = ref<DeckCard[]>([])
 const saved = ref<Record<string, SavedL12Deck>>({})
 const published = ref<PublishedDeck[]>([])
+const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
 const selected = ref<PublishedDeck | null>(null)
 const query = ref('')
 const importCode = ref('')
@@ -24,6 +25,7 @@ const sortMode = ref<'popular' | 'newest' | 'name'>('popular')
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
 const route = useRoute()
 const router = useRouter()
+const viewedDeckIds = new Set<string>()
 const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
 const editorLink = (deckName?: string, publicationId?: string) => ({ path: '/deck-editor', query: { ...(deckName ? { deck: deckName } : {}), ...(publicationId ? { published: publicationId } : {}), returnTo: returnTo.value } })
 
@@ -37,9 +39,12 @@ onMounted(async () => {
       loadDeckCatalog(),
       ensureOfficialPrebuiltDecks(),
     ])
-    const [presets, community] = await Promise.all([loadOfficialPresetDecks(), publicDeckApi.list()])
+    const [presets, community, policy] = await Promise.all([
+      loadOfficialPresetDecks(), publicDeckApi.list(), getEffectiveOperationsPolicy().catch(() => null),
+    ])
+    operationsPolicy.value = policy
     published.value = [
-      ...presets.map((deck, index) => ({ id: `official-${index}`, ownerId: 'official', deck: { ...deck, specialIds: deck.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '' })),
+      ...presets.map((deck, index) => ({ id: `official-${index}`, ownerId: 'official', deck: { ...deck, specialIds: deck.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '' })),
       ...community,
     ]
   } catch (error) {
@@ -60,7 +65,11 @@ const filteredPublished = computed(() => {
   return [...values].sort((a, b) => sortMode.value === 'name'
     ? a.deck.name.localeCompare(b.deck.name, 'zh-CN')
     : sortMode.value === 'newest' ? b.deck.updatedAt.localeCompare(a.deck.updatedAt)
-      : (b.likes + b.copies) - (a.likes + a.copies))
+      : (b.views ?? 0) - (a.views ?? 0)
+        || b.likes - a.likes
+        || b.copies - a.copies
+        || b.updatedAt.localeCompare(a.updatedAt)
+        || b.createdAt.localeCompare(a.createdAt))
 })
 const selectedGroups = computed(() => selected.value ? [...selected.value.deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
   .sort(([left], [right]) => compareDeckCardIds(left, right, byId.value, byId.value.get(selected.value!.deck.masterId)?.faction)) : [])
@@ -94,6 +103,22 @@ function updatePublished(entry: PublishedDeck) {
   const index = published.value.findIndex(item => item.id === entry.id)
   if (index >= 0) published.value[index] = entry
   if (selected.value?.id === entry.id) selected.value = entry
+}
+function openDeck(entry: PublishedDeck) {
+  selected.value = entry
+  if (entry.official || viewedDeckIds.has(entry.id)) return
+  viewedDeckIds.add(entry.id)
+  void publicDeckApi.recordView(entry.id).then(updatePublished).catch(() => viewedDeckIds.delete(entry.id))
+}
+function seasonRequirement(entry: PublishedDeck) {
+  if (!operationsPolicy.value) return { compliant: false, label: '赛季要求未知', reason: '当前无法读取赛季规则' }
+  const reason = validateDeck(entry.deck, catalog.value, operationsPolicy.value.cardRestrictions)
+  return reason
+    ? { compliant: false, label: '不符合本赛季', reason }
+    : { compliant: true, label: '符合本赛季', reason: `符合${operationsPolicy.value.season.name || '当前赛季'}构筑要求` }
+}
+function deckFaction(entry: PublishedDeck) {
+  return byId.value.get(entry.deck.masterId)?.faction || 'universal'
 }
 async function toggleLike(entry: PublishedDeck) {
   if (entry.official) return
@@ -169,7 +194,7 @@ function importFromCode() {
 
     <template v-else>
       <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="sortMode"><option value="popular">热门</option><option value="newest">最新</option><option value="name">名称</option></select><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
-      <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id"><button class="plaza-summary" @click="selected = entry"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><button :class="{ liked: entry.liked }" :disabled="entry.official" @click="toggleLike(entry)">♡ {{ entry.likes }}</button><span>复制 {{ entry.copies }}</span><button @click="selected = entry">查看构筑</button></footer></article></section>
+      <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><button :class="{ liked: entry.liked }" :disabled="entry.official" @click="toggleLike(entry)">♡ {{ entry.likes }}</button><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button></footer></article></section>
     </template>
     <p v-if="notice" class="deck-notice">{{ notice }}</p>
 
@@ -188,4 +213,6 @@ function importFromCode() {
 .deck-detail>footer .danger{border-color:#9e3944;background:#4d171d;color:#ffdce0}
 @media(max-width:700px){.plaza-toolbar{grid-template-columns:1fr}.deck-analysis{grid-template-columns:1fr}.deck-analysis>aside{border-right:0;border-bottom:1px solid #354149}}
 .mine-grid>article>:deep(.deck-profile){border:0;background:transparent}.plaza-summary>:deep(.deck-profile){border:0;background:transparent}.deck-analysis>aside>:deep(.deck-profile){width:100%}
+.plaza-grid footer{--deck-faction:72,84,91;display:grid;grid-template-columns:auto auto auto minmax(112px,1fr) auto;align-items:center;gap:8px;padding:10px 12px;border-top-color:rgba(var(--deck-faction),.48);background:linear-gradient(90deg,rgba(var(--deck-faction),.2),rgba(var(--deck-faction),.08))}.plaza-grid .faction-tianting footer{--deck-faction:34,105,113}.plaza-grid .faction-taiyangcheng footer{--deck-faction:126,91,28}.plaza-grid .faction-asgard footer{--deck-faction:44,79,122}.plaza-grid .faction-gaotianyuan footer{--deck-faction:128,43,54}.plaza-grid .faction-olympus footer{--deck-faction:86,56,126}.plaza-grid .faction-otherworld footer,.plaza-grid .faction-bijie footer{--deck-faction:35,112,83}.plaza-grid footer button{color:#d2d9d8;font-size:12px}.plaza-grid footer button.liked{color:#ff8995}.plaza-grid footer span{color:#c7cecd;font-size:12px;white-space:nowrap}.plaza-grid footer .season-compliance{justify-self:end;color:#f0a9ad;font-weight:900}.plaza-grid footer .season-compliance.compliant{color:#a4e4c8}
+@media(max-width:700px){.plaza-grid footer{grid-template-columns:repeat(3,auto);justify-content:space-between}.plaza-grid footer .season-compliance{grid-column:1/3;justify-self:start}}
 </style>

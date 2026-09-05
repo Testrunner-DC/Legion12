@@ -35,7 +35,7 @@ export interface PlatformPresence {
   friendStatus: 'self' | 'none' | 'pending' | 'accepted'; friendDirection: 'none' | 'incoming' | 'outgoing'
 }
 export interface PublishedDeck {
-  id: string; ownerId: string; author: string; deck: SavedL12Deck; likes: number; copies: number; liked: boolean
+  id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
   createdAt: string; updatedAt: string; official?: boolean
 }
 export interface BugReport {
@@ -78,6 +78,7 @@ export interface SiteMedia {
   desktopWidth: number; desktopHeight: number; mobileWidth: number; mobileHeight: number
   thumbnailWidth: number; thumbnailHeight: number; originalBytes: number; deliveryBytes: number
   createdBy: string; createdAt: string; referenceCount: number
+  desktopAltText: string; mobileAltText: string; thumbnailAltText: string; independentVariants: boolean
 }
 export interface SiteMediaEmbed {
   id: string; altText: string; desktopUrl: string; mobileUrl: string; thumbnailUrl: string
@@ -877,5 +878,6 @@ export const publicDeckApi = {
   }),
   delete: (id: string) => platformRequest<void>(`/api/public-decks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   toggleLike: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/like`, { method: 'POST' }),
+  recordView: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/view`, { method: 'POST' }),
   recordCopy: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/copy`, { method: 'POST' }),
 }

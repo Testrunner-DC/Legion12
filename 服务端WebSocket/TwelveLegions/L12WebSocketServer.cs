@@ -569,6 +569,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var published = _platform.RecordPublishedDeckCopy(id, account?.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
+        _app.MapPost("/api/public-decks/{id}/view", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            var published = _platform.RecordPublishedDeckView(id, account?.Id);
+            return published is null ? Results.NotFound() : Results.Ok(published);
+        });
         _app.MapGet("/api/tournaments", (HttpRequest request, string? status, string? search, bool? mine) =>
         {
             if (!TryAuthorize(request, L12Permission.TournamentsRead, out var authenticated, out var failure))
@@ -1293,7 +1299,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 var focalY = ParseFiniteDouble(form["focalY"], .5);
                 var result = _platform.UploadSiteMedia(authenticated.Account, new L12SiteMediaUpload(
                     form["kind"].ToString(), original.FileName, original.ContentType, original.Bytes,
-                    desktop.Bytes, mobile.Bytes, thumbnail.Bytes, form["altText"].ToString(), focalX, focalY),
+                    desktop.Bytes, mobile.Bytes, thumbnail.Bytes, form["altText"].ToString(), focalX, focalY,
+                    form["desktopAltText"].ToString(), form["mobileAltText"].ToString(),
+                    form["thumbnailAltText"].ToString(),
+                    bool.TryParse(form["independentVariants"].ToString(), out var independentVariants) &&
+                    independentVariants),
                     RequestAuditContext(request, permission));
                 return Results.Ok(result);
             }

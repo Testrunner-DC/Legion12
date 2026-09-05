@@ -541,7 +541,11 @@ public sealed partial class L12PlatformStore
         }
         data.Decks ??= [];
         data.PublishedDecks ??= [];
-        foreach (var deck in data.PublishedDecks) deck.LikedByAccountIds ??= [];
+        foreach (var deck in data.PublishedDecks)
+        {
+            deck.LikedByAccountIds ??= [];
+            deck.Views = Math.Max(0, deck.Views);
+        }
         data.Friends ??= [];
         data.BlockedAccounts ??= [];
         data.BugReports ??= [];

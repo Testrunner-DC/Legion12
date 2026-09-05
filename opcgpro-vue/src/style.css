@@ -133,9 +133,10 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 .archive-modal::before{content:'';position:absolute;inset:7px;pointer-events:none;border:1px solid rgba(95,201,209,.16)}
 .archive-modal-close{position:absolute;z-index:2;right:12px;top:10px;display:grid;width:36px;height:36px;padding:0;place-items:center;border:1px solid rgba(235,233,222,.4);background:#111617;color:#eee9dc;font:300 27px/1 Georgia,serif;cursor:pointer}
 .archive-modal-close:hover,.archive-modal-close:focus-visible{border-color:var(--cyan);background:#205f65;color:#fff;outline:0}
-.archive-modal-image{align-self:center;width:min(100%,480px);aspect-ratio:5/7;border:1px solid rgba(240,239,229,.52);background:#050708;box-shadow:10px 14px 34px #000}
+.archive-modal-image{position:relative;align-self:center;width:min(100%,480px);aspect-ratio:5/7;border:1px solid rgba(240,239,229,.52);background:#050708;box-shadow:10px 14px 34px #000}
 .archive-modal-image.horizontal{width:min(100%,560px);aspect-ratio:8/5}
 .archive-modal-image .l12-card-image{width:100%;height:100%}
+.archive-modal-version-arrow{position:absolute;z-index:3;top:50%;display:grid;width:46px;height:64px;padding:0;place-items:center;transform:translateY(-50%);border:1px solid rgba(255,255,255,.58);background:rgba(5,8,9,.42);color:#fff;font:300 42px/1 Georgia,serif;cursor:pointer;transition:background .18s ease,border-color .18s ease}.archive-modal-version-arrow:hover,.archive-modal-version-arrow:focus-visible{border-color:var(--cyan);background:rgba(28,97,104,.86);outline:0}.archive-modal-version-arrow.previous{left:12px}.archive-modal-version-arrow.next{right:12px}.archive-modal-version-count{position:absolute;z-index:3;right:12px;bottom:12px;padding:5px 8px;border:1px solid rgba(255,255,255,.42);background:rgba(3,5,6,.72);color:#f2ede1;font-size:11px;letter-spacing:.08em}
 .archive-modal-detail{min-width:0;padding:22px 12px 10px 0;overflow-y:auto}
 .archive-modal-detail h2{margin:7px 42px 14px 0;color:#f3efe4;font-size:30px;line-height:1.25}
 .archive-modal-detail dl{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;margin:18px 0;background:rgba(240,239,229,.16)}

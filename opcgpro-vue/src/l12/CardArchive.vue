@@ -43,6 +43,7 @@ const selectedLogicalId = ref('')
 const selectedVersionId = ref('')
 const selectedGalleryId = ref('')
 const modalCard = ref<CatalogCard | null>(null)
+const modalVersions = ref<CatalogCard[]>([])
 const modalCloseButton = ref<HTMLButtonElement | null>(null)
 let modalTrigger: HTMLElement | null = null
 
@@ -118,6 +119,9 @@ const selectedGalleryCard = computed(() => galleryCards.value.find(card => card.
 const selected = computed(() => page.value === 'gallery' ? selectedGalleryCard.value : selectedCatalogCard.value)
 const selectedProducts = computed(() => selected.value?.products ?? [])
 const modalProducts = computed(() => modalCard.value?.products ?? [])
+const modalVersionIndex = computed(() => modalCard.value
+  ? modalVersions.value.findIndex(card => card.id === modalCard.value?.id)
+  : -1)
 const visibleCount = computed(() => page.value === 'gallery' ? filteredGallery.value.length : filteredCatalog.value.length)
 const totalCount = computed(() => page.value === 'gallery' ? galleryCards.value.length : logicalCards.value.length)
 
@@ -153,15 +157,23 @@ function showPage(nextPage: ArchivePage) {
   if (nextPage === 'gallery' && !selectedGalleryCard.value) selectedGalleryId.value = galleryCards.value[0]?.id ?? ''
 }
 
-function openDetail(card: CatalogCard, trigger: Event) {
+function openDetail(card: CatalogCard, trigger: Event, versions: readonly CatalogCard[] = []) {
   modalTrigger = trigger.currentTarget instanceof HTMLElement ? trigger.currentTarget : null
   modalCard.value = card
+  modalVersions.value = versions.length > 1 ? [...versions] : []
   nextTick(() => modalCloseButton.value?.focus())
 }
 
 function closeDetail() {
   modalCard.value = null
+  modalVersions.value = []
   nextTick(() => modalTrigger?.focus())
+}
+
+function cycleModalVersion(direction: -1 | 1) {
+  if (!modalCard.value || modalVersions.value.length < 2) return
+  const current = modalVersionIndex.value < 0 ? 0 : modalVersionIndex.value
+  modalCard.value = modalVersions.value[(current + direction + modalVersions.value.length) % modalVersions.value.length]
 }
 
 function onWindowKeydown(event: KeyboardEvent) {
@@ -207,9 +219,9 @@ function resetFilters() {
           <article v-for="entry in filteredCatalog" :key="entry.logicalId" role="listitem" tabindex="0" class="archive-card"
             :aria-label="`${displayedVersion(entry).nameZh}，按回车打开详情`"
             :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(displayedVersion(entry).cardType) }, `faction-${displayedVersion(entry).faction}`]"
-            @click="selectLogical(entry)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event)" @keydown.space.prevent="selectLogical(entry)">
+            @click="selectLogical(entry)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event, entry.versions)" @keydown.space.prevent="selectLogical(entry)">
             <div class="archive-card-image">
-              <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(entry), $event)">
+              <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(entry), $event, entry.versions)">
                 <CardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh" intent="thumb"/>
               </div>
               <b v-if="hasCostDimension(displayedVersion(entry))" class="archive-cost">{{ displayedVersion(entry).cost }}</b>
@@ -270,6 +282,11 @@ function resetFilters() {
           <button ref="modalCloseButton" class="archive-modal-close" type="button" aria-label="关闭卡牌详情" @click="closeDetail">×</button>
           <div class="archive-modal-image" :class="{ horizontal: isHorizontalCardType(modalCard.cardType) }">
             <CardImage :card-id="modalCard.id" :legacy-url="modalCard.imageUrl" :alt="modalCard.nameZh" intent="detail" eager/>
+            <template v-if="modalVersions.length > 1">
+              <button class="archive-modal-version-arrow previous" type="button" aria-label="大图上一版本" title="上一版本" @click="cycleModalVersion(-1)">‹</button>
+              <button class="archive-modal-version-arrow next" type="button" aria-label="大图下一版本" title="下一版本" @click="cycleModalVersion(1)">›</button>
+              <b class="archive-modal-version-count">{{ modalVersionIndex + 1 }}/{{ modalVersions.length }}</b>
+            </template>
           </div>
           <div class="archive-modal-detail">
             <p class="archive-number">{{ displayCardNumber(modalCard) }} · {{ modalCard.product }}</p>

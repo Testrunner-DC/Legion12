@@ -22,7 +22,7 @@ public sealed record L12SessionRevocationResult(bool Found, string? SessionId, i
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
-    int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
     string? Phase, int? Round, int? TurnSerial, int? ActivePlayer, long? Revision, long? CommandSequence,
     IReadOnlyList<string> Stack, IReadOnlyList<string> Prompts, IReadOnlyList<string> RecentEventTypes);
@@ -185,6 +185,7 @@ public sealed partial class L12PlatformStore
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
         public List<string> LikedByAccountIds { get; set; } = [];
+        public int Views { get; set; }
         public int Copies { get; set; }
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -743,6 +744,18 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12PublishedDeckView? RecordPublishedDeckView(string publicationId, string? viewerAccountId)
+    {
+        lock (_gate)
+        {
+            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            if (row is null) return null;
+            if (row.Views < int.MaxValue) row.Views++;
+            Save();
+            return ToView(row, viewerAccountId);
+        }
+    }
+
     public bool SetRole(string accountId, string role)
         => SetRole(new L12AccountView("system", "系统", "admin", DateTimeOffset.UtcNow, false), accountId, role);
 
@@ -1250,7 +1263,7 @@ public sealed partial class L12PlatformStore
         var author = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId)?.Username ?? "已注销玩家";
         var deck = new L12AccountDeckView(row.Name, row.MasterId, row.CardIds.ToArray(), row.MoraleIds.ToArray(),
             row.SpecialIds.ToArray(), row.UpdatedAt);
-        return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.LikedByAccountIds.Count, row.Copies,
+        return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
             viewerAccountId is not null && row.LikedByAccountIds.Contains(viewerAccountId), row.CreatedAt, row.UpdatedAt);
     }
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,

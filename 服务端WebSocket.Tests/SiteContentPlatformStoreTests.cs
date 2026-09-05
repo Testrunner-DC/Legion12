@@ -24,7 +24,8 @@ public sealed class SiteContentPlatformStoreTests
             var media = Upload(store, admin, "hero");
 
             Assert.Equal(64, media.ContentHash.Length);
-            Assert.Contains(media.ContentHash, media.DesktopUrl);
+            Assert.True(media.IndependentVariants);
+            Assert.NotEqual(media.ContentHash, media.DesktopUrl.Split('/').Last().Replace(".webp", ""));
             var fileName = media.DesktopUrl.Split('/').Last();
             var file = store.ResolveSiteMediaFile(media.Id, "desktop", fileName);
             Assert.NotNull(file);
@@ -137,11 +138,94 @@ public sealed class SiteContentPlatformStoreTests
             };
             Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, wrongDesktop));
 
-            var metadataDesktop = wrongDesktop with
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void IccExifOrientationOriginalIsAcceptedAndDeliveryMetadataIsStrippedByRiffChunks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-site-metadata-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var policy = L12PlatformStore.SiteMediaPolicies().Single(item => item.Kind == "news");
+            var original = Convert.FromBase64String(RealJpegWithIccAndExifOrientation6);
+            Assert.True(ContainsBytes(original, "ICC_PROFILE"u8));
+            Assert.True(ContainsBytes(original, "Exif"u8));
+            var desktopWithMetadata = WebpWithMetadata(policy.DesktopWidth, policy.DesktopHeight);
+            var mobileWithPayloadMarkers = WebpWithImagePayloadMarkers(policy.MobileWidth, policy.MobileHeight);
+            var media = store.UploadSiteMedia(admin, new L12SiteMediaUpload("news", "orientation-6.jpg", "image/jpeg",
+                original, desktopWithMetadata, mobileWithPayloadMarkers,
+                Webp(policy.ThumbnailWidth, policy.ThumbnailHeight), "带方向与色彩配置的原图", .5, .5));
+
+            Assert.Equal("image/jpeg", media.OriginalFormat);
+            var desktop = ReadMedia(store, media, "desktop", media.DesktopUrl);
+            Assert.DoesNotContain("ICCP", WebpChunkTypes(desktop));
+            Assert.DoesNotContain("EXIF", WebpChunkTypes(desktop));
+            Assert.DoesNotContain("XMP ", WebpChunkTypes(desktop));
+            Assert.Equal(0, desktop[20] & 0x2e);
+            Assert.True(desktop.Length < desktopWithMetadata.Length);
+
+            var mobile = ReadMedia(store, media, "mobile", media.MobileUrl);
+            Assert.Contains("VP8 ", WebpChunkTypes(mobile));
+            Assert.True(ContainsBytes(mobile, "pixel-EXIF-ICCP-XMP -bytes"u8));
+            Assert.DoesNotContain("EXIF", WebpChunkTypes(mobile));
+            Assert.DoesNotContain("ICCP", WebpChunkTypes(mobile));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void HeroRequiresThreeIndependentVariantsAndCreatesOneAtomicMediaGroup()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-site-hero-group-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var policy = L12PlatformStore.SiteMediaPolicies().Single(item => item.Kind == "hero");
+            var legacyStyleUpload = new L12SiteMediaUpload("hero", "desktop.png", "image/png",
+                PngSignature(), Webp(policy.DesktopWidth, policy.DesktopHeight),
+                Webp(policy.MobileWidth, policy.MobileHeight), Webp(policy.ThumbnailWidth, policy.ThumbnailHeight),
+                "同一原图", .5, .5);
+            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, legacyStyleUpload));
+            Assert.Empty(store.AdminSiteMedia("hero"));
+
+            var invalidThirdVariant = legacyStyleUpload with
             {
-                DesktopWebp = WebpWithMetadata(policy.DesktopWidth, policy.DesktopHeight),
+                IndependentVariants = true,
+                DesktopAltText = "桌面独立构图", MobileAltText = "移动独立构图", ThumbnailAltText = "缩略独立构图",
+                ThumbnailWebp = Webp(320, 180),
             };
-            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, metadataDesktop));
+            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, invalidThirdVariant));
+            Assert.Empty(store.AdminSiteMedia("hero"));
+            Assert.False(Directory.Exists(Path.Combine(root, "site-media")) &&
+                Directory.EnumerateFiles(Path.Combine(root, "site-media")).Any());
+
+            var upload = invalidThirdVariant with
+            {
+                ThumbnailWebp = Webp(policy.ThumbnailWidth, policy.ThumbnailHeight),
+            };
+            var media = store.UploadSiteMedia(admin, upload);
+            Assert.True(media.IndependentVariants);
+            Assert.Equal("桌面独立构图", media.DesktopAltText);
+            Assert.Equal("移动独立构图", media.MobileAltText);
+            Assert.Equal("缩略独立构图", media.ThumbnailAltText);
+            Assert.Equal(media.Id, Assert.Single(store.AdminSiteMedia("hero")).Id);
+            Assert.NotNull(store.ResolveSiteMediaFile(media.Id, "desktop", media.DesktopUrl.Split('/').Last()));
+            Assert.NotNull(store.ResolveSiteMediaFile(media.Id, "mobile", media.MobileUrl.Split('/').Last()));
+            Assert.NotNull(store.ResolveSiteMediaFile(media.Id, "thumbnail", media.ThumbnailUrl.Split('/').Last()));
+            store.DeleteSiteMedia(admin, media.Id);
+            Assert.Empty(store.AdminSiteMedia("hero"));
+            Assert.All(Directory.EnumerateFiles(Path.Combine(root, "site-media")), file => Assert.DoesNotContain(".upload", file));
         }
         finally
         {
@@ -325,6 +409,29 @@ public sealed class SiteContentPlatformStoreTests
             using (var response = await client.SendAsync(request))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
+            var heroPolicy = L12PlatformStore.SiteMediaPolicies().Single(item => item.Kind == "hero");
+            using (var request = AuthorizedMedia(admin.Token!, MediaForm("hero", PngSignature(),
+                       Webp(heroPolicy.DesktopWidth, heroPolicy.DesktopHeight),
+                       Webp(heroPolicy.MobileWidth, heroPolicy.MobileHeight),
+                       Webp(heroPolicy.ThumbnailWidth, heroPolicy.ThumbnailHeight), originalName: "hero.png",
+                       originalType: "image/png", independentVariants: true,
+                       variantAltTexts: ["桌面API构图", "移动API构图", "缩略API构图"])))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var payload = await response.Content.ReadFromJsonAsync<L12SiteMediaView>();
+                Assert.True(payload!.IndependentVariants);
+                Assert.Equal("移动API构图", payload.MobileAltText);
+            }
+
+            using (var request = AuthorizedMedia(admin.Token!, MediaForm("hero", PngSignature(),
+                       Webp(heroPolicy.DesktopWidth, heroPolicy.DesktopHeight),
+                       Webp(heroPolicy.MobileWidth, heroPolicy.MobileHeight),
+                       Webp(heroPolicy.ThumbnailWidth, heroPolicy.ThumbnailHeight), originalName: "legacy-hero.png",
+                       originalType: "image/png")))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
             using (var request = AuthorizedMedia(admin.Token!, MediaForm("news", Encoding.UTF8.GetBytes("<svg><script/></svg>"),
                        Webp(newsPolicy.DesktopWidth, newsPolicy.DesktopHeight),
                        Webp(newsPolicy.MobileWidth, newsPolicy.MobileHeight),
@@ -384,7 +491,8 @@ public sealed class SiteContentPlatformStoreTests
         return store.UploadSiteMedia(admin, new L12SiteMediaUpload(kind, $"{kind}.webp", "image/webp",
             Webp(policy.DesktopWidth, policy.DesktopHeight), Webp(policy.DesktopWidth, policy.DesktopHeight),
             Webp(policy.MobileWidth, policy.MobileHeight), Webp(policy.ThumbnailWidth, policy.ThumbnailHeight),
-            $"{policy.Label}测试图", .5, .5));
+            $"{policy.Label}测试图", .5, .5, $"{policy.Label}桌面测试图", $"{policy.Label}移动测试图",
+            $"{policy.Label}缩略测试图", kind == "hero"));
     }
 
     private static byte[] Webp(int width, int height)
@@ -403,13 +511,69 @@ public sealed class SiteContentPlatformStoreTests
 
     private static byte[] WebpWithMetadata(int width, int height)
     {
-        var source = Webp(width, height);
-        var bytes = new byte[source.Length + 8];
-        source.CopyTo(bytes, 0);
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), (uint)(bytes.Length - 8));
-        Encoding.ASCII.GetBytes("EXIF").CopyTo(bytes, source.Length);
+        var bytes = AppendWebpChunk(Webp(width, height), "ICCP", Encoding.ASCII.GetBytes("ICC_PROFILE\0sRGB test profile"));
+        bytes = AppendWebpChunk(bytes, "EXIF", ExifOrientation6());
+        bytes = AppendWebpChunk(bytes, "XMP ", Encoding.UTF8.GetBytes("<x:xmpmeta>test</x:xmpmeta>"));
+        bytes[20] |= 0x2c;
         return bytes;
     }
+
+    private static byte[] WebpWithImagePayloadMarkers(int width, int height)
+        => AppendWebpChunk(Webp(width, height), "VP8 ", Encoding.ASCII.GetBytes("pixel-EXIF-ICCP-XMP -bytes"));
+
+    private static byte[] AppendWebpChunk(byte[] source, string type, byte[] payload)
+    {
+        var paddedLength = payload.Length + (payload.Length & 1);
+        var bytes = new byte[source.Length + 8 + paddedLength];
+        source.CopyTo(bytes, 0);
+        Encoding.ASCII.GetBytes(type).CopyTo(bytes, source.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(source.Length + 4, 4), (uint)payload.Length);
+        payload.CopyTo(bytes, source.Length + 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), (uint)(bytes.Length - 8));
+        return bytes;
+    }
+
+    private static byte[] ExifOrientation6()
+    {
+        var bytes = new byte[32];
+        Encoding.ASCII.GetBytes("Exif\0\0II").CopyTo(bytes, 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(8, 2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(10, 4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(14, 2), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(16, 2), 0x0112);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(18, 2), 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(20, 4), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(24, 2), 6);
+        return bytes;
+    }
+
+    private static IReadOnlyList<string> WebpChunkTypes(byte[] bytes)
+    {
+        var result = new List<string>();
+        var offset = 12;
+        while (offset + 8 <= bytes.Length)
+        {
+            result.Add(Encoding.ASCII.GetString(bytes, offset, 4));
+            var length = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset + 4, 4));
+            offset = checked(offset + 8 + (int)length + ((int)length & 1));
+        }
+        return result;
+    }
+
+    private static byte[] ReadMedia(L12PlatformStore store, L12SiteMediaView media, string variant, string url)
+    {
+        var file = store.ResolveSiteMediaFile(media.Id, variant, url.Split('/').Last());
+        Assert.NotNull(file);
+        return File.ReadAllBytes(file!.Path);
+    }
+
+    private static bool ContainsBytes(ReadOnlySpan<byte> source, ReadOnlySpan<byte> value)
+        => source.IndexOf(value) >= 0;
+
+    private static byte[] PngSignature() => [137, 80, 78, 71, 13, 10, 26, 10];
+
+    // 由 sharp 0.35 生成并复读确认：3×2 JPEG，含标准 sRGB ICC 与 EXIF Orientation=6。
+    private const string RealJpegWithIccAndExifOrientation6 = "/9j/4QC8RXhpZgAASUkqAAgAAAAGABIBAwABAAAABgAAABoBBQABAAAAVgAAABsBBQABAAAAXgAAACgBAwABAAAAAgAAABMCAwABAAAAAQAAAGmHBAABAAAAZgAAAAAAAAA4YwAA6AMAADhjAADoAwAABgAAkAcABAAAADAyMTABkQcABAAAAAECAwAAoAcABAAAADAxMDABoAMAAQAAAP//AAACoAQAAQAAAAMAAAADoAQAAQAAAAIAAAAAAAAA/+IB8ElDQ19QUk9GSUxFAAEBAAAB4GxjbXMEIAAAbW50clJHQiBYWVogB+IAAwAUAAkADgAdYWNzcE1TRlQAAAAAc2F3c2N0cmwAAAAAAAAAAAAAAAAAAPbWAAEAAAAA0y1oYW5keem/Vlo+AbaDI4VVRvdPqgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKZGVzYwAAAPwAAAAkY3BydAAAASAAAAAid3RwdAAAAUQAAAAUY2hhZAAAAVgAAAAsclhZWgAAAYQAAAAUZ1hZWgAAAZgAAAAUYlhZWgAAAawAAAAUclRSQwAAAcAAAAAgZ1RSQwAAAcAAAAAgYlRSQwAAAcAAAAAgbWx1YwAAAAAAAAABAAAADGVuVVMAAAAIAAAAHABzAFIARwBCbWx1YwAAAAAAAAABAAAADGVuVVMAAAAGAAAAHABDAEMAMAAAWFlaIAAAAAAAAPbWAAEAAAAA0y1zZjMyAAAAAAABDD8AAAXd///zJgAAB5AAAP2S///7of///aIAAAPcAADAcVhZWiAAAAAAAABvoAAAOPIAAAOPWFlaIAAAAAAAAGKWAAC3iQAAGNpYWVogAAAAAAAAJKAAAA+FAAC2xHBhcmEAAAAAAAMAAAACZmkAAPKnAAANWQAAE9AAAApb/9sAQwADAgIDAgIDAwMDBAMDBAUIBQUEBAUKBwcGCAwKDAwLCgsLDQ4SEA0OEQ4LCxAWEBETFBUVFQwPFxgWFBgSFBUU/9sAQwEDBAQFBAUJBQUJFA0LDRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU/8AAEQgAAgADAwEiAAIRAQMRAf/EABUAAQEAAAAAAAAAAAAAAAAAAAAH/8QAHhAAAQQBBQAAAAAAAAAAAAAAAwABAgQFBgcUITH/xAAVAQEBAAAAAAAAAAAAAAAAAAADB//EAB4RAAEBCQAAAAAAAAAAAAAAAAABAgMEBTI0cXKy/9oADAMBAAIRAxEAPwCM7pVAUdXMCsEdcEMdjmgIUWjGLcIHjN0yIiZ3QmCuSuwh9GeUP//Z";
 
     private static byte[] Pad(byte[] source, long length)
     {
@@ -420,11 +584,15 @@ public sealed class SiteContentPlatformStoreTests
 
     private static MultipartFormDataContent MediaForm(string kind, byte[] original, byte[] desktop,
         byte[] mobile, byte[] thumbnail, string originalName = "cover.webp", string originalType = "image/webp",
-        byte[]? extra = null)
+        byte[]? extra = null, bool independentVariants = false, string[]? variantAltTexts = null)
     {
         var form = new MultipartFormDataContent($"l12-{Guid.NewGuid():N}");
         form.Add(new StringContent(kind), "kind");
         form.Add(new StringContent("HTTP 上传测试图"), "altText");
+        form.Add(new StringContent((variantAltTexts?.ElementAtOrDefault(0) ?? "HTTP 上传测试图")), "desktopAltText");
+        form.Add(new StringContent((variantAltTexts?.ElementAtOrDefault(1) ?? "HTTP 上传测试图")), "mobileAltText");
+        form.Add(new StringContent((variantAltTexts?.ElementAtOrDefault(2) ?? "HTTP 上传测试图")), "thumbnailAltText");
+        form.Add(new StringContent(independentVariants.ToString()), "independentVariants");
         form.Add(new StringContent("0.5"), "focalX");
         form.Add(new StringContent("0.5"), "focalY");
         AddFile(form, original, "original", originalName, originalType);
