@@ -5,7 +5,7 @@
 ## 工作区与线上
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，分支 `codex/deploy-verify-20260821`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
-- 当前功能提交与 GitHub main：`1e4f699bc1bd92d074beb1bb8eb278b977f1925b`；线上活动版本仍为`8ba286b85958b192380ffbe82f1404559a6e7c99`。后续文档提交可能领先功能提交，用 `git log -1`、`git status --short`和`git rev-list --left-right --count HEAD...origin/main`重新核实。
+- 当前功能提交与 GitHub main：`34210c6211399dcc3fed23368a79e2618cde9ede`；线上活动版本仍为`8ba286b85958b192380ffbe82f1404559a6e7c99`。后续文档提交可能领先功能提交，用 `git log -1`、`git status --short`和`git rev-list --left-right --count HEAD...origin/main`重新核实。
 - 维护工具提交 `4719d59f9a3ce1f2067ac238870debd3f92baf15` 已通过新版Release并推送main；其后文档提交只补记证据。规则2261、平台71、UI240、卡图40/324、隔离前端构建及publish通过，每项仅一轮。该维护批次未部署。
 - 线上活动：`8ba286b85958b192380ffbe82f1404559a6e7c99-20260905T105254Z`；上一回滚：`9af7b28a295e041aff1940452a30ff9b588a3266-20260905T083230Z`。
 - 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-8ba286b85958-20260905T105254Z.tar.gz`；由服务器管理，不纳入本地清理。
@@ -17,6 +17,7 @@
 - FEATURE-20260905-241 已部署：连续文章编辑器、对齐/插图、正文图任意比例、资讯独立详情与返回一览。
 - UI-20260905-240 已部署：轮播移除全屏渐变，仅文字轻阴影；视频作者无前缀，右侧显示日期。
 - UI-20260905-243 已同步：双方计时/回合状态移至棋盘右侧上下常驻HUD；右栏玩家摘要强制完整显示并让对局记录区独立滚动。提交级Release通过；本批未部署。
+- BUG-20260905-244 已同步：连续文章编辑器在每次DOM解析与序列化时统一修复空白、超长和重复正文块ID，并回写画布；服务端错误拆分为缺少、过长、重复三类。提交`34210c6`的Batch与Release均通过；本批未部署。
 - 已部署应用证据：规则2261/2261、平台71/71、UI240、卡图40/324、生产构建；HTTP/WS通过、service active/running，NRestarts=0。
 - 长期授权：完成批次验证且无冲突后可提交推送main；生产部署须本批明确授权。本次维护不包含新一轮服务部署。
 - 不自行新增产品规则，不把完整卡效文本改成概括，不让插入任务覆盖此前需求。详情按ID查 `TASK-LEDGER.md`、`BUGFIX-REGISTRY.md`。
