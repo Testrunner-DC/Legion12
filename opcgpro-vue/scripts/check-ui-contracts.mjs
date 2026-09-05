@@ -522,7 +522,8 @@ const contracts = [
     && adminArticles.includes("props.kind === 'video'") && adminArticles.includes('selected.videoAuthorName')
     && adminArticles.includes("summary: props.kind === 'video' ? ''") && adminArticles.includes("body: props.kind === 'video' ? ''")
     && officialHome.includes('v-if="item.videoAuthorName"') && officialHome.includes('isInternal(item.link)')
-    && newsPage.includes('entry.videoAuthorName') && newsPage.includes(':href="entry.link || undefined"'), '视频内容必须只暴露封面、标题、作者名和整卡跳转链接，新稿作者与链接发布必填，旧空作者不显示占位'],
+    && officialHome.includes('<time>{{ dateLabel(item) }}</time>') && !officialHome.includes('作者：{{')
+    && newsPage.includes('entry.videoAuthorName') && newsPage.includes(':href="entry.link || undefined"'), '视频内容必须只暴露封面、标题、无前缀作者名、发布时间和整卡跳转链接，新稿作者与链接发布必填，旧空作者不显示占位'],
   [siteContentStore.includes('["news"] = new("news", "资讯封面", 1600, 900, 1280, 720, 480, 270')
     && siteContentStore.includes('["video"] = new("video", "视频封面", 1280, 720, 1280, 720, 480, 270')
     && siteContentStore.includes('["product"] = new("product", "商品图片", 1600, 1200, 1200, 900, 480, 360')
@@ -549,6 +550,8 @@ const contracts = [
     && adminArticles.includes("'尚未设置发布时间'") && !adminArticles.includes('new Date(article.updatedAt)')
     && !adminArticles.includes('排序值<input'), '资讯、视频和商品的公开顺序及后台预览列表必须统一为置顶优先、发布时间倒序、ID 稳定并列；未来发布时间到点自动公开，编辑时间和人工排序不得参与'],
   [officialHome.includes('.hero-copy>small,.hero-copy h1,.hero-copy p,.hero-copy strong{white-space:pre;overflow-wrap:normal;word-break:normal}')
+    && !officialHome.includes('<div class="hero-shade"')
+    && officialHome.includes('.hero-copy,.hero-copy h1,.hero-copy p,.hero-copy strong{ text-shadow:0 2px 5px rgba(0,0,0,.68) }')
     && adminSiteContent.includes('longestHeroLine') && adminSiteContent.includes('前台不会自动换行')
     && adminSiteContent.includes('aria-label="轮播文案手动换行预览"')
     && adminSiteContent.includes('.hero-copy-preview>*{display:block;width:max-content;max-width:none;margin:0 0 8px;white-space:pre;overflow-wrap:normal;word-break:normal}')
