@@ -281,6 +281,37 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
                 "非法 HTML 块", "", htmlBlock, "官方公告", "", "", "unsafe-html", false, null)));
 
+            var blankIdBody = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new[] { new { id = "   ", type = "paragraph", text = "正文", align = "left", marks = Array.Empty<object>() } },
+            });
+            var blankIdError = Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "空块标识", "", blankIdBody, "官方公告", "", "", "blank-block-id", false, null)));
+            Assert.Equal("正文内容块缺少标识或标识为空", blankIdError.Message);
+
+            var longIdBody = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new[] { new { id = new string('x', 81), type = "h3", text = "小标题", align = "left", marks = Array.Empty<object>() } },
+            });
+            var longIdError = Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "超长块标识", "", longIdBody, "官方公告", "", "", "long-block-id", false, null)));
+            Assert.Equal("正文内容块标识不能超过 80 个字符", longIdError.Message);
+
+            var duplicateIdBody = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new object[]
+                {
+                    new { id = "same", type = "paragraph", text = "第一段", align = "left", marks = Array.Empty<object>() },
+                    new { id = "same", type = "divider" },
+                },
+            });
+            var duplicateIdError = Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "重复块标识", "", duplicateIdBody, "官方公告", "", "", "duplicate-block-id", false, null)));
+            Assert.Equal("正文内容块标识不能重复：same", duplicateIdError.Message);
+
             var legacy = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "旧正文", "", "第一段\n第二行",
                 "官方公告", "", "", "legacy-body", false, null));
             Assert.Equal("第一段\n第二行", store.PublishArticle(admin, legacy.Id).Body);

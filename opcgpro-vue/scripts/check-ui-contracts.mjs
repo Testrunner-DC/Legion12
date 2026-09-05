@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { normalizeArticleBlockIds, serializeArticleBody } from '../src/l12/site/articleBlocks.ts'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -620,6 +621,33 @@ const contracts = [
   [serverDeploy.includes('readonly public_host="legion-12.com"') && serverDeploy.includes('readonly public_base="https://${public_host}"') && serverDeploy.includes('"wss://${public_host}/ws"') && serverDeploy.includes('域名：${public_host}') && !serverDeploy.includes('wss://legion12.grand-umi.com/ws') && windowsDeploy.includes('[string]$Server = "root@legion-12.com"') && windowsDeploy.includes('发布成功：https://legion-12.com/') && bugQueue.includes('[string]$ApiBase = "https://legion-12.com"'), '主站、SSH、API 与发布后 HTTP/WS 探针必须统一使用 legion-12.com，不得回退旧主站域名'],
   [serverDeploy.includes('backup_runtime') && serverDeploy.includes('restore_runtime_backup') && serverDeploy.includes('runtime-before-${short_commit}-${timestamp}.tar.gz') && serverDeploy.includes('部署前运行数据快照：${runtime_backup}') && serverDeploy.includes('prune_runtime_backups'), '生产发布必须在切换版本前快照持久化运行数据，并在程序回滚时恢复同版本数据且限制备份增长'],
 ]
+
+const longBlockId = 'x'.repeat(80)
+const blockIdFixtures = [
+  { id: 'same', type: 'paragraph', text: '段落', marks: [], align: 'left' },
+  { id: 'same', type: 'h2', text: '大标题', marks: [], align: 'center' },
+  { id: '   ', type: 'h3', text: '小标题', marks: [], align: 'right' },
+  { id: 'quote', type: 'quote', text: '引用内容', marks: [], align: 'left' },
+  { id: 'bullet', type: 'bulletList', text: '项目一\n项目二', marks: [], align: 'left' },
+  { id: 'ordered', type: 'orderedList', text: '第一项\n第二项', marks: [], align: 'justify' },
+  { id: `${longBlockId}a`, type: 'image', mediaAssetId: 'media', alt: '插图', caption: '' },
+  { id: `${longBlockId}b`, type: 'divider' },
+]
+const normalizedBlockIds = normalizeArticleBlockIds(blockIdFixtures, () => 'generated')
+const normalizedIds = normalizedBlockIds.map(block => block.id)
+const serializedBlockIds = JSON.parse(serializeArticleBody({ format: 'l12-blocks', version: 1, blocks: blockIdFixtures })).blocks.map(block => block.id)
+contracts.push([
+  normalizedBlockIds.map(block => block.type).join('|') === 'paragraph|h2|h3|quote|bulletList|orderedList|image|divider'
+    && normalizedIds.every(id => id.trim() && id.length <= 80)
+    && new Set(normalizedIds).size === normalizedIds.length
+    && normalizedIds.includes('generated') && normalizedIds.includes('generated-2') && normalizedIds.includes('generated-3')
+    && serializedBlockIds.every(id => id.trim() && id.length <= 80)
+    && new Set(serializedBlockIds).size === serializedBlockIds.length
+    && articleBlockModel.includes('normalizeArticleBlockIds(document.blocks)')
+    && articleDocumentEditor.includes('normalizeArticleBlockIds(blocks.slice(0, 200))')
+    && articleDocumentEditor.includes('element.dataset.blockId = block.id'),
+  '文章正文每次序列化必须统一修复所有块类型的空白、超长和重复标识，生成过程不得再次碰撞，并将规范化标识回写连续编辑画布',
+])
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)
 if (failures.length) {

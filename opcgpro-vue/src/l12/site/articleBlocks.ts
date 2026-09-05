@@ -35,9 +35,34 @@ export interface ArticleListItem { text: string; from: number; to: number }
 const textTypes = new Set<ArticleTextBlockType>(['paragraph', 'h2', 'h3', 'bulletList', 'orderedList', 'quote'])
 const markTypes = new Set<ArticleMarkType>(['bold', 'italic', 'underline', 'strikethrough', 'link'])
 const alignTypes = new Set<ArticleTextAlign>(['left', 'center', 'right', 'justify'])
+export const ARTICLE_BLOCK_ID_MAX_LENGTH = 80
 
 export function articleBlockId() {
   return globalThis.crypto?.randomUUID?.() ?? `block-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function boundedArticleBlockId(value: unknown) {
+  return typeof value === 'string' ? value.trim().slice(0, ARTICLE_BLOCK_ID_MAX_LENGTH) : ''
+}
+
+function unusedArticleBlockId(used: Set<string>, createId: () => string) {
+  const base = boundedArticleBlockId(createId()) || 'block'
+  if (!used.has(base)) return base
+  for (let sequence = 2; ; sequence += 1) {
+    const suffix = `-${sequence}`
+    const candidate = `${base.slice(0, ARTICLE_BLOCK_ID_MAX_LENGTH - suffix.length)}${suffix}`
+    if (!used.has(candidate)) return candidate
+  }
+}
+
+export function normalizeArticleBlockIds(blocks: readonly ArticleBlock[], createId: () => string = articleBlockId): ArticleBlock[] {
+  const used = new Set<string>()
+  return blocks.map(block => {
+    const candidate = boundedArticleBlockId(block.id)
+    const id = candidate && !used.has(candidate) ? candidate : unusedArticleBlockId(used, createId)
+    used.add(id)
+    return id === block.id ? block : { ...block, id } as ArticleBlock
+  })
 }
 
 export function newArticleTextBlock(type: ArticleTextBlockType = 'paragraph', text = ''): ArticleTextBlock {
@@ -68,7 +93,7 @@ function cleanMarks(value: unknown, textLength: number): ArticleMark[] {
 function cleanStructuredBlock(value: unknown): ArticleBlock | null {
   if (!value || typeof value !== 'object') return null
   const block = value as Record<string, unknown>
-  const id = typeof block.id === 'string' && block.id.trim() ? block.id.slice(0, 80) : articleBlockId()
+  const id = typeof block.id === 'string' ? block.id : ''
   if (block.type === 'image') {
     return {
       id, type: 'image', mediaAssetId: String(block.mediaAssetId || '').slice(0, 100),
@@ -88,13 +113,8 @@ export function parseArticleBody(value?: string | null): ArticleBodyDocument {
     try {
       const parsed = JSON.parse(source) as Record<string, unknown>
       if (parsed.format === 'l12-blocks' && parsed.version === 1 && Array.isArray(parsed.blocks)) {
-        const ids = new Set<string>()
-        const blocks = parsed.blocks.slice(0, 200).map(cleanStructuredBlock).filter((block): block is ArticleBlock => Boolean(block))
-          .map(block => {
-            if (!ids.has(block.id)) { ids.add(block.id); return block }
-            const unique = { ...block, id: articleBlockId() } as ArticleBlock
-            ids.add(unique.id); return unique
-          })
+        const blocks = normalizeArticleBlockIds(parsed.blocks.slice(0, 200).map(cleanStructuredBlock)
+          .filter((block): block is ArticleBlock => Boolean(block)))
         return { format: 'l12-blocks', version: 1, blocks: blocks.length ? blocks : [newArticleTextBlock()] }
       }
     } catch { /* Legacy plain text may legitimately begin with a brace. */ }
@@ -104,7 +124,7 @@ export function parseArticleBody(value?: string | null): ArticleBodyDocument {
 }
 
 export function serializeArticleBody(document: ArticleBodyDocument) {
-  return JSON.stringify({ format: 'l12-blocks', version: 1, blocks: document.blocks })
+  return JSON.stringify({ format: 'l12-blocks', version: 1, blocks: normalizeArticleBlockIds(document.blocks) })
 }
 
 export function articleBodyText(value?: string | null, limit = 260) {

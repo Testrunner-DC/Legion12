@@ -565,8 +565,12 @@ public sealed partial class L12PlatformStore
             {
                 if (block.ValueKind != JsonValueKind.Object) throw new ArgumentException("正文内容块必须是对象");
                 var id = JsonString(block, "id");
-                if (string.IsNullOrWhiteSpace(id) || id.Length > 80 || !ids.Add(id))
-                    throw new ArgumentException("正文内容块必须具有唯一且不超过 80 字符的标识");
+                if (string.IsNullOrWhiteSpace(id))
+                    throw new ArgumentException("正文内容块缺少标识或标识为空");
+                if (id.Length > 80)
+                    throw new ArgumentException("正文内容块标识不能超过 80 个字符");
+                if (!ids.Add(id))
+                    throw new ArgumentException($"正文内容块标识不能重复：{id}");
                 var type = JsonString(block, "type");
                 if (type == "image")
                 {

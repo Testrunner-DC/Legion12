@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { SiteMedia } from '@/l12/platform'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
-import { articleBlockId, articleInlineRuns, articleListItems, newArticleTextBlock, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
+import { articleBlockId, articleInlineRuns, articleListItems, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
 
 const props = withDefaults(defineProps<{ modelValue?: string; media?: SiteMedia[] }>(), { modelValue: '', media: () => [] })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; 'media-uploaded': [value: SiteMedia]; notice: [value: string] }>()
@@ -107,7 +107,7 @@ function elementAlign(element: HTMLElement): ArticleTextAlign {
 function textBlock(element: HTMLElement, type: ArticleTextBlock['type']): ArticleTextBlock {
   const marks: ArticleMark[] = []
   const text = nodeText(element, marks).replace(/\n$/, '').slice(0, 20_000)
-  return { id: element.dataset.blockId || articleBlockId(), type, text, marks: normalizeMarks(marks, text.length), align: elementAlign(element) }
+  return { id: element.dataset.blockId || '', type, text, marks: normalizeMarks(marks, text.length), align: elementAlign(element) }
 }
 function listBlock(element: HTMLElement, type: 'bulletList' | 'orderedList'): ArticleTextBlock {
   const marks: ArticleMark[] = []; let text = ''
@@ -117,20 +117,28 @@ function listBlock(element: HTMLElement, type: 'bulletList' | 'orderedList'): Ar
     text += nodeText(item, itemMarks).replace(/\n/g, ' ').slice(0, 20_000 - text.length)
     marks.push(...itemMarks.map(mark => ({ ...mark, from: mark.from + offset, to: mark.to + offset })))
   })
-  return { id: element.dataset.blockId || articleBlockId(), type, text, marks: normalizeMarks(marks, text.length), align: elementAlign(element) }
+  return { id: element.dataset.blockId || '', type, text, marks: normalizeMarks(marks, text.length), align: elementAlign(element) }
 }
 function parseCanvas(): ArticleBodyDocument {
   const blocks: ArticleBlock[] = []
+  const elements: { element: HTMLElement; blockIndex: number }[] = []
   for (const node of canvas.value?.childNodes || []) {
     if (node.nodeType === Node.TEXT_NODE) { const text = (node.textContent || '').trim(); if (text) blocks.push(newArticleTextBlock('paragraph', text)); continue }
     if (!(node instanceof HTMLElement)) continue
     const tag = node.tagName
-    if (tag === 'FIGURE') blocks.push({ id: node.dataset.blockId || articleBlockId(), type: 'image', mediaAssetId: (node.dataset.mediaId || '').slice(0, 100), alt: (node.dataset.alt || '').slice(0, 180), caption: (node.dataset.caption || '').slice(0, 500) })
-    else if (tag === 'HR') blocks.push({ id: node.dataset.blockId || articleBlockId(), type: 'divider' })
+    const blockIndex = blocks.length
+    if (tag === 'FIGURE') blocks.push({ id: node.dataset.blockId || '', type: 'image', mediaAssetId: (node.dataset.mediaId || '').slice(0, 100), alt: (node.dataset.alt || '').slice(0, 180), caption: (node.dataset.caption || '').slice(0, 500) })
+    else if (tag === 'HR') blocks.push({ id: node.dataset.blockId || '', type: 'divider' })
     else if (tag === 'UL' || tag === 'OL') blocks.push(listBlock(node, tag === 'UL' ? 'bulletList' : 'orderedList'))
     else if (['H2', 'H3', 'BLOCKQUOTE', 'P', 'DIV'].includes(tag)) blocks.push(textBlock(node, tag === 'H2' ? 'h2' : tag === 'H3' ? 'h3' : tag === 'BLOCKQUOTE' ? 'quote' : 'paragraph'))
+    if (blocks.length > blockIndex) elements.push({ element: node, blockIndex })
   }
-  return { format: 'l12-blocks', version: 1, blocks: blocks.length ? blocks.slice(0, 200) : [newArticleTextBlock()] }
+  const normalized = normalizeArticleBlockIds(blocks.slice(0, 200))
+  for (const { element, blockIndex } of elements) {
+    const block = normalized[blockIndex]
+    if (block) element.dataset.blockId = block.id
+  }
+  return { format: 'l12-blocks', version: 1, blocks: normalized.length ? normalized : [newArticleTextBlock()] }
 }
 
 function currentBody() { return serializeArticleBody(articleDocument.value) }
