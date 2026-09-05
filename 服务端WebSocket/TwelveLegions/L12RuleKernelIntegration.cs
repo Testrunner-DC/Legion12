@@ -1300,18 +1300,37 @@ public sealed partial class L12GameEngine
                 _ => [],
             },
         };
+        var sharedTimingLine = lines.FirstOrDefault(line =>
+            line.StartsWith("登场时/进攻时", StringComparison.Ordinal));
+        if (sharedTimingLine is not null && trigger is "enter" or "promotion-enter" or "attack")
+            return SpecializeSharedTriggerTiming(sharedTimingLine, trigger);
         var abilitySegments = lines.SelectMany(SplitEffectAbilitySegments).ToArray();
         var markerMatch = abilitySegments.FirstOrDefault(segment => markers.Length > 0
             && (ability is null ? markers.Any(marker => NormalizeTriggeredEffectText(segment).Contains(
                     NormalizeTriggeredEffectText(marker), StringComparison.Ordinal))
                 : markers.All(marker => NormalizeTriggeredEffectText(segment).Contains(
                     NormalizeTriggeredEffectText(marker), StringComparison.Ordinal))));
-        if (!string.IsNullOrWhiteSpace(markerMatch)) return markerMatch.Trim();
+        if (!string.IsNullOrWhiteSpace(markerMatch))
+            return SpecializeSharedTriggerTiming(markerMatch.Trim(), trigger);
 
         var normalizedFallback = NormalizeTriggeredEffectText(fallback);
         var fallbackMatch = abilitySegments.FirstOrDefault(segment => normalizedFallback.Length >= 2
             && NormalizeTriggeredEffectText(segment).Contains(normalizedFallback, StringComparison.Ordinal));
         return fallbackMatch ?? fallback;
+    }
+
+    private static string SpecializeSharedTriggerTiming(string text, string trigger)
+    {
+        // A printed line may deliberately share one body between multiple trigger
+        // timings. The action banner must still name only the timing that fired.
+        const string sharedEnterAttack = "登场时/进攻时";
+        if (!text.StartsWith(sharedEnterAttack, StringComparison.Ordinal)) return text;
+        return trigger switch
+        {
+            "enter" or "promotion-enter" => $"登场时{text[sharedEnterAttack.Length..]}",
+            "attack" => $"进攻时{text[sharedEnterAttack.Length..]}",
+            _ => text,
+        };
     }
 
     private static IEnumerable<string> SplitEffectAbilitySegments(string text)

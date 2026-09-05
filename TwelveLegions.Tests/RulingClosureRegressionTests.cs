@@ -154,6 +154,28 @@ public sealed class RulingClosureRegressionTests
     }
 
     [Fact]
+    public void HelenMayDeclineHerLethalSubstitution()
+    {
+        var game = Create(firstDeck: 4);
+        var player = game.State.Players[0];
+        var helen = Card("S02-0515", "ruling-helen-decline", owner: 0);
+        player.Field[0][0] = helen;
+        player.Hand.Add(Card("S02-0502", "ruling-helen-unused", owner: 0));
+
+        _ = InvokePrivate(game, "RemoveFromField", player, helen, true, "被测试致命效果击杀",
+            true, L12FieldLeaveKind.Defeat, false, false);
+        var replacement = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "effect-lethal-replacement");
+        Assert.Contains("decline", replacement.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: replacement.PromptId,
+            Choice: "decline")).Accepted);
+
+        Assert.Null(player.Field[0][0]);
+        Assert.Contains(helen, player.Graveyard);
+        Assert.Single(player.Hand);
+    }
+
+    [Fact]
     public void HelenUsesARealEffectDiscardRatherThanAFieldDeathTransaction()
     {
         var game = Create(firstDeck: 4);
@@ -226,6 +248,7 @@ public sealed class RulingClosureRegressionTests
         player.Hand.Add(ptolemy);
         AddReadyMorale(player, ptolemy.Cost);
         player.LastActiveTacticCardId = "S01-0006";
+        player.LastActiveTacticTurnSerial = game.State.TurnSerial;
         var hpBefore = opponent.Hp;
 
         Assert.True(game.Handle(0, new L12Command("playCard", ptolemy.InstanceId, Row: 0, Slot: 0)).Accepted);
@@ -242,6 +265,28 @@ public sealed class RulingClosureRegressionTests
     }
 
     [Fact]
+    public void PtolemyDoesNotRepeatAnActiveTacticFromAnEarlierTurn()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var ptolemy = Card("S01-0211", "ruling-ptolemy-old-turn");
+        player.Hand.Add(ptolemy);
+        AddReadyMorale(player, ptolemy.Cost);
+        player.LastActiveTacticCardId = "S01-0006";
+        player.LastActiveTacticTurnSerial = game.State.TurnSerial - 1;
+        var hpBefore = opponent.Hp;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", ptolemy.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+        PassResponses(game);
+
+        Assert.Equal(hpBefore, opponent.Hp);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Text.Contains("再次发动", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void PtolemyDeclaresRepeatedModesAndTargetsBeforeTheRepeatedEffectStackItem()
     {
         var game = Create();
@@ -253,6 +298,7 @@ public sealed class RulingClosureRegressionTests
         player.Hand.Add(ptolemy);
         AddReadyMorale(player, ptolemy.Cost);
         player.LastActiveTacticCardId = "S01-0005";
+        player.LastActiveTacticTurnSerial = game.State.TurnSerial;
 
         Assert.True(game.Handle(0, new L12Command("playCard", ptolemy.InstanceId, Row: 0, Slot: 0)).Accepted);
         PassResponses(game);
@@ -275,6 +321,7 @@ public sealed class RulingClosureRegressionTests
         player.Hand.Add(ptolemy);
         AddReadyMorale(player, ptolemy.Cost);
         player.LastActiveTacticCardId = "S02-0622";
+        player.LastActiveTacticTurnSerial = game.State.TurnSerial;
 
         Assert.True(game.Handle(0, new L12Command("playCard", ptolemy.InstanceId, Row: 0, Slot: 0)).Accepted);
         PassResponses(game);
@@ -302,6 +349,7 @@ public sealed class RulingClosureRegressionTests
         player.Hand.AddRange([ptolemy, summon]);
         AddReadyMorale(player, ptolemy.Cost);
         player.LastActiveTacticCardId = "S02-0207";
+        player.LastActiveTacticTurnSerial = game.State.TurnSerial;
 
         Assert.True(game.Handle(0, new L12Command("playCard", ptolemy.InstanceId, Row: 0, Slot: 0)).Accepted);
         PassResponses(game);

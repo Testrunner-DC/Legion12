@@ -4,11 +4,13 @@ using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
+public sealed record L12AudioPreferencesView(bool MusicEnabled = true, double MusicVolume = 0.35,
+    bool SfxEnabled = true, double SfxVolume = 0.7, string CardSize = "auto", string Animation = "standard");
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt,
     bool PublicHistory, int PermissionVersion = 1, bool Disabled = false,
     DateTimeOffset? DisabledAt = null, string? DisabledReason = null, bool MustChangePassword = false,
     bool Deleted = false, DateTimeOffset? DeletedAt = null, string? EmailMasked = null,
-    bool EmailVerified = false)
+    bool EmailVerified = false, L12AudioPreferencesView? AudioPreferences = null)
 {
     public IReadOnlyList<string> Permissions => L12Authorization.PermissionsForRole(Role);
 }
@@ -74,6 +76,12 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? EmailVerifiedAt { get; set; }
         public bool MustChangePassword { get; set; }
         public bool Deleted { get; set; }
+        public bool MusicEnabled { get; set; } = true;
+        public double MusicVolume { get; set; } = 0.35;
+        public bool SfxEnabled { get; set; } = true;
+        public double SfxVolume { get; set; } = 0.7;
+        public string CardSize { get; set; } = "auto";
+        public string Animation { get; set; } = "standard";
         public DateTimeOffset? DeletedAt { get; set; }
         public string? DeletedByAccountId { get; set; }
         public string? DeletedReason { get; set; }
@@ -478,6 +486,23 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
             return row is null ? null : ToView(row);
+        }
+    }
+
+    public L12AudioPreferencesView UpdateAudioPreferences(string accountId, L12AudioPreferencesView value)
+    {
+        lock (_gate)
+        {
+            var row = _data.Accounts.First(item => item.Id == accountId && !item.Deleted && !item.Disabled);
+            row.MusicEnabled = value.MusicEnabled;
+            row.MusicVolume = Math.Clamp(value.MusicVolume, 0, 1);
+            row.SfxEnabled = value.SfxEnabled;
+            row.SfxVolume = Math.Clamp(value.SfxVolume, 0, 1);
+            row.CardSize = value.CardSize is "small" or "medium" or "large" ? value.CardSize : "auto";
+            row.Animation = value.Animation is "off" or "fast" ? value.Animation : "standard";
+            Save();
+            return new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
+                row.CardSize, row.Animation);
         }
     }
 
@@ -1267,7 +1292,9 @@ public sealed partial class L12PlatformStore
 
     private static L12AccountView ToView(AccountRow row) => new(row.Id, row.Username, row.Role, row.CreatedAt,
         row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason,
-        row.MustChangePassword, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null);
+        row.MustChangePassword, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null,
+        new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
+            row.CardSize, row.Animation));
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
     {
         var blocked = _data.BlockedAccounts.Any(item => item.AccountId == viewerId && item.BlockedAccountId == row.Id);

@@ -37,7 +37,7 @@ public sealed partial class L12GameEngine
         {
             "lancelot-entry" =>
             [PublicTriggerStep("option", "mode", "兰斯洛特：是否消耗1符文并获得冲锋",
-                player.SpecialZones.Runes > 0 ? ["mode:none", "mode:use"] : ["mode:none"])],
+                ["mode:none", "mode:use"])],
             "lancelot-kill" =>
             [PublicTriggerStep("option", "mode", "兰斯洛特：选择击杀时效果",
                 hasOpenTrial ? ["mode:none", "mode:trial", "mode:rune"] : ["mode:none", "mode:rune"])],

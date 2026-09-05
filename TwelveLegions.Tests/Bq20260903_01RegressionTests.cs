@@ -305,7 +305,7 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
-    public void TsukuyomiFollowMoveMaySelectAndMoveAnOpponentLegion()
+    public void TsukuyomiFollowMoveMaySelectAndMoveARestedOpponentLegion()
     {
         var game = Create(69032, "S02-04M1");
         var player = game.State.Players[0];
@@ -314,6 +314,7 @@ public sealed class Bq20260903_01RegressionTests
         var opponentTarget = Card("S02-0402", "tsukuyomi-opponent-target");
         moved.OwnerIndex = 0;
         opponentTarget.OwnerIndex = 1;
+        opponentTarget.Tapped = true;
         player.Field[1][0] = moved;
         opponent.Field[0][2] = opponentTarget;
         player.Morale.AddRange([
@@ -325,8 +326,9 @@ public sealed class Bq20260903_01RegressionTests
         Assert.True(movement.Accepted, movement.Error);
         var order = Assert.Single(game.State.PendingPrompts);
         var follow = Assert.Single(order.ValidChoices,
-            id => order.Data[id].Contains("军团位移时效果", StringComparison.Ordinal));
-        var front = Assert.Single(order.ValidChoices, id => id != follow);
+            id => order.Data.TryGetValue(id, out var label)
+                && label.Contains("军团位移时效果", StringComparison.Ordinal));
+        var front = Assert.Single(order.ValidChoices, id => id != follow && id != "pass");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
             CardInstanceIds: [follow, front])).Accepted);
 
@@ -342,6 +344,7 @@ public sealed class Bq20260903_01RegressionTests
 
         Assert.Null(opponent.Field[0][2]);
         Assert.Same(opponentTarget, opponent.Field[0][1]);
+        Assert.True(opponentTarget.Tapped);
         Assert.Equal(-1, opponentTarget.CostModifier);
         Assert.Contains("active:master-0:tsukuyomiFollowMove", player.UsedAbilities);
 

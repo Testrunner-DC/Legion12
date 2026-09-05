@@ -48,7 +48,7 @@ const form = reactive<OperationsConfigPayload>({
   matchModes: [],
   defaultRoomConfig: { matchModeId: 'casual', spectating: 'public', handVisibility: 'request', disasterMode: 'all' },
   featureFlags: {},
-  maintenance: { enabled: false, message: '' },
+  maintenance: { enabled: false, message: '', advanceBroadcastHours: 2, expectedDurationHours: 2 },
 })
 const rankedConfig = ref<RankedConfig | null>(null)
 const rankedBroadcasts = ref<RankedBroadcast[]>([])
@@ -210,7 +210,7 @@ onMounted(load)
           <fieldset class="room-defaults"><legend>默认房间配置</legend><label>默认模式<select v-model="form.defaultRoomConfig.matchModeId"><option v-for="mode in form.matchModes" :key="mode.id" :value="mode.id">{{ mode.name }} · {{ mode.enabled ? '启用' : '停用' }}</option></select></label><label>观战权限<select v-model="form.defaultRoomConfig.spectating"><option value="public">允许所有玩家观战</option><option value="friends">仅好友观战</option><option value="disabled">禁止观战</option></select></label><label>观战手牌<select v-model="form.defaultRoomConfig.handVisibility"><option value="request">查看前申请</option><option value="public">默认公开</option></select></label><label>天灾模式<select v-model="form.defaultRoomConfig.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></label><p class="wide contract-note">这里定义新房间的初始值；房主修改后的配置仍须通过当前模式和维护策略校验。</p></fieldset>
         </template>
         <fieldset v-else-if="activeSection === 'features'" class="wide"><legend>模块功能开关</legend><p class="field-help">格式：key=true/false。关闭后前端入口会灰置，服务端仍进行权威校验。</p><label class="wide"><textarea v-model="featureFlags" rows="16"/></label></fieldset>
-        <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>维护状态与玩家公告</legend><label class="toggle-row"><span><b>启用维护</b><small>阻止创建、加入及开始新对局；已开始对局与重连继续。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">维护提示<textarea v-model="form.maintenance.message" rows="5"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.maintenance.endsAt" type="datetime-local"/></label></fieldset>
+        <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>维护状态与玩家公告</legend><label class="toggle-row"><span><b>启用维护计划</b><small>到达开始前1小时自动关闭所有新开局入口；关闭此项即可立即重新开放服务器。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">后台备注/补充提示<textarea v-model="form.maintenance.message" rows="4" placeholder="可填写额外维护说明"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.maintenance.endsAt" type="datetime-local"/></label><label>提前广播（小时）<input v-model.number="form.maintenance.advanceBroadcastHours" type="number" min="1" max="168"/></label><label>预计维护时长（小时）<input v-model.number="form.maintenance.expectedDurationHours" type="number" min="1" max="168"/></label><p class="wide contract-note">大厅从提前广播时点循环显示维护公告；局内在维护前30分钟及其后每5分钟提醒。正式维护开始时未结束对局按无效处理。</p></fieldset>
       </div>
       <footer v-if="activeSection === 'ranked'" class="config-actions"><input v-model="rankedReason" placeholder="排位配置变更理由（必填）"/><button class="confirm" @click="saveRanked">保存排位配置</button></footer>
       <footer v-else class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>

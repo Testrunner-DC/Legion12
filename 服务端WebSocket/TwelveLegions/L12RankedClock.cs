@@ -251,7 +251,64 @@ public sealed partial class L12RoomManager
         {
             Console.Error.WriteLine($"Ranked clock checkpoint batch: {error.Message}");
         }
+        await TickMaintenanceLockedRoomsAsync(now, messages);
         return messages;
+    }
+
+    private async Task TickMaintenanceLockedRoomsAsync(DateTimeOffset now, List<OutgoingMessage> messages)
+    {
+        var policy = CaptureOperationsPolicy();
+        if (!policy.Maintenance.Enabled) return;
+        var starts = policy.Maintenance.StartsAt;
+        var remaining = starts is { } scheduledStart ? scheduledStart - now : TimeSpan.Zero;
+        var active = policy.IsMaintenanceActive(now);
+        var warningMinutes = starts is not null && remaining.TotalMinutes is >= 0 and <= 30
+            ? Math.Max(0, (int)Math.Ceiling(remaining.TotalMinutes / 5d) * 5) : -1;
+        if (!active && warningMinutes < 0) return;
+
+        foreach (var room in _rooms.Values.Where(candidate => candidate.Game is not null
+                     && (candidate.Game.State.Phase != L12Phase.GameOver
+                         || !candidate.IsSandbox && !candidate.CompletionRecorded)).ToArray())
+        {
+            await room.Gate.WaitAsync();
+            try
+            {
+                if (active)
+                {
+                    if (room.Game!.State.Phase != L12Phase.GameOver)
+                    {
+                        if (room.RankedClock is { } clock) clock.ConclusionKind = "maintenance-invalidated";
+                        room.Game.ConcludeByAuthority(null, "服务器维护开始，当前对局无效");
+                    }
+                    if (room.RankedClock is not null)
+                    {
+                        await ApplyRankedClockConclusionLockedAsync(room, now);
+                    }
+                    else if (!room.IsSandbox && !room.CompletionRecorded)
+                    {
+                        if (!room.MaintenanceAuthorityEventRecorded)
+                        {
+                            room.CommandSequence++;
+                            await _recorder.AppendAuthorityAsync(room.Game, room.CommandSequence,
+                                room.Game.State.WinnerReason ?? "服务器维护开始，当前对局无效");
+                            room.MaintenanceAuthorityEventRecorded = true;
+                        }
+                        var completionError = await CompleteTournamentRoomGameAsync(room);
+                        if (completionError is not null)
+                            Console.Error.WriteLine($"Maintenance completion ({room.Code}): {completionError}");
+                    }
+                    messages.AddRange(BroadcastGame(room));
+                    continue;
+                }
+                if (room.LastMaintenanceWarningMinutes == warningMinutes) continue;
+                room.LastMaintenanceWarningMinutes = warningMinutes;
+                var text = $"服务器将于{starts!.Value.ToLocalTime():HH:mm}开始维护，距离维护还有{warningMinutes}分钟，维护开始当前对局将会被废弃，请尽快结束。";
+                foreach (var audience in room.Sessions.Concat(room.Spectators).Distinct())
+                    messages.Add(new OutgoingMessage(audience, new { type = "maintenanceWarning", message = text,
+                        startsAt = starts, minutesRemaining = warningMinutes }));
+            }
+            finally { room.Gate.Release(); }
+        }
     }
 
     private L12RankedClockView? RankedClockView(Room room)

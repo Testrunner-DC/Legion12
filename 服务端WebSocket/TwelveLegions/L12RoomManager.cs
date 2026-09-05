@@ -76,6 +76,8 @@ public sealed partial class L12RoomManager
         public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
         public int MeaningfulCommandCount { get; set; }
         public bool Closed { get; set; }
+        public int? LastMaintenanceWarningMinutes { get; set; }
+        public bool MaintenanceAuthorityEventRecorded { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
     }
 
@@ -476,7 +478,7 @@ public sealed partial class L12RoomManager
             && string.Equals(session.AccountId, viewerAccountId, StringComparison.OrdinalIgnoreCase)
             && session.RoomCode is not null);
         var currentPolicy = CaptureOperationsPolicy();
-        var maintenanceActive = currentPolicy.IsMaintenanceActive(DateTimeOffset.UtcNow);
+        var maintenanceActive = currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow);
         return _sessions.Values
             .Where(session => session.Connected && !session.IsVirtual && !string.IsNullOrWhiteSpace(session.AccountId))
             .GroupBy(session => session.AccountId!, StringComparer.OrdinalIgnoreCase)
@@ -765,7 +767,7 @@ public sealed partial class L12RoomManager
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         request ??= new L12SandboxRequest();
         var currentPolicy = CaptureOperationsPolicy();
-        if (currentPolicy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+        if (currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
             return MaintenanceBlocked(sessionId, currentPolicy);
         var disasterMode = (request.DisasterMode ?? string.Empty).Trim().ToLowerInvariant();
         if (disasterMode is not ("all" or "random" or "custom" or "none"))
@@ -853,7 +855,7 @@ public sealed partial class L12RoomManager
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var currentPolicy = CaptureOperationsPolicy();
-        if (currentPolicy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+        if (currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
             return MaintenanceBlocked(sessionId, currentPolicy);
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
@@ -1627,14 +1629,13 @@ public sealed partial class L12RoomManager
 
     private static IReadOnlyList<OutgoingMessage> MaintenanceBlocked(Guid sessionId,
         L12OperationsPolicySnapshot policy)
-        => OperationsBlocked(sessionId, "maintenance_active",
-            string.IsNullOrWhiteSpace(policy.Maintenance.Message) ? "系统维护中，暂不接受新的对局入口" : policy.Maintenance.Message);
+        => OperationsBlocked(sessionId, "maintenance_active", "维护即将开始/维护中，对局功能已关闭。");
 
     private bool TryOperationsEntryBlock(Guid sessionId, L12OperationsPolicySnapshot policy,
         string? matchModeId, out IReadOnlyList<OutgoingMessage> blocked,
         L12OperationsPolicySnapshot? pinnedRoomPolicy = null)
     {
-        if (policy.IsMaintenanceActive(DateTimeOffset.UtcNow))
+        if (policy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
         {
             blocked = MaintenanceBlocked(sessionId, policy);
             return true;
@@ -1707,9 +1708,9 @@ public sealed partial class L12RoomManager
         var handVisibility = options?.HandVisibility is "request" or "public"
             ? options.HandVisibility : defaults.HandVisibility;
         var configuredDisasterMode = options?.DisasterMode?.Trim().ToLowerInvariant();
-        var disasterMode = configuredDisasterMode is "all" or "random" or "none"
+        var disasterMode = configuredDisasterMode is "all" or "random" or "season" or "none"
             ? configuredDisasterMode
-            : defaults.DisasterMode is "all" or "random" or "none" ? defaults.DisasterMode : "all";
+            : defaults.DisasterMode is "all" or "random" or "season" or "none" ? defaults.DisasterMode : "all";
         return new L12RoomOptions
         {
             MatchModeId = "friendly",

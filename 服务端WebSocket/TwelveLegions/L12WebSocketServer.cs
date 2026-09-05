@@ -349,6 +349,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 body.NewPassword ?? string.Empty, authenticated.SessionId);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
+        _app.MapPut("/api/auth/audio-preferences", (HttpRequest request, L12AudioPreferencesView body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized()
+                : Results.Ok(_platform.UpdateAudioPreferences(account.Id, body));
+        });
         _app.MapGet("/api/auth/email", (HttpRequest request) =>
         {
             var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);

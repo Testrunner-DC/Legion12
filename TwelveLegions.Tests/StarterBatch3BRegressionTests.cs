@@ -479,6 +479,37 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
+    public void FaithZealotCopiesHorusWithoutMoraleFieldCostsOrNormalOnceUsage()
+    {
+        var game = Create(204251);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var revive = Card("ST02-07", "faith-horus-revive");
+        player.Graveyard.Add(revive);
+        game.State.FreeMasterActivation = new L12FreeMasterActivation
+        {
+            Controller = 0,
+            Ability = "horusRevive",
+            SourceInstanceId = "faith-source",
+        };
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        var target = Prompt(game);
+        Assert.Equal("grave-card", target.Kind);
+        Assert.Contains(revive.InstanceId, target.ValidChoices);
+        Choose(game, revive.InstanceId);
+        Choose(game, "0:0");
+        PassResponses(game);
+
+        Assert.Same(revive, player.Field[0][0]);
+        Assert.True(revive.Tapped);
+        Assert.Empty(player.Morale);
+        Assert.DoesNotContain(player.UsedAbilities, key => key.Contains("horusRevive", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("无视全部消耗", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void KojiroDelaysOpponentHandIdentityAndKondoReplacesLethalEffect()
     {
         var game = Create(20409);
@@ -511,6 +542,7 @@ public sealed class StarterBatch3BRegressionTests
         var removed = (bool)Invoke(replacement, "RemoveFromField", owner, protectedCard, true,
             "被效果击杀", true, L12FieldLeaveKind.Defeat, false, false)!;
         Assert.False(removed);
+        protectedCard.Troops = 0; // 复现同一命令末尾的状态检查再次看到致死状态
         Choose(replacement, kondo.InstanceId);
         Assert.Same(protectedCard, owner.Field[0][0]);
         Assert.Null(owner.Field[0][1]);

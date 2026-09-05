@@ -14,6 +14,9 @@ public sealed partial class L12GameEngine
     private string PendingCardLethalSubstitutionKey(L12CardInstance protectedCard)
         => $"pending:{CardLethalSubstitutionKey(protectedCard)}";
 
+    private string CurrentLethalEventProtectionKey(L12CardInstance protectedCard)
+        => $"lethal-event-protected:{protectedCard.InstanceId}:{State.Revision}";
+
     private string? CardLethalSubstitutionKind(L12PlayerState controller, L12CardInstance protectedCard)
     {
         if (protectedCard.CardId == "S01-0205") return "horemheb-field";
@@ -61,6 +64,7 @@ public sealed partial class L12GameEngine
         var choices = candidates.Select(card => card.InstanceId).Append(DeclineLethalSubstitution).ToArray();
         var data = new Dictionary<string, string>
         {
+            ["lethalEventId"] = Guid.NewGuid().ToString("N"),
             ["replacementKind"] = kind,
             ["cardInstanceId"] = protectedCard.InstanceId,
             ["reason"] = reason,
@@ -90,6 +94,10 @@ public sealed partial class L12GameEngine
         if (defeatedInstanceId is not null)
             ResolveAttachedCardLethalKillSources(prompt, defeatedInstanceId);
         controller.UsedAbilities.Add(CardLethalSubstitutionKey(protectedCard));
+        controller.UsedAbilities.Add(CurrentLethalEventProtectionKey(protectedCard));
+        AddEvent("replacement-transaction", controller.PlayerIndex,
+            $"致死事件 {prompt.Data.GetValueOrDefault("lethalEventId", "legacy")} 已由替代效果消费；同一事件不会再次结算〈{protectedCard.Name}〉",
+            protectedCard);
         return true;
     }
 

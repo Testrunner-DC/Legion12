@@ -285,6 +285,9 @@ export function connect(): Promise<void> {
         l12State.notice = message.message || '当前运营规则不允许执行此操作'
         l12State.pendingAction = false
       }
+      else if (message.type === 'maintenanceWarning') {
+        l12State.notice = message.message || '服务器即将维护，请尽快结束当前对局。'
+      }
       else if (message.type === 'friendInvitation') l12State.friendInvitation = message
       else if (message.type === 'friendInvitationResolved') l12State.friendInvitation = null
       else if (message.type === 'friendRoomCreated') {
@@ -479,7 +482,7 @@ export interface RoomOptions {
   matchModeId: string
   spectating: 'public' | 'friends' | 'disabled'
   handVisibility: 'request' | 'public'
-  disasterMode: 'all' | 'random' | 'none'
+  disasterMode: 'all' | 'random' | 'season' | 'none'
   useCardRestrictions: boolean
 }
 

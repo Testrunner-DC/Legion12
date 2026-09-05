@@ -699,7 +699,7 @@ public sealed partial class L12GameEngine
         if (L12StructuredCardSemantics.HasEffectiveStrongAttack(card)) keywords.Add("强攻");
         if (HasActiveImmortal(card, row)) keywords.Add("免死");
         if (card.HasSureHit) keywords.Add("必中");
-        if (L12StructuredCardRules.HasTaunt(card, row)) keywords.Add("挑衅");
+        if (L12StructuredCardRules.HasTaunt(card, row) && !IsTauntSuppressed(controller)) keywords.Add("挑衅");
         if (L12StructuredCardRules.HasCooperativeSupport(card, row)) keywords.Add("协防");
         if (card.HasCharge && card.SummonRound >= State.Round) keywords.Add("冲锋");
         if (card.HasShock) keywords.Add("震击");
@@ -740,8 +740,15 @@ public sealed partial class L12GameEngine
             effects.Add(new("extra-attack", "本回合获得额外进攻对象权限"));
         if (card.ReadyAfterNextKillUntilTurn >= State.TurnSerial)
             effects.Add(new("extra-attack", "下次击杀对方军团后转为活跃", card.ReadyAfterNextKillSourceName));
+        if (L12StructuredCardRules.HasTaunt(card, row) && IsTauntSuppressed(controller))
+            effects.Add(new("keyword-disabled", "挑衅",
+                State.ActiveDisaster?.CardId == "S02-DS02" ? State.ActiveDisaster.Name : "聂隐娘"));
         return effects;
     }
+
+    private bool IsTauntSuppressed(L12PlayerState controller)
+        => State.ActiveDisaster?.CardId == "S02-DS02"
+            || controller.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}");
 
     public string SerializeFullState() => JsonSerializer.Serialize(State);
 
@@ -1727,10 +1734,12 @@ public sealed partial class L12GameEngine
                     .Where(card => card is not null && IsFieldLegion(card) && card.Troops <= 0)
                     .Cast<L12CardInstance>()
                     .Where(card => !IsPendingCombatDeath(card.InstanceId))
+                    .Where(card => !player.UsedAbilities.Contains(CurrentLethalEventProtectionKey(card)))
                     .Select(card => (Controller: player.PlayerIndex, Card: card)))
                 .ToArray();
             if (defeated.Length == 0)
             {
+                ClearCurrentLethalEventProtections();
                 ClearPendingStateBasedKillSources();
                 return;
             }
@@ -1745,7 +1754,11 @@ public sealed partial class L12GameEngine
             }
             if (!suppressDeathTriggers) QueueSimultaneousDeathTriggers(removed);
             ResolvePendingStateBasedKillSources(removed);
-            if (removed.Count == 0) return;
+            if (removed.Count == 0)
+            {
+                ClearCurrentLethalEventProtections();
+                return;
+            }
         }
         throw new InvalidOperationException("兵力状态检查超过安全迭代次数");
     }
@@ -1773,6 +1786,14 @@ public sealed partial class L12GameEngine
         State.IsResolvingStack = false;
         State.ResponseWindow = null;
         AddEvent("game-over", winner, $"{State.Players[winner].Name} 获胜：{reason}");
+    }
+
+    private void ClearCurrentLethalEventProtections()
+    {
+        var suffix = $":{State.Revision}";
+        foreach (var player in State.Players)
+            player.UsedAbilities.RemoveWhere(key => key.StartsWith("lethal-event-protected:", StringComparison.Ordinal)
+                && key.EndsWith(suffix, StringComparison.Ordinal));
     }
 
     internal void ConcludeByAuthority(int? winner, string reason)

@@ -273,10 +273,13 @@ const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
 const previewPresentation = computed(() => prompt.value?.data?.previewPresentation ?? '')
 const showPreviewCard = computed(() => Boolean(previewCardId.value)
   && ['handled-card', 'information-card'].includes(previewPresentation.value))
-const declineChoices = new Set(['no', 'mode:none', 'skip'])
+const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])
+function isDeclineChoice(choice: string) {
+  return declineChoices.has(choice.trim().toLowerCase()) || label(choice).trim() === '不响应'
+}
 const orderedEffectChoices = computed(() => [
-  ...currentChoices.value.filter(choice => !declineChoices.has(choice.toLowerCase())),
-  ...currentChoices.value.filter(choice => declineChoices.has(choice.toLowerCase())),
+  ...currentChoices.value.filter(choice => !isDeclineChoice(choice)),
+  ...currentChoices.value.filter(isDeclineChoice),
 ])
 const displayedChoices = computed(() => {
   if (prompt.value?.kind === 'option') return orderedEffectChoices.value
@@ -544,13 +547,15 @@ function kindLabel() {
               :intent="usesDetailCardImages ? 'detail' : 'thumb'" :size="isInfoConfirm ? 'featured' : 'standard'"
               :selection-order="selected.includes(choice) && prompt.maxChoose > 1 ? selected.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
-            <button v-else :class="{ selected: selected.includes(choice) }" @click="toggle(choice)">
+            <button v-else :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+              :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
             </button>
           </template>
         </div>
         <div v-if="supplementalChoices.length && prompt.data?.choiceMode !== 'optional-add'" class="prompt-supplemental-choices">
-          <button v-for="choice in supplementalChoices" :key="choice" :class="{ selected: selected.includes(choice) }"
+          <button v-for="choice in supplementalChoices" :key="choice" :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+            :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"
             @click="toggle(choice)">{{ label(choice) }}</button>
         </div>
         <footer>
@@ -643,6 +648,7 @@ function kindLabel() {
 .prompt-panel.has-card-choices{width:min(920px,calc(100vw - 36px))}.prompt-card-strip{display:flex;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:8px;padding:10px 3px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.prompt-card-strip{max-height:none}.featured-card-strip{justify-content:center;margin:2px auto}
 .prompt-choices.effect-option-list{display:grid;max-width:100%;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:stretch;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}.prompt-choices.effect-option-list>button{width:100%;min-width:0;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:11px;font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
 .prompt-supplemental-choices{display:flex;justify-content:flex-end;gap:7px;margin:4px 3px}.prompt-supplemental-choices button{padding:7px 12px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:9px;font-weight:900}.prompt-supplemental-choices button:hover,.prompt-supplemental-choices button.selected{border-color:#70d7df;background:#174e54}
+.prompt-choices>button.decline-action,.prompt-supplemental-choices>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:11px!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:13px;line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:14px}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:11px}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:7px;line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:8px;line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:8px;font-weight:900}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}

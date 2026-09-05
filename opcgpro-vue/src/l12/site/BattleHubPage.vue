@@ -16,7 +16,7 @@ const roomCode = ref('')
 const roomOptions = ref<RoomOptions>({ matchModeId: 'friendly', spectating: 'public', handVisibility: 'request', disasterMode: 'all', useCardRestrictions: false })
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
 const policyError = ref('')
-const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.active === true)
+const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.entryBlocked === true)
 const customDecks = ref(loadSavedDecks())
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
@@ -100,7 +100,7 @@ watch(() => l12State.room?.options, options => {
     matchModeId: 'friendly',
     spectating: options.spectating,
     handVisibility: options.handVisibility,
-    disasterMode: options.disasterMode === 'custom' || options.disasterMode === 'season' ? 'all' : options.disasterMode,
+    disasterMode: options.disasterMode === 'custom' ? 'all' : options.disasterMode,
     useCardRestrictions: options.useCardRestrictions === true,
   }
 }, { immediate: true, deep: true })
@@ -116,7 +116,7 @@ onMounted(async () => {
       matchModeId: 'friendly',
       spectating: policy.defaultRoomConfig.spectating,
       handVisibility: policy.defaultRoomConfig.handVisibility,
-      disasterMode: ['all', 'random', 'none'].includes(policy.defaultRoomConfig.disasterMode)
+      disasterMode: ['all', 'random', 'season', 'none'].includes(policy.defaultRoomConfig.disasterMode)
         ? policy.defaultRoomConfig.disasterMode as RoomOptions['disasterMode'] : 'all',
       useCardRestrictions: false,
     }
@@ -158,7 +158,7 @@ async function ensureConnected() {
 }
 function operationsAllowed() {
   if (!maintenanceActive.value) return true
-  l12State.notice = operationsPolicy.value?.maintenance.message || '服务器正在维护，暂时无法开始新的对局'
+  l12State.notice = '维护即将开始/维护中，对局功能已关闭。'
   return false
 }
 function saveRoomRules() { if (isRoomHost.value) updateRoomOptions(editableRoomOptions.value) }
@@ -189,7 +189,7 @@ async function copyRoomCode() {
   <div class="battle-hub">
     <RankedBroadcastTicker />
     <header class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
-    <section v-if="maintenanceActive" class="maintenance-banner"><b>服务器维护中</b><span>{{ operationsPolicy?.maintenance.message || '暂时停止创建和加入新对局，已开始对局与重连不受影响。' }}</span></section>
+    <section v-if="operationsPolicy?.maintenance.broadcastMessage || maintenanceActive" class="maintenance-banner"><b>{{ operationsPolicy?.maintenance.active ? '服务器维护中' : '维护公告' }}</b><span>{{ operationsPolicy?.maintenance.broadcastMessage || '维护即将开始/维护中，对局功能已关闭。' }}</span></section>
       <section v-else-if="policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
 
     <section v-if="l12State.matchFound && !l12State.game" class="match-found-stage panel" data-ui-contract="match-found-state-recovery">
@@ -205,7 +205,7 @@ async function copyRoomCode() {
       <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>好友房</span><span>{{ l12State.room.options.useCardRestrictions ? '启用运营禁限卡' : '不启用运营禁限卡' }}</span><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span><span v-if="l12State.room.operationsPolicyVersion">运营规则 v{{ l12State.room.operationsPolicyVersion }}</span></div>
       <section v-if="isRoomHost" class="room-rule-editor">
         <header><b>调整房间规则</b><span>保存后双方准备状态会重置</span></header>
-        <div class="room-settings"><div><b>禁限卡规则</b><select v-model="editableRoomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="editableRoomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="editableRoomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="editableRoomOptions.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="none">不使用天灾</option></select></div></div>
+        <div class="room-settings"><div><b>禁限卡规则</b><select v-model="editableRoomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="editableRoomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="editableRoomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="editableRoomOptions.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></div></div>
         <button type="button" @click="saveRoomRules">保存房间规则</button>
       </section>
       <section class="room-current-deck"><DeckProfile v-if="currentDeck" compact :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" context="好友房牌库" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><p v-else>当前没有已保存牌库</p><div><span :class="{ invalid: !!currentDeckError }">{{ currentDeckError || '符合好友房规则' }}</span><button type="button" :disabled="me?.ready" @click="openDeckSelector">更换牌库</button></div></section>
@@ -225,7 +225,7 @@ async function copyRoomCode() {
         <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="!currentDeck || !!currentDeckError || maintenanceActive" @click="onMatch">开始{{ selectedMatchMode === 'ranked' ? '排位' : '休闲' }}匹配</button>
       </section>
 
-      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
+      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season">赛季天灾（使用当前赛季天灾池）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
@@ -233,7 +233,22 @@ async function copyRoomCode() {
       :catalog="catalog" :current-deck-name="selectorCurrentName" :restrictions="selectorRestrictions"
       :loading="selectorLoading" :disabled="!!(l12State.room && me?.ready)"
       @cancel="deckSelectorOpen = false" @confirm="confirmDeckSelection"/>
-    <Teleport to="body"><div v-if="rankedRulesOpen" class="ranked-rules-backdrop" @click.self="rankedRulesOpen = false"><section class="ranked-rules-modal" role="dialog" aria-modal="true" aria-label="排位规则"><header><div><small>RANKED RULES</small><h2>排位规则</h2><p>{{ operationsPolicy?.season.name || '当前赛季' }}</p></div><button type="button" @click="rankedRulesOpen = false">×</button></header><div class="ranked-rules-scroll"><article><h3>七曜值</h3><p>完成 {{ ranked?.config.placementMatches || 5 }} 场定级赛后进入段位。胜负结算只显示自己的七曜值与段位变化；连胜、对手强度、段位保护与分差修正均由服务器权威计算。</p></article><article><h3>段位与派系称号</h3><div v-for="faction in ranked?.config.factions || []" :key="faction.id" class="rules-faction"><b>{{ faction.name }}</b><span>{{ faction.tiers.map(tier => `${tier.name}（${tier.minimum.toLocaleString()}）`).join(' → ') }}</span><small>仅最高段位可获得：第1名「{{ faction.firstTitle }}」；第2至5名「{{ faction.topFiveTitle }}」。</small></div></article><article><h3>最强主宰规则</h3><p>每位主宰在赛季结算时按排位成绩确定最强玩家并授予对应专属称号；当前赛季成绩不会提前进入历史荣誉。</p></article><article><h3>时间限制</h3><p>每位玩家总操作时间25分钟；单次操作与掉线重连均最多4分钟。单方超时判负；双方均无法恢复则对局无效。</p></article><article><h3>本赛季天灾</h3><p>{{ operationsPolicy?.disasterCardIds.length || 0 }} 张（含固定堙灭）。排位强制使用赛季天灾池；休闲、好友房与沙盒不继承此限制。</p><ul v-if="operationsPolicy?.disasterCardIds.length"><li v-for="cardId in operationsPolicy.disasterCardIds" :key="cardId">{{ cardLabel(cardId) }}</li></ul></article><article><h3>本赛季禁限卡</h3><ul v-if="operationsPolicy?.cardRestrictions.length"><li v-for="rule in operationsPolicy.cardRestrictions" :key="`${rule.masterId || '*'}:${rule.cardId}`">{{ rule.masterId ? `${cardLabel(rule.masterId)}使用` : '全部主宰' }} {{ cardLabel(rule.cardId) }}：上限 {{ rule.maxCopies }} 张</li></ul><p v-else>本赛季未设置禁限卡。</p></article></div><footer><button type="button" @click="rankedRulesOpen = false">我知道了</button></footer></section></div></Teleport>
+    <Teleport to="body">
+      <div v-if="rankedRulesOpen" class="ranked-rules-backdrop" @click.self="rankedRulesOpen = false">
+        <section class="ranked-rules-modal" role="dialog" aria-modal="true" aria-label="排位规则">
+          <header><div><small>RANKED RULES</small><h2>排位规则</h2><p>{{ operationsPolicy?.season.name || '当前赛季' }}</p></div><button type="button" @click="rankedRulesOpen = false">×</button></header>
+          <div class="ranked-rules-scroll">
+            <article><h3>七曜值</h3><p>完成 {{ ranked?.config.placementMatches || 5 }} 场定级赛后进入段位。胜负结算只显示自己的七曜值与段位变化；连胜、对手强度、段位保护与分差修正均由服务器权威计算。</p></article>
+            <article><h3>段位与派系称号</h3><div v-for="faction in ranked?.config.factions || []" :key="faction.id" class="rules-faction"><b>{{ faction.name }}</b><span>{{ faction.tiers.map(tier => `${tier.name}（${tier.minimum.toLocaleString()}）`).join(' → ') }}</span><small>仅最高段位可获得：第1名「{{ faction.firstTitle }}」；第2至5名「{{ faction.topFiveTitle }}」。</small></div></article>
+            <article><h3>最强主宰规则</h3><p>每位主宰在赛季结算时按排位成绩确定最强玩家并授予对应专属称号；当前赛季成绩不会提前进入历史荣誉。</p></article>
+            <article><h3>时间限制</h3><p>每位玩家总操作时间25分钟；单次操作与掉线重连均最多4分钟。单方超时判负；双方均无法恢复则对局无效。</p></article>
+            <article><h3>本赛季天灾</h3><p>{{ operationsPolicy?.disasterCardIds.length || 0 }} 张（含固定堙灭）。排位强制使用赛季天灾池；好友房仅在房主选择“赛季天灾”时使用开房时的赛季快照；休闲与沙盒不继承此限制。</p><ul v-if="operationsPolicy?.disasterCardIds.length"><li v-for="cardId in operationsPolicy.disasterCardIds" :key="cardId">{{ cardLabel(cardId) }}</li></ul></article>
+            <article><h3>本赛季禁限卡</h3><ul v-if="operationsPolicy?.cardRestrictions.length"><li v-for="rule in operationsPolicy.cardRestrictions" :key="`${rule.masterId || '*'}:${rule.cardId}`">{{ rule.masterId ? `${cardLabel(rule.masterId)}使用` : '全部主宰' }} {{ cardLabel(rule.cardId) }}：上限 {{ rule.maxCopies }} 张</li></ul><p v-else>本赛季未设置禁限卡。</p></article>
+          </div>
+          <footer><button type="button" @click="rankedRulesOpen = false">我知道了</button></footer>
+        </section>
+      </div>
+    </Teleport>
     <p v-if="l12State.notice" class="battle-notice">{{ l12State.notice }}</p>
   </div>
 </template>

@@ -32,7 +32,9 @@ public sealed record L12MaintenanceConfig(
     bool Enabled,
     string Message,
     DateTimeOffset? StartsAt,
-    DateTimeOffset? EndsAt);
+    DateTimeOffset? EndsAt,
+    int AdvanceBroadcastHours = 2,
+    int ExpectedDurationHours = 2);
 
 public sealed record L12OperationsConfigPayload(
     L12SeasonConfig Season,
@@ -46,9 +48,14 @@ public sealed record L12OperationsConfigPayload(
 
 public sealed record L12EffectiveMaintenanceView(
     bool Active,
+    bool EntryBlocked,
+    string Status,
     string Message,
+    string BroadcastMessage,
     DateTimeOffset? StartsAt,
-    DateTimeOffset? EndsAt);
+    DateTimeOffset? EndsAt,
+    int AdvanceBroadcastHours,
+    int ExpectedDurationHours);
 
 public sealed record L12EffectiveOperationsPolicyView(
     long Version,
@@ -85,6 +92,20 @@ public sealed record L12OperationsPolicySnapshot(
            && (Maintenance.StartsAt is null || Maintenance.StartsAt <= now)
            && (Maintenance.EndsAt is null || Maintenance.EndsAt > now);
 
+    public bool IsNewGameEntryBlocked(DateTimeOffset now)
+        => Maintenance.Enabled
+           && (Maintenance.StartsAt is null || now >= Maintenance.StartsAt.Value.AddHours(-1))
+           && (Maintenance.EndsAt is null || now < Maintenance.EndsAt);
+
+    public bool IsMaintenanceBroadcastVisible(DateTimeOffset now)
+        => Maintenance.Enabled && Maintenance.StartsAt is { } starts
+           && now >= starts.AddHours(-Math.Max(1, Maintenance.AdvanceBroadcastHours))
+           && (Maintenance.EndsAt is null || now < Maintenance.EndsAt);
+
+    public string MaintenanceBroadcastMessage()
+        => Maintenance.StartsAt is not { } starts ? Maintenance.Message
+            : $"服务器将于{starts.ToLocalTime():HH:mm}开始维护，维护将持续约{Math.Max(1, Maintenance.ExpectedDurationHours)}个小时，敬请注意！";
+
     public bool IsSeasonDisasterModeAvailable(DateTimeOffset now)
         => string.Equals(Season.Status, "active", StringComparison.OrdinalIgnoreCase)
            && (Season.StartsAt is null || Season.StartsAt <= now)
@@ -100,8 +121,8 @@ public sealed record L12OperationsPolicySnapshot(
         => ScopeFor("casual", "all", useCardRestrictions: false, useSeasonDisasterPool: false);
 
     public L12OperationsPolicySnapshot ForFriendlyRoom(bool useCardRestrictions, string disasterMode)
-        => ScopeFor("friendly", disasterMode is "all" or "random" or "none" ? disasterMode : "all",
-            useCardRestrictions, useSeasonDisasterPool: false);
+        => ScopeFor("friendly", disasterMode is "all" or "random" or "season" or "none" ? disasterMode : "all",
+            useCardRestrictions, useSeasonDisasterPool: disasterMode == "season");
 
     public L12OperationsPolicySnapshot ForSandbox(string disasterMode)
         => ScopeFor("sandbox", disasterMode is "all" or "random" or "custom" or "none"
@@ -142,7 +163,7 @@ internal static class L12OperationsPolicyDefaults
                 ["publicDecks"] = true,
                 ["tournaments"] = true,
             },
-            new L12MaintenanceConfig(false, string.Empty, null, null));
+            new L12MaintenanceConfig(false, string.Empty, null, null, 2, 2));
 }
 
 public sealed record L12OperationsConfigView(
@@ -233,6 +254,8 @@ public sealed partial class L12PlatformStore
         public string Message { get; set; } = string.Empty;
         public DateTimeOffset? StartsAt { get; set; }
         public DateTimeOffset? EndsAt { get; set; }
+        public int AdvanceBroadcastHours { get; set; } = 2;
+        public int ExpectedDurationHours { get; set; } = 2;
     }
 
     private sealed class OperationsConfigRow
@@ -379,8 +402,13 @@ public sealed partial class L12PlatformStore
                 policy.IsSeasonDisasterModeAvailable(now),
                 policy.CardRestrictions.ToArray(),
                 policy.DefaultPresetDeckIds.ToArray(),
-                new L12EffectiveMaintenanceView(policy.IsMaintenanceActive(now), policy.Maintenance.Message,
-                    policy.Maintenance.StartsAt, policy.Maintenance.EndsAt));
+                new L12EffectiveMaintenanceView(policy.IsMaintenanceActive(now),
+                    policy.IsNewGameEntryBlocked(now),
+                    policy.IsMaintenanceActive(now) ? "maintenance" : policy.IsNewGameEntryBlocked(now) ? "upcoming" : "open",
+                    policy.Maintenance.Message,
+                    policy.IsMaintenanceBroadcastVisible(now) ? policy.MaintenanceBroadcastMessage() : string.Empty,
+                    policy.Maintenance.StartsAt, policy.Maintenance.EndsAt,
+                    policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours));
         }
     }
 
@@ -565,6 +593,10 @@ public sealed partial class L12PlatformStore
         if (payload.Maintenance.Enabled && string.IsNullOrWhiteSpace(maintenanceMessage))
             throw new L12OperationsConfigException("maintenance_message_required", "启用维护时必须填写维护提示");
         EnsureTimeRange(payload.Maintenance.StartsAt, payload.Maintenance.EndsAt, "维护窗口");
+        if (payload.Maintenance.AdvanceBroadcastHours is < 1 or > 168)
+            throw new L12OperationsConfigException("maintenance_broadcast_hours_invalid", "提前广播时间需为1至168小时");
+        if (payload.Maintenance.ExpectedDurationHours is < 1 or > 168)
+            throw new L12OperationsConfigException("maintenance_duration_invalid", "预计维护时长需为1至168小时");
 
         return new L12OperationsConfigPayload(
             new L12SeasonConfig(seasonId, seasonName, seasonStatus,
@@ -577,7 +609,8 @@ public sealed partial class L12PlatformStore
             modes.OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ToArray(),
             flags,
             new L12MaintenanceConfig(payload.Maintenance.Enabled, maintenanceMessage,
-                payload.Maintenance.StartsAt, payload.Maintenance.EndsAt));
+                payload.Maintenance.StartsAt, payload.Maintenance.EndsAt,
+                payload.Maintenance.AdvanceBroadcastHours, payload.Maintenance.ExpectedDurationHours));
     }
 
     private static IReadOnlyList<string> DescribeOperationsChanges(L12OperationsConfigPayload current,
@@ -681,6 +714,8 @@ public sealed partial class L12PlatformStore
                 Message = payload.Maintenance.Message,
                 StartsAt = payload.Maintenance.StartsAt,
                 EndsAt = payload.Maintenance.EndsAt,
+                AdvanceBroadcastHours = payload.Maintenance.AdvanceBroadcastHours,
+                ExpectedDurationHours = payload.Maintenance.ExpectedDurationHours,
             },
             UpdatedBy = actorName,
             UpdatedAt = now,
@@ -700,7 +735,8 @@ public sealed partial class L12PlatformStore
             row.MatchModes.Select(item => new L12MatchModeConfig(item.Id, item.Name, item.Enabled)).ToArray(),
             new Dictionary<string, bool>(row.FeatureFlags, StringComparer.OrdinalIgnoreCase),
             new L12MaintenanceConfig(row.Maintenance.Enabled, row.Maintenance.Message,
-                row.Maintenance.StartsAt, row.Maintenance.EndsAt));
+                row.Maintenance.StartsAt, row.Maintenance.EndsAt,
+                row.Maintenance.AdvanceBroadcastHours, row.Maintenance.ExpectedDurationHours));
 
     private static L12OperationsPolicySnapshot ToPolicySnapshot(OperationsConfigRow row)
     {

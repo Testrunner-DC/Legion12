@@ -637,18 +637,18 @@ public sealed partial class L12GameEngine
             {
                 var movedId = candidate.Data.GetValueOrDefault("moved");
                 var targets = State.Players.SelectMany(targetController => PublicLegions(targetController)
-                        .Where(card => !card.Tapped && card.InstanceId != movedId
+                        .Where(card => card.InstanceId != movedId
                             && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
                             && AdjacentEmptySlots(targetController, row, slot).Any()))
                     .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 var canUse = targets.Count > 0 && ActiveResourceCount(player) > 0;
                 steps =
                 [
-                    PublicTriggerStep("option", "mode", "月读：预先声明是否消耗1士气并位移另一张活跃军团",
+                    PublicTriggerStep("option", "mode", "月读：预先声明是否消耗1士气并位移另一张军团",
                         canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("composite-ordinary-payment", "cost", "月读：预先选择消耗的1份公开资源",
                         CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use"),
-                    PublicTriggerStep("field-legion", "target", "月读：预先选择另一张活跃军团进行1格位移",
+                    PublicTriggerStep("field-legion", "target", "月读：预先选择双方战场另一张军团进行1格位移",
                         targets, requiredChoice: "mode:use"),
                     PublicTriggerStep("adjacent-slot", "slot", "月读：预先选择该军团位移后的相邻空位",
                         ["dynamic"], referenceKey: "target", requiredChoice: "mode:use"),
@@ -1306,7 +1306,7 @@ public sealed partial class L12GameEngine
             var targetOnField = targetPlayer is null ? null
                 : FindOnField(targetPlayer, targetId, out row, out oldSlot);
             var onceKey = $"active:master-{candidate.Controller}:tsukuyomiFollowMove";
-            if (player.UsedAbilities.Contains(onceKey) || targetOnField is null || targetOnField.Tapped
+            if (player.UsedAbilities.Contains(onceKey) || targetOnField is null
                 || !IsFieldLegion(targetOnField) || targetOnField.Hidden
                 || targetOnField.InstanceId == candidate.Data.GetValueOrDefault("moved") || slot is null
                 || !AdjacentEmptySlots(targetPlayer!, row, oldSlot).Contains(slot, StringComparer.OrdinalIgnoreCase)

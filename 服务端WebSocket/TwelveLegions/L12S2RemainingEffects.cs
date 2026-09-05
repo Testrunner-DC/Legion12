@@ -441,7 +441,7 @@ public sealed partial class L12GameEngine
                 var oldSlot = -1;
                 var legion = targetPlayer is null ? null
                     : FindOnField(targetPlayer, targetId, out oldRow, out oldSlot);
-                if (legion is not null && !legion.Tapped
+                if (legion is not null
                     && legion.InstanceId != item.Data.GetValueOrDefault("moved")
                     && AdjacentEmptySlots(targetPlayer!, oldRow, oldSlot).Contains(destination, StringComparer.OrdinalIgnoreCase))
                 {
@@ -671,9 +671,9 @@ public sealed partial class L12GameEngine
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
         var key = $"active:master-{playerIndex}:tsukuyomiFollowMove";
-        if (!player.UsedAbilities.Contains(key) && player.Morale.Any(card => !card.Tapped)
+        if (!player.UsedAbilities.Contains(key) && ActiveResourceCount(player) > 0
             && State.Players.Any(targetController => PublicLegions(targetController).Any(card =>
-                card.InstanceId != moved.InstanceId && !card.Tapped
+                card.InstanceId != moved.InstanceId
                 && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
                 && AdjacentEmptySlots(targetController, row, slot).Any())))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团位移时效果",

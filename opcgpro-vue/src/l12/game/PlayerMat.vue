@@ -96,9 +96,10 @@ function moraleLabel(card: MoraleResource | null) {
   }
   return labels[state]
 }
-const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length)
+const temporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
+const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length + temporaryMoraleCount.value)
 const currentTrialInstanceId = computed(() => props.player.specialZones?.trials?.find(card => !card.trialCompleted)?.instanceId ?? null)
-const spendableMorale = computed(() => activeMorale.value + (props.player.temporaryMorale ?? 0))
+const spendableMorale = computed(() => activeMorale.value)
 type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
 const factionActions = computed<AbilityEntry[]>(() => {
   if (props.player.factionEffect?.abilities?.length) return props.player.factionEffect.abilities
@@ -296,6 +297,11 @@ function beginCardAbility(card: Card) {
         <button class="faction-effect-trigger" @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
         <span>士气</span>
         <div class="morale-stack">
+          <button v-for="index in temporaryMoraleCount" :key="`temporary-${index}`" type="button"
+            class="morale-orb temporary-morale" data-ui-contract="temporary-morale-logo-mini"
+            title="临时士气；优先用于支付，休整时消失" disabled>
+            <img src="/favicon.png" alt="临时士气" />
+          </button>
           <button v-for="(morale, index) in displayMoraleSlots" :key="morale?.instanceId ?? `unused-${index}`" type="button" class="morale-orb"
             :class="[moraleState(morale), { payable: paymentChoiceIds?.includes(morale?.instanceId ?? ''), selected: paymentSelectedIds?.includes(morale?.instanceId ?? '') }]"
             :title="moraleLabel(morale)" :aria-disabled="!paymentChoiceIds?.includes(morale?.instanceId ?? '')"
@@ -310,6 +316,7 @@ function beginCardAbility(card: Card) {
       <div class="formation" data-l12-zone="field">
         <template v-for="row in (side === 'opponent' ? [1, 0] : [0, 1])" :key="row">
           <div v-for="slot in [0,1,2]" :key="slot" class="formation-slot" role="button" tabindex="0"
+            data-ui-contract="actual-combat-target-only"
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
@@ -354,6 +361,11 @@ function beginCardAbility(card: Card) {
         <button class="faction-effect-trigger" @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
         <span>士气</span>
         <div class="morale-stack">
+          <button v-for="index in temporaryMoraleCount" :key="`temporary-${index}`" type="button"
+            class="morale-orb temporary-morale" data-ui-contract="temporary-morale-logo-mini"
+            title="临时士气；优先用于支付，休整时消失" disabled>
+            <img src="/favicon.png" alt="临时士气" />
+          </button>
           <button v-for="(morale, index) in displayMoraleSlots" :key="morale?.instanceId ?? `unused-${index}`" type="button" class="morale-orb"
             :class="[moraleState(morale), { payable: paymentChoiceIds?.includes(morale?.instanceId ?? ''), selected: paymentSelectedIds?.includes(morale?.instanceId ?? '') }]"
             :title="moraleLabel(morale)" :aria-disabled="!paymentChoiceIds?.includes(morale?.instanceId ?? '')"
@@ -434,7 +446,7 @@ function beginCardAbility(card: Card) {
 </template>
 
 <style scoped>
-.formation-slot.combat-attacker{z-index:8;border-color:#d35a61!important;box-shadow:0 0 0 3px #d35a61,0 0 24px rgba(211,90,97,.72)!important}
+.formation-slot.combat-attacker{box-shadow:none!important}
 .formation-slot.combat-target,.mini-master.combat-target{z-index:8;border-color:#e0b85a!important;box-shadow:0 0 0 3px #e0b85a,0 0 24px rgba(224,184,90,.7)!important}
 .formation-slot.combat-target :deep(.card-tile),.mini-master.combat-target{animation:l12-combat-target-cue .3s ease-out both}.card-power{transition:background-color .16s,color .16s,filter .16s}
 @keyframes l12-combat-target-cue{0%,100%{filter:none}45%{filter:brightness(1.22)}}
@@ -444,6 +456,7 @@ function beginCardAbility(card: Card) {
 .formation-slot.prompt-selected{z-index:10;border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.68)!important}.formation-slot.prompt-selected::after{content:'已选择';position:absolute;z-index:12;right:4px;top:4px;padding:3px 6px;background:#f1c75b;color:#15120a;font-size:8px;font-weight:900}
 .trial-direct-action{position:absolute;z-index:32;right:4px;bottom:4px;min-width:46px;padding:5px 8px;border:1px solid #8ee3a8;border-radius:1px;background:#12351b;color:#f3fff5;font:900 9px 'Noto Sans SC';box-shadow:0 4px 10px #000;white-space:nowrap}.trial-direct-action:hover{border-color:#c5ffd5;background:#206332}
 .morale-orb{box-sizing:border-box;width:22px;height:22px;min-width:22px;padding:0;border:1px solid #7d8581;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:#151a1a;transition:filter .16s,box-shadow .16s,border-color .16s}.morale-orb img{width:14px;height:14px;object-fit:contain}.morale-orb img.god-power-logo{filter:sepia(1) saturate(3.2) hue-rotate(352deg) brightness(1.18)}.morale-orb.active-morale{background:var(--faction-morale-active,#b4b2af);border-color:var(--faction-morale-border,#eee);box-shadow:inset 0 0 0 1px rgba(255,255,255,.36),0 0 6px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 76%,transparent);filter:saturate(1.15) brightness(1.1)}.active-turn .morale-orb.active-morale{box-shadow:inset 0 0 0 1px rgba(255,255,255,.52),0 0 11px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 92%,transparent);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-morale{background:var(--faction-morale-rested,#555);border-color:#4d5350;box-shadow:inset 0 0 0 3px rgba(0,0,0,.38);filter:saturate(.35) brightness(.52)}.morale-orb.active-god-power{background:#0091be;border-color:#f4dda1;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 0 9px rgba(0,145,190,.72);filter:saturate(1.18) brightness(1.12)}.active-turn .morale-orb.active-god-power{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55),0 0 13px rgba(0,174,222,.9);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-god-power{background:#264c57;border-color:#7e7459;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35);filter:saturate(.48) brightness(.56)}.morale-orb.unused{opacity:.25}.morale-orb.payable{cursor:pointer;border-color:#72e29f;box-shadow:0 0 9px rgba(82,213,138,.75)}.morale-orb.selected{border:3px solid #fff0a0;box-shadow:0 0 12px #f1c75b}.morale-orb:disabled:not(.payable){cursor:default}
+.morale-orb.temporary-morale{position:relative;overflow:visible;border-color:#f2f2ed;background:radial-gradient(circle,#222 0 42%,#050607 45% 100%);box-shadow:0 0 0 2px #121416,0 0 10px rgba(255,255,255,.45);cursor:default;opacity:1!important}.morale-orb.temporary-morale::before,.morale-orb.temporary-morale::after{content:'';position:absolute;z-index:-1;inset:3px;border:1px solid #7d8480;border-radius:50%;transform:rotate(45deg) scale(1.28,.58)}.morale-orb.temporary-morale::after{transform:rotate(-45deg) scale(1.28,.58)}.morale-orb.temporary-morale img{width:13px;height:13px;filter:grayscale(1) brightness(0) invert(1);object-fit:contain}
 .faction-tianting{--faction-morale-active:#dbbc00;--faction-morale-rested:#665a08;--faction-morale-border:#fff0a0}.faction-otherworld{--faction-morale-active:#31873f;--faction-morale-rested:#173e20;--faction-morale-border:#9be5a7}.faction-gaotianyuan{--faction-morale-active:#db0d17;--faction-morale-rested:#681118;--faction-morale-border:#ffacb0}.faction-asgard{--faction-morale-active:#342f2f;--faction-morale-rested:#1c1919;--faction-morale-border:#b9aeae}.faction-taiyangcheng{--faction-morale-active:#74227e;--faction-morale-rested:#38123d;--faction-morale-border:#dfa3e6}.faction-universal{--faction-morale-active:#b4b2af;--faction-morale-rested:#555451;--faction-morale-border:#f0efeb}.faction-olympus{--faction-morale-active:#075b76;--faction-morale-rested:#173844;--faction-morale-border:#86d7ee}
 .master-column{position:relative;display:grid;align-content:start;justify-items:center;gap:5px;min-width:88px}.master-column .mini-master{position:relative;inset:auto}.master-marker-track{position:absolute;z-index:9;left:8px;top:-39px;display:flex;width:178px;height:32px;align-items:center;justify-content:flex-start;gap:5px;pointer-events:auto}.side-opponent .master-marker-track{top:auto;bottom:-39px}.master-marker-track.canopic{justify-content:space-between;gap:3px}.special-lane{display:none;position:absolute;z-index:6;left:188px;right:4px;top:0;bottom:0;pointer-events:none}.special-lane.visible{display:grid;align-content:center;justify-items:center}.trial-zone{position:relative;z-index:6;display:grid;gap:6px;width:112px;pointer-events:auto}.trial-card{position:relative;width:112px;height:auto;aspect-ratio:1752/1255;padding:0;border:1px solid #8dc6b2;background:#080b0b;overflow:hidden;box-shadow:0 6px 16px #000}.trial-card .l12-card-image,.trial-card-back{width:100%;height:100%;object-fit:contain;background:#080b0b}.trial-card.inactive .l12-card-image{filter:grayscale(.85) brightness(.52)}.trial-card.concealed .l12-card-image{filter:none}.trial-card b{position:absolute;left:50%;top:50%;display:grid;min-width:30px;height:30px;place-items:center;padding:0 6px;border:2px solid #79c889;border-radius:50%;background:#102e17ed;color:#fff;font-size:16px;box-shadow:0 0 11px rgba(49,135,63,.82);transform:translate(-50%,-50%)}.rune-orb{width:32px;height:32px;min-width:32px;padding:0;border:1px solid #596661;border-radius:50%;overflow:hidden;background:#111;filter:grayscale(1) brightness(.38)}.rune-orb.active{border-color:#80d69c;filter:none;box-shadow:0 0 8px rgba(49,135,63,.7)}.rune-orb.payable{cursor:pointer;box-shadow:0 0 0 2px #75e0a1,0 0 13px rgba(49,135,63,.9)}.rune-orb.selected{border-color:#fff3bd;box-shadow:0 0 0 3px #d8b34d,0 0 15px rgba(216,179,77,.95)}.rune-orb:disabled{cursor:default;opacity:1}.rune-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.1)}
 .canopic-orb{width:32px;height:32px;min-width:32px;padding:0;overflow:hidden;border:1px solid #63555a;border-radius:50%;background:#090a0b;filter:grayscale(1) brightness(.3);cursor:pointer}.canopic-orb img{width:100%;height:100%;object-fit:cover;object-position:center 14%;transform:scale(1.12)}.canopic-orb.completed{border-color:#d0aa52;filter:none;box-shadow:0 0 7px rgba(208,170,82,.65)}.canopic-orb.activatable{border-color:#6ee2a0;box-shadow:0 0 9px rgba(82,213,138,.8);animation:canopic-ready 1.25s ease-in-out infinite alternate}@keyframes canopic-ready{to{transform:translateY(-2px);filter:brightness(1.18)}}

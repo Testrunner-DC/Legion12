@@ -276,6 +276,29 @@ public sealed class AtomicReviewBatch6FRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0602")]
+    [Trait("L12Evidence", "entry:lancelot-entry-latest-rune-state")]
+    public void LancelotEntryMaySpendARuneGainedAfterItsTriggerWasQueued()
+    {
+        var game = Create(80311);
+        var player = game.State.Players[0];
+        var lancelot = Card("S02-0602", "batch6f-lancelot-latest-rune");
+        player.Field[0][0] = lancelot;
+        player.SpecialZones.Runes = 0;
+
+        QueueTrigger(game, lancelot, "enter");
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:use", prompt.ValidChoices);
+
+        player.SpecialZones.Runes = 1; // 同时点的圣杯触发先结算后所得符文
+        Resolve(game, "mode:use");
+        PassResponses(game);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.True(lancelot.HasCharge);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0602")]
     [Trait("L12Evidence", "entry:lancelot-kill-mode-source-snapshot")]
     public void LancelotKillDeclaresModeBeforeStackAndGlobalChoiceSurvivesSourceLoss()
     {

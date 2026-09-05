@@ -1305,7 +1305,10 @@ public sealed partial class L12GameEngine
             if (!L12S2ZoneOps.SpendRunes(player, 1)) return CommandResult.Reject("需要消耗1符文");
             var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = declared[0] };
             if (declared.Length == 2) data["target"] = declared[1];
-            PushEffect(playerIndex, source, "active", "主动效果", data: data);
+            var publicText = declared[0] == "mode:debuff"
+                ? "主动休整：选择对方1张军团，本回合兵力-3000"
+                : "主动休整：查看牌库，选择1张费用不高于4的主动战术展示并加入手牌，随后重洗牌库";
+            PushEffect(playerIndex, source, "active", publicText, data: data);
             return CommandResult.Ok();
         }
         if (ability == "aristotleDiscount" && source.CardId == "S02-0513")

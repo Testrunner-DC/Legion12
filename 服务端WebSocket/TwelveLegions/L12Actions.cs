@@ -296,7 +296,11 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S01-0004" && targetPlayerIndex != playerIndex)
             AddEvent("put", targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}", card);
         if (usedAsgardSelfDamageDiscount) DamageMaster(playerIndex, 1, $"{card.Name}的登场费用减免");
-        if (card.CardType == "tactic" && !IsCounterTactic(card.CardId)) player.LastActiveTacticCardId = card.CardId;
+        if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
+        {
+            player.LastActiveTacticCardId = card.CardId;
+            player.LastActiveTacticTurnSerial = State.TurnSerial;
+        }
         ResolveOnPlayContinuousEffects(playerIndex, card);
         RecalculateContinuousTroops();
         if (card.CardId == "S01-0403" && player.UsedAbilities.Remove("s2-fortune-next-uesugi"))

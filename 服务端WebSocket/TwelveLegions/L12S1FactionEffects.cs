@@ -153,7 +153,9 @@ public sealed partial class L12GameEngine
             case "托勒密十三世":
             {
                 var previousId = player.LastActiveTacticCardId;
-                if (string.IsNullOrEmpty(previousId) || !_catalog.Cards.ContainsKey(previousId)) { FinishStackItem(item); return true; }
+                if (string.IsNullOrEmpty(previousId)
+                    || player.LastActiveTacticTurnSerial != State.TurnSerial
+                    || !_catalog.Cards.ContainsKey(previousId)) { FinishStackItem(item); return true; }
                 item.Data["postResolutionGenerated"] = "ptolemy-repeat";
                 item.Data["repeatCardId"] = previousId;
                 FinishStackItem(item);

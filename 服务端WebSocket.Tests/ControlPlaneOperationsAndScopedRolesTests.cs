@@ -264,7 +264,9 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.Equal("random", unrestrictedFriendly.DefaultRoomConfig.DisasterMode);
             Assert.Empty(unrestrictedFriendly.DisasterCardIds);
             Assert.Empty(unrestrictedFriendly.CardRestrictions);
-            Assert.Equal("all", policy.ForFriendlyRoom(false, "season").DefaultRoomConfig.DisasterMode);
+            var seasonFriendly = policy.ForFriendlyRoom(false, "season");
+            Assert.Equal("season", seasonFriendly.DefaultRoomConfig.DisasterMode);
+            Assert.Equal(policy.DisasterCardIds, seasonFriendly.DisasterCardIds);
 
             var restrictedFriendly = policy.ForFriendlyRoom(true, "none");
             Assert.Single(restrictedFriendly.CardRestrictions);
@@ -390,7 +392,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var createdPayload = Payload(created[0]);
             var roomCode = createdPayload["roomCode"]!.GetValue<string>();
             Assert.Equal("friendly", createdPayload["options"]!["matchModeId"]!.GetValue<string>());
-            Assert.Equal("all", createdPayload["options"]!["disasterMode"]!.GetValue<string>());
+            Assert.Equal("season", createdPayload["options"]!["disasterMode"]!.GetValue<string>());
             Assert.False(createdPayload["options"]!["useCardRestrictions"]!.GetValue<bool>());
             Assert.All(rooms.SelectDeck(hostSession, bannedIndex), message =>
                 Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
@@ -559,14 +561,23 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var waitingCode = Payload(waitingRoom[0])["roomCode"]!.GetValue<string>();
             store.ApplyOperationsConfig(admin, live.Config with
             {
-                Maintenance = new L12MaintenanceConfig(true, "再次维护", null, null),
+                Maintenance = new L12MaintenanceConfig(true, "再次维护",
+                    DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(2)),
             }, live.Version, "maintenance again", Context("maintenance-again"));
             Assert.Equal("maintenance_active",
                 Payload(Assert.Single(rooms.JoinRoom(waitingGuestSession, waitingCode)))["code"]!.GetValue<string>());
 
-            using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
-            Assert.All(await rooms.HandleActionAsync(hostSession, surrender.RootElement), message =>
-                Assert.Equal("gameState", Payload(message)["type"]!.GetValue<string>()));
+            var matchId = Payload(started[0])["state"]!["matchId"]!.GetValue<string>();
+            var maintenanceMessages = await rooms.TickRankedClocksAsync(DateTimeOffset.UtcNow);
+            var invalidated = maintenanceMessages.Select(Payload)
+                .First(payload => payload["type"]!.GetValue<string>() == "gameState");
+            Assert.Equal("GameOver", invalidated["state"]!["phase"]!.GetValue<string>());
+            Assert.Null(invalidated["state"]!["winner"]);
+            Assert.Contains("服务器维护", invalidated["state"]!["winnerReason"]!.GetValue<string>());
+            var recorded = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(matchId));
+            Assert.NotNull(recorded.Match.EndedUtc);
+            Assert.Single(recorded.Commands, command =>
+                command.Command.GetProperty("type").GetString() == "authorityConclusion");
             rooms.Disconnect(hostSession);
             var recoveredSession = Guid.NewGuid();
             var recovered = Payload(rooms.Connect(recoveredSession, host.Id, host.Username));

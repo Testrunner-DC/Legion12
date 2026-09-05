@@ -48,6 +48,21 @@ public sealed partial class L12GameEngine
                 var grave = player.Graveyard.Where(card => card.CardType == "legion" && card.BaseTroops <= 2000
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId).ToList();
+                if (MatchesPendingFreeMasterActivation(controller, source, ability))
+                {
+                    if (grave.Count == 0) return CommandResult.Reject("墓地没有兵力不高于2000的【太阳城】军团");
+                    return BeginPendingActivationSequence(controller, source, ability,
+                    [
+                        new L12ActivationSelectionStep
+                        {
+                            Kind = "grave-card", DeclarationKey = "entryCard",
+                            Text = "荷鲁斯（信仰狂热者）：选择墓地1张兵力不高于2000的【太阳城】军团休整登场（X/1）",
+                            ValidChoices = grave, MinChoose = 1, MaxChoose = 1,
+                            CostThreshold = 2000, SelectionConstraint = "taiyangcheng",
+                        },
+                        new L12ActivationSelectionStep { Kind = "slot", DeclarationKey = "entrySlot", Text = "荷鲁斯：选择休整登场位置", ValidChoices = EmptySlots(player).ToList(), MinChoose = 1, MaxChoose = 1 },
+                    ]);
+                }
                 var resources = CompositeOrdinaryPaymentChoices(player).ToList();
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
                 var visibleCost = 1 - waived;
@@ -174,8 +189,6 @@ public sealed partial class L12GameEngine
                     return "荷鲁斯选择的士气资源已失效";
                 var costs = costIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
                 if (costs.Any(card => card is null || !IsFieldLegion(card))) return "荷鲁斯选择的弃置军团已失效";
-                if (resourceIds.Intersect(costIds, StringComparer.OrdinalIgnoreCase).Any())
-                    return "荷鲁斯的同一张陵墓守卫不能同时作为士气资源和弃置军团";
                 var entryId = values[paymentCount];
                 var entry = player.Graveyard.FirstOrDefault(card => card.InstanceId == entryId)
                     ?? costs.OfType<L12CardInstance>().FirstOrDefault(card => card.InstanceId == entryId);

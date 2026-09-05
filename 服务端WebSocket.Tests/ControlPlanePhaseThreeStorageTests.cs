@@ -113,6 +113,33 @@ public sealed class ControlPlanePhaseThreeStorageTests
     }
 
     [Fact]
+    public void AccountAudioPreferencesPersistAcrossDevicesAndRestart()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var store = new L12PlatformStore(path);
+            var registered = store.Register("AudioPreferenceUser", "password-123").Account!;
+
+            var saved = store.UpdateAudioPreferences(registered.Id,
+                new L12AudioPreferencesView(false, 0.82, true, 0.47, "large", "fast"));
+
+            Assert.False(saved.MusicEnabled);
+            Assert.Equal(0.82, saved.MusicVolume, 3);
+            Assert.True(saved.SfxEnabled);
+            Assert.Equal(0.47, saved.SfxVolume, 3);
+            Assert.Equal("large", saved.CardSize);
+            Assert.Equal("fast", saved.Animation);
+
+            var reloaded = new L12PlatformStore(path);
+            var fromAnotherLogin = reloaded.Login("AudioPreferenceUser", "password-123").Account!;
+            Assert.Equal(saved, fromAnotherLogin.AudioPreferences);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void FailedCommitRollsBackMemoryAndDurableSnapshot()
     {
         var root = TempRoot();

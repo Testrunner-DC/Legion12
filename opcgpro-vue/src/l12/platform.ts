@@ -7,6 +7,7 @@ export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
   permissionVersion?: number; disabled?: boolean; disabledAt?: string; disabledReason?: string
   mustChangePassword?: boolean; deleted?: boolean; deletedAt?: string; emailMasked?: string; emailVerified?: boolean
+  audioPreferences?: { musicEnabled: boolean; musicVolume: number; sfxEnabled: boolean; sfxVolume: number; cardSize: 'auto'|'small'|'medium'|'large'; animation: 'off'|'fast'|'standard' }
 }
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
 export interface AccountStatusOperation { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }
@@ -199,7 +200,7 @@ export interface OperationsSeasonConfig { id: string; name: string; status: stri
 export interface OperationsDisasterPoolConfig { cardIds: string[]; annihilationLocked: boolean }
 export interface OperationsCardRestriction { cardId: string; maxCopies: number; reason?: string; masterId?: string }
 export interface OperationsMatchMode { id: string; name: string; enabled: boolean }
-export interface OperationsMaintenanceConfig { enabled: boolean; message: string; startsAt?: string; endsAt?: string }
+export interface OperationsMaintenanceConfig { enabled: boolean; message: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number }
 export interface OperationsDefaultRoomConfig {
   matchModeId: string
   spectating: 'public' | 'friends' | 'disabled'
@@ -225,7 +226,7 @@ export interface EffectiveOperationsPolicy {
   seasonDisasterModeAvailable: boolean
   cardRestrictions: OperationsCardRestriction[]
   defaultPresetDeckIds: string[]
-  maintenance: { active: boolean; message: string; startsAt?: string; endsAt?: string }
+  maintenance: { active: boolean; entryBlocked: boolean; status: 'open'|'upcoming'|'maintenance'; message: string; broadcastMessage: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number }
 }
 export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
 export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
@@ -567,6 +568,11 @@ export async function changePassword(currentPassword: string, newPassword: strin
   await refreshCurrentAccount({ force: true })
   return result
 }
+
+export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audioPreferences']>) =>
+  platformRequest<NonNullable<PlatformAccount['audioPreferences']>>('/api/auth/audio-preferences', {
+    method: 'PUT', body: JSON.stringify(value),
+  })
 
 export const emailApi = {
   capability: () => platformRequest<EmailCapability>('/api/auth/email/capability'),

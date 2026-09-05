@@ -3139,6 +3139,14 @@
 - 同类扫描：`rg -n 'VITE_APP_VERSION|L12RuntimeBuildVersion|AddBug|BugReport|version.*dev' opcgpro-vue 服务端WebSocket scripts ops .github -g '*.*'`覆盖唯一Bug表单、平台DTO、后台展示、Vite/Windows/GitHub正式构建链和服务端持久化；`rg -n 'ConnectAsync|Disconnect|RecoveryState|syncState|gameState|onclose|pong|_socketPlatformSessions|RankedReconnectTime' 服务端WebSocket/TwelveLegions opcgpro-vue/src TwelveLegions.Tests -g '*.cs' -g '*.ts' -g '*.vue'`覆盖账号认领、房间槽、所有快照消费者、心跳/关闭与4分钟结论。没有改动比赛JSON/SQLite持久化、近藤或任何卡效。
 - 红绿与回滚守卫：初始后端因缺诊断模型、generation和recovery ack编译失败，release helper因文件不存在失败，UI契约因缺ack/诊断展示失败。修复后专项8/8，包含临时store上的HTTP健康/Bug API旧端兼容、扩展字段及伪装在合法状态/close reason字段内的token/IP/private-hand哨兵均不落盘、engine不得回退静态`1.0.0(.0)`、两个真实ClientWebSocket同账号接管后旧socket非握手命令不得改变权威房间且新socket仍可操作、活/断连接原子换座、旧session迟到操作拒绝、Prompt所有者私密快照先于ack、排位时钟随快照恢复以及4分钟提前/恰好/超过边界；复核补丁定向4/4。Focused、Batch与绑定`c0ca3f4`的Release规则均2278/2278，平台持久化/控制面71/71，UI契约246/246、卡图40项/324张、原子审计324卡且legacy旧入口0、`vue-tsc -b`和Vite 210模块生产构建通过，缺`VITE_APP_VERSION`的production Vite build按预期失败。功能提交为本地`a400571`，未推送；不访问/修改生产后台，不部署。
 
+### BATCH-20260906-249 全部排队卡效、房间、维护、音频与UI收口
+
+- 同类扫描：以`QUEUE-20260905-01`至`20`为唯一清单，扫描公共触发文本、`PendingActivation`/公开响应、主宰免费副本、致死替代、士气支付、房间运营快照、对局结束记录、排行榜全部主宰展示和全部“不响应”选项。陵墓构造体已有“同时离场+阵亡”权威回归并确认仅3张休整守卫留场；黄金圣甲虫已有实例回合一次键，两项均以原场景复验代替重复补丁。
+- 卡效事务：栖木猎鹰按真实触发显示“登场时”或“进攻时”；梅林先公开选项/目标再建立绝对防御响应。荷鲁斯允许同一休整陵墓守卫先作士气资源再作弃置军团，支付离场即释放原格，刚弃军团可作墓地复活目标并原位登场；结算阶段取消依玩家最新裁定返还已保留费用。信仰狂热者复制荷鲁斯时不支付1士气或2军团且不占正常回合一次。兰斯洛特可先结算圣杯符文再支付；月读可选双方另一张活跃或休整军团并保持横置；托勒密以`TurnSerial`限定本回合最近主动战术；海伦可拒绝替死，近藤勇以唯一致死事件防止原事件重复杀死被保护军团。
+- 房间、维护与设置：好友房可选`season`并固定开房快照。后台可配大厅提前广播、开始/结束及预计时长；T-1h闭锁新对局入口，局内T-30首次、之后每5分钟广播，到时排位与非排位正式局均无胜者作废并幂等完成记录；立即维护也生效，关闭计划即重新开放。赛果页仅点击返回后离局。三首授权音乐分非对局/两首对局曲，默认音乐0.35、音效0.7；音乐、音效、卡牌尺寸与动画同时本地保底及账号跨设备持久。
+- UI与防回滚：只有真实被攻击对象发光；被无效的挑衅保留名称/来源并叠加红X；全部拒绝响应选项至少112×44。临时士气显示白色Logo-Mini实体，支付优先消耗、休整清零并进入快照。排行榜名称收口，主宰榜/对阵表统一头像，对阵列64px、行62px。`AGENTS.md`永久规则要求每次成功部署必须发布与已部署版本绑定的简明日志，失败回滚不宣称错误版本上线。
+- 验证：定向L12 13/13；Batch规则2304/2304、指定PlatformStore/ControlPlane 72/72、UI契约254、卡图40项/324张及Vue/TypeScript/Vite 211模块生产构建通过；未运行与本产品无关的GrandUMI全套。干净提交后仍须再跑Release才可同步部署。
+
 ### BUG-20260906-248 排位运行状态与跨存储结算的崩溃恢复
 
 - 实际根因：`Room`、账号席位、Prompt及25分钟总时/4分钟操作与掉线时钟只驻留进程内存；服务启动也不会重建未结束排位。GameOver命令、`matches`最终行和`L12PlatformStore`七曜/主宰/完整性账本分别写入，进程在任意两个写入之间退出会留下“记录已结束但未结算”或“平台已结算但Recorder仍认为未完成”的不确定边界；随后先跑legacy主宰历史导入还可能把同一新架构比赛再次计入。

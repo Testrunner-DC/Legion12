@@ -20,7 +20,10 @@ public sealed class TriggeredEffectPresentationTests
             {
                 var resolved = L12GameEngine.ResolveTriggeredEffectDisplayText(source, trigger, fallback);
                 Assert.DoesNotContain('\n', resolved);
-                Assert.Contains(Normalize(resolved), Normalize(definition.Effect!), StringComparison.Ordinal);
+                if (definition.Id == "ST06-05")
+                    Assert.EndsWith("可抽取1张牌。", resolved, StringComparison.Ordinal);
+                else
+                    Assert.Contains(Normalize(resolved), Normalize(definition.Effect!), StringComparison.Ordinal);
                 audited++;
             }
         }
@@ -37,6 +40,17 @@ public sealed class TriggeredEffectPresentationTests
 
         Assert.Equal("阵亡时 抽取1张牌，我方主宰增加1点血量。", resolved);
         Assert.DoesNotContain("登场时", resolved, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PerchFalconSharedPrintedLineShowsOnlyTheTriggerThatActuallyFired()
+    {
+        var source = CreateInstance(Catalog.Cards["ST06-05"]);
+
+        Assert.Equal("登场时 可抽取1张牌。",
+            L12GameEngine.ResolveTriggeredEffectDisplayText(source, "enter", "【登场时】效果"));
+        Assert.Equal("进攻时 可抽取1张牌。",
+            L12GameEngine.ResolveTriggeredEffectDisplayText(source, "attack", "【进攻时】效果"));
     }
 
     [Fact]

@@ -183,6 +183,7 @@ public sealed partial class L12GameEngine
 
         player.Resolving.Add(card);
         player.LastActiveTacticCardId = card.CardId;
+        player.LastActiveTacticTurnSerial = State.TurnSerial;
         ApplyDisasterLevelOnEntry(activation.Controller, card, deferTriggerUntilStackSettles: true);
         AddEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出", card);
         ResolveOnPlayContinuousEffects(activation.Controller, card);

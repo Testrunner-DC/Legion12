@@ -66,6 +66,7 @@ const profilePage = read('../src/l12/site/ProfilePage.vue')
 const recoveryPage = read('../src/l12/site/AccountRecoveryPage.vue')
 const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 const platform = read('../src/l12/platform.ts')
+const audioPreferencesModule = read('../src/l12/audioPreferences.ts')
 const decks = read('../src/l12/decks.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
 const deckShare = read('../src/l12/site/deckShare.ts')
@@ -233,7 +234,27 @@ const contracts = [
     && board.includes('box-sizing:border-box;width:100%') && board.includes('.battlefield-half.my-half{grid-row:3}'), '双方战场外框必须覆盖各自完整战场轨道；仅向下延展我方外框，不得缩入我方后排或挤压其他常驻UI'],
   [l12Types.includes("'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'") && l12Types.includes('statusIcons?: string[]') && l12Types.includes('statusEffects?: CardStatusEffect[]'), '卡牌投影视图必须提供结构化 statusEffects/statusIcons 状态契约并兼容旧快照缺省'],
   [cardTile.includes('props.card.statusEffects ?? []') && cardTile.includes('props.card.statusIcons ?? []') && cardTile.includes('statusLabel(effect, kind)') && cardTile.includes(':title="status.label"') && cardTile.includes(':aria-label="status.label"') && cardTile.includes('card-status-icons') && cardTile.includes('has-status-effects .card-keyword-stack') && !cardTile.includes('modifier.costDelta'), '卡牌状态图标必须按结构化状态渲染准确提示、避让关键词，费用修正不得重复为状态图标'],
+  [l12GameEngine.includes('new("keyword-disabled", "挑衅"') && l12GameEngine.includes('IsTauntSuppressed(controller)')
+    && cardTile.includes("effect.kind.trim().toLowerCase() === 'keyword-disabled'")
+    && cardTile.includes('data-ui-contract="disabled-keyword-red-x"') && cardTile.includes('class="card-keyword disabled-keyword"')
+    && cardTile.includes('color:#ff4b58'), '关键词被无效时必须从当前生效列表移出，但保留关键词名称、来源与醒目的红色X；不得伪装为关键词被去除'],
   [board.split("&& !(mode === 'attack' && selectedId)").length - 1 === 2 && playerMat.includes("targetable: Boolean(player.field[row][slot])") && playerMat.includes("source: isSelected(player.field[row][slot]?.instanceId)"), '进攻选目标时不得高亮整块玩家区域，只能标记进攻者与合法或已选目标'],
+  [playerMat.includes('data-ui-contract="actual-combat-target-only"')
+    && playerMat.includes('.formation-slot.combat-attacker{box-shadow:none!important}')
+    && playerMat.includes('.formation-slot.combat-target,.mini-master.combat-target')
+    && playerMat.includes('@keyframes l12-combat-target-cue'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、支援候选及其他可交互对象不得复用目标发光'],
+  [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-logo-mini"')
+    && playerMat.includes('const spendableMorale = computed(() => activeMorale.value)')
+    && playerMat.includes('src="/favicon.png" alt="临时士气"')
+    && playerMat.includes('filter:grayscale(1) brightness(0) invert(1)')
+    && l12GameEngine.includes('current.TemporaryMorale = 0;'), '临时士气必须逐个显示为黑莲花式实体、使用白色Logo-Mini，并由权威结束阶段在休整时清空'],
+  [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])")
+    && prompt.includes("label(choice).trim() === '不响应'")
+    && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
+    && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
+  [gamePage.includes('data-ui-contract="manual-game-over-exit"')
+    && gamePage.includes('点击返回后才离开本局')
+    && gamePage.includes('<button @click="returnToLobby">返回大厅</button>'), '胜负结算必须保持在结果页，只有玩家明确点击返回后才离开对局'],
   [globalStyle.includes('.battle-zone{position:relative}.battle-zone>.morale-rail{position:absolute') && globalStyle.includes('.l12-player-mat.side-opponent .battle-zone>.morale-rail{top:3px}') && globalStyle.includes('.l12-player-mat.side-my .battle-zone>.morale-rail{bottom:3px}'), '士气条必须脱离战场纵向占位并固定在主宰侧通道，不得挤压战场后侵入阶段安全轨道'],
   [board.includes('border-radius:50%') && board.includes('.session-disaster-strip'), '本局天灾必须保持圆形缩略图'],
   [board.includes('<Teleport to="body" :disabled="!modalInspectorVisible">'), '弹框期间必须复用原选中卡牌详情框'],
@@ -253,11 +274,25 @@ const contracts = [
   [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
   [lobby.includes('copyRoomCode') && lobby.includes('复制房间码'), '友谊战整备室必须保留房间码复制按钮'],
   [lobby.includes('isRoomHost') && lobby.includes('updateRoomOptions(editableRoomOptions.value)') && lobby.includes('保存房间规则') && l12Net.includes("type: 'updateRoomOptions'") && shell.includes('l12State.friendInvitation = null\n  resolveFriendInvitation(invitationId, accept)'), '好友邀请接受后必须立即关闭邀请层并进入整备室，且仅房主可在开战前调整房间规则'],
-  [lobby.includes('v-model="roomOptions.useCardRestrictions"') && lobby.includes('不启用运营禁限卡') && lobby.includes('启用运营禁限卡') && !lobby.includes('v-model="roomOptions.matchModeId"') && !lobby.includes('<option value="season"'), '好友房必须以是否启用运营禁限卡取代排位/休闲模式，且不得选择赛季天灾'],
+  [lobby.includes('v-model="roomOptions.useCardRestrictions"') && lobby.includes('不启用运营禁限卡') && lobby.includes('启用运营禁限卡') && !lobby.includes('v-model="roomOptions.matchModeId"') && lobby.includes('<option value="season">赛季天灾'), '好友房必须以是否启用运营禁限卡取代排位/休闲模式，并可选择赛季天灾快照'],
+  [lobby.includes('maintenance.entryBlocked') && lobby.includes('维护即将开始/维护中，对局功能已关闭。')
+    && lobby.includes('maintenance.broadcastMessage') && adminOperations.includes('提前广播（小时）')
+    && adminOperations.includes('预计维护时长（小时）'), '维护计划必须在后台配置广播/时长，在大厅单独广播并以权威入口门禁阻止新对局'],
+  [app.includes('/audio/legion12-site.mp3') && app.includes('/audio/legion12-battle-1.mp3')
+    && app.includes('/audio/legion12-battle-2.mp3') && shell.includes('v-model.number="audioPreferences.musicVolume"')
+    && shell.includes('v-model.number="audioPreferences.sfxVolume"') && shell.includes('v-model="audioPreferences.cardSize"')
+    && shell.includes('v-model="audioPreferences.animation"') && platform.includes('/api/auth/audio-preferences')
+    && audioPreferencesModule.includes("localStorage.setItem('l12-audio-preferences-v1'")
+    && audioPreferencesModule.includes('store.setSfxVolume'), '三首音乐必须按对局/非对局分流，音乐、音效、卡牌尺寸与动画设置必须同时本地保底且随账号持久化'],
   [l12Net.includes("export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'") && sandbox.includes('<option value="custom"') && !sandbox.includes('<option value="season"'), '沙盒只能使用全部、随机、自定或无天灾，不得接入赛季天灾池'],
   [lobby.includes('joinMatchmaking') && lobby.includes('七曜值') && lobby.includes('选择本赛季派系') && l12Net.includes("type: 'joinMatchmaking'") && l12Net.includes("type: 'pollMatchmaking'") && l12Net.includes("message.type === 'matchmakingRejected'") && l12Net.includes('startMatchmakingPolling()'), '公开匹配必须使用服务端权威队列、保留等待扩圈轮询并清理拒绝状态，在排位前选择赛季派系'],
   [lobby.includes('data-ui-contract="faction-totals-above-public-match"') && lobby.indexOf('data-ui-contract="faction-totals-above-public-match"') < lobby.indexOf('<section v-if="tab === \'match\'" class="mode-panel panel">'), '三派系七曜总量必须位于顶部模式标签之后、公开匹配面板之前，不能埋在公开匹配内容框内'],
   [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
+  [rankings.includes('<h1>排行榜</h1>') && !rankings.includes('<h1>排位排行榜</h1>')
+    && rankings.includes("import { masterProfileUrl } from '@/l12/specialAssets'")
+    && (rankings.match(/data-ui-contract="ranking-master-avatar"/g) ?? []).length === 3
+    && rankings.includes('gridTemplateColumns: `124px repeat(${matrixMasters.length}, 64px)`')
+    && rankings.includes('min-height:62px'), '排行榜名称必须收口为“排行榜”，主宰榜和对阵矩阵必须统一使用官方头像，并以紧凑的矩阵宽高与行高展示'],
   [disasterPoolPicker.includes('data-ui-contract="landscape-disaster-pool-picker"')
     && disasterPoolPicker.includes('class="pool-card-art"')
     && disasterPoolPicker.includes('intent="detail" fit="contain"')

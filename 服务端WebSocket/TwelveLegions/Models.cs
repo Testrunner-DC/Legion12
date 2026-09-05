@@ -88,7 +88,8 @@ public sealed class L12CustomDeckSubmission
 public sealed class L12RoomOptions
 {
     // Empty values are intentional: the room manager authoritatively normalizes legacy/partial payloads
-    // into a friendly-room scope; clients cannot select ranked rules or inject a season disaster pool here.
+    // into a friendly-room scope. Clients may opt into the current season disaster snapshot, but cannot
+    // turn a friendly room into ranked play or inject arbitrary season-pool contents.
     public string MatchModeId { get; init; } = string.Empty;
     public string Spectating { get; init; } = string.Empty;
     public string HandVisibility { get; init; } = string.Empty;
@@ -293,6 +294,7 @@ public sealed class L12PlayerState
     public int TemporaryMorale { get; set; }
     public bool BackRowCannotSupport { get; set; }
     public string? LastActiveTacticCardId { get; set; }
+    public int LastActiveTacticTurnSerial { get; set; } = -1;
     public int ReturnedMoraleThisTurn { get; set; }
     public int MasterDamageTakenThisTurn { get; set; }
     /// <summary>本回合是否曾由主宰来源令该玩家从手牌弃牌；由权威区域移动入口记录。</summary>

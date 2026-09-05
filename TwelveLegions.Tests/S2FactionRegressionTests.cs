@@ -1945,6 +1945,49 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void MerlinChoiceIsPublicBeforeAbsoluteDefenseMayRespond()
+    {
+        var game = Create(63082);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var merlin = Card("S02-0603", "s2-merlin-public-choice");
+        var target = Card("S02-0502", "s2-merlin-public-target");
+        var absoluteDefense = Card("S01-0016", "s2-merlin-absolute-defense");
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        player.Field[0][0] = merlin;
+        player.SpecialZones.Runes = 1;
+        opponent.Field[0][0] = target;
+        opponent.Field[1][0] = absoluteDefense;
+        opponent.Hand.Add(Card("S01-0003", "s2-merlin-response-discard"));
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", merlin.InstanceId,
+            Ability: "merlinRune")).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, mode.PlayerIndex);
+        Assert.DoesNotContain(absoluteDefense.InstanceId, mode.ValidChoices);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:debuff")).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, targetPrompt.PlayerIndex);
+        Assert.Contains(target.InstanceId, targetPrompt.ValidChoices);
+        Assert.DoesNotContain(absoluteDefense.InstanceId, targetPrompt.ValidChoices);
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Equal("response", response.Kind);
+        Assert.Contains(absoluteDefense.InstanceId, response.ValidChoices);
+        Assert.Contains("本回合兵力-3000", response.Text, StringComparison.Ordinal);
+        Assert.Equal(target.BaseTroops, target.Troops);
+    }
+
+    [Fact]
     public void OtherworldRuneOptionsUseEffectTextAndCanBeCancelledBeforeAutomaticPayment()
     {
         var game = CreateWithFirstMaster("S02-06M1", 63081);
