@@ -182,5 +182,13 @@
 - `BugDiagnosticPersistenceTests`固定临时`platform.json`：新报告必须分别持久化client/server/engine版本，engine不得回退静态`1.0.0(.0)`，旧客户端省略版本得到`unknown-client`，旧数据缺新增字段仍可读取。`WebSocketConnectionGenerationTests.HealthAndLegacyBugSubmissionExposeAuthoritativeBuildsAndWhitelistDiagnostics`通过临时HTTP服务把恶意哨兵同时放入扩展`token/privateHand/ip`字段和合法HTTP/API/WS/恢复/认证/维护/close reason字段；服务端须把非法枚举与reason归一为`unknown`且哨兵不得进入持久化文件，`/health`须提供服务端与可追溯L12引擎版本；测试不得访问生产API或真实报告文件。
 - `WebSocketConnectionGenerationTests.NewSocketGenerationFencesTheOlderLiveSocketWithoutRestartingTheServer`使用两个真实`ClientWebSocket`和同一账号：第二连接generation必须严格递增，认领决定为`fenced-active-session`，旧连接先收到`sessionSuperseded/newer-connection-generation`再关闭；接管后旧socket尝试`createRoom`不得改变权威状态，新socket同步仍无房并可正常建房，服务端诊断同时保留成功decision与`older-connection-fenced`原因。`GmSandboxTests.ConnectedSecondTabAtomicallyFencesTheOldSessionAndKeepsTheAuthoritativeRoom`另锁定活连接房间原子换座和旧session迟到命令失败。
 - `GmSandboxTests.DisconnectDuringPromptRestoresTheOwnersPrivatePromptBeforeRecoveryAck`按实际掷骰方断线：新session的`gameState.state.prompts`必须先恢复私密Prompt，随后ack的generation/revision一致且`pendingPrompt=true`。既有断线恢复夹具改走`RecoveryStateWithAckAsync`，排位夹具同时断言`gameState.rankedClock`和`rankedClockRestored=true`。
-- 排位断线期限继续是内存权威4分钟：3分59秒重连继续、恰好4分钟与4分钟+1毫秒均先完成权威判负再返回恢复状态；本夹具不声称服务进程重启后时钟持久化。客户端UI契约必须要求只有`snapshot-acknowledged`才能从任意站点路由进入`/game`，并锁定close code/reason、heartbeat/pong、retry、generation/恢复阶段、三端版本展示和禁止`navigator.userAgent`。
+- 排位断线期限在本批当时仍是内存权威4分钟：3分59秒重连继续、恰好4分钟与4分钟+1毫秒均先完成权威判负再返回恢复状态；服务进程重启持久化由后续`BUG-20260906-248`夹具覆盖。客户端UI契约必须要求只有`snapshot-acknowledged`才能从任意站点路由进入`/game`，并锁定close code/reason、heartbeat/pong、retry、generation/恢复阶段、三端版本展示和禁止`navigator.userAgent`。
 - `check-client-release-version.mjs`固定开发空版本=`dev`、正式commit/semver合法、正式空值或`dev`抛错；`vite.config.ts`必须实际调用同一helper。所有正式构建入口都必须注入权威commit，不能在表单层继续用fallback掩盖构建配置错误。
+
+## 排位重启恢复与结算Outbox样例
+
+- `RankedPersistenceRecoveryTests`以临时`matches.db/platform.db/platform.json`运行，禁止读写生产数据。短重启夹具保留原match/room、双账号精确构筑、私密Prompt及当前决策方；服务停机3分59秒后总操作/单次操作剩余值不得减少，但双方重连窗从最后checkpoint继续，恰好4分钟必须先按双方掉线作废。好友局断言不创建排位runtime或outbox。
+- 命令和权威GameOver分别在`before-ranked-command-commit`、`before-ranked-final-commit`故障注入，断言事件、最终match、completed runtime及outbox要么全有要么全无；`before-ranked-runtime-batch-commit`同时捕获两个房间，失败时两条generation都不前进。受控先写N+2再写N+1必须保留新快照，completed N+1也不能被旧active N拖垮同批其他房间。
+- 平台`before-commit`失败后内存与SQLite都回到最后提交快照，outbox保持pending；清除故障并新建Store后两席只结算一次。`before-ranked-outbox-ack`模拟平台成功/Recorder确认失败，重启按matchId与完整载荷复核后只ack不重复加分。恢复旧平台快照时，applied outbox只有在同match完全缺失且双方没有更晚依赖结算时才补写；冲突失败须累计attempts并保留last_error，成功复核清错。
+- 将一条outbox改为坏JSON时该项必须转quarantined，后续合法项继续结算；将一条runtime数组改为null、另一条初始状态删字段时，两项分别隔离且第三条健康对局仍恢复。两个active match共用room code时只隔离后者，清理必须按房间对象引用匹配，先恢复房间及其占位session保持可认领。
+- 冻结恢复夹具先让disconnect checkpoint失败，再让第一次认领checkpoint继续失败：两次都不得开放命令；清除故障后必须先从Recorder重放权威状态、成功写入新连接generation，随后同一Prompt命令才可执行。恢复重放对每个命令严格比对`accepted/revision/state_hash`，任何不兼容只作无效/隔离且不得改变七曜。

@@ -242,7 +242,8 @@ public sealed partial class MatchRecorder
     }
 
     private async Task AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
-        string commandJson, CommandResult result)
+        string commandJson, CommandResult result, L12RankedRuntimeCheckpoint? rankedRuntime,
+        L12RankedSettlementEnvelope? rankedSettlement)
     {
         var stateJson = engine.SerializeFullState();
         var stateHash = engine.ComputeStateHash();
@@ -269,6 +270,8 @@ public sealed partial class MatchRecorder
                     && string.Equals(reader.GetString(3), stateHash, StringComparison.Ordinal);
                 if (!same)
                     throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
+                if (rankedSettlement is not null)
+                    await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
                 await transaction.CommitAsync();
                 return;
             }
@@ -348,6 +351,14 @@ public sealed partial class MatchRecorder
             ? lastSignalSequence : newSignals.Max(signal => signal.Sequence));
         update.Parameters.AddWithValue("$match", engine.State.MatchId);
         await update.ExecuteNonQueryAsync();
+
+        if (rankedRuntime is not null)
+            await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
+        if (rankedSettlement is not null)
+            await CompleteRankedMatchAndEnqueueAsync(connection, transaction, engine, rankedSettlement);
+        StorageFailureInjector?.Invoke(rankedSettlement is null
+            ? rankedRuntime is null ? "before-match-command-commit" : "before-ranked-command-commit"
+            : "before-ranked-final-commit");
         await transaction.CommitAsync();
     }
 

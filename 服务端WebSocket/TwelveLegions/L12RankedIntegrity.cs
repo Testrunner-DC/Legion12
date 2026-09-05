@@ -136,6 +136,84 @@ public sealed partial class L12PlatformStore
         return true;
     }
 
+    internal void VerifyRankedSettlementApplied(L12RankedSettlementEnvelope payload)
+    {
+        lock (_gate)
+        {
+            var settlements = _data.RankedSettlements.Where(row => string.Equals(row.MatchId,
+                payload.MatchId, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (payload.Winner is { } winner)
+            {
+                if (settlements.Length != 2)
+                    throw new InvalidDataException("排位结算账本必须恰有两席记录");
+                var first = settlements.SingleOrDefault(row => row.AccountId == payload.FirstAccountId);
+                var second = settlements.SingleOrDefault(row => row.AccountId == payload.SecondAccountId);
+                if (first is null || second is null || first.Won != (winner == 0)
+                    || second.Won != (winner == 1))
+                    throw new InvalidOperationException("排位结算账本与 outbox 胜负载荷冲突");
+            }
+            else if (settlements.Length != 0)
+            {
+                throw new InvalidOperationException("无效排位不得存在七曜结算记录");
+            }
+
+            var audits = _data.RankedIntegrityAudits.Where(row => string.Equals(row.MatchId,
+                payload.MatchId, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (audits.Length != 1)
+                throw new InvalidDataException("排位完整性账本必须恰有一条对应记录");
+            var audit = audits[0];
+            var duration = Math.Max(0L, (long)(payload.EndedAt - payload.StartedAt).TotalMilliseconds);
+            if (audit.FirstAccountId != payload.FirstAccountId
+                || audit.SecondAccountId != payload.SecondAccountId
+                || audit.Winner != payload.Winner
+                || !string.Equals(audit.FirstMasterId, payload.FirstMasterId,
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(audit.SecondMasterId, payload.SecondMasterId,
+                    StringComparison.OrdinalIgnoreCase)
+                || audit.DurationMs != duration
+                || audit.MeaningfulCommandCount != payload.MeaningfulCommandCount
+                || !string.Equals(audit.ConclusionKind, payload.ConclusionKind,
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(audit.FirstNetworkFingerprint,
+                    NormalizeNetworkFingerprint(payload.FirstNetworkFingerprint), StringComparison.Ordinal)
+                || !string.Equals(audit.SecondNetworkFingerprint,
+                    NormalizeNetworkFingerprint(payload.SecondNetworkFingerprint), StringComparison.Ordinal))
+                throw new InvalidOperationException("排位完整性账本与 outbox 幂等载荷冲突");
+        }
+    }
+
+    internal bool CanReplayMissingRankedSettlement(L12RankedSettlementEnvelope payload,
+        out string reason)
+    {
+        lock (_gate)
+        {
+            if (_data.RankedSettlements.Any(row => string.Equals(row.MatchId, payload.MatchId,
+                    StringComparison.OrdinalIgnoreCase))
+                || _data.RankedIntegrityAudits.Any(row => string.Equals(row.MatchId, payload.MatchId,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                reason = "同一 matchId 已存在部分或冲突平台记录";
+                return false;
+            }
+            if (payload.Winner is null)
+            {
+                // 无效局不改变七曜与主宰统计；缺失完整性记录可在任意后续时点安全补写。
+                reason = string.Empty;
+                return true;
+            }
+            var hasLaterDependentSettlement = _data.RankedSettlements.Any(row =>
+                (row.AccountId == payload.FirstAccountId || row.AccountId == payload.SecondAccountId)
+                && row.SettledAt > payload.EndedAt);
+            if (hasLaterDependentSettlement)
+            {
+                reason = "平台已存在依赖该玩家旧分值的更晚结算，拒绝乱序补账";
+                return false;
+            }
+            reason = string.Empty;
+            return true;
+        }
+    }
+
     private bool EnsureRankedIntegrityAuditLocked(string matchId, string firstAccountId,
         string secondAccountId, int? winner, string? firstMasterId, string? secondMasterId,
         L12RankedIntegrityContext? context)

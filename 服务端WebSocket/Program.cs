@@ -36,9 +36,13 @@ if (bootstrapIndex >= 0)
 
 await using var recorder = new MatchRecorder(Path.Combine(runtimePath, "matches.db"));
 await recorder.InitializeAsync();
-platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
 
 var rooms = new L12RoomManager(catalog, recorder, platform);
+var rankedRecovery = await rooms.RestoreRankedRoomsAsync();
+Console.WriteLine($"Ranked recovery: settlements={rankedRecovery.SettlementsApplied}, "
+                  + $"rooms={rankedRecovery.Restored}, invalid={rankedRecovery.Invalidated}, "
+                  + $"failed={rankedRecovery.Failed}");
+platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
 
 Console.WriteLine("Twelve Legions online battle server");

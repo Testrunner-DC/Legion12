@@ -71,6 +71,7 @@ public sealed partial class L12RoomManager
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
         public bool CompletionRecorded { get; set; }
+        public long RankedCheckpointGeneration { get; set; }
         public RankedClockState? RankedClock { get; set; }
         public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
         public int MeaningfulCommandCount { get; set; }
@@ -173,15 +174,34 @@ public sealed partial class L12RoomManager
                     await recoveredRoom.Gate.WaitAsync();
                     try
                     {
+                        var reopeningClosedRoom = recoveredRoom.Closed;
+                        if (reopeningClosedRoom)
+                        {
+                            try
+                            {
+                                if (!await ReloadRankedRoomFromRecorderAsync(recoveredRoom))
+                                    throw new InvalidDataException("缺少可重建的权威排位快照");
+                                // 重建只恢复可信基线；在本次连接 checkpoint 落盘前仍保持冻结。
+                                recoveredRoom.Closed = true;
+                            }
+                            catch (Exception recoveryError)
+                            {
+                                recoveredRoom.Closed = true;
+                                RecordConnectionClaimRejection(accountId,
+                                    "ranked-closed-room-rebuild-failed");
+                                throw new InvalidOperationException("排位房间仍处于安全冻结，无法恢复认领",
+                                    recoveryError);
+                            }
+                        }
                         var now = _utcNow();
                         // 超过重连截止时间的连接不能抢在周期看门狗前清除掉线证据。
                         await ApplyRankedClockConclusionLockedAsync(recoveredRoom, now);
                         var playerSlot = recoveredRoom.Sessions.IndexOf(previous.Key);
-                        if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = sessionId;
                         var spectatorSlot = recoveredRoom.Spectators.IndexOf(previous.Key);
+                        var replacedGm = recoveredRoom.GmControllerSessionId == previous.Key;
+                        if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = sessionId;
                         if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = sessionId;
-                        if (recoveredRoom.GmControllerSessionId == previous.Key)
-                            recoveredRoom.GmControllerSessionId = sessionId;
+                        if (replacedGm) recoveredRoom.GmControllerSessionId = sessionId;
                         roomCode = recoveredRoom.Code;
                         matchId = recoveredRoom.Game?.State.MatchId;
                         recoveryRevision = recoveredRoom.Game?.State.Revision;
@@ -190,6 +210,35 @@ public sealed partial class L12RoomManager
                             ? "fenced-active-room-session" : "reclaimed-disconnected-room";
                         _sessions[sessionId] = replacement;
                         RefreshRankedClockActorsLocked(recoveredRoom, now);
+                        if (recoveredRoom.RankedClock is not null
+                            && recoveredRoom.Game?.State.Phase != L12Phase.GameOver)
+                        {
+                            try
+                            {
+                                await _recorder.PersistRankedRuntimeBatchAsync(
+                                    [CaptureRankedRuntime(recoveredRoom, now)]);
+                            }
+                            catch (Exception persistenceError)
+                            {
+                                if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = previous.Key;
+                                if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = previous.Key;
+                                if (replacedGm) recoveredRoom.GmControllerSessionId = previous.Key;
+                                _sessions.TryRemove(sessionId, out _);
+                                var rollbackRestored = false;
+                                try { rollbackRestored = await ReloadRankedRoomFromRecorderAsync(recoveredRoom); }
+                                catch (Exception rollbackError)
+                                {
+                                    Console.Error.WriteLine($"Ranked claim rollback ({recoveredRoom.Code}): "
+                                                            + rollbackError.Message);
+                                }
+                                recoveredRoom.Closed = reopeningClosedRoom || !rollbackRestored;
+                                RecordConnectionClaimRejection(accountId, "ranked-recovery-persistence-failed");
+                                throw new InvalidOperationException("排位重连状态无法持久化，已拒绝认领",
+                                    persistenceError);
+                            }
+                        }
+                        // 冻结房间只有在权威重建和本次连接边界均已落盘后才能重新接收命令。
+                        recoveredRoom.Closed = false;
                     }
                     finally { recoveredRoom.Gate.Release(); }
                 }
@@ -345,8 +394,7 @@ public sealed partial class L12RoomManager
         try
         {
             if (!_rooms.TryAdd(room.Code, room)) throw new InvalidOperationException("匹配房间码冲突");
-            await _recorder.StartAsync(room.Game, normalizedMode, other.AccountId, session.AccountId,
-                [opponent.Deck, entry.Deck]);
+            await StartRecordedGameAsync(room, [other, session], [opponent.Deck, entry.Deck]);
         }
         catch
         {
@@ -1108,8 +1156,7 @@ public sealed partial class L12RoomManager
                     disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
                 InitializeRankedClock(room);
                 var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
-                await _recorder.StartAsync(room.Game, room.Options.MatchModeId,
-                    startedMembers[0].AccountId, startedMembers[1].AccountId, selectedDecks);
+                await StartRecordedGameAsync(room, startedMembers, selectedDecks);
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room);
         }
@@ -1143,7 +1190,36 @@ public sealed partial class L12RoomManager
             var revisionBefore = room.Game.State.Revision;
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
             room.CommandSequence++;
-            await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex.Value, commandElement.GetRawText(), result);
+            var ranked = room.RankedClock is not null;
+            try
+            {
+                if (ranked)
+                {
+                    if (result.Accepted && meaningful) room.MeaningfulCommandCount++;
+                    if (result.Accepted)
+                        RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
+                    var settlement = room.Game.State.Phase == L12Phase.GameOver
+                        ? BuildRankedSettlementEnvelope(room, _utcNow()) : null;
+                    await _recorder.AppendRankedAsync(room.Game, room.CommandSequence,
+                        session.PlayerIndex.Value, commandElement.GetRawText(), result,
+                        CaptureRankedRuntime(room, _utcNow()), settlement);
+                    if (settlement is not null) room.CompletionRecorded = true;
+                }
+                else
+                {
+                    await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex.Value,
+                        commandElement.GetRawText(), result);
+                }
+            }
+            catch (Exception) when (ranked)
+            {
+                var restored = await ReloadRankedRoomFromRecorderAsync(room);
+                if (!restored) room.Closed = true;
+                return Error(sessionId, restored
+                        ? "操作未完成持久化，已恢复到最后确认状态，请重试"
+                        : "排位持久化不可用，房间已安全冻结",
+                    "actionRejected");
+            }
             if (!result.Accepted)
             {
                 var rejected = Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected").ToList();
@@ -1152,8 +1228,11 @@ public sealed partial class L12RoomManager
                 if (room.Game.State.Revision != revisionBefore) rejected.AddRange(BroadcastGame(room));
                 return rejected;
             }
-            if (meaningful) room.MeaningfulCommandCount++;
-            RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
+            if (!ranked)
+            {
+                if (meaningful) room.MeaningfulCommandCount++;
+                RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
+            }
             if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastGame(room).ToList();
@@ -1256,6 +1335,22 @@ public sealed partial class L12RoomManager
             session.Connected = false;
             session.DisconnectedAt ??= now;
             RefreshRankedClockActorsLocked(room, now);
+            if (room.RankedClock is not null && room.Game?.State.Phase != L12Phase.GameOver)
+            {
+                try
+                {
+                    _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)])
+                        .GetAwaiter().GetResult();
+                }
+                catch (Exception persistenceError)
+                {
+                    // Socket 已实际离线，不能回滚为 connected；冻结房间，避免继续在未落盘
+                    // 的连接边界上接受命令。下次启动会从最后 1 秒 checkpoint 安全恢复。
+                    room.Closed = true;
+                    Console.Error.WriteLine($"Ranked disconnect persistence ({room.Code}): {persistenceError.Message}");
+                    return Error(sessionId, "排位断线状态无法持久化，房间已安全冻结");
+                }
+            }
             return BroadcastRoom(room).Concat(room.Game is null ? [] : BroadcastGame(room)).ToArray();
         }
         finally { room.Gate.Release(); }
@@ -1441,8 +1536,11 @@ public sealed partial class L12RoomManager
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
+        var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
         if (!room.IsSandbox && !room.CompletionRecorded)
         {
+            if (ranked)
+                return "排位最终事件尚未原子写入，已冻结结算并等待重试";
             try
             {
                 await _recorder.CompleteAsync(room.Game);
@@ -1453,25 +1551,13 @@ public sealed partial class L12RoomManager
                 return $"对局记录结束写入待重试：{error.Message}";
             }
         }
-        if (room.Options.MatchModeId == "ranked" && !room.RankedResultReported)
+        if (ranked && !room.RankedResultReported)
         {
             if (_platform is null) return "排位结算服务不可用，已保留对局记录待重试";
-            var members = room.Sessions.Select(id => _sessions[id]).ToArray();
-            if (members.Length != 2 || members.Any(member => string.IsNullOrWhiteSpace(member.AccountId)))
-                return "排位结算缺少玩家账号，已保留对局记录待重试";
-            var integrity = new L12RankedIntegrityContext(room.StartedAt, _utcNow(),
-                room.MeaningfulCommandCount, RankedConclusionKind(room),
-                members[0].IntegrityClientKey, members[1].IntegrityClientKey);
             try
             {
-                if (room.Game.State.Winner is { } rankedWinner)
-                    _platform.SettleRankedMatch(room.Game.State.MatchId, members[0].AccountId!,
-                        members[1].AccountId!, rankedWinner, SelectedDeck(members[0]).MasterId,
-                        SelectedDeck(members[1]).MasterId, integrity);
-                else
-                    _platform.RecordInvalidRankedMatch(room.Game.State.MatchId, members[0].AccountId!,
-                        members[1].AccountId!, SelectedDeck(members[0]).MasterId,
-                        SelectedDeck(members[1]).MasterId, integrity);
+                var drained = await DrainRankedSettlementOutboxAsync(room.Game.State.MatchId);
+                if (drained.Failed != 0) return "排位结算待重试：持久化 outbox 尚未完成";
                 room.RankedResultReported = true;
             }
             catch (Exception error)
@@ -1525,6 +1611,7 @@ public sealed partial class L12RoomManager
         if (session.IsSpectator || session.PlayerIndex is null) { error = "观战者不能执行对局操作"; return false; }
         if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out room!))
         { error = "尚未加入房间"; return false; }
+        if (room.Closed) { error = "房间已安全冻结，请重新连接恢复"; return false; }
         error = string.Empty;
         return true;
     }

@@ -8,6 +8,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
 {
     private readonly string _connectionString;
 
+    internal Action<string>? StorageFailureInjector { get; set; }
+
     public MatchRecorder(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -46,6 +48,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "fact_schema_version", "INTEGER NOT NULL DEFAULT 1");
         await EnsureColumnAsync(connection, "matches", "last_fact_signal_sequence", "INTEGER NOT NULL DEFAULT 0");
         await InitializeAnalyticsSchemaAsync(connection);
+        await InitializeRankedPersistenceSchemaAsync(connection);
         var closeSandboxResidue = connection.CreateCommand();
         closeSandboxResidue.CommandText = """
             UPDATE matches SET ended_utc=$utc,
@@ -59,17 +62,22 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     public Task StartAsync(L12GameState state, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
         IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(state, modeId, account0, account1, decks, []);
+        => StartCoreAsync(state, modeId, account0, account1, decks, [], null);
 
     public Task StartAsync(L12GameEngine engine, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
         IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals);
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null);
+
+    internal Task StartRankedAsync(L12GameEngine engine, string account0, string account1,
+        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime)
+        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime);
 
     private async Task StartCoreAsync(L12GameState state, string modeId,
         string? account0, string? account1,
         IReadOnlyList<L12PresetDeckDefinition>? decks,
-        IReadOnlyList<L12CardFactSignal> initialSignals)
+        IReadOnlyList<L12CardFactSignal> initialSignals,
+        L12RankedRuntimeCheckpoint? rankedRuntime)
     {
         if (decks is not null && decks.Count != 2)
             throw new ArgumentException("正式对局构筑快照必须恰好包含两名玩家", nameof(decks));
@@ -113,17 +121,32 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
+        if (rankedRuntime is not null)
+            await InsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
+        StorageFailureInjector?.Invoke(rankedRuntime is null
+            ? "before-match-start-commit" : "before-ranked-start-commit");
         await transaction.CommitAsync();
     }
 
     public async Task AppendAsync(L12GameEngine engine, long sequence, int playerIndex, string commandJson, CommandResult result)
     {
-        await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result);
+        await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, null, null);
     }
+
+    internal Task AppendRankedAsync(L12GameEngine engine, long sequence, int playerIndex,
+        string commandJson, CommandResult result, L12RankedRuntimeCheckpoint runtime,
+        L12RankedSettlementEnvelope? settlement)
+        => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, settlement);
 
     public Task AppendAuthorityAsync(L12GameEngine engine, long sequence, string reason)
         => AppendAsync(engine, sequence, -1,
             JsonSerializer.Serialize(new { type = "authorityConclusion", reason }), CommandResult.Ok());
+
+    internal Task AppendRankedAuthorityAsync(L12GameEngine engine, long sequence, string reason,
+        L12RankedRuntimeCheckpoint runtime, L12RankedSettlementEnvelope settlement)
+        => AppendRankedAsync(engine, sequence, -1,
+            JsonSerializer.Serialize(new { type = "authorityConclusion", reason }), CommandResult.Ok(),
+            runtime, settlement);
 
     public async Task<bool> CompleteAsync(L12GameEngine engine)
     {
@@ -209,6 +232,10 @@ public sealed partial class MatchRecorder : IAsyncDisposable
                 WHERE latest.match_id=m.match_id ORDER BY latest.sequence DESC LIMIT 1
             )
             WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
+              AND NOT EXISTS (
+                  SELECT 1 FROM ranked_settlement_outbox o
+                  WHERE o.match_id=m.match_id
+              )
             ORDER BY m.started_utc DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 20_000));
