@@ -86,10 +86,25 @@ const entries = Object.entries(cards)
 if (entries.length !== 362 || new Set(entries.map(([id]) => id)).size !== 362) fail('manifest 卡号不是 362 个唯一值')
 
 let totalBytes = 0
+let playableCount = 0
+let presentationCount = 0
 const versionRows = []
 for (const [cardId, card] of entries) {
   if (!/^(?:S\d{2}|ST\d{2}|ST)-[A-Za-z0-9]+$/.test(cardId) || card.cardId !== cardId) fail(`非法卡号：${cardId}`)
   if (!/^[0-9a-f]{64}$/.test(card.contentHash)) fail(`内容哈希无效：${cardId}`)
+  if (card.presentationOnly === true) {
+    presentationCount += 1
+    if (typeof card.baseCardId !== 'string'
+        || !/^(?:S\d{2}|ST\d{2}|ST)-[A-Za-z0-9]+$/.test(card.baseCardId)
+        || card.baseCardId === cardId) fail(`展示资源基底无效：${cardId}`)
+    const baseCard = cards[card.baseCardId]
+    if (!baseCard || baseCard.presentationOnly !== false) fail(`展示资源基底不是可玩卡：${cardId}`)
+  } else if (card.presentationOnly === false) {
+    playableCount += 1
+    if (card.baseCardId !== undefined) fail(`可玩卡不得声明展示基底：${cardId}`)
+  } else {
+    fail(`资源展示身份无效：${cardId}`)
+  }
   const prefix = `cards/${manifest.catalogVersion}/${cardId}/${card.contentHash.slice(0, 20)}/`
   for (const [variant, fileName] of Object.entries(requiredVariants)) {
     const relative = card.variants?.[variant]
@@ -98,10 +113,16 @@ for (const [cardId, card] of entries) {
     if (!Number.isSafeInteger(card.bytes?.[variant]) || card.bytes[variant] !== file.size) fail(`变体大小不匹配：${cardId}:${variant}`)
     totalBytes += file.size
   }
-  versionRows.push(`${cardId}:${card.contentHash}`)
+  versionRows.push([
+    cardId,
+    card.contentHash,
+    card.presentationOnly ? 'presentation' : 'playable',
+    card.baseCardId || '',
+  ].join(':'))
 }
+if (presentationCount !== manifest.presentationCardCount || playableCount !== manifest.playableCardCount) fail('manifest 可玩卡与展示资源数量不匹配')
 const actualVersion = createHash('sha256').update(versionRows.sort().join('\n')).digest('hex')
-if (actualVersion !== expectedHash) fail('324 张卡的内容哈希聚合版本不匹配')
+if (actualVersion !== expectedHash) fail('362 张资源的内容哈希与展示身份聚合版本不匹配')
 if (manifest.totalBytes !== totalBytes || totalBytes > 400 * 1024 * 1024) fail('优化卡图总量与 manifest 不匹配或超过 400 MiB')
 if (!Array.isArray(preload.entries)) fail('preload 清单格式无效')
 for (const entry of preload.entries) {
