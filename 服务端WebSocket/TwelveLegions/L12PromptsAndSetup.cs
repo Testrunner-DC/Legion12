@@ -135,6 +135,10 @@ public sealed partial class L12GameEngine
         ApplySharedPromptPresentation(playerIndex, kind, playerText, validChoices, stackItemId, data);
         ApplyDirectBoardChoiceMode(validChoices, data);
         var choiceLabels = BuildPlayerChoiceLabels(playerIndex, kind, playerText, validChoices, data);
+        var activation = continuation.Equals("pending-activation", StringComparison.OrdinalIgnoreCase)
+            && data.TryGetValue("activationId", out var activationId)
+            ? State.PendingActivations.SingleOrDefault(candidate => candidate.ActivationId == activationId)
+            : null;
         var prompt = new L12Prompt
         {
             PromptId = $"prompt-{++State.PromptSequence}",
@@ -146,6 +150,12 @@ public sealed partial class L12GameEngine
             MaxChoose = max,
             Continuation = continuation,
             StackItemId = stackItemId,
+            ActivationId = activation?.ActivationId,
+            SourceInstanceId = activation?.SourceInstanceId,
+            SourceCardId = activation?.SourceCardId,
+            Step = activation?.CurrentStep,
+            CreatedRevision = activation?.CreatedRevision,
+            Controller = activation?.Controller,
             IsPrivate = isPrivate,
             Data = data,
             ChoiceLabels = choiceLabels,
@@ -529,6 +539,10 @@ public sealed partial class L12GameEngine
         var prompt = State.PendingPrompts.FirstOrDefault(item => item.PromptId == command.PromptId);
         if (prompt is null) return CommandResult.Reject("选择请求不存在或已结算");
         if (prompt.PlayerIndex != playerIndex) return CommandResult.Reject("不能替其他玩家作出选择");
+        L12PendingActivation? boundActivation = null;
+        if (prompt.Continuation.Equals("pending-activation", StringComparison.OrdinalIgnoreCase)
+            && !TryGetBoundPendingActivation(prompt, command, out boundActivation, out var bindingError))
+            return CommandResult.Reject(bindingError);
         var chosen = new List<string>();
         if (prompt.Data.GetValueOrDefault("placementMode") is "split-top-bottom" or "all-top-bottom" or "all-bottom")
         {
@@ -695,7 +709,7 @@ public sealed partial class L12GameEngine
                 ContinueCardEffect(prompt, chosen, command);
                 break;
             case "pending-activation":
-                ResolvePendingActivation(prompt, chosen);
+                ResolvePendingActivation(prompt, chosen, boundActivation!);
                 break;
             case "play-cost-choice":
             {

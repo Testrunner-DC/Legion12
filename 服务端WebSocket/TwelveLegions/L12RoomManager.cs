@@ -1012,10 +1012,18 @@ public sealed partial class L12RoomManager
             catch (JsonException) { return Error(sessionId, "操作格式错误"); }
             if (command is null || string.IsNullOrWhiteSpace(command.Type)) return Error(sessionId, "缺少操作类型");
             var meaningful = IsMeaningfulRankedCommand(room.Game, command);
+            var revisionBefore = room.Game.State.Revision;
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
             room.CommandSequence++;
             await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex.Value, commandElement.GetRawText(), result);
-            if (!result.Accepted) return Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected");
+            if (!result.Accepted)
+            {
+                var rejected = Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected").ToList();
+                // 陈旧提交可能同时触发服务端安全清理孤儿事务；拒绝原命令，但仍须把
+                // 新的权威快照广播给双方，避免客户端继续展示已经清理的 Prompt。
+                if (room.Game.State.Revision != revisionBefore) rejected.AddRange(BroadcastGame(room));
+                return rejected;
+            }
             if (meaningful) room.MeaningfulCommandCount++;
             RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
             if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
@@ -1081,10 +1089,16 @@ public sealed partial class L12RoomManager
             if (command is null || string.IsNullOrWhiteSpace(command.Type))
                 return Error(sessionId, "缺少沙盒操作类型", "actionRejected");
 
+            var revisionBefore = room.Game.State.Revision;
             var result = room.Game.Handle(actingPlayerIndex, command);
             room.CommandSequence++;
             // 沙盒不写入正式对局记录。
-            if (!result.Accepted) return Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected");
+            if (!result.Accepted)
+            {
+                var rejected = Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected").ToList();
+                if (room.Game.State.Revision != revisionBefore) rejected.AddRange(BroadcastGame(room));
+                return rejected;
+            }
             if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastGame(room).ToList();

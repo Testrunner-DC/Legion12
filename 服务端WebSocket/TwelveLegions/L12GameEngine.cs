@@ -111,6 +111,7 @@ public sealed partial class L12GameEngine
     {
         if (playerIndex is < 0 or > 1) return CommandResult.Reject("无效玩家");
         if (State.Phase == L12Phase.GameOver) return CommandResult.Reject("对局已经结束");
+        if (ReconcilePendingActivationTransactions()) State.Revision++;
 
         // Capture this before resolving the command: a disaster prompt/stack item may be
         // removed during resolution, but deaths caused by that disaster must still not
@@ -159,6 +160,7 @@ public sealed partial class L12GameEngine
 
     private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
     {
+        if (ReconcilePendingActivationTransactions()) State.Revision++;
         RecalculateContinuousTroops();
         var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
             ? (object)new
@@ -189,6 +191,8 @@ public sealed partial class L12GameEngine
             {
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
                 prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels,
+                prompt.ActivationId, prompt.SourceInstanceId, prompt.SourceCardId,
+                prompt.Step, prompt.CreatedRevision, prompt.Controller,
             }).ToArray();
         // 对手正在处理任何选择时都给出不泄露私密候选内容的等待状态。
         var waitingPromptSource = revealAllHands

@@ -166,6 +166,12 @@ export interface Prompt {
   maxChoose: number
   data: Record<string, string>
   choiceLabels: Record<string, string>
+  activationId?: string | null
+  sourceInstanceId?: string | null
+  sourceCardId?: string | null
+  step?: number | null
+  createdRevision?: number | null
+  controller?: number | null
 }
 
 export interface StackItem {

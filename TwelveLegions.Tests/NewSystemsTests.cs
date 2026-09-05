@@ -215,6 +215,7 @@ public sealed class NewSystemsTests
             ActivationId = "invalid-trigger-activation", Controller = 0,
             SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
             Ability = "trigger-declaration", Text = "选择目标", ValidChoices = ["still-legal"],
+            CreatedRevision = game.State.Revision,
             SelectionSteps =
             [
                 new L12ActivationSelectionStep
@@ -231,6 +232,12 @@ public sealed class NewSystemsTests
             PromptId = "invalid-trigger-prompt", PlayerIndex = 0, Kind = "field-legion", Text = "选择目标",
             ValidChoices = ["still-legal"], MinChoose = 1, MaxChoose = 1, IsPrivate = true,
             Continuation = "pending-activation",
+            ActivationId = activation.ActivationId,
+            SourceInstanceId = activation.SourceInstanceId,
+            SourceCardId = activation.SourceCardId,
+            Step = activation.CurrentStep,
+            CreatedRevision = activation.CreatedRevision,
+            Controller = activation.Controller,
             Data = new Dictionary<string, string> { ["activationId"] = activation.ActivationId },
         });
 

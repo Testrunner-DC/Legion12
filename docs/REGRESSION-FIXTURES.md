@@ -168,3 +168,11 @@
 - ST03-10两个增益、ST05-01检索登场/随后洗牌、ST05-M1翻转士气/军团强化以及ST06-S1三句可选效果分别形成独立响应窗口；前段被无效不得吞掉确定存在的后段。
 - ST04-05替代其他高天原军团时继承原致命动作、所有者墓地及离场语义；ST02-10的延迟弃置和ST04-10的叠放强攻必须经过公共区域入口。ST03-08墓地三倍计数除本批战术外，还以既有格拉墨费用作为全卡池控制组。
 - ST06-M1主动的“最多2张”必须接受0目标；甲斐姬免除迦具土印刷士气费用时仍要生成自然语言发动选项。最终专项13/13，Focused/Batch规则均1089/1089，公开声明、私区事务、试炼完成和原子零旧入口门禁全绿。
+
+## Prompt/PendingActivation 事务绑定与孤儿自愈样例
+
+- `PromptActivationBindingRegressionTests`固定种子`60447342`：〈安卡神碑〉A3的Prompt必须携带与唯一PendingActivation一致的`ActivationId/SourceInstanceId/SourceCardId/Step/CreatedRevision/Controller`；重连快照必须原样恢复该绑定。`CreatedRevision`必须低于正常增长后的当前revision仍合法，不得被当作当前修订乐观锁。
+- 〈阿伊〉实例不得替代安卡来源绑定，Prompt打开后的普通`playCard`也必须拒绝且不离手/不占格。错来源、陈旧step或CreatedRevision、局部回显和重复提交都不得移除当前合法Prompt，成功提交只弃牌恰一次。全部六字段都省略的旧客户仅在服务端内部完整对账后兼容。
+- `skip`取消必须同时清理Prompt和Activation，不休整安卡、不弃牌、不恢复或消费事务两次；来源离开其合法主动区域时，下一命令前取消并允许结束回合。合法Prompt+Activation必须继续阻止回合；Prompt-only、Activation-only、重复ActivationId或绑定冲突必须在一次对账中自愈，不得留下第二次操作才能解锁的孤儿。
+- UI静态契约必须同时锁定`GameBoard.hasBlockingPrompt`、同步清理普通交互状态、中央命令门禁、手牌/战场入口门禁以及`PromptOverlay`/棋盘直选的六字段回显。Prompt是否最小化不得改变阻塞信号。
+- 全池回归除精确夹具外，必须覆盖公开主动、触发声明、响应声明、匿名对手手牌、复合手牌打出、效果生成打出和重复效果；对账不能因当前revision、轮次或来源合法离开后仍由candidate/stack/committed-parent承载而误清。

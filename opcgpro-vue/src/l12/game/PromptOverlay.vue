@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Card, DisasterCardView, GameState } from '../types'
+import type { Card, DisasterCardView, GameState, Prompt } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { gameAction, l12State, sandboxAction } from '../net'
 import { masterProfileUrl } from '../specialAssets'
@@ -142,6 +142,20 @@ function isInternalChoiceValue(value: string) {
   const normalized = value.trim().toLowerCase()
   return /^(mode|continuation|action|prompt|activation|stack|effect)(:|[-_])/.test(normalized)
     || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)
+}
+
+function withPromptBinding(p: Prompt, command: Record<string, unknown> = {}) {
+  return {
+    ...command,
+    type: 'resolvePrompt',
+    promptId: p.promptId,
+    activationId: p.activationId,
+    sourceInstanceId: p.sourceInstanceId,
+    sourceCardId: p.sourceCardId,
+    step: p.step,
+    createdRevision: p.createdRevision,
+    controller: p.controller,
+  }
 }
 function safeChoiceFallback(id: string) {
   const position = prompt.value?.validChoices.indexOf(id) ?? -1
@@ -310,17 +324,17 @@ function toggle(id: string) {
 function resolveChoice(choice: string) {
   const p = prompt.value
   if (!p || !p.validChoices.includes(choice)) return
-  sendAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [choice] }, p.playerIndex)
+  sendAction(withPromptBinding(p, { cardInstanceIds: [choice] }), p.playerIndex)
 }
 function confirm() {
   const p = prompt.value
   if (!p || selected.value.length < p.minChoose || selected.value.length > p.maxChoose) return
-  sendAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value] }, p.playerIndex)
+  sendAction(withPromptBinding(p, { cardInstanceIds: [...selected.value] }), p.playerIndex)
 }
 function resolveSinglePlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
   if (!p || selected.value.length !== 1) return
-  sendAction({ type: 'resolvePrompt', promptId: p.promptId, cardInstanceIds: [...selected.value], destination }, p.playerIndex)
+  sendAction(withPromptBinding(p, { cardInstanceIds: [...selected.value], destination }), p.playerIndex)
 }
 function removePlacement(id: string) {
   placementTop.value = placementTop.value.filter(choice => choice !== id)
@@ -364,10 +378,9 @@ function dropPlacement(destination: 'top' | 'bottom', beforeId?: string) {
 function confirmSplitPlacement() {
   const p = prompt.value
   if (!p || unassignedChoices.value.length) return
-  sendAction({
-    type: 'resolvePrompt', promptId: p.promptId,
+  sendAction(withPromptBinding(p, {
     topCardInstanceIds: [...placementTop.value], bottomCardInstanceIds: [...placementBottom.value],
-  }, p.playerIndex)
+  }), p.playerIndex)
 }
 function reorderAll(beforeId: string) {
   const id = draggedChoice.value
@@ -393,11 +406,10 @@ function selectSwapChoice(id: string) {
 function confirmAllPlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
   if (!p || placementOrder.value.length !== p.validChoices.length) return
-  sendAction({
-    type: 'resolvePrompt', promptId: p.promptId,
+  sendAction(withPromptBinding(p, {
     topCardInstanceIds: destination === 'top' ? [...placementOrder.value] : [],
     bottomCardInstanceIds: destination === 'bottom' ? [...placementOrder.value] : [],
-  }, p.playerIndex)
+  }), p.playerIndex)
 }
 const isInfoConfirm = computed(() => ['disaster-reveal', 'disaster-trigger'].includes(prompt.value?.kind ?? ''))
 const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)

@@ -398,6 +398,16 @@ public sealed class L12Prompt
     public bool IsPrivate { get; init; }
     public required string Continuation { get; init; }
     public string? StackItemId { get; init; }
+    /// <summary>
+    /// pending-activation 提示的不可变事务绑定。普通提示保持 null；客户端可回显这些字段，
+    /// 但服务端始终以本对象与 PendingActivation 的权威对应关系为准。
+    /// </summary>
+    public string? ActivationId { get; init; }
+    public string? SourceInstanceId { get; init; }
+    public string? SourceCardId { get; init; }
+    public int? Step { get; init; }
+    public long? CreatedRevision { get; init; }
+    public int? Controller { get; init; }
     public Dictionary<string, string> Data { get; init; } = [];
     /// <summary>
     /// 玩家界面专用的自然语言选项标签。规则提交始终使用 ValidChoices 中的稳定协议值；
@@ -437,6 +447,8 @@ public sealed class L12PendingActivation
     public required string Ability { get; init; }
     public required string Text { get; init; }
     public required List<string> ValidChoices { get; init; }
+    /// <summary>事务建立时的修订，仅用于不可变身份绑定；不要求等于后续不断增长的当前修订。</summary>
+    public long CreatedRevision { get; init; }
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
     public List<L12ActivationSelectionStep> SelectionSteps { get; init; } = [];
@@ -723,7 +735,13 @@ public sealed record L12Command(
     string? Choice = null,
     string? Ability = null,
     string? Destination = null,
-    int? TargetPlayerIndex = null);
+    int? TargetPlayerIndex = null,
+    string? ActivationId = null,
+    string? SourceInstanceId = null,
+    string? SourceCardId = null,
+    int? Step = null,
+    long? CreatedRevision = null,
+    int? Controller = null);
 
 /// <summary>
 /// 单人测试沙盒专用的服务端权威调试指令。该结构不进入普通 gameAction；

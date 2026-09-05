@@ -138,6 +138,7 @@ public sealed partial class L12GameEngine
             Ability = ability,
             Text = first.Text,
             ValidChoices = first.ValidChoices,
+            CreatedRevision = State.Revision,
             MinChoose = first.MinChoose,
             MaxChoose = first.MaxChoose,
             SelectionSteps = steps,
@@ -813,11 +814,8 @@ public sealed partial class L12GameEngine
         return int.TryParse(choice[prefix.Length..], out var value) && value >= minimum;
     }
 
-    private void ResolvePendingActivation(L12Prompt prompt, List<string> chosen)
+    private void ResolvePendingActivation(L12Prompt prompt, List<string> chosen, L12PendingActivation activation)
     {
-        if (!prompt.Data.TryGetValue("activationId", out var activationId)) return;
-        var activation = State.PendingActivations.FirstOrDefault(item => item.ActivationId == activationId);
-        if (activation is null) return;
         if (chosen.Count == 1 && chosen[0] == "skip")
         {
             State.PendingActivations.Remove(activation);

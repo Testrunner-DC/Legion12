@@ -53,6 +53,7 @@ const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | nul
 const diceReveal = ref<{ sequence: number; values: number[]; animatedValues: number[]; text: string; settled: boolean } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
+const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt))
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
@@ -110,7 +111,7 @@ const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
 const promotionFoundationIdsFor = (card: Card) => me.value.promotionOptions?.[card.instanceId] ?? []
 const canPromote = (card: Card) => promotionFoundationIdsFor(card).length > 0
 const playableIds = computed(() => {
-  if (!isMyMain.value) return []
+  if (!isMyMain.value || hasBlockingPrompt.value) return []
   const hasLegionDestination = me.value.field.some((row, rowIndex) => row.some(card => !card || (rowIndex === 1 && isCounter(card))))
   const hasInfiltratorDestination = hasLegionDestination || enemy.value.field.some(row => row.some(card => !card))
   return (me.value.hand ?? [])
@@ -247,6 +248,20 @@ const boardSlotPreview = computed<Card | null>(() => {
 watch(() => boardTargetPrompt.value?.promptId, () => {
   boardTargetIds.value = boardTargetPrompt.value?.data?.lockedChoices?.split('|').filter(Boolean) ?? []
 })
+function clearOrdinaryInteractionState() {
+  selectedId.value = null
+  mode.value = 'play'
+  playArmed.value = false
+  defenseIds.value = []
+  supportIds.value = []
+  graveyardPlayer.value = null
+  masterPlayerIndex.value = null
+  focusCard.value = null
+  customDisasterSlot.value = null
+}
+watch(hasBlockingPrompt, blocking => {
+  if (blocking) clearOrdinaryInteractionState()
+}, { immediate: true, flush: 'sync' })
 watch(activeBoardPromptId, promptId => {
   if (!promptId) return
   graveyardPlayer.value = null
@@ -446,9 +461,25 @@ onBeforeUnmount(() => {
   if (diceHideTimer) clearTimeout(diceHideTimer)
 })
 
+function withPromptBinding(extra: Record<string, unknown>) {
+  const promptId = typeof extra.promptId === 'string' ? extra.promptId : ''
+  const prompt = props.game.prompts?.find(candidate => candidate.promptId === promptId)
+  if (!prompt) return extra
+  return {
+    ...extra,
+    activationId: prompt.activationId,
+    sourceInstanceId: prompt.sourceInstanceId,
+    sourceCardId: prompt.sourceCardId,
+    step: prompt.step,
+    createdRevision: prompt.createdRevision,
+    controller: prompt.controller,
+  }
+}
 function command(type: string, extra: Record<string, unknown> = {}) {
   if (props.readOnly) return
   if (l12State.pendingAction) return
+  if (hasBlockingPrompt.value && type !== 'resolvePrompt') return
+  if (type === 'resolvePrompt') extra = withPromptBinding(extra)
   if (type === 'mulligan') extra.cardInstanceIds = mulliganIds.value
   if (type === 'resolveDefense') {
     extra.cardInstanceIds = defenseIds.value
@@ -526,6 +557,7 @@ function selectionModeFor(playerIndex: number) {
 }
 function selectHand(card: Card) {
   focusCard.value = card
+  if (hasBlockingPrompt.value) return
   if (props.game.phase === 'Mulligan') return toggle(mulliganIds.value, card.instanceId)
   if (props.game.phase === 'Defense' && defenseTargetType.value === 'master') return toggle(defenseIds.value, card.instanceId)
   selectedId.value = selectedId.value === card.instanceId ? null : card.instanceId
@@ -544,6 +576,7 @@ function ownSlot(row: number, slot: number, card: Card | null) {
     return
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
+  if (hasBlockingPrompt.value) { if (card) focusCard.value = card; return }
   if (props.game.phase === 'Defense' && defenseTargetType.value === 'legion') {
     if (row === 1 && card && eligibleSupportIds.value.includes(card.instanceId)) {
       toggle(supportIds.value, card.instanceId)
@@ -618,6 +651,7 @@ function enemySlot(row: number, slot: number, card: Card | null) {
     return
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
+  if (hasBlockingPrompt.value) return
   if (mode.value === 'play' && playArmed.value && selectedHandCard.value && isInfiltrator(selectedHandCard.value) && !card) {
     command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: enemy.value.playerIndex })
     selectedId.value = null
@@ -652,16 +686,19 @@ function resolveBoardTarget(skip = false) {
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ids })
 }
 function attackMaster() {
+  if (hasBlockingPrompt.value) return
   if (mode.value !== 'attack' || !selectedId.value || !selectedAttackTargets.value.includes('master')) return
   command('attack', { cardInstanceId: selectedId.value, target: { type: 'master' } })
   selectedId.value = null
   mode.value = 'play'
 }
 function enemyMaster() {
+  if (hasBlockingPrompt.value) return
   if (mode.value === 'attack' && selectedId.value) return attackMaster()
   masterPlayerIndex.value = enemy.value.playerIndex
 }
 function activateMaster(ability: string) {
+  if (hasBlockingPrompt.value) return
   if (ability === 'isisVictory') return activateOsirisVictory()
   command('activateAbility', { cardInstanceId: me.value.master.masterId, ability })
   masterPlayerIndex.value = null
@@ -685,6 +722,7 @@ function eventParts(event: ActionEvent): EventPart[] {
   return parts
 }
 function playFromHand(card: Card) {
+  if (hasBlockingPrompt.value) return
   if (!playableIds.value.includes(card.instanceId)) return
   selectedId.value = card.instanceId
   focusCard.value = card
@@ -697,17 +735,20 @@ function playFromHand(card: Card) {
   selectedId.value = null
 }
 function fieldAction(action: Exclude<BoardMode, 'play'>, card: Card) {
+  if (hasBlockingPrompt.value) return
   selectedId.value = card.instanceId
   focusCard.value = card
   mode.value = action
   playArmed.value = false
 }
 function selectPublicCard(card: Card) {
+  if (hasBlockingPrompt.value) return
   selectedId.value = selectedId.value === card.instanceId ? null : card.instanceId
   focusCard.value = card
   mode.value = 'play'
 }
 function activateAbility(card: Card, ability: string) {
+  if (hasBlockingPrompt.value) return
   if (ability === 'isisVictory') { activateOsirisVictory(); return }
   command('activateAbility', { cardInstanceId: card.instanceId, ability })
   selectedId.value = null
@@ -723,6 +764,7 @@ function activateOsirisVictory() {
   command('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })
 }
 function activateFactionAbility(ability: string) {
+  if (hasBlockingPrompt.value) return
   command('activateAbility', { cardInstanceId: `faction-${me.value.playerIndex}`, ability })
 }
 function statusTexts(card: Card) {
@@ -785,16 +827,16 @@ function statusTexts(card: Card) {
           <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
-              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
-              :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
+              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
-              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
+              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'cavalryMove'"
               :selection-mode="selectionModeFor(viewEnemy.playerIndex)" :targetable-ids="targetableIdsFor(viewEnemy.playerIndex)"
@@ -809,7 +851,7 @@ function statusTexts(card: Card) {
               :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
-              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event"
+              @focus="focusCard = $event" @graveyard="!hasBlockingPrompt && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
@@ -865,10 +907,10 @@ function statusTexts(card: Card) {
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
-              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(activeBoardPromptId)"
-              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+              :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
+              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
-              :placement-mode="Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)))"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
@@ -882,7 +924,7 @@ function statusTexts(card: Card) {
               :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"
               :master-targetable="!isControlledPlayer(viewMe.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewMe.playerIndex, row, slot, card)" @master="masterFor(viewMe.playerIndex)"
-              @focus="focusCard = $event" @graveyard="graveyardPlayer = $event"
+              @focus="focusCard = $event" @graveyard="!hasBlockingPrompt && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewMe.playerIndex, action, card)"
               @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
               @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
@@ -891,7 +933,7 @@ function statusTexts(card: Card) {
           </div>
           <HandArea :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
           <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
             :active="game.activePlayer === viewMe.playerIndex" :ranked-clock="l12State.rankedClock" />
