@@ -77,7 +77,7 @@ async function selectCard(cardId: string) {
 
 onMounted(async () => {
   try { cards.value = await loadDeckCatalog() }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '卡牌档案加载失败') }
+  catch (error) { emit('notice', error instanceof Error ? error.message : '卡牌图鉴加载失败') }
   await loadAnalytics(true)
 })
 </script>

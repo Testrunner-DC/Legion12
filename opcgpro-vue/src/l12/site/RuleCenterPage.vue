@@ -183,7 +183,7 @@ function printRules() { window.print() }
 
       <section v-else class="card-data-notice">
         <b>单卡问答资料结构已建立</b>
-        <p>当前已导入 {{ QA_ENTRIES.length }} 条原始 FAQ，尚未包含统一的卡号与收录季字段，因此先提供卡名与全文检索。待卡牌档案完成映射后，将按 S01、S02 与后续产品分组显示；这里不会猜测卡号或收录信息。</p>
+        <p>当前已导入 {{ QA_ENTRIES.length }} 条原始 FAQ，尚未包含统一的卡号与收录季字段，因此先提供卡名与全文检索。待卡牌图鉴完成映射后，将按 S01、S02 与后续产品分组显示；这里不会猜测卡号或收录信息。</p>
       </section>
 
       <div class="faq-result-bar">

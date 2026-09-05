@@ -94,7 +94,7 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
         </section>
         <section class="home-actions">
           <button class="mode-card primary-mode" @click="view = 'room'"><i>⚔</i><div><small>FRIENDLY MATCH</small><h2>友谊对战</h2><p>使用六位房间码建立 1v1 对局</p></div><b>→</b></button>
-          <button class="mode-card" @click="view = 'cards'"><i>▦</i><div><small>CARD ARCHIVE</small><h2>卡牌档案</h2><p>已收录 S01、S02 与 ST01–ST06 产品卡牌数据</p></div><b>→</b></button>
+          <button class="mode-card" @click="view = 'cards'"><i>▦</i><div><small>CARD CATALOG</small><h2>卡牌图鉴</h2><p>已收录 S01、S02 与 ST01–ST06 产品卡牌数据及展示版本</p></div><b>→</b></button>
           <button class="mode-card" @click="router.push('/deck-editor')"><i>▤</i><div><small>DECK BUILDER</small><h2>牌库编辑器</h2><p>建立、校验并保存 40–50 张自定义牌库</p></div><b>→</b></button>
           <button class="mode-card" @click="view = 'replay'"><i>↺</i><div><small>MATCH RECORDS</small><h2>对局记录</h2><p>SQLite 完整记录 · 逐操作快照回看</p></div><b>→</b></button>
         </section>

@@ -421,6 +421,7 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
   ])
   if (!lookupResponse.ok) throw new Error('卡牌版本数据加载失败')
   const lookup: LookupCard[] = await lookupResponse.json()
+  const catalogById = new Map(catalog.map(card => [card.id, card]))
   const byId = new Map(catalog
     .filter(card => productInclusionsByCardId.has(card.id))
     .map(card => [card.id, withProductInclusions(card)]))
@@ -440,8 +441,18 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
     byId.set(archiveVersion.id, withProductInclusions(normalizeCardDimensions(normalizeMoraleCatalogCard(archiveVersion))))
   })
   cardArchiveAssets.forEach(asset => {
-    const base = byId.get(asset.baseCardId)
-    if (!base || byId.has(asset.id)) return
+    const base = byId.get(asset.baseCardId) ?? catalogById.get(asset.baseCardId)
+    const existing = byId.get(asset.id)
+    if (existing) {
+      byId.set(asset.id, {
+        ...existing,
+        products: [...asset.products],
+        rarity: asset.rarity || existing.rarity,
+        archiveBaseCardId: asset.baseCardId,
+      })
+      return
+    }
+    if (!base) return
     byId.set(asset.id, {
       ...base,
       id: asset.id,

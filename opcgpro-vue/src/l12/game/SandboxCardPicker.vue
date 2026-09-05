@@ -63,7 +63,7 @@ const filtered = computed(() => {
           <select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value">{{ value }}</option></select>
           <select v-model="disaster"><option value="all">全部天灾等级</option><option value="none">无天灾等级</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select>
         </div>
-        <p v-if="loading" class="state">正在读取卡牌档案…</p><p v-else-if="errorText" class="state error">{{ errorText }}</p>
+        <p v-if="loading" class="state">正在读取卡牌图鉴…</p><p v-else-if="errorText" class="state error">{{ errorText }}</p>
         <div v-else class="card-grid">
           <button v-for="card in filtered" :key="card.id" :class="{ horizontal: isHorizontalCardType(card.cardType) }" @click="emit('select', card)">
             <CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/>

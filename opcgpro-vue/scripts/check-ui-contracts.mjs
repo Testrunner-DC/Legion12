@@ -41,6 +41,7 @@ const cardTile = read('../src/l12/CardTile.vue')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
 const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
+const galleryMarkup = cardArchive.match(/<template v-else>([\s\S]*?)<div v-if="!filteredGallery\.length"/)?.[1] ?? ''
 const sandbox = read('../src/l12/site/SandboxPage.vue')
 const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
@@ -56,6 +57,7 @@ const newsPage = read('../src/l12/site/NewsPage.vue')
 const homeContent = read('../src/l12/site/homeContent.ts')
 const profilePage = read('../src/l12/site/ProfilePage.vue')
 const recoveryPage = read('../src/l12/site/AccountRecoveryPage.vue')
+const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 const platform = read('../src/l12/platform.ts')
 const decks = read('../src/l12/decks.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
@@ -88,7 +90,13 @@ const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
 const bugQueue = read('../../ops/windows/Get-L12BugQueue.ps1')
 const s1Cards = JSON.parse(read('../public/data/l12/cards.s1.json'))
 const starterCards = JSON.parse(read('../public/data/l12/cards.st.json'))
+const s2Cards = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
+const archiveAssetCards = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json')).cards
+const presentationGalleryAssets = archiveAssetCards.filter(card => card.id !== 'S02-05C1B'
+  && [/^S\d{2}-\d{4}[a-z]$/, /^S\d{2}-\d{2}[CM]1A$/, /^ST\d{2}-C1st$/].some(pattern => pattern.test(card.id)))
 const moraleIdentities = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'))
+const olympusDefaultMorale = s2Cards.find(card => card.id === 'S02-05C1')
+const olympusAlternateArt = s2Cards.find(card => card.id === 'S02-05C1A')
 
 const confirmedS1DisasterLevels = {
   'S01-0304': 2,
@@ -110,9 +118,13 @@ const contracts = [
     && cardArchive.includes('loadCardArchiveCatalog') && sandboxPicker.includes('loadDeckCatalog'), '所有页面与运行时必须共用权威阵营士气身份，ST版本不得抢占基准，奥林匹斯普通士气与神力反面必须保持分离'],
   [decks.includes('export async function loadCardArchiveCatalog()') && decks.includes('productInclusionsByCardId.has(card.cardNo)')
     && decks.includes('cardArchiveAssets.forEach') && !decks.includes("if (card.id === 'S02-05C1') return 'S02-05C1(B)'")
+    && decks.includes('const catalogById = new Map(catalog.map(card => [card.id, card]))')
+    && decks.includes('const base = byId.get(asset.baseCardId) ?? catalogById.get(asset.baseCardId)')
+    && decks.includes('archiveBaseCardId: asset.baseCardId')
     && cardArchive.includes('groupArchiveCards(cards.value)') && cardArchive.includes('entry.versions.some(card =>')
     && cardArchive.includes('selectedProducts') && cardArchive.includes('收录产品')
-    && cardArchive.includes('/ {{ logicalCards.length }} 张') && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌档案必须按权威收录产品载入展示用异画、区分奥林匹斯士气与神力编号、按任一版本搜索筛选，并按逻辑卡而不是物理版本计数'],
+    && cardArchive.includes('page.value === \'gallery\' ? galleryCards.value.length : logicalCards.value.length')
+    && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌图鉴必须按权威收录产品载入展示用异画、区分奥林匹斯士气与神力编号、按任一版本搜索筛选，并按当前子页口径计数'],
   [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('productRank(a.product)')
     && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
     && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须稳定按最早产品、最低已知罕贵度及卡号排序，缺失罕贵度须有确定顺序'],
@@ -120,15 +132,47 @@ const contracts = [
     && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(entry, -1)"')
     && cardArchive.includes('@click.stop="cycleVersion(entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(entry).id"')
     && cardArchive.includes(':card-id="selected.id"') && !cardArchive.includes('<div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">\n          <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>\n          <template')
-    && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌档案必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
+    && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌图鉴必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
+  [presentationGalleryAssets.length === 37
+    && presentationGalleryAssets.every(card => card.baseCardId && card.id !== 'S02-05C1B')
+    && s2Cards.some(card => card.id === 'S02-05C1A')
+    && cardArchive.includes("card.id !== 'S02-05C1B'")
+    && cardArchive.includes("Boolean(card.archiveBaseCardId) || card.id === 'S02-05C1A'")
+    && cardArchive.includes('cards.value.filter(isGalleryVariant)')
+    && cardArchive.includes('v-for="card in filteredGallery" :key="card.id"')
+    && !galleryMarkup.includes('archive-version-arrow'), '画廊必须逐卡展示37张登记展示资源与S02-05C1A，共38张异画；S02-05C1A在图鉴并入默认士气S02-05C1的版本切换、在画廊独立展示，不得成为新规则身份，也不得误收规则独立的奥林匹斯神力B面'],
+  [(cardArchive.match(/@dblclick\.stop="openDetail/g) ?? []).length === 2
+    && (cardArchive.match(/class="archive-image-open"/g) ?? []).length === 2
+    && !cardArchive.includes('<button class="archive-image-open"')
+    && !cardArchive.includes('class="archive-card-image" role="button"')
+    && (cardArchive.match(/@keydown\.enter\.prevent="select[^\"]+openDetail/g) ?? []).length === 2
+    && (cardArchive.match(/@keydown\.space\.prevent="select/g) ?? []).length === 2
+    && (cardArchive.match(/@keydown\.enter\.stop @keydown\.space\.stop/g) ?? []).length === 2
+    && cardArchive.includes('role="dialog" aria-modal="true" aria-labelledby="archive-modal-title"')
+    && cardArchive.includes('@click.self="closeDetail"') && cardArchive.includes("event.key === 'Escape'")
+    && cardArchive.includes('aria-label="关闭卡牌详情"') && cardArchive.includes('modalCloseButton.value?.focus()')
+    && cardArchive.includes('modalTrigger?.focus()') && cardArchive.includes('hasCostDimension(modalCard)')
+    && cardArchive.includes('modalCard.troops !== undefined') && cardArchive.includes('modalCard.hp !== undefined')
+    && cardArchive.includes('modalCard.disasterLevel !== undefined') && cardArchive.includes('modalCard.trialValue !== undefined')
+    && cardArchive.includes('<p class="l12-effect-body">{{ modalCard.effect')
+    && globalStyle.includes('.archive-modal{') && globalStyle.includes('.archive-modal-image.horizontal{')
+    && globalStyle.includes('aspect-ratio:8/5'), '全卡池与画廊必须支持双击卡图或聚焦卡位按Enter打开同一L12详情模态框，Space只选择且版本箭头不得冒泡误开；详情按卡类显示真实维度、保留效果换行和横版方向，并支持关闭、遮罩、Esc与焦点恢复'],
+  [cardArchive.includes('<h1>卡牌图鉴</h1>') && legacyLobby.includes('<h2>卡牌图鉴</h2>')
+    && cardArchive.includes('aria-label="卡牌图鉴子页"') && cardArchive.includes('>全卡池</button>') && cardArchive.includes('>画廊</button>')
+    && ![cardArchive, legacyLobby, sandboxPicker, gmPanel, adminCardAnalytics, ruleCenter].some(source => source.includes('卡牌档案')), '全站用户可见名称必须统一为“卡牌图鉴”，主标题保持“卡牌图鉴”，子页签必须为“全卡池／画廊”，不得残留旧称“卡牌档案”'],
   [decks.includes('function normalizeCardDimensions(card: DeckCard)')
     && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
     && cardArchive.includes('function hasCostDimension(card: CatalogCard)')
     && cardArchive.includes('hasCostDimension(displayedVersion(entry))')
-    && cardArchive.includes('hasCostDimension(selected)'), '主宰只有血量维度；卡牌档案、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
+    && cardArchive.includes('hasCostDimension(selected)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
   [cardArchiveVersions.includes('identity.versionCardIds.map')
+    && cardArchiveVersions.includes("if (card.id === 'S02-05C1B') return `rules:${ruleIdentity(card)}`")
     && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1')
-    && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1A'), '奥林匹斯默认士气与A异画必须归入同一士气版本组'],
+    && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1A')
+    && olympusDefaultMorale?.nameZh === '士气·奥林匹斯' && olympusAlternateArt?.nameZh === '士气·奥林匹斯'
+    && olympusDefaultMorale.product === olympusAlternateArt.product
+    && olympusDefaultMorale.number.localeCompare(olympusAlternateArt.number, 'zh-CN', { numeric: true }) < 0
+    && cardArchiveVersions.includes('defaultVersion: versions[0]'), 'S02-05C1必须是奥林匹斯士气组默认版本，S02-05C1A只作同组异画版本并在画廊独立展示，不得形成新规则或构筑身份'],
   [indexHtml.includes('<link rel="icon" type="image/png" href="/favicon.png" />') && existsSync(faviconPath), '网页标签必须使用项目提供的 Logo-Mini PNG，不得回退默认 Vite 图标'],
   [board.includes("import ActionPresentationLayer from './ActionPresentationLayer.vue'") && board.includes('<ActionPresentationLayer :events="game.recentEvents ?? []"') && actionLayer.includes('data-ui-contract="authoritative-action-presentation"'), 'L12 对局必须消费服务端 recentEvents 播放统一阶段变化条'],
   [actionPresentation.includes("event.type === 'turn-start'") && actionPresentation.includes("event.text === '进入主要阶段'") && actionPresentation.includes("event.text === '执行结束阶段'") && !actionPresentation.includes("执行抽牌阶段") && !actionPresentation.includes("执行士气阶段") && !actionPresentation.includes("event.type === 'play'") && !actionPresentation.includes("event.type === 'attack'"), '通用动作条只能呈现回合开始、主要阶段和回合结束，不得承载其他阶段或卡牌动作'],
