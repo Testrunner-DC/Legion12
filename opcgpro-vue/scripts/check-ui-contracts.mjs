@@ -699,6 +699,18 @@ contracts.push([
   '文章正文每次序列化必须统一修复所有块类型的空白、超长和重复标识，生成过程不得再次碰撞，并将规范化标识回写连续编辑画布',
 ])
 
+contracts.push([
+  shell.includes("title: '卡牌效果'")
+    && shell.includes("title: '对局与房间'")
+    && shell.includes("title: '排位与维护'")
+    && shell.includes("title: '界面与设置'")
+    && ['陵墓构造体', '栖木猎鹰', '荷鲁斯', '信仰狂热者', '兰斯洛特', '月读', '托勒密十三世', '海伦', '黄金圣甲虫', '梅林']
+      .every(cardName => shell.includes(cardName))
+    && shell.includes('entry.sections')
+    && shell.includes('class="update-section"'),
+  '更新日志必须按卡牌效果、对局房间、排位维护及界面设置分组，并点名本批完成的卡效结果',
+])
+
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)
 if (failures.length) {
   console.error(`UI 契约检查失败：\n- ${failures.join('\n- ')}`)

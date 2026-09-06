@@ -10,12 +10,47 @@ const siteBrandIcon = '/favicon.png'
 const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
 const updateEntries = [
   {
-    date: '2026-09-06', title: '排位恢复、维护与对局稳定性更新', version: releaseVersion,
-    items: [
-      '排位对局支持服务重启后的时钟与进行中状态恢复，并补齐结算对账。',
-      '新增维护预告、开局门禁、局内倒计时提醒与维护开始后的对局作废。',
-      '修复多项卡牌费用、触发顺序、目标选择、关键词与对局记录问题。',
-      '完善排行榜、对局交互提示、赛果返回与三首游戏音乐的账号同步设置。',
+    date: '2026-09-06', title: '卡牌交互、排位恢复与运营功能更新', version: releaseVersion,
+    sections: [
+      {
+        title: '卡牌效果',
+        items: [
+          '陵墓构造体同时触发离场与阵亡时，现在只会召唤3张休整的陵墓守卫，不再先全部登场后进入墓地。',
+          '栖木猎鹰的登场与进攻动画会分别显示对应的抽牌时点，不再使用无法区分时点的说明。',
+          '荷鲁斯的士气与军团费用改为分步支付；已横置的陵墓守卫仍可继续作为弃置费用，费用离场的军团及其空出的原位置也可参与后续复活选择。',
+          '信仰狂热者复制荷鲁斯时会跳过原本的士气、费用与弃置要求，且不会占用荷鲁斯正常的“我方回合1次”。',
+          '兰斯洛特登场时，即使原本没有符文，也可使用同一触发流程中“寻找圣杯之旅”刚获得的符文来取得冲锋。',
+          '月读可选择另一张我方或对方的活跃/休整军团进行位移；托勒密十三世只能再次发动本回合打出的上一张主动战术。',
+          '海伦的代替阵亡恢复为选发；黄金圣甲虫的弃牌减兵力效果严格限制为我方回合1次。',
+          '梅林等“选择一项”效果会先公开所选项目，再询问绝对防御是否响应，响应方能够看见具体选择。',
+        ],
+      },
+      {
+        title: '对局与房间',
+        items: [
+          '好友房现在可以由房主选择并固定当前赛季天灾规则，未选择时仍沿用普通好友房规则。',
+          '进攻选择阶段只高亮合法的被攻击对象；挑衅等关键词被无效时保留文字并显示红色叉号，避免误认为效果被移除。',
+          '统一放大“不响应”按钮；临时士气改用白色十二军团标志显示，并在休整后正确消失。',
+          '胜负结算页面不再自动离开，双方可查看结果并在点击返回后退出对局。',
+        ],
+      },
+      {
+        title: '排位与维护',
+        items: [
+          '排位对局在服务器重启后可恢复进行中状态、双方总时限、单次操作时限、掉线窗口及尚未处理的交互。',
+          '对局记录与排位账本增加持久化结算对账；重复结算会保持幂等，异常旧记录会被隔离而不会污染正常战绩。',
+          '后台新增计划维护与恢复服务器功能：按设定时间停止新对局、循环广播维护预告、提醒进行中的玩家，并在维护开始时废弃未结束对局。',
+          '维护即将开始或维护期间，玩家点击开启对局会明确提示对局功能已关闭；已经进行的对局在正式维护前不受开局门禁影响。',
+        ],
+      },
+      {
+        title: '界面与设置',
+        items: [
+          '排行榜统一使用主宰头像并压缩主宰对阵行高；对局内的回合标识和双方计时常驻显示，玩家信息栏强制完整展示。',
+          '加入官网与对局音乐，并提供音乐、音效、卡牌尺寸和动画速度设置；登录账号后会跨设备保存。',
+          '本次起每次正式部署都会附带与线上版本对应的更新日志，明确列出已完成的卡效和功能结果。',
+        ],
+      },
     ],
   },
 ]
@@ -183,7 +218,13 @@ onBeforeUnmount(() => {
 
       <section v-else-if="modal === 'updates'" class="site-modal update-modal">
         <header><div><small>CHANGELOG</small><h2>更新日志</h2></div><button @click="modal = null">×</button></header>
-        <article v-for="entry in updateEntries" :key="`${entry.date}-${entry.version}`"><time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code>{{ entry.version }}</code><ul><li v-for="item in entry.items" :key="item">{{ item }}</li></ul></article>
+        <article v-for="entry in updateEntries" :key="`${entry.date}-${entry.version}`">
+          <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code>{{ entry.version }}</code>
+          <section v-for="section in entry.sections" :key="section.title" class="update-section">
+            <h4>{{ section.title }}</h4>
+            <ul><li v-for="item in section.items" :key="item">{{ item }}</li></ul>
+          </section>
+        </article>
       </section>
 
       <section v-else class="site-modal online-modal">
@@ -240,4 +281,10 @@ onBeforeUnmount(() => {
 .auth-modal>p{color:#87939a;font-size:11px;line-height:1.7}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.auth-tabs button,.auth-home{padding:11px;border:1px solid #46535b;background:#080e13;color:#9aa3a7;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-modal label{display:block;margin:13px 0;color:#abb3b6;font-size:10px;font-weight:900}.auth-modal input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #4b5860;background:#080e13;color:#fff}.auth-submit{width:100%;margin-top:16px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.auth-submit:disabled{opacity:.45}.auth-home{width:100%;margin-top:8px}.auth-notice{padding:9px!important;border-left:3px solid #a72e39;background:#291016;color:#e5aab0!important}.account-gate{z-index:140}
 .invitation-gate{z-index:160}.invitation-modal>p{color:#aeb6ba;line-height:1.7}.invite-code{display:flex;align-items:center;justify-content:space-between;margin:18px 0;padding:14px;border:1px solid #4e5b63;background:#080e13}.invite-code span{color:#79868d;font-size:10px}.invite-code strong{color:#f0d478;font:900 22px monospace;letter-spacing:.18em}.invite-note{font-size:11px}.invite-actions{display:grid;grid-template-columns:1fr 1.7fr;gap:10px;margin-top:20px}.invite-actions button{padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.invite-actions button.quiet{border-color:#4a565e;background:#0a1117;color:#929da2}
 .online-actions button.quiet{border-color:#4b565c;background:#0b1217;color:#9ba5aa}
+.update-modal{width:min(680px,94vw)}
+.update-modal h3{font-size:17px}
+.update-section{margin-top:18px}
+.update-section h4{margin:0 0 8px;padding-left:9px;border-left:3px solid #d6ad59;color:#f0ede5;font-size:13px}
+.update-modal ul{margin:0;padding-left:20px}
+.update-modal li{margin:8px 0;color:#b2b9bc;line-height:1.75}
 </style>

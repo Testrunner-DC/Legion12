@@ -26,7 +26,7 @@ Standing user authorization (2026-08-30): every completed change batch that pass
 3. If `origin/main` contains new commits, preserve the authoritative local worktree and integrate the remote commits safely. Never use a destructive reset or checkout. Stop for conflict review rather than choosing one side blindly.
 4. If the branch is current, or after remote changes have been integrated and the full verification passes again, commit that feature or bug fix with a descriptive Chinese commit message and push it to the remote repository.
 5. Record the commit and push result in the task handoff. Do not publish a knowingly failing or partially conflicted tree.
-6. Every production deployment must publish one concise player-facing update-log entry tied to the deployed commit/version. State the result plainly; do not expose internal diagnostics. A rollback must not advertise the failed version as deployed.
+6. Every production deployment must publish one player-facing update-log entry tied to the deployed commit/version. Group the entry by affected area, name the cards and functions changed, and state the resulting behavior plainly; a vague summary such as “修复多项卡效” is not sufficient. Keep internal diagnostics out of the player log. A rollback must not advertise the failed version as deployed.
 
 ## Automatic task-complexity routing
 
