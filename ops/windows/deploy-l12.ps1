@@ -68,12 +68,12 @@ function Resolve-L12SshOptions {
         Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace($sshDirectory)) {
         Write-Host "[L12 部署] 未发现可复用的用户 known_hosts，使用系统 SSH 默认配置。"
-        return @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20")
+        return @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=yes")
     }
 
     $knownHosts = Join-Path $sshDirectory "known_hosts"
     $options = [Collections.Generic.List[string]]::new()
-    foreach ($option in @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "UserKnownHostsFile=$knownHosts")) {
+    foreach ($option in @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=$knownHosts")) {
         $options.Add($option)
     }
     $identity = @("id_ed25519", "id_rsa") |
@@ -85,14 +85,13 @@ function Resolve-L12SshOptions {
     }
 
     $remoteHost = ($RemoteServer -split "@")[-1]
-    $trustedProductionAlias = "103.146.230.37"
-    $remoteHostEntry = @(& ssh-keygen -F $remoteHost -f $knownHosts 2>$null)
+    $trustedProductionAlias = "38.76.208.25"
     $trustedAliasEntry = @(& ssh-keygen -F $trustedProductionAlias -f $knownHosts 2>$null)
-    if ($remoteHost -eq "legion-12.com" -and $remoteHostEntry.Count -eq 0 -and $trustedAliasEntry.Count -gt 0) {
-        # 主域没有独立记录时，复用已经人工信任的生产服务器 IP 主机密钥，
-        # 避免依赖已下线的迁移域名，也不关闭严格主机密钥校验。
+    if ($remoteHost -eq "legion-12.com" -and $trustedAliasEntry.Count -gt 0) {
+        # 主域始终复用已经人工信任的新生产服务器 IP 主机密钥，避免残留的旧域名
+        # known_hosts 条目参与判定。没有该 IP 的可信条目时不添加别名，并由严格校验失败关闭。
         foreach ($option in @("-o", "HostKeyAlias=$trustedProductionAlias")) { $options.Add($option) }
-        Write-Host "[L12 部署] 新域名复用已验证的生产服务器 IP 主机指纹。"
+        Write-Host "[L12 部署] 主域复用已验证的新生产服务器 IP 主机指纹。"
     }
     return $options.ToArray()
 }
