@@ -98,10 +98,8 @@ public sealed partial class L12GameEngine
     private void BeginFaithZealotMasterChoice(L12StackItem completed)
     {
         var player = State.Players[completed.Controller];
-        var master = CreateCard(player.MasterId, $"master-{completed.Controller}");
-        var abilities = GetAbilities(player.MasterId)
-            .Where(view => GetActiveAbilityMoraleCost(master, view.Id) > 0)
-            .ToArray();
+        // 只按卡面身份生成固定选项；不得依据当下手牌、墓地或隐藏候选裁剪公开 Prompt。
+        var abilities = GetFaithZealotEligibleAbilities(player.MasterId);
         if (abilities.Length == 0)
         {
             ResumeAfterPostResolutionGeneratedInteraction();
@@ -129,8 +127,7 @@ public sealed partial class L12GameEngine
         }
         var player = State.Players[prompt.PlayerIndex];
         var master = CreateCard(player.MasterId, $"master-{prompt.PlayerIndex}");
-        if (!GetAbilities(player.MasterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase))
-            || GetActiveAbilityMoraleCost(master, ability) <= 0)
+        if (!IsFaithZealotEligibleAbility(player.MasterId, ability))
         {
             AddEvent("effect-failed", prompt.PlayerIndex,
                 "〈信仰狂热者〉在结算后无法建立所选主宰效果");

@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   eager?: boolean
   fit?: 'contain' | 'cover'
   objectPosition?: string
+  nativeOrientation?: boolean
 }>(), {
   cardId: '',
   legacyUrl: undefined,
@@ -44,7 +45,7 @@ const activeSource = computed(() => resolved.value.sources[sourceIndex.value]
 const useHigh = computed(() => props.intent === 'detail' && highRequested.value)
 const imageUrl = computed(() => useHigh.value ? activeSource.value.webp : activeSource.value.lowWebp)
 const avifUrl = computed(() => useHigh.value && !avifDisabled.value ? activeSource.value.avif : undefined)
-const landscapeThumbnail = computed(() => props.intent === 'thumb' && resolved.value.orientation === 'landscape')
+const landscapeThumbnail = computed(() => !props.nativeOrientation && props.intent === 'thumb' && resolved.value.orientation === 'landscape')
 const imageReady = computed(() => resolutionComplete.value || activeSource.value.kind !== 'placeholder')
 
 async function refresh() {

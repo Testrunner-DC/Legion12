@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { GameState, PlayerView } from '../types'
+import { l12State } from '../net'
 
 defineProps<{
   game: GameState; me: PlayerView; mode: 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'; selectedId: string | null;
@@ -14,9 +15,12 @@ const emit = defineEmits<{
 <template>
   <div class="l12-actions">
     <template v-if="game.phase === 'Mulligan'">
-      <p>选择起始手牌后确认调度</p>
+      <p class="mulligan-role">你是{{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</p>
+      <p>
+        选择起始手牌后确认调度<span v-if="l12State.rankedClock?.operationLimitMs === 60_000">；排位超时将保留全部原手牌</span>。
+      </p>
       <button class="primary" :disabled="me.mulliganDone || busy" @click="emit('command', 'mulligan')">
-        {{ busy ? '处理中…' : me.mulliganDone ? '等待对手' : `确认调度 (${mulliganCount})` }}
+        {{ busy ? '处理中…' : me.mulliganDone ? '等待对方' : `确认调度 (${mulliganCount})` }}
       </button>
     </template>
     <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && game.activePlayer !== me.playerIndex && defenseTargetType === 'master'">
@@ -41,3 +45,7 @@ const emit = defineEmits<{
     <p v-else class="waiting">等待对手操作…</p>
   </div>
 </template>
+
+<style scoped>
+.mulligan-role{color:#f0d274;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}
+</style>

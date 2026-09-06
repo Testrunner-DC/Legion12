@@ -909,14 +909,6 @@ public sealed partial class L12GameEngine
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
-        if (ability == "factionGainRune" && source.CardId == "S02-06C1")
-        {
-            if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("该效果本回合已经发动");
-            if (!TryConsumeMorale(player, 2)) return CommandResult.Reject("需要2张活跃的士气");
-            player.UsedAbilities.Add($"active:{source.InstanceId}:{ability}");
-            PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
-            return CommandResult.Ok();
-        }
         if (ability == "olympusMoraleFlip" && source.CardId is "S02-05C1" or "S02-05C1A")
         {
             var onceKey = $"active:{source.InstanceId}:{ability}";
@@ -1204,6 +1196,21 @@ public sealed partial class L12GameEngine
         IEnumerable<string>? returnedMoraleIds = null)
     {
         var player = State.Players[playerIndex];
+        if (ability == "factionGainRune" && source.CardId == "S02-06C1")
+        {
+            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            var paid = useTombGuards switch
+            {
+                true => TryConsumeMorale(player, 2, preferTombGuards: true, allowTombGuards: true),
+                false => TryConsumeMorale(player, 2, preferTombGuards: false, allowTombGuards: false),
+                _ => TryConsumeMorale(player, 2),
+            };
+            if (!paid) return CommandResult.Reject("需要消耗2士气");
+            player.UsedAbilities.Add(onceKey);
+            PushEffect(playerIndex, source, "active", "主动效果",
+                data: new Dictionary<string, string> { ["ability"] = ability });
+            return CommandResult.Ok();
+        }
         if (ability == "nephthysSacrifice" && source.CardId == "S02-02M1")
         {
             if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");

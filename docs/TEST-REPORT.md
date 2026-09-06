@@ -1,5 +1,15 @@
 # P0 测试记录
 
+## 2026-09-06 BATCH-253 统一发布前验收
+
+- Batch最终全绿：TwelveLegions规则2393/2393，指定PlatformStoreTests/ControlPlane 74/74；没有运行其他游戏全套。
+- 首次平台门禁发现旧屏蔽测试要求向发送者暴露拒绝，与用户本次静默屏蔽要求冲突。改为同时验证接收方无申请、发送方pending、自行屏蔽的对象不可主动添加、取消屏蔽后恢复新申请；完整Batch从头复跑通过，不设置失败忽略。
+- 新专项：FaithZealotMasterAuditRegressionTests 52例，PrideTriggerPaymentReservationTests 7例，PromptAuditLogTests 9例；称号投影/事实幂等、准备计时与重启、好友隐私均已进入完整套件。
+- UI契约270项、低于14px显式字号0项、卡图40项/324张、S1/S2/ST和原子零旧入口审计通过，Vue/TypeScript通过，Vite239模块生产构建成功。
+- 自动关闭的无头Edge合成UI验收：1920×1080、1440×1000、1280×800检查信息完整、计时避让手牌、阶段条不越界；另测玩家榜10列、规则弹框、对阵62px等高、770px横卡选择与详情，页面脚本错误0。截图位于 `D:\GPT\Legion12\artifacts\batch253-ui`。不把合成卡图占位或静态契约称作全部324张人工点击。
+- 实际部署只使用干净最终提交对应的Release包；Release及部署回执保存在 `D:\GPT\Legion12\artifacts\batch253-release.log`、`batch253-deployment.log`，用于核对最终提交、备份与HTTP/WS/版本结果。本文是提交前证据，不提前声称生产成功。
+
+
 日期：2026-08-15  
 环境：Windows 10、Node.js 22.18.0、npm 10.9.3、.NET SDK 10.0.302
 

@@ -39,7 +39,7 @@ public sealed partial class L12RoomManager
             members[0].AccountId!, members[1].AccountId!, SelectedDeck(members[0]).MasterId,
             SelectedDeck(members[1]).MasterId, room.Game.State.Winner, room.StartedAt, endedAt,
             room.MeaningfulCommandCount, RankedConclusionKind(room),
-            members[0].IntegrityClientKey, members[1].IntegrityClientKey);
+            members[0].IntegrityClientKey, members[1].IntegrityClientKey, room.Game.State.Round);
     }
 
     public async Task<L12RankedRecoverySummary> RestoreRankedRoomsAsync()
@@ -276,7 +276,8 @@ public sealed partial class L12RoomManager
                 }
                 var context = new L12RankedIntegrityContext(payload.StartedAt, payload.EndedAt,
                     payload.MeaningfulCommandCount, payload.ConclusionKind,
-                    payload.FirstNetworkFingerprint, payload.SecondNetworkFingerprint);
+                    payload.FirstNetworkFingerprint, payload.SecondNetworkFingerprint,
+                    payload.FinalRound);
                 if (payload.Winner is { } winner)
                     _platform.SettleRankedMatch(payload.MatchId, payload.FirstAccountId,
                         payload.SecondAccountId, winner, payload.FirstMasterId,

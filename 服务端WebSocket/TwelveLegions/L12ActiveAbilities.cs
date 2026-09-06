@@ -2,6 +2,54 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    // 〈信仰狂热者〉只能触发卡面明确写有“消耗士气”的主宰效果。“返还士气”、
+    // 神力、符文、主动休整以及需要既成攻防/位移参照的时点效果都不在此列。
+    // 显式列出 22 张可构筑主宰与 6 张主神，避免新增能力因通用费用函数而被默认纳入。
+    private static readonly IReadOnlyDictionary<string, string[]> FaithZealotAbilityIdsByMaster =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-01M1"] = ["drawCycle"],
+            ["S01-01M2"] = [],
+            ["S01-02M1"] = [],
+            ["S01-02M3"] = ["medjedDebuff"],
+            ["S01-03M1"] = ["valkyrieRecover"],
+            ["S01-03M2"] = ["lokiCycle", "lokiHeal"],
+            ["S01-04M1"] = ["amaterasuKill"],
+            ["S01-04M2"] = ["frontBuff", "kusanagi"],
+            ["S02-01M1"] = [],
+            ["S02-02M1"] = [],
+            ["S02-03M1"] = ["thorCharge"],
+            ["S02-04M1"] = [],
+            ["S02-05M1"] = [],
+            ["S02-05M2"] = [],
+            ["S02-06M1"] = [],
+            ["S02-06M2"] = [],
+            ["ST01-M1"] = [],
+            ["ST02-M1"] = ["horusRevive"],
+            ["ST03-M1"] = [],
+            ["ST04-M1"] = [],
+            ["ST05-M1"] = [],
+            ["ST06-M1"] = [],
+            ["S01-01D1"] = [],
+            ["S01-02D1"] = ["sunTopThree", "sunBottomEnemy"],
+            ["S01-03D1"] = ["valhallaRecover"],
+            ["S01-04D1"] = ["yomiSweep"],
+            ["S02-05D1"] = [],
+            ["S02-06D1"] = [],
+        };
+
+    private L12AbilityView[] GetFaithZealotEligibleAbilities(string masterId)
+    {
+        if (!FaithZealotAbilityIdsByMaster.TryGetValue(masterId, out var eligibleIds)) return [];
+        var views = GetAbilities(masterId).ToDictionary(view => view.Id, StringComparer.OrdinalIgnoreCase);
+        return eligibleIds.Where(views.ContainsKey).Select(id => views[id]).ToArray();
+    }
+
+    private bool IsFaithZealotEligibleAbility(string masterId, string ability)
+        => FaithZealotAbilityIdsByMaster.TryGetValue(masterId, out var eligibleIds)
+            && eligibleIds.Contains(ability, StringComparer.OrdinalIgnoreCase)
+            && GetAbilities(masterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase));
+
     private bool TryGetIsisVictorySource(L12PlayerState player, out L12CardInstance? osiris, out string error)
     {
         osiris = player.Graveyard.FirstOrDefault(card => card.CardId == "S01-02M2");
@@ -61,6 +109,8 @@ public sealed partial class L12GameEngine
             && player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability))
             && !MatchesPendingFreeMasterActivation(playerIndex, source, ability))
             return CommandResult.Reject("该效果本回合已经发动");
+        if (TryBeginFaithZealotFreeMasterDeclaration(playerIndex, source, ability) is { } freeDeclaration)
+            return freeDeclaration;
 
         string[] choices;
         switch (ability)
@@ -93,6 +143,45 @@ public sealed partial class L12GameEngine
 
     private CommandResult PromptActiveTarget(int playerIndex, L12CardInstance source, string ability, string[] choices, string text)
         => BeginPendingActivation(playerIndex, source, ability, choices, text);
+
+    private CommandResult? TryBeginFaithZealotFreeMasterDeclaration(int playerIndex, L12CardInstance source,
+        string ability)
+    {
+        if (!MatchesPendingFreeMasterActivation(playerIndex, source, ability)) return null;
+        switch ((source.CardId, ability))
+        {
+            case ("S01-02M3", "medjedDebuff"):
+            {
+                var targets = PublicLegions(State.Players[1 - playerIndex]).Select(card => card.InstanceId).ToList();
+                if (targets.Count == 0) return CommandResult.Reject("对方战场没有可选择的军团");
+                return BeginPendingActivationSequence(playerIndex, source, ability,
+                [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "option", DeclarationKey = "mode",
+                        Text = "梅杰德（信仰狂热者）：选择降低兵力的幅度；士气与额外休整陵墓守卫的消耗均被忽视",
+                        ValidChoices = ["mode:normal", "mode:strong"], MinChoose = 1, MaxChoose = 1,
+                        ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["mode:normal"] = "对方1张军团本回合兵力-1000",
+                            ["mode:strong"] = "对方1张军团本回合兵力-3000",
+                        },
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "active-target", DeclarationKey = "target",
+                        Text = "梅杰德：选择本回合降低兵力的对方军团",
+                        ValidChoices = targets, MinChoose = 1, MaxChoose = 1,
+                    },
+                ]);
+            }
+            case ("S01-03M2", "lokiHeal"):
+                // 返回墓地2张卡是该选项在冒号后执行的额外消耗；免费副本不声明、不移动它们。
+                return CommitActiveAbility(playerIndex, source, ability, null);
+            default:
+                return null;
+        }
+    }
 
     private void CommitPromptedActiveAbility(L12Prompt prompt, List<string> chosen)
     {
@@ -160,7 +249,8 @@ public sealed partial class L12GameEngine
             case ("S01-02D1", "sunTopThree"):
                 if (declared.Length != 1 || declared[0] != "mode:none"
                     && !player.Graveyard.Any(card => card.InstanceId == declared[0]
-                        && card.Faction == "taiyangcheng" && CanEnterHandOrLibrary(card)))
+                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
+                        && CanEnterHandOrLibrary(card)))
                     return "众神之乡声明的墓地回收目标已失效";
                 break;
             case ("S01-02M1", "isisCanopic"):
@@ -393,10 +483,11 @@ public sealed partial class L12GameEngine
         var free = State.FreeMasterActivation!;
 
         var player = State.Players[playerIndex];
-        var legalAbility = GetAbilities(player.MasterId).Any(view => view.Id.Equals(ability, StringComparison.OrdinalIgnoreCase))
-            && GetActiveAbilityMoraleCost(source, ability) > 0;
+        var legalAbility = IsFaithZealotEligibleAbility(player.MasterId, ability);
         State.FreeMasterActivation = null;
         if (!legalAbility) return CommandResult.Reject("信仰狂热者选择的主宰效果已不合法");
+        if (ValidateFaithZealotFreeMasterDeclaration(playerIndex, source, ability, target) is { } declarationError)
+            return CommandResult.Reject(declarationError);
 
         var data = new Dictionary<string, string>
         {
@@ -405,13 +496,140 @@ public sealed partial class L12GameEngine
             ["freeMasterSource"] = free.SourceInstanceId,
         };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
-        if (source.CardId == "S01-01M1" && ability == "drawCycle")
-            foreach (var pair in CompositeFirstSegmentData("active:S01-01M1:drawCycle",
-                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
-                data[pair.Key] = pair.Value;
-        PushEffect(playerIndex, source, "active", "由〈信仰狂热者〉无视消耗触发的主宰效果", data: data);
+        var (compositePlan, declared) = FaithZealotCompositeDeclaration(source.CardId, ability, target);
+        string[]? publicTargets = null;
+        if (compositePlan is not null)
+        {
+            foreach (var pair in CompositeFirstSegmentData(compositePlan, declared)) data[pair.Key] = pair.Value;
+            publicTargets = CompositeFirstSegmentTargets(compositePlan, declared);
+        }
+        PushEffect(playerIndex, source, "active", "由〈信仰狂热者〉无视消耗触发的主宰效果",
+            publicTargets, data);
         AddEvent("effect", playerIndex, $"〈信仰狂热者〉无视全部消耗触发〈{source.Name}〉的主宰效果，且不计入使用次数", source);
         return CommandResult.Ok();
+    }
+
+    private string? ValidateFaithZealotFreeMasterDeclaration(int playerIndex, L12CardInstance source,
+        string ability, string? target)
+    {
+        var player = State.Players[playerIndex];
+        var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+        switch ((source.CardId, ability))
+        {
+            case ("S01-01M1", "drawCycle"):
+            case ("S01-03M2", "lokiCycle"):
+            case ("S01-03M2", "lokiHeal"):
+                return declared.Length == 0 ? null : "所选主宰效果不需要目标";
+            case ("S01-02M3", "medjedDebuff"):
+                return declared.Length == 2 && declared[0] is "mode:normal" or "mode:strong"
+                    && DeclaredEnemyTarget(playerIndex, declared[1]) is not null
+                    ? null : "梅杰德选择的幅度或对方军团已失效";
+            case ("S01-03M1", "valkyrieRecover"):
+            {
+                if (declared.Length != 3 || declared.Take(2).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
+                    || !declared.Take(2).Contains(declared[2], StringComparer.OrdinalIgnoreCase))
+                    return "瓦尔基里的墓地卡牌选择不完整";
+                return declared.Take(2).All(id => player.Graveyard.Any(card => card.InstanceId == id
+                        && CanEnterHandOrLibrary(card)))
+                    ? null : "瓦尔基里声明的墓地卡牌已失效";
+            }
+            case ("S01-04M1", "amaterasuKill"):
+            {
+                var debuff = declared.Length == 2 ? DeclaredEnemyTarget(playerIndex, declared[0]) : null;
+                var kill = declared.Length == 2 && declared[1] != "mode:none"
+                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
+                        - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
+                    : null;
+                return debuff is not null && (declared[1] == "mode:none" || kill is not null)
+                    ? null : "天照大神声明的费用降低或击杀目标已失效";
+            }
+            case ("S01-04M2", "frontBuff"):
+                return declared.Length == 1 && PublicFactionLegions(player, "gaotianyuan")
+                    .Any(card => card.InstanceId == declared[0])
+                    ? null : "须佐之男选择的高天原军团已失效";
+            case ("S01-04M2", "kusanagi"):
+            {
+                var (row, slot) = declared.Length == 1 ? ParseSlot(declared[0]) : (-1, -1);
+                return player.Relic?.CardId == "S01-0417" && row == 0 && slot is >= 0 and <= 2
+                    && player.Field[row][slot] is null
+                    ? null : "草薙剑或其前排登场位置已失效";
+            }
+            case ("S02-03M1", "thorCharge"):
+                return declared.Length == 0 && player.Hp <= 3
+                    ? null : "雷神索尔需要我方主宰血量不高于3且无需选择目标";
+            case ("ST02-M1", "horusRevive"):
+            {
+                var entry = declared.Length == 2
+                    ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0]
+                        && card.CardType == "legion" && card.BaseTroops <= 2000
+                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
+                    : null;
+                var (row, slot) = declared.Length == 2 ? ParseSlot(declared[1]) : (-1, -1);
+                return entry is not null && row is >= 0 and <= 1 && slot is >= 0 and <= 2
+                    && player.Field[row][slot] is null
+                    ? null : "荷鲁斯声明的墓地军团或登场位置已失效";
+            }
+            case ("S01-02D1", "sunTopThree"):
+                return declared.Length == 1 && (declared[0] == "mode:none"
+                    || player.Graveyard.Any(card => card.InstanceId == declared[0]
+                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
+                        && CanEnterHandOrLibrary(card)))
+                    ? null : "众神之乡声明的墓地回收目标已失效";
+            case ("S01-02D1", "sunBottomEnemy"):
+                return declared.Length == 1 && DeclaredEnemyTarget(playerIndex, declared[0],
+                        card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is not null
+                    ? null : "众神之乡选择的对方军团已失效";
+            case ("S01-03D1", "valhallaRecover"):
+                return declared.Length == 1 && (declared[0] == "mode:none"
+                    || player.Graveyard.Any(card => card.InstanceId == declared[0]
+                        && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                        && CanEnterHandOrLibrary(card)))
+                    ? null : "英灵殿声明的墓地回收目标已失效";
+            case ("S01-04D1", "yomiSweep"):
+            {
+                bool ValidTarget(string id, int maximum) => id == "mode:none"
+                    || DeclaredEnemyTarget(playerIndex, id, card => card.CurrentCost - 1 <= maximum) is not null;
+                return declared.Length == 2 && ValidTarget(declared[0], 3) && ValidTarget(declared[1], 1)
+                    && (declared[0] == "mode:none"
+                        || !declared[0].Equals(declared[1], StringComparison.OrdinalIgnoreCase))
+                    ? null : "黄泉之门声明的击杀目标已失效";
+            }
+            default:
+                return "信仰狂热者不能触发该主宰效果";
+        }
+    }
+
+    private static (string? Plan, Dictionary<string, List<string>> Declared) FaithZealotCompositeDeclaration(
+        string sourceCardId, string ability, string? target)
+    {
+        var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+        var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var plan = (sourceCardId, ability) switch
+        {
+            ("S01-01M1", "drawCycle") => "active:S01-01M1:drawCycle",
+            ("S01-02D1", "sunTopThree") => "active:S01-02D1:sunTopThree",
+            ("S01-03D1", "valhallaRecover") => "active:S01-03D1:valhallaRecover",
+            ("S01-04D1", "yomiSweep") => "active:S01-04D1:yomiSweep",
+            ("S01-04M1", "amaterasuKill") => "active:S01-04M1:amaterasuKill",
+            _ => null,
+        };
+        switch ((sourceCardId, ability))
+        {
+            case ("S01-02D1", "sunTopThree"):
+            case ("S01-03D1", "valhallaRecover"):
+                declared["recoverMode"] = [values[0] == "mode:none" ? "mode:none" : "mode:recover"];
+                declared["graveCard"] = [values[0]];
+                break;
+            case ("S01-04D1", "yomiSweep"):
+                declared["kill3Target"] = [values[0]];
+                declared["kill1Target"] = [values[1]];
+                break;
+            case ("S01-04M1", "amaterasuKill"):
+                declared["debuffTarget"] = [values[0]];
+                declared["killTarget"] = [values[1]];
+                break;
+        }
+        return (plan, declared);
     }
 
     private bool MatchesPendingFreeMasterActivation(int playerIndex, L12CardInstance source, string ability)
@@ -450,6 +668,13 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var source = FindSource(item);
         var ability = item.Data.GetValueOrDefault("ability") ?? string.Empty;
+        if (item.Data.GetValueOrDefault("freeMasterActivation") == "true"
+            && item.SourceCardId == "S01-03M2" && ability == "lokiHeal")
+        {
+            HealMaster(item.Controller, 1, "洛基主宰效果");
+            FinishStackItem(item);
+            return;
+        }
         if (TryResolveStarterRemainingActiveEffect(item, source, ability)) return;
         switch (ability)
         {

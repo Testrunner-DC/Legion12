@@ -31,7 +31,8 @@ internal sealed record L12RankedIntegrityContext(
     int MeaningfulCommandCount,
     string ConclusionKind,
     string? FirstNetworkFingerprint,
-    string? SecondNetworkFingerprint);
+    string? SecondNetworkFingerprint,
+    int FinalRound = 0);
 
 internal static class L12RankedNetworkPrivacy
 {

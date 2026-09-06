@@ -635,7 +635,8 @@ public sealed partial class L12GameEngine
             var prospectiveTarget = graveTarget || field.Any(card => card.BaseTroops <= 2000
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
             var visibleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
-            var resources = player.Morale.Count(card => !card.Tapped) + ActiveTombGuardResources(player).Count();
+            var resources = player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
+                + ActiveTombGuardResources(player).Count();
             if (field.Length < 2 || resources < visibleCost || !prospectiveTarget)
                 return $"需要{visibleCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场";
         }

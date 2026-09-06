@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "check:ui-contracts": "node scripts/check-ui-contracts.mjs",
+    "check:ui-contracts": "node scripts/check-ui-contracts.mjs && node scripts/check-l12-readable-fonts.mjs",
     "check:release-version": "node scripts/check-client-release-version.mjs",
     "check:card-assets": "node scripts/check-l12-card-assets.mjs",
     "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",

@@ -801,7 +801,8 @@ public sealed partial class L12GameEngine
             }
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
                 if (ability == "sunTopThree" && target != "mode:none"
-                    && !player.Graveyard.Any(card => card.InstanceId == target && card.Faction == "taiyangcheng"
+                    && !player.Graveyard.Any(card => card.InstanceId == target
+                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
                         && CanEnterHandOrLibrary(card)))
                     return CommandResult.Reject("众神之乡声明的墓地回收目标已失效");
                 if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target,
@@ -879,7 +880,8 @@ public sealed partial class L12GameEngine
             case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); player.UsedAbilities.Add(onceKey); break;
             case "valhallaRecover" when source.CardId == "S01-03D1":
                 if (target != "mode:none" && !player.Graveyard.Any(card => card.InstanceId == target
-                        && card.Faction == "asgard" && CanEnterHandOrLibrary(card)))
+                        && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                        && CanEnterHandOrLibrary(card)))
                     return CommandResult.Reject("英灵殿声明的墓地回收目标已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
                 player.UsedAbilities.Add(onceKey); break;
@@ -1123,7 +1125,8 @@ public sealed partial class L12GameEngine
                 {
                     var targetId = CompositeDeclared(item, "graveCard").SingleOrDefault();
                     var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                        && card.Faction == "taiyangcheng" && CanEnterHandOrLibrary(card));
+                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
+                        && CanEnterHandOrLibrary(card));
                     if (recover is null)
                         AddEvent("effect-cancelled", item.Controller, "众神之乡声明的墓地回收目标已失效");
                     else
@@ -1183,7 +1186,8 @@ public sealed partial class L12GameEngine
                 {
                     var targetId = CompositeDeclared(item, "graveCard").SingleOrDefault();
                     var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                        && card.Faction == "asgard" && CanEnterHandOrLibrary(card));
+                        && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                        && CanEnterHandOrLibrary(card));
                     if (recover is null)
                         AddEvent("effect-cancelled", item.Controller, "英灵殿声明的墓地回收目标已失效");
                     else

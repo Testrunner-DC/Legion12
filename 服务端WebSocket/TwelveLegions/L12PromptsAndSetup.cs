@@ -533,7 +533,7 @@ public sealed partial class L12GameEngine
             .Append(State.ActiveDisaster).FirstOrDefault(item => item?.InstanceId == instanceId);
     }
 
-    private CommandResult ResolvePrompt(int playerIndex, L12Command command)
+    private CommandResult ResolvePromptCore(int playerIndex, L12Command command)
     {
         if (string.IsNullOrWhiteSpace(command.PromptId)) return CommandResult.Reject("缺少 promptId");
         var prompt = State.PendingPrompts.FirstOrDefault(item => item.PromptId == command.PromptId);
@@ -595,7 +595,9 @@ public sealed partial class L12GameEngine
         }
 
         State.PendingPrompts.Remove(prompt);
-        AddEvent("prompt-resolved", playerIndex, $"{State.Players[playerIndex].Name} 已完成选择");
+        if (string.Equals(command.Destination, RankedSetupTimeoutDestination, StringComparison.Ordinal))
+            AddEvent("setup-timeout", playerIndex,
+                $"{State.Players[playerIndex].Name} 的准备步骤已超时，由服务器从当前合法候选中自动选择");
 
         switch (prompt.Continuation)
         {
@@ -1069,6 +1071,48 @@ public sealed partial class L12GameEngine
     {
         State.Phase = L12Phase.Mulligan;
         AddEvent("mulligan-start", null, "双方同时进行调度");
+    }
+
+    internal const string RankedSetupTimeoutDestination = "ranked-setup-timeout";
+
+    internal bool HasTimedRankedSetupDecision(int playerIndex)
+    {
+        if (playerIndex is < 0 or > 1) return false;
+        if (State.Phase == L12Phase.Mulligan)
+            return !State.Players[playerIndex].MulliganDone;
+        if (State.Phase != L12Phase.DisasterPreparation) return false;
+        return State.PendingPrompts.Any(prompt => prompt.PlayerIndex == playerIndex
+            && prompt.Continuation is "setup-ban" or "setup-first-pick" or "setup-second-pick");
+    }
+
+    internal bool TryCreateRankedSetupTimeoutCommand(int playerIndex, out L12Command command)
+    {
+        command = default!;
+        if (!HasTimedRankedSetupDecision(playerIndex)) return false;
+        if (State.Phase == L12Phase.Mulligan)
+        {
+            // An empty selection means that every original card remains in hand.
+            command = new L12Command("mulligan", CardInstanceIds: [],
+                Destination: RankedSetupTimeoutDestination);
+            return true;
+        }
+
+        var prompt = State.PendingPrompts
+            .Where(candidate => candidate.PlayerIndex == playerIndex
+                && candidate.Continuation is "setup-ban" or "setup-first-pick" or "setup-second-pick")
+            .OrderBy(candidate => candidate.PromptId, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (prompt is null) return false;
+        var choice = State.DisasterPool
+            .Where(card => prompt.ValidChoices.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(card => card.CardId, StringComparer.Ordinal)
+            .ThenBy(card => card.InstanceId, StringComparer.Ordinal)
+            .Select(card => card.InstanceId)
+            .FirstOrDefault();
+        if (choice is null) return false;
+        command = new L12Command("resolvePrompt", CardInstanceIds: [choice], PromptId: prompt.PromptId,
+            Destination: RankedSetupTimeoutDestination);
+        return true;
     }
 
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,

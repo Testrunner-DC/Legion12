@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
+import BattleUtilityDock from './game/BattleUtilityDock.vue'
 import GmPanel from './game/GmPanel.vue'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
@@ -67,9 +68,9 @@ function returnToLobby() {
 <template>
   <div v-if="game" class="game-page">
     <RankedBroadcastTicker class="battle-ranked-ticker" />
-    <button class="battle-settings-button" aria-label="打开对局设置" title="设置" @click="settingsOpen = true">⚙<span>设置</span></button>
+    <BattleUtilityDock @settings="settingsOpen = true" />
     <div class="battle-route-controls">
-      <span :class="{ online: opponent?.connected }"><i/>对手{{ opponent?.connected ? '在线' : '已断开' }}</span>
+      <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
       <button @click="returnToLobby">返回大厅</button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div>
@@ -110,7 +111,7 @@ function returnToLobby() {
 </template>
 
 <style scoped>
-.battle-route-controls{position:fixed;z-index:1600;top:12px;right:14px;display:flex;align-items:center;gap:7px;padding:6px;border:1px solid #445057;background:#080d11e8;box-shadow:0 8px 24px #000}.battle-route-controls span{display:flex;align-items:center;gap:6px;padding:0 7px;color:#b76570;font-size:9px;font-weight:900}.battle-route-controls span.online{color:#58c99a}.battle-route-controls i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor}.battle-route-controls button{padding:7px 10px;border:1px solid #57636a;background:#121a20;color:#fff;font-size:9px;font-weight:900}.battle-route-controls .surrender{border-color:#7f343e;background:#321219;color:#f2b6bc}
-.battle-settings-button{position:fixed;z-index:1600;left:12px;bottom:12px;display:grid;width:48px;height:48px;place-items:center;border:1px solid #59666b;background:#080d11ed;box-shadow:0 8px 24px #000;color:#e8d183;font-size:19px}.battle-settings-button span{position:absolute;left:100%;bottom:0;padding:4px 7px;border:1px solid #38454b;background:#080d11ed;color:#9da8a8;font-size:8px;letter-spacing:.12em}.battle-settings-mask{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:18px;background:#010407c9;backdrop-filter:blur(8px)}
-.battle-ranked-ticker{position:fixed;z-index:1500;top:8px;left:50%;width:min(760px,calc(100vw - 430px));transform:translateX(-50%)}.ranked-result{display:flex;min-width:320px;flex-direction:column;gap:6px;margin:12px 0;padding:12px;border:1px solid #a88c42;background:#17150d}.ranked-result>b{color:#e8cf7e}.ranked-result strong{font-size:13px}.ranked-result i{color:#65d2a1;font-style:normal}.ranked-result details span{display:flex;justify-content:space-between;color:#b5bdbe;font-size:10px}.ranked-result summary{cursor:pointer;color:#e1c978;font-size:10px}@media(max-width:900px){.battle-ranked-ticker{top:52px;width:calc(100vw - 20px)}}
+.battle-route-controls{position:fixed;z-index:1600;top:12px;right:14px;display:flex;align-items:center;gap:7px;padding:6px;border:1px solid #445057;background:#080d11e8;box-shadow:0 8px 24px #000}.battle-route-controls span{display:flex;align-items:center;gap:6px;padding:0 7px;color:#b76570;font-size:14px;font-weight:900}.battle-route-controls span.online{color:#58c99a}.battle-route-controls i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor}.battle-route-controls button{padding:7px 10px;border:1px solid #57636a;background:#121a20;color:#fff;font-size:14px;font-weight:900}.battle-route-controls .surrender{border-color:#7f343e;background:#321219;color:#f2b6bc}
+.battle-settings-button{position:fixed;z-index:1600;left:12px;bottom:12px;display:grid;width:48px;height:48px;place-items:center;border:1px solid #59666b;background:#080d11ed;box-shadow:0 8px 24px #000;color:#e8d183;font-size:19px}.battle-settings-button span{position:absolute;left:100%;bottom:0;padding:4px 7px;border:1px solid #38454b;background:#080d11ed;color:#9da8a8;font-size:14px;letter-spacing:.12em}.battle-settings-mask{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:18px;background:#010407c9;backdrop-filter:blur(8px)}
+.battle-ranked-ticker{position:fixed;z-index:1500;top:8px;left:50%;width:min(760px,calc(100vw - 430px));transform:translateX(-50%)}.ranked-result{display:flex;min-width:320px;flex-direction:column;gap:6px;margin:12px 0;padding:12px;border:1px solid #a88c42;background:#17150d}.ranked-result>b{color:#e8cf7e}.ranked-result strong{font-size:14px}.ranked-result i{color:#65d2a1;font-style:normal}.ranked-result details span{display:flex;justify-content:space-between;color:#b5bdbe;font-size:14px}.ranked-result summary{cursor:pointer;color:#e1c978;font-size:14px}@media(max-width:900px){.battle-ranked-ticker{top:52px;width:calc(100vw - 20px)}}
 </style>

@@ -42,6 +42,10 @@ var rankedRecovery = await rooms.RestoreRankedRoomsAsync();
 Console.WriteLine($"Ranked recovery: settlements={rankedRecovery.SettlementsApplied}, "
                   + $"rooms={rankedRecovery.Restored}, invalid={rankedRecovery.Invalidated}, "
                   + $"failed={rankedRecovery.Failed}");
+var rankedMasterTitleFacts = await recorder.ListRankedMasterTitleFactsAsync(DateTimeOffset.UtcNow);
+var importedRankedMasterTitleFacts = platform.ImportRankedMasterTitleFacts(rankedMasterTitleFacts);
+Console.WriteLine($"Ranked master title facts: authoritative={rankedMasterTitleFacts.Count}, "
+                  + $"imported={importedRankedMasterTitleFacts}");
 platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
 

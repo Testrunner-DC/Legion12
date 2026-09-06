@@ -548,6 +548,8 @@ public sealed partial class L12PlatformStore
             var rows = _data.BlockedAccounts.Where(row => row.AccountId == accountId && row.BlockedAccountId == blockedAccountId).ToArray();
             if (rows.Length == 0) return false;
             foreach (var row in rows) _data.BlockedAccounts.Remove(row);
+            _data.Friends.RemoveAll(row => row.Status == "suppressed"
+                && row.RequesterId == blockedAccountId && row.AddresseeId == accountId);
             Save();
             return true;
         }
@@ -566,8 +568,9 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12FriendView> FriendRequests(string accountId)
     {
-        lock (_gate) return _data.Friends.Where(row => row.Status == "pending"
-                && (row.RequesterId == accountId || row.AddresseeId == accountId))
+        lock (_gate) return _data.Friends.Where(row =>
+                (row.Status == "pending" && (row.RequesterId == accountId || row.AddresseeId == accountId))
+                || (row.Status == "suppressed" && row.RequesterId == accountId))
             .OrderByDescending(row => row.CreatedAt).Select(row =>
             {
                 var otherId = row.RequesterId == accountId ? row.AddresseeId : row.RequesterId;
@@ -583,14 +586,17 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             if (_data.Accounts.All(row => row.Id != targetAccountId)) return (false, "玩家不存在");
-            if (_data.BlockedAccounts.Any(row =>
-                row.AccountId == accountId && row.BlockedAccountId == targetAccountId
-                || row.AccountId == targetAccountId && row.BlockedAccountId == accountId))
-                return (false, "无法向该玩家发送好友申请");
+            if (_data.BlockedAccounts.Any(row => row.AccountId == accountId && row.BlockedAccountId == targetAccountId))
+                return (false, "请先取消屏蔽该玩家");
+            var suppressed = _data.BlockedAccounts.Any(row => row.AccountId == targetAccountId && row.BlockedAccountId == accountId);
             var existing = FindFriendRow(accountId, targetAccountId);
             if (existing?.Status == "accepted") return (false, "你们已经是好友");
-            if (existing?.Status == "pending") return (false, "好友申请已存在");
-            _data.Friends.Add(new FriendRow { RequesterId = accountId, AddresseeId = targetAccountId });
+            if (existing?.Status is "pending" or "suppressed") return (false, "好友申请已存在");
+            // Sender sees the same pending acknowledgement; a blocked receiver never
+            // receives this row. Keeping the shadow row also makes repeat requests
+            // indistinguishable and bounded to one per pair.
+            _data.Friends.Add(new FriendRow { RequesterId = accountId, AddresseeId = targetAccountId,
+                Status = suppressed ? "suppressed" : "pending" });
             Save();
             return (true, "好友申请已发送");
         }
@@ -603,6 +609,9 @@ public sealed partial class L12PlatformStore
             var row = _data.Friends.FirstOrDefault(item => item.Status == "pending"
                 && item.RequesterId == requesterId && item.AddresseeId == accountId);
             if (row is null) return (false, "好友申请不存在或已处理");
+            if (_data.BlockedAccounts.Any(item => item.AccountId == accountId && item.BlockedAccountId == requesterId
+                || item.AccountId == requesterId && item.BlockedAccountId == accountId))
+                return (false, "好友申请不存在或已处理");
             if (accept)
             {
                 row.Status = "accepted";
@@ -1299,8 +1308,9 @@ public sealed partial class L12PlatformStore
     {
         var blocked = _data.BlockedAccounts.Any(item => item.AccountId == viewerId && item.BlockedAccountId == row.Id);
         var relation = FindFriendRow(viewerId, row.Id);
+        if (relation?.Status == "suppressed" && relation.RequesterId != viewerId) relation = null;
         var direction = relation is null ? "none" : relation.AddresseeId == viewerId ? "incoming" : "outgoing";
-        return new L12FriendView(row.Id, row.Username, blocked ? "blocked" : relation?.Status ?? "none", blocked ? "none" : direction,
+        return new L12FriendView(row.Id, row.Username, blocked ? "blocked" : relation?.Status == "suppressed" ? "pending" : relation?.Status ?? "none", blocked ? "none" : direction,
             relation?.CreatedAt ?? row.CreatedAt);
     }
 

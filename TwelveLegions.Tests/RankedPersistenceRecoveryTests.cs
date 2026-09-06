@@ -156,6 +156,34 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(0, await fixture.Recorder.CountPendingRankedSettlementsAsync());
         Assert.NotNull(fixture.Platform.RankedSettlement(fixture.MatchId, fixture.First.Id));
         Assert.NotNull(fixture.Platform.RankedSettlement(fixture.MatchId, fixture.Second.Id));
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var read = connection.CreateCommand();
+            read.CommandText = "SELECT payload_json FROM ranked_settlement_outbox WHERE match_id=$match;";
+            read.Parameters.AddWithValue("$match", fixture.MatchId);
+            var legacyPayload = JsonNode.Parse((string)(await read.ExecuteScalarAsync())!)!.AsObject();
+            legacyPayload.Remove("FinalRound");
+            legacyPayload.Remove("finalRound");
+            var legacyJson = legacyPayload.ToJsonString();
+            var legacyHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(legacyJson)))
+                .ToLowerInvariant();
+            var update = connection.CreateCommand();
+            update.CommandText = "UPDATE ranked_settlement_outbox SET payload_json=$json,payload_hash=$hash WHERE match_id=$match;";
+            update.Parameters.AddWithValue("$json", legacyJson);
+            update.Parameters.AddWithValue("$hash", legacyHash);
+            update.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+        var titleFact = Assert.Single(await fixture.Recorder.ListRankedMasterTitleFactsAsync(
+            fixture.Clock.UtcNow), item => item.MatchId == fixture.MatchId);
+        Assert.Equal("disconnect-timeout", titleFact.ConclusionKind);
+        Assert.Equal(fixture.InitialState.GetProperty("round").GetInt32(), titleFact.FinalRound);
+        Assert.True(titleFact.FinalRound > 0);
+        Assert.Equal(fixture.First.Id, titleFact.FirstAccountId);
+        Assert.Equal(fixture.Second.Id, titleFact.SecondAccountId);
     }
 
     [Fact]

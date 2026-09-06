@@ -1172,8 +1172,13 @@ public sealed partial class L12RoomManager
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始");
-            if (await ApplyRankedClockConclusionLockedAsync(room, _utcNow()))
+            var clockConcluded = await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+            if (room.RankedClock is { SetupBroadcastPending: true } setupClock)
+            {
+                setupClock.SetupBroadcastPending = false;
                 return BroadcastGame(room);
+            }
+            if (clockConcluded) return BroadcastGame(room);
             if (room.Game.State.Phase == L12Phase.GameOver)
             {
                 var reportError = await CompleteTournamentRoomGameAsync(room);
@@ -1590,8 +1595,7 @@ public sealed partial class L12RoomManager
             or "activateAbility" or "flipHidden") return true;
         if (command.Type != "resolvePrompt" || string.IsNullOrWhiteSpace(command.PromptId)) return false;
         var prompt = game.State.PendingPrompts.FirstOrDefault(item => item.PromptId == command.PromptId);
-        return prompt is not null && !string.Equals(prompt.Continuation, "setup-initiative",
-            StringComparison.OrdinalIgnoreCase);
+        return prompt is not null && !prompt.Continuation.StartsWith("setup-", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string RankedConclusionKind(Room room)

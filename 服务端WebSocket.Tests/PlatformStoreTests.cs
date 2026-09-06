@@ -7,7 +7,7 @@ namespace GrandUMI.Tests;
 public sealed class PlatformEnvironmentCollection;
 
 [Collection("Platform environment")]
-public sealed class PlatformStoreTests
+public sealed partial class PlatformStoreTests
 {
     [Fact]
     public void RootAdminPasswordCanComeFromServerEnvironment()
@@ -350,7 +350,7 @@ public sealed class PlatformStoreTests
     }
 
     [Fact]
-    public void BlockingRemovesFriendshipAndPreventsNewRequests()
+    public void BlockingRemovesFriendshipAndSilentlySuppressesNewRequests()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
         try
@@ -364,9 +364,13 @@ public sealed class PlatformStoreTests
             Assert.True(store.BlockAccount(first.Id, second.Id).Success);
             Assert.False(store.AreFriends(first.Id, second.Id));
             Assert.Equal(second.Id, Assert.Single(store.BlockedAccounts(first.Id)).AccountId);
-            Assert.False(store.SendFriendRequest(second.Id, first.Id).Success);
+            Assert.True(store.SendFriendRequest(second.Id, first.Id).Success);
+            Assert.Empty(store.FriendRequests(first.Id));
+            Assert.Equal("pending", Assert.Single(store.FriendRequests(second.Id)).Status);
+            Assert.False(store.SendFriendRequest(first.Id, second.Id).Success);
             Assert.True(store.UnblockAccount(first.Id, second.Id));
             Assert.True(store.SendFriendRequest(second.Id, first.Id).Success);
+            Assert.Single(store.FriendRequests(first.Id));
         }
         finally
         {

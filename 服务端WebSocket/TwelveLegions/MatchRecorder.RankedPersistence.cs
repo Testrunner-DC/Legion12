@@ -18,7 +18,8 @@ internal sealed record L12RankedSettlementEnvelope(
     int Version, string MatchId, string FirstAccountId, string SecondAccountId,
     string FirstMasterId, string SecondMasterId, int? Winner,
     DateTimeOffset StartedAt, DateTimeOffset EndedAt, int MeaningfulCommandCount,
-    string ConclusionKind, string FirstNetworkFingerprint, string SecondNetworkFingerprint);
+    string ConclusionKind, string FirstNetworkFingerprint, string SecondNetworkFingerprint,
+    int FinalRound = 0);
 
 internal sealed record L12RankedSettlementOutboxEntry(
     string MatchId, L12RankedSettlementEnvelope? Payload, string PayloadHash, string Status, int Attempts,
@@ -109,6 +110,7 @@ public sealed partial class MatchRecorder
                 StringComparison.OrdinalIgnoreCase)
             || payload.Winner is not null and not (0 or 1)
             || payload.EndedAt < payload.StartedAt || payload.MeaningfulCommandCount < 0
+            || payload.FinalRound < 0
             || string.IsNullOrWhiteSpace(payload.ConclusionKind)
             || payload.FirstMasterId is null || payload.SecondMasterId is null
             || payload.FirstNetworkFingerprint is null || payload.SecondNetworkFingerprint is null)
@@ -424,6 +426,68 @@ public sealed partial class MatchRecorder
 
     internal async Task<int> CountActiveRankedRuntimesAsync()
         => await ScalarCountAsync("SELECT COUNT(*) FROM ranked_match_runtime WHERE status='active';");
+
+    internal async Task<IReadOnlyList<L12RankedMasterTitleMatchFact>> ListRankedMasterTitleFactsAsync(
+        DateTimeOffset utcNow)
+    {
+        var now = utcNow.ToUniversalTime();
+        var cutoff = now - L12PlatformStore.RankedMasterTitleWindow;
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT o.match_id,o.payload_json,o.payload_hash,e.state_json
+            FROM ranked_settlement_outbox o
+            JOIN matches m ON m.match_id=o.match_id AND m.mode_id='ranked'
+            LEFT JOIN match_events e ON e.id=(
+                SELECT latest.id FROM match_events latest
+                WHERE latest.match_id=o.match_id ORDER BY latest.sequence DESC LIMIT 1
+            )
+            WHERE o.status='applied' AND julianday(o.created_utc) >= julianday($cutoff)
+            ORDER BY o.created_utc,o.match_id;
+            """;
+        command.Parameters.AddWithValue("$cutoff", cutoff.ToString("O"));
+        var result = new List<L12RankedMasterTitleMatchFact>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            try
+            {
+                var matchId = reader.GetString(0);
+                var json = reader.GetString(1);
+                if (!string.Equals(PersistenceHash(json), reader.GetString(2), StringComparison.Ordinal))
+                    throw new InvalidDataException("payload hash mismatch");
+                var payload = JsonSerializer.Deserialize<L12RankedSettlementEnvelope>(json,
+                                  RankedPersistenceJson)
+                              ?? throw new InvalidDataException("payload is empty");
+                ValidateSettlement(payload);
+                if (!payload.MatchId.Equals(matchId, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("match identity mismatch");
+                var finalRound = payload.FinalRound;
+                if (!reader.IsDBNull(3))
+                {
+                    using var state = JsonDocument.Parse(reader.GetString(3));
+                    var recordedRound = ReadInt(state.RootElement, "Round", "round");
+                    if (finalRound > 0 && recordedRound > 0 && finalRound != recordedRound)
+                        throw new InvalidDataException("final round mismatch");
+                    if (finalRound <= 0) finalRound = recordedRound;
+                }
+                // 旧 outbox 可以从最终权威状态取回合数；仍然缺失时保留 0，不伪造合格历史。
+                result.Add(new L12RankedMasterTitleMatchFact(payload.MatchId,
+                    payload.FirstAccountId, payload.SecondAccountId, payload.FirstMasterId,
+                    payload.SecondMasterId, payload.Winner, Math.Max(0, finalRound), payload.EndedAt,
+                    payload.ConclusionKind, true));
+            }
+            catch (Exception error) when (error is InvalidDataException or JsonException
+                                               or KeyNotFoundException or FormatException)
+            {
+                Console.Error.WriteLine($"Ranked master title fact skipped: {SafePersistenceError(error.Message)}");
+            }
+        }
+        return result.Where(item => item.EndedAt.ToUniversalTime() >= cutoff
+                && item.EndedAt.ToUniversalTime() <= now)
+            .ToArray();
+    }
 
     internal async Task<L12RankedRuntimeCheckpoint?> GetRankedRuntimeCheckpointAsync(string matchId)
     {

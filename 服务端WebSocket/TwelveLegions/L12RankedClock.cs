@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace TwelveLegions.Server;
 
 public sealed record L12RankedClockPlayerView(
@@ -20,6 +22,9 @@ public sealed partial class L12RoomManager
     internal static readonly TimeSpan RankedTotalTime = TimeSpan.FromMinutes(25);
     internal static readonly TimeSpan RankedOperationTime = TimeSpan.FromMinutes(4);
     internal static readonly TimeSpan RankedReconnectTime = TimeSpan.FromMinutes(4);
+    internal static readonly TimeSpan RankedSetupDecisionTime = TimeSpan.FromSeconds(60);
+
+    private static readonly JsonSerializerOptions RankedSetupCommandJson = new(JsonSerializerDefaults.Web);
 
     private sealed class RankedClockState
     {
@@ -28,13 +33,16 @@ public sealed partial class L12RoomManager
             (long)RankedTotalTime.TotalMilliseconds,
         ];
         public long[] OperationRemainingMs { get; } = [
-            (long)RankedOperationTime.TotalMilliseconds,
-            (long)RankedOperationTime.TotalMilliseconds,
+            (long)RankedSetupDecisionTime.TotalMilliseconds,
+            (long)RankedSetupDecisionTime.TotalMilliseconds,
         ];
         public bool[] Acting { get; } = [false, false];
         public DateTimeOffset LastSettledAt { get; set; }
         public string? ConclusionKind { get; set; }
         public bool AuthorityEventRecorded { get; set; }
+        public bool NormalClockStarted { get; set; }
+        public bool RestoreBaselinePending { get; set; }
+        public bool SetupBroadcastPending { get; set; }
     }
 
     private void InitializeRankedClock(Room room)
@@ -79,6 +87,11 @@ public sealed partial class L12RoomManager
             LastSettledAt = runtime.LastSettledAt,
             ConclusionKind = runtime.ConclusionKind,
             AuthorityEventRecorded = runtime.AuthorityEventRecorded,
+            NormalClockStarted = room.Game is not null && !IsRankedPreparationPhase(room.Game),
+            // A durable checkpoint stores remaining time, not a wall-clock deadline. The first
+            // settlement after reconstruction establishes a fresh process baseline so service
+            // downtime is never charged and the persisted remainder is never reset to 60 seconds.
+            RestoreBaselinePending = true,
         };
         Array.Copy(runtime.TotalRemainingMs, clock.TotalRemainingMs, 2);
         Array.Copy(runtime.OperationRemainingMs, clock.OperationRemainingMs, 2);
@@ -89,12 +102,31 @@ public sealed partial class L12RoomManager
 
     private void SettleRankedClockLocked(Room room, DateTimeOffset now)
     {
-        if (room.RankedClock is not { } clock || room.Game?.State.Phase == L12Phase.GameOver) return;
+        if (room.RankedClock is not { } clock || room.Game is not { } game
+            || game.State.Phase == L12Phase.GameOver) return;
+        if (clock.RestoreBaselinePending)
+        {
+            clock.RestoreBaselinePending = false;
+            clock.LastSettledAt = now;
+            return;
+        }
         if (now <= clock.LastSettledAt) return;
         var elapsed = (long)(now - clock.LastSettledAt).TotalMilliseconds;
+        var preparation = IsRankedPreparationPhase(game);
         for (var index = 0; index < 2; index++)
         {
-            if (!clock.Acting[index] || !PlayerConnected(room, index)) continue;
+            if (!clock.Acting[index]) continue;
+            if (preparation)
+            {
+                if (!game.HasTimedRankedSetupDecision(index)) continue;
+                // Preparation decisions are server-authoritative and keep running while the
+                // player's network is down. The independent four-minute reconnect window still
+                // decides the match if the player remains disconnected.
+                clock.OperationRemainingMs[index] = Math.Max(0,
+                    clock.OperationRemainingMs[index] - elapsed);
+                continue;
+            }
+            if (!PlayerConnected(room, index)) continue;
             clock.TotalRemainingMs[index] = Math.Max(0, clock.TotalRemainingMs[index] - elapsed);
             clock.OperationRemainingMs[index] = Math.Max(0, clock.OperationRemainingMs[index] - elapsed);
         }
@@ -104,17 +136,32 @@ public sealed partial class L12RoomManager
     private void RefreshRankedClockActorsLocked(Room room, DateTimeOffset now, int? completedActor = null)
     {
         if (room.RankedClock is not { } clock || room.Game is null) return;
-        SettleRankedClockLocked(room, now);
+        var preparation = IsRankedPreparationPhase(room.Game);
         var required = RequiredDecisionPlayers(room.Game);
+        if (!preparation && !clock.NormalClockStarted)
+        {
+            // The command that leaves setup was settled against the preparation state before it
+            // ran. Establish the normal-clock baseline only now, so command processing latency is
+            // not charged to whichever player happened to complete the last setup decision.
+            clock.NormalClockStarted = true;
+            Array.Fill(clock.OperationRemainingMs, (long)RankedOperationTime.TotalMilliseconds);
+            clock.LastSettledAt = now;
+        }
+        else SettleRankedClockLocked(room, now);
         for (var index = 0; index < 2; index++)
         {
             var wasActing = clock.Acting[index];
             clock.Acting[index] = required.Contains(index);
-            if (clock.Acting[index] && (!wasActing || completedActor == index))
-                clock.OperationRemainingMs[index] = (long)RankedOperationTime.TotalMilliseconds;
+            if (clock.Acting[index] && (!preparation || room.Game.HasTimedRankedSetupDecision(index))
+                && (!wasActing || completedActor == index))
+                clock.OperationRemainingMs[index] = (long)(preparation
+                    ? RankedSetupDecisionTime : RankedOperationTime).TotalMilliseconds;
         }
         if (now > clock.LastSettledAt) clock.LastSettledAt = now;
     }
+
+    private static bool IsRankedPreparationPhase(L12GameEngine game)
+        => game.State.Phase is L12Phase.Initiative or L12Phase.DisasterPreparation or L12Phase.Mulligan;
 
     private static HashSet<int> RequiredDecisionPlayers(L12GameEngine game)
     {
@@ -136,6 +183,47 @@ public sealed partial class L12RoomManager
     private Session? PlayerSession(Room room, int playerIndex)
         => room.Sessions.Select(id => _sessions.TryGetValue(id, out var session) ? session : null)
             .FirstOrDefault(session => session?.PlayerIndex == playerIndex);
+
+    private async Task<bool> ApplyRankedSetupTimeoutsLockedAsync(Room room, DateTimeOffset now)
+    {
+        if (room.RankedClock is not { } clock || room.Game is null
+            || !IsRankedPreparationPhase(room.Game)) return false;
+        var applied = false;
+        // At most two players can expire together (the simultaneous mulligan). Recompute after
+        // every accepted default because it can create the next preparation step and a fresh clock.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var playerIndex = Enumerable.Range(0, 2).FirstOrDefault(index => clock.Acting[index]
+                && clock.OperationRemainingMs[index] <= 0
+                && room.Game.HasTimedRankedSetupDecision(index), -1);
+            if (playerIndex < 0) break;
+            if (!room.Game.TryCreateRankedSetupTimeoutCommand(playerIndex, out var command))
+                throw new InvalidOperationException("排位准备超时没有当前合法默认操作");
+
+            var result = room.Game.Handle(playerIndex, command);
+            if (!result.Accepted)
+                throw new InvalidOperationException($"排位准备超时默认操作被拒绝：{result.Error}");
+            room.CommandSequence++;
+            RefreshRankedClockActorsLocked(room, now, playerIndex);
+            try
+            {
+                await _recorder.AppendRankedAsync(room.Game, room.CommandSequence, playerIndex,
+                    JsonSerializer.Serialize(command, RankedSetupCommandJson), result,
+                    CaptureRankedRuntime(room, now), settlement: null);
+            }
+            catch (Exception error)
+            {
+                // The synthetic timeout command follows the same transaction/replay boundary as a
+                // player command. Never expose an uncommitted automatic choice.
+                if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
+                throw new InvalidOperationException("排位准备超时操作持久化失败，已回退到最后确认状态", error);
+            }
+            applied = true;
+            if (room.RankedClock is { } current) current.SetupBroadcastPending = true;
+            clock = room.RankedClock!;
+        }
+        return applied;
+    }
 
     private async Task<bool> ApplyRankedClockConclusionLockedAsync(Room room, DateTimeOffset now)
     {
@@ -164,7 +252,12 @@ public sealed partial class L12RoomManager
                     $"{room.Game.State.Players[loser].Name}掉线超过4分钟未能重连");
                 concluded = true;
             }
-            else
+            else if (await ApplyRankedSetupTimeoutsLockedAsync(room, now))
+            {
+                clock = room.RankedClock!;
+            }
+            if (!concluded && room.Game.State.Phase != L12Phase.GameOver
+                && !IsRankedPreparationPhase(room.Game))
             {
                 var totalExpired = Enumerable.Range(0, 2)
                     .Where(index => clock.TotalRemainingMs[index] <= 0).ToArray();
@@ -230,7 +323,13 @@ public sealed partial class L12RoomManager
             await room.Gate.WaitAsync();
             try
             {
-                if (await ApplyRankedClockConclusionLockedAsync(room, now))
+                var broadcast = await ApplyRankedClockConclusionLockedAsync(room, now);
+                if (room.RankedClock is { SetupBroadcastPending: true } clock)
+                {
+                    clock.SetupBroadcastPending = false;
+                    broadcast = true;
+                }
+                if (broadcast)
                     messages.AddRange(BroadcastGame(room));
                 if (room.Game?.State.Phase != L12Phase.GameOver && !room.Closed)
                     checkpoints.Add(CaptureRankedRuntime(room, now));
@@ -315,6 +414,9 @@ public sealed partial class L12RoomManager
     {
         if (room.RankedClock is not { } clock) return null;
         var now = _utcNow();
+        var preparation = room.Game is not null && IsRankedPreparationPhase(room.Game);
+        var timedPreparation = preparation && Enumerable.Range(0, 2)
+            .Any(index => room.Game!.HasTimedRankedSetupDecision(index));
         var elapsed = now > clock.LastSettledAt
             ? (long)(now - clock.LastSettledAt).TotalMilliseconds : 0L;
         var players = Enumerable.Range(0, 2).Select(index =>
@@ -323,14 +425,22 @@ public sealed partial class L12RoomManager
             long? reconnect = session is { Connected: false, DisconnectedAt: not null }
                 ? Math.Max(0L, (long)(RankedReconnectTime - (now - session.DisconnectedAt.Value)).TotalMilliseconds)
                 : null;
-            var running = elapsed > 0 && clock.Acting[index] && session?.Connected == true
+            var setupRunning = elapsed > 0 && preparation && timedPreparation && clock.Acting[index]
+                && room.Game!.HasTimedRankedSetupDecision(index)
+                && room.Game.State.Phase != L12Phase.GameOver;
+            var normalRunning = elapsed > 0 && !preparation && clock.Acting[index]
+                && session?.Connected == true
                 && room.Game?.State.Phase != L12Phase.GameOver;
             return new L12RankedClockPlayerView(index,
-                running ? Math.Max(0, clock.TotalRemainingMs[index] - elapsed) : clock.TotalRemainingMs[index],
-                running ? Math.Max(0, clock.OperationRemainingMs[index] - elapsed) : clock.OperationRemainingMs[index],
+                normalRunning ? Math.Max(0, clock.TotalRemainingMs[index] - elapsed) : clock.TotalRemainingMs[index],
+                setupRunning || normalRunning
+                    ? Math.Max(0, clock.OperationRemainingMs[index] - elapsed)
+                    : clock.OperationRemainingMs[index],
                 clock.Acting[index], session?.Connected == true, reconnect);
         }).ToArray();
         return new L12RankedClockView(now.ToUnixTimeMilliseconds(), (long)RankedTotalTime.TotalMilliseconds,
-            (long)RankedOperationTime.TotalMilliseconds, (long)RankedReconnectTime.TotalMilliseconds, players);
+            preparation ? (timedPreparation ? (long)RankedSetupDecisionTime.TotalMilliseconds : 0L)
+                : (long)RankedOperationTime.TotalMilliseconds,
+            (long)RankedReconnectTime.TotalMilliseconds, players);
     }
 }

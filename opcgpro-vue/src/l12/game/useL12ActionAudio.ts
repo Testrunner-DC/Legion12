@@ -55,6 +55,15 @@ export function playL12ActionSound(kind: ActionPresentationKind) {
   }
 }
 
+/** A short two-note notification respecting the player's sound settings. */
+export function playL12FriendRequestSound() {
+  const { isMuted, sfxVolume } = useAudioStore.getState()
+  if (isMuted || sfxVolume <= 0) return
+  const volume = Math.min(.08, .08 * sfxVolume)
+  tone(523, .12, volume, 'sine')
+  tone(784, .22, volume, 'sine', undefined, .13)
+}
+
 /** A restrained, locally generated cue matched to the seven-second Osiris sequence. */
 export function playL12OsirisVictorySound() {
   const { isMuted, sfxVolume } = useAudioStore.getState()

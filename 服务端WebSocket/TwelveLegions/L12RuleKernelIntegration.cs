@@ -197,6 +197,16 @@ public sealed partial class L12GameEngine
                 activation.CurrentStep++;
                 continue;
             }
+            if (HasPrideMasterSurchargeStep(activation) && IsOrdinaryPaymentSelectionStep(pendingStep))
+            {
+                RefreshReservedOrdinaryPaymentChoices(activation, pendingStep);
+                if (pendingStep.ValidChoices.Count < pendingStep.MinChoose)
+                {
+                    RejectPendingActivation(activation,
+                        "跨步骤预留后没有足够的合法支付资源；全部费用未提交且效果未入栈");
+                    return;
+                }
+            }
             // 可选后续段在条件、目标或支付能力不足时，构造器只会留下“不发动”。
             // 该结果没有玩家决策空间：自动记录拒绝并继续后续强制段，避免无意义弹框。
             if (IsOnlyNegativeOptionalChoice(pendingStep))
@@ -498,7 +508,9 @@ public sealed partial class L12GameEngine
         }
         else if (step.Kind == "composite-ordinary-payment")
         {
-            var choices = CompositeOrdinaryPaymentChoices(State.Players[activation.Controller]).ToList();
+            var choices = HasPrideMasterSurchargeStep(activation)
+                ? step.ValidChoices.ToList()
+                : CompositeOrdinaryPaymentChoices(State.Players[activation.Controller]).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
             if (choices.Count < step.MinChoose)
@@ -820,7 +832,7 @@ public sealed partial class L12GameEngine
         if (chosen.Count == 1 && chosen[0] == "skip")
         {
             State.PendingActivations.Remove(activation);
-            ClearFreeMasterActivation(activation);
+            var cancelledFreeMasterActivation = ClearFreeMasterActivation(activation);
             if (activation.Ability == EffectGeneratedFreePlayAbility)
             {
                 AbortEffectGeneratedFreePlay(activation, "已取消效果生成的打出声明；卡牌保留在原区域");
@@ -832,6 +844,11 @@ public sealed partial class L12GameEngine
             AddEvent("ability-cancelled", prompt.PlayerIndex, hadReservedCost
                 ? "已取消结算选择，锁定的费用已全部释放，未产生费用、离场、次数或触发事件"
                 : "已取消发动，未支付费用且未进入堆叠");
+            if (cancelledFreeMasterActivation)
+            {
+                ResumeAfterPostResolutionGeneratedInteraction();
+                return;
+            }
             if (activation.Ability == "composite-committed-play")
             {
                 AbortCommittedCompositeEffectDeclaration(activation, "已打出的复合战术取消声明，卡牌结算至墓地");
@@ -970,8 +987,9 @@ public sealed partial class L12GameEngine
             ?? (activation.SourceInstanceId == $"faction-{activation.Controller}" ? CreateCard(activation.SourceCardId, activation.SourceInstanceId) : null);
         if (source is null || activation.DeclaredTargets.Any(id => !IsDeclaredChoiceStillLegal(activation.Controller, id, activation)))
         {
-            ClearFreeMasterActivation(activation);
+            var cancelledFreeMasterActivation = ClearFreeMasterActivation(activation);
             AddEvent("ability-rejected", activation.Controller, "来源或目标已不合法，效果未支付费用也未入栈");
+            if (cancelledFreeMasterActivation) ResumeAfterPostResolutionGeneratedInteraction();
             return;
         }
         IReadOnlyCollection<string>? selectedResourceIds = null;
@@ -983,16 +1001,22 @@ public sealed partial class L12GameEngine
                     || ActiveTombGuardResources(player).Any(card => card.InstanceId == id))
                 .ToArray();
         }
+        var committingFreeMasterActivation = MatchesPendingFreeMasterActivation(
+            activation.Controller, source, activation.Ability);
         var result = CommitActiveAbility(activation.Controller, source, activation.Ability,
             activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets),
             selectedResourceIds: selectedResourceIds);
-        if (!result.Accepted) AddEvent("ability-rejected", activation.Controller, result.Error ?? "主动效果发动失败");
+        if (!result.Accepted)
+        {
+            AddEvent("ability-rejected", activation.Controller, result.Error ?? "主动效果发动失败");
+            if (committingFreeMasterActivation) ResumeAfterPostResolutionGeneratedInteraction();
+        }
     }
 
     private void RejectPendingActivation(L12PendingActivation activation, string reason)
     {
         State.PendingActivations.Remove(activation);
-        ClearFreeMasterActivation(activation);
+        var cancelledFreeMasterActivation = ClearFreeMasterActivation(activation);
         if (activation.Ability == EffectGeneratedFreePlayAbility)
         {
             AbortEffectGeneratedFreePlay(activation, reason);
@@ -1010,6 +1034,11 @@ public sealed partial class L12GameEngine
             return;
         }
         AddEvent("ability-rejected", activation.Controller, reason);
+        if (cancelledFreeMasterActivation)
+        {
+            ResumeAfterPostResolutionGeneratedInteraction();
+            return;
+        }
         if (activation.ResponseTargetStackItemId is not null)
         {
             ResumeResponseAfterCancelledDeclaration(activation);
@@ -1037,12 +1066,16 @@ public sealed partial class L12GameEngine
         return source;
     }
 
-    private void ClearFreeMasterActivation(L12PendingActivation activation)
+    private bool ClearFreeMasterActivation(L12PendingActivation activation)
     {
         if (State.FreeMasterActivation is { } free
             && free.Controller == activation.Controller
             && free.Ability.Equals(activation.Ability, StringComparison.OrdinalIgnoreCase))
+        {
             State.FreeMasterActivation = null;
+            return true;
+        }
+        return false;
     }
 
     private bool IsDeclaredChoiceStillLegal(int controller, string choice, L12PendingActivation? activation = null)
@@ -1488,7 +1521,8 @@ public sealed partial class L12GameEngine
         while (State.PendingTriggerStackCandidates.Count > 0)
         {
             var candidate = State.PendingTriggerStackCandidates[0];
-            if (candidate.Data.ContainsKey("declaration-committing")) return;
+            if (candidate.Data.ContainsKey("declaration-committing")
+                || candidate.Data.ContainsKey(PrideMasterSurchargeCommitBarrier)) return;
             if (State.PendingActivations.Any(activation => activation.TriggerCandidateId == candidate.CandidateId)) return;
             if (!candidate.Data.ContainsKey("declaration-complete") && TryBeginTriggerDeclaration(candidate)) return;
             State.PendingTriggerStackCandidates.RemoveAt(0);
@@ -1648,8 +1682,20 @@ public sealed partial class L12GameEngine
     {
         var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
         if (candidate is null) { AdvanceTriggerBatches(); return; }
-        if (!TryCommitPrideMasterSurcharge(candidate, activation)) return;
-        if (TryCompletePublicTriggerDeclaration(candidate, activation)) return;
+        if (!TryPreparePrideMasterSurchargeCommit(candidate, activation)) return;
+        if (TryCompletePublicTriggerDeclaration(candidate, activation))
+        {
+            if (!candidate.Data.ContainsKey(PrideMasterSurchargeCommitBarrier)) return;
+            if (!State.PendingTriggerStackCandidates.Contains(candidate)
+                || candidate.Data.GetValueOrDefault("declaration-complete") != "true")
+            {
+                candidate.Data.Remove(PrideMasterSurchargeCommitBarrier);
+                return;
+            }
+            if (!TryCommitPreparedPrideMasterSurcharge(candidate, activation)) return;
+            AdvanceTriggerBatches();
+            return;
+        }
         var declared = activation.DeclaredTargets.ToList();
         if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
         {
@@ -1707,6 +1753,7 @@ public sealed partial class L12GameEngine
                 $"勇士比约恩对主宰造成1点伤害，并将墓地{costs.Length}张实体卡牌依声明顺序置于牌库底部，合计视为4张作为阵亡效果费用");
             declared.Clear();
         }
+        if (!TryCommitPreparedPrideMasterSurcharge(candidate, activation)) return;
         candidate.Data["declaredTargets"] = string.Join('|', declared);
         candidate.Data["declaration-complete"] = "true";
         AdvanceTriggerBatches();
@@ -1717,28 +1764,6 @@ public sealed partial class L12GameEngine
            && source.CardType == "master"
            && !source.IsMasterLegion
            && source.CardId == State.Players[controller].MasterId;
-
-    private bool TryCommitPrideMasterSurcharge(L12TriggerCandidate candidate, L12PendingActivation activation)
-    {
-        var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
-        if (!RequiresPrideMasterSurcharge(candidate.Controller, source))
-            return true;
-        if (activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault()
-                ?.Equals("mode:none", StringComparison.OrdinalIgnoreCase) == true)
-            return true;
-        var player = State.Players[candidate.Controller];
-        var selected = activation.DeclaredValues.GetValueOrDefault("prideMasterSurcharge", []);
-        if (!TryConsumeSelectedResources(player, 1, selected))
-        {
-            RemoveUnstackedTriggerCandidate(candidate, "〈傲慢之罪〉使主宰效果额外需要消耗1士气");
-            return false;
-        }
-        candidate.Data["prideMasterSurchargePrepaid"] = "true";
-        AddEvent("cost", candidate.Controller, "〈傲慢之罪〉使主宰效果额外消耗1士气",
-            source);
-        return true;
-    }
 
     private void RecalculateContinuousTroops()
     {

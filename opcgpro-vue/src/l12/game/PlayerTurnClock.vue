@@ -19,12 +19,18 @@ const clock = computed(() => {
   const player = snapshot?.players.find(entry => entry.playerIndex === props.playerIndex)
   if (!snapshot || !player) return null
   const elapsed = Math.max(0, nowMs.value - snapshot.receivedAtMs)
-  const ticking = player.connected && player.acting ? elapsed : 0
+  const preparation = snapshot.operationLimitMs <= 60_000
+  const timedPreparation = snapshot.operationLimitMs === 60_000
+  const normalTicking = !preparation && player.connected && player.acting ? elapsed : 0
+  const operationTicking = player.acting && (timedPreparation || (!preparation && player.connected)) ? elapsed : 0
   return {
-    total: Math.max(0, player.totalRemainingMs - ticking),
-    operation: Math.max(0, player.operationRemainingMs - ticking),
+    total: Math.max(0, player.totalRemainingMs - normalTicking),
+    operation: Math.max(0, player.operationRemainingMs - operationTicking),
     reconnect: player.reconnectRemainingMs == null ? null : Math.max(0, player.reconnectRemainingMs - elapsed),
     connected: player.connected,
+    acting: player.acting,
+    preparation,
+    timedPreparation,
   }
 })
 
@@ -35,13 +41,16 @@ function formatClock(value: number) {
 </script>
 
 <template>
-  <section class="player-turn-clock" :class="[`side-${side}`, { active, disconnected: clock && !clock.connected }]"
+  <section class="player-turn-clock" :class="[`side-${side}`, { active: clock?.acting ?? active, disconnected: clock && !clock.connected }]"
     data-ui-contract="persistent-player-turn-clock" :data-player-index="playerIndex">
-    <strong>{{ active ? '回合玩家' : '等待回合' }}</strong>
+    <strong>{{ clock?.preparation ? (clock.acting ? '准备操作' : '等待准备') : active ? '回合玩家' : '等待回合' }}</strong>
     <template v-if="clock">
-      <span><small>总时</small><b>{{ formatClock(clock.total) }}</b></span>
-      <span v-if="clock.connected"><small>本次</small><b>{{ formatClock(clock.operation) }}</b></span>
-      <span v-else><small>重连</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
+      <span v-if="!clock.preparation || clock.connected"><small>总时</small><b>{{ formatClock(clock.total) }}</b></span>
+      <span v-if="clock.timedPreparation && clock.acting"><small>准备</small><b>{{ formatClock(clock.operation) }}</b></span>
+      <span v-else-if="clock.preparation"><small>准备</small><b>{{ clock.acting ? '处理中' : '等待' }}</b></span>
+      <span v-if="clock.preparation && !clock.connected"><small>重连</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
+      <span v-if="!clock.preparation && clock.connected"><small>本次</small><b>{{ formatClock(clock.operation) }}</b></span>
+      <span v-if="!clock.preparation && !clock.connected"><small>重连</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
     </template>
     <span v-else class="untimed"><small>计时</small><b>无时限</b></span>
   </section>
@@ -49,10 +58,10 @@ function formatClock(value: number) {
 
 <style scoped>
 .player-turn-clock{box-sizing:border-box;display:flex;width:286px;min-height:34px;align-items:center;justify-content:flex-end;gap:9px;padding:5px 9px;border:1px solid #505b5f;background:rgba(5,9,11,.94);box-shadow:0 7px 18px rgba(0,0,0,.72);color:#aeb6b7;pointer-events:none}
-.player-turn-clock strong{margin-right:auto;padding:3px 7px;border:1px solid #4c5558;color:#8d9697;font-size:8px;letter-spacing:.12em;white-space:nowrap}
+.player-turn-clock strong{margin-right:auto;padding:3px 7px;border:1px solid #4c5558;color:#8d9697;font-size:max(14px,var(--l12-board-readable,14px));letter-spacing:.06em;white-space:nowrap}
 .player-turn-clock span{display:flex;min-width:68px;align-items:baseline;justify-content:flex-end;gap:5px}
-.player-turn-clock small{color:#879092;font-size:7px;font-weight:900;white-space:nowrap}
-.player-turn-clock b{color:#f2eee2;font:900 11px monospace;letter-spacing:.02em;white-space:nowrap}
+.player-turn-clock small{color:#879092;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;white-space:nowrap}
+.player-turn-clock b{color:#f2eee2;font-family:monospace;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;letter-spacing:.02em;white-space:nowrap}
 .player-turn-clock.active{border-color:#d5b65f;box-shadow:0 0 12px rgba(213,182,95,.3),0 7px 18px rgba(0,0,0,.72)}
 .player-turn-clock.active strong,.player-turn-clock.active b{border-color:#d5b65f;color:#f1d77e}
 .player-turn-clock.side-opponent.active{border-color:#c9505a}.player-turn-clock.side-opponent.active strong,.player-turn-clock.side-opponent.active b{border-color:#c9505a;color:#f28e96}

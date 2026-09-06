@@ -5,6 +5,7 @@ import { isHorizontalCardType } from '../cardPresentation'
 import { destructionRoundBackUrl, disasterRoundUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
+import BattleEventLog from './BattleEventLog.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
@@ -377,27 +378,6 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   }
   showNextDiceReveal()
 })
-const hiddenLogTypes = new Set([
-  'phase', 'phase-detail', 'draw-skipped', 'prompt', 'prompt-resolved', 'priority-pass',
-  'stack-push', 'stack-deferred', 'stack-open', 'stack-resolve', 'match-created',
-  'mulligan-start', 'end-turn', 'disaster-removed',
-])
-const events = computed(() => [...(props.game.recentEvents ?? [])]
-  .filter(event => !hiddenLogTypes.has(event.type)).reverse())
-const eventLabels: Record<string, string> = {
-  play: '出牌', attack: '进攻', combat: '战斗', defense: '抵挡', support: '支援', move: '位移',
-  response: '响应', 'counter-set': '盖伏', effect: '效果', 'faction-effect': '阵营',
-  'effect-trigger': '触发', 'effect-response': '响应', 'effect-activation': '发动',
-  'effect-negated': '无效', 'initiative-choice': '先后攻', mulligan: '调度', cost: '费用',
-  disaster: '天灾', 'disaster-active': '天灾', 'disaster-value': '天灾', damage: '伤害',
-  'disaster-reveal': '天灾',
-  'combat-stage': '进攻时序', 'combat-resume': '进攻时序', 'attack-aborted': '进攻结束',
-  'defense-invalid': '防御失效', grave: '墓地',
-  dice: '掷骰',
-  heal: '恢复', leave: '离场', put: '登场', search: '检索', reveal: '展示', return: '返回',
-  discard: '弃置', reorder: '排序', 'game-over': '胜负', 'extra-turn': '追加回合',
-}
-function eventLabel(event: ActionEvent) { return eventLabels[event.type] ?? '记录' }
 const combat = computed(() => {
   const pending = props.game.pendingDefense
   if (!pending) return null
@@ -442,8 +422,8 @@ const supportReady = computed(() => {
 function updateScale() {
   compactViewport.value = window.innerWidth < 820
   scale.value = compactViewport.value
-    ? Math.max(.7, Math.min(1, window.innerHeight / 968))
-    : Math.min(window.innerWidth / 1440, window.innerHeight / 968)
+    ? Math.max(.7, Math.min(1, (window.innerHeight - 52) / 968))
+    : Math.min(window.innerWidth / 1440, (window.innerHeight - 52) / 968)
   window.requestAnimationFrame(updateInspectorFloatRect)
 }
 onMounted(() => {
@@ -704,24 +684,6 @@ function activateMaster(ability: string) {
   command('activateAbility', { cardInstanceId: me.value.master.masterId, ability })
   masterPlayerIndex.value = null
 }
-type EventPart = { kind: 'text'; text: string } | { kind: 'card'; card: Card }
-function eventParts(event: ActionEvent): EventPart[] {
-  const cards = [...new Map((event.cards ?? []).map(card => [card.name, card])).values()]
-  if (!cards.length) return [{ kind: 'text', text: event.text }]
-  const names = cards.map(card => card.name).sort((a, b) => b.length - a.length)
-  const escaped = names.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const pattern = new RegExp(`(${escaped.join('|')})`, 'g')
-  const byName = new Map(cards.map(card => [card.name, card]))
-  const parts: EventPart[] = event.text.split(pattern).filter(Boolean).map(text => {
-    const card = byName.get(text)
-    return card ? { kind: 'card', card } : { kind: 'text', text }
-  })
-  for (const card of cards) {
-    if (event.text.includes(card.name)) continue
-    parts.push({ kind: 'text', text: ' · ' }, { kind: 'card', card })
-  }
-  return parts
-}
 function playFromHand(card: Card) {
   if (hasBlockingPrompt.value) return
   if (!playableIds.value.includes(card.instanceId)) return
@@ -787,7 +749,7 @@ function statusTexts(card: Card) {
 
 <template>
   <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'read-only-board': readOnly }">
-    <div class="board-stage" :style="{ transform: `scale(${scale})` }">
+    <div class="board-stage" :style="{ transform: `scale(${scale})`, '--l12-board-readable': `${14 / Math.min(1, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
           <section v-if="sessionDisasters.length" class="grand-panel session-disaster-panel" aria-label="本局天灾">
@@ -947,14 +909,13 @@ function statusTexts(card: Card) {
         <aside class="board-rail right-rail">
           <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
             <article class="player-summary opponent-summary">
-              <header><h3>对手</h3><span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span></header>
+              <header><h3>对方</h3><span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span></header>
               <strong>{{ viewEnemy.name || '未命名玩家' }}</strong>
               <dl>
                 <div><dt>主宰</dt><dd>{{ viewEnemy.master.masterName || '未知主宰' }}</dd></div>
                 <div><dt>血量</dt><dd>{{ viewEnemy.master.hp }}/{{ viewEnemy.master.maxHp }}</dd></div>
-                <div><dt>阵营</dt><dd>{{ factionLabel(viewEnemy.faction) }}</dd></div>
               </dl>
-              <small class="battle-title"><b>{{ enemyBadge?.rankLabel || '未定级' }}</b><i>{{ enemyBadge?.masterTitle || '无主宰称号' }}</i></small>
+              <small v-if="enemyBadge?.rankLabel || enemyBadge?.masterTitle" class="battle-title"><b v-if="enemyBadge?.rankLabel">{{ enemyBadge.rankLabel }}</b><i v-if="enemyBadge?.masterTitle">{{ enemyBadge.masterTitle }}</i></small>
             </article>
             <hr/>
             <article class="player-summary my-summary">
@@ -963,26 +924,12 @@ function statusTexts(card: Card) {
               <dl>
                 <div><dt>主宰</dt><dd>{{ viewMe.master.masterName || '未知主宰' }}</dd></div>
                 <div><dt>血量</dt><dd>{{ viewMe.master.hp }}/{{ viewMe.master.maxHp }}</dd></div>
-                <div><dt>阵营</dt><dd>{{ factionLabel(viewMe.faction) }}</dd></div>
               </dl>
-              <small class="battle-title"><b>{{ myBadge?.rankLabel || '未定级' }}</b><i>{{ myBadge?.masterTitle || '无主宰称号' }}</i></small>
+              <small v-if="myBadge?.rankLabel || myBadge?.masterTitle" class="battle-title"><b v-if="myBadge?.rankLabel">{{ myBadge.rankLabel }}</b><i v-if="myBadge?.masterTitle">{{ myBadge.masterTitle }}</i></small>
             </article>
           </section>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
-            <div class="event-list">
-              <p v-for="event in events" :key="event.sequence"
-                :class="[`event-${event.type}`, { mine: event.playerIndex === game.you, opponent: event.playerIndex !== null && event.playerIndex !== undefined && event.playerIndex !== game.you }]">
-                <template v-if="event.type === 'turn-start'"><strong class="turn-divider">—— {{ event.text }} ——</strong></template>
-                <template v-else>
-                <b class="event-tag">{{ eventLabel(event) }}</b>
-                <span class="event-message"><template v-for="(part, index) in eventParts(event)" :key="index">
-                  <span v-if="part.kind === 'text'">{{ part.text }}</span>
-                  <button v-else class="log-card-link" @click="focusCard = part.card">{{ part.card.name }}</button>
-                </template></span>
-                </template>
-              </p>
-              <p v-if="!events.length" class="empty-log">等待对局开始</p>
-            </div>
+            <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
             <small>房间 {{ game.roomCode }} · REV {{ game.revision }}<br/>MATCH {{ game.matchId.slice(0,10) }}</small>
           </section>
           <section v-if="!combat && !readOnly" class="grand-panel action-panel"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
@@ -1029,6 +976,9 @@ function statusTexts(card: Card) {
 </template>
 
 <style scoped>
+.board-seam :deep(.l12-phase-track){left:200px;right:0;max-width:calc(100% - 200px);transform:translateY(-50%);flex-wrap:wrap;justify-content:center;gap:1px;padding:3px}.board-seam :deep(.l12-phase-track span){line-height:1.2;padding:3px 4px}.board-seam :deep(.l12-phase-track span i){width:1.1em;height:1.1em}
+.board-viewport{top:52px}.board-status-lane{height:auto!important;min-height:40px!important;flex-shrink:0}.player-summary :is(dt,dd,.connection-state,.battle-title b,.battle-title i){font-size:var(--l12-board-readable,14px)!important}.player-summary dl>div{grid-template-columns:3em minmax(0,1fr)!important}
+.right-rail{width:280px}.player-summary dl>div{grid-template-columns:3em minmax(0,1fr)}.player-summary header{flex-wrap:wrap}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.board-rail .action-panel{max-height:28%;overflow:auto}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
 .felt-board{
   --l12-board-seam-safe-height:76px;
   display:grid;
@@ -1038,8 +988,8 @@ function statusTexts(card: Card) {
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:34px;min-height:34px;align-items:center;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0}.my-status-lane{order:0}
 .player-panel{box-sizing:border-box;height:auto!important;min-height:286px;flex:none;overflow:visible!important}
 .player-summary{display:grid;min-width:0;gap:6px}.player-summary header{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:8px}.player-summary header h3{margin:0}.player-summary strong{max-width:none!important;overflow:visible!important;white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.35!important}
-.player-summary dl{display:grid;gap:3px;margin:0}.player-summary dl>div{display:grid;grid-template-columns:31px minmax(0,1fr);gap:5px;align-items:start}.player-summary dt{color:#687270;font-size:8px;font-weight:900}.player-summary dd{min-width:0;margin:0;color:#c8ccc8;font-size:9px;font-weight:800;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
-.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:8px!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.player-summary dl{display:grid;gap:3px;margin:0}.player-summary dl>div{display:grid;grid-template-columns:31px minmax(0,1fr);gap:5px;align-items:start}.player-summary dt{color:#687270;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}.player-summary dd{min-width:0;margin:0;color:#c8ccc8;font-size:max(14px,var(--l12-board-readable,14px));font-weight:800;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:max(14px,var(--l12-board-readable,14px))!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
 .player-panel>hr{margin:9px 0!important}.player-summary .battle-title{display:flex;min-width:0;flex-wrap:wrap;gap:4px;margin-top:1px}.player-summary .battle-title b,.player-summary .battle-title i{max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}
 .battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch}
@@ -1050,11 +1000,11 @@ function statusTexts(card: Card) {
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
 .battlefield-half.my-half{grid-row:3}
 .board-seam :deep(.l12-phase-track){max-height:calc(var(--l12-board-seam-safe-height) - 12px)}
-.session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:7px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
-.board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;padding:9px 18px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:12px;font-weight:900;pointer-events:none}
-.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;letter-spacing:.04em;text-align:center}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
-.combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:7px}.combat-versus em{color:#e5bd60;font-size:18px;font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:10px}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
-.record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:10px;white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:8px;line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
+.session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
+.board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;padding:9px 18px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;pointer-events:none}
+.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;letter-spacing:.04em;text-align:center}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
+.combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:max(14px,var(--l12-board-readable,14px))}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-readable,14px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:max(14px,var(--l12-board-readable,14px))}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
+.record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:max(14px,var(--l12-board-readable,14px));white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:max(14px,var(--l12-board-readable,14px));line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
 .disaster-zone {
   left: 53px;
   width: 112px;
@@ -1075,15 +1025,15 @@ function statusTexts(card: Card) {
   right: auto;
   transform: translate(-50%,-50%);
 }
-.disaster-value b { font-size: 17px; }
-.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:11px}.board-target-controls span{color:#8f9894;font-size:9px}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
+.disaster-value b { font-size: max(17px,var(--l12-board-readable,14px)); }
+.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:max(14px,var(--l12-board-readable,14px))}.board-target-controls span{color:#8f9894;font-size:max(14px,var(--l12-board-readable,14px))}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
-.inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:8px;font-weight:800;line-height:1.45}
-.inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:8px;font-weight:900}
+.inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:800;line-height:1.45}
+.inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}
 .session-disaster-panel{display:grid;justify-items:start}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:8px}.session-disaster-strip button{width:44px;min-width:44px;height:44px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(146px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
-.dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:44px;line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:13px;font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
+.dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-readable,14px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
-.battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:8px;font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
+.battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:max(14px,var(--l12-board-readable,14px));font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
 </style>

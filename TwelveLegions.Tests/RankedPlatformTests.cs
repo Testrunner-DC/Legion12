@@ -8,6 +8,19 @@ public sealed class RankedPlatformTests
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
     [Fact]
+    public void BattleIdentityDoesNotInventEmptyRankOrTitlePlaceholders()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-empty-identity", Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var account = store.Register("empty-identity", "Password123!").Account!;
+
+        var identity = store.RankedBattleIdentity(account.Id, 0);
+
+        Assert.Equal(string.Empty, identity.RankLabel);
+        Assert.Null(identity.MasterTitle);
+    }
+
+    [Fact]
     public void PlacementSettlementIsIdempotentAndLeaderboardIsFactionScoped()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked", Guid.NewGuid().ToString("N"));
@@ -129,12 +142,18 @@ public sealed class RankedPlatformTests
         for (var index = 0; index < 5; index++)
             store.SettleRankedMatch($"master-placement-{index}", amaterasu.Id, rival.Id, 0,
                 "S01-04M1", "S02-03M1");
+        var now = DateTimeOffset.UtcNow;
+        store.ImportRankedMasterTitleFacts(TitleFacts("master-title", amaterasu.Id,
+            "S01-04M1", "ST03-M1", now));
 
         var champion = Assert.Single(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
         Assert.Equal("天照大神", champion.MasterName);
         Assert.Equal("最强天照", champion.Title);
         Assert.Equal(amaterasu.Username, champion.Username);
-        Assert.Equal(5, champion.Games);
+        Assert.Equal(20, champion.Games);
+        var leaderboard = Assert.Single(store.RankedLeaderboard("order"));
+        Assert.Equal("S01-04M1", leaderboard.FavoriteMasterId);
+        Assert.Equal("天照大神", leaderboard.FavoriteMasterName);
         var profile = store.RankedProfile(amaterasu.Id);
         Assert.Contains("最强天照", profile.Titles);
         Assert.Contains("最强天照", profile.MasterTitles);
@@ -146,12 +165,12 @@ public sealed class RankedPlatformTests
         Assert.Throws<ArgumentException>(() => store.SelectRankedMasterTitle(amaterasu.Id, "未获得的称号"));
 
         store.SelectRankedFaction(amaterasu.Id, "fate");
-        Assert.DoesNotContain(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
-        Assert.Null(store.RankedProfile(amaterasu.Id).SelectedMasterTitle);
+        Assert.Contains(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
+        Assert.Equal("最强天照", store.RankedProfile(amaterasu.Id).SelectedMasterTitle);
     }
 
     [Fact]
-    public void ExistingSeasonRankedMatchesBackfillMasterTitlesExactlyOnce()
+    public void LegacyRankedHistoryDoesNotFabricateTitleFactsAndRichFactsImportExactlyOnce()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-master-import", Guid.NewGuid().ToString("N"));
         var catalog = Catalog;
@@ -171,9 +190,15 @@ public sealed class RankedPlatformTests
 
         Assert.Equal(5, store.ImportRankedMasterHistory(history));
         Assert.Equal(0, store.ImportRankedMasterHistory(history));
+        Assert.DoesNotContain(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
+
+        var facts = TitleFacts("historic-master-fact", amaterasu.Id,
+            "S01-04M1", "ST03-M1", now);
+        Assert.Equal(20, store.ImportRankedMasterTitleFacts(facts));
+        Assert.Equal(0, store.ImportRankedMasterTitleFacts(facts));
         var champion = Assert.Single(store.RankedMasterChampions(), item => item.MasterId == "S01-04M1");
-        Assert.Equal(5, champion.Games);
-        Assert.Equal(5, champion.Wins);
+        Assert.Equal(20, champion.Games);
+        Assert.Equal(20, champion.Wins);
         Assert.Equal("最强天照", champion.Title);
     }
 
@@ -191,6 +216,8 @@ public sealed class RankedPlatformTests
         for (var index = 0; index < 5; index++)
             store.SettleRankedMatch($"season-honor-{index}", champion.Id, rival.Id, 0,
                 "S01-04M1", "S02-03M1");
+        store.ImportRankedMasterTitleFacts(TitleFacts("season-honor-title", champion.Id,
+            "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
         Assert.Contains("最强天照", store.RankedProfile(champion.Id).Titles);
         Assert.Empty(store.RankedSeasonHonors());
 
@@ -300,4 +327,33 @@ public sealed class RankedPlatformTests
         Assert.Equal("repeat-concurrent", replay.First.MatchId);
         Assert.Equal(9, reloaded.RankedProfile(first.Id).Wins + reloaded.RankedProfile(first.Id).Losses);
     }
+
+    [Fact]
+    public void RankedConfigRejectsDifferentNumericValuesForTheSameTierAcrossFactions()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-shared-tiers", Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var admin = store.Login("Admin", "L12master").Account!;
+        var config = store.RankedConfig(admin);
+        var factions = config.Factions.Select((faction, factionIndex) => faction with
+        {
+            Tiers = faction.Tiers.Select((tier, tierIndex) => factionIndex == 1 && tierIndex == 2
+                ? tier with { BaseDelta = tier.BaseDelta + 1 }
+                : tier).ToArray(),
+        }).ToArray();
+
+        var error = Assert.Throws<L12OperationsConfigException>(() => store.UpdateRankedConfig(admin,
+            config with { Factions = factions }, "验证同段位共享数值", new L12AdminAuditContext("ranked-tier-test")));
+
+        Assert.Equal("inconsistent_ranked_tier_values", error.Code);
+        Assert.Equal(config.Factions[1].Tiers[2].BaseDelta,
+            store.RankedConfig(admin).Factions[1].Tiers[2].BaseDelta);
+    }
+
+    private static L12RankedMasterTitleMatchFact[] TitleFacts(string prefix, string accountId,
+        string masterId, string opponentMasterId, DateTimeOffset now, int count = 20)
+        => Enumerable.Range(0, count).Select(index => new L12RankedMasterTitleMatchFact(
+            $"{prefix}-{index}", accountId, $"{prefix}-opponent-{index % 10}", masterId,
+            opponentMasterId, 0, 6, now.AddDays(-(index % 5)).AddMinutes(-index - 1),
+            "normal", true)).ToArray();
 }

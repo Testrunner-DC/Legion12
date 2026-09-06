@@ -33,7 +33,8 @@ public sealed record L12RankedBroadcastClaimView(L12RankedBroadcastView Broadcas
     string ClaimToken, DateTimeOffset LeaseExpiresAt);
 public sealed record L12RankedLeaderboardEntry(int Rank, string Username,
     string Faction, int SevenValue, string DisplayValue, string Tier, string? Title,
-    IReadOnlyList<string> Titles, int Wins, int Losses, int WinStreak);
+    IReadOnlyList<string> Titles, string? FavoriteMasterId, string? FavoriteMasterName,
+    int Wins, int Losses, int WinStreak);
 public sealed record L12RankedMasterChampionView(string MasterId, string MasterName,
     string Username, string Title, int SevenValue, string DisplayValue, int Games, int Wins);
 public sealed record L12RankedAnalyticsSummary(int Matches, int PlacedPlayers,
@@ -168,6 +169,7 @@ public sealed partial class L12PlatformStore
         public string MasterId { get; set; } = string.Empty;
         public int Games { get; set; }
         public int Wins { get; set; }
+        public List<L12RankedMasterTitleMatchFact> TitleFacts { get; set; } = [];
     }
     private sealed class RankedMasterStatsAccumulator
     {
@@ -213,6 +215,7 @@ public sealed partial class L12PlatformStore
             _data.RankedBroadcasts ??= [];
             _data.RankedBroadcastDeliveries ??= [];
             _data.RankedMasterRecords ??= [];
+            foreach (var record in _data.RankedMasterRecords) record.TitleFacts ??= [];
             _data.RankedMasterRecordedMatchIds ??= [];
             _data.RankedIntegrityAudits ??= [];
             _data.RankedConfig.MasterTitles ??= [];
@@ -340,9 +343,10 @@ public sealed partial class L12PlatformStore
             var row = RequireRankedProfile(accountId);
             var rank = FactionRank(row);
             var placementTitle = FactionPlacementTitle(row, rank);
-            var rankLabel = placementTitle ?? (row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
-                ? TierFor(row).Name
-                : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}");
+            var rankLabel = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty
+                : placementTitle ?? (row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
+                    ? TierFor(row).Name
+                    : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}");
             var masterTitles = PlayerMasterTitles(row, CurrentMasterChampions());
             var selected = SelectedMasterTitle(row, masterTitles);
             return new L12RankedBattleIdentityView(playerIndex, rankLabel, selected);
@@ -411,12 +415,13 @@ public sealed partial class L12PlatformStore
             return CurrentMasterChampions().Values
                 .Select(record =>
                 {
-                    var profile = _data.RankedProfiles.First(row => row.AccountId == record.AccountId
-                        && row.SeasonId == record.SeasonId);
+                    var currentSeason = RequireOperationsConfig().Season.Id;
+                    var profile = _data.RankedProfiles.FirstOrDefault(row => row.AccountId == record.AccountId
+                        && row.SeasonId == currentSeason);
                     var masterName = MasterName(record.MasterId);
                     return new L12RankedMasterChampionView(record.MasterId, masterName,
-                        AccountName(record.AccountId), MasterTitle(record.MasterId), profile.SevenValue,
-                        $"七曜值 {profile.SevenValue:N0}", record.Games, record.Wins);
+                        AccountName(record.AccountId), MasterTitle(record.MasterId), profile?.SevenValue ?? 0,
+                        $"七曜值 {(profile?.SevenValue ?? 0):N0}", record.Games, record.Wins);
                 })
                 .OrderBy(item => item.MasterName, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -669,7 +674,14 @@ public sealed partial class L12PlatformStore
         {
             ValidateRankedIdentity(matchId, firstAccountId, secondAccountId, winner);
             if (TryGetRankedSettlementReplayLocked(matchId, firstAccountId, secondAccountId, winner,
-                    firstMasterId, secondMasterId, integrity, out var replay)) return replay;
+                    firstMasterId, secondMasterId, integrity, out var replay))
+            {
+                if (integrity is not null && ImportRankedMasterTitleFactLocked(new L12RankedMasterTitleMatchFact(
+                        matchId, firstAccountId, secondAccountId, firstMasterId ?? string.Empty,
+                        secondMasterId ?? string.Empty, winner, integrity.FinalRound, integrity.EndedAt,
+                        integrity.ConclusionKind, true))) Save();
+                return replay;
+            }
 
             var first = RequireRankedProfile(firstAccountId);
             var second = RequireRankedProfile(secondAccountId);
@@ -693,6 +705,11 @@ public sealed partial class L12PlatformStore
             second.HiddenRating = Math.Clamp(secondRating + 24d * ((winner == 1 ? 1d : 0d) - (1d - expectedFirst)), 500d, 2500d);
             UpdateMasterRecord(first, firstMasterId, winner == 0);
             UpdateMasterRecord(second, secondMasterId, winner == 1);
+            if (integrity is not null)
+                ImportRankedMasterTitleFactLocked(new L12RankedMasterTitleMatchFact(matchId,
+                    firstAccountId, secondAccountId, firstMasterId ?? string.Empty,
+                    secondMasterId ?? string.Empty, winner, integrity.FinalRound, integrity.EndedAt,
+                    integrity.ConclusionKind, true));
             if (!_data.RankedMasterRecordedMatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase))
                 _data.RankedMasterRecordedMatchIds.Add(matchId);
             _data.RankedSettlements.Add(firstSettlement);
@@ -901,9 +918,15 @@ public sealed partial class L12PlatformStore
         var faction = FactionFor(row.Faction!);
         var factionRank = FactionRank(row);
         var titles = PlayerTitles(row, factionRank, champions);
+        var favoriteMaster = _data.RankedMasterRecords.Where(item => item.AccountId == row.AccountId
+                && item.SeasonId == row.SeasonId && item.Games > 0)
+            .OrderByDescending(item => item.Games).ThenByDescending(item => item.Wins)
+            .ThenBy(item => item.MasterId, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
         return new(rank, AccountName(row.AccountId), faction.Name, row.SevenValue,
             $"七曜值 {row.SevenValue:N0}", TierFor(row).Name,
-            titles.FirstOrDefault(), titles, row.Wins, row.Losses, row.WinStreak);
+            titles.FirstOrDefault(), titles, favoriteMaster?.MasterId,
+            favoriteMaster is null ? null : MasterName(favoriteMaster.MasterId),
+            row.Wins, row.Losses, row.WinStreak);
     }
 
     private IReadOnlyList<string> PlayerTitles(RankedProfileRow row, int factionRank,
@@ -974,27 +997,7 @@ public sealed partial class L12PlatformStore
             .OrderBy(card => card.Id, StringComparer.OrdinalIgnoreCase).Select(card => card.Id);
 
     private Dictionary<string, RankedMasterRecordRow> CurrentMasterChampions()
-    {
-        var season = RequireOperationsConfig().Season.Id;
-        return _data.RankedMasterRecords.Where(record => record.SeasonId == season
-                && _data.Accounts.Any(account => account.Id == record.AccountId && !account.Disabled && !account.Deleted))
-            .GroupBy(record => record.MasterId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.Select(record => new
-                {
-                    Record = record,
-                    Profile = _data.RankedProfiles.FirstOrDefault(profile => profile.AccountId == record.AccountId
-                        && profile.SeasonId == season && profile.PlacementPlayed >= _data.RankedConfig!.PlacementMatches),
-                })
-                .Where(item => item.Profile is not null)
-                .OrderByDescending(item => item.Profile!.SevenValue)
-                .ThenByDescending(item => item.Record.Wins)
-                .ThenByDescending(item => item.Record.Games)
-                .ThenByDescending(item => item.Profile!.HiddenRating)
-                .ThenBy(item => AccountName(item.Record.AccountId), StringComparer.OrdinalIgnoreCase)
-                .Select(item => item.Record).FirstOrDefault())
-            .Where(record => record is not null)
-            .ToDictionary(record => record!.MasterId, record => record!, StringComparer.OrdinalIgnoreCase);
-    }
+        => ProjectCurrentMasterChampions(DateTimeOffset.UtcNow);
 
     private string MasterName(string masterId)
         => _data.RankedConfig!.MasterTitles.FirstOrDefault(item => item.MasterId.Equals(masterId,
@@ -1081,6 +1084,12 @@ public sealed partial class L12PlatformStore
                     WinStreakCap = Math.Max(0, tier.WinStreakCap), LossProtectionCap = Math.Max(0, tier.LossProtectionCap),
                     RatingGapCap = Math.Max(0, tier.RatingGapCap), Color = tier.Color.Trim(), Icon = tier.Icon.Trim() }).ToList() });
         }
+        var sharedTierValues = value.Factions.Select(faction => faction.Tiers.OrderBy(tier => tier.Minimum)
+            .Select(tier => (tier.Minimum, tier.BaseDelta, tier.WinStreakCap,
+                tier.LossProtectionCap, tier.RatingGapCap)).ToArray()).ToArray();
+        if (sharedTierValues.Skip(1).Any(tiers => !tiers.SequenceEqual(sharedTierValues[0])))
+            throw new L12OperationsConfigException("inconsistent_ranked_tier_values",
+                "同一段位的阈值、基础分、连胜上限、连败保护上限与分差修正上限必须在三个派系中保持一致");
         foreach (var master in value.MasterTitles ?? [])
         {
             if (string.IsNullOrWhiteSpace(master.MasterId) || string.IsNullOrWhiteSpace(master.Title)) continue;

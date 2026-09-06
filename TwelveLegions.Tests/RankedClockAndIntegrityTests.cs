@@ -281,8 +281,10 @@ public sealed class RankedClockAndIntegrityTests
             manager.Connect(firstSession, first.Id, first.Username, fingerprint);
             manager.Connect(secondSession, second.Id, second.Username, fingerprint);
             await manager.JoinMatchmakingAsync(firstSession, "ranked", null);
-            var matched = await manager.JoinMatchmakingAsync(secondSession, "ranked", null);
-            var game = matched.Where(message => message.SessionId == firstSession).Select(MessageJson)
+            await manager.JoinMatchmakingAsync(secondSession, "ranked", null);
+            await AdvanceToNormalClockAsync(manager, firstSession, secondSession);
+            var game = (await manager.RecoveryStateWithAckAsync(firstSession))
+                .Where(message => message.SessionId == firstSession).Select(MessageJson)
                 .Single(payload => payload.GetProperty("type").GetString() == "gameState");
             var acting = game.GetProperty("rankedClock").GetProperty("players").EnumerateArray()
                 .Single(player => player.GetProperty("acting").GetBoolean()).GetProperty("playerIndex").GetInt32();
@@ -304,6 +306,68 @@ public sealed class RankedClockAndIntegrityTests
 
         public Guid SessionFor(int playerIndex) => playerIndex == 0 ? FirstSession : SecondSession;
         public L12AccountView AccountFor(int playerIndex) => playerIndex == 0 ? First : Second;
+
+        private static async Task AdvanceToNormalClockAsync(L12RoomManager manager, Guid firstSession,
+            Guid secondSession)
+        {
+            var sessions = new[] { firstSession, secondSession };
+            for (var step = 0; step < 40; step++)
+            {
+                var states = new JsonElement[2];
+                for (var player = 0; player < 2; player++)
+                {
+                    states[player] = (await manager.RecoveryStateWithAckAsync(sessions[player]))
+                        .Where(message => message.SessionId == sessions[player]).Select(MessageJson)
+                        .Single(payload => payload.GetProperty("type").GetString() == "gameState")
+                        .GetProperty("state");
+                }
+                var phase = states[0].GetProperty("phase").GetString();
+                if (phase == "Mulligan")
+                {
+                    for (var player = 0; player < 2; player++)
+                    {
+                        if (states[player].GetProperty("players")[player].GetProperty("mulliganDone").GetBoolean())
+                            continue;
+                        await manager.HandleActionAsync(sessions[player], JsonSerializer.SerializeToElement(new
+                        {
+                            type = "mulligan",
+                            cardInstanceIds = Array.Empty<string>(),
+                        }, WebJson));
+                    }
+                    return;
+                }
+
+                JsonElement prompt = default;
+                var owner = -1;
+                for (var player = 0; player < 2; player++)
+                {
+                    var prompts = states[player].GetProperty("prompts").EnumerateArray().ToArray();
+                    if (prompts.Length == 0) continue;
+                    prompt = prompts[0];
+                    owner = player;
+                    break;
+                }
+                if (owner < 0) throw new InvalidOperationException("排位计时夹具无法推进准备流程");
+                var valid = prompt.GetProperty("validChoices").EnumerateArray()
+                    .Select(choice => choice.GetString()!).ToArray();
+                var choices = prompt.GetProperty("kind").GetString() switch
+                {
+                    "initiative" => new[] { "first" },
+                    "disaster-ban" or "disaster-pick" => valid.Take(1).ToArray(),
+                    "disaster-reveal" => [],
+                    "optional" when valid.Contains("no") => new[] { "no" },
+                    "trial-order" => valid,
+                    var kind => throw new InvalidOperationException($"未识别的准备 Prompt：{kind}"),
+                };
+                await manager.HandleActionAsync(sessions[owner], JsonSerializer.SerializeToElement(new
+                {
+                    type = "resolvePrompt",
+                    promptId = prompt.GetProperty("promptId").GetString(),
+                    cardInstanceIds = choices,
+                }, WebJson));
+            }
+            throw new InvalidOperationException("排位计时夹具未进入正常25/4分钟阶段");
+        }
 
         public IReadOnlyList<L12RankedIntegrityAuditView> Audits()
         {
