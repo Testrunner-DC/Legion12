@@ -524,7 +524,7 @@ public sealed class RankedPersistenceRecoveryTests
             var matchPath = Path.Combine(directory, "matches.db");
             await using var recorder = new MatchRecorder(matchPath);
             await recorder.InitializeAsync();
-            var now = new DateTimeOffset(2026, 9, 6, 11, 0, 0, TimeSpan.Zero);
+            var clock = new TestClock(DateTimeOffset.UtcNow);
             const string roomCode = "DUP777";
             var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
 
@@ -540,16 +540,16 @@ public sealed class RankedPersistenceRecoveryTests
             var firstGame = new L12GameEngine(catalog, "duplicate-room-first", roomCode, 101,
                 [accounts[0].Username, accounts[1].Username], decks);
             await recorder.StartRankedAsync(firstGame, accounts[0].Id, accounts[1].Id,
-                decks, Runtime(firstGame, now));
+                decks, Runtime(firstGame, clock.UtcNow));
             await Task.Delay(20);
             var secondGame = new L12GameEngine(catalog, "duplicate-room-second", roomCode, 102,
                 [accounts[2].Username, accounts[3].Username], decks);
             await recorder.StartRankedAsync(secondGame, accounts[2].Id, accounts[3].Id,
-                decks, Runtime(secondGame, now));
+                decks, Runtime(secondGame, clock.UtcNow));
 
             var restoredPlatform = new L12PlatformStore(platformPath, catalog.PresetDecks,
                 officialCards: catalog.Cards);
-            var manager = new L12RoomManager(catalog, recorder, restoredPlatform, () => now);
+            var manager = new L12RoomManager(catalog, recorder, restoredPlatform, () => clock.UtcNow);
             var recovery = await manager.RestoreRankedRoomsAsync();
 
             Assert.Equal(1, recovery.Restored);
@@ -575,6 +575,8 @@ public sealed class RankedPersistenceRecoveryTests
         await using var fixture = await RankedFixture.CreateAsync("corrupt-runtime-row");
         var badInitial = await fixture.CreateAdditionalMatchAsync("corrupt-initial-row");
         var healthy = await fixture.CreateAdditionalMatchAsync("healthy-row");
+        var persistedRuntime = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
         await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
                          $"Data Source={fixture.MatchPath}"))
         {
@@ -609,6 +611,10 @@ public sealed class RankedPersistenceRecoveryTests
             Assert.Equal(1, await corruptInitial.ExecuteNonQueryAsync());
         }
 
+        // Explicitly simulate a wall-clock rollback after all three rows were persisted. The two
+        // incompatible rows must still produce valid outboxes, while the healthy row remains recoverable.
+        fixture.Clock.UtcNow = persistedRuntime.StartedAt - TimeSpan.FromMinutes(1);
+
         await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
         await restoredRecorder.InitializeAsync();
         var restoredPlatform = fixture.ReloadPlatform();
@@ -618,7 +624,9 @@ public sealed class RankedPersistenceRecoveryTests
 
         Assert.Equal(1, recovery.Restored);
         Assert.Equal(2, recovery.Invalidated);
+        Assert.Equal(2, recovery.SettlementsApplied);
         Assert.Equal(0, recovery.Failed);
+        Assert.Equal(0, await restoredRecorder.CountPendingRankedSettlementsAsync());
         Assert.Equal(1, await restoredRecorder.CountActiveRankedRuntimesAsync());
         var claimSession = Guid.NewGuid();
         var claim = JsonSerializer.SerializeToElement(await restored.ConnectAsync(claimSession,
@@ -648,9 +656,9 @@ public sealed class RankedPersistenceRecoveryTests
         }
     }
 
-    private sealed class TestClock
+    private sealed class TestClock(DateTimeOffset utcNow)
     {
-        public DateTimeOffset UtcNow { get; set; } = new(2026, 9, 6, 10, 0, 0, TimeSpan.Zero);
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
     }
 
     private sealed class RankedFixture : IAsyncDisposable
@@ -686,9 +694,9 @@ public sealed class RankedPersistenceRecoveryTests
             var second = platform.Register($"ps{identity}", "Password123!").Account!;
             platform.SelectRankedFaction(first.Id, "order");
             platform.SelectRankedFaction(second.Id, "chaos");
+            var clock = new TestClock(DateTimeOffset.UtcNow);
             var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
             await recorder.InitializeAsync();
-            var clock = new TestClock();
             var manager = new L12RoomManager(catalog, recorder, platform, () => clock.UtcNow);
             var firstSession = Guid.NewGuid();
             var secondSession = Guid.NewGuid();

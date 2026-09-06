@@ -207,8 +207,11 @@ public sealed partial class L12RoomManager
     {
         var now = _utcNow();
         var runtime = source.Runtime;
-        var started = runtime?.StartedAt
+        var reportedStarted = runtime?.StartedAt
             ?? (DateTimeOffset.TryParse(source.StartedUtc, out var parsed) ? parsed : now);
+        // Recovery must still emit a deliverable invalidation when the wall clock moved backwards.
+        // Keep the corrupt source untouched for audit, but do not manufacture a negative duration.
+        var started = reportedStarted > now ? now : reportedStarted;
         var envelope = new L12RankedSettlementEnvelope(1, source.MatchId,
             source.AccountIds.ElementAtOrDefault(0) ?? string.Empty,
             source.AccountIds.ElementAtOrDefault(1) ?? string.Empty,
