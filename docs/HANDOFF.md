@@ -4,10 +4,12 @@
 
 ## 当前发布批次
 
+- `OPS-20260907-257` 已按用户明确确认清理旧服务器两份过期内容寻址卡图库：`3fb52d…` 与 `f0c581…`；表观文件合计 `522,647,629` 字节，稳定磁盘可用空间增加 `535,859,200` 字节（约 511 MiB）。旧机仅保留当前回滚图库 `910b3449…`，其 1812 个文件、`237,007,398` 字节及全树聚合 SHA256 `f3cf6abac06472c90c145a16711abc95e59370ca2ef60b08a1b290f1831611d9` 均未变化。
+- 本次仅删除两个精确卡图目录；旧机 runtime、releases、incoming、迁服证据与其他项目未改动，服务继续 inactive/disabled、`8083` 关闭、Legion12 生效 vhost 为0。历史 release `e901275…` 与 `62739a1…` 的卡图链接因此悬空；指定活动/回滚版本继续引用保留的 `910b…`。新机公网 health、WebSocket、362项 manifest 与三张代表卡复核通过。
 - `BUG-20260907-256` 已修复迁服后浏览器仍复用旧节点所产生的登录/注册 403，并把个人中心账号错误改为表单旁可见反馈；未放宽后端认证或授权。本批最终提交已同步并部署到新服务器，提交级 Release 与线上 health、主页/个人中心、匿名登录安全响应、WebSocket 及服务状态证据保存在发布收据；不要为回填本提交号再次制造文档提交。
 - `OPS-20260906-255` 已完成正式迁服：Cloudflare `legion-12.com` 已从共享旧机切到独立新机 `38.76.208.25`，`www` 继续 CNAME 到主域。新机活动 release 为 `bf613517774dadad2c5e479ba3f09b1601f190d1-20260906T134042Z`，服务 active/enabled、重启0；公网 HTTPS、health、WebSocket、卡图及 www 308 均通过。
 - 最终冻结清单为1155文件、18,640,122,491字节，新旧聚合SHA256同为`f52f4c8fea042a073f745a76783f206186cb065d14ef23346897ccdc98eca744`，两份SQLite在两端均通过完整性检查。用户明确授权忽略在途玩家直接切换；一条命令序号不连续的旧排位恢复被隔离并按无效局结算，未恢复活动房间。
-- 旧服务器三个 Legion12 vhost 和主域证书已移除，应用保持 stopped/disabled，`8083` 关闭；旧 runtime/releases 与 `/root/legion12-final-cutover/20260906T150121Z` 继续作为回滚材料，不得误删。最终清理备份在其 `post-dns-cleanup-20260906T153600Z` 子目录；两机临时迁移凭据已删除。旧机其他项目不在本批范围内。未来部署只信任新服务器 IP 的已核验 SSH 指纹，不得再次复用旧 IP。
+- 旧服务器三个 Legion12 vhost 和主域证书已移除，应用保持 stopped/disabled，`8083` 关闭；旧 runtime/releases、保留的 `910b…` 卡图库与 `/root/legion12-final-cutover/20260906T150121Z` 继续作为回滚材料，不得误删。最终清理备份在其 `post-dns-cleanup-20260906T153600Z` 子目录；两机临时迁移凭据已删除。旧机其他项目不在本批范围内。未来部署只信任新服务器 IP 的已核验 SSH 指纹，不得再次复用旧 IP。
 - `OPS-20260906-254` 已完成线上旧域下线：Cloudflare 已删除 `legion12.grand-umi.com` 的唯一 A 记录，权威 NS、8.8.8.8 与 223.5.5.5 均确认名称不存在；旧域 Nginx HTTP/HTTPS vhost、TLS 证书及续期配置已移除。新域主页/health/WS 与 www 308 均正常，应用 release/runtime 未改动。实现提交为 `9013d5fe3b4ed115b8de149d8789ed8cd50585e0`；提交级Release通过规则2393/2393、平台74/74、UI270项、卡图40项、324+38项资源审计及Vite239模块。服务器原始备份为 `/root/legion12-nginx-backups/retire-old-domain-20260906T092149Z`，最终删除前完整恢复包为其子目录 `final-cleanup-pre-delete-20260906T110431Z`。
 - 最新为 `BATCH-20260906-253`（QUEUE-36..48）：最强称号固定近30日规则及事实账、玩家榜十列/方形头像、GM横卡详情、同级段位参数合并、Faith全主宰审计与支付补漏、14px可读基准、对局摘要/工具坞/日志、静默屏蔽好友申请、排位准备60秒与迁服准备文档均已完成。
 - Batch通过规则2393/2393、指定平台74/74、UI270项、卡图40项/324张、原子零旧入口与Vite239模块；无头桌面UI回归通过。本批同意一次推送main与部署、备份/迁移对账/重启/验证/失败回滚；不得因本条预判已上线。
@@ -27,10 +29,10 @@
 ## 工作区与线上
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，当前分支 `main`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
-- 当前应用与线上迁服基线：`bf613517774dadad2c5e479ba3f09b1601f190d1`；本次切换不重新构建应用，只迁移该已验证 release 与同一冻结点运行数据。
+- 当前线上应用为 `cb14e6b07d36fd8df1d1961b6a094d4f0b2577a9`；正式迁服基线仍为 `bf613517774dadad2c5e479ba3f09b1601f190d1`。本次旧机卡图清理未重新构建、切换或重启应用。
 - 本次同步前 GitHub `origin/main` 基线为应用提交 `505384b0137d45fd093e813533df1262bdcb03c5`；旧域运维提交已在其上完成rebase和提交级Release，下一任务仍须重新 `git fetch origin main` 核实最新值。
-- 线上已部署提交（deployed commit）：`bf613517774dadad2c5e479ba3f09b1601f190d1`。
-- 新机线上活动：`/opt/legion12-releases/bf613517774dadad2c5e479ba3f09b1601f190d1-20260906T134042Z`；稳定链接为`/opt/legion12-test`，持久化目录为`/opt/legion12-runtime`。旧机同项目release/runtime仅作回滚保留，不得重新启动形成双写。
+- 线上已部署提交（deployed commit）：`cb14e6b07d36fd8df1d1961b6a094d4f0b2577a9`。
+- 新机线上活动：`/opt/legion12-releases/cb14e6b07d36fd8df1d1961b6a094d4f0b2577a9-20260906T162358Z`；稳定链接为`/opt/legion12-test`，持久化目录为`/opt/legion12-runtime`。旧机同项目release/runtime仅作回滚保留，不得重新启动形成双写。
 - 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-37f1dcc9dd68-20260906T045907Z.tar.gz`；由服务器管理，不纳入本地清理。
 - 卡图资源版本：`910b3449455cd1505cc787eaf3412a4412c09d2e373c5450d85cd6c9994a5cc3`，原图及当前内容寻址图库保留。
 - 本地预览 `http://127.0.0.1:5174/` 已按用户2026-09-05最新要求关闭；端口无监听，不要在未获新指令时自动启动。
