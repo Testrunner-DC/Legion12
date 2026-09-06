@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const source=readFileSync(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url),'utf8')
+assert(source.includes('justify-content:safe center'),'Scrollable candidates must keep their first card accessible')
+assert(source.includes('overflow-x:hidden;overflow-y:auto'),'Full effect text must not trap footer actions below a clipped panel')
+assert(source.includes('.prompt-choices.effect-option-list{display:flex;width:100%;flex-wrap:wrap;justify-content:center}'))
+assert(source.includes('displayedChoices.value.filter(id => !isDeclineChoice(id))'))
+const footer=source.slice(source.indexOf('<footer class="prompt-action-footer">'),source.indexOf('</footer>',source.indexOf('<footer class="prompt-action-footer">')))
+assert(footer.indexOf('v-for="choice in supplementalChoices"')<footer.indexOf('prompt-confirm-choice'),'Decline must precede confirm in the same footer')
+assert(footer.includes(':disabled="l12State.pendingAction"'))
+assert(!source.includes('class="prompt-supplemental-choices"'),'Do not restore the extra decline-only row')
+assert(source.includes('.prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice'))
+assert(source.includes('width:112px;min-width:112px;min-height:44px'))
+for(const field of ['promptId','activationId','sourceInstanceId','sourceCardId','step','createdRevision','controller'])
+ assert(source.includes(`${field}: p.${field}`),'Preserve authoritative binding '+field)
+assert(source.includes('prompt.value?.data?.effectText?.trim()'),'Effect decision must display the authoritative full effect text')
+console.log('Prompt presentation guards passed: centered safe overflow, one equal-size footer, pending lock and full authoritative binding.')

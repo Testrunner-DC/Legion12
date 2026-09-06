@@ -2,6 +2,12 @@
 
 These rules apply to every change in this repository.
 
+## Permanent visual baseline
+
+- Unless the user explicitly requests a typography exception, all rendered interface text uses the shared Chinese sans-serif (黑体) font stack; distinguish hierarchy with font weight and existing size, not decorative, serif, or monospace families. Text baked into card images and logos is not restyled.
+- Select controls and their expanded options must follow the dark site palette, including dialogs, Teleport content, disabled states, and light operating-system themes. Never introduce a pure-white native dropdown. Preserve native keyboard interaction and visible focus.
+- After typography/control changes, check narrow-screen containment, clipping, overlap and readability; keep the shared theme guard in the normal frontend verification chain.
+
 1. Before fixing a bug, read `docs/BUGFIX-REGISTRY.md`, identify matching prior fixes, and inspect the current local diff. The local worktree is the source of truth; never reset, checkout, or overwrite it from a remote copy.
 2. Fix shared causes before individual cards. For every card-related bug, scan the complete existing card pool for cards with the same timing, payment, targeting, zone, or presentation pattern. Record the scan query and affected cards.
 3. Add a regression guard with every fix: a server test, frontend contract/build check, catalog invariant, or a combination. Review `git diff` after the change and do not replace unrelated local edits.

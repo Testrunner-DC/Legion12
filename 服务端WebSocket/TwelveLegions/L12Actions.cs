@@ -22,14 +22,32 @@ public sealed partial class L12GameEngine
 
     private bool TryCreateGraveRepresentationPrompt(int playerIndex,
         IReadOnlyList<L12CardInstance> selectedCards, string faction, int minimum, int maximum,
-        bool legionOnly, string continuation, Dictionary<string, string> data)
+        bool legionOnly, string continuation, Dictionary<string, string> data,
+        out string? representation, out bool complete)
     {
-        var choices = L12StructuredCardRules.GraveRepresentationChoices(State.Players[playerIndex], selectedCards,
-            faction, minimum, maximum, legionOnly);
-        if (choices.Count == 0) return false;
+        var progress = data.GetValueOrDefault("graveRepresentationProgress", string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!L12StructuredCardRules.TryBuildNextGraveRepresentationPrompt(State.Players[playerIndex], selectedCards,
+                progress, faction, minimum, maximum, legionOnly, out var currentCard, out var choices,
+                out representation, out var currentOrdinal, out var variableCount))
+        {
+            complete = false;
+            return false;
+        }
+        complete = currentCard is null;
+        if (complete) return true;
+        foreach (var key in data.Keys.Where(key => key.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase))
+            .ToArray()) data.Remove(key);
         foreach (var pair in choices) data[pair.Key] = pair.Value;
+        data["graveRepresentationEntityId"] = currentCard!.InstanceId;
+        data["graveRepresentationOrdinal"] = currentOrdinal.ToString();
+        data["graveRepresentationCount"] = variableCount.ToString();
+        data["previewCardId"] = currentCard.InstanceId;
+        data["previewPresentation"] = "information-card";
+        AddPromptCardData(data, currentCard);
         CreateMappedChoicePrompt(playerIndex, "option",
-            $"墓地费用：选择〈渴求死亡的勇士〉本次视为几张{(legionOnly ? "军团" : "卡牌")}",
+            $"墓地费用：第{currentOrdinal}/{variableCount}张〈{currentCard.Name}〉" +
+            $"本次视为几张{(legionOnly ? "军团" : "卡牌")}",
             choices.Keys, 1, 1, continuation, data, isPrivate: true);
         return true;
     }
@@ -118,7 +136,8 @@ public sealed partial class L12GameEngine
 
         if (card.CardId == "S02-0302" && command.Choice?.StartsWith("rollo:", StringComparison.Ordinal) != true)
         {
-            var choices = player.Graveyard.Where(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))
+            var choices = player.Graveyard.Where(candidate => L12StructuredCardRules.HasFaction(player, candidate, "asgard")
+                    && CanEnterHandOrLibrary(candidate))
                 .ToArray();
             if (choices.Length == 0)
                 command = command with { Choice = "rollo:" };
@@ -197,12 +216,12 @@ public sealed partial class L12GameEngine
         if (!string.IsNullOrWhiteSpace(sigurdReturnId) && sigurdReturn is null)
             return CommandResult.Reject("〈蛇眼西格德〉选择的墓地卡牌已失效");
         var rolloCards = rolloReturns.Select(id => player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == id
-                && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
+                && L12StructuredCardRules.HasFaction(player, candidate, "asgard") && CanEnterHandOrLibrary(candidate)))
             .ToArray();
         var representedRolloCount = 0;
         if (rolloReturns.Length > 8 || rolloReturns.Distinct(StringComparer.OrdinalIgnoreCase).Count() != rolloReturns.Length
             || rolloReturns.Any(id => !player.Graveyard.Any(candidate => candidate.InstanceId == id
-                && candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate)))
+                && L12StructuredCardRules.HasFaction(player, candidate, "asgard") && CanEnterHandOrLibrary(candidate)))
             || rolloReturns.Length > 0 && (!L12StructuredCardRules.TryGetGraveRepresentationCount(player,
                     rolloCards.OfType<L12CardInstance>().ToArray(), rolloRepresentation, "asgard", legionOnly: false,
                     out representedRolloCount) || representedRolloCount > 8))
@@ -512,6 +531,7 @@ public sealed partial class L12GameEngine
 
     private void ApplyDisasterLevelOnEntry(int playerIndex, L12CardInstance card, bool deferTriggerUntilStackSettles)
     {
+        ResolveEntryContinuousEffects(playerIndex, card);
         if (!DisastersEnabled || card.CardType != "legion" || card.DisasterLevel <= 0) return;
         if (State.ActiveDisaster?.CardId == "S01-DS10")
         {

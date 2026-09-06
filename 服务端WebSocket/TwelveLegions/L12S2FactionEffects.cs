@@ -1082,7 +1082,7 @@ public sealed partial class L12GameEngine
                 if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
                 var choices = PublicLegions(player).Where(card => card.Tapped
                         && L12StructuredCardRules.HasFaction(player, card, "otherworld")
-                        && (card.CardId == "S02-0610" || card.BaseTroops <= 4000))
+                        && (card.CardId == "S02-0610" || card.DisplayBaseTroops <= 4000))
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) return CommandResult.Reject("没有符合条件的休整军团");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
@@ -1431,7 +1431,7 @@ public sealed partial class L12GameEngine
                 var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
                 if (chosen is null || !chosen.Tapped
                     || !L12StructuredCardRules.HasFaction(player, chosen, "otherworld")
-                    || (chosen.CardId != "S02-0610" && chosen.BaseTroops > 4000))
+                    || (chosen.CardId != "S02-0610" && chosen.DisplayBaseTroops > 4000))
                     return CommandResult.Reject("目标不符合转为活跃的条件");
             }
             else if (ability == "crusadeTrialNoLoss")

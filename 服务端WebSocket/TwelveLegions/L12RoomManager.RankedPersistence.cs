@@ -181,7 +181,11 @@ public sealed partial class L12RoomManager
                     ? value.GetInt32() : (int?)null;
                 var reason = PropertyOrNull(recorded.State, "WinnerReason", "winnerReason")?.GetString()
                     ?? "排位权威裁决";
-                engine.ConcludeByAuthority(winner, reason);
+                if (winner is null && string.Equals(source.Runtime?.ConclusionKind,
+                        L12GameEngine.AgreedDrawConclusionKind, StringComparison.OrdinalIgnoreCase))
+                    engine.ConcludeAgreedDrawByAuthority(reason);
+                else
+                    engine.ConcludeByAuthority(winner, reason);
                 outcome = CommandResult.Ok();
             }
             else
@@ -285,10 +289,18 @@ public sealed partial class L12RoomManager
                     _platform.SettleRankedMatch(payload.MatchId, payload.FirstAccountId,
                         payload.SecondAccountId, winner, payload.FirstMasterId,
                         payload.SecondMasterId, context);
+                else if (string.Equals(payload.ConclusionKind, L12GameEngine.AgreedDrawConclusionKind,
+                             StringComparison.OrdinalIgnoreCase))
+                    _platform.SettleRankedDrawMatch(payload.MatchId, payload.FirstAccountId,
+                        payload.SecondAccountId, payload.FirstMasterId,
+                        payload.SecondMasterId, context);
                 else
                     _platform.RecordInvalidRankedMatch(payload.MatchId, payload.FirstAccountId,
                         payload.SecondAccountId, payload.FirstMasterId, payload.SecondMasterId, context);
                 _platform.VerifyRankedSettlementApplied(payload);
+                if (string.Equals(payload.ConclusionKind, L12GameEngine.AgreedDrawConclusionKind,
+                        StringComparison.OrdinalIgnoreCase))
+                    _platform.FinalizeAgreedDrawFromSettlement(payload.MatchId, payload.EndedAt);
                 if (item.Status == "pending")
                     await _recorder.MarkRankedSettlementAppliedAsync(item.MatchId, item.PayloadHash);
                 else

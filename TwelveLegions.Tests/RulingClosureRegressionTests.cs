@@ -282,8 +282,11 @@ public sealed class RulingClosureRegressionTests
         PassResponses(game);
 
         Assert.Equal(hpBefore, opponent.Hp);
-        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
-            && entry.Text.Contains("再次发动", StringComparison.Ordinal));
+        Assert.Equal(ptolemy.Cost, player.Morale.Count(card => card.Tapped));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Cards.Any(card =>
+            card.InstanceId.StartsWith("repeat-effect-", StringComparison.Ordinal)));
+        Assert.DoesNotContain(player.Graveyard, card => card.CardId == "S01-0006");
+        Assert.DoesNotContain(player.Resolving, card => card.CardId == "S01-0006");
     }
 
     [Fact]

@@ -24,7 +24,7 @@ public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName
     IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
 public sealed record L12RankedSettlementComponent(string Kind, string Label, int Value);
 public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
-    bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
+    string Outcome, bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
     int Delta, string TierBefore, string TierAfter, IReadOnlyList<L12RankedSettlementComponent> Components,
     DateTimeOffset SettledAt);
 public sealed record L12RankedBroadcastView(string Id, string MatchId, string EventType,
@@ -134,6 +134,7 @@ public sealed partial class L12PlatformStore
         public string MatchId { get; set; } = string.Empty;
         public string AccountId { get; set; } = string.Empty;
         public string Faction { get; set; } = string.Empty;
+        public string Outcome { get; set; } = string.Empty;
         public bool Won { get; set; }
         public bool Placement { get; set; }
         public int PlacementPlayed { get; set; }
@@ -732,6 +733,74 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    internal L12RankedSettlementPair SettleRankedDrawMatch(string matchId, string firstAccountId,
+        string secondAccountId, string? firstMasterId = null, string? secondMasterId = null,
+        L12RankedIntegrityContext? integrity = null)
+    {
+        lock (_gate)
+        {
+            ValidateRankedIdentity(matchId, firstAccountId, secondAccountId, winner: null);
+            var existing = _data.RankedSettlements.Where(row => string.Equals(row.MatchId, matchId,
+                StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (existing.Length != 0)
+            {
+                if (existing.Length != 2)
+                    throw new InvalidDataException("排位平局结算账本不完整，已拒绝重复结算");
+                var firstReplay = existing.SingleOrDefault(row => row.AccountId == firstAccountId);
+                var secondReplay = existing.SingleOrDefault(row => row.AccountId == secondAccountId);
+                if (firstReplay is null || secondReplay is null
+                    || !string.Equals(firstReplay.Outcome, "draw", StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(secondReplay.Outcome, "draw", StringComparison.OrdinalIgnoreCase)
+                    || firstReplay.Delta != 0 || secondReplay.Delta != 0
+                    || firstReplay.Before != firstReplay.After || secondReplay.Before != secondReplay.After)
+                    throw new InvalidOperationException("排位平局重放参数与已结算结果冲突");
+                if (EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, null,
+                        firstMasterId, secondMasterId, integrity)) Save(false);
+                return new(ToView(firstReplay), ToView(secondReplay), []);
+            }
+            if (_data.RankedIntegrityAudits.Any(row => string.Equals(row.MatchId, matchId,
+                    StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("排位对局已作为其他终局记录，不能重放为平局");
+
+            var first = RequireRankedProfile(firstAccountId);
+            var second = RequireRankedProfile(secondAccountId);
+            if (string.IsNullOrWhiteSpace(first.Faction) || string.IsNullOrWhiteSpace(second.Faction))
+                throw new InvalidOperationException("排位平局结算缺少赛季派系");
+            var now = DateTimeOffset.UtcNow;
+            RankedSettlementRow DrawRow(RankedProfileRow player)
+            {
+                var tier = TierFor(player).Name;
+                return new RankedSettlementRow
+                {
+                    MatchId = matchId,
+                    AccountId = player.AccountId,
+                    Faction = player.Faction!,
+                    Outcome = "draw",
+                    Won = false,
+                    Placement = false,
+                    PlacementPlayed = player.PlacementPlayed,
+                    PlacementRequired = _data.RankedConfig!.PlacementMatches,
+                    Before = player.SevenValue,
+                    After = player.SevenValue,
+                    Delta = 0,
+                    TierBefore = tier,
+                    TierAfter = tier,
+                    Components = [new("draw", "双方同意平局", 0)],
+                    SettledAt = now,
+                };
+            }
+
+            var firstSettlement = DrawRow(first);
+            var secondSettlement = DrawRow(second);
+            _data.RankedSettlements.Add(firstSettlement);
+            _data.RankedSettlements.Add(secondSettlement);
+            EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, null,
+                firstMasterId, secondMasterId, integrity);
+            Save();
+            return new(ToView(firstSettlement), ToView(secondSettlement), []);
+        }
+    }
+
     private RankedSettlementRow SettleOne(string matchId, RankedProfileRow player, bool won,
         double ratingBefore, int opponentSevenBefore, int opponentWinStreakBefore)
     {
@@ -782,7 +851,8 @@ public sealed partial class L12PlatformStore
         var tierAfter = TierFor(player);
         return new RankedSettlementRow
         {
-            MatchId = matchId, AccountId = player.AccountId, Faction = player.Faction!, Won = won,
+            MatchId = matchId, AccountId = player.AccountId, Faction = player.Faction!,
+            Outcome = won ? "win" : "loss", Won = won,
             Placement = placement, PlacementPlayed = player.PlacementPlayed,
             PlacementRequired = config.PlacementMatches, Before = before, After = player.SevenValue,
             Delta = player.SevenValue - before, TierBefore = tierBefore.Name, TierAfter = tierAfter.Name,
@@ -1058,7 +1128,7 @@ public sealed partial class L12PlatformStore
                 tier.WinStreakCap, tier.LossProtectionCap, tier.RatingGapCap, tier.Color, tier.Icon)).ToArray())).ToArray(),
         row.MasterTitles.Select(item => new L12RankedMasterTitleConfig(item.MasterId, item.MasterName, item.Title)).ToArray());
     private L12RankedSettlementView ToView(RankedSettlementRow row) => new(row.MatchId, row.AccountId,
-        FactionFor(row.Faction).Name, row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before, row.After,
+        FactionFor(row.Faction).Name, row.Outcome, row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before, row.After,
         row.Delta, row.TierBefore, row.TierAfter, row.Components.ToArray(), row.SettledAt);
     private static L12RankedBroadcastView ToView(RankedBroadcastRow row) => new(row.Id, row.MatchId,
         row.EventType, row.Message, row.CreatedAt);

@@ -134,48 +134,82 @@ public static partial class L12StructuredCardRules
             && cards.All(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 0)
             && cards.Sum(card => StarterGraveFactionCopies(owner, card, faction, legionOnly)) >= required;
 
-    internal static IReadOnlyDictionary<string, string> GraveFactionRepresentationChoices(L12PlayerState owner,
-        IReadOnlyList<L12CardInstance> cards, string faction, int required, bool legionOnly)
-        => GraveRepresentationChoices(owner, cards, faction, required, required, legionOnly);
-
-    internal static IReadOnlyDictionary<string, string> GraveRepresentationChoices(L12PlayerState owner,
-        IReadOnlyList<L12CardInstance> cards, string faction, int minimum, int maximum, bool legionOnly)
+    /// <summary>
+    /// 逐实体构造墓地代表值声明。中间选择保持为单实体 token，全部实体完成后再归一成既有的
+    /// grave-copies:id=n,id=n 协议值，避免 UI 和服务端枚举 3^N 个组合。
+    /// </summary>
+    internal static bool TryBuildNextGraveRepresentationPrompt(L12PlayerState owner,
+        IReadOnlyList<L12CardInstance> cards, IReadOnlyCollection<string> declaredRepresentationChoices,
+        string faction, int minimum, int maximum, bool legionOnly,
+        out L12CardInstance? currentCard, out IReadOnlyDictionary<string, string> choices,
+        out string? representation, out int currentOrdinal, out int variableCount)
     {
+        currentCard = null;
+        choices = new Dictionary<string, string>();
+        representation = null;
+        currentOrdinal = 0;
+        variableCount = 0;
         if (cards.Count == 0 || minimum < 0 || maximum < minimum
+            || cards.Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != cards.Count
             || cards.Any(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) == 0)
             || cards.Count > maximum
             || cards.Sum(card => StarterGraveFactionCopies(owner, card, faction, legionOnly)) < minimum)
-            return new Dictionary<string, string>();
-        var variables = cards.Where(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 1).ToArray();
-        if (variables.Length == 0) return new Dictionary<string, string>();
-        var fixedCount = cards.Count - variables.Length;
-        var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var counts = new int[variables.Length];
+            return false;
 
-        void Build(int index, int total)
+        var variables = cards.Where(card => StarterGraveFactionCopies(owner, card, faction, legionOnly) > 1)
+            .ToArray();
+        variableCount = variables.Length;
+        var declared = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var choice in declaredRepresentationChoices)
         {
-            if (index == variables.Length)
+            if (string.IsNullOrWhiteSpace(choice)
+                || !choice.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)) return false;
+            var assignments = choice["grave-copies:".Length..]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (assignments.Length == 0) return false;
+            foreach (var assignment in assignments)
             {
-                if (total < minimum || total > maximum) return;
-                var token = "grave-copies:" + string.Join(',', variables.Select((card, variableIndex) =>
-                    $"{card.InstanceId}={counts[variableIndex]}"));
-                var label = string.Join("；", variables.Select((card, variableIndex) =>
-                    variables.Length == 1
-                        ? $"〈{card.Name}〉本次视为{counts[variableIndex]}张"
-                        : $"第{variableIndex + 1}张〈{card.Name}〉本次视为{counts[variableIndex]}张"));
-                results[token] = label;
-                return;
-            }
-            var cardMaximum = StarterGraveFactionCopies(owner, variables[index], faction, legionOnly);
-            for (var count = 1; count <= cardMaximum; count++)
-            {
-                counts[index] = count;
-                Build(index + 1, total + count);
+                var parts = assignment.Split('=', 2, StringSplitOptions.TrimEntries);
+                if (parts.Length != 2 || !int.TryParse(parts[1], out var count)) return false;
+                var variable = variables.FirstOrDefault(card =>
+                    card.InstanceId.Equals(parts[0], StringComparison.OrdinalIgnoreCase));
+                if (variable is null || count < 1
+                    || count > StarterGraveFactionCopies(owner, variable, faction, legionOnly)
+                    || !declared.TryAdd(variable.InstanceId, count)) return false;
             }
         }
 
-        Build(0, fixedCount);
-        return results;
+        currentCard = variables.FirstOrDefault(card => !declared.ContainsKey(card.InstanceId));
+        if (currentCard is not null)
+        {
+            currentOrdinal = Array.IndexOf(variables, currentCard) + 1;
+            var nextChoices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var cardMaximum = StarterGraveFactionCopies(owner, currentCard, faction, legionOnly);
+            var subtotal = cards.Count - variables.Length + declared.Values.Sum();
+            var remaining = variables.Skip(currentOrdinal).ToArray();
+            var remainingMinimum = remaining.Length;
+            var remainingMaximum = remaining.Sum(card =>
+                StarterGraveFactionCopies(owner, card, faction, legionOnly));
+            for (var count = 1; count <= cardMaximum; count++)
+            {
+                if (subtotal + count + remainingMinimum > maximum
+                    || subtotal + count + remainingMaximum < minimum) continue;
+                var token = $"grave-copies:{currentCard.InstanceId}={count}";
+                nextChoices[token] = variables.Length == 1
+                    ? $"〈{currentCard.Name}〉本次视为{count}张"
+                    : $"第{currentOrdinal}张〈{currentCard.Name}〉本次视为{count}张";
+            }
+            if (nextChoices.Count == 0) return false;
+            choices = nextChoices;
+            return true;
+        }
+
+        var representedCount = cards.Count - variables.Length + declared.Values.Sum();
+        if (representedCount < minimum || representedCount > maximum) return false;
+        if (variables.Length > 0)
+            representation = "grave-copies:" + string.Join(',', variables.Select(card =>
+                $"{card.InstanceId}={declared[card.InstanceId]}"));
+        return true;
     }
 
     internal static bool TryGetGraveRepresentationCount(L12PlayerState owner,

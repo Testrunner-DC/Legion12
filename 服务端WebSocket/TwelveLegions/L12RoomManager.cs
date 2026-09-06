@@ -649,16 +649,20 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
+            var tournamentStartBlocked = false;
             if (room.Game is not null)
                 await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
             if (room.TournamentId is not null)
             {
-                await StartTournamentGameIfReadyLockedAsync(room);
+                tournamentStartBlocked = await StartTournamentGameIfReadyLockedAsync(room);
                 if (room.Game?.State.Phase == L12Phase.GameOver)
                     await CompleteTournamentRoomGameAsync(room);
             }
-            return room.Game is null ? BroadcastRoom(room)
+            var messages = room.Game is null ? BroadcastRoom(room)
                 : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
+            return tournamentStartBlocked
+                ? messages.Concat(MaintenanceBlocked(sessionId, CaptureOperationsPolicy())).ToArray()
+                : messages;
         }
         finally { room.Gate.Release(); }
     }
@@ -672,16 +676,19 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
+            var tournamentStartBlocked = false;
             if (room.Game is not null)
                 await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
             if (room.TournamentId is not null)
             {
-                await StartTournamentGameIfReadyLockedAsync(room);
+                tournamentStartBlocked = await StartTournamentGameIfReadyLockedAsync(room);
                 if (room.Game?.State.Phase == L12Phase.GameOver)
                     await CompleteTournamentRoomGameAsync(room);
             }
             var messages = (room.Game is null ? BroadcastRoom(room)
                 : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray()).ToList();
+            if (tournamentStartBlocked)
+                messages.AddRange(MaintenanceBlocked(sessionId, CaptureOperationsPolicy()));
             messages.Add(RecoveryComplete(session, recovered, room));
             return messages;
         }
@@ -943,7 +950,8 @@ public sealed partial class L12RoomManager
                 await current.Gate.WaitAsync();
                 try
                 {
-                    await StartTournamentGameIfReadyLockedAsync(current);
+                    if (await StartTournamentGameIfReadyLockedAsync(current))
+                        return MaintenanceBlocked(sessionId, CaptureOperationsPolicy());
                     if (current.Game?.State.Phase == L12Phase.GameOver)
                         await CompleteTournamentRoomGameAsync(current);
                     return current.Game is null ? BroadcastRoom(current)
@@ -971,6 +979,9 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
+            var currentPolicy = CaptureOperationsPolicy();
+            if (room.Game is null && currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
+                return MaintenanceBlocked(sessionId, currentPolicy);
             var playerIndex = assignment.PlayerA.AccountId == session.AccountId ? 0 : 1;
             var occupiedId = room.Sessions[playerIndex];
             if (_sessions.TryGetValue(occupiedId, out var occupied) && !occupied.IsVirtual
@@ -988,7 +999,8 @@ public sealed partial class L12RoomManager
             session.IsSpectator = false;
             session.CustomDeck = player.Deck;
             room.Ready[playerIndex] = true;
-            await StartTournamentGameIfReadyLockedAsync(room);
+            if (await StartTournamentGameIfReadyLockedAsync(room))
+                return MaintenanceBlocked(sessionId, CaptureOperationsPolicy());
             return room.Game is null ? BroadcastRoom(room)
                 : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
         }
@@ -1072,11 +1084,12 @@ public sealed partial class L12RoomManager
         return room;
     }
 
-    private async Task StartTournamentGameIfReadyLockedAsync(Room room)
+    private async Task<bool> StartTournamentGameIfReadyLockedAsync(Room room)
     {
         if (room.Game is not null || room.TournamentId is null
             || !room.Sessions.All(id => _sessions.TryGetValue(id, out var member)
-                && !member.IsVirtual && member.Connected)) return;
+                && !member.IsVirtual && member.Connected)) return false;
+        if (CaptureOperationsPolicy().IsNewGameEntryBlocked(DateTimeOffset.UtcNow)) return true;
         var members = room.Sessions.Select(id => _sessions[id]).ToArray();
         var game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code,
             Random.Shared.Next(), members.Select(member => member.Name).ToArray(),
@@ -1086,6 +1099,7 @@ public sealed partial class L12RoomManager
         await _recorder.StartAsync(game, "tournament", members[0].AccountId, members[1].AccountId,
             members.Select(SelectedDeck).ToArray());
         room.Game = game;
+        return false;
     }
 
     public IReadOnlyList<OutgoingMessage> SelectDeck(Guid sessionId, int deckIndex)
@@ -1515,6 +1529,7 @@ public sealed partial class L12RoomManager
             tournamentMatchId = room.TournamentMatchId,
             playerBadges,
             rankedClock,
+            matchGovernance = MatchGovernanceForClient(room, _sessions[id]),
             rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
                 ? _platform.RankedSettlement(room.Game!.State.MatchId, _sessions[id].AccountId ?? string.Empty) : null,
         })).Concat(spectators.Select(id => new OutgoingMessage(id, new
@@ -1543,6 +1558,20 @@ public sealed partial class L12RoomManager
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
+        if (!room.Game.State.Events.Any(item => item.Type == "game-draw"))
+        {
+            try
+            {
+                _platform?.CancelOpenMatchDrawRequests(room.Game.State.MatchId, _utcNow(),
+                    "对局已由其他赛果结束");
+            }
+            catch (Exception error)
+            {
+                // Governance is an auxiliary ledger. Its retryable storage failure must never
+                // prevent the authoritative game result from completing.
+                Console.Error.WriteLine($"Match draw cancellation ({room.Code}): {error.Message}");
+            }
+        }
         var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
         if (!room.IsSandbox && !room.CompletionRecorded)
         {

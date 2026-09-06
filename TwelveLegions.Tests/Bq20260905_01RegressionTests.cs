@@ -147,7 +147,7 @@ public sealed class Bq20260905_01RegressionTests
     }
 
     [Fact]
-    public void HuntingMomentUsesOneGraveWarriorAndOnePhysicalCardAsItsFourCardCost()
+    public void HuntingMomentReturnsOneGraveWarriorAndOnePhysicalCardAsFourCardsByEffect()
     {
         var game = Create(90502);
         var player = game.State.Players[0];
@@ -179,9 +179,11 @@ public sealed class Bq20260905_01RegressionTests
         Assert.DoesNotContain(companion, player.Graveyard);
         Assert.Contains(hunt, player.Graveyard);
         Assert.Contains(target, opponent.Graveyard);
-        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("2张实体卡牌", StringComparison.Ordinal)
             && entry.Text.Contains("视为4张", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("墓地", StringComparison.Ordinal));
     }
 
     [Fact]

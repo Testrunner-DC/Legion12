@@ -138,6 +138,13 @@ public sealed partial class L12PlatformStore
         public int SortOrder { get; set; }
         public string VideoAuthorName { get; set; } = string.Empty;
         public bool VideoAuthorRequired { get; set; }
+        // 外部导入标识只保存在私有持久化行中，绝不投影到管理员或公开文章 API。
+        public string? ImportProvider { get; set; }
+        public string? ImportProjectId { get; set; }
+        public string? ImportItemId { get; set; }
+        public string? ImportSourceFingerprint { get; set; }
+        public string? ImportProjectionFingerprint { get; set; }
+        public DateTimeOffset? ImportedAt { get; set; }
     }
 
     private void EnsureArticleState()
@@ -714,6 +721,11 @@ public sealed partial class L12PlatformStore
         row.Link ??= string.Empty;
         row.Slug = string.IsNullOrWhiteSpace(row.Slug) ? $"article-{row.Id[..Math.Min(12, row.Id.Length)]}" : row.Slug;
         row.Status = row.Status is "draft" or "published" or "scheduled" or "withdrawn" or "archived" ? row.Status : "draft";
+        row.ImportProvider = NormalizeImportMetadata(row.ImportProvider, 32);
+        row.ImportProjectId = NormalizeImportMetadata(row.ImportProjectId, 32);
+        row.ImportItemId = NormalizeImportMetadata(row.ImportItemId, 32);
+        row.ImportSourceFingerprint = NormalizeImportMetadata(row.ImportSourceFingerprint, 64);
+        row.ImportProjectionFingerprint = NormalizeImportMetadata(row.ImportProjectionFingerprint, 64);
         row.Revisions ??= [];
         foreach (var revision in row.Revisions)
         {
@@ -733,5 +745,11 @@ public sealed partial class L12PlatformStore
         }
         if (row.CreatedAt == default) row.CreatedAt = DateTimeOffset.UtcNow;
         if (row.UpdatedAt == default) row.UpdatedAt = row.CreatedAt;
+    }
+
+    private static string? NormalizeImportMetadata(string? value, int maxLength)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized[..Math.Min(normalized.Length, maxLength)];
     }
 }

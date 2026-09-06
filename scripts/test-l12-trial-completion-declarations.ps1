@@ -55,7 +55,12 @@ Assert-Contains $prompts '["mode:library"]' 'The delayed library mode needs a pl
 Assert-Contains $plans 'L12S2ZoneOps.SpendRunes(player, count)' 'Fenian Legend must atomically prepay X runes before stack entry.'
 Assert-Contains $plans 'CreateTriggerCandidate(controller, angus, "trial-complete"' 'Angus must be a separate same-time completion candidate.'
 Assert-Contains $plans 'candidate.Data["trialSegment"] = skipOptionalSearch ? "1" : "0"' 'Declining Lake Lady search must begin at the first mandatory segment.'
-Assert-Contains $kernel 'candidate.Data.GetValueOrDefault("stackText", candidate.Text)' 'A declared candidate must project its actual first segment text onto the stack.'
+Assert-Contains $kernel 'var stackText = candidate.Data.GetValueOrDefault("stackText");' 'A declared candidate must read its explicit first segment before any generic text.'
+Assert-Contains $kernel 'if (string.IsNullOrWhiteSpace(stackText))' 'Only an absent explicit stack segment may use a fallback.'
+Assert-Contains $kernel 'UsesGenericStackEffectText(candidate.Trigger, candidate.Text)' 'Full trigger text must not replace a specialized follow-up segment.'
+Assert-Contains $kernel 'Text = stackText,' 'A declared candidate must project its actual first segment text onto the stack.'
+$promptTests = Read-Source 'Bq20260907_263RegressionTests.cs'
+Assert-Contains $promptTests 'ExplicitStackTextWinsAndEmptyResolvedTextFallsBackWithoutReadingHiddenCardText' 'Explicit, empty and specialized segment fallbacks require a runtime regression.'
 
 foreach ($legacy in @(
     'ResolveCompletedTrialTrigger',

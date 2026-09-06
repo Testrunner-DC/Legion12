@@ -117,6 +117,17 @@ export type ArticleDraft = Pick<Article, 'title' | 'summary' | 'body' | 'categor
   publishAt?: string; expectedRevision?: number; kind?: SiteContentKind; categoryId?: string
   mediaAssetId?: string; sortOrder?: number
 }
+export type ModianImportState = 'new' | 'imported' | 'local-edited' | 'remote-changed' | 'remote-changed-local-edited' | 'check-failed'
+export interface ModianImportPreviewItem {
+  updateId: string; sequence: number; title: string; originalPublishedAt: string; state: ModianImportState
+  articleId?: string; articleStatus?: ArticleStatus; localDraftChanged: boolean; checkMessage?: string
+}
+export interface ModianImportPreview { projectId: string; projectName: string; total: number; items: ModianImportPreviewItem[] }
+export interface ModianImportItemResult { updateId: string; status: string; message: string; articleId?: string; warnings?: string[] }
+export interface ModianImportBatchResult {
+  projectId: string; requested: number; created: number; updated: number; unchanged: number
+  needsReimport: number; conflicted: number; failed: number; items: ModianImportItemResult[]
+}
 export interface SiteHomePayload {
   composition: string; legal: string; news: Article[]; videos: Article[]; products: Article[]; media: SiteMedia[]
 }
@@ -231,7 +242,7 @@ export interface EffectiveOperationsPolicy {
   seasonDisasterModeAvailable: boolean
   cardRestrictions: OperationsCardRestriction[]
   defaultPresetDeckIds: string[]
-  maintenance: { active: boolean; entryBlocked: boolean; status: 'open'|'upcoming'|'maintenance'; message: string; broadcastMessage: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number }
+  maintenance: { enabled: boolean; active: boolean; entryBlocked: boolean; status: 'open'|'upcoming'|'maintenance'; message: string; broadcastMessage: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number; immediateActive?: boolean; immediateStartedAt?: string; immediateExpectedDurationHours?: number }
   announcements: Array<{ id: string; content: string; sortOrder: number; startsAt?: string; endsAt?: string }>
 }
 export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
@@ -269,6 +280,7 @@ export interface RankedIntegrityAudit {
 }
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
+  immediateMaintenance?: { enabled: boolean; expectedDurationHours: number; startedAt?: string }
 }
 export interface OperationsConfigVersion {
   id: string; version: number; action: string; config: OperationsConfigPayload
@@ -282,6 +294,7 @@ export interface OperationsConfigOperation {
   applied: boolean; current: OperationsConfigView; historyEntry: OperationsConfigVersion; changes: string[]
 }
 export interface ServerStartOperation { applied: boolean; alreadyStarted: boolean; current: OperationsConfigView }
+export interface ImmediateMaintenanceOperation { applied: boolean; alreadyApplied: boolean; current: OperationsConfigView }
 export interface RuntimeDependencyStatus {
   name: string; configured: boolean; state: string; detail?: string; observedAt: string
 }
@@ -618,7 +631,7 @@ export async function getPublicContentBatch(keys: string[]) {
 }
 
 export const getEffectiveOperationsPolicy = () =>
-  platformRequest<EffectiveOperationsPolicy>('/api/operations/effective-policy')
+  platformRequest<EffectiveOperationsPolicy>('/api/operations/effective-policy', { cache: 'no-store' })
 
 export const mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')
 
@@ -714,6 +727,11 @@ export const adminApi = {
   restoreArticle: (id: string) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
   articleRevisions: (id: string) => platformRequest<ArticleRevision[]>(`/api/admin/articles/${encodeURIComponent(id)}/revisions`),
   restoreArticleRevision: (id: string, revision: number) => platformRequest<Article>(`/api/admin/articles/${encodeURIComponent(id)}/revisions/${revision}/restore`, { method: 'POST' }),
+  previewModianUpdates: () => platformRequest<ModianImportPreview>('/api/admin/articles/modian/preview', { cache: 'no-store' }),
+  importModianUpdates: (body: { updateIds: string[]; categoryId: string; reimportUpdateIds: string[]; overwriteLocalChangesIds: string[] }, idempotencyKey: string) =>
+    platformRequest<ModianImportBatchResult>('/api/admin/articles/modian/import', {
+      method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body),
+    }),
   siteMediaPolicies: () => platformRequest<SiteMediaPolicy[]>('/api/admin/site/media/policies'),
   siteMedia: (kind?: SiteMediaKind) => platformRequest<SiteMedia[]>(`/api/admin/site/media${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
@@ -791,6 +809,12 @@ export const adminApi = {
     method: 'POST', body: JSON.stringify(commandBody('operations-server-start', { reason, expectedVersion })),
   }),
   runtimeStatus: () => platformRequest<RuntimeStatus>('/api/admin/runtime/status'),
+  beginImmediateMaintenance: (expectedDurationHours: number, reason: string, expectedVersion: number) => platformRequest<ImmediateMaintenanceOperation>('/api/admin/operations/server/maintenance', {
+    method: 'POST', body: JSON.stringify(commandBody('operations-immediate-maintenance', { expectedDurationHours, reason, expectedVersion })),
+  }),
+  endImmediateMaintenance: (reason: string, expectedVersion: number) => platformRequest<ImmediateMaintenanceOperation>('/api/admin/operations/server/maintenance/end', {
+    method: 'POST', body: JSON.stringify(commandBody('operations-immediate-maintenance-end', { reason, expectedVersion })),
+  }),
   rankedConfig: () => platformRequest<RankedConfig>('/api/admin/ranked/config'),
   saveRankedConfig: (config: RankedConfig, reason: string) => platformRequest<RankedConfig>('/api/admin/ranked/config', { method: 'PUT', body: JSON.stringify({ config, reason }) }),
   deleteRankedBroadcast: (id: string) => platformRequest<void>(`/api/admin/ranked/broadcasts/${encodeURIComponent(id)}`, { method: 'DELETE' }),

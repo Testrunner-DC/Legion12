@@ -70,11 +70,13 @@ foreach ($token in @(
 }
 
 $facts = [regex]::Matches($tests, '(?m)^\s*\[Fact\]\s*$').Count
-if ($facts -ne 13) { throw "Ruling closure regression inventory drifted (expected=13, actual=$facts)." }
+if ($facts -ne 15) { throw "Ruling closure regression inventory drifted (expected=15, actual=$facts)." }
 foreach ($testName in @(
     'HoremhebSubstituteReceivesTheActualLethalDestinationWithOwnerAndDeathEvents',
     'HelenUsesARealEffectDiscardRatherThanAFieldDeathTransaction',
+    'HelenMayDeclineHerLethalSubstitution',
     'PtolemyRepeatsColonEffectWithoutTheOriginalCostOrVirtualCardMovement',
+    'PtolemyDoesNotRepeatAnActiveTacticFromAnEarlierTurn',
     'FaithZealotMasterChoiceAppearsOnlyAfterZealotLeavesTheStack',
     'NegatedLiJingRevealDoesNotReadOrProcessTheHiddenTopCard',
     'LiJingRevealAndDependentChoiceStayInsideOneUninterruptedStackItem',
@@ -100,4 +102,4 @@ if ([regex]::IsMatch($open, '(?m)^### [1-5]\. ')) {
     throw 'Resolved numbered ruling questions returned to OPEN-QUESTIONS.'
 }
 
-Write-Host 'Five-ruling closure guard passed (13 regressions; OPEN queue empty).'
+Write-Host 'Five-ruling closure guard passed (15 regressions; OPEN queue empty).'

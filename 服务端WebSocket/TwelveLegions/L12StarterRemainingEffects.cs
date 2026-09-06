@@ -94,7 +94,12 @@ public sealed partial class L12GameEngine
                         ValidChoices = grave, MinChoose = 1, MaxChoose = 1,
                         CostThreshold = 2000, SelectionConstraint = "taiyangcheng",
                     },
-                    new L12ActivationSelectionStep { Kind = "slot", DeclarationKey = "entrySlot", Text = "荷鲁斯：选择休整登场位置", ValidChoices = Enumerable.Range(0, 2).SelectMany(row => Enumerable.Range(0, 3).Select(slot => $"{row}:{slot}")).ToList(), MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "prospective-entry-slot", DeclarationKey = "entrySlot",
+                        ReferenceDeclarationKey = "fieldCosts",
+                        Text = "荷鲁斯：选择休整登场位置", ValidChoices = ["dynamic"], MinChoose = 1, MaxChoose = 1,
+                    },
                 ]);
             }
             case "sifCycle":
@@ -514,7 +519,7 @@ public sealed partial class L12GameEngine
                 return false;
             case "kojiro-death-kill":
             {
-                var targets = PublicLegions(opponent).Where(card => card.BaseTroops <= 2000)
+                var targets = PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 2000)
                     .Select(card => card.InstanceId).ToList();
                 steps.Add(StarterSelectionStep("field-legion", "enemyTargets",
                     "佐佐木小次郎：可选择对方最多2张原本兵力不高于2000的军团击杀",
@@ -599,7 +604,7 @@ public sealed partial class L12GameEngine
             }
             case "light-sword-enter-kill":
             {
-                var targets = PublicLegions(opponent).Where(card => card.BaseTroops <= 2000)
+                var targets = PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 2000)
                     .Select(card => card.InstanceId).ToList();
                 steps.Add(StarterStep("option", "mode",
                     "光之剑：是否击杀对方最多2张原本兵力不高于2000的军团？",
@@ -695,7 +700,7 @@ public sealed partial class L12GameEngine
                 var targets = activation.DeclaredValues.GetValueOrDefault("enemyTargets", []);
                 if (targets.Count > 2 || targets.Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Count
                     || targets.Any(id => DeclaredEnemyTarget(candidate.Controller, id,
-                        card => card.BaseTroops <= 2000) is null))
+                        card => card.DisplayBaseTroops <= 2000) is null))
                     error = "佐佐木小次郎选择的军团已失效；效果未入栈";
                 break;
             }
@@ -730,7 +735,7 @@ public sealed partial class L12GameEngine
                 var targets = activation.DeclaredValues.GetValueOrDefault("enemyTargets", []);
                 if (targets.Count > 2 || targets.Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Count
                     || targets.Any(id => DeclaredEnemyTarget(candidate.Controller, id,
-                        card => card.BaseTroops <= 2000) is null))
+                        card => card.DisplayBaseTroops <= 2000) is null))
                     error = "光之剑选择的军团已失效；效果未入栈";
                 break;
             }
@@ -998,7 +1003,7 @@ public sealed partial class L12GameEngine
             }
             case "kojiro-death-kill":
                 foreach (var targetId in StarterDeclaredMany(item, "enemyTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.BaseTroops <= 2000) is not null)
+                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.DisplayBaseTroops <= 2000) is not null)
                         KillTarget(item, targetId, "被佐佐木小次郎的阵亡时效果击杀");
                 FinishStackItem(item);
                 return true;
@@ -1084,7 +1089,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "light-sword-enter-kill":
                 foreach (var targetId in StarterDeclaredMany(item, "enemyTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.BaseTroops <= 2000) is not null)
+                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.DisplayBaseTroops <= 2000) is not null)
                         KillTarget(item, targetId, "被光之剑的登场时效果击杀");
                 FinishStackItem(item);
                 return true;

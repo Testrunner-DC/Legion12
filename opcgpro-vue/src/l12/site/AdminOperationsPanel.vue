@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
 import DisasterPoolPicker from './DisasterPoolPicker.vue'
+import ImmediateMaintenancePanel from './ImmediateMaintenancePanel.vue'
 import {
   adminApi,
   rankedApi,
@@ -201,7 +202,9 @@ async function startServer() {
   startingServer.value = true
   try {
     const result = await adminApi.startServer(reason.value.trim(), version.value)
-    emit('notice', result.alreadyStarted ? '服务器已经处于开放状态，未重复变更配置' : '服务器已开放，新对局门禁已解除')
+    emit('notice', result.current.immediateMaintenance?.enabled
+      ? '预约维护已解除；即时维护仍在生效，新对局尚未开放。请在上方结束即时维护。'
+      : result.alreadyStarted ? '预约维护未开启，未重复变更配置' : '预约维护已解除，新对局门禁已开放')
     reason.value = ''
     await load()
   } catch (error) { emit('notice', error instanceof Error ? error.message : '启服失败') }
@@ -258,6 +261,7 @@ onMounted(load)
 
     <section v-if="activeSection !== 'versions'" class="panel config-panel">
       <header><div><h2>{{ currentSection.title }}</h2><p>{{ currentSection.summary }}</p></div><span class="version-badge">配置 v{{ version }}</span></header>
+      <ImmediateMaintenancePanel v-if="activeSection === 'maintenance'"/>
       <div class="config-grid section-grid">
         <template v-if="activeSection === 'ranked' && rankedConfig">
           <fieldset><legend>定级与广播</legend><label>定级场次<input v-model.number="rankedConfig.placementMatches" type="number" min="1" max="20"/></label><label>定级七曜上限<input v-model.number="rankedConfig.placementMaximum" type="number" min="0" max="29999"/></label><label class="toggle-row wide"><span><b>启用排位快讯</b><small>五连胜、终结连胜、最高段位、派系与主宰称号变更。</small></span><input v-model="rankedConfig.broadcastEnabled" type="checkbox"/></label></fieldset>
@@ -288,7 +292,7 @@ onMounted(load)
         </template>
         <fieldset v-else-if="activeSection === 'announcements'" class="wide announcement-editor" data-ui-contract="independent-long-term-announcements"><legend>大厅长期公告</legend><p class="wide field-help">独立于维护提示。启用且处于有效时间的公告按顺序固定显示在大厅“更换牌库”区域上方；不设置时间表示长期有效。</p><button class="wide" type="button" @click="addAnnouncement">＋ 新增公告</button><article v-for="(item,index) in form.announcements" :key="item.id" class="wide announcement-row"><header><b>公告 {{ index + 1 }}</b><span><button type="button" :disabled="index === 0" @click="moveAnnouncement(index,-1)">上移</button><button type="button" :disabled="index === form.announcements.length - 1" @click="moveAnnouncement(index,1)">下移</button><button type="button" @click="removeAnnouncement(index)">删除</button></span></header><label class="wide">内容<textarea v-model="item.content" rows="3" placeholder="输入长期公告内容"/></label><label>开始时间（可选）<input v-model="item.startsAt" type="datetime-local"/></label><label>结束时间（可选）<input v-model="item.endsAt" type="datetime-local"/></label><label class="toggle-row wide"><span><b>启用此公告</b><small>空内容或无效时间范围无法保存。</small></span><input v-model="item.enabled" type="checkbox"/></label></article><span v-if="!form.announcements.length" class="wide">暂无长期公告。</span></fieldset>
         <fieldset v-else-if="activeSection === 'features'" class="wide"><legend>模块功能开关</legend><p class="field-help">格式：key=true/false。关闭后前端入口会灰置，服务端仍进行权威校验。</p><label class="wide"><textarea v-model="featureFlags" rows="16"/></label></fieldset>
-        <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>维护状态与显式启服</legend><label class="toggle-row"><span><b>启用维护计划</b><small>到达开始前1小时自动关闭所有新开局入口。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">维护提示<textarea v-model="form.maintenance.message" rows="4" placeholder="启用维护时必填"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间（可选）<input v-model="form.maintenance.endsAt" type="datetime-local" :disabled="!form.maintenance.endsAt"/></label><label class="toggle-row wide"><span><b>不设置结束时间</b><small>维护持续到管理员点击“启动服务器”。</small></span><input type="checkbox" :checked="!form.maintenance.endsAt" @change="toggleMaintenanceEnd"/></label><label>提前广播（小时）<input v-model.number="form.maintenance.advanceBroadcastHours" type="number" min="1" max="168"/></label><label>预计维护时长（小时）<input v-model.number="form.maintenance.expectedDurationHours" type="number" min="1" max="168"/></label><p class="wide contract-note">“启动服务器”是独立幂等状态迁移：只解除当前维护与新对局门禁，不提交本页其他未保存编辑；重复点击不会再次增加配置版本。</p><button class="confirm wide" type="button" :disabled="startingServer || !loadedMaintenanceEnabled" data-ui-contract="idempotent-server-start" @click="startServer">{{ startingServer ? '正在启动…' : loadedMaintenanceEnabled ? '启动服务器并解除门禁' : '服务器当前已开放' }}</button></fieldset>
+        <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>预约维护计划</legend><label class="toggle-row"><span><b>启用维护计划</b><small>到达开始前1小时自动关闭所有新开局入口。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">维护提示<textarea v-model="form.maintenance.message" rows="4" placeholder="启用维护时必填"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间（可选）<input v-model="form.maintenance.endsAt" type="datetime-local" :disabled="!form.maintenance.endsAt"/></label><label class="toggle-row wide"><span><b>不设置结束时间</b><small>预约维护持续到管理员点击下方解除按钮。</small></span><input type="checkbox" :checked="!form.maintenance.endsAt" @change="toggleMaintenanceEnd"/></label><label>提前广播（小时）<input v-model.number="form.maintenance.advanceBroadcastHours" type="number" min="1" max="168"/></label><label>预计维护时长（小时）<input v-model.number="form.maintenance.expectedDurationHours" type="number" min="1" max="168"/></label><p class="wide contract-note">下方按钮只解除预约维护，不会结束上方即时维护，也不提交本页其他未保存编辑；重复点击不会再次增加配置版本。两种维护均解除后才开放新对局。</p><button class="confirm wide" type="button" :disabled="startingServer || !loadedMaintenanceEnabled" data-ui-contract="idempotent-server-start" @click="startServer">{{ startingServer ? '正在解除…' : loadedMaintenanceEnabled ? '启动服务器（解除预约维护）' : '预约维护未开启' }}</button></fieldset>
       </div>
       <footer v-if="activeSection === 'ranked'" class="config-actions"><input v-model="rankedReason" placeholder="排位配置变更理由（必填）"/><button class="confirm" @click="saveRanked">保存排位配置</button></footer>
       <footer v-else class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>

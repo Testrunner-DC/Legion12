@@ -548,6 +548,8 @@ public sealed partial class L12GameEngine
             return "圣物区没有〈草薙剑〉";
         if (ability == "thorCharge" && player.Hp > 3)
             return "我方主宰血量需要不高于3";
+        if (ability == "runeUse" && player.SpecialZones.Runes < 1)
+            return "需要消耗1符文";
         if (ability == "completeTrial" && source.CardType == "trial"
             && (source.TrialCompleted || source.TrialProgress < 8))
             return "试炼进度达到8后才可完成试炼";
@@ -581,8 +583,8 @@ public sealed partial class L12GameEngine
             && (!player.Graveyard.Any(card => L12StructuredCardSemantics.IsProliferatingScarab(card.CardId)) || !emptySlotExists))
             return "墓地没有可登场的〈增殖的甲虫〉或没有空位";
         if (ability == "alvidaSummon"
-            && (!player.Hand.Any(card => card.CardType == "legion" && card.DisasterLevel == 2) || !emptySlotExists))
-            return "手牌需要1张天灾等级2的军团且战场需要空位";
+            && !player.Hand.Any(card => card.CardType == "legion" && card.DisasterLevel == 2))
+            return "手牌需要1张天灾等级2的军团";
         if (ability == "isisCanopic")
         {
             if (ownLegions.Count(card => L12StructuredCardSemantics.IsTombGuard(card.CardId)) < 3)
@@ -1710,7 +1712,8 @@ public sealed partial class L12GameEngine
                 : 0;
             var rolloReturns = card.CardId == "S02-0302"
                 ? Math.Min(8, State.Players[playerIndex].Graveyard
-                    .Where(candidate => candidate.Faction == "asgard" && CanEnterHandOrLibrary(candidate))
+                    .Where(candidate => L12StructuredCardRules.HasFaction(State.Players[playerIndex], candidate, "asgard")
+                        && CanEnterHandOrLibrary(candidate))
                     .Sum(candidate => L12StructuredCardRules.StarterGraveFactionCardCopies(
                         State.Players[playerIndex], candidate, "asgard")))
                 : 0;

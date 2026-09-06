@@ -16,8 +16,10 @@ const emit = defineEmits<{
     cardType: string
     triggerEffects: boolean
   }]
+  openChange: [open: boolean]
 }>()
 const open = ref(true)
+watch(open, value => emit('openChange', value), { immediate: true })
 const targetMode = ref<'self' | 'opponent'>('self')
 const selectedCatalogCard = ref<SandboxCatalogCard | null>(null)
 const pickerOpen = ref(false)

@@ -6,6 +6,15 @@ const read = path => {
 }
 
 const s1 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s1.json'))
+const webS1 = JSON.parse(read('../public/data/l12/cards.s1.json'))
+const webLookup = JSON.parse(read('../public/data/l12/cards.lookup.json'))
+const huntingMomentText = '将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团。'
+if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
+  || webS1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
+  || webLookup.find(card => card.cardNo === 'S01-0319')?.effectText !== huntingMomentText
+  || !webLookup.find(card => card.cardNo === 'S01-0319')?.searchText?.includes(huntingMomentText)) {
+  throw new Error('猎杀时刻必须在服务端、图鉴与搜索数据中统一使用已批准的非费用效果文本')
+}
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
 const st = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.st.json'))
 const archiveAssets = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'))

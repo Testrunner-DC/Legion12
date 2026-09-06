@@ -89,7 +89,7 @@ public sealed partial class L12GameEngine
             case "无眠之夜":
                 for (var owner = 0; owner < 2; owner++)
                     foreach (var card in State.Players[owner].Field.SelectMany(row => row)
-                        .Where(card => card is not null && IsDisasterFieldCard(card) && card.BaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
+                        .Where(card => card is not null && IsDisasterFieldCard(card) && card.DisplayBaseTroops <= 2000).Cast<L12CardInstance>().ToArray())
                         RemoveFromField(State.Players[owner], card, true, "因〈无眠之夜〉弃置",
                             queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.Discard);
                 FinishStackItem(item); return;

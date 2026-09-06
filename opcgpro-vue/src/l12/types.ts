@@ -1,3 +1,5 @@
+import type { MatchGovernanceClientState } from './matchGovernance'
+
 export type Phase = 'Initiative' | 'DisasterPreparation' | 'Mulligan' | 'Disaster' | 'Reset' | 'Draw' | 'Morale' | 'Main' | 'End' | 'Defense' | 'GameOver'
 
 export interface ActionEvent {
@@ -148,6 +150,7 @@ export interface GameState {
   } | null
   winner?: number | null
   winnerReason?: string | null
+  matchGovernance?: MatchGovernanceClientState
   players: PlayerView[]
   playerBadges?: Array<{ playerIndex: number; rankLabel: string; masterTitle?: string }>
   lastAction?: ActionEvent | null

@@ -528,6 +528,8 @@ public sealed class L12ActivationSelectionStep
     public string? DeclarationKey { get; init; }
     /// <summary>动态声明步读取哪一个已声明字段作为公开对象来源。</summary>
     public string? ReferenceDeclarationKey { get; init; }
+    /// <summary>费用提交时效果来源会离场，因此其当前位置可作为后续登场位置。</summary>
+    public bool IncludeSourceSlotAfterCost { get; init; }
     /// <summary>
     /// 仅用于显式展示“玩家正在处理的公开卡牌”；为空时即使步骤引用了卡牌，也不得把
     /// 效果来源或场面目标自动当成中置预览。当前允许值为 handled-card。

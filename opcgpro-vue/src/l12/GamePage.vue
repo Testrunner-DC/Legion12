@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
-import BattleUtilityDock from './game/BattleUtilityDock.vue'
 import GmPanel from './game/GmPanel.vue'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
@@ -11,7 +10,11 @@ import { gameAction, l12State, leaveRoom, returnToRoom } from './net'
 
 const router = useRouter()
 const game = computed(() => l12State.game)
+const agreedDraw = computed(() => game.value?.phase === 'GameOver' && game.value.winner == null
+  && (game.value.matchGovernance?.drawRequest?.status === 'accepted'
+    || game.value.recentEvents?.some(event => event.type === 'game-draw')))
 const settingsOpen = ref(false)
+const gmPanelOpen = ref(l12State.gmEnabled)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
 const completedOsirisSequence = ref('')
 const osirisSequenceKey = ref('')
@@ -68,15 +71,14 @@ function returnToLobby() {
 <template>
   <div v-if="game" class="game-page">
     <RankedBroadcastTicker class="battle-ranked-ticker" />
-    <BattleUtilityDock @settings="settingsOpen = true" />
     <div class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
       <button @click="returnToLobby">返回大厅</button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div>
-    <GameBoard :game="game" :read-only="l12State.spectating" :gm-placement="gmPlacement"
-      @gm-placement-resolved="gmPlacement = null" />
-    <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" />
+    <GameBoard :game="game" :read-only="l12State.spectating" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
+      @gm-placement-resolved="gmPlacement = null" @settings="settingsOpen = true" />
+    <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"
       @complete="completeOsirisSequence" />
     <div v-if="settingsOpen" class="battle-settings-mask" @click.self="settingsOpen = false">
@@ -90,7 +92,7 @@ function returnToLobby() {
     <Transition name="fade">
       <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying" class="game-over"
         data-ui-contract="manual-game-over-exit" role="dialog" aria-modal="true" aria-label="对局结果">
-        <p>{{ game.winner == null ? '对局无效' : (game.winner === game.you ? '胜利' : '败北') }}</p>
+        <p>{{ game.winner == null ? (agreedDraw ? '平局' : '对局无效') : (game.winner === game.you ? '胜利' : '败北') }}</p>
         <strong>{{ game.winnerReason || '对局已结束' }}</strong>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
         <section v-if="l12State.rankedSettlement" class="ranked-result">

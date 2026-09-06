@@ -128,7 +128,9 @@ public sealed partial class L12PlatformStore
             throw new InvalidDataException("排位结算账本不完整，已拒绝重复结算");
         var first = rows.SingleOrDefault(row => row.AccountId == firstAccountId);
         var second = rows.SingleOrDefault(row => row.AccountId == secondAccountId);
-        if (first is null || second is null || first.Won != (winner == 0) || second.Won != (winner == 1))
+        if (first is null || second is null || first.Won != (winner == 0) || second.Won != (winner == 1)
+            || !string.Equals(first.Outcome, winner == 0 ? "win" : "loss", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(second.Outcome, winner == 1 ? "win" : "loss", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("排位对局重放参数与已结算结果冲突");
         var addedAudit = EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, winner,
             firstMasterId, secondMasterId, context);
@@ -150,8 +152,26 @@ public sealed partial class L12PlatformStore
                 var first = settlements.SingleOrDefault(row => row.AccountId == payload.FirstAccountId);
                 var second = settlements.SingleOrDefault(row => row.AccountId == payload.SecondAccountId);
                 if (first is null || second is null || first.Won != (winner == 0)
-                    || second.Won != (winner == 1))
+                    || second.Won != (winner == 1)
+                    || !string.Equals(first.Outcome, winner == 0 ? "win" : "loss",
+                        StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(second.Outcome, winner == 1 ? "win" : "loss",
+                        StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("排位结算账本与 outbox 胜负载荷冲突");
+            }
+            else if (string.Equals(payload.ConclusionKind, L12GameEngine.AgreedDrawConclusionKind,
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                if (settlements.Length != 2)
+                    throw new InvalidDataException("排位平局结算账本必须恰有两席记录");
+                var first = settlements.SingleOrDefault(row => row.AccountId == payload.FirstAccountId);
+                var second = settlements.SingleOrDefault(row => row.AccountId == payload.SecondAccountId);
+                if (first is null || second is null
+                    || !string.Equals(first.Outcome, "draw", StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(second.Outcome, "draw", StringComparison.OrdinalIgnoreCase)
+                    || first.Delta != 0 || second.Delta != 0
+                    || first.Before != first.After || second.Before != second.After)
+                    throw new InvalidOperationException("排位平局账本与 outbox 载荷冲突");
             }
             else if (settlements.Length != 0)
             {
@@ -198,7 +218,7 @@ public sealed partial class L12PlatformStore
             }
             if (payload.Winner is null)
             {
-                // 无效局不改变七曜与主宰统计；缺失完整性记录可在任意后续时点安全补写。
+                // 无效局与同意平局均不改变七曜与主宰统计；缺失账本可在任意后续时点安全补写。
                 reason = string.Empty;
                 return true;
             }
@@ -225,12 +245,17 @@ public sealed partial class L12PlatformStore
             StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
+            var expectedConclusion = string.IsNullOrWhiteSpace(context?.ConclusionKind)
+                ? "unknown"
+                : context.ConclusionKind.Trim().ToLowerInvariant();
             if (existing.FirstAccountId != firstAccountId || existing.SecondAccountId != secondAccountId
                 || existing.Winner != winner
                 || (!string.IsNullOrWhiteSpace(existing.FirstMasterId)
                     && !string.Equals(existing.FirstMasterId, normalizedFirstMaster, StringComparison.OrdinalIgnoreCase))
                 || (!string.IsNullOrWhiteSpace(existing.SecondMasterId)
-                    && !string.Equals(existing.SecondMasterId, normalizedSecondMaster, StringComparison.OrdinalIgnoreCase)))
+                    && !string.Equals(existing.SecondMasterId, normalizedSecondMaster, StringComparison.OrdinalIgnoreCase))
+                || (context is not null && !string.Equals(existing.ConclusionKind, expectedConclusion,
+                    StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("排位对局重放签名与完整性账本冲突");
             return false;
         }

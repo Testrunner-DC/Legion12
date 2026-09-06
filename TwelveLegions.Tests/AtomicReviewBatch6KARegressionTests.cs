@@ -144,8 +144,8 @@ public sealed class AtomicReviewBatch6KARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0001")]
-    [Trait("L12Evidence", "entry:independent-enter-segments")]
-    public void BlackbeardDiscardAndSubsequentDrawAreSeparateStackItems()
+    [Trait("L12Evidence", "entry:single-response-scope")]
+    public void NegatedBlackbeardEnterEffectDoesNotContinueToItsDrawClause()
     {
         var game = Create(8101);
         var player = game.State.Players[0];
@@ -164,12 +164,11 @@ public sealed class AtomicReviewBatch6KARegressionTests
         Assert.Equal("teach-enter-discard", discard.Data["atomicFlow"]);
         Assert.Equal("trigger:S01-0001:enter", discard.Data["compositePlan"]);
         discard.Negated = true;
-        var draw = PassUntilFlow(game, "teach-enter-draw");
-        Assert.Equal("teach-enter-draw", draw.Data["atomicFlow"]);
-        Assert.Equal("1", draw.Data["compositeSegment"]);
         PassResponses(game);
-        Assert.Equal(2, player.Hand.Count);
-        Assert.Single(game.State.Players[1].Hand);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("atomicFlow") == "teach-enter-draw");
+        Assert.Empty(player.Hand);
+        Assert.Empty(game.State.Players[1].Hand);
     }
 
     [Fact]

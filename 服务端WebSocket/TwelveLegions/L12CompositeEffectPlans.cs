@@ -25,6 +25,7 @@ internal static partial class L12CompositeEffectPlans
     // 避免再次用卡号分支散落到结算器中。
     private static readonly HashSet<string> SingleResponseEffectPlans = new(StringComparer.OrdinalIgnoreCase)
     {
+        "trigger:S01-0001:enter",
         "active:S01-04M1:amaterasuReady",
     };
 
@@ -107,9 +108,8 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S01-0319"] =
             [
-                new("hunt-kill-effect", "击杀已声明的对方军团",
-                    CostKind: "grave-bottom", CostKey: "graveCost", Cost: 4,
-                    PublicTargetKeys: ["killTarget"], PreStackCost: true),
+                new("hunt-effect", "依次将已声明的墓地卡牌返回牌库底部并击杀对方军团",
+                    PublicTargetKeys: ["graveEffect", "killTarget"]),
             ],
             ["S01-0419"] =
             [
@@ -613,9 +613,10 @@ public sealed partial class L12GameEngine
             case "S01-0319":
             {
                 var graveCards = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
-                steps.Add(GraveCostSelectionStep(player,
-                    "猎杀时刻：选择并排序可合计视为4张、置于牌库底部的墓地卡牌",
-                    "graveCost", graveCards, required: 4));
+                if (graveCards.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 4)
+                    steps.Add(GraveEffectSelectionStep(player,
+                        "猎杀时刻：选择并排序可合计视为4张、置于牌库底部的墓地卡牌",
+                        "graveEffect", graveCards, required: 4));
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "猎杀时刻：预先选择击杀目标",
                     PublicLegions(opponent).Where(card => card.Troops <= 6000).Select(card => card.InstanceId), 1));
                 break;
@@ -672,7 +673,7 @@ public sealed partial class L12GameEngine
 
             case "S02-0011":
                 steps.Add(CompositeStep("enemy-legion", "killTargets", "纷乱箭：预先选择最多3张原本兵力不高于2000的军团",
-                    PublicLegions(opponent).Where(card => card.BaseTroops <= 2000)
+                    PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 2000)
                         .Select(card => card.InstanceId), 1, 3));
                 break;
 
@@ -717,7 +718,7 @@ public sealed partial class L12GameEngine
                         ["mode:draw"] = "返还1士气：抽取1张牌",
                     }));
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "乾坤 阳：预先选择击杀目标",
-                    PublicLegions(opponent).Where(card => card.BaseTroops <= 3000 && !card.Hidden)
+                    PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 3000 && !card.Hidden)
                         .Select(card => card.InstanceId), 1));
                 steps.Add(CompositeStep("resource-return", "drawCost", "乾坤 阳：预先选择返还的1张士气",
                     player.Morale.Select(card => card.InstanceId), 1, requiredChoice: "mode:draw"));
@@ -780,8 +781,8 @@ public sealed partial class L12GameEngine
                     PublicLegions(player).Select(card => card.InstanceId), 0, 3));
                 steps.Add(CompositeStep("composite-desert-hand", "summonTarget",
                     "沙漠君临：预先选择天灾等级与弃置数量相同的【太阳城】军团", ["dynamic"], 1));
-                steps.Add(CompositeStep("composite-desert-slot", "summonSlot", "沙漠君临：预先选择活跃登场的位置",
-                    ["dynamic"], 1));
+                steps.Add(CompositeStep("prospective-entry-slot", "summonSlot", "沙漠君临：预先选择活跃登场的位置",
+                    ["dynamic"], 1, referenceKey: "discardTargets"));
                 break;
 
             case "S02-0307":
@@ -1097,13 +1098,7 @@ public sealed partial class L12GameEngine
             "S01-0318" => (effectOnlyRepeat || declared.GetValueOrDefault("masterDamageCost", []).SingleOrDefault() == "cost:master-damage")
                 && Grave("entryCard", target => target.CardType == "legion" && target.CurrentCost <= 5
                     && L12StructuredCardRules.HasFaction(player, target, "asgard")) && OwnSlot("entrySlot"),
-            "S01-0319" => (effectOnlyRepeat || declared.GetValueOrDefault("graveCost", []) is { Count: >= 2 and <= 4 } graveCost
-                && graveCost.Distinct(StringComparer.OrdinalIgnoreCase).Count() == graveCost.Count
-                && graveCost.Select(id => player.Graveyard.FirstOrDefault(target => target.InstanceId == id
-                        && CanEnterHandOrLibrary(target))).OfType<L12CardInstance>().ToArray() is { } graveCards
-                && graveCards.Length == graveCost.Count
-                && L12StructuredCardRules.IsExactGraveCardRepresentation(player, graveCards,
-                    declared.GetValueOrDefault("graveCostCopies", []).SingleOrDefault(), 4))
+            "S01-0319" => ValidateHuntingMomentGraveEffect(player, declared)
                 && Enemy("killTarget", target => target.Troops <= 6000),
             "S01-0419" => mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || declared.GetValueOrDefault("moraleTarget", []).SingleOrDefault() is { } moraleTarget
@@ -1113,7 +1108,7 @@ public sealed partial class L12GameEngine
             "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1"
                 && (mode is "mode:none" or "mode:morale")
                 && (effectOnlyRepeat || mode == "mode:none" || OrdinaryCosts("lotusCost", 3)),
-            "S02-0011" => EnemyMany("killTargets", 3, target => target.BaseTroops <= 2000),
+            "S02-0011" => EnemyMany("killTargets", 3, target => target.DisplayBaseTroops <= 2000),
             "S02-0013" => declared.GetValueOrDefault("artifactTarget", []).SingleOrDefault() is { } artifactId
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
@@ -1124,7 +1119,7 @@ public sealed partial class L12GameEngine
                 && Enemy("primaryTarget")
                 && (mode == "mode:none" || (effectOnlyRepeat || GodPowerCost("secondCost", 1)) && Enemy("secondaryTarget")),
             "S02-0105" => mode is "mode:none" or "mode:draw"
-                && Enemy("killTarget", target => target.BaseTroops <= 3000)
+                && Enemy("killTarget", target => target.DisplayBaseTroops <= 3000)
                 && (mode == "mode:none" || effectOnlyRepeat || declared.GetValueOrDefault("drawCost", []).SingleOrDefault() is { } moraleId
                     && player.Morale.Any(resource => resource.InstanceId == moraleId)),
             "S02-0521" => mode is "mode:none" or "mode:search"
@@ -1147,6 +1142,24 @@ public sealed partial class L12GameEngine
             _ => ValidateStarterCompositeDeclaration(controller, card, declared),
         };
         return valid;
+    }
+
+    private static bool ValidateHuntingMomentGraveEffect(L12PlayerState player,
+        IReadOnlyDictionary<string, List<string>> declared)
+    {
+        var eligible = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
+        var canReturnFour = eligible.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 4;
+        var selectedIds = declared.GetValueOrDefault("graveEffect", []);
+        var representation = declared.GetValueOrDefault("graveEffectCopies", []).SingleOrDefault();
+        if (!canReturnFour)
+            return selectedIds.Count == 0 && string.IsNullOrWhiteSpace(representation);
+        if (selectedIds.Count is < 1 or > 4
+            || selectedIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != selectedIds.Count)
+            return false;
+        var selected = selectedIds.Select(id => eligible.FirstOrDefault(card => card.InstanceId == id))
+            .OfType<L12CardInstance>().ToArray();
+        return selected.Length == selectedIds.Count
+            && L12StructuredCardRules.IsExactGraveCardRepresentation(player, selected, representation, 4);
     }
 
     private bool ValidateForgedOrdersDeclaration(L12PlayerState opponent,

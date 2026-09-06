@@ -289,8 +289,10 @@ const displayedChoices = computed(() => {
   if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
+const primaryChoices = computed(() => hasCardChoices.value
+  ? displayedChoices.value.filter(id => !isDeclineChoice(id)) : displayedChoices.value)
 const supplementalChoices = computed(() => currentChoices.value
-  .filter(id => !displayedChoices.value.includes(id)))
+  .filter(id => !primaryChoices.value.includes(id)))
 const isCardSelectionPrompt = computed(() => prompt.value?.data?.cardSelection === 'true')
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
 const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
@@ -555,7 +557,7 @@ function kindLabel() {
           </section>
         </div>
         <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList }">
-          <template v-for="choice in displayedChoices" :key="choice">
+          <template v-for="choice in primaryChoices" :key="choice">
             <PromptCardCandidate v-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)"
@@ -570,12 +572,14 @@ function kindLabel() {
             </button>
           </template>
         </div>
-        <div v-if="supplementalChoices.length && prompt.data?.choiceMode !== 'optional-add'" class="prompt-supplemental-choices">
-          <button v-for="choice in supplementalChoices" :key="choice" :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
-            :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"
-            @click="toggle(choice)">{{ label(choice) }}</button>
-        </div>
-        <footer>
+        <footer class="prompt-action-footer">
+          <template v-if="prompt.data?.choiceMode !== 'optional-add'">
+            <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
+              :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+              :disabled="l12State.pendingAction"
+              :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"
+              @click="toggle(choice)">{{ label(choice) }}</button>
+          </template>
           <template v-if="placementMode === 'single-top-bottom'">
             <span>先选择 1 张手牌，再决定放回位置</span>
             <button :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveSinglePlacement('top')">放回顶部</button>
@@ -607,7 +611,7 @@ function kindLabel() {
           <template v-else>
             <span>{{ isEffectDecision ? '请选择是否发动本次效果' : isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
-            <button class="primary" :disabled="l12State.pendingAction || selected.length < prompt.minChoose || selected.length > prompt.maxChoose" @click="confirm">
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || selected.length < prompt.minChoose || selected.length > prompt.maxChoose" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : (isInfoConfirm ? '确认信息' : '确认选择') }}
             </button>
           </template>
@@ -663,13 +667,12 @@ function kindLabel() {
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:max(14px,var(--l12-board-readable,14px))}.initiative-race span{color:#89928e;font-size:max(14px,var(--l12-board-readable,14px))}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:max(52px,var(--l12-board-readable,14px));line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:max(14px,var(--l12-board-readable,14px));font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
-.prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow:hidden}
+.prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow-x:hidden;overflow-y:auto}
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:max(18px,var(--l12-board-readable,14px));line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(18px,var(--l12-board-readable,14px))}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(920px,calc(100vw - 36px))}.prompt-card-strip{display:flex;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:8px;padding:10px 3px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.prompt-card-strip{max-height:none}.featured-card-strip{justify-content:center;margin:2px auto}
 .prompt-choices.effect-option-list{display:grid;max-width:100%;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:stretch;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}.prompt-choices.effect-option-list>button{width:100%;min-width:0;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
-.prompt-supplemental-choices{display:flex;justify-content:flex-end;gap:7px;margin:4px 3px}.prompt-supplemental-choices button{padding:7px 12px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}.prompt-supplemental-choices button:hover,.prompt-supplemental-choices button.selected{border-color:#70d7df;background:#174e54}
-.prompt-choices>button.decline-action,.prompt-supplemental-choices>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:max(14px,var(--l12-board-readable,14px))!important;line-height:1.35}
+.prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:max(14px,var(--l12-board-readable,14px))!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:max(14px,var(--l12-board-readable,14px));line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:max(14px,var(--l12-board-readable,14px))}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:max(14px,var(--l12-board-readable,14px))}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:max(14px,var(--l12-board-readable,14px));line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:max(14px,var(--l12-board-readable,14px));line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
@@ -689,4 +692,14 @@ function kindLabel() {
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
 .initiative-race img{width:58px;height:58px;object-fit:cover;border:2px solid #666;border-radius:2px}
 .l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
+/* Center short candidate groups without hiding the start of overflowing rows. */
+.prompt-choices.prompt-card-strip{justify-content:safe center}
+.prompt-choices.effect-option-list{display:flex;width:100%;flex-wrap:wrap;justify-content:center}
+.prompt-choices.effect-option-list>button{flex:0 1 220px;text-align:center}
+.prompt-choices.effect-option-list>button.decline-action{min-height:54px!important}
+.prompt-panel .prompt-action-footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.prompt-action-footer>span{order:-1;flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice{box-sizing:border-box;width:112px;min-width:112px;min-height:44px;padding:9px 12px;font-size:max(14px,var(--l12-board-readable,14px));line-height:1.35;text-align:center}
+.prompt-action-footer>.prompt-footer-choice.selected{border-color:#70d7df;background:#174e54;color:#fff}
+@media(max-width:520px){.prompt-action-footer>span{flex-basis:100%}}
 </style>

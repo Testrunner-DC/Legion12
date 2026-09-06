@@ -25,16 +25,21 @@ public sealed partial class L12GameEngine
     private void ResolveOnPlayContinuousEffects(int playerIndex, L12CardInstance card)
     {
         var player = State.Players[playerIndex];
-        if (card.CardType == "legion" && card.Faction == "asgard"
+        if (card.CardType != "legion" || player.NextLegionChargeMaxCost is not int maxCost || card.CurrentCost > maxCost) return;
+        player.NextLegionChargeMaxCost = null;
+        card.HasCharge = true;
+        AddEvent("effect", playerIndex, $"{card.Name} 获得〈全军出击〉赋予的冲锋", card);
+    }
+
+    private void ResolveEntryContinuousEffects(int playerIndex, L12CardInstance card)
+    {
+        var player = State.Players[playerIndex];
+        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard")
             && player.UsedAbilities.Contains($"s2-thor-charge:{State.TurnSerial}"))
         {
             card.HasCharge = true;
             AddEvent("effect", playerIndex, $"{card.Name}获得雷神索尔赋予的冲锋", card);
         }
-        if (card.CardType != "legion" || player.NextLegionChargeMaxCost is not int maxCost || card.CurrentCost > maxCost) return;
-        player.NextLegionChargeMaxCost = null;
-        card.HasCharge = true;
-        AddEvent("effect", playerIndex, $"{card.Name} 获得〈全军出击〉赋予的冲锋", card);
     }
 
     private void ResolveCardEffect(L12StackItem item)

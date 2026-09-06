@@ -2,17 +2,37 @@
 set -Eeuo pipefail
 umask 027
 
-readonly active_dir="/opt/legion12-test"
-readonly releases_dir="/opt/legion12-releases"
-readonly runtime_dir="/opt/legion12-runtime"
-readonly static_card_assets_dir="/opt/legion12-static/card-assets"
-readonly deployment_dir="/opt/legion12-deployment"
+readonly test_root="${L12_DEPLOY_TEST_ROOT:-}"
+if [[ -n "$test_root" ]]; then
+  [[ "${L12_DEPLOY_TEST_MODE:-0}" == "1" && "$test_root" == /* && "$test_root" != "/" && "$test_root" == *"/l12-deploy-behavior-"* ]] \
+    || { printf '[L12 部署] 错误：测试根目录不满足隔离约束\n' >&2; exit 2; }
+fi
+readonly active_dir="${test_root}/opt/legion12-test"
+readonly releases_dir="${test_root}/opt/legion12-releases"
+readonly runtime_dir="${test_root}/opt/legion12-runtime"
+readonly static_card_assets_dir="${test_root}/opt/legion12-static/card-assets"
+readonly deployment_dir="${test_root}/opt/legion12-deployment"
 readonly incoming_dir="${deployment_dir}/incoming"
 readonly runtime_backup_dir="${deployment_dir}/runtime-backups"
+readonly failure_dir="${deployment_dir}/failures"
 readonly service_name="legion12-test.service"
 readonly public_host="legion-12.com"
-readonly public_base="https://${public_host}"
-readonly lock_file="/run/lock/legion12-deploy.lock"
+readonly lock_file="${test_root}/run/lock/legion12-deploy.lock"
+readonly service_override_dir="${test_root}/etc/systemd/system/${service_name}.d"
+readonly environment_file="${test_root}/etc/legion12-test.env"
+if [[ -n "$test_root" ]]; then
+  readonly public_base="${L12_DEPLOY_PUBLIC_BASE:-https://${public_host}}"
+  readonly local_base="${L12_DEPLOY_LOCAL_BASE:-http://127.0.0.1:8083}"
+  readonly health_verifier="${L12_DEPLOY_HEALTH_VERIFIER:-${test_root}/usr/local/libexec/verify-legion12-health.mjs}"
+  readonly health_attempts="${L12_DEPLOY_HEALTH_ATTEMPTS:-30}"
+  readonly health_delay_seconds="${L12_DEPLOY_HEALTH_DELAY_SECONDS:-1}"
+else
+  readonly public_base="https://${public_host}"
+  readonly local_base="http://127.0.0.1:8083"
+  readonly health_verifier="/usr/local/libexec/verify-legion12-health.mjs"
+  readonly health_attempts="30"
+  readonly health_delay_seconds="1"
+fi
 readonly service_user="legion12"
 readonly web_user="www-data"
 
@@ -20,16 +40,27 @@ log() { printf '[L12 部署] %s\n' "$*"; }
 fail() { printf '[L12 部署] 错误：%s\n' "$*" >&2; return 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || fail "服务器缺少命令：$1"; }
 
+assert_deployment_unblocked() {
+  local blocked_file="${deployment_dir}/deployment-blocked.txt"
+  if [[ -e "$blocked_file" || -L "$blocked_file" ]]; then
+    fail "检测到未完成人工对账的发布阻断标记：${blocked_file}；拒绝继续。请先完成对账，再由人工移除该标记"
+  fi
+}
+
 self_test() {
   test "$(id -u)" -eq 0 || fail "必须以 root 身份执行"
-  for command_name in flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown sort; do
+  for command_name in id flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown sort timeout date seq; do
     require_command "$command_name"
   done
   test -e "$active_dir" || fail "当前部署入口不存在：${active_dir}"
-  test -f "/etc/legion12-test.env" || fail "管理员环境配置不存在"
+  test -f "$environment_file" || fail "管理员环境配置不存在"
+  test -f "$health_verifier" || fail "缺少提交身份校验器：${health_verifier}"
+  [[ "$health_attempts" =~ ^[1-9][0-9]*$ ]] || fail "健康检查重试次数无效"
+  [[ "$health_delay_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "健康检查间隔无效"
   id "$service_user" >/dev/null 2>&1 || fail "找不到服务账号：${service_user}"
   id "$web_user" >/dev/null 2>&1 || fail "找不到 Nginx 账号：${web_user}"
   systemctl cat "$service_name" >/dev/null
+  systemctl is-enabled --quiet "$service_name" || fail "正式服务未启用；可能位于已退役节点，拒绝发布"
   nginx -t >/dev/null
   local nginx_dump
   nginx_dump="$(nginx -T 2>&1)"
@@ -45,6 +76,53 @@ validate_archive() {
     [[ "$member" != /* ]] || fail "压缩包包含绝对路径"
     [[ "/${member}/" != *"/../"* ]] || fail "压缩包包含越界路径"
   done < <(tar -tzf "$archive")
+}
+
+read_release_commit() {
+  local release_root="$1"
+  local marker="${release_root}/.deployment-commit"
+  local release_commit
+  test -f "$marker" || fail "当前版本缺少提交标记：${marker}"
+  release_commit="$(tr -d '\r\n' < "$marker")"
+  [[ "$release_commit" =~ ^[0-9a-f]{40}$ ]] || fail "当前版本提交标记无效：${marker}"
+  printf '%s\n' "$release_commit"
+}
+
+verify_health_once() {
+  local base_url="$1"
+  local expected_commit="$2"
+  local response
+  response="$(curl -fsS --connect-timeout 5 --max-time 10 -H 'Cache-Control: no-cache' "${base_url}/health")" || return 1
+  printf '%s' "$response" | node "$health_verifier" "$expected_commit" >/dev/null
+}
+
+wait_for_exact_health() {
+  local base_url="$1"
+  local expected_commit="$2"
+  local label="$3"
+  local attempt
+  for ((attempt=1; attempt<=health_attempts; attempt+=1)); do
+    if verify_health_once "$base_url" "$expected_commit"; then
+      log "${label}提交身份核验通过：${expected_commit}"
+      return 0
+    fi
+    if (( attempt < health_attempts )); then sleep "$health_delay_seconds"; fi
+  done
+  fail "${label}健康响应未精确匹配目标提交：${expected_commit}"
+}
+
+verify_release_health() {
+  local expected_commit="$1"
+  local label="$2"
+  wait_for_exact_health "$local_base" "$expected_commit" "${label}本机后端" || return 1
+  wait_for_exact_health "$public_base" "$expected_commit" "${label}公网" || return 1
+}
+
+verify_release_websocket() {
+  local label="$1"
+  timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "ws://127.0.0.1:8083/ws" || return 1
+  timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}/ws" || return 1
+  log "${label}本机与公网 WebSocket 无状态探针通过"
 }
 
 validate_card_assets_tree() {
@@ -174,6 +252,7 @@ if [[ "${L12_DEPLOY_LOCKED:-0}" != "1" ]]; then
   exec flock --close --nonblock "$lock_file" "$0" "$@"
 fi
 
+assert_deployment_unblocked
 self_test
 if [[ "$card_assets_hash" != "-" ]]; then
   nginx_dump="$(nginx -T 2>&1)"
@@ -188,16 +267,20 @@ validate_archive "$release_archive"
 
 short_commit="${commit:0:12}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-stage_dir="/opt/legion12-staging-${short_commit}-${timestamp}"
+stage_dir="${test_root}/opt/legion12-staging-${short_commit}-${timestamp}"
 stage_card_assets_dir=""
 release_dir="${releases_dir}/${commit}-${timestamp}"
 previous_target=""
+previous_commit=""
 legacy_dir=""
 service_stopped=0
 switched=0
+active_entry_changed=0
+new_service_launch_attempted=0
 runtime_backup=""
 runtime_restore_dir=""
 failed_runtime_dir=""
+failure_stage="preflight"
 
 cleanup() {
   if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then rm -rf -- "$stage_dir"; fi
@@ -217,9 +300,11 @@ backup_runtime() {
 }
 
 restore_runtime_backup() {
+  # 仅供具有额外、可证明写入围栏的人工恢复流程复用。常规发布一旦尝试启动
+  # 新服务，错误处理器绝不会自动调用本函数覆盖可能包含新事实的 runtime。
   [[ -n "$runtime_backup" && -f "$runtime_backup" ]] || fail "缺少可用于回滚的运行数据快照"
-  runtime_restore_dir="/opt/legion12-runtime-restore-${timestamp}"
-  failed_runtime_dir="/opt/legion12-runtime-failed-${timestamp}"
+  runtime_restore_dir="${test_root}/opt/legion12-runtime-restore-${timestamp}"
+  failed_runtime_dir="${test_root}/opt/legion12-runtime-failed-${timestamp}"
   tar -tzf "$runtime_backup" >/dev/null || return 1
   mkdir -p "$runtime_restore_dir" || return 1
   tar --no-same-owner --no-same-permissions -xzf "$runtime_backup" -C "$runtime_restore_dir" || return 1
@@ -240,26 +325,95 @@ prune_runtime_backups() {
 }
 
 restore_previous() {
-  local restore_link="/opt/.legion12-restore-${timestamp}"
+  local restore_link="${test_root}/opt/.legion12-restore-${timestamp}"
   ln -s "$previous_target" "$restore_link" || return 1
   mv -Tf "$restore_link" "$active_dir" || return 1
 }
 
+stop_service_and_confirm() {
+  systemctl stop "$service_name" >/dev/null 2>&1 || true
+  if systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+write_failure_record() {
+  local disposition="$1"
+  local blocked="$2"
+  local active_target="unresolved"
+  local incident_file="${failure_dir}/deploy-${short_commit}-${timestamp}.txt"
+  local incident_temp="${incident_file}.tmp"
+  mkdir -p "$failure_dir" || return 1
+  chmod 0700 "$failure_dir" || return 1
+  if [[ -e "$active_dir" || -L "$active_dir" ]]; then
+    active_target="$(readlink -f "$active_dir" 2>/dev/null || printf '%s' "$active_dir")"
+  fi
+  {
+    printf 'status=failed\n'
+    printf 'failedCommit=%s\n' "$commit"
+    printf 'failureStage=%s\n' "$failure_stage"
+    printf 'disposition=%s\n' "$disposition"
+    printf 'serviceState=%s\n' "$(if [[ "$service_stopped" -eq 1 ]]; then printf stopped; else printf unknown; fi)"
+    printf 'activeTarget=%s\n' "$active_target"
+    printf 'previousTarget=%s\n' "$previous_target"
+    printf 'previousCommit=%s\n' "$previous_commit"
+    printf 'runtime=%s\n' "$runtime_dir"
+    printf 'runtimeBackup=%s\n' "$runtime_backup"
+    printf 'failedRuntime=%s\n' "$failed_runtime_dir"
+    printf 'recordedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$incident_temp" || return 1
+  chmod 0600 "$incident_temp" || return 1
+  mv "$incident_temp" "$incident_file" || return 1
+  if [[ "$blocked" -eq 1 ]]; then
+    install -m 0600 "$incident_file" "${deployment_dir}/deployment-blocked.txt" || return 1
+  fi
+  log "失败现场说明已保存：${incident_file}"
+}
+
 rollback_on_error() {
-  status=$?
+  local status=$?
+  local rollback_ok=1
+  if [[ "$status" -eq 0 ]]; then status=1; fi
   trap - ERR INT TERM
-  if [[ "$switched" -eq 1 && -n "$previous_target" && -e "$previous_target" ]]; then
-    log "新版本验证失败，正在恢复上一版本及对应运行数据"
-    systemctl stop "$service_name" || true
-    if restore_runtime_backup && restore_previous && systemctl start "$service_name"; then
-      rm -rf -- "$failed_runtime_dir"
-      failed_runtime_dir=""
-      log "上一版本及运行数据已恢复"
+  set +e
+
+  if [[ "$new_service_launch_attempted" -eq 1 ]]; then
+    # systemctl start 可能在返回失败前已经执行迁移或接受请求，无法证明 runtime
+    # 仍与快照相同。宁可中断可用性，也不自动覆盖或删除潜在的新业务事实。
+    if stop_service_and_confirm; then service_stopped=1; else service_stopped=0; fi
+    write_failure_record "new-service-launch-attempted; runtime preserved; manual reconciliation required" 1 || true
+    if [[ "$service_stopped" -eq 1 ]]; then
+      log "新服务已尝试启动；拒绝自动恢复旧 runtime。服务保持停止，须人工对账后恢复。"
     else
-      log "自动回滚未完整成功；为保护数据，服务保持停止并保留现场目录"
+      log "严重：新服务已尝试启动且无法确认停服；未覆盖 runtime，须立即人工隔离流量并对账。"
     fi
   elif [[ "$service_stopped" -eq 1 ]]; then
-    systemctl start "$service_name" || true
+    if [[ "$active_entry_changed" -eq 1 || "$switched" -eq 1 ]]; then
+      restore_previous || rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 ]]; then
+      systemctl start "$service_name" || rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 ]]; then
+      verify_release_health "$previous_commit" "恢复版本" || rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 ]]; then
+      verify_release_websocket "恢复版本" || rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 ]]; then
+      service_stopped=0
+      write_failure_record "failed before new-service launch; previous release restored and verified" 0 || true
+      log "新服务启动前失败；上一版本已恢复并通过本机、公网提交身份及 WebSocket 核验。"
+    else
+      if stop_service_and_confirm; then service_stopped=1; else service_stopped=0; fi
+      write_failure_record "pre-launch recovery could not be verified; manual recovery required" 1 || true
+      if [[ "$service_stopped" -eq 1 ]]; then
+        log "启动新服务前的恢复未能完整验证；服务保持停止且 runtime/备份/版本均保留。"
+      else
+        log "严重：恢复版本无法验证且无法确认停服；runtime/备份/版本均保留，须立即人工隔离流量。"
+      fi
+    fi
   fi
   cleanup
   exit "$status"
@@ -285,7 +439,7 @@ if [[ "$card_assets_hash" != "-" ]]; then
     test -f "$card_assets_archive" || fail "找不到优化卡图包"
     [[ "$(sha256sum "$card_assets_archive" | awk '{print $1}')" == "$card_assets_sha256" ]] || fail "优化卡图包 SHA256 校验失败"
     validate_archive "$card_assets_archive"
-    stage_card_assets_dir="/opt/legion12-card-assets-staging-${card_assets_hash}-${timestamp}"
+    stage_card_assets_dir="${test_root}/opt/legion12-card-assets-staging-${card_assets_hash}-${timestamp}"
     mkdir -p "$stage_card_assets_dir"
     tar --no-same-owner --no-same-permissions -xzf "$card_assets_archive" -C "$stage_card_assets_dir"
     test -f "${stage_card_assets_dir}/card-assets.manifest.json" || fail "优化卡图包缺少 manifest"
@@ -328,55 +482,71 @@ if [[ "$mode" == "dry-run" ]]; then
   exit 0
 fi
 
+if [[ -L "$active_dir" ]]; then
+  previous_target="$(readlink -f "$active_dir")"
+else
+  previous_target="$active_dir"
+fi
+previous_commit="$(read_release_commit "$previous_target")"
+
+failure_stage="stop-current-service"
 log "暂停服务并首次分离持久化运行数据"
-systemctl stop "$service_name"
 service_stopped=1
+systemctl stop "$service_name"
+if systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then
+  fail "服务停止命令返回后仍处于 active，拒绝继续备份或切换"
+fi
 if [[ ! -d "$runtime_dir" ]]; then
+  failure_stage="separate-runtime"
   test -d "${active_dir}/publish/runtime" || fail "当前版本缺少运行数据目录"
   mv "${active_dir}/publish/runtime" "$runtime_dir"
   ln -s "$runtime_dir" "${active_dir}/publish/runtime"
 fi
+failure_stage="snapshot-runtime"
 chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
 backup_runtime
 ln -s "$runtime_dir" "${stage_dir}/publish/runtime"
 
-mkdir -p "/etc/systemd/system/${service_name}.d"
-cat > "/etc/systemd/system/${service_name}.d/runtime.conf" <<EOF
+failure_stage="configure-runtime-boundary"
+mkdir -p "$service_override_dir"
+cat > "${service_override_dir}/runtime.conf" <<EOF
 [Service]
 ReadWritePaths=
 ReadWritePaths=${runtime_dir}
 EOF
 systemctl daemon-reload
 
+failure_stage="install-release"
 mv "$stage_dir" "$release_dir"
 stage_dir=""
 if [[ -L "$active_dir" ]]; then
-  previous_target="$(readlink -f "$active_dir")"
+  : # previous_target and previous_commit were captured before stopping the service.
 else
-  legacy_dir="/opt/legion12-legacy-${timestamp}"
+  legacy_dir="${test_root}/opt/legion12-legacy-${timestamp}"
   mv "$active_dir" "$legacy_dir"
   previous_target="$legacy_dir"
+  active_entry_changed=1
 fi
 
-next_link="/opt/.legion12-test-next-${timestamp}"
+next_link="${test_root}/opt/.legion12-test-next-${timestamp}"
 ln -s "$release_dir" "$next_link"
-switched=1
 mv -Tf "$next_link" "$active_dir"
+switched=1
+active_entry_changed=1
+failure_stage="start-new-service"
+new_service_launch_attempted=1
 systemctl start "$service_name"
 service_stopped=0
 
-log "验证公网 HTTP 健康状态"
-healthy=0
-for _ in $(seq 1 30); do
-  if curl -fsS "${public_base}/health" >/dev/null; then healthy=1; break; fi
-  sleep 1
-done
-[[ "$healthy" -eq 1 ]] || fail "后端健康检查超时"
+failure_stage="verify-new-release-health"
+log "验证本机与公网 HTTP 提交身份"
+verify_release_health "$commit" "新版本"
 curl -fsS "${public_base}/" >/dev/null
 curl -fsS "${public_base}/cards" >/dev/null
-log "验证公网 WebSocket 建连与无状态部署协议"
-timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}/ws"
+failure_stage="verify-new-release-websocket"
+log "验证本机与公网 WebSocket 建连及无状态部署协议"
+verify_release_websocket "新版本"
 
 if [[ "$card_assets_hash" != "-" ]]; then
   public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>{const manifest=JSON.parse(body);if(manifest.schemaVersion!==3||manifest.cardCount!==362||manifest.playableCardCount!==324||manifest.presentationCardCount!==38||!manifest.cards?.['ST01-01']||!manifest.cards?.['S01-0101b']||!manifest.cards?.['S01-01C1A']||!manifest.cards?.['S02-06C1A']||!manifest.cards?.['ST01-C1st']||!manifest.cards?.['S02-05C1B'])process.exit(2);process.stdout.write(manifest.assetVersion||'')})")"
@@ -411,6 +581,7 @@ Legion12 香港测试服
 部署日期：$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
+failure_stage="prune-runtime-backups"
 prune_runtime_backups
 
 rm -f -- "$release_archive"

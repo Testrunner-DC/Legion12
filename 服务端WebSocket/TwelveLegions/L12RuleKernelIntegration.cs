@@ -6,6 +6,19 @@ public sealed partial class L12GameEngine
         string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
         int required, string faction = "", bool legionOnly = false,
         string? requiredDeclaredChoice = null)
+        => GraveExactCountSelectionStep(owner, text, declarationKey, candidates, required, faction,
+            legionOnly, requiredDeclaredChoice);
+
+    private static L12ActivationSelectionStep GraveEffectSelectionStep(L12PlayerState owner,
+        string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
+        int required, string faction = "", bool legionOnly = false,
+        string? requiredDeclaredChoice = null)
+        => GraveExactCountSelectionStep(owner, text, declarationKey, candidates, required, faction,
+            legionOnly, requiredDeclaredChoice);
+
+    private static L12ActivationSelectionStep GraveExactCountSelectionStep(L12PlayerState owner,
+        string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
+        int required, string faction, bool legionOnly, string? requiredDeclaredChoice)
         => new()
         {
             Kind = "order",
@@ -21,6 +34,12 @@ public sealed partial class L12GameEngine
             RepresentedCount = required,
             LegionCardsOnly = legionOnly,
         };
+
+    private static bool IsGraveEffectDeclaration(string? declarationKey)
+        => declarationKey?.StartsWith("graveEffect", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string GraveSelectionHeading(string? declarationKey)
+        => IsGraveEffectDeclaration(declarationKey) ? "墓地效果" : "墓地费用";
 
     private CommandResult BeginPendingActivation(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<string> choices, string text, int min = 1, int max = 1)
@@ -67,6 +86,7 @@ public sealed partial class L12GameEngine
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
             DeclarationKey = step.DeclarationKey,
             ReferenceDeclarationKey = step.ReferenceDeclarationKey,
+            IncludeSourceSlotAfterCost = step.IncludeSourceSlotAfterCost,
             PreviewPresentation = step.PreviewPresentation,
             MinimumReferenceCount = step.MinimumReferenceCount,
             MinimumReferenceNumericValue = step.MinimumReferenceNumericValue,
@@ -82,24 +102,24 @@ public sealed partial class L12GameEngine
         }).ToList();
         for (var index = steps.Count - 1; index >= 0; index--)
         {
-            var graveCost = steps[index];
-            if (graveCost.SelectionConstraint?.Equals("grave-faction-exact", StringComparison.OrdinalIgnoreCase) != true
-                || graveCost.RepresentedCount is null
-                || string.IsNullOrWhiteSpace(graveCost.DeclarationKey)) continue;
+            var graveSelection = steps[index];
+            if (graveSelection.SelectionConstraint?.Equals("grave-faction-exact", StringComparison.OrdinalIgnoreCase) != true
+                || graveSelection.RepresentedCount is null
+                || string.IsNullOrWhiteSpace(graveSelection.DeclarationKey)) continue;
             steps.Insert(index + 1, new L12ActivationSelectionStep
             {
                 Kind = "grave-faction-count",
-                DeclarationKey = $"{graveCost.DeclarationKey}Copies",
-                ReferenceDeclarationKey = graveCost.DeclarationKey,
-                Text = $"墓地费用：选择〈渴求死亡的勇士〉本次视为几张{(graveCost.LegionCardsOnly ? "军团" : "卡牌")}",
+                DeclarationKey = $"{graveSelection.DeclarationKey}Copies",
+                ReferenceDeclarationKey = graveSelection.DeclarationKey,
+                Text = $"{GraveSelectionHeading(graveSelection.DeclarationKey)}：选择〈渴求死亡的勇士〉本次视为几张{(graveSelection.LegionCardsOnly ? "军团" : "卡牌")}",
                 ValidChoices = [],
                 MinChoose = 1,
                 MaxChoose = 1,
                 CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
-                RequiredDeclaredChoice = graveCost.RequiredDeclaredChoice,
-                FactionConstraint = graveCost.FactionConstraint,
-                RepresentedCount = graveCost.RepresentedCount,
-                LegionCardsOnly = graveCost.LegionCardsOnly,
+                RequiredDeclaredChoice = graveSelection.RequiredDeclaredChoice,
+                FactionConstraint = graveSelection.FactionConstraint,
+                RepresentedCount = graveSelection.RepresentedCount,
+                LegionCardsOnly = graveSelection.LegionCardsOnly,
             });
         }
         if (triggerCandidateId is not null && RequiresPrideMasterSurcharge(playerIndex, source))
@@ -236,9 +256,13 @@ public sealed partial class L12GameEngine
         }
         var step = activation.SelectionSteps[activation.CurrentStep];
         var promptKind = step.Kind;
+        var promptText = step.Text;
         string? promptDataChoiceMode = null;
         string? promptLockedChoices = null;
         int? targetPlayerIndex = null;
+        L12CardInstance? graveRepresentationCard = null;
+        var graveRepresentationOrdinal = 0;
+        var graveRepresentationCount = 0;
         if (step.Kind == "adjacent-slot")
         {
             var row = -1;
@@ -405,6 +429,10 @@ public sealed partial class L12GameEngine
                 ? []
                 : EffectEntryBattlefieldChoices(activation.Controller, card)
                     .Select(EffectEntryBattlefieldChoice).ToList();
+            if (card is not null && step.IncludeSourceSlotAfterCost
+                && ProspectiveEntrySlots(activation, step, activation.Controller).Count > 0)
+                choices.Add(EffectEntryBattlefieldChoice(activation.Controller));
+            choices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
             foreach (var choice in choices)
@@ -442,6 +470,23 @@ public sealed partial class L12GameEngine
             if (step.ValidChoices.Count < step.MinChoose)
             {
                 RejectPendingActivation(activation, "所选战场当前没有可合法登场的位置，效果未支付费用也未入栈");
+                return;
+            }
+            promptKind = "slot";
+        }
+        else if (step.Kind == "prospective-entry-slot")
+        {
+            var battlefieldChoice = activation.DeclaredTargets.LastOrDefault(choice =>
+                choice.StartsWith("battlefield:", StringComparison.OrdinalIgnoreCase));
+            targetPlayerIndex = ParseEffectEntryBattlefieldChoice(battlefieldChoice)
+                ?? step.TargetPlayerIndex
+                ?? activation.Controller;
+            var choices = ProspectiveEntrySlots(activation, step, targetPlayerIndex.Value);
+            step.ValidChoices.Clear();
+            step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count < step.MinChoose)
+            {
+                RejectPendingActivation(activation, "费用结算后仍没有合法登场位置；费用未支付且效果未入栈");
                 return;
             }
             promptKind = "slot";
@@ -584,15 +629,28 @@ public sealed partial class L12GameEngine
             var player = State.Players[activation.Controller];
             var selectedCards = selectedIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id))
                 .OfType<L12CardInstance>().ToArray();
-            var choices = L12StructuredCardRules.GraveFactionRepresentationChoices(player, selectedCards,
-                step.FactionConstraint ?? string.Empty, step.RepresentedCount ?? 0, step.LegionCardsOnly);
-            if (choices.Count == 0 && step.RepresentedCount is { } exactCount && selectedCards.All(card =>
-                    L12StructuredCardRules.StarterGraveFactionCopies(player, card,
-                        step.FactionConstraint ?? string.Empty, step.LegionCardsOnly) == 1)
-                && selectedCards.Length == exactCount)
+            var progressKey = $"{step.DeclarationKey}:grave-count-progress";
+            var progress = activation.DeclaredValues.GetValueOrDefault(progressKey, []);
+            if (selectedCards.Length != selectedIds.Count
+                || !L12StructuredCardRules.TryBuildNextGraveRepresentationPrompt(player, selectedCards, progress,
+                    step.FactionConstraint ?? string.Empty, step.RepresentedCount ?? 0,
+                    step.RepresentedCount ?? 0, step.LegionCardsOnly,
+                    out graveRepresentationCard, out var choices, out var representation,
+                    out graveRepresentationOrdinal, out graveRepresentationCount))
+            {
+                RejectPendingActivation(activation, IsGraveEffectDeclaration(step.DeclarationKey)
+                    ? "所选墓地卡牌无法按玩家指定张数满足返回效果；卡牌未支付费用也未入栈"
+                    : "所选墓地卡牌无法按玩家指定张数满足发动费用；费用未支付也未入栈");
+                return;
+            }
+            if (graveRepresentationCard is null)
             {
                 if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
-                    activation.DeclaredValues[step.DeclarationKey] = [];
+                    activation.DeclaredValues[step.DeclarationKey] = representation is null ? [] : [representation];
+                if (representation is not null
+                    && !activation.DeclaredTargets.Contains(representation, StringComparer.OrdinalIgnoreCase))
+                    activation.DeclaredTargets.Add(representation);
+                activation.DeclaredValues.Remove(progressKey);
                 activation.CurrentStep++;
                 CreateActivationStepPrompt(activation);
                 return;
@@ -601,11 +659,8 @@ public sealed partial class L12GameEngine
             step.ValidChoices.AddRange(choices.Keys);
             step.ChoiceLabels.Clear();
             foreach (var pair in choices) step.ChoiceLabels[pair.Key] = pair.Value;
-            if (step.ValidChoices.Count == 0)
-            {
-                RejectPendingActivation(activation, "所选墓地卡牌无法按玩家指定张数满足发动费用；费用未支付也未入栈");
-                return;
-            }
+            promptText = $"{GraveSelectionHeading(step.DeclarationKey)}：第{graveRepresentationOrdinal}/{graveRepresentationCount}张" +
+                $"〈{graveRepresentationCard.Name}〉本次视为几张{(step.LegionCardsOnly ? "军团" : "卡牌")}";
             promptKind = "option";
         }
         else if (step.Kind == "composite-desert-hand")
@@ -629,23 +684,6 @@ public sealed partial class L12GameEngine
                 return;
             }
             promptKind = "hand-card";
-        }
-        else if (step.Kind == "composite-desert-slot")
-        {
-            var player = State.Players[activation.Controller];
-            var choices = EmptySlots(player).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var id in activation.DeclaredValues.GetValueOrDefault("discardTargets", []))
-                if (FindOnField(player, id, out var row, out var slot) is not null)
-                    choices.Add($"{row}:{slot}");
-            step.ValidChoices.Clear();
-            step.ValidChoices.AddRange(choices);
-            if (choices.Count == 0)
-            {
-                RejectPendingActivation(activation, "弃置结算后仍没有合法登场位置，效果未支付费用也未入栈");
-                return;
-            }
-            promptKind = "slot";
-            targetPlayerIndex = activation.Controller;
         }
         else if (step.Kind == "public-palace-enemy")
         {
@@ -721,6 +759,15 @@ public sealed partial class L12GameEngine
         if (step.RepresentedCount is { } representedCount)
             promptData["representedCount"] = representedCount.ToString();
         if (step.LegionCardsOnly) promptData["legionCardsOnly"] = "true";
+        if (graveRepresentationCard is not null)
+        {
+            promptData["graveRepresentationEntityId"] = graveRepresentationCard.InstanceId;
+            promptData["graveRepresentationOrdinal"] = graveRepresentationOrdinal.ToString();
+            promptData["graveRepresentationCount"] = graveRepresentationCount.ToString();
+            promptData["previewCardId"] = graveRepresentationCard.InstanceId;
+            promptData["previewPresentation"] = "information-card";
+            AddPromptCardData(promptData, graveRepresentationCard);
+        }
         if (activation.Ability == "public-trigger-declaration")
         {
             var triggerSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
@@ -776,7 +823,7 @@ public sealed partial class L12GameEngine
         }
         var promptChoices = (addCancellationChoice ? step.ValidChoices.Append("skip") : step.ValidChoices)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        CreatePrompt(activation.Controller, promptKind, step.Text, promptChoices, step.MinChoose,
+        CreatePrompt(activation.Controller, promptKind, promptText, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
             data: promptData);
@@ -877,6 +924,15 @@ public sealed partial class L12GameEngine
             || chosen.Any(id => !step.ValidChoices.Contains(id, StringComparer.OrdinalIgnoreCase)))
         {
             RejectPendingActivation(activation, "目标声明已失效，效果未支付费用也未入栈");
+            return;
+        }
+        if (step.Kind == "grave-faction-count")
+        {
+            var progressKey = $"{step.DeclarationKey}:grave-count-progress";
+            var progress = activation.DeclaredValues.GetValueOrDefault(progressKey, []).ToList();
+            progress.Add(chosen.Single());
+            activation.DeclaredValues[progressKey] = progress;
+            CreateActivationStepPrompt(activation);
             return;
         }
         activation.DeclaredTargets.AddRange(chosen);
@@ -1098,7 +1154,9 @@ public sealed partial class L12GameEngine
             var card = reference is null ? null : FindPromptCard(controller, reference);
             var battlefield = ParseEffectEntryBattlefieldChoice(choice);
             return card is not null && battlefield is not null
-                && EffectEntryBattlefieldChoices(controller, card).Contains(battlefield.Value);
+                && (EffectEntryBattlefieldChoices(controller, card).Contains(battlefield.Value)
+                    || entryStep?.IncludeSourceSlotAfterCost == true && battlefield.Value == controller
+                    && ProspectiveEntrySlots(activation!, entryStep, controller).Count > 0);
         }
         // PendingActivation 也用于士气/神力等真实资源的预声明。士气不是
         // L12CardInstance，不能仅依赖 FindPromptCard 校验，否则合法选择会在支付前被误判失效。
@@ -1137,6 +1195,20 @@ public sealed partial class L12GameEngine
                     && AdjacentEmptySlots(battlefield, movingRow, movingSlot)
                         .Contains(choice, StringComparer.OrdinalIgnoreCase);
             }
+            var prospectiveStep = activation?.SelectionSteps.FirstOrDefault(step =>
+                step.Kind == "prospective-entry-slot" && step.DeclarationKey is not null
+                && activation.DeclaredValues.GetValueOrDefault(step.DeclarationKey, [])
+                    .Contains(choice, StringComparer.OrdinalIgnoreCase));
+            if (prospectiveStep is not null)
+            {
+                var prospectiveBattlefield = activation!.DeclaredTargets
+                    .Select(ParseEffectEntryBattlefieldChoice)
+                    .LastOrDefault(index => index is not null)
+                    ?? prospectiveStep.TargetPlayerIndex
+                    ?? controller;
+                return ProspectiveEntrySlots(activation, prospectiveStep, prospectiveBattlefield)
+                    .Contains(choice);
+            }
             var effectEntryBattlefield = activation?.DeclaredTargets
                 .Select(ParseEffectEntryBattlefieldChoice)
                 .FirstOrDefault(index => index is not null);
@@ -1149,15 +1221,28 @@ public sealed partial class L12GameEngine
                     && battlefield.Field[row][slot] is null
                     && EffectCavalryDestinations(battlefield).Contains(choice);
             }
-            if (activation?.Ability == "horusRevive")
-            {
-                var occupant = State.Players[controller].Field[row][slot];
-                return occupant is null || activation.DeclaredValues.GetValueOrDefault("fieldCosts", [])
-                    .Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase);
-            }
             return State.Players[controller].Field[row][slot] is null;
         }
         return FindPromptCard(controller, choice) is not null;
+    }
+
+    private HashSet<string> ProspectiveEntrySlots(L12PendingActivation activation,
+        L12ActivationSelectionStep step, int targetPlayerIndex)
+    {
+        var battlefield = State.Players[targetPlayerIndex];
+        var choices = EmptySlots(battlefield).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (step.ReferenceDeclarationKey is { } referenceKey)
+        {
+            foreach (var id in activation.DeclaredValues.GetValueOrDefault(referenceKey, []))
+                if (FindOnField(battlefield, id, out var row, out var slot) is not null)
+                    choices.Add($"{row}:{slot}");
+        }
+        if (step.IncludeSourceSlotAfterCost && targetPlayerIndex == activation.Controller
+            && FindOnField(battlefield, activation.SourceInstanceId, out var sourceRow, out var sourceSlot) is not null)
+            choices.Add($"{sourceRow}:{sourceSlot}");
+        if (State.ActiveDisaster?.CardId == "S01-DS03")
+            choices.RemoveWhere(choice => choice.StartsWith("1:", StringComparison.Ordinal));
+        return choices;
     }
 
     private L12CardInstance? DeclaredEnemyTarget(int controller, string? instanceId,
@@ -1340,7 +1425,7 @@ public sealed partial class L12GameEngine
         var sharedTimingLine = lines.FirstOrDefault(line =>
             line.StartsWith("登场时/进攻时", StringComparison.Ordinal));
         if (sharedTimingLine is not null && trigger is "enter" or "promotion-enter" or "attack")
-            return SpecializeSharedTriggerTiming(sharedTimingLine, trigger);
+            return TrimTrailingEffectReminder(SpecializeSharedTriggerTiming(sharedTimingLine, trigger));
         var abilitySegments = lines.SelectMany(SplitEffectAbilitySegments).ToArray();
         var markerMatch = abilitySegments.FirstOrDefault(segment => markers.Length > 0
             && (ability is null ? markers.Any(marker => NormalizeTriggeredEffectText(segment).Contains(
@@ -1348,12 +1433,21 @@ public sealed partial class L12GameEngine
                 : markers.All(marker => NormalizeTriggeredEffectText(segment).Contains(
                     NormalizeTriggeredEffectText(marker), StringComparison.Ordinal))));
         if (!string.IsNullOrWhiteSpace(markerMatch))
-            return SpecializeSharedTriggerTiming(markerMatch.Trim(), trigger);
+            return TrimTrailingEffectReminder(SpecializeSharedTriggerTiming(markerMatch.Trim(), trigger));
 
         var normalizedFallback = NormalizeTriggeredEffectText(fallback);
         var fallbackMatch = abilitySegments.FirstOrDefault(segment => normalizedFallback.Length >= 2
             && NormalizeTriggeredEffectText(segment).Contains(normalizedFallback, StringComparison.Ordinal));
-        return fallbackMatch ?? fallback;
+        return fallbackMatch is null ? fallback : TrimTrailingEffectReminder(fallbackMatch);
+    }
+
+    private static string TrimTrailingEffectReminder(string text)
+    {
+        const string chargeKeywordReminder = "（可在登场回合进攻）";
+        var trimmed = text.Trim();
+        return trimmed.EndsWith(chargeKeywordReminder, StringComparison.Ordinal)
+            ? trimmed[..^chargeKeywordReminder.Length].TrimEnd()
+            : trimmed;
     }
 
     private static string SpecializeSharedTriggerTiming(string text, string trigger)
@@ -1411,7 +1505,17 @@ public sealed partial class L12GameEngine
         {
             var ability = GetAbilities(source.CardId)
                 .FirstOrDefault(candidate => candidate.Id.Equals(abilityId, StringComparison.OrdinalIgnoreCase));
-            if (ability is not null && !string.IsNullOrWhiteSpace(ability.Label)) return ability.Label;
+            if (ability is not null && !string.IsNullOrWhiteSpace(ability.Label))
+            {
+                var label = TrimTrailingEffectReminder(ability.Label);
+                if (source.CardType == "rune" && source.Name.StartsWith("士气·", StringComparison.Ordinal))
+                {
+                    var delimiter = label.IndexOf('：');
+                    var body = delimiter < 0 ? label : label[(delimiter + 1)..].Trim();
+                    return $"{source.Name["士气·".Length..]}阵营效果：{body}";
+                }
+                return label;
+            }
         }
 
         if (trigger is "response-block" or "response-retarget-master" or "response-negate" or "reaction" or "s2-reaction")
@@ -1532,7 +1636,13 @@ public sealed partial class L12GameEngine
 
     private void AddTriggerCandidateToStack(L12TriggerCandidate candidate)
     {
-        var stackText = candidate.Data.GetValueOrDefault("stackText", candidate.Text);
+        var triggerEffectText = candidate.Data.GetValueOrDefault("triggerEffectText");
+        if (string.IsNullOrWhiteSpace(triggerEffectText)) triggerEffectText = candidate.Text;
+        var stackText = candidate.Data.GetValueOrDefault("stackText");
+        if (string.IsNullOrWhiteSpace(stackText))
+            stackText = UsesGenericStackEffectText(candidate.Trigger, candidate.Text)
+                ? triggerEffectText
+                : candidate.Text;
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -1549,9 +1659,7 @@ public sealed partial class L12GameEngine
         else State.EffectStack.Add(item);
         RevealSetReactionSourceWhenStacked(candidate);
         var source = FindSource(item) ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
-        AddEvent("effect-trigger", candidate.Controller,
-            candidate.Data.GetValueOrDefault("triggerEffectText", candidate.Text),
-            source);
+        AddEvent("effect-trigger", candidate.Controller, triggerEffectText, source);
         AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{stackText}进入同一时点触发批次",
             source);
     }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { captureBugClientDiagnostic, l12State } from '@/l12/net'
 import { platformState, submitBug } from '@/l12/platform'
@@ -9,6 +9,9 @@ const open = ref(false)
 const busy = ref(false)
 const message = ref('')
 const form = reactive({ bugDescription: '', suggestion: '' })
+function openFeedback() { open.value = true }
+onMounted(() => window.addEventListener('l12-open-bug-feedback', openFeedback))
+onBeforeUnmount(() => window.removeEventListener('l12-open-bug-feedback', openFeedback))
 
 async function submit() {
   const bugDescription = form.bugDescription.trim()

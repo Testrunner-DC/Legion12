@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;900&family=ZCOOL+XiaoWei&display=swap');
-
 :root {
   font-family: 'Noto Sans SC', system-ui, sans-serif;
   color: #eee8d9;
@@ -106,7 +104,7 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 .mat-piles{height:208px;gap:5px}.pile{border:1px solid rgba(236,237,227,.28);border-radius:1px;background:rgba(7,9,10,.38)}.pile.deck{background:rgba(7,9,10,.38)}.pile-card{width:48px;height:68px;border:1px solid rgba(240,239,229,.72);border-radius:2px;background:#101314;box-shadow:3px 4px 8px #000}.pile-card.card-back,.card-back{background-color:#00101f;background-image:url('/assets/l12/card-back-navy.png');background-position:center;background-size:cover}.pile-card.card-back i,.card-back i{display:none}.pile-card img{object-fit:contain;background:#090a0b}.pile b{border-radius:1px;background:#e9e4d6;color:#101213}.pile span{color:#c3c2b9;font-family:Georgia,'Songti SC',serif;letter-spacing:.08em}.pile.graveyard:hover{border-color:var(--cyan);background:rgba(30,126,135,.16)}
 .board-seam::before{height:1px;background:linear-gradient(90deg,transparent,#b42a35 24%,#e9e7dd 50%,#3eabb5 76%,transparent)}.disaster-counter{left:176px;border:1px solid #e6e1d2;border-radius:1px;background:#a8242e;box-shadow:0 4px 12px #000;color:#fff}.disaster-counter b,.disaster-counter span{color:#fff}.l12-phase-track{border:1px solid rgba(235,236,226,.34);border-radius:1px;background:#0b0d0e;box-shadow:0 4px 12px #000}.l12-phase-track span.active{border-radius:1px;background:#e7e2d3;box-shadow:none;color:#111314}.l12-phase-track span.round{color:var(--cyan)}
 .l12-hand{height:106px;gap:7px}.hand-card-wrap{position:relative;flex:0 0 74px;height:103px;display:grid;place-items:end center;transition:filter .15s,opacity .15s}.hand-card-wrap .card-tile{width:74px;height:103px;flex-basis:74px;border:1px solid rgba(237,237,228,.68);border-radius:2px;box-shadow:0 5px 11px #000}.l12-hand.playability-active .hand-card-wrap:not(.playable){filter:saturate(.55) brightness(.72)}.hand-card-wrap.playable .card-tile{border-color:#62c5cc;box-shadow:0 0 0 1px rgba(70,185,195,.52),0 5px 12px #000}.hand-card-wrap.playable .card-tile:hover{box-shadow:0 0 13px rgba(69,185,195,.62),0 8px 14px #000}.l12-hand.hidden .card-back{width:50px;height:70px;border:1px solid rgba(236,237,227,.65);border-radius:2px;box-shadow:0 4px 8px #000}
-.card-tile{border:1px solid rgba(238,238,228,.7);border-radius:2px;background:#0b0d0e;box-shadow:0 5px 12px rgba(0,0,0,.68)}.card-tile:hover{border-color:#fff;box-shadow:0 8px 16px #000,0 0 9px rgba(69,185,195,.4)}.card-tile.selected{border:2px solid #f4f0df;box-shadow:0 0 0 2px var(--cyan),0 7px 14px #000}.card-tile img{object-fit:contain;background:#090a0b}.card-tile::after{display:none}.card-name{display:none}.card-cost,.card-power,.card-disaster{padding:2px 5px;border:1px solid rgba(240,240,231,.5);border-radius:1px;color:#fff;font-weight:800;text-shadow:0 1px 1px #000}.card-cost{left:3px;right:auto;top:3px;bottom:auto;background:rgba(5,6,7,.94)}.card-disaster{left:auto;right:3px;top:3px;bottom:auto;background:rgba(126,24,31,.94)}.card-power{left:50%;right:auto;bottom:3px;transform:translateX(-50%);background:rgba(51,55,56,.95)}.card-power.boosted{background:rgba(20,91,67,.96)}.card-power.weakened{background:rgba(126,24,31,.96)}
+.card-tile{border:1px solid rgba(238,238,228,.7);border-radius:2px;background:#0b0d0e;box-shadow:0 5px 12px rgba(0,0,0,.68)}.card-tile:hover{border-color:#fff;box-shadow:0 8px 16px #000,0 0 9px rgba(69,185,195,.4)}.card-tile.selected{border:2px solid #f4f0df;box-shadow:0 0 0 2px var(--cyan),0 7px 14px #000}.card-tile img{object-fit:contain;background:#090a0b}.card-tile::after{display:none}.card-name{display:none}.card-cost,.card-power,.card-disaster{padding:2px 5px;border:1px solid rgba(240,240,231,.5);border-radius:1px;color:#fff;font-weight:800;text-shadow:0 1px 1px #000}.card-cost{left:3px;right:auto;top:3px;bottom:auto;background:rgba(5,6,7,.72)}.card-disaster{left:auto;right:3px;top:3px;bottom:auto;background:rgba(126,24,31,.76)}.card-power{left:50%;right:auto;bottom:3px;transform:translateX(-50%);background:rgba(51,55,56,.78)}.card-power.boosted{background:rgba(20,91,67,.8)}.card-power.weakened{background:rgba(126,24,31,.82)}
 .card-context-actions{position:absolute;z-index:30;left:50%;bottom:calc(100% + 5px);display:none;gap:4px;transform:translateX(-50%);white-space:nowrap;filter:none}.hand-card-wrap.selected>.card-context-actions,.formation-slot.source>.card-context-actions{display:flex}.card-context-actions button{min-width:46px;padding:5px 8px;border:1px solid #ede9dc;border-radius:1px;background:#111415;color:#eeeadd;font:700 max(14px,var(--l12-board-readable,14px)) 'Noto Sans SC';box-shadow:0 4px 10px #000}.card-context-actions button:hover,.card-context-actions button.active{border-color:var(--cyan);background:#1f747c;color:#fff}.formation-slot .field-actions{bottom:calc(50% + 62px)}.hand-card-wrap .hand-actions{bottom:calc(100% + 4px)}.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}
 .player-panel strong{font-family:Georgia,'Songti SC',serif}.player-panel strong.mine{color:#5ec6ce}.player-panel h3:first-child,.side-opponent .pile span{color:#d2525b}.player-panel hr+h3,.side-my .pile span{color:#58bdc5}.l12-actions button{border:1px solid #5a605e;border-radius:1px;background:#15191a}.l12-actions button:hover{border-color:var(--cyan)}.l12-actions button.primary{border:1px solid #ded9ca;background:#e4dfd0;box-shadow:none;color:#111314}.l12-actions button.danger{border-color:#a63a42;background:#351417;color:#edb2b6}.card-action-hint{padding:8px;border-left:2px solid var(--cyan);background:rgba(28,116,125,.12)}
 .graveyard-overlay{background:rgba(3,5,6,.86);backdrop-filter:blur(7px)}.graveyard-window{width:min(680px,88vw);height:min(570px,82vh);border:1px solid rgba(239,239,230,.62);border-radius:2px;background:linear-gradient(145deg,#171a1b,#080a0b);box-shadow:0 18px 50px #000}.graveyard-window>header{border-bottom:1px solid rgba(237,238,228,.28)}.graveyard-window header small{color:var(--cyan)}.graveyard-window h2{font-family:Georgia,'Songti SC',serif}.graveyard-window header button{border:1px solid #ddd9cc;border-radius:1px;background:#171a1b;box-shadow:none;color:#eee9dc}.graveyard-columns.single{grid-template-columns:1fr}.graveyard-columns article{border:1px solid rgba(236,237,227,.25);border-radius:1px;background:#0b0d0e}.graveyard-columns article.initial{border-color:rgba(236,237,227,.25)}.graveyard-columns h3 span{color:var(--cyan)}
@@ -215,9 +213,9 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 
 /* Readability contract: every interactive text surface keeps a strong luminance gap. */
 :root{font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}
-.card-power{border-color:#aeb4b0!important;background:#353a39!important;color:#fff!important;text-shadow:0 1px 2px #000!important}
-.card-power.boosted{border-color:#6fc797!important;background:#145b43!important;color:#fff!important;box-shadow:0 0 8px rgba(49,153,104,.55)}
-.card-power.weakened{border-color:#de7780!important;background:#7e181f!important;color:#fff!important;box-shadow:0 0 8px rgba(179,45,55,.5)}
+.card-power{border-color:#aeb4b0!important;background:rgba(53,58,57,.78)!important;color:#fff!important;text-shadow:0 1px 2px #000!important}
+.card-power.boosted{border-color:#6fc797!important;background:rgba(20,91,67,.8)!important;color:#fff!important;box-shadow:0 0 8px rgba(49,153,104,.55)}
+.card-power.weakened{border-color:#de7780!important;background:rgba(126,24,31,.82)!important;color:#fff!important;box-shadow:0 0 8px rgba(179,45,55,.5)}
 .l12-actions button,.card-context-actions button,.board-target-controls button,.prompt-panel footer button,.prompt-choices>button,.prompt-minimized-bar button,.graveyard-window header button,.master-window button,.deck-editor button{background:#151a1b;color:#fff;border-color:#8d9692;text-shadow:none}
 .l12-actions button:hover,.card-context-actions button:hover,.board-target-controls button:hover,.prompt-panel footer button:hover,.prompt-choices>button:hover,.prompt-minimized-bar button:hover,.graveyard-window header button:hover,.master-window button:hover,.deck-editor button:hover{background:#205f65;color:#fff;border-color:#83e4eb}
 .l12-actions button.primary,.board-target-controls button.primary,.prompt-panel footer button.primary{background:#eee8d8!important;color:#0a0d0e!important;border-color:#fff!important}
@@ -233,3 +231,80 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 .card-tile.horizontal-card{height:auto;aspect-ratio:8/5}
 .card-inspector>.card-tile.horizontal-card{width:100%;max-width:238px;height:auto;flex:0 0 auto;aspect-ratio:8/5}
 @media(max-width:700px){.archive-detail-image.horizontal{width:min(250px,100%)}}
+
+/*
+ * Global UI theme invariant.
+ *
+ * Keep this layer last: it changes only the font family while preserving every
+ * component's font size, weight and line-height. Important declarations in this
+ * named layer override legacy unlayered shorthand declarations from scoped
+ * components. Universal selectors cover body-level teleports and generated text.
+ */
+@layer l12-theme{
+  :root{
+  --l12-font-sans:'Microsoft YaHei','Microsoft YaHei UI','PingFang SC','Noto Sans SC','Source Han Sans SC','Heiti SC',Arial,sans-serif;
+  --l12-native-control-bg:#0b1011;
+  --l12-native-control-bg-disabled:#111617;
+  --l12-native-control-ink:#ece9df;
+  --l12-native-control-ink-disabled:#858d89;
+  color-scheme:dark;
+}
+
+html,
+body,
+*,
+*::before,
+*::after,
+*::placeholder{
+  font-family:var(--l12-font-sans)!important;
+}
+
+html,
+body,
+select,
+option,
+optgroup{
+  color-scheme:dark!important;
+}
+
+select,
+select option,
+select optgroup{
+  background-color:var(--l12-native-control-bg)!important;
+  color:var(--l12-native-control-ink)!important;
+}
+
+select{
+  box-sizing:border-box!important;
+  min-width:0!important;
+  max-width:100%!important;
+  min-height:36px!important;
+  padding:8px 12px!important;
+  border-color:#56615f!important;
+}
+
+select option:checked{
+  background-color:#263638!important;
+  color:#fff!important;
+}
+
+select:focus,
+select:focus-visible{
+  border-color:#72d7de!important;
+  outline:2px solid rgba(83,196,203,.48);
+  outline-offset:1px;
+}
+
+select:disabled,
+select option:disabled,
+select optgroup:disabled{
+  background-color:var(--l12-native-control-bg-disabled)!important;
+  color:var(--l12-native-control-ink-disabled)!important;
+}
+
+select:disabled{
+  border-color:#394240!important;
+  cursor:not-allowed;
+  opacity:.72;
+}
+}

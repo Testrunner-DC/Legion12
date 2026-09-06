@@ -162,11 +162,6 @@ public static partial class L12StructuredCardRules
 
     public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
     {
-        // 〈猎杀时刻〉冒号前的“将墓地4张卡牌返回牌库底部”是发动费用，
-        // 必须在支付士气、移出手牌和入栈之前完成合法性校验。
-        if (card.CardId == "S01-0319"
-            && controller.Graveyard.Sum(StarterGraveCardCopies) < 4)
-            return "〈猎杀时刻〉需要墓地卡牌合计能视为4张，才可支付发动费用";
         if (card.CardType != "artifact") return null;
         var artifactZone = controller.Relic is null
             ? controller.ExtraRelics

@@ -1361,7 +1361,8 @@ public sealed partial class L12GameEngine
                 candidate.Data["onceKey"] = onceKey;
             }
         }
-        else if (key.Item1 == "S02-01S1")
+        else if (key is ("S02-01S1", "master-morale-return", _)
+            && candidate.Data.GetValueOrDefault("mode") == "xiaotian")
         {
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
             var slot = activation.DeclaredValues.GetValueOrDefault("slot", []).SingleOrDefault();

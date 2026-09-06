@@ -357,6 +357,9 @@ public sealed partial class L12RoomManager
     private async Task TickMaintenanceLockedRoomsAsync(DateTimeOffset now, List<OutgoingMessage> messages)
     {
         var policy = CaptureOperationsPolicy();
+        // Immediate maintenance closes only new-game entry. It deliberately shields already-running games
+        // from the scheduled-maintenance invalidation path while the manual override is active.
+        if (policy.ImmediateMaintenance?.Enabled == true) return;
         if (!policy.Maintenance.Enabled) return;
         var starts = policy.Maintenance.StartsAt;
         var remaining = starts is { } scheduledStart ? scheduledStart - now : TimeSpan.Zero;
@@ -401,7 +404,7 @@ public sealed partial class L12RoomManager
                 }
                 if (room.LastMaintenanceWarningMinutes == warningMinutes) continue;
                 room.LastMaintenanceWarningMinutes = warningMinutes;
-                var text = $"服务器将于{starts!.Value.ToLocalTime():HH:mm}开始维护，距离维护还有{warningMinutes}分钟，维护开始当前对局将会被废弃，请尽快结束。";
+                var text = $"服务器将于北京时间{starts!.Value.ToOffset(TimeSpan.FromHours(8)):HH:mm}开始维护，距离维护还有{warningMinutes}分钟，维护开始当前对局将会被废弃，请尽快结束。";
                 foreach (var audience in room.Sessions.Concat(room.Spectators).Distinct())
                     messages.Add(new OutgoingMessage(audience, new { type = "maintenanceWarning", message = text,
                         startsAt = starts, minutesRemaining = warningMinutes }));

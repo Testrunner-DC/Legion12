@@ -2,6 +2,8 @@ import { reactive } from 'vue'
 import type { GameState, RankedClockView, RoomState } from './types'
 import type { SavedL12Deck } from './decks'
 import type { EffectiveOperationsPolicy, RankedSettlement } from './platform'
+import type { MatchGovernanceResult } from './matchGovernance'
+import { createGameReentryController } from './gameReentry'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
@@ -131,6 +133,7 @@ export const l12State = reactive({
   matchFound: null as null | { mode?: 'ranked' | 'casual'; roomCode: string; matchId?: string },
   rankedSettlement: null as RankedSettlement | null,
   rankedClock: null as RankedClockView | null,
+  matchGovernanceResult: null as MatchGovernanceResult | null,
   connectionGeneration: 0,
   recoveryPhase: 'idle' as L12RecoveryPhase,
   connectionIssue: 'none' as L12ConnectionIssue,
@@ -140,6 +143,30 @@ export const l12State = reactive({
   lastCloseReason: '' as string,
   retryCount: 0,
 })
+
+const gameReentry = createGameReentryController(async () => {
+  // 动态加载避免 net -> router -> platform -> net 的初始化环；恢复消息到达时路由已经安装。
+  const { router } = await import('../router/index')
+  return {
+    currentRoute: () => ({
+      path: router.currentRoute.value.path,
+      fullPath: router.currentRoute.value.fullPath,
+      replay: router.currentRoute.value.meta.replay === true,
+    }),
+    enterGame: async () => { await router.replace('/game') },
+    afterEach: listener => router.afterEach(() => listener()),
+  }
+})
+
+function syncGameReentry() {
+  void gameReentry.update({
+    status: l12State.status,
+    recoveryPhase: l12State.recoveryPhase,
+    connectionGeneration: l12State.connectionGeneration,
+    game: l12State.game ? { matchId: l12State.game.matchId, revision: l12State.game.revision } : null,
+    leavingRoom: l12State.leavingRoom,
+  })
+}
 
 function socketReadyStateName(socket: WebSocket | null) {
   const state = socket?.readyState
@@ -205,13 +232,17 @@ export async function captureBugClientDiagnostic(currentRoute: string): Promise<
 }
 
 export function connect(): Promise<void> {
-  if (l12State.socket?.readyState === WebSocket.OPEN && l12State.status === 'online') return Promise.resolve()
+  if (l12State.socket?.readyState === WebSocket.OPEN && l12State.status === 'online') {
+    syncGameReentry()
+    return Promise.resolve()
+  }
   if (connectPromise) return connectPromise
   const authToken = localStorage.getItem('l12-auth-token') || ''
   if (!authToken) {
     l12State.notice = '请先登录账号'
     l12State.connectionIssue = 'authentication'
     l12State.recoveryPhase = 'authentication-rejected'
+    syncGameReentry()
     return Promise.reject(new Error(l12State.notice))
   }
   automaticConnectionEnabled = true
@@ -220,6 +251,7 @@ export function connect(): Promise<void> {
   l12State.connectionIssue = 'none'
   l12State.recoveryPhase = 'opening-websocket'
   l12State.notice = ''
+  syncGameReentry()
   l12State.endpoint = normalizeEndpoint(l12State.endpoint)
   localStorage.setItem('l12-endpoint', l12State.endpoint)
   const pending = new Promise<void>((resolve, reject) => {
@@ -241,12 +273,14 @@ export function connect(): Promise<void> {
         l12State.recoveryPhase = 'session-claimed'
         l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
         startHeartbeat(socket)
+        syncGameReentry()
       }
       else if (message.type === 'authenticationRequired') {
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'authentication'
         l12State.recoveryPhase = 'authentication-rejected'
         l12State.notice = message.message || '登录状态已失效，请重新登录账号'
+        syncGameReentry()
         if (!settled) { settled = true; reject(new Error(l12State.notice)) }
         socket.close(4001, 'authentication rejected')
       }
@@ -255,6 +289,7 @@ export function connect(): Promise<void> {
         l12State.connectionIssue = 'authentication'
         l12State.recoveryPhase = 'authentication-rejected'
         l12State.notice = message.message || '连接认证未完成'
+        syncGameReentry()
         if (!settled) { settled = true; reject(new Error(l12State.notice)) }
         socket.close(4001, String(message.reason || 'connection rejected').slice(0, 120))
       }
@@ -263,6 +298,7 @@ export function connect(): Promise<void> {
         l12State.connectionIssue = 'superseded'
         l12State.recoveryPhase = 'superseded'
         l12State.notice = message.message || '此账号已由另一个页面接管连接'
+        syncGameReentry()
         if (!settled) { settled = true; reject(new Error(l12State.notice)) }
       }
       else if (message.type === 'pong') l12State.lastPongAt = new Date().toISOString()
@@ -276,6 +312,7 @@ export function connect(): Promise<void> {
           l12State.gmEnabled = false
           l12State.pendingAction = false
         }
+        syncGameReentry()
       }
       else if (message.type === 'effectiveOperationsPolicy') {
         l12State.operationsPolicy = message.policy
@@ -287,6 +324,10 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'maintenanceWarning') {
         l12State.notice = message.message || '服务器即将维护，请尽快结束当前对局。'
+      }
+      else if (message.type === 'matchGovernanceResult') {
+        l12State.matchGovernanceResult = message as MatchGovernanceResult
+        l12State.notice = message.message || ''
       }
       else if (message.type === 'friendInvitation') l12State.friendInvitation = message
       else if (message.type === 'friendInvitationResolved') l12State.friendInvitation = null
@@ -322,12 +363,14 @@ export function connect(): Promise<void> {
         l12State.room = null
         l12State.game = null
         l12State.rankedClock = null
+        l12State.matchGovernanceResult = null
         l12State.spectating = false
         l12State.leavingRoom = false
         l12State.gmEnabled = false
         l12State.pendingAction = false
         l12State.matchFound = null
         l12State.notice = message.message || ''
+        syncGameReentry()
       }
       else if (message.type === 'gameState') {
         if (l12State.leavingRoom) return
@@ -353,6 +396,7 @@ export function connect(): Promise<void> {
           clearMatchmakingRecovery()
           l12State.matchFound = null
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
+          syncGameReentry()
         }
       }
       else if (message.type === 'recoveryComplete') {
@@ -366,6 +410,7 @@ export function connect(): Promise<void> {
         if (!snapshotMatches || !roomMatches) {
           l12State.recoveryPhase = 'snapshot-mismatch'
           l12State.notice = '权威恢复快照尚未完整到达，正在重新同步…'
+          syncGameReentry()
           socket.send(JSON.stringify({ type: 'syncState' }))
           return
         }
@@ -390,6 +435,7 @@ export function connect(): Promise<void> {
         l12State.connectionIssue = l12State.operationsPolicy?.maintenance.active ? 'maintenance' : 'none'
         l12State.notice = ''
         if (l12State.leavingRoom) socket.send(JSON.stringify({ type: 'leaveRoom' }))
+        syncGameReentry()
         if (!settled) { settled = true; resolve() }
       }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
@@ -397,6 +443,7 @@ export function connect(): Promise<void> {
         l12State.notice = message.message
         l12State.pendingAction = false
         l12State.leavingRoom = false
+        syncGameReentry()
       }
     }
     socket.onerror = () => {
@@ -404,6 +451,7 @@ export function connect(): Promise<void> {
       l12State.status = 'offline'
       l12State.connectionIssue = 'websocket'
       l12State.notice = '暂时无法连接服务器，正在自动重试。'
+      syncGameReentry()
       if (!settled) { settled = true; reject(new Error(l12State.notice)) }
     }
     socket.onclose = (event) => {
@@ -422,6 +470,7 @@ export function connect(): Promise<void> {
         l12State.recoveryPhase = event.code === 4002 ? 'superseded' : 'disconnected'
         l12State.pendingAction = false
         l12State.gmEnabled = false
+        syncGameReentry()
         if (!settled) { settled = true; reject(new Error(l12State.notice || '连接已关闭')) }
         if (![4001, 4002, 1008].includes(event.code)) scheduleReconnect()
       }
@@ -467,6 +516,8 @@ export function disconnect() {
   l12State.matchFound = null
   l12State.rankedSettlement = null
   l12State.rankedClock = null
+  l12State.matchGovernanceResult = null
+  syncGameReentry()
 }
 
 export function send(payload: unknown) {
@@ -515,9 +566,14 @@ export const spectateTournamentMatch = (tournamentId: string, matchId: string) =
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
-export const returnToRoom = () => setReady(false)
+export const returnToRoom = () => {
+  void gameReentry.requestExit(l12State.game?.matchId)
+  setReady(false)
+}
 export const leaveRoom = () => {
+  void gameReentry.requestExit(l12State.game?.matchId)
   l12State.leavingRoom = true
+  syncGameReentry()
   send({ type: 'leaveRoom' })
 }
 export function gameAction(command: Record<string, unknown>) {

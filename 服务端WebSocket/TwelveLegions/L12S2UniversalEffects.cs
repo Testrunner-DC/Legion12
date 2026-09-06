@@ -113,7 +113,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "chaotic-arrows-effect":
                 foreach (var targetId in CompositeDeclared(item, "killTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, target => target.BaseTroops <= 2000) is not null)
+                    if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 2000) is not null)
                         KillTarget(item, targetId, "被〈纷乱箭〉击杀");
                 FinishStackItem(item);
                 return true;
@@ -132,7 +132,7 @@ public sealed partial class L12GameEngine
             case "qianyang-kill":
             {
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
-                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.BaseTroops <= 3000) is not null)
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 3000) is not null)
                     KillTarget(item, targetId!, "被〈乾坤 阳〉击杀");
                 FinishStackItem(item);
                 return true;

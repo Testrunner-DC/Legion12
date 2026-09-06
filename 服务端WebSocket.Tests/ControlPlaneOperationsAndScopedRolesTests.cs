@@ -186,6 +186,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.Contains("maintenance", applied.Changes);
 
             var effective = store.EffectiveOperationsPolicy(now);
+            Assert.True(effective.Maintenance.Enabled);
             Assert.True(effective.Maintenance.Active);
             Assert.Null(effective.Maintenance.EndsAt);
             Assert.Equal(new[] { "first", "second" }, effective.Announcements!.Select(item => item.Id));
@@ -197,6 +198,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.False(started.Current.Config.Maintenance.Enabled);
             Assert.Null(started.Current.Config.Maintenance.StartsAt);
             Assert.Null(started.Current.Config.Maintenance.EndsAt);
+            Assert.False(store.EffectiveOperationsPolicy(now).Maintenance.Enabled);
             var startedVersion = started.Current.Version;
 
             var repeated = store.StartServer(admin, applied.Current.Version, "retry after network timeout",

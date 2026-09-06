@@ -273,11 +273,32 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "hunt-kill-effect":
+            case "hunt-effect":
             {
+                var declared = CompositeDeclared(item, "graveEffect")
+                    .Concat(CompositeDeclared(item, "graveEffectCopies"));
+                if (L12StructuredCardRules.TryResolveGraveCostDeclaration(player, declared, 4,
+                        string.Empty, legionOnly: false, out var returned, out _))
+                {
+                    MoveGraveToLibraryBottom(player, returned);
+                    var physicalText = returned.Length == 4
+                        ? "4张卡牌"
+                        : $"{returned.Length}张实体卡牌（按效果合计视为4张）";
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉将墓地{physicalText}依声明顺序返回牌库底部", returned);
+                }
+                else
+                {
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉结算时没有可合计视为4张的完整墓地声明，不返回墓地卡牌");
+                }
+
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被猎杀时刻击杀");
+                else
+                    AddEvent("effect-cancelled", item.Controller,
+                        $"〈{item.SourceName}〉的击杀目标已失效，墓地返回效果不撤销");
                 FinishStackItem(item);
                 return true;
             }
@@ -731,7 +752,7 @@ public sealed partial class L12GameEngine
                 var (row, slot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
                 if (guard is null || battlefield != playerIndex || row is < 0 or > 1 || slot is < 0 or > 2
                     || player.Field[row][slot] is not null)
-                    return CommandResult.Reject("不朽之礼的陵墓守卫或登场位置已失效");
+                    return CommandResult.Reject("太阳城阵营效果选择的陵墓守卫或登场位置已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
                 player.UsedAbilities.Add(onceKey);
                 break;
@@ -752,10 +773,12 @@ public sealed partial class L12GameEngine
                     : null;
                 var battlefield = declared.Length == 3 ? ParseEffectEntryBattlefieldChoice(declared[1]) : null;
                 var (row, slot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
+                var occupant = row is >= 0 and <= 1 && slot is >= 0 and <= 2 ? player.Field[row][slot] : null;
                 if (legion is null || battlefield != playerIndex || row is < 0 or > 1 || slot is < 0 or > 2
-                    || player.Field[row][slot] is not null)
+                    || occupant is not null && occupant.InstanceId != source.InstanceId)
                     return CommandResult.Reject("阿尔维达声明的军团或登场位置已失效");
-                RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard);
+                if (!RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard))
+                    return CommandResult.Reject("阿尔维达已不在战场，无法支付弃置费用");
                 break;
             }
             case "olgaDebuff" when source.CardId == "S01-0314":

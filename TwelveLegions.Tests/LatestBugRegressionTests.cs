@@ -173,57 +173,49 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void HuntingMomentCannotBePlayedBeforeItsFourCardGraveyardCostIsLegal()
+    public void HuntingMomentWithFewerThanFourGraveCardsStillKillsWithoutReturningThem()
     {
         var game = Create(6414);
         var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
         player.Hand.Clear();
         player.Graveyard.Clear();
+        player.Library.Clear();
         player.Morale.Clear();
         AddReadyMorale(player, 3);
         var huntingMoment = Card("S01-0319", "hunting-moment");
         player.Hand.Add(huntingMoment);
+        var graveCards = new List<L12CardInstance>();
         for (var index = 0; index < 3; index++)
-            player.Graveyard.Add(Card("S01-0001", $"hunting-cost-{index}"));
+        {
+            var graveCard = Card("S01-0001", $"hunting-effect-{index}");
+            graveCards.Add(graveCard);
+            player.Graveyard.Add(graveCard);
+        }
+        var target = Card("S01-0103", "hunting-target");
+        opponent.Field[0][0] = target;
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
 
-        var blockedSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        var blockedCard = Assert.Single(blockedSnapshot.GetProperty("players")[0]
+        var handCard = Assert.Single(snapshot.GetProperty("players")[0]
             .GetProperty("hand").EnumerateArray());
-        Assert.Contains("合计能视为4张", blockedCard.GetProperty("playBlockedReason").GetString());
-
-        var rejected = game.Handle(0, new L12Command("playCard", huntingMoment.InstanceId));
-        Assert.False(rejected.Accepted);
-        Assert.Contains("合计能视为4张", rejected.Error);
-        Assert.Contains(huntingMoment, player.Hand);
-        Assert.Equal(3, player.Morale.Count(card => !card.Tapped));
-        Assert.Empty(player.Resolving);
-
-        player.Graveyard.Add(Card("S01-0002", "hunting-cost-3"));
-        var target = Card("S01-0103", "hunting-target");
-        game.State.Players[1].Field[0][0] = target;
-        var legalSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        var legalCard = Assert.Single(legalSnapshot.GetProperty("players")[0]
-            .GetProperty("hand").EnumerateArray());
-        Assert.Equal(JsonValueKind.Null, legalCard.GetProperty("playBlockedReason").ValueKind);
+        Assert.Equal(JsonValueKind.Null, handCard.GetProperty("playBlockedReason").ValueKind);
 
         Assert.True(game.Handle(0, new L12Command("playCard", huntingMoment.InstanceId)).Accepted);
-        var costOrder = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", costOrder.Continuation);
-        Assert.Equal(4, costOrder.MinChoose);
-        Assert.Equal(4, costOrder.MaxChoose);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: costOrder.PromptId,
-            CardInstanceIds: costOrder.ValidChoices.Where(choice => choice != "skip").ToList())).Accepted);
         var killTarget = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
             Choice: target.InstanceId)).Accepted);
         PassResponses(game);
+
         Assert.DoesNotContain(huntingMoment, player.Hand);
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
-        Assert.Same(target, game.State.Players[1].Graveyard.Last());
+        Assert.Empty(player.Library);
+        Assert.All(graveCards, graveCard => Assert.Contains(graveCard, player.Graveyard));
+        Assert.Same(target, opponent.Graveyard.Last());
+        Assert.DoesNotContain(game.State.Events, actionEvent => actionEvent.Type == "cost"
+            && actionEvent.Text.Contains("墓地", StringComparison.Ordinal));
     }
 
     [Fact]

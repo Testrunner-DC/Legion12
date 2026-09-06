@@ -1,6 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [string]$Server = "root@legion-12.com",
+    [string]$KnownHostsFile = "",
+    [string]$IdentityFile = "",
     [string]$ArtifactManifest = "",
     [string]$CacheRoot = "",
     [switch]$DryRun,
@@ -40,73 +42,43 @@ function Invoke-GitFetchWithRetry {
     }
 }
 
-function Resolve-L12SshOptions {
-    param(
-        [Parameter(Mandatory = $true)][string]$RepositoryRoot,
-        [Parameter(Mandatory = $true)][string]$RemoteServer
-    )
-
-    $candidateProfiles = [Collections.Generic.List[string]]::new()
-    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
-        $candidateProfiles.Add($env:USERPROFILE)
-    }
-    try {
-        $repositoryOwner = (Get-Acl -LiteralPath $RepositoryRoot).Owner
-        $repositoryOwnerName = ($repositoryOwner -split '\\')[-1]
-        if (-not [string]::IsNullOrWhiteSpace($repositoryOwnerName) -and -not [string]::IsNullOrWhiteSpace($env:SystemDrive)) {
-            $candidateProfiles.Add((Join-Path "$($env:SystemDrive)\Users" $repositoryOwnerName))
-        }
-    }
-    catch {
-        Write-Verbose "无法从仓库所有者推导 SSH 配置目录：$($_.Exception.Message)"
-    }
-
-    $sshDirectory = $candidateProfiles |
-        Select-Object -Unique |
-        ForEach-Object { Join-Path $_ ".ssh" } |
-        Where-Object { Test-Path -LiteralPath (Join-Path $_ "known_hosts") -PathType Leaf } |
-        Select-Object -First 1
-    if ([string]::IsNullOrWhiteSpace($sshDirectory)) {
-        Write-Host "[L12 部署] 未发现可复用的用户 known_hosts，使用系统 SSH 默认配置。"
-        return @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=yes")
-    }
-
-    $knownHosts = Join-Path $sshDirectory "known_hosts"
-    $options = [Collections.Generic.List[string]]::new()
-    foreach ($option in @("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=$knownHosts")) {
-        $options.Add($option)
-    }
-    $identity = @("id_ed25519", "id_rsa") |
-        ForEach-Object { Join-Path $sshDirectory $_ } |
-        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-        Select-Object -First 1
-    if (-not [string]::IsNullOrWhiteSpace($identity)) {
-        foreach ($option in @("-o", "IdentitiesOnly=yes", "-i", $identity)) { $options.Add($option) }
-    }
-
-    $remoteHost = ($RemoteServer -split "@")[-1]
-    $trustedProductionAlias = "38.76.208.25"
-    $trustedAliasEntry = @(& ssh-keygen -F $trustedProductionAlias -f $knownHosts 2>$null)
-    if ($remoteHost -eq "legion-12.com" -and $trustedAliasEntry.Count -gt 0) {
-        # 主域始终复用已经人工信任的新生产服务器 IP 主机密钥，避免残留的旧域名
-        # known_hosts 条目参与判定。没有该 IP 的可信条目时不添加别名，并由严格校验失败关闭。
-        foreach ($option in @("-o", "HostKeyAlias=$trustedProductionAlias")) { $options.Add($option) }
-        Write-Host "[L12 部署] 主域复用已验证的新生产服务器 IP 主机指纹。"
-    }
-    return $options.ToArray()
-}
-
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$targetHelper = Join-Path $PSScriptRoot "L12DeployTarget.ps1"
+. $targetHelper
+# 在初始化缓存、Git 同步或任何 SSH/SCP 写入之前拒绝旧机及任意目标。
+$productionEndpoint = Resolve-L12ProductionEndpoint -RemoteServer $Server
+$Server = $productionEndpoint.Destination
 $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
 $serverScript = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
+$serverHealthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
 $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $originalLocation = Get-Location
 
 try {
     Set-Location $repoRoot
-    foreach ($commandName in @("git", "ssh", "scp", "powershell")) { Require-Command $commandName }
-    $sshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot -RemoteServer $Server)
+    foreach ($commandName in @("git", "ssh", "scp", "ssh-keygen", "powershell")) { Require-Command $commandName }
+    $sshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot -RemoteServer $Server `
+        -KnownHostsFile $KnownHostsFile -IdentityFile $IdentityFile)
+    $remoteHost = $productionEndpoint.Host
+    $trustedProductionAlias = "38.76.208.25"
+    $knownHostsOption = $sshOptions | Where-Object { $_ -like "UserKnownHostsFile=*" } | Select-Object -First 1
+    $knownHosts = if ($knownHostsOption) { $knownHostsOption.Substring("UserKnownHostsFile=".Length) } else { "" }
+    $trustedAliasEntry = if ($knownHosts) { @(& ssh-keygen -F $trustedProductionAlias -f $knownHosts 2>$null) } else { @() }
+    if ($sshOptions -notcontains "StrictHostKeyChecking=yes") {
+        throw "生产连接没有启用严格主机密钥校验，拒绝部署。"
+    }
+    if ($sshOptions -notcontains "HostName=$trustedProductionAlias") {
+        throw "生产连接没有固定到新服务器 IP，拒绝部署。"
+    }
+    if ($remoteHost -eq "legion-12.com" -and $trustedAliasEntry.Count -gt 0) {
+        if ($sshOptions -notcontains "HostKeyAlias=$trustedProductionAlias") {
+            throw "主域连接没有固定到新生产服务器主机指纹，拒绝部署。"
+        }
+    }
+    elseif ($remoteHost -ne $trustedProductionAlias -or $trustedAliasEntry.Count -eq 0) {
+        throw "生产目标或新服务器主机指纹在调用前发生变化，拒绝部署。"
+    }
 
     $branch = (& git branch --show-current).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
@@ -164,11 +136,13 @@ try {
 
     $incoming = "/opt/legion12-deployment/incoming"
     $remoteBootstrap = "/tmp/deploy-l12-release-$commit.sh"
+    $remoteHealthVerifier = "/tmp/verify-l12-health-$commit.mjs"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传发布工具与预构建运行包..."
     Invoke-External ssh @sshOptions $Server "mkdir -p '$incoming'"
     Invoke-External scp @sshOptions $serverScript "${Server}:$remoteBootstrap"
+    Invoke-External scp @sshOptions $serverHealthVerifier "${Server}:$remoteHealthVerifier"
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
 
     $cardAssetsSha = "-"
@@ -190,7 +164,7 @@ try {
     }
     else { throw "发布清单缺少完整优化卡图包，拒绝退回旧卡图链路。" }
 
-    Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && rm -f '$remoteBootstrap'"
+    Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && rm -f '$remoteBootstrap' '$remoteHealthVerifier'"
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
     Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath"

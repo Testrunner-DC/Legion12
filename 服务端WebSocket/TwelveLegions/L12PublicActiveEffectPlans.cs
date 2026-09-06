@@ -107,12 +107,12 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("墓地需要1张陵墓守卫且战场需要空位");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    PublicActiveStep("card", "entryCard", "不朽之礼：预先选择墓地1张陵墓守卫", guards),
+                    PublicActiveStep("card", "entryCard", "太阳城阵营效果：预先选择墓地1张陵墓守卫", guards),
                     PublicActiveStep("effect-entry-battlefield", "entryBattlefield",
-                        "不朽之礼：预先选择陵墓守卫登场的战场", ["dynamic"],
+                        "太阳城阵营效果：预先选择陵墓守卫登场的战场", ["dynamic"],
                         referenceKey: "entryCard"),
                     PublicActiveStep("effect-entry-slot", "entrySlot",
-                        "不朽之礼：预先选择陵墓守卫活跃登场的位置", ["dynamic"],
+                        "太阳城阵营效果：预先选择陵墓守卫活跃登场的位置", ["dynamic"],
                         referenceKey: "entryCard"),
                 ]);
             }
@@ -120,15 +120,17 @@ public sealed partial class L12GameEngine
             {
                 var legions = player.Hand.Where(card => card.CardType == "legion" && card.DisasterLevel == 2)
                     .Select(card => card.InstanceId).ToList();
-                if (legions.Count == 0 || !EmptySlots(player).Any())
-                    return CommandResult.Reject("手牌需要1张天灾等级2的军团且战场需要空位");
+                if (legions.Count == 0)
+                    return CommandResult.Reject("手牌需要1张天灾等级2的军团");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     PublicActiveStep("hand-card", "entryCard", "阿尔维达：预先选择手牌1张天灾等级2的军团", legions),
                     PublicActiveStep("effect-entry-battlefield", "entryBattlefield",
-                        "阿尔维达：预先选择军团登场的战场", ["dynamic"], referenceKey: "entryCard"),
-                    PublicActiveStep("effect-entry-slot", "entrySlot",
-                        "阿尔维达：预先选择军团活跃登场的位置", ["dynamic"], referenceKey: "entryCard"),
+                        "阿尔维达：预先选择军团登场的战场", ["dynamic"], referenceKey: "entryCard",
+                        includeSourceSlotAfterCost: true),
+                    PublicActiveStep("prospective-entry-slot", "entrySlot",
+                        "阿尔维达：预先选择军团活跃登场的位置", ["dynamic"], referenceKey: "entryCard",
+                        includeSourceSlotAfterCost: true),
                 ]);
             }
             case ("S01-03M2", "lokiHeal"):
@@ -245,7 +247,7 @@ public sealed partial class L12GameEngine
     private static L12ActivationSelectionStep PublicActiveStep(string kind, string key, string text,
         IEnumerable<string> choices, int min = 1, int max = 1, string? referenceKey = null,
         bool skipWhenReferenceIsNone = false, int? costThreshold = null, string? requiredChoice = null,
-        bool autoSelectWhenExact = false)
+        bool autoSelectWhenExact = false, bool includeSourceSlotAfterCost = false)
         => new()
         {
             Kind = kind,
@@ -256,6 +258,7 @@ public sealed partial class L12GameEngine
             MaxChoose = max,
             AutoSelectWhenExact = autoSelectWhenExact,
             ReferenceDeclarationKey = referenceKey,
+            IncludeSourceSlotAfterCost = includeSourceSlotAfterCost,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,
             CostThreshold = costThreshold,
             RequiredDeclaredChoice = requiredChoice,

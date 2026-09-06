@@ -1305,7 +1305,7 @@
     "faction": "asgard",
     "imageUrl": "https://steamusercontent-a.akamaihd.net/ugc/15073596840416971550/EC2B9389A5AD08B46A7705C72219A075AAF4F904/",
     "cost": 3,
-    "effect": "将墓地4张卡牌自选顺序返回我方牌库底部：击杀对方1张兵力不高于6000的军团。"
+    "effect": "将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团。"
   },
   {
     "id": "S01-0320",

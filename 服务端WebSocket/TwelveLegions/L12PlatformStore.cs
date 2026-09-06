@@ -241,6 +241,8 @@ public sealed partial class L12PlatformStore
         public List<FriendRow> Friends { get; set; } = [];
         public List<BlockedAccountRow> BlockedAccounts { get; set; } = [];
         public List<BugRow> BugReports { get; set; } = [];
+        public List<MatchDrawRequestRow> MatchDrawRequests { get; set; } = [];
+        public List<PlayerMatchReportRow> PlayerMatchReports { get; set; } = [];
         public Dictionary<string, string> Content { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public List<ContentRow> ContentEntries { get; set; } = [];
         public List<ArticleRow> Articles { get; set; } = [];

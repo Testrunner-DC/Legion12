@@ -23,6 +23,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly MatchRecorder _recorder;
     private readonly L12PlatformStore _platform;
     private readonly L12AdminCommandBus _adminCommands;
+    private readonly L12ModianImportService _modianImports;
     private readonly IL12ReleaseControlAdapter _releaseControl;
     private readonly L12Catalog _catalog;
     private readonly int _cardCount;
@@ -44,12 +45,14 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 
     public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform,
         L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl = null,
-        string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null)
+        string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null,
+        IL12ModianImportClient? modianImportClient = null)
     {
         _rooms = rooms;
         _recorder = recorder;
         _platform = platform;
         _adminCommands = new L12AdminCommandBus(platform);
+        _modianImports = new L12ModianImportService(platform, modianImportClient);
         _releaseControl = releaseControl ?? new L12DisabledReleaseControlAdapter();
         _rankedIntegrityHmacKey = rankedIntegrityHmacKey
             ?? Environment.GetEnvironmentVariable(L12RankedNetworkPrivacy.EnvironmentKey);
@@ -1202,6 +1205,43 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
         });
+        _app.MapPost("/api/admin/operations/server/maintenance",
+            (HttpRequest request, OperationsImmediateMaintenanceRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            // Like explicit server start, immediate maintenance is state-idempotent. A retry after a lost
+            // successful response must reach the store even when it carries the preceding version.
+            var payload = new L12ImmediateMaintenanceStartCommandPayload(body.ExpectedDurationHours, expected);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.server.maintenance.start", "operations:server", payload, key, null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.BeginImmediateMaintenance(current.Actor,
+                    current.Payload.ExpectedDurationHours, current.Payload.ExpectedVersion,
+                    current.Reason, current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/operations/server/maintenance/end",
+            (HttpRequest request, OperationsImmediateMaintenanceEndRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12ImmediateMaintenanceEndCommandPayload(expected);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.server.maintenance.end", "operations:server", payload, key, null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.EndImmediateMaintenance(current.Actor,
+                    current.Payload.ExpectedVersion, current.Reason, current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
         _app.MapGet("/api/admin/runtime/status", (HttpRequest request) =>
         {
             const L12Permission permission = L12Permission.AdminRuntimeRead;
@@ -1284,6 +1324,62 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             });
             return AdminCommandResponse(request, command, outcome);
         });
+        _app.MapGet("/api/admin/match-governance/draw-requests",
+            (HttpRequest request, string? status, string? search) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminMatchGovernanceRead,
+                    out var authenticated, out var failure)) return failure;
+            return Results.Ok(_platform.MatchDrawRequests(authenticated.Account, status, search));
+        });
+        _app.MapGet("/api/admin/match-governance/player-reports",
+            (HttpRequest request, string? status, string? search) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminMatchGovernanceRead,
+                    out var authenticated, out var failure)) return failure;
+            return Results.Ok(_platform.PlayerMatchReports(authenticated.Account, status, search));
+        });
+        _app.MapPatch("/api/admin/match-governance/draw-requests/{id}",
+            (HttpRequest request, string id, L12MatchGovernanceUpdate body) =>
+        {
+            const L12Permission permission = L12Permission.AdminMatchGovernanceWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.UpdateMatchDrawRequest(authenticated.Account, id, body,
+                    RequestAuditContext(request, permission)));
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "draw_request_not_found", error.Message,
+                    StatusCodes.Status404NotFound);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_draw_governance_update", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapPatch("/api/admin/match-governance/player-reports/{id}",
+            (HttpRequest request, string id, L12MatchGovernanceUpdate body) =>
+        {
+            const L12Permission permission = L12Permission.AdminMatchGovernanceWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.UpdatePlayerMatchReport(authenticated.Account, id, body,
+                    RequestAuditContext(request, permission)));
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "player_report_not_found", error.Message,
+                    StatusCodes.Status404NotFound);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_player_report_update", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+        });
         _app.MapGet("/api/content", (HttpRequest request) =>
         {
             var keys = request.Query["key"].Where(key => _platform.IsContentKeyAllowed(key)).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -1309,6 +1405,52 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.AdminArticles(status, category, search, limit ?? 300, kind ?? "news"));
+        });
+        _app.MapGet("/api/admin/articles/modian/preview", async (HttpRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out _, out var failure)) return failure;
+            try { return Results.Ok(await _modianImports.PreviewAsync(cancellationToken)); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Results.Empty;
+            }
+            catch (Exception error) when (error is HttpRequestException or TimeoutException
+                or InvalidDataException or JsonException)
+            {
+                return ApiError(request, "modian_preview_failed", "固定项目更新暂时无法检查，请稍后重试",
+                    StatusCodes.Status502BadGateway);
+            }
+        });
+        _app.MapPost("/api/admin/articles/modian/import", async (HttpRequest request,
+            L12ModianImportRequest body, CancellationToken cancellationToken) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var rawKey = request.Headers["Idempotency-Key"].FirstOrDefault() ?? body.IdempotencyKey;
+                var idempotencyKey = rawKey?.Trim();
+                if (idempotencyKey?.Length > 128) throw new ArgumentException("幂等键不能超过 128 字符");
+                var audit = RequestAuditContext(request, permission) with { IdempotencyKey = idempotencyKey };
+                return Results.Ok(await _modianImports.ImportAsync(authenticated.Account, body, audit,
+                    cancellationToken));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_modian_import", error.Message, StatusCodes.Status400BadRequest);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Results.Empty;
+            }
+            catch (Exception error) when (error is HttpRequestException or TimeoutException
+                or InvalidDataException or JsonException)
+            {
+                return ApiError(request, "modian_import_unavailable", "固定项目更新暂时无法导入，请稍后重试",
+                    StatusCodes.Status502BadGateway);
+            }
         });
         _app.MapGet("/api/admin/articles/{id}", (HttpRequest request, string id) =>
         {
@@ -1864,6 +2006,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                         => SelectCustomDeck(sessionId, deckElement),
                     "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
                     "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
+                    "requestMatchDraw" => await _rooms.RequestMatchDrawAsync(sessionId,
+                        GetString(root, "requestId"), GetString(root, "reason")),
+                    "resolveMatchDraw" => await _rooms.ResolveMatchDrawAsync(sessionId,
+                        GetString(root, "requestId"), GetBool(root, "accept", false)),
+                    "reportOpponent" => await _rooms.ReportOpponentAsync(sessionId,
+                        GetString(root, "reportId"), GetString(root, "description")),
                     "sandboxAction" when root.TryGetProperty("command", out var sandboxCommand)
                         => await _rooms.HandleSandboxActionAsync(sessionId, GetInt(root, "actingPlayerIndex", -1), sandboxCommand),
                     "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
@@ -3226,6 +3374,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
         await StopRankedClockWatchdogAsync();
+        _modianImports.Dispose();
         if (_app is not null) await _app.DisposeAsync();
     }
 }
@@ -3263,6 +3412,14 @@ public sealed record L12OperationsRollbackCommandPayload(string VersionId);
 public sealed record OperationsServerStartRequest(string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12ServerStartCommandPayload(long ExpectedVersion, string RequestedState = "open");
+public sealed record OperationsImmediateMaintenanceRequest(int ExpectedDurationHours, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record OperationsImmediateMaintenanceEndRequest(string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12ImmediateMaintenanceStartCommandPayload(int ExpectedDurationHours,
+    long ExpectedVersion, string RequestedState = "maintenance");
+public sealed record L12ImmediateMaintenanceEndCommandPayload(long ExpectedVersion,
+    string RequestedState = "open");
 public sealed record AuditArchiveRequest(int? RetentionDays = null, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record SessionCommandPayload(string AccountId, string? SessionId);

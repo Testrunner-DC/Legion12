@@ -36,6 +36,11 @@ public sealed record L12MaintenanceConfig(
     int AdvanceBroadcastHours = 2,
     int ExpectedDurationHours = 2);
 
+public sealed record L12ImmediateMaintenanceView(
+    bool Enabled,
+    int ExpectedDurationHours,
+    DateTimeOffset? StartedAt = null);
+
 public sealed record L12AnnouncementConfig(
     string Id,
     string Content,
@@ -63,6 +68,7 @@ public sealed record L12OperationsConfigPayload(
     IReadOnlyList<L12AnnouncementConfig>? Announcements = null);
 
 public sealed record L12EffectiveMaintenanceView(
+    bool Enabled,
     bool Active,
     bool EntryBlocked,
     string Status,
@@ -71,7 +77,10 @@ public sealed record L12EffectiveMaintenanceView(
     DateTimeOffset? StartsAt,
     DateTimeOffset? EndsAt,
     int AdvanceBroadcastHours,
-    int ExpectedDurationHours);
+    int ExpectedDurationHours,
+    bool ImmediateActive = false,
+    DateTimeOffset? ImmediateStartedAt = null,
+    int? ImmediateExpectedDurationHours = null);
 
 public sealed record L12EffectiveOperationsPolicyView(
     long Version,
@@ -96,7 +105,8 @@ public sealed record L12OperationsPolicySnapshot(
     IReadOnlyList<L12MatchModeConfig> MatchModes,
     IReadOnlyDictionary<string, bool> FeatureFlags,
     L12MaintenanceConfig Maintenance,
-    IReadOnlyList<L12AnnouncementConfig>? Announcements = null)
+    IReadOnlyList<L12AnnouncementConfig>? Announcements = null,
+    L12ImmediateMaintenanceView? ImmediateMaintenance = null)
 {
     public bool IsMatchModeEnabled(string? modeId)
         => MatchModes.Any(mode => mode.Enabled
@@ -111,9 +121,10 @@ public sealed record L12OperationsPolicySnapshot(
            && (Maintenance.EndsAt is null || Maintenance.EndsAt > now);
 
     public bool IsNewGameEntryBlocked(DateTimeOffset now)
-        => Maintenance.Enabled
-           && (Maintenance.StartsAt is null || now >= Maintenance.StartsAt.Value.AddHours(-1))
-           && (Maintenance.EndsAt is null || now < Maintenance.EndsAt);
+        => ImmediateMaintenance?.Enabled == true
+           || Maintenance.Enabled
+              && (Maintenance.StartsAt is null || now >= Maintenance.StartsAt.Value.AddHours(-1))
+              && (Maintenance.EndsAt is null || now < Maintenance.EndsAt);
 
     public bool IsMaintenanceBroadcastVisible(DateTimeOffset now)
         => Maintenance.Enabled && Maintenance.StartsAt is { } starts
@@ -122,7 +133,10 @@ public sealed record L12OperationsPolicySnapshot(
 
     public string MaintenanceBroadcastMessage()
         => Maintenance.StartsAt is not { } starts ? Maintenance.Message
-            : $"服务器将于{starts.ToLocalTime():HH:mm}开始维护，维护将持续约{Math.Max(1, Maintenance.ExpectedDurationHours)}个小时，敬请注意！";
+            : $"服务器将于北京时间{starts.ToOffset(TimeSpan.FromHours(8)):HH:mm}开始维护，维护将持续约{Math.Max(1, Maintenance.ExpectedDurationHours)}个小时，敬请注意！";
+
+    public string ImmediateMaintenanceBroadcastMessage()
+        => $"当前服务器维护中，预计维护时间为{Math.Clamp(ImmediateMaintenance?.ExpectedDurationHours ?? 1, 1, 168)}小时。";
 
     public IReadOnlyList<L12EffectiveAnnouncementView> ActiveAnnouncements(DateTimeOffset now)
         => (Announcements ?? [])
@@ -198,7 +212,8 @@ public sealed record L12OperationsConfigView(
     string VersionId,
     L12OperationsConfigPayload Config,
     string UpdatedBy,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    L12ImmediateMaintenanceView? ImmediateMaintenance = null);
 
 public sealed record L12OperationsConfigVersionView(
     string Id,
@@ -208,7 +223,8 @@ public sealed record L12OperationsConfigVersionView(
     string ActorId,
     string ActorName,
     string Reason,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    L12ImmediateMaintenanceView? ImmediateMaintenance = null);
 
 public sealed record L12OperationsConfigPreviewView(
     bool Valid,
@@ -227,6 +243,11 @@ public sealed record L12OperationsConfigOperationView(
 public sealed record L12ServerStartOperationView(
     bool Applied,
     bool AlreadyStarted,
+    L12OperationsConfigView Current);
+
+public sealed record L12ImmediateMaintenanceOperationView(
+    bool Applied,
+    bool AlreadyApplied,
     L12OperationsConfigView Current);
 
 public sealed class L12OperationsConfigException : InvalidOperationException
@@ -290,6 +311,13 @@ public sealed partial class L12PlatformStore
         public int ExpectedDurationHours { get; set; } = 2;
     }
 
+    private sealed class OperationsImmediateMaintenanceRow
+    {
+        public bool Enabled { get; set; }
+        public int ExpectedDurationHours { get; set; } = 2;
+        public DateTimeOffset? StartedAt { get; set; }
+    }
+
     private sealed class OperationsAnnouncementRow
     {
         public string Id { get; set; } = string.Empty;
@@ -312,6 +340,7 @@ public sealed partial class L12PlatformStore
         public List<OperationsMatchModeRow> MatchModes { get; set; } = [];
         public Dictionary<string, bool> FeatureFlags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public OperationsMaintenanceRow Maintenance { get; set; } = new();
+        public OperationsImmediateMaintenanceRow ImmediateMaintenance { get; set; } = new();
         public List<OperationsAnnouncementRow> Announcements { get; set; } = [];
         public string UpdatedBy { get; set; } = "系统";
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -378,7 +407,7 @@ public sealed partial class L12PlatformStore
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
-            var next = ToRow(normalized, current.Version + 1, actor.Username);
+            var next = ToRow(normalized, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
             _data.OperationsConfig = next;
             var history = NewOperationsHistory(next, "apply", actor, normalizedReason);
@@ -406,7 +435,7 @@ public sealed partial class L12PlatformStore
                 ?? throw new L12OperationsConfigException("operations_version_not_found", "运营配置历史版本不存在");
             var targetPayload = ToPayload(target.Config);
             var changes = DescribeOperationsChanges(ToPayload(current), targetPayload);
-            var next = ToRow(targetPayload, current.Version + 1, actor.Username);
+            var next = ToRow(targetPayload, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
             _data.OperationsConfig = next;
             var history = NewOperationsHistory(next, $"rollback:{target.Id}", actor, normalizedReason);
@@ -448,7 +477,7 @@ public sealed partial class L12PlatformStore
                     EndsAt = null,
                 },
             };
-            var next = ToRow(nextPayload, current.Version + 1, actor.Username);
+            var next = ToRow(nextPayload, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             _data.OperationsConfig = next;
             var history = NewOperationsHistory(next, "start-server", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
@@ -458,6 +487,81 @@ public sealed partial class L12PlatformStore
                 context with { Outcome = "succeeded", Reason = normalizedReason });
             Save();
             return new L12ServerStartOperationView(true, false, ToView(next));
+        }
+    }
+
+    public L12ImmediateMaintenanceOperationView BeginImmediateMaintenance(L12AccountView actor,
+        int expectedDurationHours, long expectedVersion, string? reason, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        if (expectedDurationHours is < 1 or > 168)
+            throw new L12OperationsConfigException("maintenance_duration_invalid", "预计维护时间需为1至168小时");
+        lock (_gate)
+        {
+            var current = RequireOperationsConfig();
+            if (current.ImmediateMaintenance.Enabled)
+            {
+                AddAdminAudit(actor, "operations", "immediate-maintenance-start", "operations:server",
+                    current.Version.ToString(), current.Version.ToString(), normalizedReason,
+                    context with { Outcome = "already-applied", Reason = normalizedReason });
+                Save(false);
+                return new L12ImmediateMaintenanceOperationView(false, true, ToView(current));
+            }
+            EnsureOperationsVersion(current, expectedVersion);
+
+            var next = ToRow(ToPayload(current), current.Version + 1, actor.Username,
+                new OperationsImmediateMaintenanceRow
+                {
+                    Enabled = true,
+                    ExpectedDurationHours = expectedDurationHours,
+                    StartedAt = DateTimeOffset.UtcNow,
+                });
+            _data.OperationsConfig = next;
+            var history = NewOperationsHistory(next, "immediate-maintenance-start", actor, normalizedReason);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+            AddAdminAudit(actor, "operations", "immediate-maintenance-start", "operations:server",
+                current.Version.ToString(), next.Version.ToString(), normalizedReason,
+                context with { Outcome = "succeeded", Reason = normalizedReason });
+            Save();
+            return new L12ImmediateMaintenanceOperationView(true, false, ToView(next));
+        }
+    }
+
+    public L12ImmediateMaintenanceOperationView EndImmediateMaintenance(L12AccountView actor,
+        long expectedVersion, string? reason, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var current = RequireOperationsConfig();
+            if (!current.ImmediateMaintenance.Enabled)
+            {
+                AddAdminAudit(actor, "operations", "immediate-maintenance-end", "operations:server",
+                    current.Version.ToString(), current.Version.ToString(), normalizedReason,
+                    context with { Outcome = "already-applied", Reason = normalizedReason });
+                Save(false);
+                return new L12ImmediateMaintenanceOperationView(false, true, ToView(current));
+            }
+            EnsureOperationsVersion(current, expectedVersion);
+
+            var next = ToRow(ToPayload(current), current.Version + 1, actor.Username,
+                new OperationsImmediateMaintenanceRow
+                {
+                    Enabled = false,
+                    ExpectedDurationHours = current.ImmediateMaintenance.ExpectedDurationHours,
+                });
+            _data.OperationsConfig = next;
+            var history = NewOperationsHistory(next, "immediate-maintenance-end", actor, normalizedReason);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+            AddAdminAudit(actor, "operations", "immediate-maintenance-end", "operations:server",
+                current.Version.ToString(), next.Version.ToString(), normalizedReason,
+                context with { Outcome = "succeeded", Reason = normalizedReason });
+            Save();
+            return new L12ImmediateMaintenanceOperationView(true, false, ToView(next));
         }
     }
 
@@ -477,6 +581,9 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var policy = ToPolicySnapshot(RequireOperationsConfig());
+            var immediateActive = policy.ImmediateMaintenance?.Enabled == true;
+            var scheduledActive = policy.IsMaintenanceActive(now);
+            var entryBlocked = policy.IsNewGameEntryBlocked(now);
             return new L12EffectiveOperationsPolicyView(
                 policy.Version,
                 policy.Season,
@@ -486,13 +593,17 @@ public sealed partial class L12PlatformStore
                 policy.IsSeasonDisasterModeAvailable(now),
                 policy.CardRestrictions.ToArray(),
                 policy.DefaultPresetDeckIds.ToArray(),
-                new L12EffectiveMaintenanceView(policy.IsMaintenanceActive(now),
-                    policy.IsNewGameEntryBlocked(now),
-                    policy.IsMaintenanceActive(now) ? "maintenance" : policy.IsNewGameEntryBlocked(now) ? "upcoming" : "open",
+                new L12EffectiveMaintenanceView(policy.Maintenance.Enabled || immediateActive,
+                    scheduledActive || immediateActive,
+                    entryBlocked,
+                    scheduledActive || immediateActive ? "maintenance" : entryBlocked ? "upcoming" : "open",
                     policy.Maintenance.Message,
-                    policy.IsMaintenanceBroadcastVisible(now) ? policy.MaintenanceBroadcastMessage() : string.Empty,
+                    immediateActive ? policy.ImmediateMaintenanceBroadcastMessage()
+                        : policy.IsMaintenanceBroadcastVisible(now) ? policy.MaintenanceBroadcastMessage() : string.Empty,
                     policy.Maintenance.StartsAt, policy.Maintenance.EndsAt,
-                    policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours),
+                    policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours,
+                    immediateActive, policy.ImmediateMaintenance?.StartedAt,
+                    immediateActive ? policy.ImmediateMaintenance?.ExpectedDurationHours : null),
                 policy.ActiveAnnouncements(now));
         }
     }
@@ -773,7 +884,8 @@ public sealed partial class L12PlatformStore
             .Take(OperationsHistoryLimit).ToList();
     }
 
-    private static OperationsConfigRow ToRow(L12OperationsConfigPayload payload, long version, string actorName)
+    private static OperationsConfigRow ToRow(L12OperationsConfigPayload payload, long version, string actorName,
+        OperationsImmediateMaintenanceRow? immediateMaintenance = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new OperationsConfigRow
@@ -824,6 +936,7 @@ public sealed partial class L12PlatformStore
                 AdvanceBroadcastHours = payload.Maintenance.AdvanceBroadcastHours,
                 ExpectedDurationHours = payload.Maintenance.ExpectedDurationHours,
             },
+            ImmediateMaintenance = CloneImmediateMaintenance(immediateMaintenance),
             Announcements = (payload.Announcements ?? []).Select(item => new OperationsAnnouncementRow
             {
                 Id = item.Id,
@@ -870,15 +983,31 @@ public sealed partial class L12PlatformStore
             payload.MatchModes.ToArray(),
             new Dictionary<string, bool>(payload.FeatureFlags, StringComparer.OrdinalIgnoreCase),
             payload.Maintenance,
-            payload.Announcements?.ToArray() ?? []);
+            payload.Announcements?.ToArray() ?? [],
+            ToView(row.ImmediateMaintenance));
     }
 
     private static L12OperationsConfigView ToView(OperationsConfigRow row)
-        => new(row.Version, row.VersionId, ToPayload(row), row.UpdatedBy, row.UpdatedAt);
+        => new(row.Version, row.VersionId, ToPayload(row), row.UpdatedBy, row.UpdatedAt,
+            ToView(row.ImmediateMaintenance));
 
     private static L12OperationsConfigVersionView ToView(OperationsConfigVersionRow row)
         => new(row.Id, row.Version, row.Action, ToPayload(row.Config), row.ActorId, row.ActorName,
-            row.Reason, row.CreatedAt);
+            row.Reason, row.CreatedAt, ToView(row.Config.ImmediateMaintenance));
+
+    private static L12ImmediateMaintenanceView ToView(OperationsImmediateMaintenanceRow row)
+        => new(row.Enabled, row.ExpectedDurationHours, row.StartedAt);
+
+    private static OperationsImmediateMaintenanceRow CloneImmediateMaintenance(
+        OperationsImmediateMaintenanceRow? row)
+        => row is null
+            ? new OperationsImmediateMaintenanceRow()
+            : new OperationsImmediateMaintenanceRow
+            {
+                Enabled = row.Enabled,
+                ExpectedDurationHours = row.ExpectedDurationHours,
+                StartedAt = row.StartedAt,
+            };
 
     private OperationsConfigRow RequireOperationsConfig()
         => _data.OperationsConfig ?? throw new InvalidOperationException("运营配置尚未初始化");
@@ -918,6 +1047,26 @@ public sealed partial class L12PlatformStore
         if (row.FeatureFlags is null)
         { row.FeatureFlags = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase); changed = true; }
         if (row.Maintenance is null) { row.Maintenance = new OperationsMaintenanceRow(); changed = true; }
+        if (row.ImmediateMaintenance is null)
+        {
+            row.ImmediateMaintenance = new OperationsImmediateMaintenanceRow();
+            changed = true;
+        }
+        if (row.ImmediateMaintenance.ExpectedDurationHours is < 1 or > 168)
+        {
+            row.ImmediateMaintenance.ExpectedDurationHours = 2;
+            changed = true;
+        }
+        if (row.ImmediateMaintenance.Enabled && row.ImmediateMaintenance.StartedAt is null)
+        {
+            row.ImmediateMaintenance.StartedAt = row.UpdatedAt == default ? DateTimeOffset.UtcNow : row.UpdatedAt;
+            changed = true;
+        }
+        else if (!row.ImmediateMaintenance.Enabled && row.ImmediateMaintenance.StartedAt is not null)
+        {
+            row.ImmediateMaintenance.StartedAt = null;
+            changed = true;
+        }
         if (row.Announcements is null) { row.Announcements = []; changed = true; }
         if (string.IsNullOrWhiteSpace(row.UpdatedBy)) { row.UpdatedBy = "系统"; changed = true; }
         if (row.UpdatedAt == default) { row.UpdatedAt = DateTimeOffset.UtcNow; changed = true; }

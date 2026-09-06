@@ -62,6 +62,7 @@ public sealed class DeckValidatorTests
     [InlineData("S01-0219", "taiyangcheng")]
     [InlineData("S01-0220", "taiyangcheng")]
     [InlineData("S02-0301", "asgard")]
+    [InlineData("S02-0305", "asgard")]
     public void LimitOneCardsAreRejectedAtTheSecondCopy(string cardId, string faction)
     {
         var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == faction);
@@ -96,8 +97,30 @@ public sealed class DeckValidatorTests
 
         Assert.Equal([
             "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
-            "S02-0301",
+            "S02-0301", "S02-0305",
         ], limited);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public void BloodRingPrintedLimitAppliesEvenWhenSeasonAllowsThree(int copies, bool accepted)
+    {
+        var catalog = Catalog;
+        var preset = catalog.PresetDecks.First(deck => catalog.Cards[deck.MasterId].Faction == "asgard");
+        var cards = preset.CardIds.Where(id => id != "S02-0305").ToList();
+        cards.AddRange(Enumerable.Repeat("S02-0305", copies));
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = "血戒构筑边界",
+            MasterId = preset.MasterId,
+            CardIds = cards,
+            MoraleIds = preset.MoraleIds.ToList(),
+            SpecialIds = preset.SpecialIds.ToList(),
+        };
+        Assert.Equal(accepted, L12DeckValidator.TryValidate(catalog, submission, out _, out var error,
+            [new L12CardRestrictionConfig("S02-0305", 3, "赛季上限不得放宽卡牌固有限制")]));
+        if (!accepted) Assert.Contains("最多 1 张", error);
     }
 
     [Fact]

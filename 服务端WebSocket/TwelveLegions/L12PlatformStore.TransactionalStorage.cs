@@ -550,6 +550,10 @@ public sealed partial class L12PlatformStore
         data.BlockedAccounts ??= [];
         data.BugReports ??= [];
         foreach (var bug in data.BugReports) bug.History ??= [];
+        data.MatchDrawRequests ??= [];
+        foreach (var request in data.MatchDrawRequests) request.History ??= [];
+        data.PlayerMatchReports ??= [];
+        foreach (var report in data.PlayerMatchReports) report.History ??= [];
         data.Content ??= new(StringComparer.OrdinalIgnoreCase);
         data.ContentEntries ??= [];
         foreach (var entry in data.ContentEntries)
@@ -584,6 +588,10 @@ public sealed partial class L12PlatformStore
         data.RankedProfileHistory ??= [];
         foreach (var history in data.RankedProfileHistory) history.Titles ??= [];
         data.RankedSettlements ??= [];
+        foreach (var settlement in data.RankedSettlements)
+            settlement.Outcome = string.IsNullOrWhiteSpace(settlement.Outcome)
+                ? (settlement.Won ? "win" : "loss")
+                : settlement.Outcome.Trim().ToLowerInvariant();
         data.RankedBroadcasts ??= [];
         data.RankedBroadcastDeliveries ??= [];
         data.RankedIntegrityAudits ??= [];

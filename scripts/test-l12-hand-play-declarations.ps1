@@ -42,7 +42,7 @@ foreach ($cardId in @(
 foreach ($flow in @(
     'volley-effect', 'evil-ritual-effect', 'strategic-transfer-effect', 'forged-orders-effect',
     'plague-effect', 'march-buff-effect', 'march-kill-effect', 'duat-effect',
-    'valkyrie-summon-effect', 'hunt-kill-effect', 'defense-deployment-set',
+    'valkyrie-summon-effect', 'hunt-effect', 'defense-deployment-set',
     'defense-deployment-draw', 'black-lotus-disaster', 'black-lotus-morale',
     'chaotic-arrows-effect', 'holy-lock-effect',
     'ritual-draw', 'ritual-disaster', 'peace-draw', 'peace-negotiation',
@@ -54,6 +54,41 @@ foreach ($flow in @(
 }
 
 Assert-Contains $plans 'PreStackCost: true' 'Known sixth-batch colon costs must be marked for pre-stack payment.'
+# BATCH266: Hunt's return is an effect, not a colon cost. Other costs remain guarded below.
+$huntPlan = [regex]::Match($plans, '(?s)\["S01-0319"\]\s*=\s*\[(.*?)\],\s*\["S01-0419"\]').Groups[1].Value
+if ([string]::IsNullOrWhiteSpace($huntPlan) -or [regex]::Matches($huntPlan, 'new\(').Count -ne 1) {
+    throw 'Hunting Moment must retain one whole-effect stack item.'
+}
+Assert-Contains $huntPlan '"hunt-effect"' 'Hunting Moment whole-effect plan is missing.'
+Assert-Contains $huntPlan 'PublicTargetKeys: ["graveEffect", "killTarget"]' 'Hunting Moment must bind both public effect declarations.'
+if ($huntPlan -match 'hunt-kill-effect|hunt-grave-bottom-effect|grave-bottom|PreStackCost|CostKind|CostKey') {
+    throw 'Hunting Moment must not restore a grave cost or independent second stack item.'
+}
+$huntDeclaration = [regex]::Match($plans, '(?s)case "S01-0319":(.*?)case "S01-0419":').Groups[1].Value
+foreach ($pattern in @('>= 4', 'GraveEffectSelectionStep', '"graveEffect"', '"killTarget"')) {
+    Assert-Contains $huntDeclaration $pattern 'Hunting Moment must skip only the unavailable grave-return declaration.'
+}
+$huntResolver = [regex]::Match($s1Faction, '(?s)case "hunt-effect":(.*?)case "法老王的庆典":').Groups[1].Value
+Assert-Contains $huntResolver '不返回墓地卡牌' 'Hunting Moment needs an explicit unavailable-return path.'
+if ($huntResolver.IndexOf('MoveGraveToLibraryBottom', [StringComparison]::Ordinal) -lt 0 -or
+    $huntResolver.IndexOf('KillTarget', [StringComparison]::Ordinal) -le
+    $huntResolver.IndexOf('MoveGraveToLibraryBottom', [StringComparison]::Ordinal)) {
+    throw 'Hunting Moment must resolve ordered return before independently rechecking the kill.'
+}
+$huntCatalogPath = Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions/Data/cards.s1.json'
+$huntCatalog = ([IO.File]::ReadAllText($huntCatalogPath, [Text.Encoding]::UTF8) | ConvertFrom-Json) |
+    Where-Object id -eq 'S01-0319'
+if ($huntCatalog.effect -ne '将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团。') {
+    throw 'Hunting Moment catalog text must match the approved non-cost wording.'
+}
+$huntTests = Read-Source 'Bq20260907_266RegressionTests.cs'
+foreach ($test in @('NegatedHuntingMomentReturnsNoCardsAndKillsNoTarget',
+    'HuntingMomentKeepsItsOrderedReturnWhenTheKillTargetBecomesInvalid',
+    'HuntingMomentWithAStaleGraveDeclarationReturnsNothingButStillKills',
+    'CancellingHuntingMomentSelectionPaysNothingAndMovesNothing',
+    'PtolemyRepeatedHuntingMomentAlsoReturnsTheGraveCardsBeforeKilling')) {
+    Assert-Contains $huntTests $test "Hunting Moment regression coverage missing: $test"
+}
 foreach ($reservedCost in @('campHealCost', 'campDrawCost', 'scoutCost')) {
     Assert-Contains $plans $reservedCost "Batch 6J-B base play payment must reserve declared follow-up cost: $reservedCost"
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cancelMatchmaking, connect, createRoom, joinMatchmaking, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPES, loadDeckCatalog,
@@ -9,6 +9,7 @@ import DeckProfile from '@/l12/DeckProfile.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
 import { getEffectiveOperationsPolicy, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
+import { maintenanceCountdown } from './maintenanceCountdown'
 
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('match')
@@ -16,6 +17,10 @@ const roomCode = ref('')
 const roomOptions = ref<RoomOptions>({ matchModeId: 'friendly', spectating: 'public', handVisibility: 'request', disasterMode: 'all', useCardRestrictions: false })
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
 const policyError = ref('')
+const policyNow = ref(Date.now())
+const maintenanceView = computed(() => operationsPolicy.value
+  ? maintenanceCountdown(operationsPolicy.value.maintenance, policyNow.value)
+  : null)
 const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.entryBlocked === true)
 const customDecks = ref(loadSavedDecks())
 const catalog = ref<DeckCard[]>([])
@@ -94,6 +99,44 @@ const optionLabels = {
   disasterMode: { all: '全部天灾', random: '随机天灾', season: '赛季天灾', custom: '自定天灾（沙盒）', none: '不使用天灾' },
 } as const
 
+let maintenanceClockTimer = 0
+let operationsRefreshTimer = 0
+let refreshingOperationsPolicy = false
+let roomDefaultsHydrated = false
+
+function consumeOperationsPolicy(policy: EffectiveOperationsPolicy) {
+  operationsPolicy.value = policy
+  policyError.value = ''
+  if (roomDefaultsHydrated) return
+  roomOptions.value = {
+    matchModeId: 'friendly',
+    spectating: policy.defaultRoomConfig.spectating,
+    handVisibility: policy.defaultRoomConfig.handVisibility,
+    disasterMode: ['all', 'random', 'season', 'none'].includes(policy.defaultRoomConfig.disasterMode)
+      ? policy.defaultRoomConfig.disasterMode as RoomOptions['disasterMode'] : 'all',
+    useCardRestrictions: false,
+  }
+  roomDefaultsHydrated = true
+}
+
+async function refreshOperationsPolicy() {
+  if (refreshingOperationsPolicy) return
+  refreshingOperationsPolicy = true
+  try {
+    const policy = await getEffectiveOperationsPolicy()
+    consumeOperationsPolicy(policy)
+    l12State.operationsPolicy = policy
+  } catch (error) {
+    policyError.value = error instanceof Error ? error.message : '运营规则加载失败'
+  } finally {
+    refreshingOperationsPolicy = false
+  }
+}
+
+watch(() => l12State.operationsPolicy, policy => {
+  if (policy) consumeOperationsPolicy(policy)
+}, { immediate: true })
+
 watch(() => l12State.room?.options, options => {
   if (!options) return
   editableRoomOptions.value = {
@@ -106,25 +149,21 @@ watch(() => l12State.room?.options, options => {
 }, { immediate: true, deep: true })
 
 onMounted(async () => {
+  maintenanceClockTimer = window.setInterval(() => { policyNow.value = Date.now() }, 1_000)
+  operationsRefreshTimer = window.setInterval(() => void refreshOperationsPolicy(), 15_000)
   ;[customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
   hydrateDeckSelections()
-  try {
-    const policy = await getEffectiveOperationsPolicy()
-    operationsPolicy.value = policy
-    l12State.operationsPolicy = policy
-    roomOptions.value = {
-      matchModeId: 'friendly',
-      spectating: policy.defaultRoomConfig.spectating,
-      handVisibility: policy.defaultRoomConfig.handVisibility,
-      disasterMode: ['all', 'random', 'season', 'none'].includes(policy.defaultRoomConfig.disasterMode)
-        ? policy.defaultRoomConfig.disasterMode as RoomOptions['disasterMode'] : 'all',
-      useCardRestrictions: false,
-    }
-    ranked.value = await rankedApi.overview()
-  } catch (error) { policyError.value = error instanceof Error ? error.message : '运营规则加载失败' }
+  await refreshOperationsPolicy()
+  try { ranked.value = await rankedApi.overview() }
+  catch (error) { l12State.notice = error instanceof Error ? error.message : '排位资料加载失败' }
   if (platformState.account && platformState.token && l12State.status === 'offline') {
     try { await connect() } catch { /* 页面保留离线提示，创建/加入时仍可重试。 */ }
   }
+})
+
+onBeforeUnmount(() => {
+  window.clearInterval(maintenanceClockTimer)
+  window.clearInterval(operationsRefreshTimer)
 })
 
 // 创建、加入或恢复好友房时，把该模式已确认的牌库同步到房间；选择器取消不会触发这里。
@@ -189,7 +228,7 @@ async function copyRoomCode() {
   <div class="battle-hub">
     <RankedBroadcastTicker />
     <header class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
-    <section v-if="operationsPolicy?.maintenance.broadcastMessage || maintenanceActive" class="maintenance-banner"><b>{{ operationsPolicy?.maintenance.active ? '服务器维护中' : '维护公告' }}</b><span>{{ operationsPolicy?.maintenance.broadcastMessage || '维护即将开始/维护中，对局功能已关闭。' }}</span></section>
+    <section v-if="maintenanceView" class="maintenance-banner" :class="maintenanceView.phase"><b>{{ maintenanceView.title }}</b><strong>{{ maintenanceView.countdown }}</strong><span>{{ maintenanceView.message }}</span></section>
       <section v-else-if="policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
 
     <section v-if="l12State.matchFound && !l12State.game" class="match-found-stage panel" data-ui-contract="match-found-state-recovery">
@@ -268,7 +307,7 @@ async function copyRoomCode() {
 .player-online{margin-top:8px;color:#b76570;font-size:14px;font-style:normal;font-weight:900}.player-online.online{color:#58c99a}.room-rule-summary{display:flex;align-items:center;gap:8px;margin:-8px 0 18px;padding:11px 14px;border:1px solid #354149;background:#0a1117}.room-rule-summary b{margin-right:6px;color:#e4c675;font-size:14px}.room-rule-summary span{padding:4px 7px;background:#17212a;color:#aab4b8;font-size:14px;font-weight:900}
 @media(max-width:700px){.room-rule-summary{align-items:stretch;flex-direction:column}.room-rule-summary span{text-align:center}}
 .room-decks button{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;padding:8px}.room-decks button>img{width:38px;height:38px;object-fit:cover;border:1px solid #596269;border-radius:2px}.room-decks button>span,.room-decks button b,.room-decks button small{display:block}.room-decks button small{margin-top:4px;color:#77848a;font-size:14px}
-.maintenance-banner,.policy-warning{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:13px 16px;border:1px solid #9a7135;background:#2a1e0e;color:#f0d695;font-size:14px}.maintenance-banner span,.policy-warning span{color:#c8b98f}.policy-warning{border-color:#6b4c52;background:#221217;color:#e1b2b8}.join-row button:disabled,.room-settings select:disabled{cursor:not-allowed;opacity:.45}
+.maintenance-banner,.policy-warning{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:13px 16px;border:1px solid #9a7135;background:#2a1e0e;color:#f0d695;font-size:14px}.maintenance-banner{flex-wrap:wrap}.maintenance-banner strong{color:#fff0b3;font:900 14px monospace;white-space:nowrap}.maintenance-banner span{min-width:0;flex:1 1 260px}.maintenance-banner span,.policy-warning span{color:#c8b98f}.maintenance-banner.active{border-color:#a54a52;background:#2b1217}.policy-warning{border-color:#6b4c52;background:#221217;color:#e1b2b8}.join-row button:disabled,.room-settings select:disabled{cursor:not-allowed;opacity:.45}
 .current-deck{grid-template-columns:minmax(0,1fr) auto}.current-deck :deep(.deck-profile){border:0;background:transparent;padding:0}.room-decks button{display:block;padding:0}.room-decks button :deep(.deck-profile){width:100%;border:0;background:transparent}.room-decks button.active :deep(.deck-profile){background:#202017}
 .long-term-announcements{display:grid;gap:7px;margin:0 0 12px}.long-term-announcements article{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:10px;padding:11px 13px;border:1px solid #705f34;border-left:4px solid #d6b85e;background:#18160f;color:#d8ddd9}.long-term-announcements b{color:#f0d477;font-size:14px;white-space:nowrap}.long-term-announcements span{white-space:pre-wrap;font-size:14px;line-height:1.65}
 .room-rule-editor{margin:0 0 18px;padding:14px;border:1px solid #695b36;background:#11140f}.room-rule-editor>header{display:flex;align-items:center;justify-content:space-between}.room-rule-editor>header span{color:#877d62;font-size:14px}.room-rule-editor>.room-settings{margin-top:12px}.room-rule-editor>button{display:block;margin:12px 0 0 auto;padding:9px 18px;border:1px solid #d7bb69;background:#d7bb69;color:#111;font-weight:900}

@@ -613,6 +613,7 @@
     "id": "S02-0305",
     "number": "S02-0305",
     "nameZh": "安德华拉诺特",
+    "deckLimit": 1,
     "imageUrl": "/cards/faces/阿斯加德/安德华拉诺特.png",
     "cardType": "artifact",
     "product": "S02",

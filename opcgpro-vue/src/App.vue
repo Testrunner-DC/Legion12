@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { l12State, startAutomaticConnection, stopAutomaticConnection } from '@/l12/net'
 import { authState, platformState, updateAudioPreferences } from '@/l12/platform'
 import SiteShell from '@/l12/site/SiteShell.vue'
@@ -10,7 +10,6 @@ import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudi
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
 
 const route = useRoute()
-const router = useRouter()
 const immersive = computed(() => route.meta.immersive === true)
 const backgroundMusic = new BackgroundMusicController()
 let battleTrack = 0
@@ -67,10 +66,6 @@ onBeforeUnmount(() => {
   window.clearTimeout(audioSaveTimer)
   backgroundMusic.destroy()
   window.removeEventListener('pointerdown', primeMusic)
-})
-watch(() => [l12State.game, l12State.recoveryPhase] as const, ([game, recoveryPhase]) => {
-  if (game && recoveryPhase === 'snapshot-acknowledged' && !l12State.leavingRoom
-    && route.path !== '/game' && route.meta.replay !== true) router.push('/game')
 })
 watch(() => [platformState.token, authState.verified] as const, ([token, verified]) => {
   if (token && verified) startAutomaticConnection()
