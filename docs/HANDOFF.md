@@ -4,7 +4,7 @@
 
 ## 当前发布批次
 
-- `BATCH-20260906-251` 已在本地提交、尚未同步/部署：当前HEAD（提交标题“完善设置对局后台与长回放可靠性”）包含音乐平滑切换与低音量感知曲线、设置全功能生效、对战安全带与完整外框、单卡分析主宰双筛选、构筑快照浏览、长期公告、维护结束可空/显式启动、首页发布快照冻结及长回放分页防OOM。新音量反馈`BUG-20260906-c1f12db3`已标记为`in-progress`，必须在线上版本验证后才可`resolved`。
+- `BATCH-20260906-251` 已提交并同步、尚未部署：应用提交`e83fdf811c43df02c6ecf70b8b0c94bdf7e4ec80`包含音乐平滑切换与低音量感知曲线、设置全功能生效、对战安全带与完整外框、单卡分析主宰双筛选、构筑快照浏览、长期公告、维护结束可空/显式启动、首页发布快照冻结及长回放分页防OOM。新音量反馈`BUG-20260906-c1f12db3`已标记为`in-progress`，必须在线上版本验证后才可`resolved`。
 - 正式后台旧队列已补齐状态：28条以具名回归和已部署版本回填`resolved`，美杜莎费用来源裁定、鼠标悬停自动放大建议及信息不足的“为啥现在用不了”共3条按原因`closed`，不会在后续拉取时继续伪装成未处理新Bug。
 - `QUEUE-20260906-33`至`35`仅排队：临时士气可选支付/每行8枚换行、黑色莲花使用`Logo-Lotus.png`、主宰对阵所有行高统一为首行高度；不得混入`BATCH-20260906-251`。
 - `UI-20260906-250` 已补正并部署：更新日志由四条概括改为四个分组、19条结果说明，点名十张相关卡牌；应用提交 `37f1dcc9dd68ab958841d4415f1ec52195f30dae` 已同步并上线。`QUEUE-20260906-22`至`31`均仅登记，未混入本批。
@@ -16,8 +16,8 @@
 ## 工作区与线上
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，分支 `codex/deploy-verify-20260821`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
-- 当前功能开发提交（development commit）：当前HEAD，标题“完善设置对局后台与长回放可靠性”；最终完整哈希以`git rev-parse HEAD`为准，同步前必须跑干净提交Release。
-- GitHub `origin/main` 已包含应用提交 `37f1dcc9dd68ab958841d4415f1ec52195f30dae`；下一任务仍须重新 `git fetch origin main` 核实最新值。
+- 当前功能开发提交（development commit）：`e83fdf811c43df02c6ecf70b8b0c94bdf7e4ec80`；Batch与干净提交Release均已通过。
+- GitHub `origin/main` 已包含应用提交 `e83fdf811c43df02c6ecf70b8b0c94bdf7e4ec80`；下一任务仍须重新 `git fetch origin main` 核实最新值。
 - 线上已部署提交（deployed commit）：`37f1dcc9dd68ab958841d4415f1ec52195f30dae`。
 - 线上活动：`/opt/legion12-releases/37f1dcc9dd68ab958841d4415f1ec52195f30dae-20260906T045907Z`；上一版本为应用提交 `a936b72924b467a8f9a916be3812bb35d3b804ae`。
 - 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-37f1dcc9dd68-20260906T045907Z.tar.gz`；由服务器管理，不纳入本地清理。
