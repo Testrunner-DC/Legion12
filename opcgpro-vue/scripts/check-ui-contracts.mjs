@@ -70,6 +70,7 @@ const officialHome = read('../src/l12/site/OfficialHomePage.vue')
 const newsPage = read('../src/l12/site/NewsPage.vue')
 const homeContent = read('../src/l12/site/homeContent.ts')
 const profilePage = read('../src/l12/site/ProfilePage.vue')
+const profileAuthForm = profilePage.match(/<form class="account-form auth-form"[\s\S]*?<\/form>/)?.[0] ?? ''
 const recoveryPage = read('../src/l12/site/AccountRecoveryPage.vue')
 const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 const platform = read('../src/l12/platform.ts')
@@ -707,6 +708,26 @@ const contracts = [
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
     && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '单卡分析必须区分使用方/对手方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
   [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
+  [profileAuthForm.includes('@submit.prevent="submitAuth"') && profileAuthForm.includes('type="submit"')
+    && (profileAuthForm.match(/\brequired\b/g)?.length ?? 0) === 2
+    && profileAuthForm.includes(':disabled="authBusy || !auth.username.trim() || !auth.password"')
+    && profileAuthForm.includes('v-if="authNotice"') && profileAuthForm.includes('role="alert"')
+    && profileAuthForm.includes('aria-live="assertive"') && profilePage.includes("if (authBusy.value) return")
+    && profilePage.includes("authMode.value === 'login' ? '登录中…' : '正在建立账号…'"), '个人中心登录/注册必须使用语义表单，支持回车且空字段不可提交；请求中须禁用并以同步忙碌门禁阻止快速重复提交，结果须在表单旁无障碍播报'],
+  [profilePage.includes('error instanceof PlatformRequestError') && profilePage.includes('error.status === 403')
+    && profilePage.includes('error.status === 401 || error.status === 429')
+    && profilePage.includes('当前连接的站点节点已失效') && profilePage.includes('彻底关闭浏览器中的所有十二军团页面')
+    && profilePage.includes('暂时无法连接账号服务，请检查网络后重试')
+    && profilePage.includes('else authNotice.value = authenticationFailureMessage(error)')
+    && l12ServerSources.includes('"用户名或密码错误"') && l12ServerSources.includes('"login_rate_limited"'), '登录失败须就地覆盖安全统一的401、限流429、失效节点403及网络异常；不得用提示区分账号不存在、密码错误、禁用或删除'],
+  [profilePage.includes("if (authMode.value === 'login') await login(auth.username, auth.password)")
+    && profilePage.includes('authenticationCompleted = Boolean(platformState.account)')
+    && profilePage.includes('账号已登录，但后续数据同步失败')
+    && platform.includes('authState.verified = true') && platform.includes("localStorage.setItem('l12-auth-token', token)")
+    && app.includes('if (token && verified) startAutomaticConnection()'), '登录成功必须先提交权威账号与令牌再启动全站WebSocket；后续牌库或资料同步失败不得把已成功认证伪装成登录失败'],
+  [profilePage.includes('<p v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">')
+    && profilePage.indexOf('<p v-if="notice" class="notice"') < profilePage.indexOf('<section v-if="ranked"')
+    && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],
   [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('friendApi.blocked()') && friendsPage.includes('selectedPresence?.canInvite') && friendsPage.includes('selectedPresence?.canSpectate'), '好友中心须支持申请、屏蔽，并按在线状态在邀请对战与观战之间切换'],
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
   [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null') && platform.includes("platformRequest<PlatformAccount>('/api/auth/me')") && platform.includes('remember(account, requestToken)') && platform.includes('if (authRefreshPromise) return authRefreshPromise'), '账号初始化与权限刷新必须去重读取 /api/auth/me，并以权威响应覆盖本地缓存'],
