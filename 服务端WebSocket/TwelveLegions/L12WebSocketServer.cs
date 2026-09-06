@@ -175,11 +175,50 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Response.Headers.CacheControl = "no-store";
             var includeReplay = string.Equals(request.Query["includeReplay"], "true",
                 StringComparison.OrdinalIgnoreCase);
-            var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
-            _platform.RecordAdminRead(authenticated.Account, permission, "match",
-                includeReplay ? "read-replay" : "read-detail", matchId,
-                AuditContext(request, permission));
-            return match is null ? Results.NotFound() : Results.Ok(match);
+            try
+            {
+                var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
+                _platform.RecordAdminRead(authenticated.Account, permission, "match",
+                    includeReplay ? "read-replay" : "read-detail", matchId,
+                    AuditContext(request, permission));
+                return match is null ? Results.NotFound() : Results.Ok(match);
+            }
+            catch (L12ReplayPayloadTooLargeException error)
+            {
+                _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-rejected",
+                    matchId, AuditContext(request, permission) with { Outcome = "rejected", Reason = "replay-too-large" });
+                return ApiError(request, "replay_too_large",
+                    $"回放超过在线读取上限（最多 {error.MaximumCommands} 条命令或 {error.MaximumBytes / 1024 / 1024} MiB），已在反序列化前拒绝以保护服务。",
+                    StatusCodes.Status413PayloadTooLarge);
+            }
+        });
+        _app.MapGet("/api/admin/matches/{matchId}/replay", async (HttpRequest request,
+            string matchId, int? limit) =>
+        {
+            const L12Permission permission = L12Permission.AdminMatchesRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var page = await _recorder.GetAdminReplayPageAsync(matchId, QueryValue(request, "cursor"),
+                    limit ?? 50, request.HttpContext.RequestAborted);
+                _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-page",
+                    matchId, AuditContext(request, permission));
+                return page is null ? Results.NotFound() : Results.Ok(page);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_replay_cursor", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+            catch (L12ReplayPayloadTooLargeException error)
+            {
+                _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-page-rejected",
+                    matchId, AuditContext(request, permission) with { Outcome = "rejected", Reason = "replay-row-too-large" });
+                return ApiError(request, "replay_page_too_large",
+                    $"单条回放状态超过分页上限（{error.MaximumBytes / 1024 / 1024} MiB），已在 JSON 反序列化前拒绝。",
+                    StatusCodes.Status413PayloadTooLarge);
+            }
         });
         _app.MapGet("/api/admin/players/{accountId}/matches", async (HttpRequest request, string accountId) =>
         {
@@ -1137,6 +1176,28 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.RollbackOperationsConfig(current.Actor,
                     current.Payload.VersionId, expected, current.Reason, current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/operations/server/start",
+            (HttpRequest request, OperationsServerStartRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            // The generic command bus rejects stale versions before invoking the operation. Server start is
+            // state-idempotent: after a successful response is lost, a retry with a new key and the old version
+            // must reach StartServer so it can observe that the server is already open. Keep the supplied
+            // precondition in the signed payload and let the store enforce it only for maintenance -> open.
+            var payload = new L12ServerStartCommandPayload(expected);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "operations.server.start",
+                "operations:server", payload, key, null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.StartServer(current.Actor,
+                    current.Payload.ExpectedVersion,
+                    current.Reason, current.AuditContext)));
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -2176,7 +2237,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             ModeId: QueryValue(request, "modeId", "mode"),
             MasterId: QueryValue(request, "masterId"),
             FromUtc: QueryDate(request, "fromUtc", "from"),
-            ToUtc: QueryDate(request, "toUtc", "to"));
+            ToUtc: QueryDate(request, "toUtc", "to"),
+            OpponentMasterId: QueryValue(request, "opponentMasterId"));
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)
@@ -2330,12 +2392,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         return true;
     }
 
-    private static L12AdminCommandResult<L12OperationsConfigOperationView> ExecuteOperationsConfig(
-        Func<L12OperationsConfigOperationView> operation)
+    private static L12AdminCommandResult<T> ExecuteOperationsConfig<T>(Func<T> operation)
     {
         try
         {
-            return L12AdminCommandResult<L12OperationsConfigOperationView>.Ok(operation());
+            return L12AdminCommandResult<T>.Ok(operation());
         }
         catch (L12OperationsConfigException error)
         {
@@ -2346,7 +2407,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 "permission_denied" => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status400BadRequest,
             };
-            return L12AdminCommandResult<L12OperationsConfigOperationView>.Fail(error.Code,
+            return L12AdminCommandResult<T>.Fail(error.Code,
                 error.Message, status);
         }
     }
@@ -3199,6 +3260,9 @@ public sealed record OperationsConfigApplyRequest(L12OperationsConfigPayload Con
 public sealed record OperationsConfigRollbackRequest(string? VersionId, string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12OperationsRollbackCommandPayload(string VersionId);
+public sealed record OperationsServerStartRequest(string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12ServerStartCommandPayload(long ExpectedVersion, string RequestedState = "open");
 public sealed record AuditArchiveRequest(int? RetentionDays = null, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record SessionCommandPayload(string AccountId, string? SessionId);

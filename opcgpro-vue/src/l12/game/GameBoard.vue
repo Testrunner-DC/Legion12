@@ -10,6 +10,7 @@ import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
+import { l12AnimationDuration } from '../audioPreferences'
 import MasterOverlay from './MasterOverlay.vue'
 import PhaseTrack from './PhaseTrack.vue'
 import PlayerMat from './PlayerMat.vue'
@@ -290,7 +291,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   lastHiddenRevealSequence.value = event.sequence
   hiddenRevealCard.value = event.cards[0]
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
-  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, 3000)
+  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, l12AnimationDuration(3000, 700))
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const specialVictory = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'special-victory'
@@ -310,7 +311,7 @@ function showNextPublicReveal() {
     publicReveal.value = null
     publicRevealTimer = null
     showNextPublicReveal()
-  }, 3000)
+  }, l12AnimationDuration(3000, 700))
 }
 function publicRevealText(event: ActionEvent) {
   const text = event.effectText?.trim() || event.text.trim()
@@ -332,7 +333,7 @@ function showNextDiceReveal() {
   diceReveal.value = { ...next, values, animatedValues: values.map(() => 1 + Math.floor(Math.random() * 6)), settled: false }
   diceRollTimer = setInterval(() => {
     if (diceReveal.value) diceReveal.value.animatedValues = values.map(() => 1 + Math.floor(Math.random() * 6))
-  }, 90)
+  }, l12AnimationDuration(90, 50))
   diceSettleTimer = setTimeout(() => {
     if (diceRollTimer) clearInterval(diceRollTimer)
     diceRollTimer = null
@@ -340,12 +341,12 @@ function showNextDiceReveal() {
       diceReveal.value.animatedValues = [...values]
       diceReveal.value.settled = true
     }
-  }, 900)
+  }, l12AnimationDuration(900, 180))
   diceHideTimer = setTimeout(() => {
     diceReveal.value = null
     diceHideTimer = null
     showNextDiceReveal()
-  }, 2200)
+  }, l12AnimationDuration(2200, 700))
 }
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
@@ -441,8 +442,8 @@ const supportReady = computed(() => {
 function updateScale() {
   compactViewport.value = window.innerWidth < 820
   scale.value = compactViewport.value
-    ? Math.max(.78, Math.min(1, window.innerHeight / 900))
-    : Math.min(window.innerWidth / 1440, window.innerHeight / 900)
+    ? Math.max(.7, Math.min(1, window.innerHeight / 968))
+    : Math.min(window.innerWidth / 1440, window.innerHeight / 968)
   window.requestAnimationFrame(updateInspectorFloatRect)
 }
 onMounted(() => {
@@ -822,14 +823,16 @@ function statusTexts(card: Card) {
         </aside>
 
         <main class="board-center" data-l12-game-stage>
-          <PlayerTurnClock class="board-player-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
-            :active="game.activePlayer === viewEnemy.playerIndex" :ranked-clock="l12State.rankedClock" />
           <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
+          <div class="board-status-lane opponent-status-lane" data-ui-contract="opponent-status-safe-lane">
+            <PlayerTurnClock class="board-player-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
+              :active="game.activePlayer === viewEnemy.playerIndex" :ranked-clock="l12State.rankedClock" />
+          </div>
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
@@ -931,12 +934,14 @@ function statusTexts(card: Card) {
               @faction-ability="ability => activateFactionAbilityFor(viewMe.playerIndex, ability)"
               @payment-resource="togglePaymentResource" />
           </div>
+          <div class="board-status-lane my-status-lane" data-ui-contract="player-status-safe-lane">
+            <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
+              :active="game.activePlayer === viewMe.playerIndex" :ranked-clock="l12State.rankedClock" />
+          </div>
           <HandArea :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
-          <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
-            :active="game.activePlayer === viewMe.playerIndex" :ranked-clock="l12State.rankedClock" />
         </main>
 
         <aside class="board-rail right-rail">
@@ -1030,7 +1035,7 @@ function statusTexts(card: Card) {
   grid-template-rows:minmax(272px,1fr) var(--l12-board-seam-safe-height) minmax(272px,1fr);
   align-items:stretch;
 }
-.board-player-clock{position:absolute;right:5px;z-index:38}.opponent-player-clock{top:4px}.my-player-clock{bottom:4px}
+.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:34px;min-height:34px;align-items:center;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0}.my-status-lane{order:0}
 .player-panel{box-sizing:border-box;height:auto!important;min-height:286px;flex:none;overflow:visible!important}
 .player-summary{display:grid;min-width:0;gap:6px}.player-summary header{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:8px}.player-summary header h3{margin:0}.player-summary strong{max-width:none!important;overflow:visible!important;white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.35!important}
 .player-summary dl{display:grid;gap:3px;margin:0}.player-summary dl>div{display:grid;grid-template-columns:31px minmax(0,1fr);gap:5px;align-items:start}.player-summary dt{color:#687270;font-size:8px;font-weight:900}.player-summary dd{min-width:0;margin:0;color:#c8ccc8;font-size:9px;font-weight:800;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
@@ -1040,7 +1045,7 @@ function statusTexts(card: Card) {
 .battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch}
 .battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
 .battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
-.battlefield-half.my-half::before{bottom:-10px;border-color:rgba(57,171,181,.4)}
+.battlefield-half.my-half::before{inset:0;border-color:rgba(57,171,181,.4)}
 .battlefield-half.opponent-half{grid-row:1}
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
 .battlefield-half.my-half{grid-row:3}

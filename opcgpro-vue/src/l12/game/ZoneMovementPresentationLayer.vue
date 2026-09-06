@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { l12AnimationDuration } from '../audioPreferences'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card } from '../types'
 
@@ -149,6 +150,12 @@ function resolveRect(zone: Zone, playerIndex: number, instanceId?: string) {
   return elementRect(cardElement(instanceId)) ?? elementRect(zoneElement(zone, playerIndex)) ?? fallbackRect(zone, playerIndex)
 }
 
+function movementDuration(movement: Movement) {
+  if (!movement.sourceGhost) return l12AnimationDuration(440, 180)
+  const distance = Math.hypot(movement.toRect.x - movement.fromRect.x, movement.toRect.y - movement.fromRect.y)
+  return l12AnimationDuration(Math.round(Math.min(500, Math.max(340, 320 + distance * .16))), 180)
+}
+
 const motionStyle = computed(() => {
   if (!active.value) return {}
   const start = active.value.fromRect
@@ -160,6 +167,7 @@ const motionStyle = computed(() => {
     '--move-to-y': `${finish.y}px`,
     '--move-from-scale': `${Math.max(.55, Math.min(1.45, start.width / 72))}`,
     '--move-to-scale': `${Math.max(.55, Math.min(1.45, finish.width / 72))}`,
+    '--move-duration': `${movementDuration(active.value)}ms`,
   }
 })
 
@@ -217,8 +225,7 @@ function showNext() {
     const dy = target.y - source.y
     const scaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
     const scaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
-    const distance = Math.hypot(dx, dy)
-    const duration = Math.round(Math.min(500, Math.max(340, 320 + distance * .16)))
+    const duration = movementDuration(active.value)
     activeGhostAnimation = wrapper.animate([
       { transform: 'translate3d(0,0,0) scale(1)', opacity: 1 },
       { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY})`, opacity: 1 },
@@ -228,10 +235,11 @@ function showNext() {
       activeGhostWrapper?.remove()
       activeGhostWrapper = null
     }
-    timer = setTimeout(finish, duration + 80)
+    timer = setTimeout(finish, duration + l12AnimationDuration(80, 20))
     return
   }
-  timer = setTimeout(finish, 460)
+  const duration = movementDuration(active.value)
+  timer = setTimeout(finish, duration + l12AnimationDuration(20, 10))
 }
 
 function cancelActiveMovement() {
@@ -301,7 +309,7 @@ onBeforeUnmount(reset)
   <Teleport to="body">
     <div v-if="active && !active.sourceGhost" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
-      <div class="moving-card" :class="{ concealed: active.concealed, covered: active.covered }">
+      <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered }">
         <img v-if="active.concealed" src="/assets/l12/card-back-official.png" alt="" />
         <img v-else-if="active.preparedImageUrl" :src="active.preparedImageUrl" :alt="active.card?.name || ''" />
       </div>
@@ -310,10 +318,9 @@ onBeforeUnmount(reset)
 </template>
 
 <style scoped>
-.zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight .44s cubic-bezier(.24,.72,.28,1) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
+.zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) cubic-bezier(.24,.72,.28,1) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
 @keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:8px}}
-@media(prefers-reduced-motion:reduce){.moving-card{animation-duration:.1s}}
 .zone-card-movement{z-index:902}
 </style>

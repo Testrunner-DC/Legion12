@@ -67,7 +67,8 @@ public sealed partial class MatchRecorder
             "rules-version", "COALESCE(e.rules_version,'legacy')"));
         var recent = await ListAdminMatchesAsync(new L12AdminMatchQuery(Limit: 20,
             ModeId: normalized.ModeId, MasterId: normalized.MasterId, FromUtc: normalized.FromUtc,
-            ToUtc: normalized.ToUtc, CardId: cardId.Trim()));
+            ToUtc: normalized.ToUtc, CardId: cardId.Trim(), CardOwnerMasterId: normalized.MasterId,
+            CardOwnerOpponentMasterId: normalized.OpponentMasterId));
         return new L12CardAnalyticsDetail(summary, breakdowns, recent.Items, summary.Coverage);
     }
 
@@ -81,6 +82,8 @@ public sealed partial class MatchRecorder
                 .Select(cardId => cardId.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             ModeId = string.IsNullOrWhiteSpace(query.ModeId) ? null : query.ModeId.Trim().ToLowerInvariant(),
             MasterId = string.IsNullOrWhiteSpace(query.MasterId) ? null : query.MasterId.Trim(),
+            OpponentMasterId = string.IsNullOrWhiteSpace(query.OpponentMasterId)
+                ? null : query.OpponentMasterId.Trim(),
         };
 
     private static string AnalyticsEligibleCte(L12CardAnalyticsQuery query,
@@ -105,6 +108,11 @@ public sealed partial class MatchRecorder
         {
             clauses.Add("p.master_id=$master");
             parameters["$master"] = query.MasterId;
+        }
+        if (query.OpponentMasterId is not null)
+        {
+            clauses.Add("opponent.master_id=$opponentMaster");
+            parameters["$opponentMaster"] = query.OpponentMasterId;
         }
         if (query.FromUtc is { } from)
         {

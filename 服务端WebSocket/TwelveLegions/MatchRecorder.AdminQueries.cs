@@ -6,6 +6,10 @@ namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder
 {
+    public const long MaximumInlineReplayCommands = 1_500;
+    public const long MaximumInlineReplayBytes = 32L * 1024 * 1024;
+    public const int MaximumReplayPageCommands = 100;
+    public const long MaximumReplayPageBytes = 4L * 1024 * 1024;
     private const string AdminMatchSelect = """
         SELECT m.match_id,m.mode_id,m.started_utc,m.ended_utc,m.winner,m.error,
                (SELECT COUNT(*) FROM match_events e WHERE e.match_id=m.match_id),
@@ -97,10 +101,153 @@ public sealed partial class MatchRecorder
                 EmptyCoverage(privateDuringActiveMatch: true));
         }
 
+        if (includeReplay) await EnsureInlineReplayWithinLimitsAsync(connection, matchId);
         var replay = includeReplay ? (await GetMatchAsync(matchId))?.Commands ?? [] : [];
         var facts = await ReadCardFactsAsync(connection, matchId);
         var coverage = await ReadCoverageAsync(connection, matchId, privateDuringActiveMatch: false);
         return new L12AdminMatchDetail(summary, participants, replay, facts, coverage);
+    }
+
+    private static async Task EnsureInlineReplayWithinLimitsAsync(SqliteConnection connection, string matchId)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*),COALESCE(SUM(
+                length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
+                +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
+                +COALESCE(length(CAST(error AS BLOB)),0)
+            ),0)
+            FROM match_events WHERE match_id=$match;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return;
+        var count = reader.GetInt64(0);
+        var bytes = reader.GetInt64(1);
+        if (count > MaximumInlineReplayCommands || bytes > MaximumInlineReplayBytes)
+            throw new L12ReplayPayloadTooLargeException(matchId, count, bytes,
+                MaximumInlineReplayCommands, MaximumInlineReplayBytes);
+    }
+
+    public async Task<L12AdminReplayPage?> GetAdminReplayPageAsync(string matchId, string? cursor,
+        int limit = 50, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(matchId)) return null;
+        var normalizedMatchId = matchId.Trim();
+        var take = Math.Clamp(limit, 1, MaximumReplayPageCommands);
+        var afterSequence = DecodeReplayCursor(normalizedMatchId, cursor);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var metadata = connection.CreateCommand();
+        metadata.CommandText = """
+            SELECT COUNT(e.id),COALESCE(SUM(
+                length(CAST(e.command_json AS BLOB))+length(CAST(e.state_json AS BLOB))
+                +length(CAST(e.state_hash AS BLOB))+length(CAST(e.received_utc AS BLOB))
+                +COALESCE(length(CAST(e.error AS BLOB)),0)
+            ),0)
+            FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+            WHERE m.match_id=$match AND m.mode_id<>'sandbox' AND m.ended_utc IS NOT NULL
+            GROUP BY m.match_id;
+            """;
+        metadata.Parameters.AddWithValue("$match", normalizedMatchId);
+        long totalCommands;
+        long totalBytes;
+        await using (var metadataReader = await metadata.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await metadataReader.ReadAsync(cancellationToken)) return null;
+            totalCommands = metadataReader.GetInt64(0);
+            totalBytes = metadataReader.GetInt64(1);
+        }
+
+        // Size the candidate rows without selecting either JSON payload. This keeps an
+        // oversized state out of the managed process entirely and lets us reject it
+        // before GetString/JsonDocument.Parse. Only the accepted <=4 MiB sequence range
+        // is selected by the second query below.
+        var sizing = connection.CreateCommand();
+        sizing.CommandText = """
+            SELECT length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
+                     +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
+                     +COALESCE(length(CAST(error AS BLOB)),0),sequence
+            FROM match_events
+            WHERE match_id=$match AND sequence>$after
+            ORDER BY sequence
+            LIMIT $take;
+            """;
+        sizing.Parameters.AddWithValue("$match", normalizedMatchId);
+        sizing.Parameters.AddWithValue("$after", afterSequence);
+        sizing.Parameters.AddWithValue("$take", take + 1);
+        var sequences = new List<long>(take);
+        long pageBytes = 0;
+        var hasMore = false;
+        await using (var sizingReader = await sizing.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await sizingReader.ReadAsync(cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var rowBytes = sizingReader.GetInt64(0);
+                if (sequences.Count >= take || pageBytes + rowBytes > MaximumReplayPageBytes)
+                {
+                    hasMore = true;
+                    if (sequences.Count == 0)
+                        throw new L12ReplayPayloadTooLargeException(matchId, totalCommands, rowBytes,
+                            MaximumReplayPageCommands, MaximumReplayPageBytes);
+                    break;
+                }
+                pageBytes += rowBytes;
+                sequences.Add(sizingReader.GetInt64(1));
+            }
+        }
+
+        var items = new List<L12RecordedCommand>(sequences.Count);
+        if (sequences.Count > 0)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json
+                FROM match_events
+                WHERE match_id=$match AND sequence>$after AND sequence<=$last
+                ORDER BY sequence;
+                """;
+            command.Parameters.AddWithValue("$match", normalizedMatchId);
+            command.Parameters.AddWithValue("$after", afterSequence);
+            command.Parameters.AddWithValue("$last", sequences[^1]);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var commandDocument = JsonDocument.Parse(reader.GetString(3));
+                using var stateDocument = JsonDocument.Parse(reader.GetString(8));
+                items.Add(new L12RecordedCommand(
+                    reader.GetInt64(0), reader.GetString(1), reader.IsDBNull(2) ? -1 : reader.GetInt32(2),
+                    commandDocument.RootElement.Clone(), reader.GetInt32(4) == 1,
+                    reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetString(7),
+                    stateDocument.RootElement.Clone()));
+            }
+        }
+        var nextCursor = hasMore && sequences.Count > 0
+            ? EncodeReplayCursor(normalizedMatchId, sequences[^1])
+            : null;
+        return new L12AdminReplayPage(items, nextCursor, take, pageBytes, totalCommands, totalBytes);
+    }
+
+    private static string EncodeReplayCursor(string matchId, long sequence)
+        => Base64UrlEncode($"{matchId}\n{sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+
+    private static long DecodeReplayCursor(string matchId, string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return -1;
+        try
+        {
+            var value = Base64UrlDecode(cursor.Trim());
+            var separator = value.LastIndexOf('\n');
+            if (separator > 0 && string.Equals(value[..separator], matchId, StringComparison.Ordinal)
+                && long.TryParse(value[(separator + 1)..], System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var sequence) && sequence >= 0)
+                return sequence;
+        }
+        catch (Exception error) when (error is FormatException or ArgumentException) { }
+        throw new ArgumentException("回放分页游标无效", nameof(cursor));
     }
 
     public async Task<IReadOnlyList<L12MatchSummary>> ListMatchesForAccountAsync(
@@ -217,7 +364,18 @@ public sealed partial class MatchRecorder
         }
         if (!string.IsNullOrWhiteSpace(query.CardId))
         {
-            clauses.Add("EXISTS(SELECT 1 FROM match_deck_cards dc WHERE dc.match_id=m.match_id AND dc.card_id=$card)");
+            var ownerClauses = new List<string> { "dc.match_id=m.match_id", "dc.card_id=$card" };
+            if (!string.IsNullOrWhiteSpace(query.CardOwnerMasterId))
+            {
+                ownerClauses.Add("owner.master_id=$cardOwnerMaster");
+                parameters["$cardOwnerMaster"] = query.CardOwnerMasterId.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(query.CardOwnerOpponentMasterId))
+            {
+                ownerClauses.Add("opponent.master_id=$cardOwnerOpponentMaster");
+                parameters["$cardOwnerOpponentMaster"] = query.CardOwnerOpponentMasterId.Trim();
+            }
+            clauses.Add($"EXISTS(SELECT 1 FROM match_deck_cards dc JOIN match_participants owner ON owner.match_id=dc.match_id AND owner.player_index=dc.player_index JOIN match_participants opponent ON opponent.match_id=owner.match_id AND opponent.player_index<>owner.player_index WHERE {string.Join(" AND ", ownerClauses)})");
             parameters["$card"] = query.CardId.Trim();
         }
         if (includeCursor && !string.IsNullOrWhiteSpace(query.Cursor))
@@ -399,7 +557,11 @@ public sealed partial class MatchRecorder
 
     private static JsonElement ParseJsonElement(string json)
     {
-        try { return JsonDocument.Parse(json).RootElement.Clone(); }
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
         catch (JsonException) { return JsonSerializer.SerializeToElement(new { invalid = true }); }
     }
 

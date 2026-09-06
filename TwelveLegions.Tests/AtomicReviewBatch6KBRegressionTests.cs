@@ -296,6 +296,36 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         if (cardId == "S01-0216") Assert.Equal(6, player.Hp);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20260905-05996658")]
+    public void CanopicThreeAddsTwoTemporaryMoraleBeforeDiscardingItself()
+    {
+        var game = Create(8219);
+        var player = game.State.Players[0];
+        var source = Card("S01-0219", "batch6kb-canopic-three-temporary-morale");
+        player.ExtraRelics.Add(source);
+
+        QueueTrigger(game, source, "enter");
+        Assert.Equal("canopic-three-morale", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        for (var safety = 0; safety < 8 && player.TemporaryMorale == 0; safety++)
+        {
+            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+            Resolve(game, "pass");
+        }
+
+        Assert.Equal(2, player.TemporaryMorale);
+        Assert.Contains(source, player.ExtraRelics);
+        Assert.Equal("canopic-three-discard", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        for (var safety = 0; safety < 8 && player.ExtraRelics.Contains(source); safety++)
+        {
+            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+            Resolve(game, "pass");
+        }
+
+        Assert.Contains(source, player.Graveyard);
+        Assert.DoesNotContain(source, player.ExtraRelics);
+    }
+
     [Theory]
     [InlineData("S01-02D1", "sunTopThree", "sun-top-three-search", "sun-top-three-recover")]
     [InlineData("S01-03D1", "valhallaRecover", "valhalla-mill", "valhalla-recover")]

@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -192,12 +193,117 @@ public sealed class MatchAnalyticsTests
         Assert.Equal(1, item.WinRateDelta);
         Assert.Equal(1, page.Total);
 
+        var oriented = await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
+            MinimumSampleSize: 1, CandidateCardIds: [targetCard], MasterId: includedDeck.MasterId,
+            OpponentMasterId: comparisonDeck.MasterId));
+        Assert.Equal(3, Assert.Single(oriented.Items, item => item.CardId == targetCard).SampleSize);
+        Assert.Equal(3, oriented.Summary.SampleSize);
+        var reversed = await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
+            MinimumSampleSize: 1, CandidateCardIds: [targetCard], MasterId: comparisonDeck.MasterId,
+            OpponentMasterId: includedDeck.MasterId));
+        Assert.DoesNotContain(reversed.Items, item => item.CardId == targetCard);
+
         var detail = Assert.IsType<L12CardAnalyticsDetail>(await recorder.GetCardAnalyticsAsync(targetCard,
-            new L12CardAnalyticsQuery(MinimumSampleSize: 1)));
+            new L12CardAnalyticsQuery(MinimumSampleSize: 1, MasterId: includedDeck.MasterId,
+                OpponentMasterId: comparisonDeck.MasterId)));
         Assert.NotEmpty(detail.Breakdowns);
         Assert.Contains(detail.Breakdowns, breakdown => breakdown.Dimension == "opponent-master");
         Assert.Contains(detail.Breakdowns, breakdown => breakdown.Dimension == "rules-version");
         Assert.Equal(targetCard, detail.Summary.CardId);
+    }
+
+    [Fact]
+    public async Task HugeReplayUsesStableBoundedPagesWithoutBlockingNormalRankedSnapshot()
+    {
+        var directory = TestDirectory("huge-replay");
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = Catalog();
+        var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var game = new L12GameEngine(catalog, "huge-replay", "HUGE01", 59,
+            ["甲", "乙"], decks, skipPreparation: true);
+        await recorder.StartAsync(game, "ranked", "huge-a", "huge-b", decks);
+        game.ConcludeByAuthority(0, "超大回放测试结束");
+        await recorder.AppendAuthorityAsync(game, 1, "超大回放测试结束");
+        await recorder.CompleteAsync(game);
+
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            var append = connection.CreateCommand();
+            append.CommandText = """
+                WITH RECURSIVE replay(sequence) AS (
+                    VALUES(100) UNION ALL SELECT sequence+1 FROM replay WHERE sequence<1700
+                )
+                INSERT INTO match_events(match_id,sequence,received_utc,player_index,command_json,accepted,
+                                         error,revision,state_hash,state_json)
+                SELECT 'huge-replay',sequence,'2026-09-06T00:00:00.0000000+00:00',0,'{}',1,NULL,
+                       sequence,'hash',CASE WHEN sequence=1700 THEN 'invalid-json-must-not-be-read' ELSE '{}' END
+                FROM replay;
+                """;
+            await append.ExecuteNonQueryAsync();
+        }
+
+        var snapshot = Assert.IsType<L12AdminMatchDetail>(await recorder.GetAdminMatchAsync("huge-replay"));
+        Assert.Equal("ranked", snapshot.Summary.ModeId);
+        Assert.NotEmpty(snapshot.Participants[0].DeckCards);
+        Assert.Empty(snapshot.Replay);
+
+        var first = Assert.IsType<L12AdminReplayPage>(
+            await recorder.GetAdminReplayPageAsync("huge-replay", null, 17));
+        Assert.Equal(17, first.Items.Count);
+        Assert.NotNull(first.NextCursor);
+        Assert.True(first.TotalCommands > MatchRecorder.MaximumInlineReplayCommands);
+        var second = Assert.IsType<L12AdminReplayPage>(
+            await recorder.GetAdminReplayPageAsync("huge-replay", first.NextCursor, 17));
+        Assert.True(second.Items[0].Sequence > first.Items[^1].Sequence);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            recorder.GetAdminReplayPageAsync("different-match", first.NextCursor, 17));
+        await Assert.ThrowsAsync<L12ReplayPayloadTooLargeException>(() =>
+            recorder.GetAdminMatchAsync("huge-replay", includeReplay: true));
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            recorder.GetAdminReplayPageAsync("huge-replay", null, 17, cancelled.Token));
+    }
+
+    [Fact]
+    public async Task ReplayPageByteCapReturnsCursorBeforeTakeLimit()
+    {
+        var directory = TestDirectory("byte-capped-replay");
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = Catalog();
+        var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var game = new L12GameEngine(catalog, "byte-capped-replay", "BYTE01", 60,
+            ["甲", "乙"], decks, skipPreparation: true);
+        await recorder.StartAsync(game, "ranked", "byte-a", "byte-b", decks);
+        game.ConcludeByAuthority(0, "字节分页测试结束");
+        await recorder.AppendAuthorityAsync(game, 1, "字节分页测试结束");
+        await recorder.CompleteAsync(game);
+
+        var largeState = JsonSerializer.Serialize(new string('x', 2_200_000));
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            await InsertReplayEventAsync(connection, "byte-capped-replay", 100, largeState);
+            await InsertReplayEventAsync(connection, "byte-capped-replay", 101, largeState);
+            await InsertReplayEventAsync(connection, "byte-capped-replay", 102, "{}");
+        }
+
+        var first = Assert.IsType<L12AdminReplayPage>(
+            await recorder.GetAdminReplayPageAsync("byte-capped-replay", null, 100));
+        Assert.True(first.Items.Count < first.Limit);
+        Assert.Equal(100, first.Items[^1].Sequence);
+        Assert.True(first.PageBytes <= MatchRecorder.MaximumReplayPageBytes);
+        Assert.NotNull(first.NextCursor);
+        var second = Assert.IsType<L12AdminReplayPage>(
+            await recorder.GetAdminReplayPageAsync("byte-capped-replay", first.NextCursor, 100));
+        Assert.Equal(101, second.Items[0].Sequence);
+        Assert.Contains(second.Items, item => item.Sequence == 102);
+        Assert.Null(second.NextCursor);
     }
 
     [Fact]
@@ -210,7 +316,8 @@ public sealed class MatchAnalyticsTests
         var player = platform.Register("api-player", "Password123!").Account!;
         var opponent = platform.Register("api-opponent", "Password123!").Account!;
         var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
-        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        var matchPath = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(matchPath);
         await recorder.InitializeAsync();
         var game = new L12GameEngine(catalog, "api-match", "API001", 61,
             [player.Username, opponent.Username], decks, skipPreparation: true);
@@ -256,6 +363,27 @@ public sealed class MatchAnalyticsTests
                 var detail = await response.Content.ReadFromJsonAsync<L12AdminMatchDetail>();
                 Assert.NotEmpty(detail!.Replay);
             }
+            await using (var connection = new SqliteConnection($"Data Source={matchPath}"))
+            {
+                await connection.OpenAsync();
+                await InsertReplayEventAsync(connection, "api-match", 10_000,
+                    new string('x', checked((int)MatchRecorder.MaximumReplayPageBytes + 1)));
+            }
+            string oversizedCursor;
+            using (var pageRequest = Authorized(HttpMethod.Get,
+                       "/api/admin/matches/api-match/replay?limit=100", adminLogin.Token!))
+            using (var response = await client.SendAsync(pageRequest))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var page = await response.Content.ReadFromJsonAsync<L12AdminReplayPage>();
+                Assert.NotEmpty(page!.Items);
+                oversizedCursor = Assert.IsType<string>(page.NextCursor);
+            }
+            using (var oversizedRequest = Authorized(HttpMethod.Get,
+                       $"/api/admin/matches/api-match/replay?limit=100&cursor={Uri.EscapeDataString(oversizedCursor)}",
+                       adminLogin.Token!))
+            using (var response = await client.SendAsync(oversizedRequest))
+                Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
             var targetCard = decks[0].CardIds[0];
             var cardName = catalog.Cards[targetCard].NameZh;
             using (var search = Authorized(HttpMethod.Get,
@@ -327,6 +455,21 @@ public sealed class MatchAnalyticsTests
         var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return request;
+    }
+
+    private static async Task InsertReplayEventAsync(SqliteConnection connection, string matchId,
+        long sequence, string stateJson)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO match_events(match_id,sequence,received_utc,player_index,command_json,accepted,
+                                     error,revision,state_hash,state_json)
+            VALUES($match,$sequence,'2026-09-06T00:00:00.0000000+00:00',0,'{}',1,NULL,$sequence,'hash',$state);
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$sequence", sequence);
+        command.Parameters.AddWithValue("$state", stateJson);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static L12Catalog Catalog()

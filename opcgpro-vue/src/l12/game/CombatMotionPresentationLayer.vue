@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, watch } from 'vue'
+import { l12AnimationDuration } from '../audioPreferences'
 import type { ActionEvent, Card } from '../types'
 
 const props = defineProps<{ events: ActionEvent[]; matchId: string }>()
@@ -44,7 +45,7 @@ function animateAttack(event: ActionEvent) {
     { transform: 'translate3d(0,0,0)' },
     { transform: `translate3d(${dx / distance * step}px,${dy / distance * step}px,0)`, offset: .48 },
     { transform: 'translate3d(0,0,0)' },
-  ], { duration: 360, easing: 'cubic-bezier(.25,.72,.35,1)' })
+  ], { duration: l12AnimationDuration(360, 24), easing: 'cubic-bezier(.25,.72,.35,1)' })
   remember(animation)
 }
 
@@ -62,7 +63,7 @@ function animatePowerBadge(element: HTMLElement) {
     { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
     { transform: 'translateX(-50%) scale(1.14)', filter: 'brightness(1.55)', offset: .45 },
     { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
-  ], { duration: 280, easing: 'ease-out' })
+  ], { duration: l12AnimationDuration(280, 80), easing: 'ease-out' })
   remember(animation)
 }
 
@@ -94,7 +95,7 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent) {
     { transform: 'translate3d(0,0,0) scale(1)', opacity: 1, filter: 'grayscale(0)' },
     { transform: 'translate3d(0,0,0) scale(1)', opacity: 1, filter: 'grayscale(.35)', offset: .3 },
     { transform: `translate3d(${dx}px,${dy}px,0) scale(.48)`, opacity: 0, filter: 'grayscale(1)' },
-  ], { duration: 500, easing: 'cubic-bezier(.3,.6,.3,1)', fill: 'forwards' })
+  ], { duration: l12AnimationDuration(500, 180), easing: 'cubic-bezier(.3,.6,.3,1)', fill: 'forwards' })
   remember(animation)
   animation.addEventListener('finish', () => { overlays.delete(wrapper); wrapper.remove() }, { once: true })
 }

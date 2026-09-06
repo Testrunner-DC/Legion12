@@ -156,6 +156,9 @@ export interface AdminMatchDetail {
   replay: RecordedCommand[]; cardFacts: AdminMatchCardFact[]
   coverage: AdminAnalyticsCoverage
 }
+export interface AdminReplayPage {
+  items: RecordedCommand[]; nextCursor?: string; limit: number; pageBytes: number; totalCommands: number; totalBytes: number
+}
 export interface AdminCardAnalyticsItem {
   cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; inclusionRate: number; wins: number; winRate: number
   baselineWinRate?: number | null; winRateDelta?: number | null; drawnMatches: number; playedMatches: number
@@ -201,6 +204,7 @@ export interface OperationsDisasterPoolConfig { cardIds: string[]; annihilationL
 export interface OperationsCardRestriction { cardId: string; maxCopies: number; reason?: string; masterId?: string }
 export interface OperationsMatchMode { id: string; name: string; enabled: boolean }
 export interface OperationsMaintenanceConfig { enabled: boolean; message: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number }
+export interface OperationsAnnouncementConfig { id: string; content: string; enabled: boolean; sortOrder: number; startsAt?: string; endsAt?: string }
 export interface OperationsDefaultRoomConfig {
   matchModeId: string
   spectating: 'public' | 'friends' | 'disabled'
@@ -216,6 +220,7 @@ export interface OperationsConfigPayload {
   defaultRoomConfig: OperationsDefaultRoomConfig
   featureFlags: Record<string, boolean>
   maintenance: OperationsMaintenanceConfig
+  announcements: OperationsAnnouncementConfig[]
 }
 export interface EffectiveOperationsPolicy {
   version: number
@@ -227,6 +232,7 @@ export interface EffectiveOperationsPolicy {
   cardRestrictions: OperationsCardRestriction[]
   defaultPresetDeckIds: string[]
   maintenance: { active: boolean; entryBlocked: boolean; status: 'open'|'upcoming'|'maintenance'; message: string; broadcastMessage: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number }
+  announcements: Array<{ id: string; content: string; sortOrder: number; startsAt?: string; endsAt?: string }>
 }
 export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
 export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
@@ -275,6 +281,7 @@ export interface OperationsConfigPreview {
 export interface OperationsConfigOperation {
   applied: boolean; current: OperationsConfigView; historyEntry: OperationsConfigVersion; changes: string[]
 }
+export interface ServerStartOperation { applied: boolean; alreadyStarted: boolean; current: OperationsConfigView }
 export interface RuntimeDependencyStatus {
   name: string; configured: boolean; state: string; detail?: string; observedAt: string
 }
@@ -637,7 +644,12 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/matches${params.size ? `?${params}` : ''}`)
   },
-  match: (matchId: string, includeReplay = false) => platformRequest<AdminMatchDetail>(`/api/admin/matches/${encodeURIComponent(matchId)}${includeReplay ? '?includeReplay=true' : ''}`),
+  match: (matchId: string) => platformRequest<AdminMatchDetail>(`/api/admin/matches/${encodeURIComponent(matchId)}`),
+  replayPage: (matchId: string, cursor?: string, limit = 50) => {
+    const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(100, limit))) })
+    if (cursor) params.set('cursor', cursor)
+    return platformRequest<AdminReplayPage>(`/api/admin/matches/${encodeURIComponent(matchId)}/replay?${params}`)
+  },
   playerMatches: (accountId: string, query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
@@ -645,17 +657,17 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
   },
-  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; search?: string; minimumSample?: number } = {}) => {
+  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; search?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to, minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsPage>(`/api/admin/analytics/cards${params.size ? `?${params}` : ''}`)
   },
-  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string } = {}) => {
+  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
-    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
-    ;['mode', 'from', 'to'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to, minimumSampleSize: query.minimumSample }
+    ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
   },
@@ -774,6 +786,9 @@ export const adminApi = {
   }),
   rollbackOperationsConfig: (versionId: string, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config/rollback', {
     method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion })),
+  }),
+  startServer: (reason: string, expectedVersion?: number) => platformRequest<ServerStartOperation>('/api/admin/operations/server/start', {
+    method: 'POST', body: JSON.stringify(commandBody('operations-server-start', { reason, expectedVersion })),
   }),
   runtimeStatus: () => platformRequest<RuntimeStatus>('/api/admin/runtime/status'),
   rankedConfig: () => platformRequest<RankedConfig>('/api/admin/ranked/config'),

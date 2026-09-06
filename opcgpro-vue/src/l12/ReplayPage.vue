@@ -13,13 +13,16 @@ const playing = ref(false)
 const playbackSpeed = ref<1 | 2 | 3>(1)
 const loading = ref(true)
 const error = ref('')
+const replayNextCursor = ref<string | undefined>()
+const replayTotalCommands = ref(0)
+const loadingReplayPage = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
 const currentGame = computed(() => detail.value ? replayGameAt(detail.value, selectedStep.value) : null)
-const totalSteps = computed(() => detail.value?.commands.length ?? 0)
+const isAdminReplay = computed(() => route.name === 'admin-match-replay')
+const totalSteps = computed(() => isAdminReplay.value ? replayTotalCommands.value : detail.value?.commands.length ?? 0)
 const atFirst = computed(() => selectedStep.value <= 0)
 const atLast = computed(() => selectedStep.value >= totalSteps.value - 1)
-const isAdminReplay = computed(() => route.name === 'admin-match-replay')
 const returnLabel = computed(() => isAdminReplay.value ? '返回后台对局档案' : '返回对局记录')
 const replayResult = computed(() => {
   if (!detail.value || !currentGame.value || !atLast.value) return null
@@ -51,7 +54,12 @@ async function loadReplay() {
     if (route.name === 'json-replay') detail.value = consumeImportedReplay()
     else if (isAdminReplay.value) {
       const matchId = String(route.params.matchId ?? '')
-      if (matchId) detail.value = adminReplayDetail(await adminApi.match(matchId, true))
+      if (matchId) {
+        const [summary, firstPage] = await Promise.all([adminApi.match(matchId), adminApi.replayPage(matchId)])
+        detail.value = adminReplayDetail({ ...summary, replay: firstPage.items })
+        replayNextCursor.value = firstPage.nextCursor
+        replayTotalCommands.value = firstPage.totalCommands
+      }
     }
     else {
       const matchId = String(route.params.matchId ?? '')
@@ -80,9 +88,27 @@ function previous() {
   selectedStep.value = Math.max(0, selectedStep.value - 1)
 }
 
-function next() {
+async function ensureReplayStepLoaded(index: number) {
+  if (!isAdminReplay.value || !detail.value || index < detail.value.commands.length) return true
+  if (!replayNextCursor.value || loadingReplayPage.value) return false
+  loadingReplayPage.value = true
+  try {
+    const matchId = String(route.params.matchId ?? '')
+    const page = await adminApi.replayPage(matchId, replayNextCursor.value)
+    detail.value.commands.push(...page.items)
+    replayNextCursor.value = page.nextCursor
+    replayTotalCommands.value = page.totalCommands
+    return index < detail.value.commands.length
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '读取下一页回放失败'
+    stop()
+    return false
+  } finally { loadingReplayPage.value = false }
+}
+async function next() {
   stop()
-  selectedStep.value = Math.min(totalSteps.value - 1, selectedStep.value + 1)
+  const target = Math.min(totalSteps.value - 1, selectedStep.value + 1)
+  if (await ensureReplayStepLoaded(target)) selectedStep.value = target
 }
 
 function toggle() {
@@ -96,11 +122,13 @@ function toggle() {
 function startPlaybackTimer() {
   clearPlaybackTimer()
   const interval = 2700 / playbackSpeed.value
-  timer = window.setInterval(() => {
+  timer = window.setInterval(() => void (async () => {
     if (atLast.value) return stop()
-    selectedStep.value += 1
+    const target = selectedStep.value + 1
+    if (!await ensureReplayStepLoaded(target)) return
+    selectedStep.value = target
     if (atLast.value) stop()
-  }, interval)
+  })(), interval)
 }
 
 function setPlaybackSpeed(speed: 1 | 2 | 3) {
@@ -140,8 +168,8 @@ function returnFromReplay() {
       <button :disabled="atFirst" @click="previous">上一步</button>
       <button class="play" @click="toggle">{{ playing ? '暂停' : '播放' }}</button>
       <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
-      <button :disabled="atLast" @click="next">下一步</button>
-      <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}</small>
+      <button :disabled="atLast || loadingReplayPage" @click="next">{{ loadingReplayPage ? '加载中' : '下一步' }}</button>
+      <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
     </div>
 
     <main v-if="loading || error" class="replay-loading">

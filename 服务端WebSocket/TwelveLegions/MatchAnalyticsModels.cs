@@ -2,6 +2,16 @@ using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
+public sealed class L12ReplayPayloadTooLargeException(
+    string matchId, long commandCount, long serializedBytes, long maximumCommands, long maximumBytes)
+    : Exception($"对局 {matchId} 的回放过大（{commandCount} 条命令，{serializedBytes} 字节）；请缩小回放或使用离线归档。")
+{
+    public long CommandCount { get; } = commandCount;
+    public long SerializedBytes { get; } = serializedBytes;
+    public long MaximumCommands { get; } = maximumCommands;
+    public long MaximumBytes { get; } = maximumBytes;
+}
+
 public static class L12CardFactKinds
 {
     public const int SchemaVersion = 1;
@@ -34,7 +44,9 @@ public sealed record L12AdminMatchQuery(
     int? Winner = null,
     DateTimeOffset? FromUtc = null,
     DateTimeOffset? ToUtc = null,
-    string? CardId = null);
+    string? CardId = null,
+    string? CardOwnerMasterId = null,
+    string? CardOwnerOpponentMasterId = null);
 
 public sealed record L12CardAnalyticsQuery(
     string? Cursor = null,
@@ -45,7 +57,8 @@ public sealed record L12CardAnalyticsQuery(
     string? ModeId = null,
     string? MasterId = null,
     DateTimeOffset? FromUtc = null,
-    DateTimeOffset? ToUtc = null);
+    DateTimeOffset? ToUtc = null,
+    string? OpponentMasterId = null);
 
 public sealed record L12AdminMatchPlayer(
     int PlayerIndex,
@@ -121,6 +134,14 @@ public sealed record L12AdminMatchDetail(
     IReadOnlyList<L12RecordedCommand> Replay,
     IReadOnlyList<L12CardFactView> CardFacts,
     L12AnalyticsCoverage Coverage);
+
+public sealed record L12AdminReplayPage(
+    IReadOnlyList<L12RecordedCommand> Items,
+    string? NextCursor,
+    int Limit,
+    long PageBytes,
+    long TotalCommands,
+    long TotalBytes);
 
 public sealed record L12CardAnalyticsItem(
     string CardId,

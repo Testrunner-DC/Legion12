@@ -27,7 +27,7 @@ const reason = ref('')
 const catalog = ref<DeckCard[]>([])
 const presetDecks = ref('')
 const featureFlags = ref('')
-type OperationsSection = 'season' | 'ranked' | 'construction' | 'room' | 'features' | 'maintenance' | 'versions'
+type OperationsSection = 'season' | 'ranked' | 'construction' | 'room' | 'features' | 'announcements' | 'maintenance' | 'versions'
 const activeSection = ref<OperationsSection>('season')
 const loadError = ref('')
 const sections: Array<{ id: OperationsSection; title: string; summary: string }> = [
@@ -36,7 +36,8 @@ const sections: Array<{ id: OperationsSection; title: string; summary: string }>
   { id: 'construction', title: '构筑规则', summary: '禁限卡与新账号默认预组' },
   { id: 'room', title: '对战与房间', summary: '模式开关与默认房间规则' },
   { id: 'features', title: '功能开关', summary: '大厅、沙盒、观战、赛事等模块' },
-  { id: 'maintenance', title: '维护与公告', summary: '维护窗口、玩家提示与生效状态' },
+  { id: 'announcements', title: '长期公告', summary: '大厅固定公告、顺序与生效时间' },
+  { id: 'maintenance', title: '维护与启服', summary: '维护窗口、结束时间与显式启服' },
   { id: 'versions', title: '版本与状态', summary: '配置历史、回滚及后端运行状态' },
 ]
 const currentSection = computed(() => sections.find(item => item.id === activeSection.value) ?? sections[0])
@@ -49,10 +50,13 @@ const form = reactive<OperationsConfigPayload>({
   defaultRoomConfig: { matchModeId: 'casual', spectating: 'public', handVisibility: 'request', disasterMode: 'all' },
   featureFlags: {},
   maintenance: { enabled: false, message: '', advanceBroadcastHours: 2, expectedDurationHours: 2 },
+  announcements: [],
 })
 const rankedConfig = ref<RankedConfig | null>(null)
 const rankedBroadcasts = ref<RankedBroadcast[]>([])
 const rankedReason = ref('')
+const startingServer = ref(false)
+const loadedMaintenanceEnabled = ref(false)
 
 const observedAt = computed(() => runtime.value ? new Date(runtime.value.observedAt).toLocaleString() : '未加载')
 
@@ -85,10 +89,14 @@ function syncTextFields() {
 }
 function hydrate(payload: OperationsConfigPayload) {
   const copy = structuredClone(payload)
+  copy.announcements ??= []
   copy.season.startsAt = toLocalDateTimeInput(copy.season.startsAt)
   copy.season.endsAt = toLocalDateTimeInput(copy.season.endsAt)
   copy.maintenance.startsAt = toLocalDateTimeInput(copy.maintenance.startsAt)
   copy.maintenance.endsAt = toLocalDateTimeInput(copy.maintenance.endsAt)
+  copy.announcements = (copy.announcements ?? []).map(item => ({ ...item,
+    startsAt: toLocalDateTimeInput(item.startsAt), endsAt: toLocalDateTimeInput(item.endsAt),
+  }))
   Object.assign(form.season, copy.season)
   Object.assign(form.disasterPool, copy.disasterPool)
   form.cardRestrictions.splice(0, form.cardRestrictions.length, ...copy.cardRestrictions)
@@ -97,6 +105,7 @@ function hydrate(payload: OperationsConfigPayload) {
   Object.assign(form.defaultRoomConfig, copy.defaultRoomConfig)
   form.featureFlags = copy.featureFlags
   Object.assign(form.maintenance, copy.maintenance)
+  form.announcements.splice(0, form.announcements.length, ...copy.announcements)
   syncTextFields()
 }
 function serialize(): OperationsConfigPayload {
@@ -109,6 +118,8 @@ function serialize(): OperationsConfigPayload {
     defaultRoomConfig: { ...form.defaultRoomConfig },
     featureFlags: parseFlags(featureFlags.value),
     maintenance: { ...form.maintenance, startsAt: toIsoDateTime(form.maintenance.startsAt), endsAt: toIsoDateTime(form.maintenance.endsAt) },
+    announcements: form.announcements.map((item, index) => ({ ...item, sortOrder: index,
+      startsAt: toIsoDateTime(item.startsAt), endsAt: toIsoDateTime(item.endsAt) })),
   }
 }
 async function load() {
@@ -129,6 +140,7 @@ async function load() {
     rankedConfig.value = ranked
     rankedBroadcasts.value = broadcasts
     hydrate(current.config)
+    loadedMaintenanceEnabled.value = current.config.maintenance.enabled
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '运营配置加载失败'
     emit('notice', loadError.value)
@@ -139,6 +151,33 @@ function toggleSeasonEnd(event: Event) {
   form.season.endsAt = (event.target as HTMLInputElement).checked
     ? undefined
     : toLocalDateTimeInput(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString())
+}
+function toggleMaintenanceEnd(event: Event) {
+  form.maintenance.endsAt = (event.target as HTMLInputElement).checked
+    ? undefined
+    : toLocalDateTimeInput(new Date(Date.now() + Math.max(1, form.maintenance.expectedDurationHours) * 60 * 60 * 1000).toISOString())
+}
+function addAnnouncement() {
+  const id = globalThis.crypto?.randomUUID?.() ?? `announcement-${Date.now().toString(36)}`
+  form.announcements.push({ id, content: '', enabled: false, sortOrder: form.announcements.length })
+}
+function moveAnnouncement(index: number, direction: -1 | 1) {
+  const target = index + direction
+  if (target < 0 || target >= form.announcements.length) return
+  const [item] = form.announcements.splice(index, 1)
+  if (item) form.announcements.splice(target, 0, item)
+}
+function removeAnnouncement(index: number) { form.announcements.splice(index, 1) }
+async function startServer() {
+  if (!reason.value.trim()) { emit('notice', '启服前请填写变更理由'); return }
+  startingServer.value = true
+  try {
+    const result = await adminApi.startServer(reason.value.trim(), version.value)
+    emit('notice', result.alreadyStarted ? '服务器已经处于开放状态，未重复变更配置' : '服务器已开放，新对局门禁已解除')
+    reason.value = ''
+    await load()
+  } catch (error) { emit('notice', error instanceof Error ? error.message : '启服失败') }
+  finally { startingServer.value = false }
 }
 async function previewChanges() {
   try {
@@ -209,8 +248,9 @@ onMounted(load)
           <fieldset><legend>允许的对战模式</legend><article v-for="mode in form.matchModes" :key="mode.id" class="toggle-row"><span><b>{{ mode.name }}</b><small>{{ mode.id }}</small></span><input v-model="mode.enabled" type="checkbox"/></article><span v-if="!form.matchModes.length">暂无服务端定义的模式</span></fieldset>
           <fieldset class="room-defaults"><legend>默认房间配置</legend><label>默认模式<select v-model="form.defaultRoomConfig.matchModeId"><option v-for="mode in form.matchModes" :key="mode.id" :value="mode.id">{{ mode.name }} · {{ mode.enabled ? '启用' : '停用' }}</option></select></label><label>观战权限<select v-model="form.defaultRoomConfig.spectating"><option value="public">允许所有玩家观战</option><option value="friends">仅好友观战</option><option value="disabled">禁止观战</option></select></label><label>观战手牌<select v-model="form.defaultRoomConfig.handVisibility"><option value="request">查看前申请</option><option value="public">默认公开</option></select></label><label>天灾模式<select v-model="form.defaultRoomConfig.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></label><p class="wide contract-note">这里定义新房间的初始值；房主修改后的配置仍须通过当前模式和维护策略校验。</p></fieldset>
         </template>
+        <fieldset v-else-if="activeSection === 'announcements'" class="wide announcement-editor" data-ui-contract="independent-long-term-announcements"><legend>大厅长期公告</legend><p class="wide field-help">独立于维护提示。启用且处于有效时间的公告按顺序固定显示在大厅“更换牌库”区域上方；不设置时间表示长期有效。</p><button class="wide" type="button" @click="addAnnouncement">＋ 新增公告</button><article v-for="(item,index) in form.announcements" :key="item.id" class="wide announcement-row"><header><b>公告 {{ index + 1 }}</b><span><button type="button" :disabled="index === 0" @click="moveAnnouncement(index,-1)">上移</button><button type="button" :disabled="index === form.announcements.length - 1" @click="moveAnnouncement(index,1)">下移</button><button type="button" @click="removeAnnouncement(index)">删除</button></span></header><label class="wide">内容<textarea v-model="item.content" rows="3" placeholder="输入长期公告内容"/></label><label>开始时间（可选）<input v-model="item.startsAt" type="datetime-local"/></label><label>结束时间（可选）<input v-model="item.endsAt" type="datetime-local"/></label><label class="toggle-row wide"><span><b>启用此公告</b><small>空内容或无效时间范围无法保存。</small></span><input v-model="item.enabled" type="checkbox"/></label></article><span v-if="!form.announcements.length" class="wide">暂无长期公告。</span></fieldset>
         <fieldset v-else-if="activeSection === 'features'" class="wide"><legend>模块功能开关</legend><p class="field-help">格式：key=true/false。关闭后前端入口会灰置，服务端仍进行权威校验。</p><label class="wide"><textarea v-model="featureFlags" rows="16"/></label></fieldset>
-        <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>维护状态与玩家公告</legend><label class="toggle-row"><span><b>启用维护计划</b><small>到达开始前1小时自动关闭所有新开局入口；关闭此项即可立即重新开放服务器。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">后台备注/补充提示<textarea v-model="form.maintenance.message" rows="4" placeholder="可填写额外维护说明"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间<input v-model="form.maintenance.endsAt" type="datetime-local"/></label><label>提前广播（小时）<input v-model.number="form.maintenance.advanceBroadcastHours" type="number" min="1" max="168"/></label><label>预计维护时长（小时）<input v-model.number="form.maintenance.expectedDurationHours" type="number" min="1" max="168"/></label><p class="wide contract-note">大厅从提前广播时点循环显示维护公告；局内在维护前30分钟及其后每5分钟提醒。正式维护开始时未结束对局按无效处理。</p></fieldset>
+        <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>维护状态与显式启服</legend><label class="toggle-row"><span><b>启用维护计划</b><small>到达开始前1小时自动关闭所有新开局入口。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">维护提示<textarea v-model="form.maintenance.message" rows="4" placeholder="启用维护时必填"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间（可选）<input v-model="form.maintenance.endsAt" type="datetime-local" :disabled="!form.maintenance.endsAt"/></label><label class="toggle-row wide"><span><b>不设置结束时间</b><small>维护持续到管理员点击“启动服务器”。</small></span><input type="checkbox" :checked="!form.maintenance.endsAt" @change="toggleMaintenanceEnd"/></label><label>提前广播（小时）<input v-model.number="form.maintenance.advanceBroadcastHours" type="number" min="1" max="168"/></label><label>预计维护时长（小时）<input v-model.number="form.maintenance.expectedDurationHours" type="number" min="1" max="168"/></label><p class="wide contract-note">“启动服务器”是独立幂等状态迁移：只解除当前维护与新对局门禁，不提交本页其他未保存编辑；重复点击不会再次增加配置版本。</p><button class="confirm wide" type="button" :disabled="startingServer || !loadedMaintenanceEnabled" data-ui-contract="idempotent-server-start" @click="startServer">{{ startingServer ? '正在启动…' : loadedMaintenanceEnabled ? '启动服务器并解除门禁' : '服务器当前已开放' }}</button></fieldset>
       </div>
       <footer v-if="activeSection === 'ranked'" class="config-actions"><input v-model="rankedReason" placeholder="排位配置变更理由（必填）"/><button class="confirm" @click="saveRanked">保存排位配置</button></footer>
       <footer v-else class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>
@@ -235,4 +275,5 @@ onMounted(load)
 .operations-workbench{display:grid;grid-template-columns:1fr;gap:14px}.operations-header{display:flex;align-items:flex-end;justify-content:space-between;border:1px solid #4a4030;background:linear-gradient(110deg,#14130f,#171b1f);padding:20px}.operations-header h2{margin:3px 0;font-size:24px}.operations-header p{margin:0;color:#8d989e;font-size:11px}.operations-header>div>small{color:#c8a84f;letter-spacing:.16em}.operations-version{display:grid;grid-template-columns:auto auto;gap:3px 10px;align-items:center;text-align:right}.operations-version span,.operations-version small{color:#89959a;font-size:10px}.operations-version b{color:#efd16f;font-size:20px}.operations-version button{grid-column:1/-1}.load-error{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin:0;border:1px solid #9c3e47;background:#2a1014;padding:12px;color:#ffc8ce}.load-error span{font-size:11px}.operations-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.operations-nav button{display:flex;min-height:66px;flex-direction:column;gap:5px;align-items:flex-start;border:1px solid #354249;background:#0c1318;padding:12px;color:#d8e0e2;text-align:left}.operations-nav button small{color:#77858b;font-size:9px}.operations-nav button.active{border-color:#c29c3d;background:linear-gradient(120deg,#2c2512,#13191d);color:#f5d775}.panel{border:1px solid #35424a;background:#101821;padding:20px}.panel>header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #36434a;padding-bottom:13px}.panel h2{margin:0}.panel p,.panel span{color:#87949a;font-size:11px}.panel button,.panel select,.panel input,.panel textarea,.operations-header button,.load-error button{box-sizing:border-box;border:1px solid #4c5961;background:#080e13;color:#fff;font:700 11px 'Microsoft YaHei';padding:9px}.runtime-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:14px}.runtime-grid article{display:flex;flex-direction:column;gap:5px;padding:13px;border:1px solid #34424a;background:#0b1218}.runtime-grid small{color:#8c999f}.runtime-grid b{font-size:18px}.version-badge{padding:6px 9px;border:1px solid #b7953f;color:#e6ca77!important}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.config-grid fieldset{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;border:1px solid #334049;padding:14px}.config-grid legend{padding:0 6px;color:#e0c36e;font-weight:900}.config-grid label{display:flex;flex-direction:column;gap:6px;color:#b5bfc3;font-size:10px}.config-grid .wide{grid-column:1/-1}.locked-note{color:#e3c76e!important}.field-help,.contract-note{margin:0;color:#8f9da3!important}.toggle-row{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;padding:8px;border:1px solid #2f3b42}.toggle-row span{display:flex;flex-direction:column}.toggle-row input{width:auto}.config-actions{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:14px}.confirm{border-color:#b9953f!important;background:#2c2411!important;color:#f0d582!important}.preview-box{margin-top:12px;padding:12px;border:1px solid #866f35;background:#1f1a0d}.preview-box li,.preview-box p{font-size:10px}.history-panel>article{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 0;border-bottom:1px solid #303c43}.history-panel>article span{display:flex;flex-direction:column}.history-panel>article p{grid-column:1/-1;margin:0}.history-panel button{grid-row:1;grid-column:2}.history-panel small{color:#748087}.panel button:disabled{cursor:not-allowed;opacity:.45}
 @media(max-width:1100px){.operations-nav,.config-grid{grid-template-columns:1fr 1fr}.runtime-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.operations-header{align-items:flex-start;flex-direction:column;gap:12px}.operations-version{text-align:left}.operations-nav,.runtime-grid,.config-grid,.config-grid fieldset,.config-actions{grid-template-columns:1fr}.config-grid .wide{grid-column:auto}.load-error{grid-template-columns:1fr}.operations-nav button{min-height:56px}}
 .ranked-tier-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.ranked-tier-grid article{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #303c43;background:#0a1117}.ranked-tier-grid article>b{color:#e1c36d}.ranked-master-title-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ranked-master-title-grid label{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,1fr);align-items:center;gap:8px;padding:9px;border:1px solid #303c43;background:#0a1117}.ranked-master-title-grid label span,.ranked-master-title-grid label small{display:block}.ranked-master-title-grid label small{margin-top:2px;color:#69777d;font:700 9px monospace}.broadcast-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #303c43}.broadcast-row span,.broadcast-row small{display:block}.broadcast-row small{margin-top:4px;color:#69777d}@media(max-width:1200px){.ranked-master-title-grid{grid-template-columns:1fr 1fr}}@media(max-width:1000px){.ranked-tier-grid{grid-template-columns:1fr 1fr}}@media(max-width:760px){.ranked-master-title-grid{grid-template-columns:1fr}.ranked-master-title-grid label{grid-template-columns:1fr}}
+.announcement-editor>button{border-style:dashed!important}.announcement-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:12px;border:1px solid #35424a;background:#0a1117}.announcement-row>header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}.announcement-row>header span{display:flex;gap:5px}.announcement-row>header button{padding:6px}.announcement-row .wide{grid-column:1/-1}
 </style>

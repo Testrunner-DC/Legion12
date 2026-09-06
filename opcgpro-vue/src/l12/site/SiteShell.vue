@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
-import { friendApi, login, platformState, register, updateAudioPreferences, type PlatformPresence } from '@/l12/platform'
-import { audioPreferences, syncAudioStore } from '@/l12/audioPreferences'
+import { friendApi, login, platformState, register, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
+import L12SettingsModal from './L12SettingsModal.vue'
 
 const siteBrandIcon = '/favicon.png'
 const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
@@ -110,14 +110,6 @@ const connectionLabel = computed(() => {
 })
 
 watch(() => route.fullPath, () => { mobileOpen.value = false })
-let audioSaveTimer = 0
-watch(audioPreferences, value => {
-  syncAudioStore()
-  window.clearTimeout(audioSaveTimer)
-  if (platformState.account) audioSaveTimer = window.setTimeout(() => {
-    void updateAudioPreferences({ ...value }).catch(() => undefined)
-  }, 500)
-}, { deep: true })
 function enterFriendRoom() { void router.push('/battle') }
 let presenceTimer = 0
 async function refreshPresence() {
@@ -174,7 +166,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('l12-friend-room-created', enterFriendRoom)
   window.clearInterval(presenceTimer)
-  window.clearTimeout(audioSaveTimer)
 })
 </script>
 
@@ -207,14 +198,7 @@ onBeforeUnmount(() => {
     <main class="site-content"><slot /></main>
 
     <div v-if="modal" class="site-modal-mask" @click.self="modal = null">
-      <section v-if="modal === 'settings'" class="site-modal">
-        <header><div><small>SETTINGS</small><h2>设置</h2></div><button @click="modal = null">×</button></header>
-        <div class="setting-row"><div><b>卡牌显示</b><span>调整图鉴、牌库与对战中的卡牌尺寸</span></div><select v-model="audioPreferences.cardSize"><option value="auto">自动</option><option value="small">小</option><option value="medium">中</option><option value="large">大</option></select></div>
-        <div class="setting-row"><div><b>对局动画</b><span>不会跳过必要的公开与结算信息</span></div><select v-model="audioPreferences.animation"><option value="off">关闭</option><option value="fast">快速</option><option value="standard">标准</option></select></div>
-        <div class="setting-row"><div><b>游戏音乐</b><span>官网与对局使用不同曲目，默认音量低于音效</span></div><div class="audio-setting"><button class="toggle" :class="{ on: audioPreferences.musicEnabled }" @click="audioPreferences.musicEnabled = !audioPreferences.musicEnabled">{{ audioPreferences.musicEnabled ? '已开启' : '已关闭' }}</button><input v-model.number="audioPreferences.musicVolume" type="range" min="0" max="1" step="0.05"/></div></div>
-        <div class="setting-row"><div><b>游戏音效</b><span>卡牌、战斗、回合及系统提示音</span></div><div class="audio-setting"><button class="toggle" :class="{ on: audioPreferences.sfxEnabled }" @click="audioPreferences.sfxEnabled = !audioPreferences.sfxEnabled">{{ audioPreferences.sfxEnabled ? '已开启' : '已关闭' }}</button><input v-model.number="audioPreferences.sfxVolume" type="range" min="0" max="1" step="0.05"/></div></div>
-        <p class="setting-note">官网与资料页面适配竖屏；对战与回放在移动端使用横屏布局。</p>
-      </section>
+      <L12SettingsModal v-if="modal === 'settings'" @close="modal = null"/>
 
       <section v-else-if="modal === 'updates'" class="site-modal update-modal">
         <header><div><small>CHANGELOG</small><h2>更新日志</h2></div><button @click="modal = null">×</button></header>

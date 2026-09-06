@@ -27,6 +27,7 @@ Standing user authorization (2026-08-30): every completed change batch that pass
 4. If the branch is current, or after remote changes have been integrated and the full verification passes again, commit that feature or bug fix with a descriptive Chinese commit message and push it to the remote repository.
 5. Record the commit and push result in the task handoff. Do not publish a knowingly failing or partially conflicted tree.
 6. Every production deployment must publish one player-facing update-log entry tied to the deployed commit/version. Group the entry by affected area, name the cards and functions changed, and state the resulting behavior plainly; a vague summary such as “修复多项卡效” is not sufficient. Keep internal diagnostics out of the player log. A rollback must not advertise the failed version as deployed.
+7. After production verification succeeds, close the linked backend Bug loop in the same release workflow. Mark a report `resolved` only when its original scenario has a named regression test and the deployed commit/version is verified; link duplicates to the primary report before closing them. Rejected requests and insufficient reports must record the reason. Leave unverified reports open or confirmed, and never bulk-close them merely because related code changed.
 
 ## Automatic task-complexity routing
 

@@ -164,7 +164,7 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 
 /* Readability baseline: a taller 16:10 virtual table uses vertical screen space instead of
    shrinking the entire game into the previous 1600×760 ultra-wide strip. */
-.board-stage{width:1440px;height:900px}
+.board-stage{width:1440px;height:968px}
 .left-rail{width:230px}.right-rail{width:220px}
 .card-inspector>.card-tile{width:146px;height:204px;flex-basis:204px}
 .card-inspector h2{font-size:22px}.card-inspector dl>div{font-size:11px}.card-inspector dd{font-size:13px}.card-inspector>p{font-size:11px;line-height:1.75}

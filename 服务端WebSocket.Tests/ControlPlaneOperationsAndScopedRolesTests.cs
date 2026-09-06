@@ -159,6 +159,70 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
     }
 
     [Fact]
+    public void LongTermAnnouncementsAreTimeScopedAndServerStartIsIdempotent()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var now = new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero);
+            var payload = initial.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "人工维护", now.AddHours(-1), null),
+                Announcements =
+                [
+                    new L12AnnouncementConfig("second", "第二条", true, 20),
+                    new L12AnnouncementConfig("first", "第一条", true, 10, now.AddDays(-1), null),
+                    new L12AnnouncementConfig("expired", "已过期", true, 0, null, now),
+                    new L12AnnouncementConfig("future", "未开始", true, 1, now.AddMinutes(1), null),
+                    new L12AnnouncementConfig("disabled", "已停用", false, 2),
+                ],
+            };
+            var applied = store.ApplyOperationsConfig(admin, payload, initial.Version,
+                "activate maintenance and announcements", Context("announcements-apply"));
+            Assert.Contains("announcements", applied.Changes);
+            Assert.Contains("maintenance", applied.Changes);
+
+            var effective = store.EffectiveOperationsPolicy(now);
+            Assert.True(effective.Maintenance.Active);
+            Assert.Null(effective.Maintenance.EndsAt);
+            Assert.Equal(new[] { "first", "second" }, effective.Announcements!.Select(item => item.Id));
+
+            var started = store.StartServer(admin, applied.Current.Version, "maintenance complete",
+                Context("server-start"));
+            Assert.True(started.Applied);
+            Assert.False(started.AlreadyStarted);
+            Assert.False(started.Current.Config.Maintenance.Enabled);
+            Assert.Null(started.Current.Config.Maintenance.StartsAt);
+            Assert.Null(started.Current.Config.Maintenance.EndsAt);
+            var startedVersion = started.Current.Version;
+
+            var repeated = store.StartServer(admin, applied.Current.Version, "retry after network timeout",
+                Context("server-start-retry"));
+            Assert.False(repeated.Applied);
+            Assert.True(repeated.AlreadyStarted);
+            Assert.Equal(startedVersion, repeated.Current.Version);
+            Assert.Equal(new[] { "first", "second" },
+                store.EffectiveOperationsPolicy(now).Announcements!.Select(item => item.Id));
+
+            var invalid = repeated.Current.Config with
+            {
+                Announcements = [new L12AnnouncementConfig("empty", "   ", true)],
+            };
+            Assert.Equal("announcement_content_required",
+                Assert.Throws<L12OperationsConfigException>(() => store.PreviewOperationsConfig(admin,
+                    invalid, repeated.Current.Version, Context("empty-announcement"))).Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void OperationsConfigRejectsUnlockingOrMovingAnnihilation()
     {
         var root = TempRoot();
@@ -728,14 +792,46 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                     ["publicDecks"] = false,
                     ["tournaments"] = false,
                 },
+                Maintenance = new L12MaintenanceConfig(true, "HTTP maintenance",
+                    DateTimeOffset.UtcNow.AddMinutes(-1), null),
             };
+            L12OperationsConfigOperationView appliedOperations;
             using (var apply = Authorized(HttpMethod.Put, "/api/admin/operations/config", admin.Token!, "ops-http",
                        new OperationsConfigApplyRequest(next, "disable temporarily", "ops-http-1", current.Version)))
             using (var response = await client.SendAsync(apply))
             {
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-                var result = await response.Content.ReadFromJsonAsync<L12OperationsConfigOperationView>();
-                Assert.False(result!.Current.Config.FeatureFlags["tournaments"]);
+                appliedOperations = (await response.Content.ReadFromJsonAsync<L12OperationsConfigOperationView>())!;
+                Assert.False(appliedOperations.Current.Config.FeatureFlags["tournaments"]);
+            }
+
+            using (var staleBeforeStart = Authorized(HttpMethod.Post,
+                       "/api/admin/operations/server/start", admin.Token!, "ops-start-http-stale",
+                       new OperationsServerStartRequest("stale before start", "ops-start-http-stale-1",
+                           appliedOperations.Current.Version - 1)))
+            using (var response = await client.SendAsync(staleBeforeStart))
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+            using (var start = Authorized(HttpMethod.Post, "/api/admin/operations/server/start", admin.Token!,
+                       "ops-start-http", new OperationsServerStartRequest("maintenance complete",
+                           "ops-start-http-1", appliedOperations.Current.Version)))
+            using (var response = await client.SendAsync(start))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var started = await response.Content.ReadFromJsonAsync<L12ServerStartOperationView>();
+                Assert.True(started!.Applied);
+                Assert.False(started.AlreadyStarted);
+            }
+            using (var retry = Authorized(HttpMethod.Post, "/api/admin/operations/server/start", admin.Token!,
+                       "ops-start-http-retry", new OperationsServerStartRequest("retry lost response",
+                           "ops-start-http-2", appliedOperations.Current.Version)))
+            using (var response = await client.SendAsync(retry))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var started = await response.Content.ReadFromJsonAsync<L12ServerStartOperationView>();
+                Assert.False(started!.Applied);
+                Assert.True(started.AlreadyStarted);
+                Assert.Equal(appliedOperations.Current.Version + 1, started.Current.Version);
             }
 
             using (var effectiveResponse = await client.GetAsync("/api/operations/effective-policy"))

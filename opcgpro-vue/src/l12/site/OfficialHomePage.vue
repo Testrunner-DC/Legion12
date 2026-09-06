@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { siteContentApi, type Article, type SiteMedia } from '@/l12/platform'
+import { siteContentApi, type Article, type SiteHomePayload, type SiteMedia } from '@/l12/platform'
 import { articleBodyText } from './articleBlocks'
 import { defaultHomeComposition, defaultSiteLegal, parseHomeComposition, parseSiteLegal, type HomeHeroSlide } from './homeContent'
+import { loadPublishedHomeCache, savePublishedHomeCache } from './homePublishedCache'
 
 const ready = ref(false)
 const composition = ref(defaultHomeComposition())
@@ -15,6 +16,11 @@ const activeIndex = ref(0)
 const carouselPaused = ref(false)
 const carouselCycle = ref(0)
 let carouselTimer = 0
+let homeRetryTimer = 0
+let refreshGeneration = 0
+let retryAttempt = 0
+let disposed = false
+let hasPublishedSnapshot = false
 const carouselDuration = 6500
 
 const enabledSlides = computed<HomeHeroSlide[]>(() => {
@@ -62,17 +68,63 @@ function startCarousel() {
 }
 function toggleCarousel() { carouselPaused.value = !carouselPaused.value; startCarousel() }
 
-onMounted(async () => {
+function applyPublishedHome(payload: SiteHomePayload) {
+  const nextComposition = parseHomeComposition(payload.composition)
+  const nextLegal = parseSiteLegal(payload.legal)
+  const nextNews = [...payload.news]
+  const nextVideos = [...payload.videos]
+  const nextProducts = [...payload.products]
+  const nextMedia = [...payload.media]
+  composition.value = nextComposition
+  legal.value = nextLegal
+  news.value = nextNews
+  videos.value = nextVideos
+  products.value = nextProducts
+  media.value = nextMedia
+  hasPublishedSnapshot = true
+  activeIndex.value = Math.min(activeIndex.value, Math.max(0, nextComposition.heroSlides.filter(item => item.enabled).length - 1))
+}
+function scheduleHomeRefresh() {
+  window.clearTimeout(homeRetryTimer)
+  const delay = Math.min(30_000, [2_000, 5_000, 10_000, 20_000][Math.min(retryAttempt++, 3)]!)
+  homeRetryTimer = window.setTimeout(() => void refreshPublishedHome(), delay)
+}
+async function refreshPublishedHome() {
+  const generation = ++refreshGeneration
   try {
     const payload = await siteContentApi.home()
-    composition.value = parseHomeComposition(payload.composition)
-    legal.value = parseSiteLegal(payload.legal)
-    news.value = payload.news; videos.value = payload.videos; products.value = payload.products; media.value = payload.media
+    if (disposed || generation !== refreshGeneration) return
+    applyPublishedHome(payload)
+    savePublishedHomeCache(payload)
+    retryAttempt = 0
+    ready.value = hasPublishedSnapshot
+    startCarousel()
   } catch {
-    composition.value = defaultHomeComposition(); legal.value = defaultSiteLegal()
-  } finally { ready.value = true; startCarousel() }
+    if (disposed || generation !== refreshGeneration) return
+    // Keep the last successfully published snapshot. A deploy-window 502 or a
+    // not-yet-ready replacement process must not overwrite it with placeholders.
+    ready.value = hasPublishedSnapshot
+    scheduleHomeRefresh()
+  }
+}
+function refreshWhenVisible() {
+  if (!document.hidden) void refreshPublishedHome()
+}
+onMounted(() => {
+  const cached = loadPublishedHomeCache()
+  if (cached) { applyPublishedHome(cached); ready.value = true; startCarousel() }
+  void refreshPublishedHome()
+  window.addEventListener('online', refreshWhenVisible)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
 })
-onBeforeUnmount(() => window.clearTimeout(carouselTimer))
+onBeforeUnmount(() => {
+  disposed = true
+  refreshGeneration++
+  window.clearTimeout(carouselTimer)
+  window.clearTimeout(homeRetryTimer)
+  window.removeEventListener('online', refreshWhenVisible)
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
+})
 </script>
 
 <template>

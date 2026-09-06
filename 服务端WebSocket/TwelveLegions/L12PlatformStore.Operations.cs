@@ -36,6 +36,21 @@ public sealed record L12MaintenanceConfig(
     int AdvanceBroadcastHours = 2,
     int ExpectedDurationHours = 2);
 
+public sealed record L12AnnouncementConfig(
+    string Id,
+    string Content,
+    bool Enabled,
+    int SortOrder = 0,
+    DateTimeOffset? StartsAt = null,
+    DateTimeOffset? EndsAt = null);
+
+public sealed record L12EffectiveAnnouncementView(
+    string Id,
+    string Content,
+    int SortOrder,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt);
+
 public sealed record L12OperationsConfigPayload(
     L12SeasonConfig Season,
     L12SeasonDisasterPoolConfig DisasterPool,
@@ -44,7 +59,8 @@ public sealed record L12OperationsConfigPayload(
     L12DefaultRoomConfig DefaultRoomConfig,
     IReadOnlyList<L12MatchModeConfig> MatchModes,
     IReadOnlyDictionary<string, bool> FeatureFlags,
-    L12MaintenanceConfig Maintenance);
+    L12MaintenanceConfig Maintenance,
+    IReadOnlyList<L12AnnouncementConfig>? Announcements = null);
 
 public sealed record L12EffectiveMaintenanceView(
     bool Active,
@@ -66,7 +82,8 @@ public sealed record L12EffectiveOperationsPolicyView(
     bool SeasonDisasterModeAvailable,
     IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
     IReadOnlyList<string> DefaultPresetDeckIds,
-    L12EffectiveMaintenanceView Maintenance);
+    L12EffectiveMaintenanceView Maintenance,
+    IReadOnlyList<L12EffectiveAnnouncementView>? Announcements = null);
 
 public sealed record L12OperationsPolicySnapshot(
     long Version,
@@ -78,7 +95,8 @@ public sealed record L12OperationsPolicySnapshot(
     L12DefaultRoomConfig DefaultRoomConfig,
     IReadOnlyList<L12MatchModeConfig> MatchModes,
     IReadOnlyDictionary<string, bool> FeatureFlags,
-    L12MaintenanceConfig Maintenance)
+    L12MaintenanceConfig Maintenance,
+    IReadOnlyList<L12AnnouncementConfig>? Announcements = null)
 {
     public bool IsMatchModeEnabled(string? modeId)
         => MatchModes.Any(mode => mode.Enabled
@@ -105,6 +123,15 @@ public sealed record L12OperationsPolicySnapshot(
     public string MaintenanceBroadcastMessage()
         => Maintenance.StartsAt is not { } starts ? Maintenance.Message
             : $"服务器将于{starts.ToLocalTime():HH:mm}开始维护，维护将持续约{Math.Max(1, Maintenance.ExpectedDurationHours)}个小时，敬请注意！";
+
+    public IReadOnlyList<L12EffectiveAnnouncementView> ActiveAnnouncements(DateTimeOffset now)
+        => (Announcements ?? [])
+            .Where(item => item.Enabled && !string.IsNullOrWhiteSpace(item.Content)
+                && (item.StartsAt is null || item.StartsAt <= now)
+                && (item.EndsAt is null || item.EndsAt > now))
+            .OrderBy(item => item.SortOrder).ThenBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(item => new L12EffectiveAnnouncementView(item.Id, item.Content, item.SortOrder,
+                item.StartsAt, item.EndsAt)).ToArray();
 
     public bool IsSeasonDisasterModeAvailable(DateTimeOffset now)
         => string.Equals(Season.Status, "active", StringComparison.OrdinalIgnoreCase)
@@ -197,6 +224,11 @@ public sealed record L12OperationsConfigOperationView(
     L12OperationsConfigVersionView HistoryEntry,
     IReadOnlyList<string> Changes);
 
+public sealed record L12ServerStartOperationView(
+    bool Applied,
+    bool AlreadyStarted,
+    L12OperationsConfigView Current);
+
 public sealed class L12OperationsConfigException : InvalidOperationException
 {
     public string Code { get; }
@@ -258,6 +290,16 @@ public sealed partial class L12PlatformStore
         public int ExpectedDurationHours { get; set; } = 2;
     }
 
+    private sealed class OperationsAnnouncementRow
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public bool Enabled { get; set; }
+        public int SortOrder { get; set; }
+        public DateTimeOffset? StartsAt { get; set; }
+        public DateTimeOffset? EndsAt { get; set; }
+    }
+
     private sealed class OperationsConfigRow
     {
         public long Version { get; set; } = 1;
@@ -270,6 +312,7 @@ public sealed partial class L12PlatformStore
         public List<OperationsMatchModeRow> MatchModes { get; set; } = [];
         public Dictionary<string, bool> FeatureFlags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public OperationsMaintenanceRow Maintenance { get; set; } = new();
+        public List<OperationsAnnouncementRow> Announcements { get; set; } = [];
         public string UpdatedBy { get; set; } = "系统";
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
@@ -377,6 +420,47 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12ServerStartOperationView StartServer(L12AccountView actor, long expectedVersion,
+        string? reason, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var current = RequireOperationsConfig();
+            if (!current.Maintenance.Enabled)
+            {
+                AddAdminAudit(actor, "operations", "server-start", "operations:server",
+                    current.Version.ToString(), current.Version.ToString(), normalizedReason,
+                    context with { Outcome = "already-applied", Reason = normalizedReason });
+                Save(false);
+                return new L12ServerStartOperationView(false, true, ToView(current));
+            }
+            EnsureOperationsVersion(current, expectedVersion);
+
+            var payload = ToPayload(current);
+            var nextPayload = payload with
+            {
+                Maintenance = payload.Maintenance with
+                {
+                    Enabled = false,
+                    StartsAt = null,
+                    EndsAt = null,
+                },
+            };
+            var next = ToRow(nextPayload, current.Version + 1, actor.Username);
+            _data.OperationsConfig = next;
+            var history = NewOperationsHistory(next, "start-server", actor, normalizedReason);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+            AddAdminAudit(actor, "operations", "server-start", "operations:server",
+                current.Version.ToString(), next.Version.ToString(), normalizedReason,
+                context with { Outcome = "succeeded", Reason = normalizedReason });
+            Save();
+            return new L12ServerStartOperationView(true, false, ToView(next));
+        }
+    }
+
     internal long OperationsConfigVersion()
     {
         lock (_gate) return RequireOperationsConfig().Version;
@@ -408,7 +492,8 @@ public sealed partial class L12PlatformStore
                     policy.Maintenance.Message,
                     policy.IsMaintenanceBroadcastVisible(now) ? policy.MaintenanceBroadcastMessage() : string.Empty,
                     policy.Maintenance.StartsAt, policy.Maintenance.EndsAt,
-                    policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours));
+                    policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours),
+                policy.ActiveAnnouncements(now));
         }
     }
 
@@ -598,6 +683,25 @@ public sealed partial class L12PlatformStore
         if (payload.Maintenance.ExpectedDurationHours is < 1 or > 168)
             throw new L12OperationsConfigException("maintenance_duration_invalid", "预计维护时长需为1至168小时");
 
+        var announcementSource = payload.Announcements ?? [];
+        if (announcementSource.Count > 20)
+            throw new L12OperationsConfigException("too_many_announcements", "长期公告最多配置 20 条");
+        var announcements = announcementSource.Select((item, index) =>
+        {
+            if (item is null)
+                throw new L12OperationsConfigException("invalid_announcement", "长期公告条目不能为空");
+            var id = RequireOperationsId(item.Id, "长期公告 ID");
+            var content = OptionalOperationsText(item.Content, 1000);
+            if (item.Enabled && string.IsNullOrWhiteSpace(content))
+                throw new L12OperationsConfigException("announcement_content_required", "启用长期公告时必须填写内容");
+            EnsureTimeRange(item.StartsAt, item.EndsAt, $"长期公告 {id}");
+            return new L12AnnouncementConfig(id, content, item.Enabled,
+                item.SortOrder is < 0 or > 999 ? index : item.SortOrder, item.StartsAt, item.EndsAt);
+        }).ToArray();
+        if (announcements.GroupBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .Any(group => group.Count() > 1))
+            throw new L12OperationsConfigException("duplicate_announcement", "长期公告 ID 不能重复");
+
         return new L12OperationsConfigPayload(
             new L12SeasonConfig(seasonId, seasonName, seasonStatus,
                 payload.Season.StartsAt, payload.Season.EndsAt),
@@ -610,7 +714,9 @@ public sealed partial class L12PlatformStore
             flags,
             new L12MaintenanceConfig(payload.Maintenance.Enabled, maintenanceMessage,
                 payload.Maintenance.StartsAt, payload.Maintenance.EndsAt,
-                payload.Maintenance.AdvanceBroadcastHours, payload.Maintenance.ExpectedDurationHours));
+                payload.Maintenance.AdvanceBroadcastHours, payload.Maintenance.ExpectedDurationHours),
+            announcements.OrderBy(item => item.SortOrder)
+                .ThenBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
     private static IReadOnlyList<string> DescribeOperationsChanges(L12OperationsConfigPayload current,
@@ -625,6 +731,7 @@ public sealed partial class L12PlatformStore
         if (!JsonEqual(current.MatchModes, next.MatchModes)) changes.Add("matchModes");
         if (!JsonEqual(current.FeatureFlags, next.FeatureFlags)) changes.Add("featureFlags");
         if (!JsonEqual(current.Maintenance, next.Maintenance)) changes.Add("maintenance");
+        if (!JsonEqual(current.Announcements ?? [], next.Announcements ?? [])) changes.Add("announcements");
         return changes;
     }
 
@@ -717,6 +824,15 @@ public sealed partial class L12PlatformStore
                 AdvanceBroadcastHours = payload.Maintenance.AdvanceBroadcastHours,
                 ExpectedDurationHours = payload.Maintenance.ExpectedDurationHours,
             },
+            Announcements = (payload.Announcements ?? []).Select(item => new OperationsAnnouncementRow
+            {
+                Id = item.Id,
+                Content = item.Content,
+                Enabled = item.Enabled,
+                SortOrder = item.SortOrder,
+                StartsAt = item.StartsAt,
+                EndsAt = item.EndsAt,
+            }).ToList(),
             UpdatedBy = actorName,
             UpdatedAt = now,
         };
@@ -736,7 +852,9 @@ public sealed partial class L12PlatformStore
             new Dictionary<string, bool>(row.FeatureFlags, StringComparer.OrdinalIgnoreCase),
             new L12MaintenanceConfig(row.Maintenance.Enabled, row.Maintenance.Message,
                 row.Maintenance.StartsAt, row.Maintenance.EndsAt,
-                row.Maintenance.AdvanceBroadcastHours, row.Maintenance.ExpectedDurationHours));
+                row.Maintenance.AdvanceBroadcastHours, row.Maintenance.ExpectedDurationHours),
+            row.Announcements.Select(item => new L12AnnouncementConfig(item.Id, item.Content,
+                item.Enabled, item.SortOrder, item.StartsAt, item.EndsAt)).ToArray());
 
     private static L12OperationsPolicySnapshot ToPolicySnapshot(OperationsConfigRow row)
     {
@@ -751,7 +869,8 @@ public sealed partial class L12PlatformStore
             payload.DefaultRoomConfig,
             payload.MatchModes.ToArray(),
             new Dictionary<string, bool>(payload.FeatureFlags, StringComparer.OrdinalIgnoreCase),
-            payload.Maintenance);
+            payload.Maintenance,
+            payload.Announcements?.ToArray() ?? []);
     }
 
     private static L12OperationsConfigView ToView(OperationsConfigRow row)
@@ -799,6 +918,7 @@ public sealed partial class L12PlatformStore
         if (row.FeatureFlags is null)
         { row.FeatureFlags = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase); changed = true; }
         if (row.Maintenance is null) { row.Maintenance = new OperationsMaintenanceRow(); changed = true; }
+        if (row.Announcements is null) { row.Announcements = []; changed = true; }
         if (string.IsNullOrWhiteSpace(row.UpdatedBy)) { row.UpdatedBy = "系统"; changed = true; }
         if (row.UpdatedAt == default) { row.UpdatedAt = DateTimeOffset.UtcNow; changed = true; }
         return changed;

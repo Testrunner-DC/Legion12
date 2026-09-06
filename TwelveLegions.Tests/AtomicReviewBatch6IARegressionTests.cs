@@ -351,4 +351,36 @@ public sealed class AtomicReviewBatch6IARegressionTests
         Assert.Single(game.State.PendingTriggerStackCandidates);
         Assert.Empty(game.State.EffectStack);
     }
+
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20260905-de68a25e")]
+    [Trait("L12Evidence", "bug:BUG-20260905-13a0e5ac")]
+    public void MiyamotoDecliningAttackDrawResumesDefenseAndCompletesTheAttack()
+    {
+        var game = Create(9653);
+        var miyamoto = Card("S01-0405", "batch6ia-miyamoto-decline-attack");
+        miyamoto.SummonRound = -1;
+        game.State.Players[0].Field[0][0] = miyamoto;
+        game.State.Players[0].Library.Add(Card("S01-0001", "batch6ia-miyamoto-decline-draw"));
+        game.State.Players[1].Hand.Add(Card("S01-0002", "batch6ia-miyamoto-decline-opponent-hand"));
+        var defenderHp = game.State.Players[1].Hp;
+
+        var attack = game.Handle(0, new L12Command("attack", miyamoto.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.True(attack.Accepted, attack.Error);
+        ResolveOnlyPrompt(game, "mode:none");
+
+        Assert.NotNull(game.State.PendingDefense);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        PassResponses(game);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+
+        var defense = game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: []));
+        Assert.True(defense.Accepted, defense.Error);
+        PassResponses(game);
+        Assert.Null(game.State.PendingDefense);
+        Assert.True(game.State.Players[1].Hp < defenderHp);
+    }
 }
