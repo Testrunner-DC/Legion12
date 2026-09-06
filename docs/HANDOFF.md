@@ -4,7 +4,7 @@
 
 ## 当前发布批次
 
-- `UI-20260906-250` 正在补正已部署更新日志：由四条概括改为四个分组、19条结果说明，点名十张相关卡牌；Batch前端门禁已通过，尚未提交、同步或部署。`QUEUE-20260906-22`音乐平滑切换与`QUEUE-20260906-23`后台Bug审计仅登记，未混入本批。
+- `UI-20260906-250` 已补正并部署：更新日志由四条概括改为四个分组、19条结果说明，点名十张相关卡牌；应用提交 `37f1dcc9dd68ab958841d4415f1ec52195f30dae` 已同步并上线。`QUEUE-20260906-22`至`31`均仅登记，未混入本批。
 - `BATCH-20260906-249` 已完成、同步并部署。应用提交为 `a936b72924b467a8f9a916be3812bb35d3b804ae`；Batch/Release 均通过规则 2304/2304、指定 PlatformStore/ControlPlane 72/72、UI 契约 254、卡图 40 项/324 张、Vue/TypeScript/Vite 211 模块生产构建。
 - 本批收口此前排队但未发布的全部问题：卡牌触发/费用/目标/公开信息与致死替代、好友房赛季天灾、进行中排位恢复与结算 Outbox、停机维护、跨设备设置与游戏音乐、胜负页手动返回、排行榜和对局 UI 完整度。
 - 用户已明确授权：最终提交推送 `Testrunner-DC/Legion12` 的 `main`；通过 SSH/SCP 部署到 `legion-12.com`；允许排位数据库 Schema 迁移、持久化数据备份、远端版本切换、`legion12-test.service` 重启、HTTP/WebSocket/版本验证和成功后的更新日志；验证失败时允许回滚并重启。
@@ -13,11 +13,11 @@
 ## 工作区与线上
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，分支 `codex/deploy-verify-20260821`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
-- 当前功能开发提交（development commit）：`a936b72924b467a8f9a916be3812bb35d3b804ae`。
-- GitHub `origin/main` 已包含应用提交 `a936b72924b467a8f9a916be3812bb35d3b804ae` 及本交接记录；下一任务仍须重新 `git fetch origin main` 核实最新值。
-- 线上已部署提交（deployed commit）：`a936b72924b467a8f9a916be3812bb35d3b804ae`。
-- 线上活动：`/opt/legion12-releases/a936b72924b467a8f9a916be3812bb35d3b804ae-20260905T210744Z`；上一版本：`/opt/legion12-releases/8ba286b85958b192380ffbe82f1404559a6e7c99-20260905T105254Z`。
-- 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-a936b72924b4-20260905T210744Z.tar.gz`；由服务器管理，不纳入本地清理。
+- 当前功能开发提交（development commit）：`37f1dcc9dd68ab958841d4415f1ec52195f30dae`。
+- GitHub `origin/main` 已包含应用提交 `37f1dcc9dd68ab958841d4415f1ec52195f30dae`；下一任务仍须重新 `git fetch origin main` 核实最新值。
+- 线上已部署提交（deployed commit）：`37f1dcc9dd68ab958841d4415f1ec52195f30dae`。
+- 线上活动：`/opt/legion12-releases/37f1dcc9dd68ab958841d4415f1ec52195f30dae-20260906T045907Z`；上一版本为应用提交 `a936b72924b467a8f9a916be3812bb35d3b804ae`。
+- 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-37f1dcc9dd68-20260906T045907Z.tar.gz`；由服务器管理，不纳入本地清理。
 - 卡图资源版本：`910b3449455cd1505cc787eaf3412a4412c09d2e373c5450d85cd6c9994a5cc3`，原图及当前内容寻址图库保留。
 - 本地预览 `http://127.0.0.1:5174/` 已按用户2026-09-05最新要求关闭；端口无监听，不要在未获新指令时自动启动。
 
