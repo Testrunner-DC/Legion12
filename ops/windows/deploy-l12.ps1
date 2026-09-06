@@ -85,14 +85,14 @@ function Resolve-L12SshOptions {
     }
 
     $remoteHost = ($RemoteServer -split "@")[-1]
-    $trustedMigrationAlias = "legion12.grand-umi.com"
+    $trustedProductionAlias = "103.146.230.37"
     $remoteHostEntry = @(& ssh-keygen -F $remoteHost -f $knownHosts 2>$null)
-    $trustedAliasEntry = @(& ssh-keygen -F $trustedMigrationAlias -f $knownHosts 2>$null)
+    $trustedAliasEntry = @(& ssh-keygen -F $trustedProductionAlias -f $knownHosts 2>$null)
     if ($remoteHost -eq "legion-12.com" -and $remoteHostEntry.Count -eq 0 -and $trustedAliasEntry.Count -gt 0) {
-        # 新旧域名迁移期间连接的是同一生产主机。复用已经人工信任的旧域主机密钥，
-        # 避免关闭 StrictHostKeyChecking 或要求调用者追加临时参数。
-        foreach ($option in @("-o", "HostKeyAlias=$trustedMigrationAlias")) { $options.Add($option) }
-        Write-Host "[L12 部署] 新域名复用已验证的旧域 SSH 主机指纹。"
+        # 主域没有独立记录时，复用已经人工信任的生产服务器 IP 主机密钥，
+        # 避免依赖已下线的迁移域名，也不关闭严格主机密钥校验。
+        foreach ($option in @("-o", "HostKeyAlias=$trustedProductionAlias")) { $options.Add($option) }
+        Write-Host "[L12 部署] 新域名复用已验证的生产服务器 IP 主机指纹。"
     }
     return $options.ToArray()
 }

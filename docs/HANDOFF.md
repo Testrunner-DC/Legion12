@@ -4,6 +4,7 @@
 
 ## 当前发布批次
 
+- `OPS-20260906-254` 已完成线上旧域下线：Cloudflare 已删除 `legion12.grand-umi.com` 的唯一 A 记录，权威 NS、8.8.8.8 与 223.5.5.5 均确认名称不存在；旧域 Nginx HTTP/HTTPS vhost、TLS 证书及续期配置已移除。新域主页/health/WS 与 www 308 均正常，应用 release/runtime 未改动。服务器原始备份为 `/root/legion12-nginx-backups/retire-old-domain-20260906T092149Z`，最终删除前完整恢复包为其子目录 `final-cleanup-pre-delete-20260906T110431Z`。
 - 最新为 `BATCH-20260906-253`（QUEUE-36..48）：最强称号固定近30日规则及事实账、玩家榜十列/方形头像、GM横卡详情、同级段位参数合并、Faith全主宰审计与支付补漏、14px可读基准、对局摘要/工具坞/日志、静默屏蔽好友申请、排位准备60秒与迁服准备文档均已完成。
 - Batch通过规则2393/2393、指定平台74/74、UI270项、卡图40项/324张、原子零旧入口与Vite239模块；无头桌面UI回归通过。本批同意一次推送main与部署、备份/迁移对账/重启/验证/失败回滚；不得因本条预判已上线。
 - 功能开发身份为包含本条的最终批次提交；远端与线上身份必须现场读取 `git rev-parse origin/main` 和公网 `/health`。提交级Release、部署与线上核验回执位于 `D:\GPT\Legion12\artifacts\batch253-release.log`、`batch253-deployment.log`。这避免为回填自身提交号而再次发布功能包。
@@ -22,10 +23,10 @@
 ## 工作区与线上
 
 - 唯一开发目录：`D:\GPT\Legion12\app`，分支 `codex/deploy-verify-20260821`；Git公共目录位于 `D:\GPT\Legion12\repo\.git`，不是可删除的副本。
-- 当前功能开发提交（development commit）：`e96c9117c2f69103835c400697df029c59150e85`；Batch与干净提交Release均已通过。
-- GitHub `origin/main` 已包含应用提交 `e96c9117c2f69103835c400697df029c59150e85`；下一任务仍须重新 `git fetch origin main` 核实最新值。
-- 线上已部署提交（deployed commit）：`37f1dcc9dd68ab958841d4415f1ec52195f30dae`。
-- 线上活动：`/opt/legion12-releases/37f1dcc9dd68ab958841d4415f1ec52195f30dae-20260906T045907Z`；上一版本为应用提交 `a936b72924b467a8f9a916be3812bb35d3b804ae`。
+- 当前功能开发基线：`505384b0137d45fd093e813533df1262bdcb03c5`；本次旧域运维提交在完成 rebase、提交级 Release 与推送后单独记录。
+- GitHub `origin/main` 当前包含应用提交 `505384b0137d45fd093e813533df1262bdcb03c5`；下一任务仍须重新 `git fetch origin main` 核实最新值。
+- 线上已部署提交（deployed commit）：`505384b0137d45fd093e813533df1262bdcb03c5`（旧域下线前后保持不变）。
+- 线上活动：`/opt/legion12-releases/505384b0137d45fd093e813533df1262bdcb03c5-20260906T102029Z`；旧域下线未切换应用版本，上一 release 仍由服务器保留。
 - 运行数据恢复快照：`/opt/legion12-deployment/runtime-backups/runtime-before-37f1dcc9dd68-20260906T045907Z.tar.gz`；由服务器管理，不纳入本地清理。
 - 卡图资源版本：`910b3449455cd1505cc787eaf3412a4412c09d2e373c5450d85cd6c9994a5cc3`，原图及当前内容寻址图库保留。
 - 本地预览 `http://127.0.0.1:5174/` 已按用户2026-09-05最新要求关闭；端口无监听，不要在未获新指令时自动启动。

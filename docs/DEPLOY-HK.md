@@ -13,12 +13,12 @@
 
 Nginx 和 systemd 继续访问 `/opt/legion12-test`，版本切换只原子替换该符号链接。首次使用新流程时，旧版 `publish/runtime` 会在服务停止后通过同文件系统移动到共享目录，不复制约 1GB 的数据库和平台数据。
 
-## 公网域名与双域过渡
+## 公网域名
 
 - 主站为 `https://legion-12.com`，生产 WebSocket 为 `wss://legion-12.com/ws`；`https://www.legion-12.com/*` 以 308 保留路径和查询参数跳转主站。
-- `https://legion12.grand-umi.com` 在迁移宽限期继续提供相同静态站、API 和 WebSocket，不做重定向，避免旧页面重连或进行中的对局因域名切换中断。
-- 生产前端不显式设置 `VITE_WS_URL`，由浏览器按当前 HTTPS 主机选择同源 `wss://<当前主机>/ws`。发布探针和运维脚本以新主域为权威目标。
-- 登录令牌、离线牌库和界面偏好保存在浏览器 `localStorage`，不会跨域复制。用户首次打开新主域需要重新登录；服务端账号、牌库、对局和回放数据仍在共享运行目录，不受域名切换影响。禁止通过 URL、重定向参数或日志传递 bearer token；旧域应保留足够宽限期供用户检查尚未同步的本机数据。
+- 旧迁移域名已停止提供静态站、API 和 WebSocket；生产配置、发布探针及运维脚本不得再依赖旧域名。
+- 生产前端不显式设置 `VITE_WS_URL`，由浏览器按当前 HTTPS 主机选择同源 `wss://legion-12.com/ws`。发布探针和运维脚本以新主域为唯一权威目标。
+- 登录令牌、离线牌库和界面偏好保存在浏览器 `localStorage`，不会跨域复制。旧域用户转到新主域后可能需要重新登录；服务端账号、牌库、对局和回放数据仍在共享运行目录，不受域名下线影响。禁止通过 URL、重定向参数或日志传递 bearer token。
 
 ## 首次准备
 
@@ -37,7 +37,7 @@ SSH 公钥加入服务器后验证：
 ssh root@legion-12.com "echo SSH连接成功"
 ```
 
-不要复制其他电脑的 SSH 私钥。部署脚本会自动读取仓库所有者的用户 SSH 配置；迁移宽限期内若新域 SSH 名称尚未写入 `known_hosts`，会复用已验证的旧域主机指纹连接同一生产主机，不需要追加参数，也不会关闭主机密钥校验。
+不要复制其他电脑的 SSH 私钥。部署脚本会自动读取仓库所有者的用户 SSH 配置；若新域 SSH 名称尚未写入 `known_hosts`，会复用已验证的生产服务器 IP 主机指纹，不依赖旧域名，也不会关闭主机密钥校验。
 
 ## 完整验证与构建
 
@@ -108,7 +108,7 @@ ssh root@legion-12.com "journalctl -u legion12-test.service -n 200 --no-pager"
 
 禁止直接覆盖 `/opt/legion12-test`、删除 `/opt/legion12-runtime`，或在服务器源码目录执行 `git pull`。旧 release 暂不自动删除，以便人工审计和回滚。
 
-域名迁移不切换应用 release，也不移动运行数据。2026-08-28 的 Nginx 切换前备份位于 `/root/legion12-nginx-backups/20260828T113923Z`；新主域与 `www` 分别由 `/etc/nginx/sites-enabled/legion12-new-domain`、`legion12-www-domain` 启用，旧域虚拟主机保持独立。若新域验证失败，应只禁用这两个新链接并在迁移窗口内从备份恢复 `/etc/nginx/sites-available/legion12`，随后先执行 `nginx -t`，成功后才 `systemctl reload nginx`。继续以旧域验证主页、健康接口和 WebSocket；不要停止后端、删除新证书或修改 `/opt/legion12-runtime`。DNS 回滚由 Cloudflare 控制台单独执行，仓库脚本不持有其凭据。
+域名下线不切换应用 release，也不移动运行数据。2026-08-28 的新域上线前备份位于 `/root/legion12-nginx-backups/20260828T113923Z`；新主域与 `www` 分别由 `/etc/nginx/sites-enabled/legion12-new-domain`、`legion12-www-domain` 启用。旧域下线前必须另建带时间戳的 Nginx 备份，先将旧入口收敛为到新域的精确 308，再删除旧 DNS 并停用旧虚拟主机及证书续期。任何配置变更都必须先执行 `nginx -t`，成功后才 `systemctl reload nginx`；不得停止后端或修改 `/opt/legion12-runtime`。DNS 回滚由 Cloudflare 控制台单独执行，仓库脚本不持有其凭据。
 
 ## Windows 构建缓存位置
 
