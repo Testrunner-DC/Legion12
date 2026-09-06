@@ -114,6 +114,9 @@ const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.
 const windowsVerify = read('../../ops/windows/verify-l12.ps1')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 const deployTarget = read('../../ops/windows/L12DeployTarget.ps1')
+if (!windowsVerify.includes('Source = "ops\\windows\\L12DeployTarget.ps1"; Target = "ops\\windows\\L12DeployTarget.ps1"')) {
+  throw new Error('隔离发布构建必须复制部署目标校验文件，不得跳过新服务器白名单与指纹门禁。')
+}
 const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
 const nginxSite = read('../../ops/server/legion12-testrun.nginx')
 const nginxHttpSite = read('../../ops/server/legion12-testrun-http.nginx')

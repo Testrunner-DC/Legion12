@@ -133,6 +133,7 @@ try {
         @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
         @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
         @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" },
+        @{ Source = "ops\windows\L12DeployTarget.ps1"; Target = "ops\windows\L12DeployTarget.ps1" },
         @{ Source = "ops\server\deploy-l12-release.sh"; Target = "ops\server\deploy-l12-release.sh" },
         @{ Source = "ops\server\legion12-testrun.nginx"; Target = "ops\server\legion12-testrun.nginx" },
         @{ Source = "ops\server\legion12-testrun-http.nginx"; Target = "ops\server\legion12-testrun-http.nginx" },
