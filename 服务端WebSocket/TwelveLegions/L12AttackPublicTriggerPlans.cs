@@ -406,9 +406,7 @@ public sealed partial class L12GameEngine
     }
 
     private bool CanConsumeAttackOrdinaryCost(L12PlayerState player, IReadOnlyList<string> costIds)
-        => costIds.Count == 1 && costIds[0] == "temporary-morale:1"
-            ? CanConsumeSelectedResources(player, 1, [])
-            : CanConsumeSelectedResources(player, 1, costIds);
+        => CanConsumeSelectedResources(player, 1, costIds);
 
     private void PayAttackPublicCost(L12TriggerCandidate candidate, L12PendingActivation activation,
         AttackPublicTriggerPlan plan, L12PlayerState player, L12CardInstance? source, IReadOnlyList<string> costIds)
@@ -424,8 +422,7 @@ public sealed partial class L12GameEngine
                         leaveKind: L12FieldLeaveKind.Discard);
                 break;
             case "ordinary-morale":
-                _ = TryConsumeSelectedResources(player, 1,
-                    costIds.Count == 1 && costIds[0] == "temporary-morale:1" ? [] : costIds);
+                _ = TryConsumeSelectedResources(player, 1, costIds);
                 break;
             case "master-damage":
                 DamageMaster(candidate.Controller, 1, "贝奥武夫进攻效果费用");

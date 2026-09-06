@@ -898,7 +898,7 @@ public sealed partial class L12GameEngine
 
     private IEnumerable<string> CompositeOrdinaryPaymentChoices(L12PlayerState player)
     {
-        if (player.TemporaryMorale > 0) yield return "temporary-morale:1";
+        foreach (var temporary in TemporaryMoralePaymentChoices(player)) yield return temporary;
         foreach (var morale in player.Morale.Where(card => !card.Tapped)) yield return morale.InstanceId;
         foreach (var guard in ActiveTombGuardResources(player)) yield return guard.InstanceId;
     }
@@ -1034,16 +1034,12 @@ public sealed partial class L12GameEngine
         bool OrdinaryCost(string key)
         {
             var id = declared.GetValueOrDefault(key, []).SingleOrDefault();
-            return id == "temporary-morale:1" ? player.TemporaryMorale > 0
-                : id is not null && CompositeOrdinaryPaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase);
+            return id is not null && CanConsumeSelectedResources(player, 1, [id]);
         }
         bool OrdinaryCosts(string key, int count)
         {
             var ids = declared.GetValueOrDefault(key, []);
-            if (ids.Count != count || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != count) return false;
-            var selected = ids.Where(id => id != "temporary-morale:1").ToArray();
-            return ids.Contains("temporary-morale:1", StringComparer.OrdinalIgnoreCase) == (player.TemporaryMorale > 0)
-                && CanConsumeSelectedResources(player, count, selected);
+            return CanConsumeSelectedResources(player, count, ids);
         }
         bool EnemyMany(string key, int maximum, Func<L12CardInstance, bool>? predicate = null)
         {
@@ -1321,8 +1317,8 @@ public sealed partial class L12GameEngine
                 "campHealCost", "campDrawCost", "scoutCost" }
             .SelectMany(key => declared.GetValueOrDefault(key, []))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        return (selected.Where(id => id != "temporary-morale:1").ToArray(),
-            selected.Contains("temporary-morale:1", StringComparer.OrdinalIgnoreCase) ? 1 : 0);
+        return (selected.Where(id => !TryParseTemporaryMoralePaymentChoice(id, out _)).ToArray(),
+            SelectedTemporaryMoraleCount(selected));
     }
 
     private bool QueueNextCompositeSegment(L12StackItem item, L12CardInstance? source)
@@ -1471,7 +1467,12 @@ public sealed partial class L12GameEngine
                 return ids.Length == segment.Cost && ReturnSelectedMoraleById(player, ids, segment.Cost);
             case "ordinary-payment":
             {
-                var selected = ids.Where(id => id != "temporary-morale:1").ToArray();
+                // 临时士气以数量存在。基础费用可能已经消费了未预留的临时士气，
+                // 因此在真正支付复合段费用时，把声明中的临时令牌重新映射到当前令牌。
+                var temporaryCount = SelectedTemporaryMoraleCount(ids);
+                if (temporaryCount > player.TemporaryMorale) return false;
+                var selected = TemporaryMoralePaymentChoices(player).Take(temporaryCount)
+                    .Concat(ids.Where(id => !TryParseTemporaryMoralePaymentChoice(id, out _))).ToArray();
                 return TryConsumeSelectedResources(player, segment.Cost, selected);
             }
             case "discard-hand":

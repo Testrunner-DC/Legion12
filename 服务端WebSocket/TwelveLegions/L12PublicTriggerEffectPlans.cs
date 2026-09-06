@@ -1310,13 +1310,11 @@ public sealed partial class L12GameEngine
                 || !IsFieldLegion(targetOnField) || targetOnField.Hidden
                 || targetOnField.InstanceId == candidate.Data.GetValueOrDefault("moved") || slot is null
                 || !AdjacentEmptySlots(targetPlayer!, row, oldSlot).Contains(slot, StringComparer.OrdinalIgnoreCase)
-                || !CanConsumeSelectedResources(player, 1,
-                    cost.Count == 1 && cost[0] == "temporary-morale:1" ? [] : cost))
+                || !CanConsumeSelectedResources(player, 1, cost))
                 error = "月读的费用、公开目标或位移位置已失效；未支付费用且效果未入栈";
             else
             {
-                _ = TryConsumeSelectedResources(player, 1,
-                    cost.Count == 1 && cost[0] == "temporary-morale:1" ? [] : cost);
+                _ = TryConsumeSelectedResources(player, 1, cost);
                 player.UsedAbilities.Add(onceKey);
                 candidate.Data["targetPlayerIndex"] = targetController.ToString();
             }

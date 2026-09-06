@@ -479,6 +479,39 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
+    public void HorusCanExplicitlyChooseTemporaryMoraleAndPreserveOrdinaryMorale()
+    {
+        var game = Create(204252);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var ordinary = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "horus-ordinary-preserved" };
+        var revive = Card("ST02-07", "horus-temporary-paid-and-revived");
+        var secondCost = Card("ST01-02", "horus-temporary-cost-2");
+        player.Morale.Add(ordinary);
+        player.TemporaryMorale = 1;
+        player.Field[0][0] = revive;
+        player.Field[0][1] = secondCost;
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+
+        Assert.True(start.Accepted, start.Error);
+        var payment = Prompt(game);
+        Assert.Contains("temporary-morale:1", payment.ValidChoices);
+        Assert.Contains(ordinary.InstanceId, payment.ValidChoices);
+        Choose(game, "temporary-morale:1");
+        ChooseMany(game, revive.InstanceId, secondCost.InstanceId);
+        Choose(game, revive.InstanceId);
+        Choose(game, "0:0");
+        PassResponses(game);
+
+        Assert.Equal(0, player.TemporaryMorale);
+        Assert.False(ordinary.Tapped);
+        Assert.Same(revive, player.Field[0][0]);
+        Assert.True(revive.Tapped);
+        Assert.Contains(secondCost, player.Graveyard);
+    }
+
+    [Fact]
     public void FaithZealotCopiesHorusWithoutMoraleFieldCostsOrNormalOnceUsage()
     {
         var game = Create(204251);

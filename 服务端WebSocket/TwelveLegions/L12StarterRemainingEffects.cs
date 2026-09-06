@@ -65,19 +65,19 @@ public sealed partial class L12GameEngine
                 }
                 var resources = CompositeOrdinaryPaymentChoices(player).ToList();
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
-                var visibleCost = 1 - waived;
+                var paymentCost = 1 - waived;
                 var prospectiveReviveExists = grave.Count > 0 || field.Any(id =>
                     FindOnField(player, id, out _, out _) is { } card && card.BaseTroops <= 2000
                     && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
-                if (field.Count < 2 || resources.Count < visibleCost || !prospectiveReviveExists)
-                    return CommandResult.Reject($"需要{visibleCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场");
+                if (field.Count < 2 || resources.Count < paymentCost || !prospectiveReviveExists)
+                    return CommandResult.Reject($"需要{paymentCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场");
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
                     new L12ActivationSelectionStep
                     {
                         Kind = "composite-ordinary-payment", DeclarationKey = "moraleCost",
                         Text = "荷鲁斯：支付费用——消耗1士气",
-                        ValidChoices = resources, MinChoose = visibleCost, MaxChoose = visibleCost,
+                        ValidChoices = resources, MinChoose = paymentCost, MaxChoose = paymentCost,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -177,15 +177,17 @@ public sealed partial class L12GameEngine
             case "horusRevive":
             {
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
-                var visibleCost = 1 - waived;
-                var paymentCount = 2 + visibleCost;
-                var resourceIds = values.Take(visibleCost).ToArray();
-                var costIds = values.Skip(visibleCost).Take(2).ToArray();
-                if (values.Length != paymentCount + 2 || resourceIds.Length != visibleCost || costIds.Length != 2
+                var paymentCost = 1 - waived;
+                var paymentCount = 2 + paymentCost;
+                var resourceIds = values.Take(paymentCost).ToArray();
+                var costIds = values.Skip(paymentCost).Take(2).ToArray();
+                if (values.Length != paymentCount + 2 || resourceIds.Length != paymentCost || costIds.Length != 2
                     || costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
                     return "荷鲁斯的费用、墓地军团或位置选择不完整";
-                if (player.TemporaryMorale < 1 - waived
-                    && !CanConsumeSelectedResources(player, 1 - waived, resourceIds))
+                // CommitActiveAbility 在真正提交前会把玩家点选的资源预付，并放入等量
+                // 临时士气作为只供下层 ConsumeMorale 使用的一次性凭证。
+                if (player.TemporaryMorale < paymentCost
+                    && !CanConsumeSelectedResources(player, paymentCost, resourceIds))
                     return "荷鲁斯选择的士气资源已失效";
                 var costs = costIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
                 if (costs.Any(card => card is null || !IsFieldLegion(card))) return "荷鲁斯选择的弃置军团已失效";
@@ -265,13 +267,15 @@ public sealed partial class L12GameEngine
                 break;
             case "horusRevive":
                 var waived = Math.Min(1, player.MasterMoraleWaiverCredit);
-                var visibleCost = 1 - waived;
-                var paymentCount = 2 + visibleCost;
-                var selectedResourceIds = values.Take(visibleCost).ToArray();
-                string[] resourcesStillToConsume = player.TemporaryMorale >= 1 - waived ? [] : selectedResourceIds;
-                if (!TryConsumeSelectedResources(player, 1 - waived, resourcesStillToConsume)) return CommandResult.Reject("需要消耗1士气");
+                var paymentCost = 1 - waived;
+                var paymentCount = 2 + paymentCost;
+                var selectedResourceIds = values.Take(paymentCost).ToArray();
+                var resourcesToConsume = player.TemporaryMorale >= paymentCost
+                    ? TemporaryMoralePaymentChoices(player).Take(paymentCost).ToArray()
+                    : selectedResourceIds;
+                if (!TryConsumeSelectedResources(player, paymentCost, resourcesToConsume)) return CommandResult.Reject("需要消耗1士气");
                 player.MasterMoraleWaiverCredit -= waived;
-                var selectedCostIds = values.Skip(visibleCost).Take(2).ToArray();
+                var selectedCostIds = values.Skip(paymentCost).Take(2).ToArray();
                 var costs = selectedCostIds.Select(id => FindOnField(player, id, out _, out _)!).ToArray();
                 foreach (var cost in costs)
                     if (!RemoveFromField(player, cost, true, "作为荷鲁斯效果的费用弃置", leaveKind: L12FieldLeaveKind.Discard))
@@ -528,9 +532,7 @@ public sealed partial class L12GameEngine
                 if (target is not null && ActiveResourceCount(player) >= moraleCost) modes.Add("mode:morale");
                 if (target is not null && player.Hand.Count > 0) modes.Add("mode:discard");
                 modes.Add("mode:none");
-                var visibleCost = Math.Max(0, moraleCost - player.TemporaryMorale);
-                var resources = player.Morale.Where(card => !card.Tapped).Select(card => card.InstanceId)
-                    .Concat(ActiveTombGuardResources(player).Select(card => card.InstanceId)).ToList();
+                var resources = CompositeOrdinaryPaymentChoices(player).ToList();
                 steps.Add(StarterSelectionStep("option", "mode",
                     target is null ? "迦具土：触发目标已经离场" : $"迦具土：是否使〈{target.Name}〉本回合兵力+2000？",
                     modes, 1, 1, labels: new()
@@ -543,8 +545,8 @@ public sealed partial class L12GameEngine
                 {
                     Kind = "resource-payment", DeclarationKey = "moraleCost",
                     Text = "迦具土：选择用于支付1士气的资源", ValidChoices = resources,
-                    MinChoose = visibleCost, MaxChoose = visibleCost, RequiredDeclaredChoice = "mode:morale",
-                    AutoSelectWhenExact = resources.Count == visibleCost,
+                    MinChoose = moraleCost, MaxChoose = moraleCost, RequiredDeclaredChoice = "mode:morale",
+                    AutoSelectWhenExact = resources.Count == moraleCost,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 });
                 steps.Add(StarterStep("hand-card", "discardCost", "迦具土：选择弃置的1张手牌",

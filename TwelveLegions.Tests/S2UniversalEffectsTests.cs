@@ -727,6 +727,41 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    public void BlackLotusCanReserveThreeTemporaryMoraleWhileItsBaseCostUsesTheFourth()
+    {
+        var game = Create(seed: 62121);
+        var player = game.State.Players[0];
+        var lotus = TakeCard(game, 0, "S02-0010");
+        player.Morale.Clear();
+        player.TemporaryMorale = 4;
+        game.State.DisasterValue = 4;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", lotus.InstanceId)).Accepted);
+        var disasterPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: disasterPrompt.PromptId,
+            Choice: "0")).Accepted);
+        var moralePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
+            Choice: "mode:morale")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.Equal(3, payment.MinChoose);
+        Assert.Equal(3, payment.MaxChoose);
+        Assert.Equal(4, payment.ValidChoices.Count(id => id.StartsWith("temporary-morale:", StringComparison.Ordinal)));
+
+        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["temporary-morale:2", "temporary-morale:3", "temporary-morale:4"]));
+
+        Assert.True(paid.Accepted, paid.Error);
+        Assert.Equal(0, player.TemporaryMorale);
+        var converted = Assert.Single(player.Morale, card => card.CardId == "S02-0010");
+        Assert.True(converted.Tapped);
+        Assert.DoesNotContain(player.Graveyard, card => card.InstanceId == lotus.InstanceId);
+    }
+
+    [Fact]
     public void ReturnedBlackLotusGoesToGraveyardInsteadOfMoraleDeck()
     {
         var game = CreateTianting(seed: 6213);

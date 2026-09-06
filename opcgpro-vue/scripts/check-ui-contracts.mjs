@@ -14,6 +14,7 @@ const combatMotionLayer = read('../src/l12/game/CombatMotionPresentationLayer.vu
 const osirisVictory = read('../src/l12/game/OsirisVictorySequence.vue')
 const indexHtml = read('../index.html')
 const faviconPath = new URL('../public/favicon.png', import.meta.url)
+const blackLotusPath = new URL('../public/assets/l12/special/logo/black-lotus.png', import.meta.url)
 const globalStyle = read('../src/style.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
 const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
@@ -252,11 +253,19 @@ const contracts = [
     && playerMat.includes('.formation-slot.combat-attacker{box-shadow:none!important}')
     && playerMat.includes('.formation-slot.combat-target,.mini-master.combat-target')
     && playerMat.includes('@keyframes l12-combat-target-cue'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、支援候选及其他可交互对象不得复用目标发光'],
-  [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-logo-mini"')
+  [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-selectable-lotus"')
+    && (playerMat.match(/data-ui-contract="temporary-morale-selectable-lotus"/g) ?? []).length === 2
     && playerMat.includes('const spendableMorale = computed(() => activeMorale.value)')
-    && playerMat.includes('src="/favicon.png" alt="临时士气"')
-    && playerMat.includes('filter:grayscale(1) brightness(0) invert(1)')
-    && l12GameEngine.includes('current.TemporaryMorale = 0;'), '临时士气必须逐个显示为黑莲花式实体、使用白色Logo-Mini，并由权威结束阶段在休整时清空'],
+    && playerMat.includes('temporaryMoraleChoiceId(index)')
+    && playerMat.includes('temporaryMoralePayable(index)')
+    && playerMat.includes(':src="blackLotusLogoUrl" alt="黑色莲花临时士气"')
+    && specialAssets.includes('/logo/black-lotus.png') && existsSync(blackLotusPath)
+    && l12GameEngine.includes('current.TemporaryMorale = 0;'), '临时士气必须逐个显示为黑色莲花实体、进入可选支付交互，并由权威结束阶段在休整时清空'],
+  [globalStyle.includes('width:173px;max-width:173px')
+    && globalStyle.includes('flex:0 0 19px!important')
+    && globalStyle.includes('flex-wrap:wrap-reverse;align-content:flex-end')
+    && globalStyle.includes('translateY(calc(-100% + 31px))')
+    && globalStyle.includes('translateY(calc(100% - 31px))'), '士气容器必须每行最多8枚；我方首行固定后向下换行，对方首行固定后向上换行'],
   [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])")
     && prompt.includes("label(choice).trim() === '不响应'")
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
@@ -264,7 +273,9 @@ const contracts = [
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes('点击返回后才离开本局')
     && gamePage.includes('<button @click="returnToLobby">返回大厅</button>'), '胜负结算必须保持在结果页，只有玩家明确点击返回后才离开对局'],
-  [globalStyle.includes('.battle-zone{position:relative}.battle-zone>.morale-rail{position:absolute') && globalStyle.includes('.l12-player-mat.side-opponent .battle-zone>.morale-rail{top:3px}') && globalStyle.includes('.l12-player-mat.side-my .battle-zone>.morale-rail{bottom:3px}'), '士气条必须脱离战场纵向占位并固定在主宰侧通道，不得挤压战场后侵入阶段安全轨道'],
+  [globalStyle.includes('.battle-zone{position:relative}.battle-zone>.morale-rail{position:absolute')
+    && globalStyle.includes('.l12-player-mat.side-opponent .battle-zone>.morale-rail{top:3px;transform:')
+    && globalStyle.includes('.l12-player-mat.side-my .battle-zone>.morale-rail{bottom:3px;transform:'), '士气条必须脱离战场纵向占位并固定在主宰侧通道；首行锚点不得因新增换行而移动'],
   [board.includes('border-radius:50%') && board.includes('.session-disaster-strip'), '本局天灾必须保持圆形缩略图'],
   [board.includes('<Teleport to="body" :disabled="!modalInspectorVisible">'), '弹框期间必须复用原选中卡牌详情框'],
   [!board.includes('class="modal-card-inspector"'), '不得重新引入第二套弹框卡牌详情'],
@@ -347,7 +358,8 @@ const contracts = [
     && rankings.includes("import { masterProfileUrl } from '@/l12/specialAssets'")
     && (rankings.match(/data-ui-contract="ranking-master-avatar"/g) ?? []).length === 3
     && rankings.includes('gridTemplateColumns: `124px repeat(${matrixMasters.length}, 64px)`')
-    && rankings.includes('min-height:62px'), '排行榜名称必须收口为“排行榜”，主宰榜和对阵矩阵必须统一使用官方头像，并以紧凑的矩阵宽高与行高展示'],
+    && rankings.includes('grid-auto-rows:62px')
+    && rankings.includes('height:62px;min-height:62px;max-height:62px;overflow:hidden'), '排行榜名称必须收口为“排行榜”，主宰榜和对阵矩阵必须统一使用官方头像，全部对阵数据行固定为首行62px高度'],
   [disasterPoolPicker.includes('data-ui-contract="landscape-disaster-pool-picker"')
     && disasterPoolPicker.includes('class="pool-card-art"')
     && disasterPoolPicker.includes('intent="detail" fit="contain"')

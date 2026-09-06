@@ -585,7 +585,8 @@ public sealed partial class L12GameEngine
         {
             var player = State.Players[playerIndex];
             var resources = chosen.Count(id => player.Morale.Any(card => card.InstanceId == id && !card.Tapped)
-                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id));
+                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)
+                || TemporaryMoralePaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase));
             var fieldLegions = chosen.Count(id => FindOnField(player, id, out _, out _) is { } card
                 && IsFieldLegion(card));
             var requiredResources = mixedConstraint == "one-resource-two-field-legions" ? 1 : 0;

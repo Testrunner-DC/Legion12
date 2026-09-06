@@ -381,6 +381,107 @@ public sealed class ExtendedCardEffectsTests
         Assert.Same(legion, player.Field[0][0]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TemporaryMoraleAndOrdinaryMoraleAreExplicitPaymentChoices(bool payWithTemporaryMorale)
+    {
+        var game = Create(0, 1, payWithTemporaryMorale ? 9021 : 9022);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        foreach (var resource in player.Morale) resource.Tapped = true;
+        var ordinaryMorale = player.Morale[0];
+        ordinaryMorale.Tapped = false;
+        player.TemporaryMorale = 1;
+        var legion = Card("S01-0116", $"temporary-payment-choice-{payWithTemporaryMorale}");
+        player.Hand.Add(legion);
+
+        var play = game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0));
+
+        Assert.True(play.Accepted, play.Error);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.Equal(1, payment.MinChoose);
+        Assert.Equal(1, payment.MaxChoose);
+        Assert.Contains("temporary-morale:1", payment.ValidChoices);
+        Assert.Contains(ordinaryMorale.InstanceId, payment.ValidChoices);
+        Assert.Equal("temporary-morale", payment.Data["temporary-morale:1:resourceType"]);
+        var choice = payWithTemporaryMorale ? "temporary-morale:1" : ordinaryMorale.InstanceId;
+
+        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [choice]));
+
+        Assert.True(paid.Accepted, paid.Error);
+        Assert.Equal(payWithTemporaryMorale ? 0 : 1, player.TemporaryMorale);
+        Assert.Equal(!payWithTemporaryMorale, ordinaryMorale.Tapped);
+        Assert.Same(legion, player.Field[0][0]);
+        var replay = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [choice]));
+        Assert.False(replay.Accepted);
+        Assert.Equal(payWithTemporaryMorale ? 0 : 1, player.TemporaryMorale);
+        Assert.Equal(!payWithTemporaryMorale, ordinaryMorale.Tapped);
+    }
+
+    [Fact]
+    public void MultipleTemporaryMoraleHaveUniqueChoicesAndSupportMixedPayment()
+    {
+        var game = Create(0, 1, 9023);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        foreach (var resource in player.Morale) resource.Tapped = true;
+        var ordinaryMorale = player.Morale[0];
+        ordinaryMorale.Tapped = false;
+        player.TemporaryMorale = 2;
+        var legion = Card("S01-0004", "temporary-payment-mixed-two");
+        player.Hand.Add(legion);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(2, payment.MinChoose);
+        Assert.Equal(2, payment.MaxChoose);
+        Assert.Contains("temporary-morale:1", payment.ValidChoices);
+        Assert.Contains("temporary-morale:2", payment.ValidChoices);
+        Assert.Contains(ordinaryMorale.InstanceId, payment.ValidChoices);
+
+        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["temporary-morale:2", ordinaryMorale.InstanceId]));
+
+        Assert.True(paid.Accepted, paid.Error);
+        Assert.Equal(1, player.TemporaryMorale);
+        Assert.True(ordinaryMorale.Tapped);
+        Assert.Same(legion, player.Field[0][0]);
+    }
+
+    [Fact]
+    public void InvalidOrDuplicateTemporaryMoraleChoicesDoNotConsumeAnything()
+    {
+        var game = Create(0, 1, 9024);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        foreach (var resource in player.Morale) resource.Tapped = true;
+        var ordinaryMorale = player.Morale[0];
+        ordinaryMorale.Tapped = false;
+        player.TemporaryMorale = 2;
+        var legion = Card("S01-0004", "temporary-payment-invalid");
+        player.Hand.Add(legion);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        var unknown = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["temporary-morale:1", "temporary-morale:3"]));
+        Assert.False(unknown.Accepted);
+        Assert.Equal(2, player.TemporaryMorale);
+        Assert.False(ordinaryMorale.Tapped);
+        Assert.Contains(payment, game.State.PendingPrompts);
+
+        var duplicate = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["temporary-morale:1", "temporary-morale:1"]));
+        Assert.False(duplicate.Accepted);
+        Assert.Equal(2, player.TemporaryMorale);
+        Assert.False(ordinaryMorale.Tapped);
+        Assert.Contains(payment, game.State.PendingPrompts);
+    }
+
     [Fact]
     public void ExtendedAbilityMetadataIsPublishedBySnapshots()
     {

@@ -520,7 +520,8 @@ public sealed partial class L12GameEngine
             var player = State.Players[activation.Controller];
             var resourceChoices = step.ValidChoices.Where(id =>
                 player.Morale.Any(card => card.InstanceId == id && !card.Tapped)
-                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)).ToArray();
+                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)
+                || TemporaryMoralePaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
             if (resourceChoices.Length == 1) promptLockedChoices = resourceChoices[0];
         }
         else if (step.Kind == "field-legion-cost")
@@ -977,7 +978,8 @@ public sealed partial class L12GameEngine
         if (activation.Ability == "horusRevive")
         {
             selectedResourceIds = activation.DeclaredValues.GetValueOrDefault("moraleCost", [])
-                .Where(id => player.Morale.Any(card => card.InstanceId == id)
+                .Where(id => TemporaryMoralePaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase)
+                    || player.Morale.Any(card => card.InstanceId == id)
                     || ActiveTombGuardResources(player).Any(card => card.InstanceId == id))
                 .ToArray();
         }
@@ -1067,6 +1069,8 @@ public sealed partial class L12GameEngine
         }
         // PendingActivation 也用于士气/神力等真实资源的预声明。士气不是
         // L12CardInstance，不能仅依赖 FindPromptCard 校验，否则合法选择会在支付前被误判失效。
+        if (TryParseTemporaryMoralePaymentChoice(choice, out var temporaryMoraleIndex))
+            return temporaryMoraleIndex <= State.Players[controller].TemporaryMorale;
         if (State.Players[controller].Morale.Any(card => card.InstanceId == choice)) return true;
         if (GetAbilities(State.Players[controller].MasterId).Any(view => view.Id.Equals(choice, StringComparison.OrdinalIgnoreCase)))
             return true;
