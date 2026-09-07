@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
-public sealed record OutgoingMessage(Guid SessionId, object Payload);
+public sealed record OutgoingMessage(Guid SessionId, object Payload, bool ReplaceableGameState = false,
+    bool IsGameState = false, bool ForceFullGameState = false);
 
 public sealed record L12OnlinePresence(
     string AccountId,
@@ -53,6 +54,8 @@ public sealed partial class L12RoomManager
 
     private sealed class Room
     {
+        private const int MaximumProcessedActionRequests = 256;
+
         public required string Code { get; init; }
         public List<Guid> Sessions { get; } = [];
         public List<Guid> Spectators { get; } = [];
@@ -79,7 +82,41 @@ public sealed partial class L12RoomManager
         public int? LastMaintenanceWarningMinutes { get; set; }
         public bool MaintenanceAuthorityEventRecorded { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
+        public Dictionary<string, ProcessedActionRequest> ProcessedActionRequests { get; } =
+            new(StringComparer.Ordinal);
+        public Queue<string> ProcessedActionRequestOrder { get; } = new();
+
+        public bool TryGetProcessedActionRequest(int actorIndex, string? requestId,
+            out ProcessedActionRequest processed)
+        {
+            processed = null!;
+            if (requestId is null
+                || !ProcessedActionRequests.TryGetValue(ActionRequestKey(actorIndex, requestId), out var found))
+                return false;
+            processed = found;
+            return true;
+        }
+
+        public void RememberProcessedActionRequest(int actorIndex, string? requestId,
+            bool accepted, string? error, long revision)
+        {
+            if (requestId is null) return;
+            var key = ActionRequestKey(actorIndex, requestId);
+            if (ProcessedActionRequests.ContainsKey(key)) return;
+            ProcessedActionRequests[key] = new ProcessedActionRequest(accepted, error, revision);
+            ProcessedActionRequestOrder.Enqueue(key);
+            while (ProcessedActionRequestOrder.Count > MaximumProcessedActionRequests)
+            {
+                var expired = ProcessedActionRequestOrder.Dequeue();
+                ProcessedActionRequests.Remove(expired);
+            }
+        }
+
+        private static string ActionRequestKey(int actorIndex, string requestId)
+            => $"{actorIndex}:{requestId}";
     }
+
+    private sealed record ProcessedActionRequest(bool Accepted, string? Error, long Revision);
 
     private sealed record MatchmakingEntry(Guid SessionId, string AccountId, string Mode,
         L12PresetDeckDefinition Deck, DateTimeOffset JoinedAt, double HiddenRating);
@@ -105,6 +142,7 @@ public sealed partial class L12RoomManager
     {
         _catalog = catalog;
         _recorder = recorder;
+        _recorder.AttachCatalog(catalog);
         _platform = platform;
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
@@ -394,7 +432,7 @@ public sealed partial class L12RoomManager
         session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
         room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
-            operationsPolicy: policy);
+            operationsPolicy: policy, stateFormatVersion: 2);
         InitializeRankedClock(room);
         try
         {
@@ -416,7 +454,8 @@ public sealed partial class L12RoomManager
         var found = room.Sessions.Select(id => new OutgoingMessage(id, new { type = "matchmakingFound",
             mode = normalizedMode, roomCode = room.Code, matchId = room.Game.State.MatchId,
             message = "匹配成功，正在建立对局" }));
-        return found.Concat(BroadcastRoom(room)).Concat(BroadcastGame(room)).ToArray();
+        return found.Concat(BroadcastRoom(room))
+            .Concat(BroadcastGame(room, forceCritical: true)).ToArray();
     }
 
     public IReadOnlyList<OutgoingMessage> CancelMatchmaking(Guid sessionId)
@@ -663,7 +702,7 @@ public sealed partial class L12RoomManager
             }
             var messages = BroadcastRoom(room).ToList();
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
-            if (room.Game is not null) messages.AddRange(BroadcastGame(room));
+            if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true));
             return tournamentStartBlocked
                 ? messages.Concat(MaintenanceBlocked(sessionId, CaptureOperationsPolicy())).ToArray()
                 : messages.ToArray();
@@ -691,7 +730,7 @@ public sealed partial class L12RoomManager
             }
             var messages = BroadcastRoom(room).ToList();
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
-            if (room.Game is not null) messages.AddRange(BroadcastGame(room));
+            if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true));
             if (tournamentStartBlocked)
                 messages.AddRange(MaintenanceBlocked(sessionId, CaptureOperationsPolicy()));
             messages.Add(RecoveryComplete(session, recovered, room));
@@ -849,7 +888,8 @@ public sealed partial class L12RoomManager
         room.Game = new L12GameEngine(
             _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
-            disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
+            disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
+            stateFormatVersion: 2);
         room.Game.InitializeGmDisasters();
         foreach (var playerIndex in new[] { 0, 1 })
         {
@@ -875,7 +915,7 @@ public sealed partial class L12RoomManager
             Console.Error.WriteLine($"Sandbox recording start ({room.Code}): {persistenceError.Message}");
             return Error(sessionId, "沙盒录像暂时不可用，未建立未记录的沙盒", "sandboxRejected");
         }
-        return BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
+        return BroadcastRoom(room).Concat(BroadcastGame(room, forceCritical: true)).ToArray();
     }
 
     public IReadOnlyList<OutgoingMessage> SpectateRoom(Guid sessionId, string? roomCode)
@@ -976,7 +1016,7 @@ public sealed partial class L12RoomManager
                     if (current.Game?.State.Phase == L12Phase.GameOver)
                         await CompleteTournamentRoomGameAsync(current);
                     return current.Game is null ? BroadcastRoom(current)
-                        : BroadcastRoom(current).Concat(BroadcastGame(current)).ToArray();
+                        : BroadcastRoom(current).Concat(BroadcastGame(current, forceCritical: true)).ToArray();
                 }
                 finally { current.Gate.Release(); }
             }
@@ -1023,7 +1063,7 @@ public sealed partial class L12RoomManager
             if (await StartTournamentGameIfReadyLockedAsync(room))
                 return MaintenanceBlocked(sessionId, CaptureOperationsPolicy());
             return room.Game is null ? BroadcastRoom(room)
-                : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
+                : BroadcastRoom(room).Concat(BroadcastGame(room, forceCritical: true)).ToArray();
         }
         finally { room.Gate.Release(); }
     }
@@ -1115,7 +1155,7 @@ public sealed partial class L12RoomManager
         var game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code,
             Random.Shared.Next(), members.Select(member => member.Name).ToArray(),
             members.Select(SelectedDeck).ToArray(), disasterMode: room.Options.DisasterMode,
-            operationsPolicy: room.OperationsPolicy);
+            operationsPolicy: room.OperationsPolicy, stateFormatVersion: 2);
         // 只有对局记录成功落库后才发布可操作引擎；失败时下一次进入/恢复可安全重试。
         await _recorder.StartAsync(game, "tournament", members[0].AccountId, members[1].AccountId,
             members.Select(SelectedDeck).ToArray());
@@ -1191,35 +1231,52 @@ public sealed partial class L12RoomManager
                 room.Game = new L12GameEngine(
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
                     playerNames, selectedDecks,
-                    disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
+                    disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
+                    stateFormatVersion: 2);
                 InitializeRankedClock(room);
                 var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
                 await StartRecordedGameAsync(room, startedMembers, selectedDecks);
             }
-            return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room);
+            return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room, forceCritical: true);
         }
         finally { room.Gate.Release(); }
     }
 
-    public async Task<IReadOnlyList<OutgoingMessage>> HandleActionAsync(Guid sessionId, JsonElement commandElement)
+    public async Task<IReadOnlyList<OutgoingMessage>> HandleActionAsync(Guid sessionId,
+        JsonElement commandElement, string? requestId = null)
     {
-        if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        requestId = NormalizeActionRequestId(requestId);
+        if (!TryGetMembership(sessionId, out var session, out var room, out var error))
+            return Error(sessionId, error, requestId: requestId);
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Game is null) return Error(sessionId, "对局尚未开始");
+            if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
+            var actorIndex = session.PlayerIndex!.Value;
+            if (room.TryGetProcessedActionRequest(actorIndex, requestId, out var duplicate))
+            {
+                return duplicate.Accepted
+                    ? BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                        requestId: requestId)
+                    : Error(sessionId, duplicate.Error ?? "操作被拒绝", "actionRejected", requestId);
+            }
             var clockConcluded = await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
             if (room.RankedClock is { SetupBroadcastPending: true } setupClock)
             {
                 setupClock.SetupBroadcastPending = false;
-                return BroadcastGame(room);
+                return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                    requestId: requestId);
             }
-            if (clockConcluded) return BroadcastGame(room);
+            if (clockConcluded)
+                return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                    requestId: requestId);
             if (room.Game.State.Phase == L12Phase.GameOver)
             {
                 var reportError = await CompleteTournamentRoomGameAsync(room);
-                var completed = BroadcastGame(room).ToList();
-                if (reportError is not null) completed.AddRange(Error(sessionId, reportError, "tournamentResultPending"));
+                var completed = BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                    requestId: requestId).ToList();
+                if (reportError is not null)
+                    completed.AddRange(Error(sessionId, reportError, "tournamentResultPending", requestId));
                 return completed;
             }
             L12Command? command;
@@ -1227,11 +1284,14 @@ public sealed partial class L12RoomManager
             {
                 command = commandElement.Deserialize<L12Command>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
-            catch (JsonException) { return Error(sessionId, "操作格式错误"); }
-            if (command is null || string.IsNullOrWhiteSpace(command.Type)) return Error(sessionId, "缺少操作类型");
+            catch (JsonException) { return Error(sessionId, "操作格式错误", requestId: requestId); }
+            if (command is null || string.IsNullOrWhiteSpace(command.Type))
+                return Error(sessionId, "缺少操作类型", requestId: requestId);
             var meaningful = IsMeaningfulRankedCommand(room.Game, command);
             var revisionBefore = room.Game.State.Revision;
+            var engineStartedAt = L12PerformanceMetrics.Start();
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
+            L12PerformanceMetrics.Duration("action.engine", engineStartedAt);
             room.CommandSequence++;
             var ranked = room.RankedClock is not null;
             try
@@ -1245,84 +1305,120 @@ public sealed partial class L12RoomManager
                         ? BuildRankedSettlementEnvelope(room, _utcNow()) : null;
                     await _recorder.AppendRankedAsync(room.Game, room.CommandSequence,
                         session.PlayerIndex.Value, commandElement.GetRawText(), result,
-                        CaptureRankedRuntime(room, _utcNow()), settlement);
+                        CaptureRankedRuntime(room, _utcNow()), settlement, requestId,
+                        !result.Accepted && room.Game.State.Revision != revisionBefore);
                     if (settlement is not null) room.CompletionRecorded = true;
                 }
                 else
                 {
                     await _recorder.AppendAsync(room.Game, room.CommandSequence, session.PlayerIndex.Value,
-                        commandElement.GetRawText(), result);
+                        commandElement.GetRawText(), result, requestId,
+                        !result.Accepted && room.Game.State.Revision != revisionBefore);
                 }
             }
-            catch (Exception) when (ranked)
+            catch (Exception)
             {
-                var restored = await ReloadRankedRoomFromRecorderAsync(room);
+                var restored = ranked
+                    ? await ReloadRankedRoomFromRecorderAsync(room)
+                    : await ReloadJournalRoomFromRecorderAsync(room);
                 if (!restored) room.Closed = true;
                 return Error(sessionId, restored
                         ? "操作未完成持久化，已恢复到最后确认状态，请重试"
-                        : "排位持久化不可用，房间已安全冻结",
-                    "actionRejected");
+                        : "对局持久化不可用，房间已安全冻结",
+                    "actionRejected", requestId);
             }
             if (!result.Accepted)
             {
-                var rejected = Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected").ToList();
+                room.RememberProcessedActionRequest(actorIndex, requestId, false, result.Error,
+                    room.Game.State.Revision);
+                var rejected = Error(sessionId, result.Error ?? "操作被拒绝", "actionRejected",
+                    requestId).ToList();
                 // 陈旧提交可能同时触发服务端安全清理孤儿事务；拒绝原命令，但仍须把
                 // 新的权威快照广播给双方，避免客户端继续展示已经清理的 Prompt。
-                if (room.Game.State.Revision != revisionBefore) rejected.AddRange(BroadcastGame(room));
+                if (room.Game.State.Revision != revisionBefore)
+                    rejected.AddRange(BroadcastGame(room, forceCritical: true,
+                        requestSessionId: sessionId, requestId: requestId));
                 return rejected;
             }
+            room.RememberProcessedActionRequest(actorIndex, requestId, true, null,
+                room.Game.State.Revision);
             if (!ranked)
             {
                 if (meaningful) room.MeaningfulCommandCount++;
                 RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
             }
-            if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
+            if (room.Game.State.Phase != L12Phase.GameOver)
+                return BroadcastGame(room, requestSessionId: sessionId, requestId: requestId);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
-            var messages = BroadcastGame(room).ToList();
+            var messages = BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                requestId: requestId).ToList();
             if (errorMessage is not null)
-                messages.AddRange(Error(sessionId, errorMessage, "tournamentResultPending"));
+                messages.AddRange(Error(sessionId, errorMessage, "tournamentResultPending", requestId));
             return messages;
         }
         finally { room.Gate.Release(); }
     }
 
-    public async Task<IReadOnlyList<OutgoingMessage>> HandleGmActionAsync(Guid sessionId, JsonElement commandElement)
+    public async Task<IReadOnlyList<OutgoingMessage>> HandleGmActionAsync(Guid sessionId,
+        JsonElement commandElement, string? requestId = null)
     {
-        if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        requestId = NormalizeActionRequestId(requestId);
+        if (!TryGetMembership(sessionId, out var session, out var room, out var error))
+            return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
-            return Error(sessionId, "GM 指令只允许由单人测试沙盒的创建者执行", "actionRejected");
+            return Error(sessionId, "GM 指令只允许由单人测试沙盒的创建者执行", "actionRejected", requestId);
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始");
+            if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始", requestId: requestId);
+            if (room.TryGetProcessedActionRequest(-1, requestId, out var duplicate))
+                return duplicate.Accepted
+                    ? BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                        requestId: requestId)
+                    : Error(sessionId, duplicate.Error ?? "GM 操作被拒绝", "actionRejected", requestId);
             L12GmCommand? command;
             try
             {
                 command = commandElement.Deserialize<L12GmCommand>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
-            catch (JsonException) { return Error(sessionId, "GM 操作格式错误", "actionRejected"); }
+            catch (JsonException) { return Error(sessionId, "GM 操作格式错误", "actionRejected", requestId); }
             if (command is null || string.IsNullOrWhiteSpace(command.Type))
-                return Error(sessionId, "缺少 GM 操作类型", "actionRejected");
+                return Error(sessionId, "缺少 GM 操作类型", "actionRejected", requestId);
+            var revisionBefore = room.Game.State.Revision;
             var result = room.Game.HandleGm(command);
             room.CommandSequence++;
             try
             {
                 await _recorder.AppendAsync(room.Game, room.CommandSequence, -1,
-                    commandElement.GetRawText(), result);
+                    commandElement.GetRawText(), result, requestId,
+                    !result.Accepted && room.Game.State.Revision != revisionBefore);
             }
             catch (Exception persistenceError)
             {
-                room.Closed = true;
+                var restored = await ReloadJournalRoomFromRecorderAsync(room);
+                if (!restored) room.Closed = true;
                 Console.Error.WriteLine($"Sandbox GM recording ({room.Code}): {persistenceError.Message}");
-                return Error(sessionId, "沙盒命令未能持久化，房间已安全冻结", "actionRejected");
+                return Error(sessionId, restored
+                    ? "沙盒命令未能持久化，已恢复到最后确认状态，请重试"
+                    : "沙盒命令未能持久化，房间已安全冻结", "actionRejected", requestId);
             }
-            if (!result.Accepted) return Error(sessionId, result.Error ?? "GM 操作被拒绝", "actionRejected");
-            var messages = BroadcastGame(room).ToList();
+            room.RememberProcessedActionRequest(-1, requestId, result.Accepted, result.Error,
+                room.Game.State.Revision);
+            if (!result.Accepted)
+            {
+                var rejected = Error(sessionId, result.Error ?? "GM 操作被拒绝", "actionRejected",
+                    requestId).ToList();
+                if (room.Game.State.Revision != revisionBefore)
+                    rejected.AddRange(BroadcastGame(room, forceCritical: true,
+                        requestSessionId: sessionId, requestId: requestId));
+                return rejected;
+            }
+            var messages = BroadcastGame(room, requestSessionId: sessionId, requestId: requestId).ToList();
             if (room.Game.State.Phase == L12Phase.GameOver)
             {
                 var completionError = await CompleteTournamentRoomGameAsync(room);
                 if (completionError is not null)
-                    messages.AddRange(Error(sessionId, completionError, "sandboxRecordingPending"));
+                    messages.AddRange(Error(sessionId, completionError, "sandboxRecordingPending", requestId));
             }
             return messages;
         }
@@ -1335,26 +1431,33 @@ public sealed partial class L12RoomManager
     /// 普通 gameAction 或复制一套结算规则。
     /// </summary>
     public async Task<IReadOnlyList<OutgoingMessage>> HandleSandboxActionAsync(
-        Guid sessionId, int actingPlayerIndex, JsonElement commandElement)
+        Guid sessionId, int actingPlayerIndex, JsonElement commandElement, string? requestId = null)
     {
-        if (!TryGetMembership(sessionId, out _, out var room, out var error)) return Error(sessionId, error);
+        requestId = NormalizeActionRequestId(requestId);
+        if (!TryGetMembership(sessionId, out _, out var room, out var error))
+            return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
-            return Error(sessionId, "沙盒代行操作只允许由单人测试沙盒的创建者执行", "actionRejected");
+            return Error(sessionId, "沙盒代行操作只允许由单人测试沙盒的创建者执行", "actionRejected", requestId);
         if (actingPlayerIndex is < 0 or > 1)
-            return Error(sessionId, "沙盒代行玩家无效", "actionRejected");
+            return Error(sessionId, "沙盒代行玩家无效", "actionRejected", requestId);
 
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始");
+            if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始", requestId: requestId);
+            if (room.TryGetProcessedActionRequest(actingPlayerIndex, requestId, out var duplicate))
+                return duplicate.Accepted
+                    ? BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                        requestId: requestId)
+                    : Error(sessionId, duplicate.Error ?? "沙盒操作被拒绝", "actionRejected", requestId);
             L12Command? command;
             try
             {
                 command = commandElement.Deserialize<L12Command>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
-            catch (JsonException) { return Error(sessionId, "沙盒操作格式错误", "actionRejected"); }
+            catch (JsonException) { return Error(sessionId, "沙盒操作格式错误", "actionRejected", requestId); }
             if (command is null || string.IsNullOrWhiteSpace(command.Type))
-                return Error(sessionId, "缺少沙盒操作类型", "actionRejected");
+                return Error(sessionId, "缺少沙盒操作类型", "actionRejected", requestId);
 
             var revisionBefore = room.Game.State.Revision;
             var result = room.Game.Handle(actingPlayerIndex, command);
@@ -1362,24 +1465,36 @@ public sealed partial class L12RoomManager
             try
             {
                 await _recorder.AppendAsync(room.Game, room.CommandSequence, actingPlayerIndex,
-                    commandElement.GetRawText(), result);
+                    commandElement.GetRawText(), result, requestId,
+                    !result.Accepted && room.Game.State.Revision != revisionBefore);
             }
             catch (Exception persistenceError)
             {
-                room.Closed = true;
+                var restored = await ReloadJournalRoomFromRecorderAsync(room);
+                if (!restored) room.Closed = true;
                 Console.Error.WriteLine($"Sandbox action recording ({room.Code}): {persistenceError.Message}");
-                return Error(sessionId, "沙盒命令未能持久化，房间已安全冻结", "actionRejected");
+                return Error(sessionId, restored
+                    ? "沙盒命令未能持久化，已恢复到最后确认状态，请重试"
+                    : "沙盒命令未能持久化，房间已安全冻结", "actionRejected", requestId);
             }
+            room.RememberProcessedActionRequest(actingPlayerIndex, requestId, result.Accepted,
+                result.Error, room.Game.State.Revision);
             if (!result.Accepted)
             {
-                var rejected = Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected").ToList();
-                if (room.Game.State.Revision != revisionBefore) rejected.AddRange(BroadcastGame(room));
+                var rejected = Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected",
+                    requestId).ToList();
+                if (room.Game.State.Revision != revisionBefore)
+                    rejected.AddRange(BroadcastGame(room, forceCritical: true,
+                        requestSessionId: sessionId, requestId: requestId));
                 return rejected;
             }
-            if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
+            if (room.Game.State.Phase != L12Phase.GameOver)
+                return BroadcastGame(room, requestSessionId: sessionId, requestId: requestId);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
-            var messages = BroadcastGame(room).ToList();
-            if (errorMessage is not null) messages.AddRange(Error(sessionId, errorMessage, "sandboxRecordingPending"));
+            var messages = BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
+                requestId: requestId).ToList();
+            if (errorMessage is not null)
+                messages.AddRange(Error(sessionId, errorMessage, "sandboxRecordingPending", requestId));
             return messages;
         }
         finally { room.Gate.Release(); }
@@ -1576,32 +1691,94 @@ public sealed partial class L12RoomManager
     private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
         => room.Sessions.Select(id => RoomStateForViewer(room, _sessions[id])).ToArray();
 
-    private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room)
+    private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room, bool forceCritical = false,
+        Guid? requestSessionId = null, string? requestId = null)
     {
+        var snapshotStartedAt = L12PerformanceMetrics.Start();
         Guid[] spectators;
         lock (room.Spectators) spectators = [.. room.Spectators];
         var rankedClock = RankedClockView(room);
         var playerBadges = RankedPlayerBadges(room);
-        return room.Sessions.Select(id => new OutgoingMessage(id, new
+        var state = room.Game!.State;
+        var replaceable = !forceCritical && state.Phase != L12Phase.GameOver;
+        var messages = room.Sessions.Select(id =>
         {
-            type = "gameState", state = room.IsSandbox && room.GmControllerSessionId == id
+            var viewer = _sessions[id];
+            var snapshot = room.IsSandbox && room.GmControllerSessionId == id
                 ? room.Game!.SnapshotForGm(_sessions[id].PlayerIndex!.Value)
-                : room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value),
-            gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
-            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
-            tournamentMatchId = room.TournamentMatchId,
-            playerBadges,
-            rankedClock,
-            matchGovernance = MatchGovernanceForClient(room, _sessions[id]),
-            rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
-                ? _platform.RankedSettlement(room.Game!.State.MatchId, _sessions[id].AccountId ?? string.Empty) : null,
-        })).Concat(spectators.Select(id => new OutgoingMessage(id, new
+                : room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value);
+            var matchGovernance = MatchGovernanceForClient(room, viewer);
+            var immediateInteraction = SnapshotRequiresCriticalDelivery(snapshot)
+                                       || matchGovernance.DrawRequest?.ViewerCanRespond == true;
+            var payload = new
+            {
+                type = "gameState", state = snapshot,
+                requestId = id == requestSessionId ? requestId : null,
+                gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
+                tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+                tournamentMatchId = room.TournamentMatchId,
+                playerBadges,
+                rankedClock,
+                matchGovernance,
+                rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
+                    ? _platform.RankedSettlement(room.Game!.State.MatchId,
+                        viewer.AccountId ?? string.Empty) : null,
+            };
+            return new OutgoingMessage(id, payload,
+                replaceable && id != requestSessionId && !immediateInteraction,
+                IsGameState: true,
+                ForceFullGameState: forceCritical || immediateInteraction
+                                                    || state.Phase == L12Phase.GameOver);
+        })
+            .Concat(SpectatorMessages()).ToArray();
+        L12PerformanceMetrics.Duration("snapshot.build", snapshotStartedAt);
+        return messages;
+
+        IEnumerable<OutgoingMessage> SpectatorMessages()
         {
-            type = "gameState", spectating = true, gmEnabled = false,
-            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
-            tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
-            state = room.Game!.SnapshotForSpectator(),
-        }))).ToArray();
+            if (spectators.Length == 0) yield break;
+            // 所有观战者使用同一公开视角对象，发送层会按对象引用只序列化一次。
+            var payload = new
+            {
+                type = "gameState", spectating = true, gmEnabled = false,
+                tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+                tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
+                state = room.Game!.SnapshotForSpectator(),
+            };
+            foreach (var id in spectators)
+                yield return new OutgoingMessage(id, payload, replaceable, IsGameState: true,
+                    ForceFullGameState: forceCritical || state.Phase == L12Phase.GameOver);
+        }
+    }
+
+    internal static bool SnapshotRequiresCriticalDelivery(L12GameSnapshot snapshot)
+    {
+        if (snapshot.Prompts.Length > 0) return true;
+        if (snapshot.Phase == L12Phase.Mulligan) return true;
+        if (snapshot.Phase == L12Phase.Main && snapshot.ActivePlayer == snapshot.You) return true;
+        return snapshot.Phase == L12Phase.Defense
+               && snapshot.PendingDefense is L12PendingDefense
+               {
+                   Stage: L12CombatStage.DefenseChoice,
+               } defense
+               && defense.AttackerPlayer != snapshot.You;
+    }
+
+    private async Task<bool> ReloadJournalRoomFromRecorderAsync(Room room)
+    {
+        var matchId = room.Game?.State.MatchId;
+        if (string.IsNullOrWhiteSpace(matchId)) return false;
+        var recovered = await _recorder.LoadJournalEngineAsync(matchId);
+        if (recovered is null) return false;
+        room.Game = recovered.Engine;
+        room.CommandSequence = recovered.CommandSequence;
+        room.ProcessedActionRequests.Clear();
+        room.ProcessedActionRequestOrder.Clear();
+        foreach (var request in recovered.ProcessedRequests)
+            room.RememberProcessedActionRequest(request.PlayerIndex, request.RequestId,
+                request.Accepted, request.Error, request.Revision);
+        room.Closed = false;
+        return true;
     }
 
     private IReadOnlyList<L12RankedBattleIdentityView> RankedPlayerBadges(Room room)
@@ -1621,7 +1798,7 @@ public sealed partial class L12RoomManager
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
-        if (!room.Game.State.Events.Any(item => item.Type == "game-draw"))
+        if (!room.Game.State.EndedByAgreedDraw)
         {
             try
             {
@@ -1726,8 +1903,15 @@ public sealed partial class L12RoomManager
         return true;
     }
 
-    private static IReadOnlyList<OutgoingMessage> Error(Guid sessionId, string message, string type = "error")
-        => [new OutgoingMessage(sessionId, new { type, message })];
+    private static IReadOnlyList<OutgoingMessage> Error(Guid sessionId, string message,
+        string type = "error", string? requestId = null)
+        => [new OutgoingMessage(sessionId, new { type, message, requestId })];
+
+    private static string? NormalizeActionRequestId(string? requestId)
+    {
+        requestId = requestId?.Trim();
+        return string.IsNullOrEmpty(requestId) || requestId.Length > 128 ? null : requestId;
+    }
 
     private static IReadOnlyList<OutgoingMessage> MatchmakingError(Guid sessionId, string message)
         => Error(sessionId, message, "matchmakingRejected");

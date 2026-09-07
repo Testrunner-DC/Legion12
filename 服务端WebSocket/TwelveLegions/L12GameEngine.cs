@@ -1,11 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    internal const int MaximumSnapshotEvents = 128;
+
     private void GrantStrongAttack(L12CardInstance card)
     {
         var alreadyAppliedToCurrentAttack = L12StructuredCardSemantics.HasEffectiveStrongAttack(card);
@@ -24,6 +27,22 @@ public sealed partial class L12GameEngine
     private readonly Random _random;
     private readonly bool _autoPassEmptyResponses;
     private readonly bool _concealHiddenResponseAvailability;
+    private long _cachedHashRevision = long.MinValue;
+    private int _cachedHashEventCount = -1;
+    private string? _cachedStateHash;
+    private long _preparedProjectionRevision = long.MinValue;
+    private readonly List<L12ActionEvent> _unpersistedEvents = [];
+
+    internal long RandomDrawCount => _random switch
+    {
+        L12DeterministicRandom stable => stable.DrawCount,
+        _ => 0,
+    };
+    internal L12RandomState? RandomState => (_random as L12DeterministicRandom)?.CaptureState();
+    internal long CardFactSignalSequence => _cardFactSignalSequence;
+    internal IReadOnlyList<L12ActionEvent> UnpersistedEvents => _unpersistedEvents;
+    internal bool AutoPassEmptyResponses => _autoPassEmptyResponses;
+    internal bool ConcealHiddenResponseAvailability => _concealHiddenResponseAvailability;
 
     /// <summary>
     /// 没有理论合法响应时，正式对局自动让过优先权。
@@ -45,10 +64,11 @@ public sealed partial class L12GameEngine
         string disasterMode = "all",
         bool? autoPassEmptyResponses = null,
         bool? concealHiddenResponseAvailability = null,
-        L12OperationsPolicySnapshot? operationsPolicy = null)
+        L12OperationsPolicySnapshot? operationsPolicy = null,
+        int stateFormatVersion = 0)
         : this(catalog, matchId, roomCode, seed, playerNames,
             deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
-            concealHiddenResponseAvailability, operationsPolicy)
+            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion)
     {
     }
 
@@ -63,16 +83,20 @@ public sealed partial class L12GameEngine
         string disasterMode = "all",
         bool? autoPassEmptyResponses = null,
         bool? concealHiddenResponseAvailability = null,
-        L12OperationsPolicySnapshot? operationsPolicy = null)
+        L12OperationsPolicySnapshot? operationsPolicy = null,
+        int stateFormatVersion = 0)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
         _catalog = catalog;
-        _random = new Random(seed);
+        _random = stateFormatVersion >= 2
+            ? new L12DeterministicRandom(seed)
+            : new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability ?? !skipPreparation;
         State = new L12GameState
         {
+            StateFormatVersion = stateFormatVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
@@ -105,6 +129,42 @@ public sealed partial class L12GameEngine
             CreatePrompt(State.DiceWinner, "initiative", "选择先攻或后攻", ["first", "second"], 1, 1,
                 "setup-initiative", isPrivate: false);
         }
+    }
+
+    private L12GameEngine(L12Catalog catalog, L12GameState state, L12RandomState randomState,
+        long cardFactSignalSequence, bool autoPassEmptyResponses,
+        bool concealHiddenResponseAvailability)
+    {
+        _catalog = catalog;
+        State = state;
+        _random = new L12DeterministicRandom(randomState);
+        _cardFactSignalSequence = cardFactSignalSequence;
+        _autoPassEmptyResponses = autoPassEmptyResponses;
+        _concealHiddenResponseAvailability = concealHiddenResponseAvailability;
+    }
+
+    internal static L12GameEngine RestoreCheckpoint(L12Catalog catalog, string stateJson,
+        L12RandomState randomState, long cardFactSignalSequence,
+        bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true)
+    {
+        var state = JsonSerializer.Deserialize<L12GameState>(stateJson, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
+        }) ?? throw new InvalidDataException("对局检查点状态为空");
+        if (state.StateFormatVersion < 2)
+            throw new InvalidDataException("历史状态不能绕过命令重放直接恢复");
+        return new L12GameEngine(catalog, state, randomState, cardFactSignalSequence,
+            autoPassEmptyResponses, concealHiddenResponseAvailability);
+    }
+
+    internal void MarkEventsPersisted(long throughSequence)
+        => _unpersistedEvents.RemoveAll(item => item.Sequence <= throughSequence);
+
+    internal void MarkCardFactsPersisted(long throughSequence)
+    {
+        if (State.StateFormatVersion < 2) return;
+        _cardFactSignals.RemoveAll(item => item.Sequence <= throughSequence);
     }
 
     public CommandResult Handle(int playerIndex, L12Command command)
@@ -161,7 +221,8 @@ public sealed partial class L12GameEngine
     private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
     {
         if (ReconcilePendingActivationTransactions()) State.Revision++;
-        RecalculateContinuousTroops();
+        if (State.StateFormatVersion < 2) RecalculateContinuousTroops();
+        else PrepareV2ProjectionState();
         var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
             ? (object)new
             {
@@ -220,6 +281,7 @@ public sealed partial class L12GameEngine
         }).ToArray();
 
         var recentEvents = State.Events
+            .TakeLast(MaximumSnapshotEvents)
             .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, revealAllDisasters))
             .ToArray();
         var lastAction = State.LastAction is null
@@ -757,16 +819,36 @@ public sealed partial class L12GameEngine
         => State.ActiveDisaster?.CardId == "S02-DS02"
             || controller.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}");
 
-    public string SerializeFullState() => JsonSerializer.Serialize(State);
+    public string SerializeFullState()
+    {
+        PrepareV2ProjectionState();
+        return JsonSerializer.Serialize(State);
+    }
 
     public string ComputeStateHash()
     {
+        PrepareV2ProjectionState();
+        if (_cachedStateHash is not null
+            && _cachedHashRevision == State.Revision
+            && _cachedHashEventCount == State.Events.Count)
+            return _cachedStateHash;
         // Hash the exact canonical JSON bytes without keeping both a full UTF-16
         // string and UTF-8 array for every player/spectator/checkpoint snapshot.
         using var hash = SHA256.Create();
         using (var stream = new CryptoStream(Stream.Null, hash, CryptoStreamMode.Write))
             JsonSerializer.Serialize(stream, State);
-        return Convert.ToHexString(hash.Hash!).ToLowerInvariant();
+        _cachedHashRevision = State.Revision;
+        _cachedHashEventCount = State.Events.Count;
+        return _cachedStateHash = Convert.ToHexString(hash.Hash!).ToLowerInvariant();
+    }
+
+    private void PrepareV2ProjectionState()
+    {
+        if (State.StateFormatVersion < 2 || _preparedProjectionRevision == State.Revision) return;
+        RecalculateContinuousTroops();
+        _preparedProjectionRevision = State.Revision;
+        // 持续修正可能在该 revision 第一次序列化前才物化；之后的持久化和所有视角复用同一哈希。
+        _cachedStateHash = null;
     }
 
     private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck)
@@ -1919,6 +2001,11 @@ public sealed partial class L12GameEngine
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text, cards.Select(card => card.Clone()).ToArray());
         State.Events.Add(State.LastAction);
+        if (State.StateFormatVersion >= 2)
+        {
+            _unpersistedEvents.Add(State.LastAction);
+            if (State.Events.Count > MaximumSnapshotEvents) State.Events.RemoveAt(0);
+        }
         TrackStructuredEventFacts(type, playerIndex, cards);
         State.Log.Add(text);
         if (State.Log.Count > 80) State.Log.RemoveAt(0);

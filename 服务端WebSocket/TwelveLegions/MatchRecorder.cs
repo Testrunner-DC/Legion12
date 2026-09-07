@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -8,6 +9,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
 {
     private readonly string _connectionString;
     private readonly Func<DateTimeOffset> _utcNow;
+    private readonly ConcurrentDictionary<string, Dictionary<string, CardLocation>> _factLocationBaselines =
+        new(StringComparer.OrdinalIgnoreCase);
+    internal int FactLocationBaselineCount => _factLocationBaselines.Count;
 
     internal Action<string>? StorageFailureInjector { get; set; }
 
@@ -49,6 +53,11 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "first_player", "INTEGER");
         await EnsureColumnAsync(connection, "matches", "fact_schema_version", "INTEGER NOT NULL DEFAULT 1");
         await EnsureColumnAsync(connection, "matches", "last_fact_signal_sequence", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "matches", "storage_version", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(connection, "matches", "hash_version", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(connection, "matches", "identity_scrubbed", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "match_events", "request_id", "TEXT");
+        await InitializeJournalSchemaAsync(connection);
         await InitializeAnalyticsSchemaAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
@@ -57,22 +66,23 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     public Task StartAsync(L12GameState state, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
         IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(state, modeId, account0, account1, decks, [], null);
+        => StartCoreAsync(state, modeId, account0, account1, decks, [], null, null);
 
     public Task StartAsync(L12GameEngine engine, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
         IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null);
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null, engine);
 
     internal Task StartRankedAsync(L12GameEngine engine, string account0, string account1,
         IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime)
-        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime);
+        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime, engine);
 
     private async Task StartCoreAsync(L12GameState state, string modeId,
         string? account0, string? account1,
         IReadOnlyList<L12PresetDeckDefinition>? decks,
         IReadOnlyList<L12CardFactSignal> initialSignals,
-        L12RankedRuntimeCheckpoint? rankedRuntime)
+        L12RankedRuntimeCheckpoint? rankedRuntime,
+        L12GameEngine? engine)
     {
         if (decks is not null && decks.Count != 2)
             throw new ArgumentException("正式对局构筑快照必须恰好包含两名玩家", nameof(decks));
@@ -82,15 +92,18 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         var startedUtc = _utcNow().ToUniversalTime().ToString("O");
         var normalizedMode = string.IsNullOrWhiteSpace(modeId)
             ? "friendly" : modeId.Trim().ToLowerInvariant();
+        var journalV2 = UsesJournalV2(engine);
+        var initialStateJson = journalV2 ? engine!.SerializeFullState() : JsonSerializer.Serialize(state);
+        var initialStateHash = journalV2 ? engine!.ComputeStateHash() : string.Empty;
         var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO matches(
                 match_id,room_code,seed,player_0,player_1,deck_0,deck_1,started_utc,mode_id,
                 account_0,account_1,rules_version,rules_policy_version,season_id,initial_state_json,
-                first_player,fact_schema_version,last_fact_signal_sequence)
+                first_player,fact_schema_version,last_fact_signal_sequence,storage_version,hash_version)
             VALUES($id,$room,$seed,$p0,$p1,$d0,$d1,$utc,$mode,$a0,$a1,$rules,$policy,$season,
-                   $initial,$first,$factSchema,$lastSignal);
+                   $initial,$first,$factSchema,$lastSignal,$storage,$hashVersion);
             """;
         command.Parameters.AddWithValue("$id", state.MatchId);
         command.Parameters.AddWithValue("$room", state.RoomCode);
@@ -107,12 +120,14 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             ? $"policy:{state.OperationsPolicy.Version}" : state.OperationsPolicy.VersionId);
         command.Parameters.AddWithValue("$policy", state.OperationsPolicy.Version);
         command.Parameters.AddWithValue("$season", (object?)state.OperationsPolicy.Season.Id ?? DBNull.Value);
-        command.Parameters.AddWithValue("$initial", JsonSerializer.Serialize(state));
+        command.Parameters.AddWithValue("$initial", initialStateJson);
         command.Parameters.AddWithValue("$first", state.Phase == L12Phase.Initiative
             ? DBNull.Value : state.FirstPlayer);
         command.Parameters.AddWithValue("$factSchema", L12CardFactKinds.SchemaVersion);
         command.Parameters.AddWithValue("$lastSignal", initialSignals.Count == 0
             ? 0 : initialSignals.Max(signal => signal.Sequence));
+        command.Parameters.AddWithValue("$storage", journalV2 ? JournalStorageVersion : 1);
+        command.Parameters.AddWithValue("$hashVersion", journalV2 ? 2 : 1);
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
@@ -120,29 +135,53 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             await InsertSandboxRecordingAsync(connection, transaction, state.MatchId, startedUtc);
         if (rankedRuntime is not null)
             await InsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
+        if (journalV2)
+        {
+            await PersistActionEventsAsync(connection, transaction, engine!, 0, startedUtc, []);
+            await PersistCheckpointAsync(connection, transaction, engine!, 0, initialStateHash,
+                initialStateJson, startedUtc);
+        }
         StorageFailureInjector?.Invoke(rankedRuntime is null
             ? "before-match-start-commit" : "before-ranked-start-commit");
         await transaction.CommitAsync();
+        if (journalV2)
+        {
+            _factLocationBaselines[state.MatchId] = CaptureLocations(state);
+            engine!.MarkEventsPersisted(engine.State.EventSequence);
+            engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
+        }
     }
 
-    public async Task AppendAsync(L12GameEngine engine, long sequence, int playerIndex, string commandJson, CommandResult result)
+    public async Task AppendAsync(L12GameEngine engine, long sequence, int playerIndex, string commandJson,
+        CommandResult result, string? requestId = null, bool stateChangedOnRejection = false)
     {
-        await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, null, null);
+        await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, null, null,
+            requestId, stateChangedOnRejection);
     }
 
     internal Task AppendRankedAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint runtime,
-        L12RankedSettlementEnvelope? settlement)
-        => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, settlement);
+        L12RankedSettlementEnvelope? settlement, string? requestId = null,
+        bool stateChangedOnRejection = false)
+        => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, settlement,
+            requestId, stateChangedOnRejection);
 
     public Task AppendAuthorityAsync(L12GameEngine engine, long sequence, string reason)
         => AppendAsync(engine, sequence, -1,
-            JsonSerializer.Serialize(new { type = "authorityConclusion", reason }), CommandResult.Ok());
+            JsonSerializer.Serialize(new
+            {
+                type = "authorityConclusion", reason, winner = engine.State.Winner,
+                agreedDraw = engine.State.EndedByAgreedDraw,
+            }), CommandResult.Ok());
 
     internal Task AppendRankedAuthorityAsync(L12GameEngine engine, long sequence, string reason,
         L12RankedRuntimeCheckpoint runtime, L12RankedSettlementEnvelope settlement)
         => AppendRankedAsync(engine, sequence, -1,
-            JsonSerializer.Serialize(new { type = "authorityConclusion", reason }), CommandResult.Ok(),
+            JsonSerializer.Serialize(new
+            {
+                type = "authorityConclusion", reason, winner = engine.State.Winner,
+                agreedDraw = engine.State.EndedByAgreedDraw,
+            }), CommandResult.Ok(),
             runtime, settlement);
 
     public async Task<bool> CompleteAsync(L12GameEngine engine)
@@ -162,7 +201,11 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         command.Parameters.AddWithValue("$hash", finalHash);
         command.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
         command.Parameters.AddWithValue("$id", engine.State.MatchId);
-        if (await command.ExecuteNonQueryAsync() == 1) return true;
+        if (await command.ExecuteNonQueryAsync() == 1)
+        {
+            _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
+            return true;
+        }
 
         var existing = connection.CreateCommand();
         existing.CommandText = "SELECT winner,final_hash,ended_utc FROM matches WHERE match_id=$id;";
@@ -174,6 +217,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         if (reader.IsDBNull(2) || recordedWinner != engine.State.Winner
             || !string.Equals(recordedHash, finalHash, StringComparison.Ordinal))
             throw new InvalidOperationException("重复结束请求与已记录的正式赛果冲突");
+        _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
         return false;
     }
 
@@ -222,8 +266,13 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await connection.OpenAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT m.match_id,m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,e.state_json
+            SELECT m.match_id,m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,
+                   COALESCE(p0.master_name,''),COALESCE(p1.master_name,''),m.first_player,
+                   m.storage_version,
+                   CASE WHEN m.storage_version < 2 THEN e.state_json ELSE NULL END
             FROM matches m
+            LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
+            LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
             LEFT JOIN match_events e ON e.id=(
                 SELECT latest.id FROM match_events latest
                 WHERE latest.match_id=m.match_id ORDER BY latest.sequence DESC LIMIT 1
@@ -240,18 +289,21 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            var master0 = string.Empty;
-            var master1 = string.Empty;
-            var firstPlayer = 0;
-            if (!reader.IsDBNull(6))
+            var master0 = reader.GetString(6);
+            var master1 = reader.GetString(7);
+            var firstPlayer = reader.IsDBNull(8) ? 0 : reader.GetInt32(8);
+            if (reader.GetInt32(9) < JournalStorageVersion && !reader.IsDBNull(10))
             {
-                using var state = JsonDocument.Parse(reader.GetString(6));
+                using var state = JsonDocument.Parse(reader.GetString(10));
                 var root = state.RootElement;
                 firstPlayer = ReadInt(root, "FirstPlayer", "firstPlayer");
-                if (TryProperty(root, "Players", "players", out var players) && players.ValueKind == JsonValueKind.Array)
+                if (TryProperty(root, "Players", "players", out var players)
+                    && players.ValueKind == JsonValueKind.Array)
                 {
-                    if (players.GetArrayLength() > 0) master0 = ReadString(players[0], "MasterName", "masterName");
-                    if (players.GetArrayLength() > 1) master1 = ReadString(players[1], "MasterName", "masterName");
+                    if (players.GetArrayLength() > 0)
+                        master0 = ReadString(players[0], "MasterName", "masterName");
+                    if (players.GetArrayLength() > 1)
+                        master1 = ReadString(players[1], "MasterName", "masterName");
                 }
             }
             matches.Add(new L12RankingMatch(reader.GetString(0), reader.GetString(1), reader.GetString(2),
@@ -279,6 +331,14 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             if (!await reader.ReadAsync()) return null;
             summary = ReadSummary(reader);
         }
+
+        var storageCommand = connection.CreateCommand();
+        storageCommand.CommandText = "SELECT storage_version FROM matches WHERE match_id=$id;";
+        storageCommand.Parameters.AddWithValue("$id", matchId);
+        var storageVersion = Convert.ToInt32(await storageCommand.ExecuteScalarAsync());
+        if (storageVersion >= JournalStorageVersion)
+            return new L12MatchDetail(summary,
+                await ReconstructJournalCommandsAsync(connection, matchId));
 
         var eventCommand = connection.CreateCommand();
         eventCommand.CommandText = """

@@ -115,6 +115,10 @@ public sealed partial class L12RoomManager
             CompletionRecorded = false,
             RankedResultReported = false,
         };
+        foreach (var request in source.ProcessedRequests ?? [])
+            room.RememberProcessedActionRequest(request.PlayerIndex, request.RequestId,
+                request.Accepted, request.Error, request.Revision);
+        _recorder.RegisterRecoveredEngine(game);
         room.Ready[0] = room.Ready[1] = true;
         RestoreRankedClock(room, runtime);
         var addedPlaceholders = new List<Guid>();
@@ -158,20 +162,46 @@ public sealed partial class L12RoomManager
 
     private L12GameEngine ReplayRankedEngine(L12RankedRecoverySource source)
     {
-        using var initialDocument = JsonDocument.Parse(source.InitialStateJson);
-        var initial = initialDocument.RootElement;
-        var policyElement = Property(initial, "OperationsPolicy", "operationsPolicy");
-        var policy = policyElement.Deserialize<L12OperationsPolicySnapshot>(RankedRecoveryJson)
-            ?? throw new InvalidDataException("初始状态缺少运营规则快照");
-        var disasterMode = Property(initial, "DisasterMode", "disasterMode").GetString() ?? "season";
-        var engine = new L12GameEngine(_catalog, source.MatchId, source.RoomCode, source.Seed,
-            source.PlayerNames, source.Decks, disasterMode: disasterMode, operationsPolicy: policy);
-        if (!string.Equals(engine.ComputeStateHash(), HashStateJson(source.InitialStateJson),
-                StringComparison.Ordinal))
-            throw new InvalidDataException("初始状态重放校验失败");
-        long expectedSequence = 0;
+        L12GameEngine engine;
+        long expectedSequence;
+        if (source.StorageVersion >= MatchRecorder.JournalStorageVersion)
+        {
+            var checkpoint = source.StateCheckpoint
+                ?? throw new InvalidDataException("v2 排位缺少状态检查点");
+            engine = L12GameEngine.RestoreCheckpoint(_catalog, checkpoint.StateJson,
+                checkpoint.RandomState, checkpoint.CardFactSignalSequence,
+                checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability);
+            if (engine.State.Revision != checkpoint.Revision
+                || !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash,
+                    StringComparison.Ordinal))
+                throw new InvalidDataException("v2 排位检查点哈希校验失败");
+            expectedSequence = checkpoint.Sequence;
+        }
+        else
+        {
+            using var initialDocument = JsonDocument.Parse(source.InitialStateJson);
+            var initial = initialDocument.RootElement;
+            var policyElement = Property(initial, "OperationsPolicy", "operationsPolicy");
+            var policy = policyElement.Deserialize<L12OperationsPolicySnapshot>(RankedRecoveryJson)
+                ?? throw new InvalidDataException("初始状态缺少运营规则快照");
+            var disasterMode = Property(initial, "DisasterMode", "disasterMode").GetString() ?? "season";
+            engine = new L12GameEngine(_catalog, source.MatchId, source.RoomCode, source.Seed,
+                source.PlayerNames, source.Decks, disasterMode: disasterMode, operationsPolicy: policy);
+            if (!string.Equals(engine.ComputeStateHash(), HashStateJson(source.InitialStateJson),
+                    StringComparison.Ordinal))
+                throw new InvalidDataException("初始状态重放校验失败");
+            expectedSequence = 0;
+        }
         foreach (var recorded in source.Commands)
         {
+            if (recorded.Sequence == expectedSequence)
+            {
+                if (engine.State.Revision != recorded.Revision
+                    || !string.Equals(engine.ComputeStateHash(), recorded.StateHash,
+                        StringComparison.Ordinal))
+                    throw new InvalidDataException("排位检查点与边界命令不一致");
+                continue;
+            }
             if (recorded.Sequence != ++expectedSequence)
                 throw new InvalidDataException("排位命令序号不连续");
             var type = recorded.CommandType;
@@ -328,12 +358,18 @@ public sealed partial class L12RoomManager
         var source = await _recorder.LoadActiveRankedMatchAsync(matchId);
         if (source is null || source.LoadError is not null || source.Runtime is null) return false;
         var engine = ReplayRankedEngine(source);
+        _recorder.RegisterRecoveredEngine(engine);
         room.Game = engine;
         room.CommandSequence = source.Runtime.CommandSequence;
         room.StartedAt = source.Runtime.StartedAt;
         room.MeaningfulCommandCount = source.Runtime.MeaningfulCommandCount;
         room.CompletionRecorded = false;
         room.RankedResultReported = false;
+        room.ProcessedActionRequests.Clear();
+        room.ProcessedActionRequestOrder.Clear();
+        foreach (var request in source.ProcessedRequests ?? [])
+            room.RememberProcessedActionRequest(request.PlayerIndex, request.RequestId,
+                request.Accepted, request.Error, request.Revision);
         room.Closed = false;
         RestoreRankedClock(room, source.Runtime);
         return true;

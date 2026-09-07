@@ -10,6 +10,7 @@ public sealed partial class L12GameEngine
         reason = string.IsNullOrWhiteSpace(reason) ? "双方同意平局" : reason.Trim();
         State.Winner = null;
         State.WinnerReason = reason;
+        State.EndedByAgreedDraw = true;
         State.Phase = L12Phase.GameOver;
         State.PendingDefense = null;
         State.SuspendedCombatContexts.Clear();

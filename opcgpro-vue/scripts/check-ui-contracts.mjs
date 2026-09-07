@@ -283,8 +283,8 @@ const contracts = [
     && l12Net.includes('if (!message.queued && l12State.matchFound) return')
     && l12Net.includes('requestMatchedState(socket)') && l12Net.includes('l12State.matchFound = null')
     && lobby.includes('data-ui-contract="match-found-state-recovery"')
-    && wsServer.includes('ConcurrentDictionary<Guid, SemaphoreSlim> _socketSendGates')
-    && wsServer.includes('await gate.WaitAsync(cancellationToken)') && wsServer.includes('"syncState" =>')
+    && wsServer.includes('ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections')
+    && wsServer.includes('outbound.TryEnqueue(queued, message.ReplaceableGameState)') && wsServer.includes('"syncState" =>')
     && l12ServerSources.includes('session.RoomCode is not null')
     && l12ServerSources.includes('return RecoveryStateAsync(sessionId);'), '排位与休闲匹配成功后必须进入显式建局加载态，忽略迟到的未排队消息并主动恢复房间/对局快照；服务端发送必须按会话串行化'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
@@ -413,7 +413,7 @@ const contracts = [
   [gamePage.includes("import GameBoard from './game/GameBoard.vue'"), '对战入口必须唯一指向 src/l12/game/GameBoard.vue'],
   [!lobby.includes('l12State.room.decks'), '友谊战整备室不得同时渲染服务端预组与我的牌库'],
   [lobby.includes('platformState.account') && !lobby.includes('玩家昵称<input'), '对战大厅必须使用登录账号身份且不得保留手填昵称'],
-  [l12Net.includes("JSON.stringify({ type: 'hello', authToken })") && !l12Net.includes("type: 'hello', name"), 'WebSocket 握手必须使用账号令牌而非任意昵称'],
+  [/type:\s*'hello',[\s\S]{0,160}?authToken/.test(l12Net) && !l12Net.includes("type: 'hello', name"), 'WebSocket 握手必须使用账号令牌而非任意昵称'],
   [app.includes('startAutomaticConnection') && app.includes('[platformState.token, authState.verified]') && app.includes('token && verified') && app.includes('{ immediate: true }'), '只有经过服务端验证的登录玩家才能在全站启动自动连接'],
   [mainEntry.includes('initializeAuth()') && mainEntry.includes('await Promise.race([') && mainEntry.includes('window.setTimeout(resolve, 3_000)') && mainEntry.indexOf('initializeAuth()') < mainEntry.indexOf("mount('#app')"), '应用挂载前必须有界等待权威身份初始化，认证服务不可达时也不能让公共站点无限白屏'],
   [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
@@ -669,7 +669,7 @@ const contracts = [
     && gmPanel.includes("openChange: [open: boolean]") && board.includes("'gm-panel-docked': gmPanelOpen && !compactViewport")
     && board.includes('const availableWidth = window.innerWidth - (props.gmPanelOpen && !compactViewport.value ? 344 : 0)')
     && board.includes('.board-viewport.gm-panel-docked{right:344px}'), '展开 GM 调试面板时必须为其保留独立停靠区并重算棋盘缩放，禁止覆盖计时、玩家信息或结束回合操作'],
-  [gmPanel.includes("send({ type: 'gmAction'") || (gmPanel.includes('gmAction(') && l12Net.includes("send({ type: 'gmAction', command })")), 'GM 操作必须走独立 gmAction 消息，不得伪装成普通 gameAction'],
+  [gmPanel.includes("send({ type: 'gmAction'") || (gmPanel.includes('gmAction(') && l12Net.includes("pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(), command }")), 'GM 操作必须走独立 gmAction 消息，不得伪装成普通 gameAction'],
   [gmPanel.includes('导出可复现 JSON') && gmPanel.includes('/api/matches/'), 'GM 面板必须保留可复现记录导出入口'],
   [gmPanel.includes("run('setTroops'") && gmPanel.includes("run('startAttack'") && gmPanel.includes('发起规则内测试进攻'), 'GM 面板必须保留兵力设置与规则内测试进攻闭环'],
   [gmPanel.includes("run('addCard'") && gmPanel.includes('value: count.value') && gmPanel.includes('连续放置'), 'GM 卡牌区域操作必须支持连续构造同卡场景'],
@@ -733,7 +733,7 @@ const contracts = [
     && board.includes("mode.value = 'play'") && board.includes('.board-mode-hint button{min-width:58px;min-height:44px')
     && !board.includes("cancelLocalAttackSelection() {\n  command('attack'"), '选择进攻对象提示必须提供最小44px取消按钮，只清理未提交的本地进攻选择，不能发送撤销权威进攻的命令'],
   [board.includes('boardSlotTargetPlayerIndex') && board.includes('targetPlayerIndex') && playerMat.includes("promptSlotIds?.includes(`${row}:${slot}`)"), '跨阵营位移的目标阵地必须高亮实际被移动军团所在战场，不得回退为操作者自己的同坐标格'],
-  [l12Net.includes("send({ type: 'sandboxAction', actingPlayerIndex, command })") && board.includes('controlledPlayerIndex') && board.includes('const viewMe = computed(() => props.game.players[props.game.you])') && board.includes('const viewEnemy = computed(() => props.game.players[1 - props.game.you])') && board.includes('v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand"') && board.includes(':cards="viewMe.hand"') && board.includes(':controllable="isControlledPlayer(viewEnemy.playerIndex)"') && prompt.includes('sandboxAction(actingPlayerIndex, command)') && globalStyle.includes('.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}'), '沙盒必须固定我方在下、对方在上，不交换棋盘，同时可查看双方手牌并代行双方规则内选择；上方手牌操作按钮必须朝棋盘中心展开而不被裁切'],
+  [l12Net.includes("type: 'sandboxAction', requestId: createActionRequestId(), actingPlayerIndex, command") && board.includes('controlledPlayerIndex') && board.includes('const viewMe = computed(() => props.game.players[props.game.you])') && board.includes('const viewEnemy = computed(() => props.game.players[1 - props.game.you])') && board.includes('v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand"') && board.includes(':cards="viewMe.hand"') && board.includes(':controllable="isControlledPlayer(viewEnemy.playerIndex)"') && prompt.includes('sandboxAction(actingPlayerIndex, command)') && globalStyle.includes('.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}'), '沙盒必须固定我方在下、对方在上，不交换棋盘，同时可查看双方手牌并代行双方规则内选择；上方手牌操作按钮必须朝棋盘中心展开而不被裁切'],
   [board.includes(':mine="masterPlayerIndex === controlledPlayerIndex"') && board.includes("sandboxAction(controlledPlayerIndex.value, { type, ...extra })") && prompt.includes('sandboxAction(actingPlayerIndex, command)'), '沙盒代操作对方时必须按受控方索引开放主宰效果并完成后续提示，正式房仍只允许登录座位'],
   [board.includes('watch(activeBoardPromptId, promptId => {') && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null'), '任何场面直选 Prompt 开始时必须关闭墓地、效果弹框与浮动卡牌详情'],
   [board.includes('const hasBlockingPrompt = computed') && board.includes('function clearOrdinaryInteractionState()') && board.includes('watch(hasBlockingPrompt')
@@ -1015,6 +1015,17 @@ contracts.push([
     && shell.includes('entry.sections')
     && shell.includes('class="update-section"'),
   '更新日志必须按卡牌效果、对局房间、排位维护及界面设置分组，并点名本批完成的卡效结果',
+])
+
+contracts.push([
+  shell.includes("title: '对战操作延迟与长局稳定性优化'")
+    && shell.match(/version: releaseVersion/g)?.length === 1
+    && shell.includes("title: '操作响应与连接稳定性'")
+    && shell.includes("title: '快照、观战与回放'")
+    && shell.includes('稳定请求标识')
+    && shell.includes('增量对局快照')
+    && shell.includes('最近128条'),
+  '正式发布的玩家更新日志必须明确说明操作隔离、重连幂等、增量快照及近期日志上限',
 ])
 
 const titleRules = read('../src/l12/site/RankedMasterTitleRulesModal.vue')

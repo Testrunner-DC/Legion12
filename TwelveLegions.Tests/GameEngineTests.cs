@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -727,22 +729,55 @@ public sealed class GameEngineTests
     }
 
     [Fact]
-    public void SnapshotKeepsCompleteEventHistoryBeyondLegacyEightyEventLimit()
+    public async Task SnapshotKeepsBoundedRecentEventsWhileJournalKeepsCompleteHistory()
     {
-        var game = Create();
-        game.Handle(0, new L12Command("mulligan", CardInstanceIds: []));
-        game.Handle(1, new L12Command("mulligan", CardInstanceIds: []));
+        var directory = Path.Combine(Path.GetTempPath(), "l12-complete-events", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        recorder.AttachCatalog(Catalog);
+        var game = new L12GameEngine(Catalog, "complete-events", "ABC123", 1206,
+            ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
+        await recorder.StartAsync(game);
+        long commandSequence = 0;
 
-        for (var turn = 0; turn < 15; turn++)
+        async Task ApplyAsync(int playerIndex, L12Command command)
         {
-            var result = game.Handle(game.State.ActivePlayer, new L12Command("endTurn"));
+            var result = game.Handle(playerIndex, command);
             Assert.True(result.Accepted, result.Error);
+            await recorder.AppendAsync(game, ++commandSequence, playerIndex,
+                JsonSerializer.Serialize(command), result);
         }
 
-        Assert.True(game.State.Events.Count > 80);
+        await ApplyAsync(0, new L12Command("mulligan", CardInstanceIds: []));
+        await ApplyAsync(1, new L12Command("mulligan", CardInstanceIds: []));
+
+        for (var turn = 0; turn < 15; turn++)
+            await ApplyAsync(game.State.ActivePlayer, new L12Command("endTurn"));
+
+        Assert.Equal(211, game.State.EventSequence);
+        Assert.Equal(L12GameEngine.MaximumSnapshotEvents, game.State.Events.Count);
         var snapshot = game.SnapshotFor(0);
-        Assert.Equal(game.State.Events.Count, snapshot.RecentEvents.Length);
-        Assert.Equal(1, snapshot.RecentEvents[0].Sequence);
+        Assert.Equal(L12GameEngine.MaximumSnapshotEvents, snapshot.RecentEvents.Length);
+        Assert.Equal(84, snapshot.RecentEvents[0].Sequence);
+        Assert.Equal(211, snapshot.RecentEvents[^1].Sequence);
+        Assert.Equal(snapshot.RecentEvents[^1].Sequence, snapshot.LastAction?.Sequence);
+        Assert.DoesNotContain(snapshot.RecentEvents, actionEvent => actionEvent.Sequence == 1);
+
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            var count = connection.CreateCommand();
+            count.CommandText = "SELECT COUNT(*) FROM match_action_events WHERE match_id='complete-events';";
+            Assert.Equal(211L, (long)(await count.ExecuteScalarAsync())!);
+        }
+
+        var recovery = Assert.IsType<L12JournalRecoveryState>(
+            await recorder.LoadJournalEngineAsync("complete-events"));
+        Assert.Equal(commandSequence, recovery.CommandSequence);
+        Assert.Equal(211, recovery.Engine.State.EventSequence);
+        Assert.Equal(game.State.LastAction?.Sequence, recovery.Engine.State.LastAction?.Sequence);
+        Assert.Equal(game.ComputeStateHash(), recovery.Engine.ComputeStateHash());
     }
 
     [Fact]

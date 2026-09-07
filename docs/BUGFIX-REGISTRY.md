@@ -2,6 +2,21 @@
 
 本文件是追加式修复台账。开始新的 Bug 修复前必须先检索本文件；修复卡效时必须记录全卡池同类扫描结果。
 
+### BUG-20260908-ACTION-LATENCY-PERSISTENCE 动作链、快照与持久化结构性放大
+
+- 状态与授权：基线 `b522f72052c1240aabf25e25b59e3d6dca9de89a`；用户明确批准低风险即时延迟治理和追加日志/周期检查点两批连续实施，并在完整验收后由根任务统一同步、正式部署。本条当前只记录本地实现，未提交、未推送、未访问或修改生产。发布身份、数据库迁移及线上验证不得在最终发布收据前标为完成。
+- 生产只读基线：公网 health/WebSocket 正常、服务重启 0；发布前复核服务 MemoryCurrent `891,179,008`、MemoryPeak `1,073,745,920`，`matches.db` 为 `27,482,595,328` 字节，`/opt` 可用 `17,698,160,640` 字节，最近完整 runtime 压缩快照约 `1,247,278,879` 字节，Outbox pending 0。未为本修复执行生产清理、压缩或 VACUUM。
+- 根因：动作在房间 Gate 内串行执行引擎、构造/哈希完整状态、把每动作 0.6–2.23 MB `state_json` 写入 SQLite 后才广播；同 revision 重复哈希/序列化，每位收件人再次 JSON 序列化并串行发送。`State.Events` 无界进入权威状态、持久化及所有网络快照，形成随局长线性放大；拒绝动作也占用昂贵持久化链，断线重发缺少跨重启幂等基线。
+- 即时治理：每个 WebSocket 会话改为容量 32 的单发送循环，保持同连接严格顺序；只合并连续、可替换的普通 `gameState`，Prompt、拒绝、恢复、开局和终局等关键消息形成屏障，关键消息挤出普通快照，队列被关键消息占满或单次发送超过 5 秒时只隔离该慢连接。匹配、沙盒、赛事和双方就绪产生的首批快照均不可替换且强制完整；动作广播按私有视角判定，真正收到 `Prompts`、防御选择或和局回应交互的一方不可丢且强制完整，只有对手的 `WaitingPrompt` 仍可替换。同一消息/视角只序列化一次，并以无身份/内容标签记录动作、快照、事务、序列化、发送耗时和字节数。
+- 协议与幂等：hello 能力协商 `requestIds`/`deltaGameState`；新客户端为普通、沙盒及 GM 动作携带稳定 `requestId`，仅匹配响应解除 pending，恢复完成后至多重发同一信封一次；旧客户端继续完整快照和旧 pending 行为。服务端内存有界去重并将 requestId 写入 `match_action_requests` 和命令记录，重启从账本恢复；重复、乱序和断线重发返回原结果而不重复执行。纯拒绝只追加 2 字节 `{}` 命令及轻量审计，不构造检查点；拒绝伴随权威自愈仍保存并广播修正状态。
+- 快照与事件：生产新局使用状态格式 v2，客户端表现事件窗口精确保留最近 128 条，完整事件按序写入 `match_action_events`，恢复后的 `EventSequence` 连续；开局、重连、终局及每 32 revision 强制完整快照，其余在同一会话和私有视角基线上发送增量，基线仅在实际发送成功后提交，基线错配请求权威同步。递归差量不跨玩家复用私有投影，公开观战投影才共享；差量过大或形状变化自动回退全量。每 revision/事件数缓存哈希，v1 默认字段保持省略以维持历史哈希。
+- 持久化 v2：新增、版本化且仅附加的 `match_action_requests`、`match_action_events`、`match_state_checkpoints` 及相关列；初态、每 32 个有状态命令和终态写 Brotli 完整检查点，普通命令的 `state_json='{}'`。恢复从最新检查点逐命令重放尾部，校验 sequence、accepted、revision 和 hash；事实提取使用内存前后位置，不再反复解析上一份巨大状态。排位 runtime、管理员详情/分页、主宰称号、事实、终局 Outbox、回放、沙盒保留和匿名化均按 `storage_version` 分流；旧 v1 `state_json` 仍可读，新记录不改写旧历史。
+- 权威语义护栏：`State.Events` 全服务扫描后，唯一规则查询 `State.Events.Any(game-draw)` 已改为显式 `EndedByAgreedDraw`，避免窗口截断让平局事实失忆。账号匿名化同时清理命令 JSON、完整事件、初态和压缩检查点中的身份，并以 `identity_scrubbed` 标记；活局匿名化后迟到的命令、事件、事实元数据及新检查点继续沿用已持久化墓碑名，不能重新写回旧身份。不将 `{}` 当完整状态。新 v2 使用状态可显式恢复的稳定 xoshiro256** 随机源，检查点保存四个状态字、原始抽样计数、算法版本及校验和；恢复不再以调用次数猜测 `System.Random` 内部状态，缺少或损坏随机状态时以 `InvalidDataException` 失败关闭。v1 继续从初态以原 `System.Random` 全命令重放，不改变历史语义；尚未发布的早期 v2 本地草稿不提供不确定兼容路径。
+- 同类扫描：只读参考 `D:\Self\GrandUMI` 的 `652781066`、`eb506f9d0`/`0013ffe07`、`96d6a02d3`、`d9b837f69`，未修改或运行未过滤 GrandUMI 测试。最终代码扫描为 `rg -n "State\.Events|\.Events\.Any\(" 服务端WebSocket/TwelveLegions -g '*.cs'`，仅剩事件窗口维护、哈希和快照投影；`rg -n "state_json|initial_state_json|storage_version|identity_scrubbed" 服务端WebSocket/TwelveLegions -g '*.cs'` 逐处复核后，v2 读取均走检查点+尾部重放。未给历史 `match_events` 增加大索引，新索引只落在新增小表。
+- 回归：新增 `LatencyAndPersistenceRegressionTests` 覆盖 1200+ 长局有界成本、精确 128 网络事件窗口/最新连续序号/完整 211 条 journal/重启连续恢复、非法 Prompt 后合法动作、重复/乱序/断线重发与跨重启幂等、拒绝伴随自愈、纯拒绝跨检查点周期、慢观战者隔离及关键顺序、首批快照与对手 Prompt/防御交互关键分类、增量等价/隐藏信息/周期全量/旧客户端、事务各阶段失败、v2 检查点+尾部及 v1 哈希恢复、混合随机 API 的完整状态恢复/真实洗牌尾部重放/缺失随机状态拒绝、旧 v1 排行事实缺失回退、管理员及活局匿名化后迟到写入。目标筛选 24/24；受管 .NET SDK 10.0.302 下从头 Focused 退出 0（规则 2497/2497、UI 291、连接 23/23、重入 6/6），最终从头 Batch 退出 0（Release 规则 2497/2497、原子审计 324 张且旧入口 0、UI 291、连接 23/23、排位广播、卡图 40 项/324 张、Vue 类型检查与 Vite 252 模块构建）。根任务独立复跑目标 24/24、连接恢复 23/23 和 UI 291。Batch 首轮在排位广播检查后遇到一次 Windows Node `0xC0000005` 进程异常；卡图、`vue-tsc`、Vite 分段复跑及完整 Batch 第二轮均通过，未出现代码断言或编译错误。未运行未过滤 GrandUMI 套件。
+- 文件：`L12OutboundConnection.cs`、`L12SnapshotWireCodec.cs`、`L12PerformanceMetrics.cs`、`L12DeterministicRandom.cs`、`MatchRecorder.Journal.cs`；并修改 RoomManager/WebSocket/Engine/Recorder/Models、`opcgpro-vue/src/l12/net.ts`、连接/UI 契约、`GameEngineTests.cs`、`LatencyAndPersistenceRegressionTests.cs` 及异界天灾审计脚本的 CRLF 行尾兼容正则。
+- 发布与回滚护栏：发布前必须排空或围栏当前 v1 活局、验证增量 Schema、空闲空间、SQLite/WAL 一致备份、Outbox/恢复/数据库增长和服务内存；26.7 GB runtime 全量 tar.gz 可能造成显著空间和时长压力，须先评估，不能为了发布删除、压缩或 VACUUM 生产数据。新二进制可读 v1/v2，但旧二进制不能安全继续写入 v2 的 `{}` 命令行；产生 v2 数据后的回滚应保持维护并滚前修复，或先围栏/排空 v2 活局后才切兼容程序，绝不可用旧数据库快照覆盖新事实。发布后把“数据库每动作线性增长”和“内存贴 1 GiB”作为硬门槛观察。
+
 ### BUG-20260907-CONNECTION-STABILITY 登录共享限流与赛后重连放大
 
 - L12-UI配套冻结：士气锁定显示半透明锁，不改支付；排位广播原来租约过期重新领取、组件重新挂载重播，现以订阅时间和服务器2分钟实时窗口筛选，领取即消费展示权，模块级续播与逐广播持久确认队列。后端广播4/4、静态及真实行为回归通过，行为测试涵盖双实例/重挂载/失败重试/pagehide/多键存储；根独立复跑两脚本通过，已接入build。相关文件由UI交接，可信代理middleware及根连接修改保留。

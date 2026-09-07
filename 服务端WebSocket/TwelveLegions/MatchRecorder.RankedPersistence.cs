@@ -29,7 +29,8 @@ internal sealed record L12RankedRecoverySource(
     string MatchId, string RoomCode, int Seed, string[] PlayerNames, string[] AccountIds,
     string InitialStateJson, string StartedUtc, L12PresetDeckDefinition[] Decks,
     IReadOnlyList<L12RankedReplayCommand> Commands, L12RankedRuntimeCheckpoint? Runtime,
-    string? LoadError);
+    string? LoadError, int StorageVersion = 1, L12PersistedCheckpoint? StateCheckpoint = null,
+    IReadOnlyList<L12PersistedActionRequest>? ProcessedRequests = null);
 
 internal sealed record L12RankedReplayCommand(
     long Sequence, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
@@ -440,7 +441,9 @@ public sealed partial class MatchRecorder
         await connection.OpenAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT o.match_id,o.payload_json,o.payload_hash,e.state_json
+            SELECT o.match_id,o.payload_json,o.payload_hash,
+                   CASE WHEN m.storage_version < 2 THEN e.state_json ELSE NULL END,
+                   m.storage_version
             FROM ranked_settlement_outbox o
             JOIN matches m ON m.match_id=o.match_id AND m.mode_id='ranked'
             LEFT JOIN match_events e ON e.id=(
@@ -475,6 +478,13 @@ public sealed partial class MatchRecorder
                     if (finalRound > 0 && recordedRound > 0 && finalRound != recordedRound)
                         throw new InvalidDataException("final round mismatch");
                     if (finalRound <= 0) finalRound = recordedRound;
+                }
+                else if (finalRound <= 0 && reader.GetInt32(4) >= JournalStorageVersion)
+                {
+                    var checkpoint = await LoadLatestCheckpointAsync(matchId);
+                    if (checkpoint is null) throw new InvalidDataException("final checkpoint missing");
+                    using var state = JsonDocument.Parse(checkpoint.StateJson);
+                    finalRound = ReadInt(state.RootElement, "Round", "round");
                 }
                 // 旧 outbox 可以从最终权威状态取回合数；仍然缺失时保留 0，不伪造合格历史。
                 result.Add(new L12RankedMasterTitleMatchFact(payload.MatchId,
@@ -565,7 +575,7 @@ public sealed partial class MatchRecorder
         command.CommandText = """
             SELECT m.match_id,m.room_code,m.seed,m.player_0,m.player_1,m.account_0,m.account_1,
                    COALESCE(m.initial_state_json,''),m.started_utc,
-                   r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation
+                   r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation,m.storage_version
             FROM matches m
             LEFT JOIN ranked_match_runtime r ON r.match_id=m.match_id AND r.status='active'
             WHERE m.match_id=$match AND m.mode_id='ranked' AND m.ended_utc IS NULL
@@ -574,7 +584,7 @@ public sealed partial class MatchRecorder
         command.Parameters.AddWithValue("$match", matchId);
         (string MatchId, string RoomCode, int Seed, string[] Names, string[] Accounts,
             string Initial, string Started, string? RuntimeJson, string? RuntimeHash,
-            long? RuntimeGeneration) row;
+            long? RuntimeGeneration, int StorageVersion) row;
         await using (var reader = await command.ExecuteReaderAsync())
         {
             if (!await reader.ReadAsync()) return null;
@@ -585,11 +595,13 @@ public sealed partial class MatchRecorder
                 reader.GetString(7), reader.GetString(8),
                 reader.IsDBNull(9) ? null : reader.GetString(9),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetInt64(11));
+                reader.IsDBNull(11) ? null : reader.GetInt64(11), reader.GetInt32(12));
         }
         L12PresetDeckDefinition[] decks = [];
         IReadOnlyList<L12RankedReplayCommand> events = [];
         L12RankedRuntimeCheckpoint? runtime = null;
+        L12PersistedCheckpoint? stateCheckpoint = null;
+        IReadOnlyList<L12PersistedActionRequest> processedRequests = [];
         string? error = null;
         try
         {
@@ -611,7 +623,18 @@ public sealed partial class MatchRecorder
                 throw new InvalidDataException("排位运行快照身份不一致");
             runtime = parsedRuntime;
             decks = await ReadRecoveryDecksAsync(connection, row.MatchId, row.Initial);
-            events = await ReadRecoveryEventsAsync(connection, row.MatchId);
+            if (row.StorageVersion >= JournalStorageVersion)
+            {
+                stateCheckpoint = await LoadLatestCheckpointAsync(row.MatchId)
+                    ?? throw new InvalidDataException("v2 排位缺少状态检查点");
+                events = await ReadRecoveryEventsAsync(connection, row.MatchId,
+                    Math.Max(0, stateCheckpoint.Sequence - 1), journalV2: true);
+                processedRequests = await LoadProcessedActionRequestsAsync(row.MatchId);
+            }
+            else
+            {
+                events = await ReadRecoveryEventsAsync(connection, row.MatchId);
+            }
         }
         catch (Exception failure) when (failure is InvalidDataException or InvalidOperationException
                                                or JsonException or KeyNotFoundException
@@ -620,7 +643,8 @@ public sealed partial class MatchRecorder
             error = SafePersistenceError(failure.Message);
         }
         return new L12RankedRecoverySource(row.MatchId, row.RoomCode, row.Seed, row.Names,
-            row.Accounts, row.Initial, row.Started, decks, events, runtime, error);
+            row.Accounts, row.Initial, row.Started, decks, events, runtime, error,
+            row.StorageVersion, stateCheckpoint, processedRequests);
     }
 
     private static async Task<L12PresetDeckDefinition[]> ReadRecoveryDecksAsync(
@@ -740,14 +764,15 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<IReadOnlyList<L12RankedReplayCommand>> ReadRecoveryEventsAsync(
-        SqliteConnection connection, string matchId)
+        SqliteConnection connection, string matchId, long afterSequence = 0, bool journalV2 = false)
     {
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT sequence,player_index,command_json,accepted,revision,state_hash
-            FROM match_events WHERE match_id=$match ORDER BY sequence;
+            FROM match_events WHERE match_id=$match AND sequence>$after ORDER BY sequence;
             """;
         command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$after", afterSequence);
         var events = new List<L12RankedReplayCommand>();
         await using (var reader = await command.ExecuteReaderAsync())
         {
@@ -770,7 +795,9 @@ public sealed partial class MatchRecorder
             var recorded = events[index];
             if (!string.Equals(recorded.CommandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
                 continue;
-            var authority = await ReadAuthorityConclusionStateAsync(connection, matchId, recorded.Sequence);
+            var authority = journalV2
+                ? ReadAuthorityConclusionCommand(recorded.CommandJson)
+                : await ReadAuthorityConclusionStateAsync(connection, matchId, recorded.Sequence);
             events[index] = recorded with
             {
                 AuthorityWinner = authority.Winner,
@@ -778,6 +805,17 @@ public sealed partial class MatchRecorder
             };
         }
         return events;
+    }
+
+    private static (int? Winner, string? Reason) ReadAuthorityConclusionCommand(string commandJson)
+    {
+        using var document = JsonDocument.Parse(commandJson);
+        var root = document.RootElement;
+        var winner = root.TryGetProperty("winner", out var winnerElement)
+            && winnerElement.ValueKind == JsonValueKind.Number ? winnerElement.GetInt32() : (int?)null;
+        var reason = root.TryGetProperty("reason", out var reasonElement)
+            && reasonElement.ValueKind == JsonValueKind.String ? reasonElement.GetString() : null;
+        return (winner, reason);
     }
 
     private static async Task<(int? Winner, string? Reason)> ReadAuthorityConclusionStateAsync(
@@ -812,7 +850,7 @@ public sealed partial class MatchRecorder
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
-        var latestHash = source.Commands.LastOrDefault()?.StateHash;
+        var latestHash = source.Commands.LastOrDefault()?.StateHash ?? source.StateCheckpoint?.StateHash;
         var complete = connection.CreateCommand();
         complete.Transaction = transaction;
         complete.CommandText = """

@@ -57,6 +57,52 @@ let snapshotRecoveryTimer: ReturnType<typeof setTimeout> | null = null
 let snapshotRecoveryAttempt = 0
 let reconnectAttempts = 0
 let automaticConnectionEnabled = false
+let negotiatedRequestIds = false
+let pendingActionEnvelope: null | Record<string, unknown> = null
+let pendingActionResentAttempt = -1
+let lastGameStateEnvelope: any = null
+
+function createActionRequestId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function completePendingAction(responseRequestId?: unknown) {
+  if (!pendingActionEnvelope) return
+  if (negotiatedRequestIds
+    && String(responseRequestId || '') !== String(pendingActionEnvelope.requestId || '')) return
+  pendingActionEnvelope = null
+  pendingActionResentAttempt = -1
+  l12State.pendingAction = false
+}
+
+function cancelPendingAction() {
+  pendingActionEnvelope = null
+  pendingActionResentAttempt = -1
+  l12State.pendingAction = false
+}
+
+function rebuildDeltaGameState(delta: any) {
+  const baseline = lastGameStateEnvelope
+  if (!baseline || baseline.type !== 'gameState'
+    || String(baseline.state?.matchId || '') !== String(delta.matchId || '')
+    || Number(baseline.state?.revision ?? -1) !== Number(delta.baseRevision ?? -2)
+    || !Array.isArray(delta.changes)) return null
+  const rebuilt = JSON.parse(JSON.stringify(baseline))
+  for (const change of delta.changes) {
+    if (!Array.isArray(change?.path) || change.path.length === 0) return null
+    let target: any = rebuilt
+    for (const segment of change.path.slice(0, -1)) {
+      if (target == null || !(segment in target)) return null
+      target = target[segment]
+    }
+    const key = change.path.at(-1) as string | number
+    if (change.remove) delete target[key]
+    else target[key] = change.value
+  }
+  if (Number(rebuilt.state?.revision ?? -1) !== Number(delta.revision ?? -2)) return null
+  return rebuilt
+}
 
 function clearReconnectTimer() {
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
@@ -360,15 +406,30 @@ export function connect(): Promise<void> {
         return
       }
       l12State.recoveryPhase = 'authenticating'
-      socket.send(JSON.stringify({ type: 'hello', authToken }))
+      socket.send(JSON.stringify({
+        type: 'hello',
+        authToken,
+        capabilities: { requestIds: true, deltaGameState: true },
+      }))
     }
     socket.onmessage = (event) => {
       // 新连接已经接管后，丢弃旧 WebSocket 迟到的消息，避免恢复快照被旧状态回滚。
       if (!isCurrentAttempt() || failed) return
-      const message = JSON.parse(String(event.data))
+      let message = JSON.parse(String(event.data))
+      if (message.type === 'gameStateDelta') {
+        const rebuilt = rebuildDeltaGameState(message)
+        if (!rebuilt) {
+          l12State.recoveryPhase = 'snapshot-mismatch'
+          l12State.notice = '增量快照基线不匹配，正在请求完整权威状态…'
+          requestSnapshotRecovery(socket)
+          return
+        }
+        message = rebuilt
+      }
       // Any current server message proves the receive path is still alive.
       unansweredHeartbeats = 0
       if (message.type === 'session') {
+        negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
         claimedGeneration = Number(message.connectionGeneration || 0)
         l12State.sessionId = message.sessionId
         l12State.nickname = message.name
@@ -423,7 +484,7 @@ export function connect(): Promise<void> {
           l12State.rankedClock = null
           l12State.spectating = false
           l12State.gmEnabled = false
-          l12State.pendingAction = false
+          completePendingAction(message.requestId)
         }
         syncGameReentry()
       }
@@ -433,7 +494,7 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'operationsBlocked') {
         l12State.notice = message.message || '当前运营规则不允许执行此操作'
-        l12State.pendingAction = false
+        completePendingAction(message.requestId)
       }
       else if (message.type === 'maintenanceWarning') {
         l12State.notice = message.message || '服务器即将维护，请尽快结束当前对局。'
@@ -475,12 +536,13 @@ export function connect(): Promise<void> {
         clearMatchmakingRecovery()
         l12State.room = null
         l12State.game = null
+        lastGameStateEnvelope = null
         l12State.rankedClock = null
         l12State.matchGovernanceResult = null
         l12State.spectating = false
         l12State.leavingRoom = false
         l12State.gmEnabled = false
-        l12State.pendingAction = false
+        cancelPendingAction()
         l12State.matchFound = null
         l12State.notice = message.message || ''
         syncGameReentry()
@@ -498,12 +560,13 @@ export function connect(): Promise<void> {
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
         if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {
           l12State.game = incoming
+          lastGameStateEnvelope = JSON.parse(JSON.stringify(message))
           l12State.rankedClock = message.rankedClock
             ? { ...(message.rankedClock as RankedClockView), receivedAtMs: Date.now() }
             : null
           l12State.spectating = Boolean(message.spectating)
           l12State.gmEnabled = Boolean(message.gmEnabled)
-          l12State.pendingAction = false
+          completePendingAction(message.requestId)
           l12State.rankedSettlement = message.rankedSettlement || null
           if (l12State.status === 'connecting') l12State.recoveryPhase = 'snapshot-received'
           clearMatchmakingRecovery()
@@ -529,15 +592,19 @@ export function connect(): Promise<void> {
         }
         clearSnapshotRecovery()
         if (!message.roomCode) {
+          cancelPendingAction()
           l12State.room = null
           l12State.game = null
+          lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
           l12State.gmEnabled = false
           l12State.matchFound = null
         }
         else if (!message.matchId) {
+          cancelPendingAction()
           l12State.game = null
+          lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
           l12State.gmEnabled = false
@@ -549,13 +616,18 @@ export function connect(): Promise<void> {
         l12State.connectionIssue = l12State.operationsPolicy?.maintenance.active ? 'maintenance' : 'none'
         l12State.notice = ''
         if (l12State.leavingRoom) socket.send(JSON.stringify({ type: 'leaveRoom' }))
+        else if (pendingActionEnvelope && negotiatedRequestIds
+          && pendingActionResentAttempt !== attempt && socket.readyState === WebSocket.OPEN) {
+          pendingActionResentAttempt = attempt
+          socket.send(JSON.stringify(pendingActionEnvelope))
+        }
         syncGameReentry()
         settle()
       }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
         || message.type === 'tournamentRoomRejected' || message.type === 'tournamentResultPending') {
         l12State.notice = message.message
-        l12State.pendingAction = false
+        completePendingAction(message.requestId)
         l12State.leavingRoom = false
         syncGameReentry()
       }
@@ -571,6 +643,7 @@ export function connect(): Promise<void> {
         clearMatchmakingRecovery()
         l12State.matchmaking = null
         l12State.socket = null
+        lastGameStateEnvelope = null
         l12State.status = 'offline'
         l12State.lastCloseCode = event.code || null
         l12State.lastCloseReason = String(event.reason || '').slice(0, 160)
@@ -578,7 +651,7 @@ export function connect(): Promise<void> {
         else if (event.code === 4002) l12State.connectionIssue = 'superseded'
         else if (l12State.connectionIssue === 'none') l12State.connectionIssue = 'websocket'
         l12State.recoveryPhase = event.code === 4002 ? 'superseded' : 'disconnected'
-        l12State.pendingAction = false
+        if (!negotiatedRequestIds || [4001, 4002, 1008].includes(event.code)) cancelPendingAction()
         l12State.gmEnabled = false
         syncGameReentry()
         settle(new Error(l12State.notice || '连接已关闭'))
@@ -631,7 +704,9 @@ export function disconnect() {
   l12State.spectating = false
   l12State.leavingRoom = false
   l12State.gmEnabled = false
-  l12State.pendingAction = false
+  cancelPendingAction()
+  negotiatedRequestIds = false
+  lastGameStateEnvelope = null
   l12State.matchmaking = null
   l12State.matchFound = null
   l12State.rankedSettlement = null
@@ -699,20 +774,25 @@ export const leaveRoom = () => {
 export function gameAction(command: Record<string, unknown>) {
   if (l12State.pendingAction) return
   l12State.pendingAction = true
-  send({ type: 'gameAction', command })
-  if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
+  pendingActionEnvelope = { type: 'gameAction', requestId: createActionRequestId(), command }
+  send(pendingActionEnvelope)
+  if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }
 
 export function sandboxAction(actingPlayerIndex: number, command: Record<string, unknown>) {
   if (!l12State.gmEnabled || l12State.pendingAction) return
   l12State.pendingAction = true
-  send({ type: 'sandboxAction', actingPlayerIndex, command })
-  if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
+  pendingActionEnvelope = {
+    type: 'sandboxAction', requestId: createActionRequestId(), actingPlayerIndex, command,
+  }
+  send(pendingActionEnvelope)
+  if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }
 
 export function gmAction(command: Record<string, unknown>) {
   if (!l12State.gmEnabled || l12State.pendingAction) return
   l12State.pendingAction = true
-  send({ type: 'gmAction', command })
-  if (l12State.socket?.readyState !== WebSocket.OPEN) l12State.pendingAction = false
+  pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(), command }
+  send(pendingActionEnvelope)
+  if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }

@@ -271,7 +271,7 @@ public sealed partial class L12RoomManager
         L12MatchDrawRequestClientView? request;
         try
         {
-            if (room.Game.State.Events.Any(item => item.Type == "game-draw"))
+            if (room.Game.State.EndedByAgreedDraw)
                 _platform.FinalizeAgreedDrawFromSettlement(room.Game.State.MatchId, _utcNow());
             request = _platform.MatchDrawRequestForClient(room.Game.State.MatchId,
                 viewer.AccountId, _utcNow());

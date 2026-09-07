@@ -243,19 +243,36 @@ public sealed partial class MatchRecorder
 
     private async Task AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint? rankedRuntime,
-        L12RankedSettlementEnvelope? rankedSettlement)
+        L12RankedSettlementEnvelope? rankedSettlement, string? requestId,
+        bool stateChangedOnRejection)
     {
-        var stateJson = engine.SerializeFullState();
+        var appendStartedAt = L12PerformanceMetrics.Start();
+        var journalV2 = UsesJournalV2(engine);
+        var lightweightRejection = journalV2 && !result.Accepted && !stateChangedOnRejection;
+        var writeCheckpoint = false;
+        string? checkpointStateJson = null;
+        var serializationStartedAt = L12PerformanceMetrics.Start();
+        var stateJson = journalV2 ? "{}" : engine.SerializeFullState();
         var stateHash = engine.ComputeStateHash();
+        L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
+        L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
         var occurredUtc = _utcNow().ToUniversalTime().ToString("O");
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+        var transactionStartedAt = L12PerformanceMetrics.Start();
+        var identityReplacements = await ReadIdentityReplacementsAsync(
+            connection, transaction, engine.State);
+        if (identityReplacements.Count > 0)
+        {
+            commandJson = ApplyIdentityReplacements(commandJson, identityReplacements);
+            stateJson = ApplyIdentityReplacements(stateJson, identityReplacements);
+        }
 
         var duplicate = connection.CreateCommand();
         duplicate.Transaction = transaction;
         duplicate.CommandText = """
-            SELECT player_index,accepted,revision,state_hash
+            SELECT player_index,accepted,revision,state_hash,request_id
             FROM match_events WHERE match_id=$match AND sequence=$sequence;
             """;
         duplicate.Parameters.AddWithValue("$match", engine.State.MatchId);
@@ -267,7 +284,9 @@ public sealed partial class MatchRecorder
                 var same = reader.GetInt32(0) == playerIndex
                     && (reader.GetInt32(1) == 1) == result.Accepted
                     && reader.GetInt64(2) == engine.State.Revision
-                    && string.Equals(reader.GetString(3), stateHash, StringComparison.Ordinal);
+                    && string.Equals(reader.GetString(3), stateHash, StringComparison.Ordinal)
+                    && string.Equals(reader.IsDBNull(4) ? null : reader.GetString(4), requestId,
+                        StringComparison.Ordinal);
                 if (!same)
                     throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
                 if (rankedSettlement is not null)
@@ -277,22 +296,61 @@ public sealed partial class MatchRecorder
             }
         }
 
-        var context = connection.CreateCommand();
-        context.Transaction = transaction;
-        context.CommandText = """
-            SELECT COALESCE(
-                       (SELECT state_json FROM match_events
-                        WHERE match_id=$match ORDER BY sequence DESC LIMIT 1),
-                       initial_state_json,
-                       '{}'),
-                   last_fact_signal_sequence
-            FROM matches WHERE match_id=$match;
-            """;
-        context.Parameters.AddWithValue("$match", engine.State.MatchId);
-        string previousStateJson;
-        long lastSignalSequence;
-        await using (var reader = await context.ExecuteReaderAsync())
+        if (journalV2 && !lightweightRejection)
         {
+            var checkpointBoundary = connection.CreateCommand();
+            checkpointBoundary.Transaction = transaction;
+            checkpointBoundary.CommandText = """
+                SELECT COALESCE(MAX(sequence),0) FROM match_state_checkpoints
+                WHERE match_id=$match;
+                """;
+            checkpointBoundary.Parameters.AddWithValue("$match", engine.State.MatchId);
+            var lastCheckpointSequence = Convert.ToInt64(
+                await checkpointBoundary.ExecuteScalarAsync());
+            writeCheckpoint = engine.State.Phase == L12Phase.GameOver
+                              || sequence - lastCheckpointSequence >= CheckpointInterval;
+            if (writeCheckpoint)
+            {
+                var checkpointSerializationStartedAt = L12PerformanceMetrics.Start();
+                checkpointStateJson = engine.SerializeFullState();
+                checkpointStateJson = ApplyIdentityReplacements(
+                    checkpointStateJson, identityReplacements);
+                L12PerformanceMetrics.Duration("persistence.checkpoint-serialize",
+                    checkpointSerializationStartedAt);
+                L12PerformanceMetrics.Bytes("persistence.checkpoint-json", checkpointStateJson.Length);
+            }
+        }
+
+        string? previousStateJson = null;
+        Dictionary<string, CardLocation>? previousLocations = null;
+        long lastSignalSequence;
+        if (journalV2)
+        {
+            var context = connection.CreateCommand();
+            context.Transaction = transaction;
+            context.CommandText = "SELECT last_fact_signal_sequence FROM matches WHERE match_id=$match;";
+            context.Parameters.AddWithValue("$match", engine.State.MatchId);
+            var value = await context.ExecuteScalarAsync();
+            if (value is null) throw new KeyNotFoundException("找不到待追加的正式对局记录");
+            lastSignalSequence = Convert.ToInt64(value);
+            if (!_factLocationBaselines.TryGetValue(engine.State.MatchId, out previousLocations))
+                throw new InvalidOperationException("追加日志缺少内存事实基线，必须先完成权威恢复");
+        }
+        else
+        {
+            var context = connection.CreateCommand();
+            context.Transaction = transaction;
+            context.CommandText = """
+                SELECT COALESCE(
+                           (SELECT state_json FROM match_events
+                            WHERE match_id=$match ORDER BY sequence DESC LIMIT 1),
+                           initial_state_json,
+                           '{}'),
+                       last_fact_signal_sequence
+                FROM matches WHERE match_id=$match;
+                """;
+            context.Parameters.AddWithValue("$match", engine.State.MatchId);
+            await using var reader = await context.ExecuteReaderAsync();
             if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待追加的正式对局记录");
             previousStateJson = reader.IsDBNull(0) ? "{}" : reader.GetString(0);
             lastSignalSequence = reader.GetInt64(1);
@@ -302,8 +360,8 @@ public sealed partial class MatchRecorder
         append.Transaction = transaction;
         append.CommandText = """
             INSERT INTO match_events(match_id, sequence, received_utc, player_index, command_json, accepted,
-                                     error, revision, state_hash, state_json)
-            VALUES($id,$seq,$utc,$player,$json,$accepted,$error,$revision,$hash,$state);
+                                     error, revision, state_hash, state_json,request_id)
+            VALUES($id,$seq,$utc,$player,$json,$accepted,$error,$revision,$hash,$state,$requestId);
             """;
         append.Parameters.AddWithValue("$id", engine.State.MatchId);
         append.Parameters.AddWithValue("$seq", sequence);
@@ -315,7 +373,30 @@ public sealed partial class MatchRecorder
         append.Parameters.AddWithValue("$revision", engine.State.Revision);
         append.Parameters.AddWithValue("$hash", stateHash);
         append.Parameters.AddWithValue("$state", stateJson);
+        append.Parameters.AddWithValue("$requestId", (object?)requestId ?? DBNull.Value);
         await append.ExecuteNonQueryAsync();
+        if (requestId is not null)
+        {
+            var request = connection.CreateCommand();
+            request.Transaction = transaction;
+            request.CommandText = """
+                INSERT INTO match_action_requests(
+                    match_id,player_index,request_id,command_sequence,accepted,error,revision,state_hash,created_utc)
+                VALUES($match,$player,$request,$sequence,$accepted,$error,$revision,$hash,$utc);
+                """;
+            request.Parameters.AddWithValue("$match", engine.State.MatchId);
+            request.Parameters.AddWithValue("$player", playerIndex);
+            request.Parameters.AddWithValue("$request", requestId);
+            request.Parameters.AddWithValue("$sequence", sequence);
+            request.Parameters.AddWithValue("$accepted", result.Accepted ? 1 : 0);
+            request.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
+            request.Parameters.AddWithValue("$revision", engine.State.Revision);
+            request.Parameters.AddWithValue("$hash", stateHash);
+            request.Parameters.AddWithValue("$utc", occurredUtc);
+            await request.ExecuteNonQueryAsync();
+        }
+        StorageFailureInjector?.Invoke(rankedRuntime is null
+            ? "after-match-command-write" : "after-ranked-command-write");
 
         var identities = await ReadParticipantIdentitiesAsync(connection, transaction, engine.State.MatchId);
         var newSignals = engine.CardFactSignals.Where(signal => signal.Sequence > lastSignalSequence).ToArray();
@@ -323,9 +404,13 @@ public sealed partial class MatchRecorder
             .Where(signal => signal.CardInstanceId is not null)
             .Select(signal => (signal.Kind, signal.CardInstanceId!))
             .ToHashSet();
-        foreach (var fact in ExtractDeltaFacts(previousStateJson, engine.State, sequence, occurredUtc,
-                     identities, explicitFacts))
-            await InsertFactAsync(connection, transaction, fact);
+        if (!lightweightRejection)
+        {
+            foreach (var fact in ExtractDeltaFacts(
+                         previousLocations ?? CaptureLocations(previousStateJson!), engine.State, sequence, occurredUtc,
+                         identities, explicitFacts))
+                await InsertFactAsync(connection, transaction, fact);
+        }
 
         foreach (var signal in newSignals)
         {
@@ -337,7 +422,9 @@ public sealed partial class MatchRecorder
                 signal.Round, signal.Turn, signal.Phase, occurredUtc,
                 signal.PlayerIndex, accountId, signal.CardId, signal.CardInstanceId, null, null,
                 signal.SourceZone, signal.DestinationZone, signal.Amount, signal.Coverage,
-                JsonSerializer.Serialize(signal.Data ?? new Dictionary<string, string>())));
+                ApplyIdentityReplacements(
+                    JsonSerializer.Serialize(signal.Data ?? new Dictionary<string, string>()),
+                    identityReplacements)));
         }
 
         var update = connection.CreateCommand();
@@ -352,15 +439,74 @@ public sealed partial class MatchRecorder
         update.Parameters.AddWithValue("$match", engine.State.MatchId);
         await update.ExecuteNonQueryAsync();
         await TouchSandboxRecordingAsync(connection, transaction, engine.State.MatchId, occurredUtc);
+        StorageFailureInjector?.Invoke(rankedRuntime is null
+            ? "after-match-fact-write" : "after-ranked-fact-write");
 
         if (rankedRuntime is not null)
             await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
         if (rankedSettlement is not null)
             await CompleteRankedMatchAndEnqueueAsync(connection, transaction, engine, rankedSettlement);
+        if (journalV2)
+        {
+            await PersistActionEventsAsync(connection, transaction, engine, sequence, occurredUtc,
+                identityReplacements);
+            StorageFailureInjector?.Invoke(rankedRuntime is null
+                ? "after-match-action-event-write" : "after-ranked-action-event-write");
+            if (writeCheckpoint)
+            {
+                await PersistCheckpointAsync(connection, transaction, engine, sequence, stateHash,
+                    checkpointStateJson!, occurredUtc);
+                StorageFailureInjector?.Invoke(rankedRuntime is null
+                    ? "after-match-checkpoint-write" : "after-ranked-checkpoint-write");
+            }
+        }
         StorageFailureInjector?.Invoke(rankedSettlement is null
             ? rankedRuntime is null ? "before-match-command-commit" : "before-ranked-command-commit"
             : "before-ranked-final-commit");
         await transaction.CommitAsync();
+        L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
+        L12PerformanceMetrics.Duration("persistence.total", appendStartedAt);
+        if (journalV2)
+        {
+            if (rankedSettlement is null)
+                _factLocationBaselines[engine.State.MatchId] = CaptureLocations(engine.State);
+            else
+                _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
+            engine.MarkEventsPersisted(engine.State.EventSequence);
+            engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
+        }
+    }
+
+    private static async Task<IReadOnlyList<(string Value, string Replacement)>>
+        ReadIdentityReplacementsAsync(SqliteConnection connection, SqliteTransaction transaction,
+            L12GameState state)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT player_0,player_1,identity_scrubbed FROM matches WHERE match_id=$match;";
+        command.Parameters.AddWithValue("$match", state.MatchId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待追加的正式对局记录");
+        if (reader.GetInt32(2) != 1) return [];
+
+        var replacements = new List<(string Value, string Replacement)>();
+        for (var playerIndex = 0; playerIndex < state.Players.Length; playerIndex++)
+        {
+            var persistedName = reader.GetString(playerIndex);
+            var inMemoryName = state.Players[playerIndex].Name;
+            if (!string.IsNullOrEmpty(inMemoryName)
+                && !string.Equals(inMemoryName, persistedName, StringComparison.Ordinal))
+                replacements.Add((inMemoryName, persistedName));
+        }
+        return replacements;
+    }
+
+    private static string ApplyIdentityReplacements(string json,
+        IReadOnlyList<(string Value, string Replacement)> replacements)
+    {
+        foreach (var replacement in replacements)
+            json = ScrubJsonString(json, replacement.Value, replacement.Replacement);
+        return json;
     }
 
     private static async Task<Dictionary<int, ParticipantIdentity>> ReadParticipantIdentitiesAsync(
@@ -420,14 +566,13 @@ public sealed partial class MatchRecorder
     }
 
     private static IReadOnlyList<PendingCardFact> ExtractDeltaFacts(
-        string previousStateJson,
+        IReadOnlyDictionary<string, CardLocation> previous,
         L12GameState currentState,
         long commandSequence,
         string occurredUtc,
         IReadOnlyDictionary<int, ParticipantIdentity> identities,
         IReadOnlySet<(string Kind, string InstanceId)> explicitFacts)
     {
-        var previous = CaptureLocations(previousStateJson);
         var current = CaptureLocations(currentState);
         var facts = new List<PendingCardFact>();
         var ordinal = 0;
@@ -671,8 +816,8 @@ public sealed partial class MatchRecorder
                 var updateMatch = connection.CreateCommand();
                 updateMatch.Transaction = transaction;
                 updateMatch.CommandText = playerIndex == 0
-                    ? "UPDATE matches SET player_0=$anonymous,deck_0='已清理牌库',account_0=NULL WHERE match_id=$match;"
-                    : "UPDATE matches SET player_1=$anonymous,deck_1='已清理牌库',account_1=NULL WHERE match_id=$match;";
+                    ? "UPDATE matches SET player_0=$anonymous,deck_0='已清理牌库',account_0=NULL,identity_scrubbed=1 WHERE match_id=$match;"
+                    : "UPDATE matches SET player_1=$anonymous,deck_1='已清理牌库',account_1=NULL,identity_scrubbed=1 WHERE match_id=$match;";
                 updateMatch.Parameters.AddWithValue("$anonymous", anonymousName);
                 updateMatch.Parameters.AddWithValue("$match", match);
                 await updateMatch.ExecuteNonQueryAsync();
@@ -724,6 +869,7 @@ public sealed partial class MatchRecorder
                 updateInitial.Parameters.AddWithValue("$match", match);
                 await updateInitial.ExecuteNonQueryAsync();
             }
+            await ScrubJournalIdentityAsync(connection, transaction, match, playerName, anonymousName);
         }
 
         await transaction.CommitAsync();

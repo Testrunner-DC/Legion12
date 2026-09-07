@@ -15,8 +15,12 @@ namespace TwelveLegions.Server;
 
 public sealed class L12WebSocketServer : IAsyncDisposable
 {
+    private static readonly JsonSerializerOptions OutgoingJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan SocketSendTimeout = TimeSpan.FromSeconds(5);
+
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
+    private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly L12RoomManager _rooms;
@@ -28,8 +32,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly L12Catalog _catalog;
     private readonly int _cardCount;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _socketSendGates = new();
+    private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
+    private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
     private readonly ConcurrentDictionary<Guid, SocketPlatformBinding> _socketPlatformSessions = new();
+    private readonly ConcurrentDictionary<Guid, ProtocolCapabilities> _socketCapabilities = new();
     private readonly ConcurrentDictionary<string, Guid> _activeAccountSockets =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _socketClaimGate = new(1, 1);
@@ -1903,6 +1909,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     {
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
+        foreach (var outbound in _outboundConnections.Values)
+            await outbound.CompleteAsync(drain: false);
         foreach (var socket in _sockets.Values)
         {
             try { await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "server stopped", CancellationToken.None); }
@@ -1920,7 +1928,17 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             socket = await context.WebSockets.AcceptWebSocketAsync();
             _sockets[sessionId] = socket;
-            _socketSendGates.TryAdd(sessionId, new SemaphoreSlim(1, 1));
+            var acceptedSocket = socket;
+            var snapshotCodec = new L12SnapshotWireCodec();
+            _snapshotCodecs[sessionId] = snapshotCodec;
+            var outbound = new L12OutboundConnection(
+                (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, payload, token),
+                error =>
+                {
+                    Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
+                    acceptedSocket.Abort();
+                }, SocketSendTimeout);
+            _outboundConnections[sessionId] = outbound;
             var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
                 context.Connection.RemoteIpAddress, _rankedIntegrityHmacKey);
             if (rankedNetworkFingerprint is not null)
@@ -1944,7 +1962,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 _activeAccountSockets.TryRemove(binding.AccountId, out _);
             await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
             _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
-            _socketSendGates.TryRemove(sessionId, out _);
+            _socketCapabilities.TryRemove(sessionId, out _);
+            _snapshotCodecs.TryRemove(sessionId, out _);
+            if (_outboundConnections.TryRemove(sessionId, out var outbound))
+                await outbound.DisposeAsync();
             socket?.Dispose();
         }
     }
@@ -2023,7 +2044,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     "selectCustomDeck" when root.TryGetProperty("deck", out var deckElement)
                         => SelectCustomDeck(sessionId, deckElement),
                     "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
-                    "gameAction" when root.TryGetProperty("command", out var command) => await _rooms.HandleActionAsync(sessionId, command),
+                    "gameAction" when root.TryGetProperty("command", out var command)
+                        => await _rooms.HandleActionAsync(sessionId, command, GetString(root, "requestId")),
                     "requestMatchDraw" => await _rooms.RequestMatchDrawAsync(sessionId,
                         GetString(root, "requestId"), GetString(root, "reason")),
                     "resolveMatchDraw" => await _rooms.ResolveMatchDrawAsync(sessionId,
@@ -2031,8 +2053,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     "reportOpponent" => await _rooms.ReportOpponentAsync(sessionId,
                         GetString(root, "reportId"), GetString(root, "description")),
                     "sandboxAction" when root.TryGetProperty("command", out var sandboxCommand)
-                        => await _rooms.HandleSandboxActionAsync(sessionId, GetInt(root, "actingPlayerIndex", -1), sandboxCommand),
-                    "gmAction" when root.TryGetProperty("command", out var gmCommand) => await _rooms.HandleGmActionAsync(sessionId, gmCommand),
+                        => await _rooms.HandleSandboxActionAsync(sessionId,
+                            GetInt(root, "actingPlayerIndex", -1), sandboxCommand,
+                            GetString(root, "requestId")),
+                    "gmAction" when root.TryGetProperty("command", out var gmCommand)
+                        => await _rooms.HandleGmActionAsync(sessionId, gmCommand,
+                            GetString(root, "requestId")),
                     "getEffectiveOperationsPolicy" => [EffectiveOperationsPolicyMessage(sessionId)],
                     "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
                     "deploymentProbe" => [new OutgoingMessage(sessionId, new
@@ -2059,6 +2085,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     code = "commandFailed",
                     message = "本次操作处理失败，已保留连接并重新同步对局状态",
                     correlationId,
+                    requestId = GetString(root, "requestId"),
                 }, cancellationToken);
                 try
                 {
@@ -2099,6 +2126,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         }
 
         L12SessionClaimResult claim;
+        var capabilities = ReadProtocolCapabilities(root);
+        _socketCapabilities[sessionId] = capabilities;
+        if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+            snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
         Guid? previousSocket;
         IReadOnlyList<OutgoingMessage> recovery;
         await _socketClaimGate.WaitAsync();
@@ -2123,6 +2154,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             type = "session", sessionId, name = claim.Name, claim.Recovered, claim.RoomCode,
             claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
             claim.RecoveryRevision,
+            protocolVersion = 2,
+            capabilities = new
+            {
+                requestIds = capabilities.RequestIds,
+                deltaGameState = capabilities.DeltaGameState,
+            },
         });
         return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }.Concat(recovery).ToArray();
     }
@@ -2130,11 +2167,26 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private async Task SupersedeSocketAsync(Guid sessionId, string accountId,
         CancellationToken cancellationToken)
     {
-        await SendAsync(sessionId, new
+        var payload = new
         {
             type = "sessionSuperseded", reason = "newer-connection-generation",
             message = "此账号已由更新的连接接管",
-        }, cancellationToken);
+        };
+        if (_outboundConnections.TryGetValue(sessionId, out var outbound))
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(SocketSendTimeout);
+            try
+            {
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, OutgoingJsonOptions);
+                await outbound.EnqueueAndWaitAsync(new L12QueuedPayload(bytes, false, false), timeout.Token);
+            }
+            catch (Exception error) when (error is OperationCanceledException or WebSocketException
+                or ObjectDisposedException)
+            {
+                // 旧连接已被逻辑栅栏隔离；通知发送失败不影响新连接接管。
+            }
+        }
         _rooms.RecordConnectionClaimRejection(accountId, "older-connection-fenced");
         if (!_sockets.TryGetValue(sessionId, out var socket) || socket.State != WebSocketState.Open) return;
         try
@@ -2158,6 +2210,21 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 
     private static int GetInt(JsonElement root, string propertyName, int fallback = 0)
         => root.TryGetProperty(propertyName, out var element) && element.TryGetInt32(out var value) ? value : fallback;
+
+    private static ProtocolCapabilities ReadProtocolCapabilities(JsonElement root)
+    {
+        if (!root.TryGetProperty("capabilities", out var value)) return new(false, false);
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            var requested = value.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"));
+        }
+        if (value.ValueKind != JsonValueKind.Object) return new(false, false);
+        return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false));
+    }
 
     private IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, JsonElement deckElement)
     {
@@ -2209,27 +2276,61 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         }
     }
 
-    private async Task SendManyAsync(IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
+    private Task SendManyAsync(IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
-        foreach (var message in messages) await SendAsync(message.SessionId, message.Payload, cancellationToken);
+        var serializedByPayload = new Dictionary<object, byte[]>(ReferenceEqualityComparer.Instance);
+        foreach (var message in messages)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_outboundConnections.TryGetValue(message.SessionId, out var outbound)) continue;
+            if (!serializedByPayload.TryGetValue(message.Payload, out var bytes))
+            {
+                var serializationStartedAt = L12PerformanceMetrics.Start();
+                bytes = JsonSerializer.SerializeToUtf8Bytes(message.Payload, OutgoingJsonOptions);
+                L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+                serializedByPayload[message.Payload] = bytes;
+                L12PerformanceMetrics.Bytes("websocket.full-payload", bytes.Length);
+            }
+            var queued = new L12QueuedPayload(bytes, message.IsGameState, message.ForceFullGameState);
+            if (outbound.TryEnqueue(queued, message.ReplaceableGameState))
+            {
+                L12PerformanceMetrics.Value("websocket.queue-depth", outbound.QueuedCount);
+                continue;
+            }
+            if (message.ReplaceableGameState) continue;
+            // 队列中全是不可丢关键消息时，隔离此慢连接，绝不反压房间动作链。
+            if (_sockets.TryGetValue(message.SessionId, out var slowSocket)) slowSocket.Abort();
+        }
+        return Task.CompletedTask;
     }
 
-    private async Task SendAsync(Guid sessionId, object payload, CancellationToken cancellationToken)
+    private Task SendAsync(Guid sessionId, object payload, CancellationToken cancellationToken)
     {
-        if (!_sockets.TryGetValue(sessionId, out var socket) || socket.State != WebSocketState.Open) return;
-        var gate = _socketSendGates.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
-        {
-            if (!_sockets.TryGetValue(sessionId, out socket) || socket.State != WebSocketState.Open) return;
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload,
-                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
-        }
-        finally
-        {
-            gate.Release();
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_outboundConnections.TryGetValue(sessionId, out var outbound)) return Task.CompletedTask;
+        var serializationStartedAt = L12PerformanceMetrics.Start();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, OutgoingJsonOptions);
+        L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+        if (!outbound.TryEnqueue(new L12QueuedPayload(bytes, false, false))
+            && _sockets.TryGetValue(sessionId, out var slowSocket))
+            slowSocket.Abort();
+        return Task.CompletedTask;
+    }
+
+    private static async Task SendDirectAsync(WebSocket socket, L12SnapshotWireCodec snapshotCodec,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        if (socket.State != WebSocketState.Open) return;
+        var prepared = snapshotCodec.Prepare((L12QueuedPayload)payload);
+        L12PerformanceMetrics.Bytes(prepared.IsDelta
+            ? "websocket.delta-payload" : "websocket.sent-payload", prepared.Payload.Length);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(SocketSendTimeout);
+        var sendStartedAt = L12PerformanceMetrics.Start();
+        await socket.SendAsync(prepared.Payload.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
+        L12PerformanceMetrics.Duration("websocket.send", sendStartedAt);
+        prepared.Commit();
     }
 
     private async Task RunRankedClockWatchdogAsync(CancellationToken cancellationToken)

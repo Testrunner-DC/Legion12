@@ -503,7 +503,10 @@ const tests = [
     assert.equal(FakeWebSocket.instances.length, 1)
     const socket = FakeWebSocket.instances[0]
     socket.open()
-    assert.deepEqual(JSON.parse(socket.sent[0]), { type: 'hello', authToken: 'valid-token' })
+    assert.deepEqual(JSON.parse(socket.sent[0]), {
+      type: 'hello', authToken: 'valid-token',
+      capabilities: { requestIds: true, deltaGameState: true },
+    })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')
     socket.receive({ type: 'session', sessionId: 'session-7', name: '测试玩家', connectionGeneration: 7 })
@@ -614,6 +617,108 @@ const tests = [
     assert.equal(FakeWebSocket.instances.length, 1)
     assert.equal(net.l12State.connectionIssue, 'authentication')
     assert.equal(net.l12State.recoveryPhase, 'disconnected')
+  }],
+
+  ['request ids ignore stale replies and resend exactly once after authoritative reconnect recovery', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'request-id-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const firstSocket = FakeWebSocket.instances[0]
+    firstSocket.open()
+    firstSocket.receive({ type: 'session', sessionId: 'request-session-1', name: '测试玩家',
+      connectionGeneration: 71, capabilities: { requestIds: true, deltaGameState: true } })
+    firstSocket.receive({ type: 'roomState', roomCode: 'REQ001', yourPlayerIndex: 0, started: true, players: [] })
+    firstSocket.receive({ type: 'gameState', state: {
+      matchId: 'request-match', roomCode: 'REQ001', revision: 1, phase: 'Main', players: [],
+    } })
+    firstSocket.receive({ type: 'recoveryComplete', connectionGeneration: 71,
+      roomCode: 'REQ001', matchId: 'request-match', recoveryRevision: 1 })
+    await connected
+
+    net.gameAction({ type: 'endTurn' })
+    const original = JSON.parse(firstSocket.sent.at(-1))
+    assert.equal(original.type, 'gameAction')
+    assert.equal(typeof original.requestId, 'string')
+    firstSocket.receive({ type: 'actionRejected', requestId: 'older-request', message: '迟到响应' })
+    assert.equal(net.l12State.pendingAction, true, 'a stale response must not release the current action')
+
+    firstSocket.emitClose(1006, 'network lost after submit')
+    assert.equal(net.l12State.pendingAction, true, 'a negotiated action remains retryable across disconnect')
+    await timers.advance(1_000)
+    const secondSocket = FakeWebSocket.instances[1]
+    secondSocket.open()
+    secondSocket.receive({ type: 'session', sessionId: 'request-session-2', name: '测试玩家',
+      connectionGeneration: 72, recovered: true,
+      capabilities: { requestIds: true, deltaGameState: true } })
+    secondSocket.receive({ type: 'roomState', roomCode: 'REQ001', yourPlayerIndex: 0, started: true, players: [] })
+    secondSocket.receive({ type: 'gameState', state: {
+      matchId: 'request-match', roomCode: 'REQ001', revision: 1, phase: 'Main', players: [],
+    } })
+    assert.equal(secondSocket.sent.filter(item => JSON.parse(item).type === 'gameAction').length, 0,
+      'the action must not race ahead of recoveryComplete')
+    secondSocket.receive({ type: 'recoveryComplete', connectionGeneration: 72,
+      roomCode: 'REQ001', matchId: 'request-match', recoveryRevision: 1 })
+    await flushPromises()
+    const resent = secondSocket.sent.filter(item => JSON.parse(item).type === 'gameAction')
+    assert.equal(resent.length, 1)
+    assert.deepEqual(JSON.parse(resent[0]), original)
+    secondSocket.receive({ type: 'actionRejected', requestId: original.requestId, message: '权威响应' })
+    assert.equal(net.l12State.pendingAction, false)
+    net.disconnect()
+  }],
+
+  ['an action started while offline does not leave a negotiated request permanently pending', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'offline-action-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'offline-action-session', name: '测试玩家',
+      connectionGeneration: 73, capabilities: { requestIds: true, deltaGameState: true } })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 73 })
+    await connected
+
+    socket.emitClose(1006, 'network unavailable')
+    assert.equal(net.l12State.status, 'offline')
+    net.gameAction({ type: 'endTurn' })
+    assert.equal(net.l12State.pendingAction, false,
+      'an action that was never sent cannot be retried as if the server had accepted it')
+    await timers.advance(1_000)
+    net.disconnect()
+  }],
+
+  ['negotiated deltas rebuild the last private envelope and request a full snapshot on a missing base', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'delta-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'delta-session', name: '测试玩家',
+      connectionGeneration: 81, capabilities: { requestIds: true, deltaGameState: true } })
+    socket.receive({ type: 'roomState', roomCode: 'DELTA1', yourPlayerIndex: 0, started: true, players: [] })
+    socket.receive({ type: 'gameState', state: {
+      matchId: 'delta-match', roomCode: 'DELTA1', revision: 4, phase: 'Main',
+      players: [{ hp: 20, hand: ['private-card'] }, { hp: 20, handCount: 1 }],
+    } })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 81,
+      roomCode: 'DELTA1', matchId: 'delta-match', recoveryRevision: 4 })
+    await connected
+
+    socket.receive({ type: 'gameStateDelta', matchId: 'delta-match', baseRevision: 4, revision: 5,
+      changes: [
+        { path: ['state', 'revision'], value: 5, remove: false },
+        { path: ['state', 'players', 0, 'hp'], value: 19, remove: false },
+      ] })
+    assert.equal(net.l12State.game.revision, 5)
+    assert.equal(net.l12State.game.players[0].hp, 19)
+    assert.deepEqual(net.l12State.game.players[0].hand, ['private-card'])
+
+    const syncBefore = socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+    socket.receive({ type: 'gameStateDelta', matchId: 'delta-match', baseRevision: 3, revision: 6,
+      changes: [{ path: ['state', 'revision'], value: 6, remove: false }] })
+    assert.equal(net.l12State.game.revision, 5)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, syncBefore + 1)
+    net.disconnect()
   }],
 ]
 

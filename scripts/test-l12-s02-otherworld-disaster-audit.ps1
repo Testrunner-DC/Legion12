@@ -99,7 +99,7 @@ $auditFiles = @(
     'S02-OTHERWORLD-DISASTER-ABILITY-AUDIT.md'
 )
 $allAuditRows = @($auditFiles | ForEach-Object {
-    [regex]::Matches((Read-Source $_), '(?m)^\| (?<id>S\d{2}-[A-Za-z0-9]+) [^|\r\n]+ \| (?<abilities>\d+) \|.*?\| (?<status>[^|\r\n]+) \|$') |
+    [regex]::Matches((Read-Source $_), '(?m)^\| (?<id>S\d{2}-[A-Za-z0-9]+) [^|\r\n]+ \| (?<abilities>\d+) \|.*?\| (?<status>[^|\r\n]+) \|\r?$') |
         ForEach-Object {
             [pscustomobject]@{
                 Id = $_.Groups['id'].Value

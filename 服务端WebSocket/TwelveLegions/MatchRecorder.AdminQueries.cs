@@ -114,15 +114,27 @@ public sealed partial class MatchRecorder
 
     private static async Task EnsureInlineReplayWithinLimitsAsync(SqliteConnection connection, string matchId)
     {
+        var storageVersion = await ReadStorageVersionAsync(connection, matchId);
         var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT COUNT(*),COALESCE(SUM(
-                length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
-                +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
-                +COALESCE(length(CAST(error AS BLOB)),0)
-            ),0)
-            FROM match_events WHERE match_id=$match;
-            """;
+        command.CommandText = storageVersion >= JournalStorageVersion
+            ? """
+                SELECT COUNT(*),COALESCE(SUM(
+                    length(CAST(command_json AS BLOB))+length(CAST(state_hash AS BLOB))
+                    +length(CAST(received_utc AS BLOB))+COALESCE(length(CAST(error AS BLOB)),0)
+                ),0) + COUNT(*) * COALESCE((
+                    SELECT MAX(uncompressed_bytes) FROM match_state_checkpoints
+                    WHERE match_id=$match
+                ),0)
+                FROM match_events WHERE match_id=$match;
+                """
+            : """
+                SELECT COUNT(*),COALESCE(SUM(
+                    length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
+                    +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
+                    +COALESCE(length(CAST(error AS BLOB)),0)
+                ),0)
+                FROM match_events WHERE match_id=$match;
+                """;
         command.Parameters.AddWithValue("$match", matchId);
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return;
@@ -142,18 +154,31 @@ public sealed partial class MatchRecorder
         var afterSequence = DecodeReplayCursor(normalizedMatchId, cursor);
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        var storageVersion = await ReadStorageVersionAsync(connection, normalizedMatchId, cancellationToken);
 
         var metadata = connection.CreateCommand();
-        metadata.CommandText = """
-            SELECT COUNT(e.id),COALESCE(SUM(
-                length(CAST(e.command_json AS BLOB))+length(CAST(e.state_json AS BLOB))
-                +length(CAST(e.state_hash AS BLOB))+length(CAST(e.received_utc AS BLOB))
-                +COALESCE(length(CAST(e.error AS BLOB)),0)
-            ),0)
-            FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
-            WHERE m.match_id=$match AND (m.mode_id='sandbox' OR m.ended_utc IS NOT NULL)
-            GROUP BY m.match_id;
-            """;
+        metadata.CommandText = storageVersion >= JournalStorageVersion
+            ? """
+                SELECT COUNT(e.id),COALESCE(SUM(
+                    length(CAST(e.command_json AS BLOB))+length(CAST(e.state_hash AS BLOB))
+                    +length(CAST(e.received_utc AS BLOB))+COALESCE(length(CAST(e.error AS BLOB)),0)
+                    +COALESCE((SELECT MAX(c.uncompressed_bytes)
+                               FROM match_state_checkpoints c WHERE c.match_id=m.match_id),0)
+                ),0)
+                FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+                WHERE m.match_id=$match AND (m.mode_id='sandbox' OR m.ended_utc IS NOT NULL)
+                GROUP BY m.match_id;
+                """
+            : """
+                SELECT COUNT(e.id),COALESCE(SUM(
+                    length(CAST(e.command_json AS BLOB))+length(CAST(e.state_json AS BLOB))
+                    +length(CAST(e.state_hash AS BLOB))+length(CAST(e.received_utc AS BLOB))
+                    +COALESCE(length(CAST(e.error AS BLOB)),0)
+                ),0)
+                FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+                WHERE m.match_id=$match AND (m.mode_id='sandbox' OR m.ended_utc IS NOT NULL)
+                GROUP BY m.match_id;
+                """;
         metadata.Parameters.AddWithValue("$match", normalizedMatchId);
         long totalCommands;
         long totalBytes;
@@ -169,15 +194,26 @@ public sealed partial class MatchRecorder
         // before GetString/JsonDocument.Parse. Only the accepted <=4 MiB sequence range
         // is selected by the second query below.
         var sizing = connection.CreateCommand();
-        sizing.CommandText = """
-            SELECT length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
-                     +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
-                     +COALESCE(length(CAST(error AS BLOB)),0),sequence
-            FROM match_events
-            WHERE match_id=$match AND sequence>$after
-            ORDER BY sequence
-            LIMIT $take;
-            """;
+        sizing.CommandText = storageVersion >= JournalStorageVersion
+            ? """
+                SELECT length(CAST(command_json AS BLOB))+length(CAST(state_hash AS BLOB))
+                         +length(CAST(received_utc AS BLOB))+COALESCE(length(CAST(error AS BLOB)),0)
+                         +COALESCE((SELECT MAX(uncompressed_bytes) FROM match_state_checkpoints
+                                   WHERE match_id=$match),0),sequence
+                FROM match_events
+                WHERE match_id=$match AND sequence>$after
+                ORDER BY sequence
+                LIMIT $take;
+                """
+            : """
+                SELECT length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
+                         +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
+                         +COALESCE(length(CAST(error AS BLOB)),0),sequence
+                FROM match_events
+                WHERE match_id=$match AND sequence>$after
+                ORDER BY sequence
+                LIMIT $take;
+                """;
         sizing.Parameters.AddWithValue("$match", normalizedMatchId);
         sizing.Parameters.AddWithValue("$after", afterSequence);
         sizing.Parameters.AddWithValue("$take", take + 1);
@@ -206,31 +242,58 @@ public sealed partial class MatchRecorder
         var items = new List<L12RecordedCommand>(sequences.Count);
         if (sequences.Count > 0)
         {
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json
-                FROM match_events
-                WHERE match_id=$match AND sequence>$after AND sequence<=$last
-                ORDER BY sequence;
-                """;
-            command.Parameters.AddWithValue("$match", normalizedMatchId);
-            command.Parameters.AddWithValue("$after", afterSequence);
-            command.Parameters.AddWithValue("$last", sequences[^1]);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
+            if (storageVersion >= JournalStorageVersion)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                using var commandDocument = JsonDocument.Parse(reader.GetString(3));
-                using var stateDocument = JsonDocument.Parse(reader.GetString(8));
-                items.Add(new L12RecordedCommand(
-                    reader.GetInt64(0), reader.GetString(1), reader.IsDBNull(2) ? -1 : reader.GetInt32(2),
-                    commandDocument.RootElement.Clone(), reader.GetInt32(4) == 1,
-                    reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetString(7),
-                    stateDocument.RootElement.Clone()));
+                pageBytes = 0;
+                var reconstructed = await ReconstructJournalCommandsAsync(connection,
+                    normalizedMatchId, sequences[^1], afterSequence, cancellationToken);
+                foreach (var item in reconstructed.Where(item => item.Sequence > afterSequence))
+                {
+                    var rowBytes = Encoding.UTF8.GetByteCount(item.Command.GetRawText())
+                                   + Encoding.UTF8.GetByteCount(item.State.GetRawText())
+                                   + Encoding.UTF8.GetByteCount(item.StateHash)
+                                   + Encoding.UTF8.GetByteCount(item.ReceivedUtc)
+                                   + Encoding.UTF8.GetByteCount(item.Error ?? string.Empty);
+                    if (items.Count >= take || pageBytes + rowBytes > MaximumReplayPageBytes)
+                    {
+                        hasMore = true;
+                        if (items.Count == 0)
+                            throw new L12ReplayPayloadTooLargeException(matchId, totalCommands, rowBytes,
+                                MaximumReplayPageCommands, MaximumReplayPageBytes);
+                        break;
+                    }
+                    pageBytes += rowBytes;
+                    items.Add(item);
+                }
+            }
+            else
+            {
+                var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json
+                    FROM match_events
+                    WHERE match_id=$match AND sequence>$after AND sequence<=$last
+                    ORDER BY sequence;
+                    """;
+                command.Parameters.AddWithValue("$match", normalizedMatchId);
+                command.Parameters.AddWithValue("$after", afterSequence);
+                command.Parameters.AddWithValue("$last", sequences[^1]);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    using var commandDocument = JsonDocument.Parse(reader.GetString(3));
+                    using var stateDocument = JsonDocument.Parse(reader.GetString(8));
+                    items.Add(new L12RecordedCommand(
+                        reader.GetInt64(0), reader.GetString(1), reader.IsDBNull(2) ? -1 : reader.GetInt32(2),
+                        commandDocument.RootElement.Clone(), reader.GetInt32(4) == 1,
+                        reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetString(7),
+                        stateDocument.RootElement.Clone()));
+                }
             }
         }
-        var nextCursor = hasMore && sequences.Count > 0
-            ? EncodeReplayCursor(normalizedMatchId, sequences[^1])
+        var nextCursor = hasMore && items.Count > 0
+            ? EncodeReplayCursor(normalizedMatchId, items[^1].Sequence)
             : null;
         return new L12AdminReplayPage(items, nextCursor, take, pageBytes, totalCommands, totalBytes);
     }

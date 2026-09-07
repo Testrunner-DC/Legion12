@@ -162,6 +162,7 @@ public sealed partial class MatchRecorder
         }
         StorageFailureInjector?.Invoke("before-sandbox-abandon-commit");
         await transaction.CommitAsync();
+        _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
         return changed == 1;
     }
 
@@ -210,6 +211,7 @@ public sealed partial class MatchRecorder
         }
 
         await transaction.CommitAsync();
+        _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
         return changed == 1;
     }
 

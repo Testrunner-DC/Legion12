@@ -627,6 +627,9 @@ public sealed record L12ActionEvent(
 
 public sealed class L12GameState
 {
+    /// <summary>0 表示历史全事件哈希；2 表示有界表现窗口 + 独立完整事件日志。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int StateFormatVersion { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }
@@ -679,6 +682,8 @@ public sealed class L12GameState
     public int CounterTacticsDisabledExpiresAtPlayerTurnStart { get; set; } = -1;
     public int? Winner { get; set; }
     public string? WinnerReason { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EndedByAgreedDraw { get; set; }
     public long Revision { get; set; }
     public long EventSequence { get; set; }
     public long PromptSequence { get; set; }
