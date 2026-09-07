@@ -175,6 +175,21 @@ async function loadNetModule() {
   return importJavaScript(compile(source, filename), 'l12-net-recovery-test')
 }
 
+async function loadRouteGuard(platform) {
+  const filename = join(frontendRoot, 'src', 'router', 'index.ts')
+  const source = readFileSync(filename, 'utf8')
+  const body = source.slice(source.indexOf('router.beforeEach('))
+  globalThis.__l12GuardPlatform = platform
+  globalThis.__l12Guard = null
+  await importJavaScript(compile(`
+    const { canAccessAdmin, platformState, authState, refreshCurrentAccount } = globalThis.__l12GuardPlatform
+    const router = { beforeEach: guard => { globalThis.__l12Guard = guard } }
+    ${body}
+  `, filename), 'l12-route-guard')
+  assert.equal(typeof globalThis.__l12Guard, 'function')
+  return globalThis.__l12Guard
+}
+
 function accountFixture() {
   return { id: 'account-1', username: '测试玩家', role: 'player', createdAt: '2026-09-07T00:00:00Z', publicHistory: false }
 }
@@ -212,6 +227,167 @@ function sendSuccessfulHandshake(socket, generation) {
 }
 
 const tests = [
+  ['a half-open socket with no server replies is retried without requiring a close event', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'heartbeat-token' })
+    const net = await loadNetModule()
+    const pending = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 51)
+    await pending
+    await timers.advance(75_000)
+    assert.equal(socket.closeCalls.at(-1)?.code, 4000)
+    assert.equal(net.l12State.connectionIssue, 'websocket')
+    await timers.advance(1000)
+    assert.equal(FakeWebSocket.instances.length, 2)
+    net.disconnect()
+  }],
+  ['server replies keep heartbeat alive and an explicitly superseded socket never reconnects', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'heartbeat-alive' })
+    const net = await loadNetModule()
+    const pending = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 52)
+    await pending
+    for (let i = 0; i < 4; i++) {
+      await timers.advance(25_000)
+      socket.receive({ type: 'pong' })
+    }
+    assert.equal(socket.closeCalls.length, 0)
+    socket.receive({ type: 'sessionSuperseded' })
+    socket.emitClose(4002, 'session superseded')
+    await timers.advance(80_000)
+    assert.equal(FakeWebSocket.instances.length, 1)
+    net.disconnect()
+  }],
+  ['incomplete recovery acknowledgements back off instead of flooding full snapshots', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'backoff-token' })
+    const net = await loadNetModule()
+    const pending = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'backoff-session', connectionGeneration: 41 })
+    const ack = { type: 'recoveryComplete', connectionGeneration: 41, roomCode: 'MISSING' }
+    for (let i = 0; i < 100; i++) socket.receive(ack)
+    const count = () => socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+    assert.equal(count(), 1, 'repeated bad acks must not amplify memory pressure')
+    await timers.advance(999)
+    assert.equal(count(), 1)
+    await timers.advance(1)
+    assert.equal(count(), 2)
+    socket.receive({ type: 'roomState', roomCode: 'MISSING', yourPlayerIndex: 0, players: [], started: false })
+    socket.receive(ack)
+    await pending
+    await timers.advance(8_000)
+    assert.equal(count(), 2, 'a valid snapshot must cancel pending retries')
+    net.disconnect()
+  }],
+  ['verified route changes preserve authentication and never force a healthy socket to reconnect', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'route-token' })
+    const platform = await loadPlatformModule()
+    const calls = installFetchPlan([async () => response(200, accountFixture())])
+    await platform.initializeAuth()
+    const guard = await loadRouteGuard(platform)
+    for (const path of ['/battle', '/battle/records', '/battle/friends']) {
+      assert.equal(await guard({ meta: { requiresAccount: true }, fullPath: path }), true)
+      assert.equal(platform.authState.verified, true)
+    }
+    assert.equal(calls.length, 1, 'navigation must not issue forced identity refreshes')
+    assert.equal(globalThis.__l12DisconnectCalls, 0)
+  }],
+  ['route guard fails closed for cached but unverified identity and denied admin access', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'cached-token' })
+    const platform = await loadPlatformModule()
+    platform.platformState.account = accountFixture()
+    installFetchPlan([async () => response(503, { message: 'temporary failure' })])
+    const guard = await loadRouteGuard(platform)
+    assert.deepEqual(await guard({ meta: { requiresAccount: true }, fullPath: '/battle' }),
+      { name: 'me', query: { redirect: '/battle' } })
+    platform.authState.verified = true
+    assert.deepEqual(await guard({ meta: { requiresAdmin: true }, fullPath: '/admin' }),
+      { name: 'me', query: { redirect: '/admin' } })
+  }],
+  ['spectator recovery rejects a missing room snapshot then completes without relaxing identity checks', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'spectator-token' })
+    const net = await loadNetModule()
+    const pending = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'spectator-session', connectionGeneration: 21, recovered: true })
+    const game = { matchId: 'spectated-match', roomCode: 'WATCH1', revision: 8, phase: 'Main', players: [] }
+    const ack = { type: 'recoveryComplete', connectionGeneration: 21, roomCode: 'WATCH1', matchId: game.matchId, recoveryRevision: 8 }
+    socket.receive({ type: 'gameState', spectating: true, state: game })
+    socket.receive(ack)
+    assert.equal(net.l12State.recoveryPhase, 'snapshot-mismatch', 'the original missing room sequence must reproduce the incident')
+    assert.equal((await promiseOutcome(pending)).status, 'pending')
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, 1)
+    socket.receive({ type: 'roomState', roomCode: 'WATCH1', yourPlayerIndex: null, started: true, players: [] })
+    socket.receive({ type: 'gameState', spectating: true, gmEnabled: false, state: game })
+    socket.receive(ack)
+    await pending
+    socket.receive(ack)
+    assert.equal(net.l12State.status, 'online')
+    assert.equal(net.l12State.spectating, true)
+    assert.equal(net.l12State.gmEnabled, false)
+    assert.equal(net.l12State.room.yourPlayerIndex, null)
+    assert.equal(net.l12State.notice, '')
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, 1, 'complete and repeated acknowledgements must not restart the sync loop')
+    net.disconnect()
+  }],
+
+  ['ordinary and tournament spectator refresh accept ordered public room game and acknowledgement', async () => {
+    for (const tournament of [false, true]) {
+      installBrowserEnvironment({ 'l12-auth-token': 'spectator-token' })
+      const net = await loadNetModule()
+      const pending = net.connect()
+      const socket = FakeWebSocket.instances[0]
+      socket.open()
+      socket.receive({ type: 'session', sessionId: 'fresh-spectator', connectionGeneration: 22, recovered: true })
+      socket.receive({ type: 'roomState', roomCode: 'WATCH2', yourPlayerIndex: null, started: true, players: [] })
+      socket.receive({ type: 'gameState', spectating: true, gmEnabled: false,
+        ...(tournament ? { tournamentId: 'tournament-1', tournamentCode: 'EVENT1', tournamentMatchId: 'table-1' } : {}),
+        state: { matchId: 'watched-game', roomCode: 'WATCH2', revision: 12, phase: 'Main', players: [] } })
+      socket.receive({ type: 'recoveryComplete', connectionGeneration: 22, roomCode: 'WATCH2', matchId: 'watched-game', recoveryRevision: 12 })
+      await pending
+      assert.equal(net.l12State.status, 'online')
+      assert.equal(net.l12State.spectating, true)
+      assert.equal(net.l12State.gmEnabled, false)
+      if (tournament) assert.equal(net.l12State.game.tournamentMatchId, 'table-1')
+      assert.equal(socket.sent.some(item => JSON.parse(item).type === 'syncState'), false)
+      net.leaveRoom()
+      assert.equal(JSON.parse(socket.sent.at(-1)).type, 'leaveRoom')
+      socket.receive({ type: 'roomLeft' })
+      socket.receive({ type: 'recoveryComplete', connectionGeneration: 22, roomCode: null, matchId: null })
+      assert.equal(net.l12State.room, null)
+      assert.equal(net.l12State.game, null)
+      assert.equal(net.l12State.spectating, false)
+      net.disconnect()
+    }
+  }],
+
+  ['spectator recovery still refuses a wrong room match or lower revision', async () => {
+    for (const mismatch of ['room', 'match', 'revision']) {
+      installBrowserEnvironment({ 'l12-auth-token': 'spectator-token' })
+      const net = await loadNetModule()
+      const pending = net.connect()
+      const socket = FakeWebSocket.instances[0]
+      socket.open()
+      socket.receive({ type: 'session', sessionId: 'spectator-identity', connectionGeneration: 23 })
+      socket.receive({ type: 'roomState', roomCode: mismatch === 'room' ? 'WRONG' : 'WATCH3', yourPlayerIndex: null, started: true, players: [] })
+      socket.receive({ type: 'gameState', spectating: true,
+        state: { matchId: mismatch === 'match' ? 'wrong-match' : 'expected-match', revision: mismatch === 'revision' ? 4 : 5, phase: 'Main', players: [] } })
+      const ack = { type: 'recoveryComplete', connectionGeneration: 23, roomCode: 'WATCH3', matchId: 'expected-match', recoveryRevision: 5 }
+      socket.receive(ack)
+      assert.equal(net.l12State.recoveryPhase, 'snapshot-mismatch', `${mismatch} must not be bypassed for spectators`)
+      assert.equal(net.l12State.status, 'connecting')
+      socket.receive({ type: 'roomState', roomCode: 'WATCH3', yourPlayerIndex: null, started: true, players: [] })
+      socket.receive({ type: 'gameState', spectating: true, state: { matchId: 'expected-match', revision: 5, phase: 'Main', players: [] } })
+      socket.receive(ack)
+      await pending
+      assert.equal(net.l12State.status, 'online')
+      net.disconnect()
+    }
+  }],
+
   ['temporary auth network failure retries and verifies cached token', async () => {
     const account = accountFixture()
     const { timers, storage } = installBrowserEnvironment({

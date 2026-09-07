@@ -81,6 +81,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app = builder.Build();
         _app.Use(async (context, next) =>
         {
+            // Authentication, mail throttles and privacy-preserving ranked network keys
+            // must use the same verified client address, not the local reverse proxy.
+            context.Connection.RemoteIpAddress = L12TrustedClientAddress.Resolve(context);
             var correlationId = L12CorrelationIds.AcceptOrCreate(context.Request.Headers[L12CorrelationIds.HeaderName]);
             context.Items[L12CorrelationIds.ContextItemName] = correlationId;
             var originalPath = context.Request.Path.Value ?? string.Empty;
@@ -324,10 +327,12 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
         });
         _app.MapGet("/api/ranked/broadcasts", (int? limit) => Results.Ok(_platform.RankedBroadcasts(limit ?? 30)));
-        _app.MapPost("/api/ranked/broadcasts/claim", (HttpRequest request) =>
+        _app.MapPost("/api/ranked/broadcasts/claim", (HttpRequest request,
+            DateTimeOffset? subscriptionStartedAt) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            return account is null ? Results.Unauthorized() : Results.Ok(_platform.ClaimRankedBroadcast(account.Id));
+            return account is null ? Results.Unauthorized() : Results.Ok(
+                _platform.ClaimRankedBroadcast(account.Id, subscriptionStartedAt));
         });
         _app.MapPost("/api/ranked/broadcasts/{id}/complete", (HttpRequest request, string id,
             RankedBroadcastCompleteRequest body) =>
@@ -336,7 +341,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             return _platform.CompleteRankedBroadcast(account.Id, id, body.ClaimToken ?? string.Empty)
                 ? Results.Ok(new { completed = true })
-                : Results.Conflict(new { message = "广播领取已失效，请重新领取" });
+                : Results.Conflict(new { message = "广播领取不存在或确认凭据无效" });
         });
         _app.MapGet("/api/admin/ranked/config", (HttpRequest request) =>
         {

@@ -2,6 +2,28 @@
 
 本文件是追加式修复台账。开始新的 Bug 修复前必须先检索本文件；修复卡效时必须记录全卡池同类扫描结果。
 
+### BUG-20260907-CONNECTION-STABILITY 登录共享限流与赛后重连放大
+
+- L12-UI配套冻结：士气锁定显示半透明锁，不改支付；排位广播原来租约过期重新领取、组件重新挂载重播，现以订阅时间和服务器2分钟实时窗口筛选，领取即消费展示权，模块级续播与逐广播持久确认队列。后端广播4/4、静态及真实行为回归通过，行为测试涵盖双实例/重挂载/失败重试/pagehide/多键存储；根独立复跑两脚本通过，已接入build。相关文件由UI交接，可信代理middleware及根连接修改保留。
+- UI最终剩余0并冻结；士气锁视觉报告D:/GPT/Legion12/artifacts/batch281-morale-lock-ui，根已查看morale-lock.png，双方有效/过期/无锁场景保留32px圆标和三列镜像结构，小锁不拦截点击。UI独立1/2/4/5/8/10/11/12/18士气视觉通过；不把本地夹具占位卡图当成生产卡图库异常。
+
+- 状态：本地修复及根独立Batch通过；用户最新批准与L12-UI冻结交接后统一紧急发布，允许当前局无效中止、不修改已完成结算，保留未来维护及数据现场。尚未部署，最终以connection-stability-final-receipt.md为准。
+- 登录根因：Nginx转发到loopback，应用直接以RemoteIpAddress作为登录/邮件限流及排位匿名网络指纹来源，未解包可信代理链。目标关联ID审计为rate-limited，实际桶源127.0.0.1。新增只允许本机Nginx入口、从右到左遍历已知Cloudflare代理网段的地址解析；未知代理停止、忽略伪造前缀及CF-Connecting-IP，异常长度/格式失败关闭。网段来源https://www.cloudflare.com/ips-v4/、https://www.cloudflare.com/ips-v6/（2026-09-07核实）；不动态下载、不接受客户端配置可信源。
+- 赛后根因：SetReady(false)清Game却残留RankedClock；Disconnect的null!=GameOver成立，持久化抛错而Closed；重连把无Game已结算房间当活局恢复，且先读全部未结束排位的完整历史，造成失败循环与线上OOM。路由force刷新verified使健康WS主动断开，触发并放大上述链。
+- 同类范围：普通/排位/赛事/沙盒的返回、断线、认领，启动及单局恢复、authorityConclusion；所有RemoteIpAddress消费者；路由首次验证、已验证导航、身份失效与旧连接隔离。不改变卡效、账号密码校验、账号锁定阈值或正式服1G配置。
+- 红绿：真实HTTP代理隔离测试修复前0/1（另一玩家误429），修复后含来源/伪造/IPv4+IPv6及既有限流16/16；真实路由+platform测试红15/17→绿17/17。快照洪泛从100次请求缩为一次立即请求加1/2/4/8秒退避；半开连接无回复自动恢复，最终连接20/20。
+- 恢复专项10/10：清理已完成房间残留时钟；只对确认数据库已结束的旧冻结大厅解除，不放行未结记录；定向读取单局命令，不加载普通命令的完整state_json，authorityConclusion保留胜者与原因。状态哈希使用流式序列化，输出与旧算法一致；大历史三次哈希原分配68,940,176字节，现小于7,514,896字节。
+- 根独立Batch：规则2474/2474、限定平台102/102、UI290、连接20/20及Vue/Vite通过，日志D:/GPT/Legion12/artifacts/connection-stability-root-batch.log；仅NU1900源不可达警告。待UI冻结后干净提交级Release。无Schema迁移、无历史记录截断；回滚只在数据兼容下切程序，不以备份覆盖新事实。
+
+### BUG-20260907-SPECTATOR-RECOVERY 观战恢复缺少本人房间快照
+
+- 用户原场景：点击观战后提示“权威恢复快照尚未完整到达”，刷新仍反复。只读线上检查为637a489、health=ok、active/running、NRestarts=0，非整体服务宕机。
+- 根因：普通/赛事观战保存Session.RoomCode并进入room.Spectators；恢复ack携带roomCode/matchId/revision，但BroadcastRoom仅发给room.Sessions。观战者收到gameState和ack却无本人roomState；net.ts严格roomMatches拒绝，syncState重复同样缺口。
+- 同类扫描：SpectateRoom、SpectateTournamentMatch、RecoveryStateAsync/WithAckAsync、BroadcastRoom/BroadcastGame、ConnectAsync观战认领以及前端room/game/ack校验。既有观战重连测试只验证gameState，未验证本人完整序列。
+- 批准边界：用户已明确执行本地修复；禁止同步/推送/部署，禁止生产写入。critical负责公共单接收者房间投影及后端回归；根负责前端真实net.ts消息行为测试，L12-UI士气锁图标diff保留暂停。
+- 修复要求：观战补发仅公开信息的房间状态，顺序为roomState→gameState→ack；yourPlayerIndex为空、私有牌库名不公开，不加入玩家Sessions、不授予GM权限、不放宽客户端完整性校验。
+- 验证状态：本地已完成、未同步未部署。普通观战失败基线0/2→修复2/2，相邻生命周期59/59、赛事专项1/1；根独立Batch规则2463/2463、限定平台88/88、连接15/15、UI290及Vue/Vite通过，日志`D:/GPT/Legion12/artifacts/spectator-recovery-root-batch.log`。根新增3组行为回归覆盖旧消息缺口、完整序列、普通/赛事刷新、重复ack、退出及错房/错局/低revision拒绝；仅NU1900漏洞源警告。未改net.ts完整性校验、数据库Schema或生产状态，回退只涉及本地投影/类型/测试，不涉及数据恢复。
+
 ### BUG-20260907-277至280 远程身份、费用腾空格及迦具土交互
 
 - 授权与基线：用户批准5条新报告修复、一次同步和正式部署，尽量19:00前但不降低验收；原HEAD/正式服`cce59c9`、工作树干净。既有267–276已部署，不重复开发。本批实现及根独立Batch已通过，待提交级Release/发布，不能提前回填resolved。

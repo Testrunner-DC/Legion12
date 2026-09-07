@@ -48,8 +48,10 @@ public sealed partial class L12RoomManager
         var restored = 0;
         var invalidated = 0;
         var failed = settlementResult.Failed;
-        foreach (var source in await _recorder.LoadActiveRankedMatchesAsync())
+        foreach (var matchId in await _recorder.ListActiveRankedMatchIdsAsync())
         {
+            var source = await _recorder.LoadActiveRankedMatchAsync(matchId);
+            if (source is null) continue;
             Room? room = null;
             try
             {
@@ -172,15 +174,12 @@ public sealed partial class L12RoomManager
         {
             if (recorded.Sequence != ++expectedSequence)
                 throw new InvalidDataException("排位命令序号不连续");
-            var type = Property(recorded.Command, "Type", "type").GetString();
+            var type = recorded.CommandType;
             CommandResult outcome;
             if (string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
             {
-                var winnerElement = PropertyOrNull(recorded.State, "Winner", "winner");
-                var winner = winnerElement is { ValueKind: JsonValueKind.Number } value
-                    ? value.GetInt32() : (int?)null;
-                var reason = PropertyOrNull(recorded.State, "WinnerReason", "winnerReason")?.GetString()
-                    ?? "排位权威裁决";
+                var winner = recorded.AuthorityWinner;
+                var reason = recorded.AuthorityWinnerReason ?? "排位权威裁决";
                 if (winner is null && string.Equals(source.Runtime?.ConclusionKind,
                         L12GameEngine.AgreedDrawConclusionKind, StringComparison.OrdinalIgnoreCase))
                     engine.ConcludeAgreedDrawByAuthority(reason);
@@ -190,7 +189,7 @@ public sealed partial class L12RoomManager
             }
             else
             {
-                var command = recorded.Command.Deserialize<L12Command>(RankedRecoveryJson)
+                var command = JsonSerializer.Deserialize<L12Command>(recorded.CommandJson, RankedRecoveryJson)
                     ?? throw new InvalidDataException("排位命令载荷为空");
                 outcome = engine.Handle(recorded.PlayerIndex, command);
             }
@@ -324,9 +323,9 @@ public sealed partial class L12RoomManager
 
     private async Task<bool> ReloadRankedRoomFromRecorderAsync(Room room)
     {
-        var source = (await _recorder.LoadActiveRankedMatchesAsync())
-            .SingleOrDefault(item => string.Equals(item.MatchId, room.Game?.State.MatchId,
-                StringComparison.OrdinalIgnoreCase));
+        var matchId = room.Game?.State.MatchId;
+        if (string.IsNullOrWhiteSpace(matchId)) return false;
+        var source = await _recorder.LoadActiveRankedMatchAsync(matchId);
         if (source is null || source.LoadError is not null || source.Runtime is null) return false;
         var engine = ReplayRankedEngine(source);
         room.Game = engine;
@@ -337,6 +336,20 @@ public sealed partial class L12RoomManager
         room.RankedResultReported = false;
         room.Closed = false;
         RestoreRankedClock(room, source.Runtime);
+        return true;
+    }
+
+    private async Task<bool> TryReleasePersistedCompletedRankedRoomAsync(Room room)
+    {
+        if (!room.Closed || room.Game is not null || !room.CompletionRecorded
+            || !string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase))
+            return false;
+        // A legacy process may already have detached the completed engine but retained its clock,
+        // then frozen the lobby while trying to checkpoint a null game. Only repair that state when
+        // the recorder confirms this room has no unfinished ranked match awaiting reconstruction.
+        if (await _recorder.HasUnfinishedRankedMatchForRoomAsync(room.Code)) return false;
+        room.RankedClock = null;
+        room.Closed = false;
         return true;
     }
 

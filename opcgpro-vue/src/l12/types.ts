@@ -88,7 +88,7 @@ export interface PlayerView {
   handCount?: number
   moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
   moraleDeckCount?: number
-  morale: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
+  morale: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean; cannotUntapUntilRound?: number }>
   field: Array<Array<Card | null>>
   relic?: Card | null
   extraRelics?: Card[]
@@ -194,7 +194,7 @@ export interface RoomState {
   tournamentId?: string
   tournamentCode?: string
   tournamentMatchId?: string
-  yourPlayerIndex: number
+  yourPlayerIndex: number | null
   players: Array<{ name: string; playerIndex: number; connected: boolean; ready: boolean; deckIndex: number; customDeck?: boolean; deckName: string; masterName: string; faction: string }>
   decks: Array<{ index: number; name: string; masterId: string; masterName: string; faction: string }>
   options?: { matchModeId: string; spectating: 'public' | 'friends' | 'disabled'; handVisibility: 'request' | 'public'; disasterMode: 'all' | 'random' | 'season' | 'custom' | 'none'; useCardRestrictions?: boolean }

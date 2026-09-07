@@ -866,7 +866,10 @@ export const rankedApi = {
   },
   history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
-  claimBroadcast: () => platformRequest<RankedBroadcastClaim | null>('/api/ranked/broadcasts/claim', { method: 'POST' }),
+  claimBroadcast: (subscriptionStartedAt?: string) => {
+    const params = subscriptionStartedAt ? `?subscriptionStartedAt=${encodeURIComponent(subscriptionStartedAt)}` : ''
+    return platformRequest<RankedBroadcastClaim | null>(`/api/ranked/broadcasts/claim${params}`, { method: 'POST' })
+  },
   completeBroadcast: (id: string, claimToken: string) => platformRequest<{ completed: boolean }>(`/api/ranked/broadcasts/${encodeURIComponent(id)}/complete`, {
     method: 'POST', body: JSON.stringify({ claimToken }),
   }),

@@ -506,6 +506,224 @@ public sealed class RankedPersistenceRecoveryTests
     }
 
     [Fact]
+    public async Task CompletedRankedRoomReturnsToLobbyAndReconnectsWithoutPersistingANullGame()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("completed-room-reconnect");
+        var completed = await fixture.Manager.HandleActionAsync(fixture.FirstSession,
+            JsonSerializer.SerializeToElement(new { type = "surrender" }, WebJson));
+        Assert.Contains(completed.Select(MessageJson), payload => payload.GetProperty("type").GetString() == "gameState"
+            && payload.GetProperty("state").GetProperty("phase").GetString() == "GameOver");
+        Assert.NotNull((await fixture.Recorder.GetMatchAsync(fixture.MatchId))!.Match.EndedUtc);
+        Assert.Equal(0, await fixture.Recorder.CountActiveRankedRuntimesAsync());
+
+        var lobby = await fixture.Manager.SetReadyAsync(fixture.FirstSession, false);
+        Assert.Contains(lobby.Select(MessageJson), payload => payload.GetProperty("type").GetString() == "roomState");
+        fixture.Recorder.StorageFailureInjector = stage =>
+        {
+            if (stage == "before-ranked-runtime-batch-commit")
+                throw new IOException("completed room must not persist an active runtime");
+        };
+
+        fixture.Manager.Disconnect(fixture.FirstSession);
+        var replacement = Guid.NewGuid();
+        var claim = await fixture.Manager.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+
+        Assert.True(claim.Recovered);
+        Assert.Equal(fixture.RoomCode, claim.RoomCode);
+        var recovery = (await fixture.Manager.RecoveryStateWithAckAsync(replacement))
+            .Where(message => message.SessionId == replacement).Select(MessageJson).ToArray();
+        Assert.Contains(recovery, payload => payload.GetProperty("type").GetString() == "roomState");
+        Assert.DoesNotContain(recovery, payload => payload.GetProperty("type").GetString() == "gameState");
+        Assert.Equal(0, await fixture.Recorder.CountActiveRankedRuntimesAsync());
+    }
+
+    [Fact]
+    public async Task CompletedRankedRoomCanFenceItsOldSocketWithoutANullGameCheckpoint()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("completed-room-fenced-reconnect");
+        await fixture.Manager.HandleActionAsync(fixture.FirstSession,
+            JsonSerializer.SerializeToElement(new { type = "surrender" }, WebJson));
+        await fixture.Manager.SetReadyAsync(fixture.FirstSession, false);
+        fixture.Recorder.StorageFailureInjector = stage =>
+        {
+            if (stage == "before-ranked-runtime-batch-commit")
+                throw new IOException("completed room must not persist an active runtime");
+        };
+
+        var replacement = Guid.NewGuid();
+        var claim = await fixture.Manager.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+
+        Assert.True(claim.Recovered);
+        Assert.Equal(fixture.RoomCode, claim.RoomCode);
+        Assert.Equal("fenced-active-room-session", claim.ClaimDecision);
+    }
+
+    [Fact]
+    public async Task LegacyClosedCompletedRankedLobbyReopensOnlyAfterItsDurableMatchIsFinished()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("legacy-completed-lobby");
+        var room = RuntimeRoom(fixture.Manager, fixture.RoomCode);
+        var roomType = room.GetType();
+        var clockProperty = roomType.GetProperty("RankedClock")!;
+        var closedProperty = roomType.GetProperty("Closed")!;
+        var legacyClock = clockProperty.GetValue(room);
+        Assert.NotNull(legacyClock);
+        Assert.Equal(clockProperty.PropertyType, legacyClock.GetType());
+        await fixture.Manager.HandleActionAsync(fixture.FirstSession,
+            JsonSerializer.SerializeToElement(new { type = "surrender" }, WebJson));
+        await fixture.Manager.SetReadyAsync(fixture.FirstSession, false);
+        Assert.Null(clockProperty.GetValue(room));
+
+        // Recreate the exact legacy in-memory residue: completion was durably committed, but the
+        // old process retained its ranked clock and froze the now engine-less lobby on disconnect.
+        clockProperty.SetValue(room, legacyClock);
+        closedProperty.SetValue(room, true);
+        Assert.False(await fixture.Recorder.HasUnfinishedRankedMatchForRoomAsync(fixture.RoomCode));
+
+        var replacement = Guid.NewGuid();
+        var claim = await fixture.Manager.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+
+        Assert.True(claim.Recovered);
+        Assert.Equal(fixture.RoomCode, claim.RoomCode);
+        Assert.False((bool)closedProperty.GetValue(room)!);
+        Assert.Null(clockProperty.GetValue(room));
+    }
+
+    [Fact]
+    public async Task LegacyCompletedLobbyRepairDoesNotBypassAnUnfinishedRankedRecord()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("legacy-lobby-active-record");
+        var room = RuntimeRoom(fixture.Manager, fixture.RoomCode);
+        var roomType = room.GetType();
+        var clockProperty = roomType.GetProperty("RankedClock")!;
+        var closedProperty = roomType.GetProperty("Closed")!;
+        var legacyClock = clockProperty.GetValue(room);
+        Assert.NotNull(legacyClock);
+        Assert.Equal(clockProperty.PropertyType, legacyClock.GetType());
+        await fixture.Manager.HandleActionAsync(fixture.FirstSession,
+            JsonSerializer.SerializeToElement(new { type = "surrender" }, WebJson));
+        await fixture.Manager.SetReadyAsync(fixture.FirstSession, false);
+        var unfinished = await fixture.CreateAdditionalMatchAsync("legacy-lobby-unfinished");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var move = connection.CreateCommand();
+            move.CommandText = "UPDATE matches SET room_code=$room WHERE match_id=$match;";
+            move.Parameters.AddWithValue("$room", fixture.RoomCode);
+            move.Parameters.AddWithValue("$match", unfinished.MatchId);
+            Assert.Equal(1, await move.ExecuteNonQueryAsync());
+        }
+        clockProperty.SetValue(room, legacyClock);
+        closedProperty.SetValue(room, true);
+        Assert.True(await fixture.Recorder.HasUnfinishedRankedMatchForRoomAsync(fixture.RoomCode));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Manager.ConnectAsync(
+            Guid.NewGuid(), fixture.First.Id, fixture.First.Username));
+
+        Assert.True((bool)closedProperty.GetValue(room)!);
+    }
+
+    [Fact]
+    public async Task TargetedRankedRecoveryDoesNotLoadAnUnrelatedActiveMatch()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("targeted-recovery");
+        var unrelated = await fixture.CreateAdditionalMatchAsync("targeted-recovery-unrelated");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var corrupt = connection.CreateCommand();
+            corrupt.CommandText = "UPDATE matches SET initial_state_json=$invalid WHERE match_id=$match;";
+            corrupt.Parameters.AddWithValue("$invalid", "{unrelated-invalid-state");
+            corrupt.Parameters.AddWithValue("$match", unrelated.MatchId);
+            Assert.Equal(1, await corrupt.ExecuteNonQueryAsync());
+        }
+
+        var source = Assert.IsType<L12RankedRecoverySource>(
+            await fixture.Recorder.LoadActiveRankedMatchAsync(fixture.MatchId));
+
+        Assert.Equal(fixture.MatchId, source.MatchId);
+        Assert.Null(source.LoadError);
+    }
+
+    [Fact]
+    public async Task RankedRecoveryReplaysOrdinaryCommandsWithoutMaterializingStoredFullStates()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("lightweight-events");
+        var prompt = fixture.InitialState.GetProperty("prompts").EnumerateArray().Single();
+        var owner = prompt.GetProperty("playerIndex").GetInt32();
+        var accepted = await fixture.Manager.HandleActionAsync(fixture.SessionFor(owner),
+            JsonSerializer.SerializeToElement(new
+            {
+                type = "resolvePrompt",
+                promptId = prompt.GetProperty("promptId").GetString(),
+                choice = "first",
+            }, WebJson));
+        Assert.DoesNotContain(accepted.Select(MessageJson), payload =>
+            payload.GetProperty("type").GetString() == "actionRejected");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var corrupt = connection.CreateCommand();
+            corrupt.CommandText = "UPDATE match_events SET state_json=$invalid WHERE match_id=$match AND sequence=1;";
+            corrupt.Parameters.AddWithValue("$invalid", "{ordinary-state-is-not-a-recovery-input");
+            corrupt.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await corrupt.ExecuteNonQueryAsync());
+        }
+
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder,
+            fixture.ReloadPlatform(), () => fixture.Clock.UtcNow);
+        var summary = await restored.RestoreRankedRoomsAsync();
+
+        Assert.Equal(1, summary.Restored);
+        Assert.Equal(0, summary.Invalidated);
+        var replacement = Guid.NewGuid();
+        var account = owner == 0 ? fixture.First : fixture.Second;
+        var claim = await restored.ConnectAsync(replacement, account.Id, account.Username);
+        Assert.True(claim.Recovered);
+        var recoveredState = (await restored.RecoveryStateWithAckAsync(replacement))
+            .Where(message => message.SessionId == replacement).Select(MessageJson)
+            .Single(payload => payload.GetProperty("type").GetString() == "gameState")
+            .GetProperty("state");
+        Assert.Equal(fixture.MatchId, recoveredState.GetProperty("matchId").GetString());
+        Assert.True(recoveredState.GetProperty("revision").GetInt64()
+                    > fixture.InitialState.GetProperty("revision").GetInt64());
+    }
+
+    [Fact]
+    public async Task LightweightRecoveryStillReadsAuthorityConclusionWinnerAndReason()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("lightweight-authority");
+        fixture.Manager.Disconnect(fixture.SessionFor(fixture.ActingPlayer));
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(4);
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var exposeCompletedBoundary = connection.CreateCommand();
+            exposeCompletedBoundary.CommandText = """
+                UPDATE matches SET ended_utc=NULL WHERE match_id=$match;
+                UPDATE ranked_match_runtime SET status='active' WHERE match_id=$match;
+                """;
+            exposeCompletedBoundary.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(2, await exposeCompletedBoundary.ExecuteNonQueryAsync());
+        }
+
+        var source = Assert.IsType<L12RankedRecoverySource>(
+            await fixture.Recorder.LoadActiveRankedMatchAsync(fixture.MatchId));
+        Assert.Null(source.LoadError);
+        var authority = Assert.Single(source.Commands, command =>
+            command.CommandType.Equals("authorityConclusion", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1 - fixture.ActingPlayer, authority.AuthorityWinner);
+        Assert.Contains("超过4分钟", authority.AuthorityWinnerReason);
+    }
+
+    [Fact]
     public async Task DuplicateRoomCodeQuarantinesOnlyConflictingMatchAndKeepsFirstRecoveryClaimable()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"l12-ranked-duplicate-room-{Guid.NewGuid():N}");
@@ -638,6 +856,21 @@ public sealed class RankedPersistenceRecoveryTests
 
     private static JsonElement MessageJson(OutgoingMessage message)
         => JsonSerializer.SerializeToElement(message.Payload, WebJson);
+
+    private static object RuntimeRoom(L12RoomManager manager, string roomCode)
+    {
+        var rooms = (System.Collections.IEnumerable)typeof(L12RoomManager)
+            .GetField("_rooms", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(manager)!;
+        foreach (var entry in rooms)
+        {
+            var entryType = entry!.GetType();
+            if (string.Equals((string?)entryType.GetProperty("Key")!.GetValue(entry), roomCode,
+                    StringComparison.OrdinalIgnoreCase))
+                return entryType.GetProperty("Value")!.GetValue(entry)!;
+        }
+        throw new InvalidOperationException($"Missing runtime room {roomCode}");
+    }
 
     private static async Task DeleteTestDirectoryAsync(string directory)
     {

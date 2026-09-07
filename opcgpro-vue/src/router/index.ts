@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { canAccessAdmin, platformState, refreshCurrentAccount } from '@/l12/platform'
+import { authState, canAccessAdmin, platformState, refreshCurrentAccount } from '@/l12/platform'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -38,13 +38,17 @@ export const router = createRouter({
 
 router.beforeEach(async to => {
   if (to.meta.requiresAdmin !== true && to.meta.requiresAccount !== true) return true
+  let timeout: number | undefined
   try {
     await Promise.race([
-      refreshCurrentAccount({ force: true }),
-      new Promise<void>(resolve => window.setTimeout(resolve, 3_000)),
+      // Navigation is not a new login. Reuse the already verified identity; a forced
+      // refresh temporarily clears verified and tears down the live game socket.
+      refreshCurrentAccount(),
+      new Promise<void>(resolve => { timeout = window.setTimeout(resolve, 3_000) }),
     ])
   } catch { /* 权限校验不可用时保持失败关闭。 */ }
-  if (!platformState.account) return { name: 'me', query: { redirect: to.fullPath } }
+  finally { window.clearTimeout(timeout) }
+  if (!authState.verified || !platformState.account) return { name: 'me', query: { redirect: to.fullPath } }
   if (platformState.account.mustChangePassword && to.name !== 'me')
     return { name: 'me', query: { redirect: to.fullPath, reason: 'password-change-required' } }
   if (to.meta.requiresAdmin !== true) return true

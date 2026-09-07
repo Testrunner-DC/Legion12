@@ -177,6 +177,9 @@ public sealed partial class L12RoomManager
                     try
                     {
                         var reopeningClosedRoom = recoveredRoom.Closed;
+                        if (reopeningClosedRoom
+                            && await TryReleasePersistedCompletedRankedRoomAsync(recoveredRoom))
+                            reopeningClosedRoom = false;
                         if (reopeningClosedRoom)
                         {
                             try
@@ -212,8 +215,8 @@ public sealed partial class L12RoomManager
                             ? "fenced-active-room-session" : "reclaimed-disconnected-room";
                         _sessions[sessionId] = replacement;
                         RefreshRankedClockActorsLocked(recoveredRoom, now);
-                        if (recoveredRoom.RankedClock is not null
-                            && recoveredRoom.Game?.State.Phase != L12Phase.GameOver)
+                        if (recoveredRoom.RankedClock is not null && recoveredRoom.Game is not null
+                            && recoveredRoom.Game.State.Phase != L12Phase.GameOver)
                         {
                             try
                             {
@@ -658,11 +661,12 @@ public sealed partial class L12RoomManager
                 if (room.Game?.State.Phase == L12Phase.GameOver)
                     await CompleteTournamentRoomGameAsync(room);
             }
-            var messages = room.Game is null ? BroadcastRoom(room)
-                : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
+            var messages = BroadcastRoom(room).ToList();
+            if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
+            if (room.Game is not null) messages.AddRange(BroadcastGame(room));
             return tournamentStartBlocked
                 ? messages.Concat(MaintenanceBlocked(sessionId, CaptureOperationsPolicy())).ToArray()
-                : messages;
+                : messages.ToArray();
         }
         finally { room.Gate.Release(); }
     }
@@ -685,8 +689,9 @@ public sealed partial class L12RoomManager
                 if (room.Game?.State.Phase == L12Phase.GameOver)
                     await CompleteTournamentRoomGameAsync(room);
             }
-            var messages = (room.Game is null ? BroadcastRoom(room)
-                : BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray()).ToList();
+            var messages = BroadcastRoom(room).ToList();
+            if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
+            if (room.Game is not null) messages.AddRange(BroadcastGame(room));
             if (tournamentStartBlocked)
                 messages.AddRange(MaintenanceBlocked(sessionId, CaptureOperationsPolicy()));
             messages.Add(RecoveryComplete(session, recovered, room));
@@ -901,7 +906,7 @@ public sealed partial class L12RoomManager
             session.PlayerIndex = null;
             session.IsSpectator = true;
         }
-        return [new OutgoingMessage(sessionId, new
+        return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
         {
             type = "gameState",
             spectating = true,
@@ -1052,7 +1057,7 @@ public sealed partial class L12RoomManager
             session.PlayerIndex = null;
             session.IsSpectator = true;
         }
-        return [new OutgoingMessage(sessionId, new
+        return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
         {
             type = "gameState", spectating = true, gmEnabled = false,
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
@@ -1158,6 +1163,7 @@ public sealed partial class L12RoomManager
                 // 完成记录已经在对局进入 GameOver 时落盘；这里只重置房间内的赛局槽与准备状态，
                 // 保留成员、房号、牌库和固定运营策略，供双方重新准备开启全新 match。
                 room.Game = null;
+                room.RankedClock = null;
                 room.CommandSequence = 0;
                 Array.Fill(room.Ready, false);
             }
@@ -1399,7 +1405,8 @@ public sealed partial class L12RoomManager
             session.Connected = false;
             session.DisconnectedAt ??= now;
             RefreshRankedClockActorsLocked(room, now);
-            if (room.RankedClock is not null && room.Game?.State.Phase != L12Phase.GameOver)
+            if (room.RankedClock is not null && room.Game is not null
+                && room.Game.State.Phase != L12Phase.GameOver)
             {
                 try
                 {
@@ -1530,7 +1537,7 @@ public sealed partial class L12RoomManager
         session.IsSpectator = false;
     }
 
-    private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
+    private OutgoingMessage RoomStateForViewer(Room room, Session viewer)
     {
         var decks = _catalog.PresetDecks.Select((deck, index) => (deck, index))
             .Where(item => IsPresetAllowed(room.OperationsPolicy, item.index, out _))
@@ -1540,34 +1547,34 @@ public sealed partial class L12RoomManager
                 masterName = _catalog.Cards[item.deck.MasterId].NameZh,
                 faction = _catalog.Cards[item.deck.MasterId].Faction,
             }).ToArray();
-        return room.Sessions.Select(id =>
+        var canViewDeckSelections = !viewer.IsSpectator && viewer.PlayerIndex is not null;
+        var players = room.Sessions.Select(memberId =>
         {
-            var viewer = _sessions[id];
-            var players = room.Sessions.Select(memberId =>
+            var member = _sessions[memberId];
+            var deck = SelectedDeck(member);
+            var master = _catalog.Cards[deck.MasterId];
+            return new
             {
-                var member = _sessions[memberId];
-                var deck = SelectedDeck(member);
-                var master = _catalog.Cards[deck.MasterId];
-                return new
-                {
-                    member.Name, playerIndex = member.PlayerIndex, member.Connected,
-                    ready = room.Ready[member.PlayerIndex!.Value],
-                    deckIndex = member.CustomDeck is null ? member.SelectedDeckIndex : -1,
-                    customDeck = member.CustomDeck is not null,
-                    deckName = member.PlayerIndex == viewer.PlayerIndex ? deck.Name : string.Empty,
-                    masterName = master.NameZh, faction = master.Faction,
-                };
-            }).ToArray();
-            return new OutgoingMessage(id, new
-            {
-                type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
-                players, decks, options = room.Options, started = room.Game is not null, sandbox = room.IsSandbox,
-                tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
-                tournamentMatchId = room.TournamentMatchId,
-                operationsPolicyVersion = room.OperationsPolicy.Version,
-            });
+                member.Name, playerIndex = member.PlayerIndex, member.Connected,
+                ready = room.Ready[member.PlayerIndex!.Value],
+                deckIndex = canViewDeckSelections && member.CustomDeck is null ? member.SelectedDeckIndex : -1,
+                customDeck = canViewDeckSelections && member.CustomDeck is not null,
+                deckName = canViewDeckSelections && member.PlayerIndex == viewer.PlayerIndex ? deck.Name : string.Empty,
+                masterName = master.NameZh, faction = master.Faction,
+            };
         }).ToArray();
+        return new OutgoingMessage(viewer.Id, new
+        {
+            type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
+            players, decks, options = room.Options, started = room.Game is not null, sandbox = room.IsSandbox,
+            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+            tournamentMatchId = room.TournamentMatchId,
+            operationsPolicyVersion = room.OperationsPolicy.Version,
+        });
     }
+
+    private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
+        => room.Sessions.Select(id => RoomStateForViewer(room, _sessions[id])).ToArray();
 
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room)
     {

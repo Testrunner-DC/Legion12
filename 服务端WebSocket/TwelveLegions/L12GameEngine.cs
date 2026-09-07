@@ -761,8 +761,12 @@ public sealed partial class L12GameEngine
 
     public string ComputeStateHash()
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(SerializeFullState()));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
+        // Hash the exact canonical JSON bytes without keeping both a full UTF-16
+        // string and UTF-8 array for every player/spectator/checkpoint snapshot.
+        using var hash = SHA256.Create();
+        using (var stream = new CryptoStream(Stream.Null, hash, CryptoStreamMode.Write))
+            JsonSerializer.Serialize(stream, State);
+        return Convert.ToHexString(hash.Hash!).ToLowerInvariant();
     }
 
     private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck)

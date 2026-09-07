@@ -58,6 +58,7 @@ public sealed record L12RankedSettlementPair(L12RankedSettlementView First,
 public sealed partial class L12PlatformStore
 {
     private static readonly string[] RankedFactionIds = ["order", "chaos", "fate"];
+    private static readonly TimeSpan RankedBroadcastRealtimeWindow = TimeSpan.FromMinutes(2);
     private sealed class RankedTierRow
     {
         public string Name { get; set; } = string.Empty;
@@ -590,32 +591,24 @@ public sealed partial class L12PlatformStore
             .Take(Math.Clamp(limit, 1, 100)).Select(ToView).ToArray();
     }
 
-    public L12RankedBroadcastClaimView? ClaimRankedBroadcast(string accountId)
+    public L12RankedBroadcastClaimView? ClaimRankedBroadcast(string accountId,
+        DateTimeOffset? subscriptionStartedAt = null)
+        => ClaimRankedBroadcastAt(accountId, subscriptionStartedAt, DateTimeOffset.UtcNow);
+
+    internal L12RankedBroadcastClaimView? ClaimRankedBroadcastAt(string accountId,
+        DateTimeOffset? subscriptionStartedAt, DateTimeOffset now)
     {
         lock (_gate)
         {
             var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Disabled && !row.Deleted)
                 ?? throw new KeyNotFoundException("账号不存在或不可用");
-            var now = DateTimeOffset.UtcNow;
-            var pending = _data.RankedBroadcastDeliveries
-                .Where(row => row.AccountId == accountId && row.CompletedAt is null)
-                .OrderBy(row => row.LeaseExpiresAt).FirstOrDefault();
-            if (pending is not null)
-            {
-                if (pending.LeaseExpiresAt > now) return null;
-                var pendingBroadcast = _data.RankedBroadcasts.FirstOrDefault(row => row.Id == pending.BroadcastId);
-                if (pendingBroadcast is not null)
-                {
-                    pending.ClaimToken = Guid.NewGuid().ToString("N");
-                    pending.LeaseExpiresAt = now.AddSeconds(45);
-                    Save();
-                    return new(ToView(pendingBroadcast), pending.ClaimToken, pending.LeaseExpiresAt);
-                }
-                _data.RankedBroadcastDeliveries.Remove(pending);
-            }
-
             var cutoff = _data.RankedBroadcastDeliveryCutover ?? now;
             if (account.CreatedAt > cutoff) cutoff = account.CreatedAt;
+            var freshFloor = now - RankedBroadcastRealtimeWindow;
+            var requestedStart = subscriptionStartedAt ?? freshFloor;
+            if (requestedStart > now) requestedStart = now;
+            if (requestedStart < freshFloor) requestedStart = freshFloor;
+            if (requestedStart > cutoff) cutoff = requestedStart;
             var delivered = _data.RankedBroadcastDeliveries.Where(row => row.AccountId == accountId)
                 .Select(row => row.BroadcastId).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var next = _data.RankedBroadcasts.Where(row => row.CreatedAt >= cutoff && !delivered.Contains(row.Id))

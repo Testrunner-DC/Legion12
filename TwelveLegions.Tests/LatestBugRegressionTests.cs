@@ -7,6 +7,10 @@ namespace TwelveLegions.Tests;
 public sealed class LatestBugRegressionTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+    private static readonly JsonSerializerOptions WebJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     private static L12GameEngine Create(int seed = 6401)
         => new(Catalog, "latest-regression", "LATEST", seed, ["甲", "乙"], [0, 0], skipPreparation: true);
@@ -664,8 +668,18 @@ public sealed class LatestBugRegressionTests
         await manager.SetReadyAsync(guest, true);
 
         var spectate = manager.SpectateRoom(spectator, roomCode);
-        Assert.Equal("gameState", JsonSerializer.SerializeToElement(Assert.Single(spectate).Payload)
-            .GetProperty("type").GetString());
+        var spectatorPayloads = spectate.Where(message => message.SessionId == spectator)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        Assert.Equal(["roomState", "gameState"], spectatorPayloads
+            .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+        var publicRoom = spectatorPayloads[0];
+        Assert.Equal(JsonValueKind.Null, publicRoom.GetProperty("yourPlayerIndex").ValueKind);
+        Assert.All(publicRoom.GetProperty("players").EnumerateArray(), player =>
+        {
+            Assert.Equal(string.Empty, player.GetProperty("deckName").GetString());
+            Assert.Equal(-1, player.GetProperty("deckIndex").GetInt32());
+            Assert.False(player.GetProperty("customDeck").GetBoolean());
+        });
 
         var leave = manager.LeaveRoom(spectator);
         var left = JsonSerializer.SerializeToElement(Assert.Single(leave).Payload);
@@ -702,11 +716,37 @@ public sealed class LatestBugRegressionTests
         var recovered = JsonSerializer.SerializeToElement(
             manager.Connect(recoveredSession, "spectator-recovery", "旁观者"));
         Assert.True(recovered.GetProperty("recovered").GetBoolean());
-        Assert.Contains(manager.RecoveryState(recoveredSession), message =>
-            JsonSerializer.SerializeToElement(message.Payload).GetProperty("type").GetString() == "gameState");
+        Assert.Equal(roomCode, recovered.GetProperty("roomCode").GetString());
+
+        var firstRecovery = (await manager.RecoveryStateWithAckAsync(recoveredSession, recovered: true))
+            .Where(message => message.SessionId == recoveredSession)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        Assert.Equal(["roomState", "gameState", "recoveryComplete"], firstRecovery
+            .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+        Assert.Equal(roomCode, firstRecovery[0].GetProperty("roomCode").GetString());
+        Assert.Equal(JsonValueKind.Null, firstRecovery[0].GetProperty("yourPlayerIndex").ValueKind);
+        Assert.True(firstRecovery[1].GetProperty("spectating").GetBoolean());
+        Assert.Equal(roomCode, firstRecovery[2].GetProperty("roomCode").GetString());
+        Assert.Equal(recovered.GetProperty("connectionGeneration").GetInt64(),
+            firstRecovery[2].GetProperty("connectionGeneration").GetInt64());
+
+        var repeatedRecovery = (await manager.RecoveryStateWithAckAsync(recoveredSession, recovered: true))
+            .Where(message => message.SessionId == recoveredSession)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        Assert.Equal(["roomState", "gameState", "recoveryComplete"], repeatedRecovery
+            .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+        Assert.Equal(firstRecovery[1].GetProperty("state").GetProperty("revision").GetInt64(),
+            repeatedRecovery[1].GetProperty("state").GetProperty("revision").GetInt64());
 
         Assert.Equal("roomLeft", JsonSerializer.SerializeToElement(
             Assert.Single(manager.LeaveRoom(recoveredSession)).Payload).GetProperty("type").GetString());
+        var afterLeave = (await manager.RecoveryStateWithAckAsync(recoveredSession, recovered: true))
+            .Where(message => message.SessionId == recoveredSession)
+            .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson)).ToArray();
+        var leftAck = Assert.Single(afterLeave);
+        Assert.Equal("recoveryComplete", leftAck.GetProperty("type").GetString());
+        Assert.Equal(JsonValueKind.Null, leftAck.GetProperty("roomCode").ValueKind);
+        Assert.Equal(JsonValueKind.Null, leftAck.GetProperty("matchId").ValueKind);
         manager.Disconnect(recoveredSession);
         var nextSession = Guid.NewGuid();
         var next = JsonSerializer.SerializeToElement(

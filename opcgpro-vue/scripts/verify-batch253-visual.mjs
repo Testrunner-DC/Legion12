@@ -29,12 +29,13 @@ const moraleTotal=Math.max(0,Number(params.get('morale')||12))
 const moraleActive=Math.max(0,Math.min(moraleTotal,Number(params.get('active')||moraleTotal)))
 const special=params.has('special')
 const trialMode=params.has('trial')
+const moraleLockMode=params.has('moraleLock')
 const slotMode=params.has('slot')
 const effectMode=params.get('effect')
 const canopicIds=['S01-0216','S01-0217','S01-0218','S01-0219','S01-0220']
 const canopicTrack=canopicIds.map((id,j)=>({...card(catalog.find(c=>c.id===id)||legions[0],'canopic-'+j),completed:j<3}))
 const trial=card(catalog.find(c=>c.cardType==='trial')||disasters[0],'trial-wide')
-const players=[0,1].map(i=>({playerIndex:i,name:i?'对方测试长昵称十二军团':'我方测试昵称',deckName:'合成验收',faction:special&&i===0?'taiyangcheng':'otherworld',master:{masterId:masters[i]?.id||'ST06-M1',masterName:masters[i]?.nameZh||'银臂努阿达',hp:7,maxHp:9},libraryCount:30,hand:legions.map((d,j)=>card(d,i+'hand'+j)),handCount:6,morale:Array.from({length:moraleTotal},(_,j)=>({instanceId:i+'morale'+j,cardId:'ST06-C1',tapped:j>=moraleActive})),field:slotMode&&i===0?[[card(legions[0],'0unit'),card(legions[1],'0occupied-1'),card(legions[2],'0occupied-2')],[card(legions[3],'0occupied-3'),card(legions[4],'0unit-payment'),card(legions[5],'0occupied-5')]]:[[card(legions[0],i+'unit'),null,null],[null,null,null]],graveyard:[card(legions[1],i+'grave')],mulliganDone:true,specialZones:{runes:3,trialLevel:0,godPower:[],trials:trialMode&&i===0?[trial]:[],canopicTrack:special&&i===0?canopicTrack:[]}}))
+const players=[0,1].map(i=>({playerIndex:i,name:i?'对方测试长昵称十二军团':'我方测试昵称',deckName:'合成验收',faction:special&&i===0?'taiyangcheng':'otherworld',master:{masterId:masters[i]?.id||'ST06-M1',masterName:masters[i]?.nameZh||'银臂努阿达',hp:7,maxHp:9},libraryCount:30,hand:legions.map((d,j)=>card(d,i+'hand'+j)),handCount:6,morale:Array.from({length:moraleTotal},(_,j)=>({instanceId:i+'morale'+j,cardId:'ST06-C1',tapped:j>=moraleActive,cannotUntapUntilRound:moraleLockMode?(j===0?3:j===1?2:0):0})),field:slotMode&&i===0?[[card(legions[0],'0unit'),card(legions[1],'0occupied-1'),card(legions[2],'0occupied-2')],[card(legions[3],'0occupied-3'),card(legions[4],'0unit-payment'),card(legions[5],'0occupied-5')]]:[[card(legions[0],i+'unit'),null,null],[null,null,null]],graveyard:[card(legions[1],i+'grave')],mulliganDone:true,specialZones:{runes:3,trialLevel:0,godPower:[],trials:trialMode&&i===0?[trial]:[],canopicTrack:special&&i===0?canopicTrack:[]}}))
 l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges:[{playerIndex:0,rankLabel:'迷雾旅人',masterTitle:'最强银臂努阿达'},{playerIndex:1,rankLabel:'',masterTitle:''}],recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
 if(slotMode)l12State.game.prompts=[{promptId:'occupied-slot-prompt',playerIndex:0,kind:'slot',text:'选择支付后登场位置',validChoices:['0:0','1:1'],minChoose:1,maxChoose:1,data:{choiceMode:'board-slot',targetPlayerIndex:'0'},choiceLabels:{},createdRevision:1,controller:0},{promptId:'declared-cost-prompt',playerIndex:0,kind:'resource-payment',text:'已声明费用',validChoices:['0unit','0morale0'],minChoose:1,maxChoose:1,data:{choiceMode:'resource-payment'},choiceLabels:{},createdRevision:1,controller:0}]
 if(effectMode){
@@ -136,7 +137,10 @@ try {
   {name:'morale-4',query:'morale=4&active=4',expected:4,label:'4/4'},
   {name:'morale-5',query:'morale=5&active=5',expected:5,label:'5/5'},
   {name:'morale-8',query:'morale=8&active=8',expected:8,label:'8/8'},
+  {name:'morale-10',query:'morale=10&active=10',expected:10,label:'10/10'},
+  {name:'morale-11',query:'morale=11&active=11',expected:11,label:'11/11'},
   {name:'morale-12',query:'morale=12&active=12',expected:12,label:'12/12'},
+  {name:'morale-lock',query:'morale=3&active=3&moraleLock=1',expected:3,label:'3/3',locked:true},
   {name:'morale-overflow-special',query:'morale=18&active=5&special=1',expected:12,label:'5/18'},
   {name:'morale-trial',query:'morale=3&active=3&trial=1',expected:3,label:'3/3'},
  ]){
@@ -173,6 +177,19 @@ try {
   if(result.orbs.length>3){
    assert(result.orbs[3].top>result.orbs[0].top,scenario.name+' my morale must wrap down')
    assert(opponent.orbs[3].top<opponent.orbs[0].top,scenario.name+' opponent morale must wrap up')
+  }
+  if(scenario.locked){
+   for(const side of ['side-my','side-opponent']){
+    const lock=page.locator('.l12-player-mat.'+side+' [data-ui-contract="active-morale-lock"]')
+    assert.equal(await lock.count(),1,scenario.name+' '+side+' must render only the currently effective lock')
+    const geometry=await lock.evaluate(element=>{
+     const lockRect=element.getBoundingClientRect(),iconRect=element.parentElement.querySelector('img').getBoundingClientRect(),style=getComputedStyle(element)
+     return {pointerEvents:style.pointerEvents,title:element.getAttribute('title'),overlapsIcon:lockRect.left<iconRect.right&&lockRect.right>iconRect.left&&lockRect.top<iconRect.bottom&&lockRect.bottom>iconRect.top}
+    })
+    assert.equal(geometry.pointerEvents,'none',scenario.name+' lock must not intercept morale clicks')
+    assert.equal(geometry.title,'本轮重置阶段无法转为活跃',scenario.name+' lock tooltip must describe reset-phase behavior')
+    assert.equal(geometry.overlapsIcon,false,scenario.name+' lock must not cover the morale symbol')
+   }
   }
   if(scenario.name==='morale-overflow-special'){
    assert.equal(result.canopics.length,5,'five Canopic markers must be present')

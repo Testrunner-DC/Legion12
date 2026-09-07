@@ -395,10 +395,35 @@ public sealed class TournamentFullFlowTests
                 Assert.Equal(match.Id, gameDocument.RootElement.GetProperty("tournamentMatchId").GetString());
             }
             var spectate = rooms.SpectateTournamentMatch(refereeSession, tournament.Id, match.Id);
-            var spectatorMessage = Assert.Single(spectate);
-            using (var spectatorDocument = JsonDocument.Parse(JsonSerializer.Serialize(spectatorMessage.Payload)))
+            var spectatorPayloads = spectate.Where(message => message.SessionId == refereeSession)
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).ToArray();
+            Assert.Equal(new[] { "roomState", "gameState" }, spectatorPayloads
+                .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+            Assert.Equal(JsonValueKind.Null, spectatorPayloads[0].GetProperty("yourPlayerIndex").ValueKind);
+            Assert.All(spectatorPayloads[0].GetProperty("players").EnumerateArray(), viewedPlayer =>
+            {
+                Assert.Equal(string.Empty, viewedPlayer.GetProperty("deckName").GetString());
+                Assert.Equal(-1, viewedPlayer.GetProperty("deckIndex").GetInt32());
+                Assert.False(viewedPlayer.GetProperty("customDeck").GetBoolean());
+            });
+            using (var spectatorDocument = JsonDocument.Parse(spectatorPayloads[1].GetRawText()))
                 Assert.Equal(tournament.Code,
                     spectatorDocument.RootElement.GetProperty("tournamentCode").GetString());
+
+            rooms.Disconnect(refereeSession);
+            var replacementReferee = Guid.NewGuid();
+            var refereeClaim = await rooms.ConnectAsync(replacementReferee, referee.Id, referee.Username);
+            Assert.True(refereeClaim.Recovered);
+            Assert.Equal(match.RoomCode, refereeClaim.RoomCode);
+            var refereeRecovery = (await rooms.RecoveryStateWithAckAsync(replacementReferee, recovered: true))
+                .Where(message => message.SessionId == replacementReferee)
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).ToArray();
+            Assert.Equal(new[] { "roomState", "gameState", "recoveryComplete" }, refereeRecovery
+                .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+            Assert.Equal(tournament.Id, refereeRecovery[0].GetProperty("tournamentId").GetString());
+            Assert.Equal(tournament.Code, refereeRecovery[1].GetProperty("tournamentCode").GetString());
+            Assert.Equal(match.Id, refereeRecovery[1].GetProperty("tournamentMatchId").GetString());
+            Assert.Equal(match.RoomCode, refereeRecovery[2].GetProperty("roomCode").GetString());
 
             using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
             var gameOver = await rooms.HandleActionAsync(hostSession, surrender.RootElement);

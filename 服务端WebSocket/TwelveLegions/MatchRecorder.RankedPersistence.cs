@@ -28,8 +28,12 @@ internal sealed record L12RankedSettlementOutboxEntry(
 internal sealed record L12RankedRecoverySource(
     string MatchId, string RoomCode, int Seed, string[] PlayerNames, string[] AccountIds,
     string InitialStateJson, string StartedUtc, L12PresetDeckDefinition[] Decks,
-    IReadOnlyList<L12RecordedCommand> Commands, L12RankedRuntimeCheckpoint? Runtime,
+    IReadOnlyList<L12RankedReplayCommand> Commands, L12RankedRuntimeCheckpoint? Runtime,
     string? LoadError);
+
+internal sealed record L12RankedReplayCommand(
+    long Sequence, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
+    string StateHash, int? AuthorityWinner, string? AuthorityWinnerReason);
 
 public sealed record L12RankedRecoverySummary(
     int SettlementsApplied, int Restored, int Invalidated, int Failed);
@@ -521,7 +525,39 @@ public sealed partial class MatchRecorder
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
-    internal async Task<IReadOnlyList<L12RankedRecoverySource>> LoadActiveRankedMatchesAsync()
+    internal async Task<IReadOnlyList<string>> ListActiveRankedMatchIdsAsync()
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT match_id FROM matches
+            WHERE mode_id='ranked' AND ended_utc IS NULL
+            ORDER BY started_utc,match_id;
+            """;
+        var result = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) result.Add(reader.GetString(0));
+        return result;
+    }
+
+    internal async Task<bool> HasUnfinishedRankedMatchForRoomAsync(string roomCode)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS(
+                SELECT 1 FROM matches
+                WHERE room_code=$room COLLATE NOCASE
+                  AND mode_id='ranked' AND ended_utc IS NULL
+            );
+            """;
+        command.Parameters.AddWithValue("$room", roomCode);
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+    }
+
+    internal async Task<L12RankedRecoverySource?> LoadActiveRankedMatchAsync(string matchId)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -532,62 +568,59 @@ public sealed partial class MatchRecorder
                    r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation
             FROM matches m
             LEFT JOIN ranked_match_runtime r ON r.match_id=m.match_id AND r.status='active'
-            WHERE m.mode_id='ranked' AND m.ended_utc IS NULL
-            ORDER BY m.started_utc,m.match_id;
+            WHERE m.match_id=$match AND m.mode_id='ranked' AND m.ended_utc IS NULL
+            LIMIT 1;
             """;
-        var rows = new List<(string MatchId, string RoomCode, int Seed, string[] Names, string[] Accounts,
-            string Initial, string Started, string? RuntimeJson, string? RuntimeHash, long? RuntimeGeneration)>();
+        command.Parameters.AddWithValue("$match", matchId);
+        (string MatchId, string RoomCode, int Seed, string[] Names, string[] Accounts,
+            string Initial, string Started, string? RuntimeJson, string? RuntimeHash,
+            long? RuntimeGeneration) row;
         await using (var reader = await command.ExecuteReaderAsync())
         {
-            while (await reader.ReadAsync())
-                rows.Add((reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
-                    [reader.GetString(3), reader.GetString(4)],
-                    [reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
-                        reader.IsDBNull(6) ? string.Empty : reader.GetString(6)],
-                    reader.GetString(7), reader.GetString(8),
-                    reader.IsDBNull(9) ? null : reader.GetString(9),
-                    reader.IsDBNull(10) ? null : reader.GetString(10),
-                    reader.IsDBNull(11) ? null : reader.GetInt64(11)));
+            if (!await reader.ReadAsync()) return null;
+            row = (reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
+                [reader.GetString(3), reader.GetString(4)],
+                [reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
+                    reader.IsDBNull(6) ? string.Empty : reader.GetString(6)],
+                reader.GetString(7), reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetInt64(11));
         }
-        var result = new List<L12RankedRecoverySource>();
-        foreach (var row in rows)
+        L12PresetDeckDefinition[] decks = [];
+        IReadOnlyList<L12RankedReplayCommand> events = [];
+        L12RankedRuntimeCheckpoint? runtime = null;
+        string? error = null;
+        try
         {
-            L12PresetDeckDefinition[] decks = [];
-            IReadOnlyList<L12RecordedCommand> events = [];
-            L12RankedRuntimeCheckpoint? runtime = null;
-            string? error = null;
-            try
-            {
-                if (string.IsNullOrWhiteSpace(row.Initial))
-                    throw new InvalidDataException("缺少初始权威状态");
-                if (row.Accounts.Any(string.IsNullOrWhiteSpace))
-                    throw new InvalidDataException("缺少排位账号席位");
-                if (row.RuntimeJson is null || row.RuntimeHash is null)
-                    throw new InvalidDataException("缺少排位运行快照");
-                if (!string.Equals(PersistenceHash(row.RuntimeJson), row.RuntimeHash, StringComparison.Ordinal))
-                    throw new InvalidDataException("排位运行快照校验失败");
-                var parsedRuntime = JsonSerializer.Deserialize<L12RankedRuntimeCheckpoint>(row.RuntimeJson,
-                    RankedPersistenceJson) ?? throw new InvalidDataException("排位运行快照为空");
-                ValidateRuntime(parsedRuntime);
-                if (parsedRuntime.CheckpointGeneration != row.RuntimeGeneration)
-                    throw new InvalidDataException("排位运行快照 generation 与索引列不一致");
-                if (!string.Equals(parsedRuntime.MatchId, row.MatchId, StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(parsedRuntime.RoomCode, row.RoomCode, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("排位运行快照身份不一致");
-                runtime = parsedRuntime;
-                decks = await ReadRecoveryDecksAsync(connection, row.MatchId, row.Initial);
-                events = await ReadRecoveryEventsAsync(connection, row.MatchId);
-            }
-            catch (Exception failure) when (failure is InvalidDataException or InvalidOperationException
-                                                   or JsonException or KeyNotFoundException
-                                                   or FormatException or OverflowException)
-            {
-                error = SafePersistenceError(failure.Message);
-            }
-            result.Add(new L12RankedRecoverySource(row.MatchId, row.RoomCode, row.Seed, row.Names,
-                row.Accounts, row.Initial, row.Started, decks, events, runtime, error));
+            if (string.IsNullOrWhiteSpace(row.Initial))
+                throw new InvalidDataException("缺少初始权威状态");
+            if (row.Accounts.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidDataException("缺少排位账号席位");
+            if (row.RuntimeJson is null || row.RuntimeHash is null)
+                throw new InvalidDataException("缺少排位运行快照");
+            if (!string.Equals(PersistenceHash(row.RuntimeJson), row.RuntimeHash, StringComparison.Ordinal))
+                throw new InvalidDataException("排位运行快照校验失败");
+            var parsedRuntime = JsonSerializer.Deserialize<L12RankedRuntimeCheckpoint>(row.RuntimeJson,
+                RankedPersistenceJson) ?? throw new InvalidDataException("排位运行快照为空");
+            ValidateRuntime(parsedRuntime);
+            if (parsedRuntime.CheckpointGeneration != row.RuntimeGeneration)
+                throw new InvalidDataException("排位运行快照 generation 与索引列不一致");
+            if (!string.Equals(parsedRuntime.MatchId, row.MatchId, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(parsedRuntime.RoomCode, row.RoomCode, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("排位运行快照身份不一致");
+            runtime = parsedRuntime;
+            decks = await ReadRecoveryDecksAsync(connection, row.MatchId, row.Initial);
+            events = await ReadRecoveryEventsAsync(connection, row.MatchId);
         }
-        return result;
+        catch (Exception failure) when (failure is InvalidDataException or InvalidOperationException
+                                               or JsonException or KeyNotFoundException
+                                               or FormatException or OverflowException)
+        {
+            error = SafePersistenceError(failure.Message);
+        }
+        return new L12RankedRecoverySource(row.MatchId, row.RoomCode, row.Seed, row.Names,
+            row.Accounts, row.Initial, row.Started, decks, events, runtime, error);
     }
 
     private static async Task<L12PresetDeckDefinition[]> ReadRecoveryDecksAsync(
@@ -706,23 +739,71 @@ public sealed partial class MatchRecorder
             throw new InvalidDataException($"{label}与精确构筑快照不一致");
     }
 
-    private static async Task<IReadOnlyList<L12RecordedCommand>> ReadRecoveryEventsAsync(
+    private static async Task<IReadOnlyList<L12RankedReplayCommand>> ReadRecoveryEventsAsync(
         SqliteConnection connection, string matchId)
     {
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json
+            SELECT sequence,player_index,command_json,accepted,revision,state_hash
             FROM match_events WHERE match_id=$match ORDER BY sequence;
             """;
         command.Parameters.AddWithValue("$match", matchId);
-        var events = new List<L12RecordedCommand>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-            events.Add(new L12RecordedCommand(reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2),
-                JsonDocument.Parse(reader.GetString(3)).RootElement.Clone(), reader.GetInt32(4) == 1,
-                reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetString(7),
-                JsonDocument.Parse(reader.GetString(8)).RootElement.Clone()));
+        var events = new List<L12RankedReplayCommand>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var commandJson = reader.GetString(2);
+                using var commandDocument = JsonDocument.Parse(commandJson);
+                var commandElement = commandDocument.RootElement;
+                if (!(commandElement.TryGetProperty("type", out var type)
+                      || commandElement.TryGetProperty("Type", out type))
+                    || type.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(type.GetString()))
+                    throw new InvalidDataException("排位命令缺少类型");
+                events.Add(new L12RankedReplayCommand(reader.GetInt64(0), reader.GetInt32(1),
+                    commandJson, type.GetString()!, reader.GetInt32(3) == 1, reader.GetInt64(4),
+                    reader.GetString(5), null, null));
+            }
+        }
+        for (var index = 0; index < events.Count; index++)
+        {
+            var recorded = events[index];
+            if (!string.Equals(recorded.CommandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var authority = await ReadAuthorityConclusionStateAsync(connection, matchId, recorded.Sequence);
+            events[index] = recorded with
+            {
+                AuthorityWinner = authority.Winner,
+                AuthorityWinnerReason = authority.Reason,
+            };
+        }
         return events;
+    }
+
+    private static async Task<(int? Winner, string? Reason)> ReadAuthorityConclusionStateAsync(
+        SqliteConnection connection, string matchId, long sequence)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT state_json FROM match_events
+            WHERE match_id=$match AND sequence=$sequence;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$sequence", sequence);
+        var stateJson = await command.ExecuteScalarAsync() as string
+                        ?? throw new InvalidDataException("排位权威结论缺少状态");
+        using var stateDocument = JsonDocument.Parse(stateJson);
+        var state = stateDocument.RootElement;
+        int? winnerValue = null;
+        string? reasonValue = null;
+        if ((state.TryGetProperty("Winner", out var winner)
+             || state.TryGetProperty("winner", out winner))
+            && winner.ValueKind == JsonValueKind.Number)
+            winnerValue = winner.GetInt32();
+        if (state.TryGetProperty("WinnerReason", out var reason)
+            || state.TryGetProperty("winnerReason", out reason))
+            reasonValue = reason.ValueKind == JsonValueKind.String ? reason.GetString() : null;
+        return (winnerValue, reasonValue);
     }
 
     internal async Task FinalizeIncompatibleRankedAsync(L12RankedRecoverySource source,

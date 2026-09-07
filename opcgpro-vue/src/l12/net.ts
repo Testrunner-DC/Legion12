@@ -50,8 +50,11 @@ let cancelPendingConnect: ((reason?: string) => void) | null = null
 let connectionAttemptSerial = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+let unansweredHeartbeats = 0
 let matchmakingPollTimer: ReturnType<typeof setInterval> | null = null
 let matchmakingRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+let snapshotRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+let snapshotRecoveryAttempt = 0
 let reconnectAttempts = 0
 let automaticConnectionEnabled = false
 
@@ -63,6 +66,24 @@ function clearReconnectTimer() {
 function clearHeartbeat() {
   if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer)
   heartbeatTimer = null
+  unansweredHeartbeats = 0
+}
+
+function clearSnapshotRecovery() {
+  if (snapshotRecoveryTimer !== null) window.clearTimeout(snapshotRecoveryTimer)
+  snapshotRecoveryTimer = null
+  snapshotRecoveryAttempt = 0
+}
+
+function requestSnapshotRecovery(socket: WebSocket) {
+  if (snapshotRecoveryTimer !== null || socket !== l12State.socket || socket.readyState !== WebSocket.OPEN) return
+  socket.send(JSON.stringify({ type: 'syncState' }))
+  const delay = Math.min(1000 * (2 ** snapshotRecoveryAttempt++), 8000)
+  snapshotRecoveryTimer = window.setTimeout(() => {
+    snapshotRecoveryTimer = null
+    if (socket === l12State.socket && l12State.recoveryPhase === 'snapshot-mismatch')
+      requestSnapshotRecovery(socket)
+  }, delay)
 }
 
 function clearMatchmakingPolling() {
@@ -94,10 +115,16 @@ function startMatchmakingPolling() {
   }, 5_000)
 }
 
-function startHeartbeat(socket: WebSocket) {
+function startHeartbeat(socket: WebSocket, onTimeout: () => void) {
   clearHeartbeat()
   heartbeatTimer = window.setInterval(() => {
     if (socket.readyState === WebSocket.OPEN) {
+      if (unansweredHeartbeats >= 2) {
+        clearHeartbeat()
+        onTimeout()
+        return
+      }
+      unansweredHeartbeats += 1
       l12State.lastHeartbeatAt = new Date().toISOString()
       socket.send(JSON.stringify({ type: 'ping' }))
     }
@@ -250,6 +277,7 @@ export function connect(): Promise<void> {
   }
   automaticConnectionEnabled = true
   clearReconnectTimer()
+  clearSnapshotRecovery()
   l12State.status = 'connecting'
   l12State.connectionIssue = 'none'
   l12State.recoveryPhase = 'opening-websocket'
@@ -282,6 +310,20 @@ export function connect(): Promise<void> {
       failed = true
       settle(new Error(reason))
     }
+    const failConnection = (reason: string) => {
+      if (!isCurrentAttempt() || failed) return
+      failed = true
+      clearHeartbeat()
+      clearSnapshotRecovery()
+      l12State.status = 'offline'
+      l12State.connectionIssue = 'websocket'
+      l12State.notice = reason
+      l12State.recoveryPhase = 'disconnected'
+      syncGameReentry()
+      settle(new Error(reason))
+      scheduleReconnect()
+      socket.close(4000, 'websocket recovery required')
+    }
 
     try { socket = new WebSocket(l12State.endpoint) }
     catch (error) {
@@ -302,6 +344,7 @@ export function connect(): Promise<void> {
       if (!isCurrentAttempt() || settled || failed) return
       failed = true
       clearHeartbeat()
+      clearSnapshotRecovery()
       l12State.status = 'offline'
       l12State.connectionIssue = 'websocket'
       l12State.recoveryPhase = 'disconnected'
@@ -323,6 +366,8 @@ export function connect(): Promise<void> {
       // 新连接已经接管后，丢弃旧 WebSocket 迟到的消息，避免恢复快照被旧状态回滚。
       if (!isCurrentAttempt() || failed) return
       const message = JSON.parse(String(event.data))
+      // Any current server message proves the receive path is still alive.
+      unansweredHeartbeats = 0
       if (message.type === 'session') {
         claimedGeneration = Number(message.connectionGeneration || 0)
         l12State.sessionId = message.sessionId
@@ -330,11 +375,13 @@ export function connect(): Promise<void> {
         l12State.connectionGeneration = claimedGeneration
         l12State.recoveryPhase = 'session-claimed'
         l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
-        startHeartbeat(socket)
+        startHeartbeat(socket, () => failConnection('服务器长时间未响应心跳，正在自动重连。'))
         syncGameReentry()
       }
       else if (message.type === 'authenticationRequired') {
         failed = true
+        clearHeartbeat()
+        clearSnapshotRecovery()
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'authentication'
         l12State.recoveryPhase = 'authentication-rejected'
@@ -345,6 +392,8 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'passwordChangeRequired' || message.type === 'connectionRejected') {
         failed = true
+        clearHeartbeat()
+        clearSnapshotRecovery()
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'authentication'
         l12State.recoveryPhase = 'authentication-rejected'
@@ -355,6 +404,8 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'sessionSuperseded') {
         failed = true
+        clearHeartbeat()
+        clearSnapshotRecovery()
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'superseded'
         l12State.recoveryPhase = 'superseded'
@@ -473,9 +524,10 @@ export function connect(): Promise<void> {
           l12State.recoveryPhase = 'snapshot-mismatch'
           l12State.notice = '权威恢复快照尚未完整到达，正在重新同步…'
           syncGameReentry()
-          socket.send(JSON.stringify({ type: 'syncState' }))
+          requestSnapshotRecovery(socket)
           return
         }
+        clearSnapshotRecovery()
         if (!message.roomCode) {
           l12State.room = null
           l12State.game = null
@@ -508,22 +560,11 @@ export function connect(): Promise<void> {
         syncGameReentry()
       }
     }
-    socket.onerror = () => {
-      if (!isCurrentAttempt() || failed) return
-      failed = true
-      clearHeartbeat()
-      l12State.status = 'offline'
-      l12State.connectionIssue = 'websocket'
-      l12State.notice = '暂时无法连接服务器，正在自动重试。'
-      l12State.recoveryPhase = 'disconnected'
-      syncGameReentry()
-      settle(new Error(l12State.notice))
-      scheduleReconnect()
-      socket.close(4000, 'websocket error')
-    }
+    socket.onerror = () => failConnection('暂时无法连接服务器，正在自动重试。')
     socket.onclose = (event) => {
       if (isCurrentAttempt()) {
         failed = true
+        clearSnapshotRecovery()
         clearHandshakeTimer()
         clearHeartbeat()
         clearMatchmakingPolling()
@@ -570,6 +611,7 @@ export function disconnect() {
   automaticConnectionEnabled = false
   connectionAttemptSerial += 1
   clearReconnectTimer()
+  clearSnapshotRecovery()
   clearHeartbeat()
   clearMatchmakingPolling()
   clearMatchmakingRecovery()

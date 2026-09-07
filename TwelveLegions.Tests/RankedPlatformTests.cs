@@ -263,6 +263,83 @@ public sealed class RankedPlatformTests
     }
 
     [Fact]
+    public void RankedBroadcastSubscriptionSkipsBacklogAndNeverReissuesUnconfirmedClaims()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-subscription", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "platform.json");
+        var store = new L12PlatformStore(path);
+        var first = store.Register("bc-live-first", "Password123!").Account!;
+        var second = store.Register("bc-live-second", "Password123!").Account!;
+        var viewer = store.Register("bc-live-viewer", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"broadcast-offline-{index}", first.Id, second.Id, 0);
+
+        var subscribedAt = DateTimeOffset.UtcNow;
+        store.SettleRankedMatch("broadcast-live-5", first.Id, second.Id, 0);
+        var firstClaim = Assert.IsType<L12RankedBroadcastClaimView>(
+            store.ClaimRankedBroadcast(viewer.Id, subscribedAt));
+        Assert.Equal("broadcast-live-5", firstClaim.Broadcast.MatchId);
+
+        store.SettleRankedMatch("broadcast-live-6", first.Id, second.Id, 0);
+        var secondClaim = Assert.IsType<L12RankedBroadcastClaimView>(
+            store.ClaimRankedBroadcast(viewer.Id, subscribedAt));
+        Assert.Equal("broadcast-live-6", secondClaim.Broadcast.MatchId);
+        Assert.NotEqual(firstClaim.Broadcast.Id, secondClaim.Broadcast.Id);
+        Assert.Null(store.ClaimRankedBroadcast(viewer.Id, subscribedAt));
+        Assert.False(store.CompleteRankedBroadcast(viewer.Id, firstClaim.Broadcast.Id, "wrong-token"));
+        Assert.True(store.CompleteRankedBroadcast(viewer.Id, firstClaim.Broadcast.Id, firstClaim.ClaimToken));
+
+        var reloaded = new L12PlatformStore(path);
+        Assert.Null(reloaded.ClaimRankedBroadcast(viewer.Id, subscribedAt));
+        Assert.Null(reloaded.ClaimRankedBroadcastAt(viewer.Id, subscribedAt,
+            secondClaim.LeaseExpiresAt.AddSeconds(1)));
+        Assert.True(reloaded.CompleteRankedBroadcast(viewer.Id, secondClaim.Broadcast.Id,
+            secondClaim.ClaimToken));
+        Assert.Null(reloaded.ClaimRankedBroadcast(viewer.Id, subscribedAt));
+    }
+
+    [Fact]
+    public void RankedBroadcastRejectsClientClockRollbackOutsideRealtimeWindow()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-clock", Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var first = store.Register("bc-clock-first", "Password123!").Account!;
+        var second = store.Register("bc-clock-second", "Password123!").Account!;
+        var viewer = store.Register("bc-clock-viewer", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"broadcast-clock-old-{index}", first.Id, second.Id, 0);
+
+        Assert.Null(store.ClaimRankedBroadcastAt(viewer.Id, DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UtcNow.AddMinutes(10)));
+    }
+
+    [Fact]
+    public async Task ConcurrentTabsCanClaimTheSameRankedBroadcastOnlyOnce()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-tabs", Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var first = store.Register("bc-tabs-first", "Password123!").Account!;
+        var second = store.Register("bc-tabs-second", "Password123!").Account!;
+        var viewer = store.Register("bc-tabs-viewer", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        for (var index = 0; index < 4; index++)
+            store.SettleRankedMatch($"broadcast-tabs-setup-{index}", first.Id, second.Id, 0);
+        var subscribedAt = DateTimeOffset.UtcNow;
+        store.SettleRankedMatch("broadcast-tabs-live", first.Id, second.Id, 0);
+
+        var claims = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+            store.ClaimRankedBroadcast(viewer.Id, subscribedAt))));
+
+        Assert.Single(claims, claim => claim is not null);
+        Assert.Equal("broadcast-tabs-live", claims.Single(claim => claim is not null)!.Broadcast.MatchId);
+    }
+
+    [Fact]
     public void RankedAnalyticsAggregatesMasterUsageSidesAndMatchupsWithoutRawMatches()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-analytics", Guid.NewGuid().ToString("N"));
