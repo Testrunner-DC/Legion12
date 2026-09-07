@@ -152,19 +152,42 @@ try {
 
     $commitA = "a" * 40
     $commitB = "b" * 40
-    $validHealth = "{`"status`":`"ok`",`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}"
+    $validHealth = "{`"status`":`"ok`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}"
     $validResult = Invoke-NativeCapture -Executable $nodePath -Arguments @($healthVerifier, $commitA) -StandardInput $validHealth
     Assert-True ($validResult.ExitCode -eq 0) "精确健康身份被错误拒绝：$($validResult.Output)"
+    $maintenanceHealth = "{`"status`":`"maintenance`",`"maintenance`":true,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}"
+    $strictMaintenance = Invoke-NativeCapture -Executable $nodePath -Arguments @($healthVerifier, $commitA) -StandardInput $maintenanceHealth
+    Assert-True ($strictMaintenance.ExitCode -ne 0) "默认严格 ok 校验错误接受了维护状态。"
+    $deploymentMaintenance = Invoke-NativeCapture -Executable $nodePath `
+        -Arguments @($healthVerifier, $commitA, "--allow-maintenance") -StandardInput $maintenanceHealth
+    Assert-True ($deploymentMaintenance.ExitCode -eq 0) "部署维护模式错误拒绝了一致的维护状态：$($deploymentMaintenance.Output)"
+    $deploymentOk = Invoke-NativeCapture -Executable $nodePath `
+        -Arguments @($healthVerifier, $commitA, "--allow-maintenance") -StandardInput $validHealth
+    Assert-True ($deploymentOk.ExitCode -eq 0) "部署维护模式错误拒绝了一致的 ok 状态：$($deploymentOk.Output)"
+    $unknownHealthMode = Invoke-NativeCapture -Executable $nodePath `
+        -Arguments @($healthVerifier, $commitA, "--unknown-mode") -StandardInput $validHealth
+    Assert-True ($unknownHealthMode.ExitCode -eq 2) "未知健康校验模式没有按参数错误失败关闭。"
     foreach ($invalidHealth in @(
-        "{`"status`":`"degraded`",`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
-        "{`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
-        "{`"service`":`"twelve-legions`",`"serverVersion`":`"$commitB`",`"engineVersion`":`"l12-engine/$commitA`"}",
-        "{`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitB`"}",
-        "{`"service`":`"other`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"degraded`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"unknown`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"ok`",`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"ok`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitB`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"ok`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitB`"}",
+        "{`"status`":`"ok`",`"maintenance`":false,`"service`":`"other`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
         "not-json"
     )) {
         $invalidResult = Invoke-NativeCapture -Executable $nodePath -Arguments @($healthVerifier, $commitA) -StandardInput $invalidHealth
         Assert-True ($invalidResult.ExitCode -ne 0) "健康身份校验器接受了错误响应：$invalidHealth"
+    }
+    foreach ($invalidDeploymentHealth in @(
+        "{`"status`":`"maintenance`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"ok`",`"maintenance`":true,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"degraded`",`"maintenance`":true,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}",
+        "{`"status`":`"maintenance`",`"maintenance`":true,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitB`",`"engineVersion`":`"l12-engine/$commitB`"}"
+    )) {
+        $invalidDeploymentResult = Invoke-NativeCapture -Executable $nodePath `
+            -Arguments @($healthVerifier, $commitA, "--allow-maintenance") -StandardInput $invalidDeploymentHealth
+        Assert-True ($invalidDeploymentResult.ExitCode -ne 0) "部署健康校验器接受了错误或不一致响应：$invalidDeploymentHealth"
     }
 
     function New-FakeCommand {
@@ -180,6 +203,7 @@ try {
             [string]$LocalCommitOverride = "",
             [string]$PublicCommitOverride = "",
             [string]$HealthStatus = "ok",
+            [string]$HealthMaintenance = "",
             [ValidateSet("deploy", "dry-run")][string]$Mode = "deploy",
             [switch]$FailBackup,
             [switch]$WriteOnStart,
@@ -269,7 +293,12 @@ if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/health" ] || [ "$url" = "$L12_DEPLOY_PUBLI
     served_commit="$L12_TEST_PUBLIC_COMMIT_OVERRIDE"
   fi
   engine_commit="$served_commit"
-  printf '{"status":"%s","service":"twelve-legions","serverVersion":"%s","engineVersion":"l12-engine/%s"}\n' "${L12_TEST_HEALTH_STATUS:-ok}" "$served_commit" "$engine_commit"
+  health_status="${L12_TEST_HEALTH_STATUS:-ok}"
+  health_maintenance="${L12_TEST_HEALTH_MAINTENANCE:-}"
+  if [ -z "$health_maintenance" ]; then
+    if [ "$health_status" = "maintenance" ]; then health_maintenance=true; else health_maintenance=false; fi
+  fi
+  printf '{"status":"%s","maintenance":%s,"service":"twelve-legions","serverVersion":"%s","engineVersion":"l12-engine/%s"}\n' "$health_status" "$health_maintenance" "$served_commit" "$engine_commit"
 fi
 exit 0
 '@ | Out-Null
@@ -336,6 +365,7 @@ exec "$L12_TEST_REAL_TAR" "$@"
             L12_TEST_LOCAL_COMMIT_OVERRIDE = $LocalCommitOverride
             L12_TEST_PUBLIC_COMMIT_OVERRIDE = $PublicCommitOverride
             L12_TEST_HEALTH_STATUS = $HealthStatus
+            L12_TEST_HEALTH_MAINTENANCE = $HealthMaintenance
             L12_TEST_FAIL_BACKUP = $(if ($FailBackup) { "1" } else { "0" })
             L12_TEST_WRITE_ON_START = $(if ($WriteOnStart) { "1" } else { "0" })
             L12_TEST_SERVICE_ENABLED = $(if ($DisabledService) { "0" } else { "1" })
@@ -374,6 +404,9 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True ($success.Commands.Contains("wss://legion-12.com/ws")) "成功路径没有执行公网 WebSocket 探针。"
     Assert-True ((Get-Content -LiteralPath (Join-Path $success.Root "opt\legion12-deployment\deployment-info.txt") -Raw).Contains($commitB)) "成功元数据未绑定目标提交。"
 
+    $maintenanceSuccess = Invoke-ServerScenario -Name "maintenance-success" -HealthStatus "maintenance"
+    Assert-True ($maintenanceSuccess.ExitCode -eq 0) "维护门禁下精确版本部署被错误判定失败：$($maintenanceSuccess.Output)"
+
     $retiredNode = Invoke-ServerScenario -Name "retired-node" -DisabledService
     Assert-True ($retiredNode.ExitCode -ne 0) "已禁用服务的退役节点通过了服务器发布自检。"
     Assert-True (-not $retiredNode.Commands.Contains("systemctl stop")) "退役节点拒绝前已停止或改动服务。"
@@ -409,6 +442,10 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True ($degradedHealth.ExitCode -ne 0) "版本正确但 status 非 ok 时部署被错误判定成功。"
     Assert-True ((Test-Path -LiteralPath (Join-Path $degradedHealth.Root "opt\legion12-runtime\post-launch-write.txt"))) "非 ok 健康响应后的失败处理覆盖了新 runtime 事实。"
     Assert-True ((Test-Path -LiteralPath (Join-Path $degradedHealth.Root "opt\legion12-deployment\deployment-blocked.txt"))) "非 ok 健康响应没有进入 fail-closed 边界。"
+
+    $inconsistentMaintenance = Invoke-ServerScenario -Name "inconsistent-maintenance" `
+        -HealthStatus "maintenance" -HealthMaintenance "false" -WriteOnStart
+    Assert-True ($inconsistentMaintenance.ExitCode -ne 0) "maintenance=false 与 status=maintenance 不一致时部署被错误判定成功。"
 
     $preLaunchFailure = Invoke-ServerScenario -Name "prelaunch-recovery" -FailBackup
     Assert-True ($preLaunchFailure.ExitCode -ne 0) "备份失败夹具意外成功。"

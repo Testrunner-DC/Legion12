@@ -93,7 +93,7 @@ verify_health_once() {
   local expected_commit="$2"
   local response
   response="$(curl -fsS --connect-timeout 5 --max-time 10 -H 'Cache-Control: no-cache' "${base_url}/health")" || return 1
-  printf '%s' "$response" | node "$health_verifier" "$expected_commit" >/dev/null
+  printf '%s' "$response" | node "$health_verifier" "$expected_commit" --allow-maintenance >/dev/null
 }
 
 wait_for_exact_health() {

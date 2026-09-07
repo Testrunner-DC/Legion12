@@ -6,6 +6,12 @@ if (!/^[0-9a-f]{40}$/.test(expectedCommit)) {
   process.stderr.write('expected commit must be a 40-character lowercase Git SHA\n')
   process.exit(2)
 }
+const mode = String(process.argv[3] ?? '').trim()
+if (mode !== '' && mode !== '--allow-maintenance') {
+  process.stderr.write('health verification mode must be --allow-maintenance when provided\n')
+  process.exit(2)
+}
+const allowMaintenance = mode === '--allow-maintenance'
 
 const chunks = []
 let bytes = 0
@@ -27,11 +33,14 @@ try {
 }
 
 const expectedEngine = `l12-engine/${expectedCommit}`
-if (health?.status !== 'ok'
+const statusIsConsistent = (health?.status === 'ok' && health?.maintenance === false)
+  || (allowMaintenance && health?.status === 'maintenance' && health?.maintenance === true)
+if (!statusIsConsistent
     || health?.service !== 'twelve-legions'
     || health?.serverVersion !== expectedCommit
     || health?.engineVersion !== expectedEngine) {
-  process.stderr.write(`health readiness or identity mismatch: expected ok / ${expectedCommit} / ${expectedEngine}\n`)
+  const expectedStatus = allowMaintenance ? 'ok(false) or maintenance(true)' : 'ok(false)'
+  process.stderr.write(`health readiness or identity mismatch: expected ${expectedStatus} / ${expectedCommit} / ${expectedEngine}\n`)
   process.exit(1)
 }
 
