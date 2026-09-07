@@ -131,7 +131,11 @@ try {
  }
  await page.setViewportSize({width:1920,height:1080})
  for(const scenario of [
+  {name:'morale-1',query:'morale=1&active=1',expected:1,label:'1/1'},
   {name:'morale-low',query:'morale=2&active=2',expected:2,label:'2/2'},
+  {name:'morale-4',query:'morale=4&active=4',expected:4,label:'4/4'},
+  {name:'morale-5',query:'morale=5&active=5',expected:5,label:'5/5'},
+  {name:'morale-8',query:'morale=8&active=8',expected:8,label:'8/8'},
   {name:'morale-12',query:'morale=12&active=12',expected:12,label:'12/12'},
   {name:'morale-overflow-special',query:'morale=18&active=5&special=1',expected:12,label:'5/18'},
   {name:'morale-trial',query:'morale=3&active=3&trial=1',expected:3,label:'3/3'},
@@ -159,6 +163,17 @@ try {
   const moraleScale=result.orbs[0]?.width/32||1
   const fixedGridStart=result.stack.cx-(32*3+10*2)*moraleScale/2
   assert(rows.every(row=>row.every((orb,index)=>Math.abs(orb.left-(fixedGridStart+index*42*moraleScale))<1.5)),scenario.name+' partial morale rows must fill the centered fixed columns from left to right: '+JSON.stringify({fixedGridStart,rows}))
+  const opponent=await page.locator('.l12-player-mat.side-opponent .resource-morale-stack').evaluate(stack=>({
+   center:(stack.getBoundingClientRect().left+stack.getBoundingClientRect().right)/2,
+   orbs:[...stack.querySelectorAll('.morale-orb')].map(orb=>{const rect=orb.getBoundingClientRect();return {left:rect.left,top:rect.top,width:rect.width}}),
+  }))
+  const opponentScale=opponent.orbs[0].width/32
+  assert.equal(opponent.orbs.length,scenario.expected,scenario.name+' opponent count')
+  opponent.orbs.forEach((orb,index)=>assert(Math.abs(orb.left-(opponent.center-58*opponentScale+(index%3)*42*opponentScale))<1.5,scenario.name+' opponent fixed columns'))
+  if(result.orbs.length>3){
+   assert(result.orbs[3].top>result.orbs[0].top,scenario.name+' my morale must wrap down')
+   assert(opponent.orbs[3].top<opponent.orbs[0].top,scenario.name+' opponent morale must wrap up')
+  }
   if(scenario.name==='morale-overflow-special'){
    assert.equal(result.canopics.length,5,'five Canopic markers must be present')
    assert(new Set(result.canopics.map(item=>Math.round(item.top))).size===1,'five Canopic markers must stay on one row')

@@ -14,6 +14,7 @@
 - 实现与同类边界：远程使用`IsRangedLegion`，未实际授予的granted-continuous不作为固有身份；弓手及术师获得完整职介能力。等价士气在共享声明器增加显式opt-in，迦具土开启；候选要求同卡号、普通面、同后续活跃限制，特殊资源及傲慢附加费用仍保留决策。旧普通支付分类也细化为真实状态/守卫实例，避免同类外观掩盖不同结果。布尔声明字段默认false，历史状态不自动开启新行为，仍要求排空旧局。
 - 具名回归：`RangedLegionIdentityIsSeparateFromPositionOnlyRangeBonuses`（38/7/2全池边界及普通特殊阴性）、`ArtemisDoesNotTreatAFrontOnlyRangeBonusAsRangedLegionIdentity`、`AeneasKeepsLibraryIdentityPrivateUntilResolutionAndThenShuffles`、`KagutsuchiCombatTimingShowsItsCompletePrintedAbility`、`KagutsuchiPaysBeforeStackAndBuffsTheAttackingLegion`、`KagutsuchiOnlyAutoPaysSemanticallyEquivalentOrdinaryResources`、`KagutsuchiEquivalentMoraleAutoPaymentReservesAcrossPrideSurcharge`及既有Horus满场费用格/双费用回归。前端`verify-batch253-visual.mjs`实际最小化后点击两费用格发出精确resolvePrompt，非候选无命令；费用模式需确认、纯发动仍直达，480×800显示迦具土全文。
 - 根独立验收：Batch规则2463/2463、卡效静态/原子审计全通过；前端UI289、主题11、连接12、重入6、维护/音乐/摩点/Prompt/回放、卡图40/324及Vue/Vite全通过。重新运行视觉/点击矩阵5种视口及480×800，errors=[]，亲自查看费用格高亮、士气低数量及完整正文截图。日志`D:/GPT/Legion12/artifacts/batch277-root-backend.log`、`batch277-root-frontend.log`、`batch277-root-visual.log`；UI冻结交接`batch277-ui-handoff.md`。仅NU1900漏洞源不可达警告，测试失败0/跳过0。最终提交/部署与报告回填以`D:/GPT/Legion12/artifacts/batch277-final-receipt.md`为准，无收据不得宣称上线。
+- 最终补验：`639855f`提交级Release规则2463/2463、平台88/88及前端/发布包通过；根追加士气1/4/5/8和对方三列/向上、我方向下的实际几何断言，与2/3/12/18全矩阵复跑通过（`batch277-root-morale-matrix.log`），只补测试和日志表述，不改游戏行为。补充提交仍须重新执行提交级Release，不复用旧提交包。
 
 ### OPS-20260907-276 维护状态与部署健康门禁分离
 
