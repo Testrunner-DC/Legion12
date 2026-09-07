@@ -255,7 +255,6 @@ public sealed class PrideTriggerPaymentReservationTests
         Invoke(game, "AdvanceTriggerBatches");
 
         ResolveAccepted(game, "mode:morale");
-        ResolveAccepted(game, first.InstanceId);
         var surcharge = OnlyPrompt(game);
         Assert.DoesNotContain(first.InstanceId, surcharge.ValidChoices);
         player.Field[0][0] = null;

@@ -353,6 +353,8 @@ const contracts = [
     && l12GameEngine.includes('current.TemporaryMorale = 0;'), '临时士气必须逐个显示为黑色莲花实体、进入可选支付交互，并由权威结束阶段在休整时清空'],
   [playerMat.includes('.resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}')
     && playerMat.includes('.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}')
+    && playerMat.includes("'morale-remainder-1': visibleMoraleCount % 3 === 1")
+    && playerMat.includes('.resource-morale-stack.morale-remainder-1::after')
     && playerMat.includes('.resource-morale-stack .morale-orb{width:32px;height:32px;min-width:32px')
     && playerMat.includes('const visibleMoraleLimit = 12')
     && playerMat.includes('.slice(0, Math.max(0, visibleMoraleLimit - visibleTemporaryMoraleCount.value))')
@@ -360,7 +362,7 @@ const contracts = [
     && playerMat.includes('.resource-zone{grid-column:4;grid-row:1/-1;display:flex')
     && playerMat.includes('align-self:center')
     && playerMat.includes('.side-opponent .resource-morale-stack{order:1;flex-wrap:wrap-reverse;align-content:flex-end}')
-    && !playerMat.includes('Array<null>'), '士气枚堆每行必须最多3枚并逐行居中；我方向下、对方向上换行，未追加的士气不得预占图标'],
+    && !playerMat.includes('Array<null>'), '士气枚堆必须使用容器内居中的固定三列，并从左向右填充；我方向下、对方向上换行，未追加的士气不得预占图标'],
   [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])")
     && prompt.includes("explicitLabel === '不响应' || explicitLabel === '不发动'")
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
@@ -378,6 +380,13 @@ const contracts = [
     && playerMat.includes('white-space:nowrap')
     && playerMat.includes('@click.stop="factionOpen = true; factionMinimized = false"')
     && playerMat.includes('@click.stop="selectMoralePayment(morale.instanceId)"'), '阵营效果、同行士气标题/计数和三枚一行的士气堆必须共用156px边界并保留文字内距；资源组以牌库墓地整列上下居中，对方仅镜像组内顺序，并保持弹框与支付交互'],
+  [playerMat.includes("if (props.promptSlotIds?.includes(`${row}:${slot}`))")
+    && playerMat.indexOf("if (props.promptSlotIds?.includes(`${row}:${slot}`))") < playerMat.indexOf("if (card && props.paymentChoiceIds?.includes(card.instanceId))")
+    && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || isPlacementDestination")
+    && board.includes('function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number)')
+    && board.includes("if (prompt.validChoices.includes(choice)) command('resolvePrompt', { promptId: prompt.promptId, choice })")
+    && board.includes('if (resolveBoardSlotPrompt(me.value.playerIndex, row, slot)) return')
+    && board.includes('if (resolveBoardSlotPrompt(enemy.value.playerIndex, row, slot)) return'), '场面槽位Prompt必须以目标玩家和权威validChoices为准，已被声明费用军团占据的候选格仍可高亮点击并优先于资源支付路由；普通放置移动不得放宽'],
   [!board.includes('房间 {{ game.roomCode }}') && !board.includes('MATCH {{ game.matchId.slice')
     && board.includes('.right-rail .action-panel :deep(.l12-actions>p){display:none}')
     && (board.match(/<GameActions /g) ?? []).length === 2
@@ -664,9 +673,11 @@ const contracts = [
   [gameActions.includes("game.activePlayer !== me.playerIndex") && gameActions.includes("game.activePlayer === me.playerIndex") && !gameActions.includes('game.activePlayer !== game.you'), '沙盒双方抵挡、支援和阶段操作必须依据当前代操作玩家而非登录座位'],
   [!board.includes('当前子阶段：') && !board.includes('data-ui-contract="combat-substage"') && board.includes('pending.attackValue > 0') && board.includes("pendingDefense?.stage === 'DefenseChoice'") && gameActions.includes("pendingDefense?.stage === 'DefenseChoice'"), '进攻界面必须消费服务端子阶段与冻结进攻值，只在 DefenseChoice 开放抵挡/支援，并禁止显示内部子阶段调试文字'],
   [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes('isPureEffectDecision')
+    && prompt.includes('isDirectActivationChoice')
     && prompt.includes("isDeclineChoice(id) ? '不发动' : '发动'") && prompt.includes('decisionEffectText')
     && prompt.includes("if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }")
-    && prompt.includes('<footer v-if="!isPureEffectDecision"') && prompt.includes('!isPureEffectDecision">{{ kindLabel() }}'), '纯二选一卡效发动框必须仅显示来源、当前效果文本和等大的发动/不发动按钮，点击立即提交；多选与支付弹框仍保留确认区'],
+    && prompt.includes('<footer v-if="!isPureEffectDecision"') && prompt.includes('!isPureEffectDecision">{{ kindLabel() }}')
+    && prompt.includes('(hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))'), '纯二选一卡效发动框必须仅显示来源、当前效果文本和等大的发动/不发动按钮，点击立即提交；费用选择不得误判为纯发动，拒绝动作须与确认选择保留在底部'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],
   [prompt.includes("import PromptCardCandidate from './PromptCardCandidate.vue'") && (prompt.match(/<PromptCardCandidate/g)?.length ?? 0) >= 6
     && promptCardCandidate.indexOf('<CardImage') < promptCardCandidate.indexOf('prompt-card-candidate__name')

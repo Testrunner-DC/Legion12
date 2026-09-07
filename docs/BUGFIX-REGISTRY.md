@@ -2,6 +2,19 @@
 
 本文件是追加式修复台账。开始新的 Bug 修复前必须先检索本文件；修复卡效时必须记录全卡池同类扫描结果。
 
+### BUG-20260907-277至280 远程身份、费用腾空格及迦具土交互
+
+- 授权与基线：用户批准5条新报告修复、一次同步和正式部署，尽量19:00前但不降低验收；原HEAD/正式服`cce59c9`、工作树干净。既有267–276已部署，不重复开发。本批实现及根独立Batch已通过，待提交级Release/发布，不能提前回填resolved。
+- 277/9bb2a85e：`HasAnyRowRangeBonus`把任一位置的增距误作远程身份，影响特勒马科斯、埃涅阿斯·晋升、猎神的赐福；`LastKnownWasRanged`用距离/无损生成，影响阿尔忒弥斯离场触发。用户裁定：当前有效弓手/术师（含视为）及明确无条件远程特殊军团（攻城投石车）是远程；条件增距并非远程，特殊职介不能整体归类。报告“亚马逊刺客”非正式卡名，无卡号/录像，彭忒西勒亚仅为候选，不伪造原报告身份。
+- 全池扫描：`rg -n 'HasAnyRowRangeBonus|LastKnownWasRanged|EffectiveProfession' 服务端WebSocket/TwelveLegions`及三套`cards*.json`增距/无损文本。47张相关卡：38张无条件、7张前排条件（荆轲、锡瓦的卡巴、夺命诗人埃吉尔、服部半藏、彭忒西勒亚、克劳迪娅、聂隐娘），另有源义经后排仅增距和阿塔兰忒·晋升后排视为弓手。身份与实际距离分离，保留条件战斗收益；非场上区域不能伪造位置，离场取最后有效身份。
+- 278/7a5c49fa：匿名化复核荷鲁斯回放第20指令，费用军团尚在原格时服务器已提供0:0和1:1合法候选；前端高亮/点击仍强制当前为空。仅对当前board-slot Prompt与目标玩家、权威候选匹配的格子放行；普通移动、普通登场及非候选格仍严格校验。回归不能只直接向后端提交，须覆盖真实前端点击路由与费用格高亮。
+- 279/94bb1054、cc1a529d：公共触发正文提取缺`legion-attack-timing`，退回“我方军团进攻或被进攻时效果”。补完整对应效果段，费用分支不得被纯发动/不发动快捷界面吞掉。回放两枚S01-04C1普通士气仍要求选择，单枚场景已自动完成；只新增完全等价普通资源的确定性支付，特殊资源、跨步骤预留或不同后果仍保留选择，不能简单总取第一项。
+- 280/55468868：士气原每行flex居中导致少量/末行漂移；固定三列基准从左向右填充，保留32px、每行3枚/最多12枚、完整计数、我方向下/对方向上及资源ID映射。
+- 分工及回滚护栏：critical独占后端和规则测试，L12-UI独占交互/布局和前端测试，根独占台账/结果日志/集成发布。无Schema迁移需求；旧运行局须排空，不依赖跨版本Prompt重放。只在通过Release、线上身份/WS/关键功能验证后结束当前维护和闭环报告，保留未来计划、历史和新写入，不恢复旧数据快照。
+- 实现与同类边界：远程使用`IsRangedLegion`，未实际授予的granted-continuous不作为固有身份；弓手及术师获得完整职介能力。等价士气在共享声明器增加显式opt-in，迦具土开启；候选要求同卡号、普通面、同后续活跃限制，特殊资源及傲慢附加费用仍保留决策。旧普通支付分类也细化为真实状态/守卫实例，避免同类外观掩盖不同结果。布尔声明字段默认false，历史状态不自动开启新行为，仍要求排空旧局。
+- 具名回归：`RangedLegionIdentityIsSeparateFromPositionOnlyRangeBonuses`（38/7/2全池边界及普通特殊阴性）、`ArtemisDoesNotTreatAFrontOnlyRangeBonusAsRangedLegionIdentity`、`AeneasKeepsLibraryIdentityPrivateUntilResolutionAndThenShuffles`、`KagutsuchiCombatTimingShowsItsCompletePrintedAbility`、`KagutsuchiPaysBeforeStackAndBuffsTheAttackingLegion`、`KagutsuchiOnlyAutoPaysSemanticallyEquivalentOrdinaryResources`、`KagutsuchiEquivalentMoraleAutoPaymentReservesAcrossPrideSurcharge`及既有Horus满场费用格/双费用回归。前端`verify-batch253-visual.mjs`实际最小化后点击两费用格发出精确resolvePrompt，非候选无命令；费用模式需确认、纯发动仍直达，480×800显示迦具土全文。
+- 根独立验收：Batch规则2463/2463、卡效静态/原子审计全通过；前端UI289、主题11、连接12、重入6、维护/音乐/摩点/Prompt/回放、卡图40/324及Vue/Vite全通过。重新运行视觉/点击矩阵5种视口及480×800，errors=[]，亲自查看费用格高亮、士气低数量及完整正文截图。日志`D:/GPT/Legion12/artifacts/batch277-root-backend.log`、`batch277-root-frontend.log`、`batch277-root-visual.log`；UI冻结交接`batch277-ui-handoff.md`。仅NU1900漏洞源不可达警告，测试失败0/跳过0。最终提交/部署与报告回填以`D:/GPT/Legion12/artifacts/batch277-final-receipt.md`为准，无收据不得宣称上线。
+
 ### OPS-20260907-276 维护状态与部署健康门禁分离
 
 - 根因：健康端点在业务维护时返回maintenance/true，旧发布检查仅接受ok，会误判新版本启动失败，与“验证成功后才开放”授权冲突。

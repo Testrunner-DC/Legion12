@@ -70,7 +70,7 @@ public sealed partial class L12GameEngine
             {
                 var olympus = PublicLegions(player)
                     .Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")).ToArray();
-                var ranged = olympus.Where(L12StructuredCardRules.HasAnyRowRangeBonus).ToArray();
+                var ranged = olympus.Where(card => IsRangedLegionOnField(player, card)).ToArray();
                 var modes = new List<string>();
                 if (olympus.Length > 0) modes.Add("mode:shock");
                 if (ranged.Length > 0) modes.Add("mode:ranged");
@@ -114,7 +114,7 @@ public sealed partial class L12GameEngine
             {
                 "mode:shock" => Own("shockTarget", card => L12StructuredCardRules.HasFaction(player, card, "olympus")),
                 "mode:ranged" => Own("rangedTarget", card => L12StructuredCardRules.HasFaction(player, card, "olympus")
-                    && L12StructuredCardRules.HasAnyRowRangeBonus(card)),
+                    && IsRangedLegionOnField(player, card)),
                 _ => false,
             },
             _ => false,

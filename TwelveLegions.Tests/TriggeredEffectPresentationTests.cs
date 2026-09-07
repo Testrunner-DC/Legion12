@@ -77,6 +77,19 @@ public sealed class TriggeredEffectPresentationTests
     }
 
     [Fact]
+    public void KagutsuchiCombatTimingShowsItsCompletePrintedAbility()
+    {
+        var source = CreateInstance(Catalog.Cards["ST04-M1"]);
+
+        var resolved = L12GameEngine.ResolveTriggeredEffectDisplayText(
+            source, "legion-attack-timing", "我方军团进攻或被进攻时效果");
+
+        Assert.Equal(
+            "回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。",
+            resolved);
+    }
+
+    [Fact]
     public void EveryDirectResponseCardResolvesOnlyItsCurrentResponseAbilityBlock()
     {
         var responseMarkers = new Dictionary<string, string>

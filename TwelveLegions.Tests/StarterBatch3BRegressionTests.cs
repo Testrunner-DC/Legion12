@@ -782,10 +782,10 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Equal("弃置1张手牌", choicePrompt.ChoiceLabels["mode:discard"]);
         Assert.Equal("不发动", choicePrompt.ChoiceLabels["mode:none"]);
         Choose(game, "mode:morale");
-        Choose(game, player.Morale[0].InstanceId);
         PassResponses(game);
 
-        Assert.Single(player.Morale, morale => morale.Tapped);
+        Assert.True(player.Morale[0].Tapped);
+        Assert.False(player.Morale[1].Tapped);
         Assert.Equal(attacker.BaseTroops + 2000, attacker.Troops);
         Assert.True(game.State.Events.FindIndex(entry => entry.Type == "cost" && entry.Text.Contains("火之迦具土"))
             < game.State.Events.FindIndex(entry => entry.Type == "stack-push"
@@ -807,8 +807,9 @@ public sealed class StarterBatch3BRegressionTests
         Assert.True(defenseAttack.Accepted, defenseAttack.Error);
         Assert.Equal(1, Prompt(defenseGame).PlayerIndex);
         Choose(defenseGame, "mode:morale");
-        Choose(defenseGame, defender.Morale[0].InstanceId);
         PassResponses(defenseGame);
+        Assert.True(defender.Morale[0].Tapped);
+        Assert.False(defender.Morale[1].Tapped);
         Assert.Equal(L12CombatStage.DefenseChoice, defenseGame.State.PendingDefense?.Stage);
         var supportResult = defenseGame.Handle(1, new L12Command("resolveDefense",
             CardInstanceIds: [cooperativeSupport.InstanceId]));
@@ -816,6 +817,72 @@ public sealed class StarterBatch3BRegressionTests
         PassResponses(defenseGame);
         Assert.Equal(defendedLegion.BaseTroops + 2000, defendedLegion.Troops);
         Assert.Contains(cooperativeSupport, defender.Graveyard);
+    }
+
+    [Fact]
+    public void KagutsuchiOnlyAutoPaysSemanticallyEquivalentOrdinaryResources()
+    {
+        var game = Create(204111);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST04-M1");
+        var attacker = Card("ST04-03", "kagutsuchi-semantic-attacker");
+        player.Field[0][0] = attacker;
+        player.Morale.Add(new L12MoraleCard
+        {
+            CardId = "S01-04C1", InstanceId = "kagutsuchi-semantic-first",
+        });
+        player.Morale.Add(new L12MoraleCard
+        {
+            CardId = "S01-04C1", InstanceId = "kagutsuchi-semantic-different-card",
+            CannotUntapUntilRound = game.State.Round + 2,
+        });
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        Choose(game, "mode:morale");
+
+        var payment = Prompt(game);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.Contains("kagutsuchi-semantic-first", payment.ValidChoices);
+        Assert.Contains("kagutsuchi-semantic-different-card", payment.ValidChoices);
+        Choose(game, "kagutsuchi-semantic-first");
+        PassResponses(game);
+
+        Assert.True(player.Morale[0].Tapped);
+        Assert.False(player.Morale[1].Tapped);
+        Assert.Equal(attacker.BaseTroops + 2000, attacker.Troops);
+    }
+
+    [Fact]
+    public void KagutsuchiEquivalentMoraleAutoPaymentReservesAcrossPrideSurcharge()
+    {
+        var game = Create(204112);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST04-M1");
+        var attacker = Card("ST04-03", "kagutsuchi-reserved-attacker");
+        player.Field[0][0] = attacker;
+        player.Morale.AddRange(Enumerable.Range(0, 3).Select(index => new L12MoraleCard
+        {
+            CardId = "S01-04C1", InstanceId = $"kagutsuchi-reserved-{index}",
+        }));
+        game.State.ActiveDisaster = Card("S02-DS06", "kagutsuchi-reserved-pride");
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        Choose(game, "mode:morale");
+        var surcharge = Prompt(game);
+        Assert.Equal("resource-payment", surcharge.Kind);
+        Assert.DoesNotContain("kagutsuchi-reserved-0", surcharge.ValidChoices);
+        Assert.Contains("kagutsuchi-reserved-1", surcharge.ValidChoices);
+        Assert.Contains("kagutsuchi-reserved-2", surcharge.ValidChoices);
+        Choose(game, "kagutsuchi-reserved-1");
+        PassResponses(game);
+
+        Assert.True(player.Morale[0].Tapped);
+        Assert.True(player.Morale[1].Tapped);
+        Assert.False(player.Morale[2].Tapped);
+        Assert.Equal(attacker.BaseTroops + 2000, attacker.Troops);
+        Assert.Empty(game.State.PendingActivations);
     }
 
     [Fact]
@@ -990,8 +1057,10 @@ public sealed class StarterBatch3BRegressionTests
         var aeneas = Card("ST05-01", "aeneas");
         var ranged = Card("ST05-03", "secret-ranged");
         var ordinary = Card("ST01-01", "secret-ordinary");
+        var frontOnlyMelee = Card("S02-0517", "secret-front-only-melee");
+        var conditionalArcher = Card("S02-0507", "secret-conditional-archer");
         player.Field[0][0] = aeneas;
-        player.Library.AddRange([ranged, ordinary]);
+        player.Library.AddRange([ranged, ordinary, frontOnlyMelee, conditionalArcher]);
 
         Queue(game, 0, aeneas, "promotion-enter");
         var declaration = Prompt(game);
@@ -1001,6 +1070,8 @@ public sealed class StarterBatch3BRegressionTests
         var search = Prompt(game);
         Assert.True(search.IsPrivate);
         Assert.Contains(ranged.InstanceId, search.ValidChoices);
+        Assert.DoesNotContain(frontOnlyMelee.InstanceId, search.ValidChoices);
+        Assert.DoesNotContain(conditionalArcher.InstanceId, search.ValidChoices);
         Assert.DoesNotContain(ranged.InstanceId, JsonSerializer.Serialize(game.SnapshotFor(1)),
             StringComparison.Ordinal);
         ChooseMany(game, ranged.InstanceId);

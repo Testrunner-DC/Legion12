@@ -59,6 +59,28 @@ public sealed partial class L12GameEngine
     private static int SelectedTemporaryMoraleCount(IReadOnlyCollection<string> selectedIds)
         => selectedIds.Count(id => TryParseTemporaryMoralePaymentChoice(id, out _));
 
+    private string? OrdinaryPaymentSemanticKey(L12PlayerState player, string choiceId)
+    {
+        if (TryParseTemporaryMoralePaymentChoice(choiceId, out _)) return "temporary-morale";
+        var morale = player.Morale.FirstOrDefault(card => card.InstanceId.Equals(
+            choiceId, StringComparison.OrdinalIgnoreCase) && !card.Tapped);
+        if (morale is not null)
+            return $"morale:{morale.CardId}:{morale.IsGodPower}:{morale.CannotUntapUntilRound}";
+        // 场上陵墓守卫的位置、兵力及附加状态都可能影响后续效果；即使同名也不能
+        // 自动替玩家选定其中一张。
+        var guard = ActiveTombGuardResources(player).FirstOrDefault(card => card.InstanceId.Equals(
+            choiceId, StringComparison.OrdinalIgnoreCase));
+        return guard is null ? null : $"tomb-guard:{guard.InstanceId}";
+    }
+
+    private static string? EquivalentOrdinaryMoralePaymentKey(L12PlayerState player, string choiceId)
+    {
+        var morale = player.Morale.FirstOrDefault(card => card.InstanceId.Equals(
+            choiceId, StringComparison.OrdinalIgnoreCase) && !card.Tapped);
+        if (morale is null || morale.IsGodPower || morale.CardId == "S02-0010") return null;
+        return $"ordinary-morale:{morale.CardId}:{morale.CannotUntapUntilRound}";
+    }
+
     private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost,
         IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)
     {
@@ -70,11 +92,10 @@ public sealed partial class L12GameEngine
         // 所有公开资源都必须支付时没有选择空间；直接支付可避免只有一个合法答案的空弹框。
         if (candidateCount <= totalCost) return false;
 
-        var resourceKinds = temporary.Select(_ => "temporary-morale")
-            .Concat(morale.Select(card => card.CardId == "S02-0010"
-                ? "black-lotus"
-                : card.IsGodPower ? "god-power" : "morale"))
-            .Concat(guards.Select(_ => "tomb-guard"))
+        var resourceKinds = temporary
+            .Concat(morale.Select(card => card.InstanceId))
+            .Concat(guards.Select(card => card.InstanceId))
+            .Select(choice => OrdinaryPaymentSemanticKey(player, choice))
             .Distinct(StringComparer.Ordinal)
             .Take(2)
             .Count();

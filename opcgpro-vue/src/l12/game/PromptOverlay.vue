@@ -280,6 +280,11 @@ function isDeclineChoice(choice: string) {
   const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
   return declineChoices.has(choice.trim().toLowerCase()) || explicitLabel === '不响应' || explicitLabel === '不发动'
 }
+const directActivationChoices = new Set(['yes', 'mode:use', 'activate', 'use'])
+function isDirectActivationChoice(choice: string) {
+  const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
+  return directActivationChoices.has(choice.trim().toLowerCase()) || explicitLabel === '发动'
+}
 const orderedEffectChoices = computed(() => [
   ...currentChoices.value.filter(choice => !isDeclineChoice(choice)),
   ...currentChoices.value.filter(isDeclineChoice),
@@ -288,7 +293,8 @@ const isPureEffectDecision = computed(() => Boolean(isEffectDecision.value
   && prompt.value?.minChoose === 1 && prompt.value?.maxChoose === 1
   && currentChoices.value.length === 2
   && currentChoices.value.some(choice => isDeclineChoice(choice))
-  && currentChoices.value.some(choice => !isDeclineChoice(choice))))
+  && currentChoices.value.some(choice => isDirectActivationChoice(choice))
+  && currentChoices.value.every(choice => isDeclineChoice(choice) || isDirectActivationChoice(choice))))
 const displayedChoices = computed(() => {
   if (prompt.value?.kind === 'option') return orderedEffectChoices.value
   const listed = prompt.value?.data?.displayCardIds?.split('|').filter(Boolean)
@@ -296,7 +302,7 @@ const displayedChoices = computed(() => {
   if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
-const primaryChoices = computed(() => hasCardChoices.value
+const primaryChoices = computed(() => (hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))
   ? displayedChoices.value.filter(id => !isDeclineChoice(id)) : displayedChoices.value)
 const supplementalChoices = computed(() => currentChoices.value
   .filter(id => !primaryChoices.value.includes(id)))

@@ -29,11 +29,21 @@ const moraleTotal=Math.max(0,Number(params.get('morale')||12))
 const moraleActive=Math.max(0,Math.min(moraleTotal,Number(params.get('active')||moraleTotal)))
 const special=params.has('special')
 const trialMode=params.has('trial')
+const slotMode=params.has('slot')
+const effectMode=params.get('effect')
 const canopicIds=['S01-0216','S01-0217','S01-0218','S01-0219','S01-0220']
 const canopicTrack=canopicIds.map((id,j)=>({...card(catalog.find(c=>c.id===id)||legions[0],'canopic-'+j),completed:j<3}))
 const trial=card(catalog.find(c=>c.cardType==='trial')||disasters[0],'trial-wide')
-const players=[0,1].map(i=>({playerIndex:i,name:i?'对方测试长昵称十二军团':'我方测试昵称',deckName:'合成验收',faction:special&&i===0?'taiyangcheng':'otherworld',master:{masterId:masters[i]?.id||'ST06-M1',masterName:masters[i]?.nameZh||'银臂努阿达',hp:7,maxHp:9},libraryCount:30,hand:legions.map((d,j)=>card(d,i+'hand'+j)),handCount:6,morale:Array.from({length:moraleTotal},(_,j)=>({instanceId:i+'morale'+j,cardId:'ST06-C1',tapped:j>=moraleActive})),field:[[card(legions[0],i+'unit'),null,null],[null,null,null]],graveyard:[card(legions[1],i+'grave')],mulliganDone:true,specialZones:{runes:3,trialLevel:0,godPower:[],trials:trialMode&&i===0?[trial]:[],canopicTrack:special&&i===0?canopicTrack:[]}}))
+const players=[0,1].map(i=>({playerIndex:i,name:i?'对方测试长昵称十二军团':'我方测试昵称',deckName:'合成验收',faction:special&&i===0?'taiyangcheng':'otherworld',master:{masterId:masters[i]?.id||'ST06-M1',masterName:masters[i]?.nameZh||'银臂努阿达',hp:7,maxHp:9},libraryCount:30,hand:legions.map((d,j)=>card(d,i+'hand'+j)),handCount:6,morale:Array.from({length:moraleTotal},(_,j)=>({instanceId:i+'morale'+j,cardId:'ST06-C1',tapped:j>=moraleActive})),field:slotMode&&i===0?[[card(legions[0],'0unit'),card(legions[1],'0occupied-1'),card(legions[2],'0occupied-2')],[card(legions[3],'0occupied-3'),card(legions[4],'0unit-payment'),card(legions[5],'0occupied-5')]]:[[card(legions[0],i+'unit'),null,null],[null,null,null]],graveyard:[card(legions[1],i+'grave')],mulliganDone:true,specialZones:{runes:3,trialLevel:0,godPower:[],trials:trialMode&&i===0?[trial]:[],canopicTrack:special&&i===0?canopicTrack:[]}}))
 l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges:[{playerIndex:0,rankLabel:'迷雾旅人',masterTitle:'最强银臂努阿达'},{playerIndex:1,rankLabel:'',masterTitle:''}],recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
+if(slotMode)l12State.game.prompts=[{promptId:'occupied-slot-prompt',playerIndex:0,kind:'slot',text:'选择支付后登场位置',validChoices:['0:0','1:1'],minChoose:1,maxChoose:1,data:{choiceMode:'board-slot',targetPlayerIndex:'0'},choiceLabels:{},createdRevision:1,controller:0},{promptId:'declared-cost-prompt',playerIndex:0,kind:'resource-payment',text:'已声明费用',validChoices:['0unit','0morale0'],minChoose:1,maxChoose:1,data:{choiceMode:'resource-payment'},choiceLabels:{},createdRevision:1,controller:0}]
+if(effectMode){
+ const choices=effectMode==='cost2'?['pay:morale','pay:discard','no']:effectMode==='cost1'?['pay:morale','no']:['yes','no']
+ l12State.game.prompts=[{promptId:'effect-cost-prompt',playerIndex:0,kind:'option',text:'迦具土',validChoices:choices,minChoose:1,maxChoose:1,data:{uiPattern:'effect-decision',effectText:'回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。'},choiceLabels:{'pay:morale':'消耗1士气','pay:discard':'弃置1张手牌',yes:'发动',no:'不发动'},createdRevision:1,controller:0}]
+}
+window.__sentCommands=[]
+l12State.socket={readyState:WebSocket.OPEN,send:payload=>window.__sentCommands.push(JSON.parse(payload))}
+window.__resetSentCommands=()=>{window.__sentCommands=[];l12State.pendingAction=false}
 window.__setInspectorPrompt=visible=>{l12State.game.prompts=visible?[{promptId:'inspector-prompt',playerIndex:0,kind:'option',text:'合成来源',validChoices:['yes','no'],minChoose:1,maxChoose:1,choiceLabels:{yes:'发动',no:'不发动'},data:{uiPattern:'effect-decision',sourceName:'合成来源',effectText:'登场时 可发动试炼。',sourceInstanceId:'0unit'},sourceInstanceId:'0unit',sourceCardId:legions[0].id,createdRevision:1,controller:0}]:[]}
 l12State.status='online'
 l12State.room={roomCode:'TEST253',yourPlayerIndex:0,players:players.map(p=>({...p,connected:true,ready:true,deckIndex:0})),decks:[],started:true}
@@ -144,7 +154,11 @@ try {
   assert(result.orbs.every(orb=>orb.left>=result.stack.left+8&&orb.right<=result.stack.right-8&&orb.top>=result.stack.top+8&&orb.bottom<=result.stack.bottom-8),scenario.name+' morale circles need inner breathing room')
   const rows=Object.values(result.orbs.reduce((grouped,orb)=>{const key=Math.round(orb.top);(grouped[key]??=[]).push(orb);return grouped},{}))
   assert(rows.every(row=>row.length<=3),scenario.name+' morale circles must wrap three per row')
-  assert(rows.every(row=>Math.abs((row[0].left+row.at(-1).right)/2-result.stack.cx)<1.5),scenario.name+' every morale row must be horizontally centered')
+  const fullRow=rows.find(row=>row.length===3)
+  if(fullRow)assert(Math.abs((fullRow[0].left+fullRow.at(-1).right)/2-result.stack.cx)<1.5,scenario.name+' fixed three-column morale grid must be centered')
+  const moraleScale=result.orbs[0]?.width/32||1
+  const fixedGridStart=result.stack.cx-(32*3+10*2)*moraleScale/2
+  assert(rows.every(row=>row.every((orb,index)=>Math.abs(orb.left-(fixedGridStart+index*42*moraleScale))<1.5)),scenario.name+' partial morale rows must fill the centered fixed columns from left to right: '+JSON.stringify({fixedGridStart,rows}))
   if(scenario.name==='morale-overflow-special'){
    assert.equal(result.canopics.length,5,'five Canopic markers must be present')
    assert(new Set(result.canopics.map(item=>Math.round(item.top))).size===1,'five Canopic markers must stay on one row')
@@ -154,6 +168,54 @@ try {
   }
   await page.screenshot({path:path.join(out,scenario.name+'.png')})
  }
+ await page.setViewportSize({width:1920,height:1080})
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?slot=1')
+ const ownSlots=page.locator('.l12-player-mat.side-my .formation-slot')
+ await ownSlots.first().waitFor()
+ assert.equal(await ownSlots.filter({has:page.locator('.card-tile')}).count(),6,'occupied-slot regression fixture must keep the target battlefield full')
+ assert.equal(await ownSlots.filter({has:page.locator('.card-tile')}).filter({hasNot:page.locator('.missing-card')}).count(),6,'all full-field fixtures must remain real cards')
+ assert.equal(await ownSlots.locator('.available').count(),0,'available is a class on the slot itself, not a descendant')
+ assert.equal(await page.locator('.l12-player-mat.side-my .formation-slot.available').count(),2,'only authoritative occupied slot choices may highlight')
+ await page.getByRole('button',{name:'最小化弹框',exact:true}).click()
+ await page.screenshot({path:path.join(out,'occupied-authoritative-slots.png')})
+ await ownSlots.nth(2).click()
+ assert.equal(await page.evaluate(()=>window.__sentCommands.length),0,'occupied non-candidate slot must not submit')
+ for(const index of [0,4]){
+  await ownSlots.nth(index).click()
+  const sent=await page.evaluate(()=>window.__sentCommands.at(-1))
+  assert.equal(sent?.type,'gameAction','occupied authoritative slot click must send a game action')
+  assert.equal(sent?.command?.type,'resolvePrompt','occupied authoritative slot click must resolve the slot prompt')
+  assert.equal(sent?.command?.choice,index===0?'0:0':'1:1','occupied authoritative slot click must preserve the exact server choice')
+  await page.evaluate(()=>window.__resetSentCommands())
+ }
+ await page.setViewportSize({width:480,height:800})
+ for(const effect of [
+  {mode:'cost2',costs:['消耗1士气','弃置1张手牌']},
+  {mode:'cost1',costs:['消耗1士气']},
+ ]){
+  await page.goto('http://127.0.0.1:'+port+'/__qa__?effect='+effect.mode)
+  const panel=page.locator('.prompt-panel')
+  await panel.waitFor()
+  const effectText=panel.locator('.effect-decision-text')
+  assert.equal((await effectText.textContent())?.trim(),'回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。','Kagutsuchi prompt must display the complete authoritative effect text')
+  const textBounds=await effectText.evaluate(element=>{const rect=element.getBoundingClientRect(),panel=element.closest('.prompt-panel').getBoundingClientRect();return {left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,panelLeft:panel.left,panelRight:panel.right,panelTop:panel.top,panelBottom:panel.bottom,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth}})
+  assert(textBounds.left>=textBounds.panelLeft-1&&textBounds.right<=textBounds.panelRight+1&&textBounds.top>=textBounds.panelTop-1&&textBounds.bottom<=textBounds.panelBottom+1&&textBounds.scrollWidth<=textBounds.clientWidth+1,'complete Kagutsuchi text must wrap inside the narrow prompt without clipping')
+  for(const cost of effect.costs)await panel.getByRole('button',{name:cost,exact:true}).waitFor()
+  const footer=panel.locator('.prompt-action-footer')
+  await footer.getByRole('button',{name:'不发动',exact:true}).waitFor()
+  await footer.getByRole('button',{name:'确认选择',exact:true}).waitFor()
+  await panel.getByRole('button',{name:effect.costs[0],exact:true}).click()
+  assert.equal(await page.evaluate(()=>window.__sentCommands.length),0,'cost selection must wait for explicit confirmation')
+  assert.equal(await footer.getByRole('button',{name:'确认选择',exact:true}).isEnabled(),true,'selected cost must enable explicit confirmation')
+  await page.screenshot({path:path.join(out,'effect-'+effect.mode+'.png')})
+ }
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?effect=pure')
+ const purePanel=page.locator('.prompt-panel')
+ await purePanel.waitFor()
+ assert.equal(await purePanel.locator('.prompt-action-footer').count(),0,'true activate/decline prompt must remain the compact immediate decision')
+ await purePanel.getByRole('button',{name:'发动',exact:true}).click()
+ const pureSent=await page.evaluate(()=>window.__sentCommands.at(-1))
+ assert.equal(pureSent?.command?.type,'resolvePrompt','pure activation choice must still submit immediately')
  await page.setViewportSize({width:770,height:850})
  await page.goto('http://127.0.0.1:'+port+'/__qa__?picker=1')
  await page.locator('.picker-card.horizontal').first().waitFor()

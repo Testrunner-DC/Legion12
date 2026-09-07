@@ -559,15 +559,17 @@ function selectHand(card: Card) {
   mode.value = 'play'
   playArmed.value = selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
 }
+function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number) {
+  const prompt = boardSlotPrompt.value
+  if (!prompt || boardSlotTargetPlayerIndex.value !== playerIndex) return false
+  const choice = `${row}:${slot}`
+  if (prompt.validChoices.includes(choice)) command('resolvePrompt', { promptId: prompt.promptId, choice })
+  return true
+}
 function ownSlot(row: number, slot: number, card: Card | null) {
+  if (resolveBoardSlotPrompt(me.value.playerIndex, row, slot)) return
   if (resourceSelectionPrompt.value) {
     if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
-    return
-  }
-  if (boardSlotPrompt.value && boardSlotTargetPlayerIndex.value === me.value.playerIndex) {
-    const choice = `${row}:${slot}`
-    if (!card && boardSlotPrompt.value.validChoices.includes(choice))
-      command('resolvePrompt', { promptId: boardSlotPrompt.value.promptId, choice })
     return
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
@@ -635,14 +637,9 @@ function confirmResourcePayment(skip = false) {
 }
 function enemySlot(row: number, slot: number, card: Card | null) {
   if (card) focusCard.value = card
+  if (resolveBoardSlotPrompt(enemy.value.playerIndex, row, slot)) return
   if (resourceSelectionPrompt.value) {
     if (card && paymentChoiceIds.value.includes(card.instanceId)) togglePaymentResource(card.instanceId)
-    return
-  }
-  if (boardSlotPrompt.value && boardSlotTargetPlayerIndex.value === enemy.value.playerIndex) {
-    const choice = `${row}:${slot}`
-    if (!card && boardSlotPrompt.value.validChoices.includes(choice))
-      command('resolvePrompt', { promptId: boardSlotPrompt.value.promptId, choice })
     return
   }
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }

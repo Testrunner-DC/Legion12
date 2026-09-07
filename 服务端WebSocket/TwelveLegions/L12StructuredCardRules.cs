@@ -154,6 +154,32 @@ public static partial class L12StructuredCardRules
     public static bool HasAnyRowRangedNoLoss(L12CardInstance card)
         => CombatProfile(card, 0).HasRangedNoLoss || CombatProfile(card, 1).HasRangedNoLoss;
 
+    /// <summary>
+    /// “远程军团”是卡牌身份，不等同于某个位置临时获得了进攻距离与无损。
+    /// 离场区域只读取基础职介及无条件远程能力；场上查询还会读取该位置的
+    /// 有效职介，因此“视为弓手/术师”只在条件实际成立时成为远程军团。
+    /// </summary>
+    public static bool IsRangedLegion(L12CardInstance card)
+        => IsRangedProfession(card.Profession) || HasUnconditionalRangedAbility(card.CardId);
+
+    public static bool IsRangedLegion(L12CardInstance card, int row)
+        => IsRangedProfession(CombatProfile(card, row).EffectiveProfession)
+            || HasUnconditionalRangedAbility(card.CardId);
+
+    private static bool IsRangedProfession(string? profession)
+        => profession is "弓手" or "术师";
+
+    private static bool HasUnconditionalRangedAbility(string cardId)
+        => GetCombatRuleAbilities(cardId)
+            // granted-continuous 是可被其他效果授予的定义块，不能在尚未授予时
+            // 反向成为卡牌自身身份。
+            .Where(ability => ability.ExecutionModel == "continuous"
+                && string.IsNullOrWhiteSpace(ConditionExpression(ability)))
+            .Any(ability => ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                    && atom.Parameters.GetValueOrDefault("rangeBonus") == "1")
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                    && atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true"));
+
     public static bool HasAnyRowAttackNoLoss(L12CardInstance card)
         => CombatProfile(card, 0).HasAttackNoLoss || CombatProfile(card, 1).HasAttackNoLoss;
 
@@ -261,7 +287,6 @@ public static partial class L12StructuredCardRules
         var rangedNoLoss = false;
         var attackNoLoss = false;
         var cannotBeRanged = false;
-        var professionDerived = false;
         int? attackTroopsSetValue = null;
         var incomingRangedCombatDamageAdjustment = 0;
         var matchedConditions = new List<string>();
@@ -278,7 +303,6 @@ public static partial class L12StructuredCardRules
                         && atom.Parameters.GetValueOrDefault("key") == "source.derived-profession")
                     {
                         profession = atom.Parameters.GetValueOrDefault("value") ?? profession;
-                        professionDerived = true;
                     }
                     if (atom.Kind != L12AtomKinds.AttackRule) continue;
                     ranged |= atom.Parameters.GetValueOrDefault("rangeBonus") == "1";
@@ -297,10 +321,10 @@ public static partial class L12StructuredCardRules
                     attackTroopsSetValue = setValue;
         }
 
-        // 职介本身是规则能力的来源，而不只是展示标签。任何持续效果将军团
-        // “视为【弓手】”后，都必须立即获得弓手的完整职介能力，禁止再要求
+        // 职介本身是规则能力的来源，而不只是展示标签。弓手、术师及任何持续
+        // 效果将军团“视为”这两种职介后，都必须立即获得完整远程能力，禁止再要求
         // 每张赋予职介的卡重复写距离与远程无损，或在进攻流程中按卡号特判。
-        if (professionDerived && string.Equals(profession, "弓手", StringComparison.Ordinal))
+        if (IsRangedProfession(profession))
         {
             ranged = true;
             rangedNoLoss = true;

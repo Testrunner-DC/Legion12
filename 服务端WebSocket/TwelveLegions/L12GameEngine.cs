@@ -1702,8 +1702,17 @@ public sealed partial class L12GameEngine
     {
         var profile = L12StructuredCardRules.CombatProfile(card, row);
         card.LastKnownEffectiveProfession = profile.EffectiveProfession;
-        card.LastKnownWasRanged = profile.HasRangeBonus && profile.HasRangedNoLoss;
+        card.LastKnownWasRanged = L12StructuredCardRules.IsRangedLegion(card, row);
         card.LastKnownAttachedCardIds = card.AttachedCards.Select(attached => attached.InstanceId).ToList();
+    }
+
+    private static bool IsRangedLegionOnField(L12PlayerState player, L12CardInstance card)
+    {
+        for (var row = 0; row < player.Field.Length; row++)
+        for (var slot = 0; slot < player.Field[row].Length; slot++)
+            if (player.Field[row][slot]?.InstanceId == card.InstanceId)
+                return L12StructuredCardRules.IsRangedLegion(card, row);
+        return false;
     }
 
     private L12CardInstance[] SnapshotHand(int playerIndex)

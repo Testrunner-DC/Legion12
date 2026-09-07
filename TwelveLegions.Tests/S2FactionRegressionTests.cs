@@ -3953,6 +3953,37 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void ArtemisDoesNotTreatAFrontOnlyRangeBonusAsRangedLegionIdentity()
+    {
+        var game = CreateWithFirstMaster("S02-05M1", 63361);
+        var defender = game.State.Players[0];
+        var attackerPlayer = game.State.Players[1];
+        defender.Hand.Clear();
+        attackerPlayer.Hand.Clear();
+        var frontOnlyAssassin = Card("S02-0517", "artemis-front-only-assassin");
+        var attacker = Card("S02-0004", "artemis-front-only-attacker");
+        frontOnlyAssassin.SummonRound = attacker.SummonRound = 0;
+        defender.Field[0][0] = frontOnlyAssassin;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Morale.Clear();
+        defender.Morale.Add(new L12MoraleCard
+        {
+            CardId = "S02-05C1", InstanceId = "artemis-front-only-rested", Tapped = true,
+        });
+        game.State.ActivePlayer = 1;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", frontOnlyAssassin.InstanceId))).Accepted);
+        PassResponses(game);
+
+        Assert.False(frontOnlyAssassin.LastKnownWasRanged);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.False(defender.Morale[0].IsGodPower);
+    }
+
+    [Fact]
     public void TrojanHorseMayEnterEnemyFieldThenLeavesAndDrawsAtOwnersNextEnd()
     {
         var game = Create(6337);

@@ -4,6 +4,8 @@
 
 ## 当前发布批次
 
+- 2026-09-07 18:24：277–280实现及根独立Batch已完成，规则2463/2463、UI289/主题/连接/回放/卡图/Vue/Vite通过，真实点击及5视口+480窄窗复跑errors=[]；后端及L12-UI均冻结，待干净提交级Release和本次一次同步部署，目标19:00前但不跳过门禁。范围为远程身份、荷鲁斯原格点击、迦具土完整文本/等价普通士气和三列士气排列，日志见BUGFIX-REGISTRY新条目。基线/线上仍`cce59c9`；18:09维护v13阻新局、活动局/待恢复/Outbox均0，切换前须再核验。最终提交/上线/开放及后台状态以`D:/GPT/Legion12/artifacts/batch277-final-receipt.md`为准，无收据不能声称部署成功。
+
 - 最终发布补漏276：267–275干净提交`bafbb7e`的Release已完整通过且UI冻结，但尚未推送/部署；预检发现维护状态被旧健康门禁误拒。仅部署显式允许自洽maintenance/true，默认仍严格ok/false，保持身份强校验。补漏提交后须重新执行提交级Release。最终成功/失败及实际线上身份见`D:/GPT/Legion12/artifacts/batch275-final-receipt.md`，不存在收据即不能声称部署完成。
 - 最新授权补充：用户已明确本次部署可强制关闭GM沙盒（含在线），旧“playing=1阻断”不再适用于已证明的GM沙盒。真人非沙盒对局仍自然排空，排位恢复/Outbox/隔离记录仍须验证；统一发布一次关闭，不额外提前重启，不补造旧未录沙盒过程。
 - 本批最终根独立验收：后端Batch2458/2458、限定平台88/88及卡效静态/原子审计；前端288项UI、字体/主题/音乐/连接/重入/维护/摩点/Prompt/回放/卡图、Vue及Vite均通过。日志batch275-root-backend.log、batch275-root-frontend.log。GitHub SSH22/HTTPS暂时失败，使用既有github.com主机信任的SSH443成功fetch，最新main与基线2a0e938一致；不修改origin或降级主机验证。仍须UI最终冻结、干净提交级Release与线上发布验证。

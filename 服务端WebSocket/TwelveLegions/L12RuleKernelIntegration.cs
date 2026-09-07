@@ -81,6 +81,7 @@ public sealed partial class L12GameEngine
                 : Math.Min(step.MaxChoose, step.ValidChoices.Count),
             CancellationPolicy = step.CancellationPolicy,
             AutoSelectWhenExact = step.AutoSelectWhenExact,
+            AutoSelectEquivalentOrdinaryMorale = step.AutoSelectEquivalentOrdinaryMorale,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
             RequiredDeclaredChoice = step.RequiredDeclaredChoice,
@@ -237,13 +238,16 @@ public sealed partial class L12GameEngine
                 activation.CurrentStep++;
                 continue;
             }
-            if ((pendingStep.AutoSelectWhenExact || IsDeterministicCostSelection(pendingStep))
-                && pendingStep.MinChoose == pendingStep.MaxChoose
-                && pendingStep.ValidChoices.Count == pendingStep.MinChoose)
+            var deterministicCostChoices = DeterministicCostSelection(activation, pendingStep);
+            if (pendingStep.MinChoose == pendingStep.MaxChoose
+                && ((pendingStep.AutoSelectWhenExact
+                        && pendingStep.ValidChoices.Count == pendingStep.MinChoose)
+                    || deterministicCostChoices is not null))
             {
-                activation.DeclaredTargets.AddRange(pendingStep.ValidChoices);
+                var selected = deterministicCostChoices ?? pendingStep.ValidChoices;
+                activation.DeclaredTargets.AddRange(selected);
                 if (!string.IsNullOrWhiteSpace(pendingStep.DeclarationKey))
-                    activation.DeclaredValues[pendingStep.DeclarationKey] = pendingStep.ValidChoices.ToList();
+                    activation.DeclaredValues[pendingStep.DeclarationKey] = selected.ToList();
                 activation.CurrentStep++;
                 continue;
             }
@@ -842,14 +846,24 @@ public sealed partial class L12GameEngine
                 || choice.Equals("skip", StringComparison.OrdinalIgnoreCase)),
         };
 
-    private static bool IsDeterministicCostSelection(L12ActivationSelectionStep step)
+    private IReadOnlyList<string>? DeterministicCostSelection(
+        L12PendingActivation activation, L12ActivationSelectionStep step)
     {
-        if (step.ValidChoices.Count == 0 || step.MinChoose <= 0) return false;
+        if (step.ValidChoices.Count == 0 || step.MinChoose <= 0
+            || step.MinChoose != step.MaxChoose) return null;
         // Auto-pay only the shared resource-payment controls. Other colon costs may be
         // the player's last opportunity to cancel an active effect, or may carry ordering
         // semantics even when only one card is currently legal. Those flows opt in with
         // AutoSelectWhenExact after their own activation confirmation instead.
-        return step.Kind is "resource-payment" or "composite-ordinary-payment";
+        if (step.Kind is not ("resource-payment" or "composite-ordinary-payment")) return null;
+        if (step.ValidChoices.Count == step.MinChoose) return step.ValidChoices;
+        if (!step.AutoSelectEquivalentOrdinaryMorale) return null;
+
+        var player = State.Players[activation.Controller];
+        var semantics = step.ValidChoices.Select(choice => EquivalentOrdinaryMoralePaymentKey(player, choice)).ToArray();
+        if (semantics.Any(string.IsNullOrWhiteSpace)
+            || semantics.Distinct(StringComparer.Ordinal).Take(2).Count() != 1) return null;
+        return step.ValidChoices.Take(step.MinChoose).ToArray();
     }
 
     private static bool IsOnlyNegativeOptionalChoice(L12ActivationSelectionStep step)
@@ -1405,6 +1419,7 @@ public sealed partial class L12GameEngine
                 "promotion-enter" => ["晋升登场"],
                 "enter" => ["登场时"],
                 "attack" => ["进攻时"],
+                "legion-attack-timing" => ["我方军团", "被进攻时"],
                 "after-damage" => ["对主宰造成伤害时", "主宰受到伤害时"],
                 "disaster" => ["触发"],
                 "death" => ["阵亡时"],
@@ -1425,6 +1440,14 @@ public sealed partial class L12GameEngine
                 _ => [],
             },
         };
+        if (trigger == "legion-attack-timing")
+        {
+            var sharedCombatTiming = lines.FirstOrDefault(line => markers.All(marker =>
+                NormalizeTriggeredEffectText(line).Contains(
+                    NormalizeTriggeredEffectText(marker), StringComparison.Ordinal)));
+            if (!string.IsNullOrWhiteSpace(sharedCombatTiming))
+                return TrimTrailingEffectReminder(sharedCombatTiming);
+        }
         var sharedTimingLine = lines.FirstOrDefault(line =>
             line.StartsWith("登场时/进攻时", StringComparison.Ordinal));
         if (sharedTimingLine is not null && trigger is "enter" or "promotion-enter" or "attack")

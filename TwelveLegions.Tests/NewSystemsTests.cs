@@ -1546,6 +1546,62 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void RangedLegionIdentityIsSeparateFromPositionOnlyRangeBonuses()
+    {
+        L12CardInstance Instance(string cardId)
+        {
+            var definition = Catalog.Cards[cardId];
+            return new L12CardInstance
+            {
+                InstanceId = $"ranged-identity-{cardId}",
+                CardId = definition.Id,
+                Name = definition.NameZh,
+                CardType = definition.CardType,
+                Faction = definition.Faction,
+                Profession = definition.Profession,
+                EffectText = definition.Effect,
+            };
+        }
+
+        var frontOnlyMelee = new[]
+        {
+            "S01-0115", "S01-0213", "S01-0316", "S01-0415",
+            "S02-0517", "S02-0619", "ST01-08",
+        };
+        foreach (var cardId in frontOnlyMelee)
+        {
+            var card = Instance(cardId);
+            Assert.False(L12StructuredCardRules.IsRangedLegion(card), cardId);
+            Assert.False(L12StructuredCardRules.IsRangedLegion(card, 0), cardId);
+            Assert.False(L12StructuredCardRules.IsRangedLegion(card, 1), cardId);
+            Assert.True(L12StructuredCardRules.CombatProfile(card, 0).HasRangeBonus, cardId);
+        }
+
+        var unconditional = Catalog.Cards.Values.Where(card => card.CardType == "legion"
+            && card.Effect?.Contains("进攻距离+1，远程进攻无损", StringComparison.Ordinal) == true
+            && !card.Effect.Contains("「位于前排」进攻距离+1", StringComparison.Ordinal)
+            && card.Id is not ("S01-0409" or "S02-0507")).ToArray();
+        Assert.Equal(38, unconditional.Length);
+        Assert.All(unconditional, definition =>
+            Assert.True(L12StructuredCardRules.IsRangedLegion(Instance(definition.Id)), definition.Id));
+
+        var yoshitsune = Instance("S01-0409");
+        Assert.False(L12StructuredCardRules.IsRangedLegion(yoshitsune));
+        Assert.False(L12StructuredCardRules.IsRangedLegion(yoshitsune, 1));
+        Assert.True(L12StructuredCardRules.CombatProfile(yoshitsune, 1).HasRangeBonus);
+
+        var atalanta = Instance("S02-0507");
+        Assert.False(L12StructuredCardRules.IsRangedLegion(atalanta));
+        Assert.False(L12StructuredCardRules.IsRangedLegion(atalanta, 0));
+        Assert.True(L12StructuredCardRules.IsRangedLegion(atalanta, 1));
+
+        var merlin = Instance("S02-0603");
+        Assert.True(L12StructuredCardRules.IsRangedLegion(merlin));
+        Assert.True(L12StructuredCardRules.CombatProfile(merlin, 0).HasRangeBonus);
+        Assert.True(L12StructuredCardRules.CombatProfile(merlin, 0).HasRangedNoLoss);
+    }
+
+    [Fact]
     public void EveryPrintedPermanentCombatRuleMatchesTheSharedCombatProfile()
     {
         var attackNoLoss = Catalog.Cards.Values

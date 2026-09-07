@@ -85,6 +85,7 @@ const displayMoraleSlots = computed<Array<MoraleResource>>(() => {
   })
   return resources.map(({ resource }) => resource).slice(0, Math.max(0, visibleMoraleLimit - visibleTemporaryMoraleCount.value))
 })
+const visibleMoraleCount = computed(() => visibleTemporaryMoraleCount.value + displayMoraleSlots.value.length)
 function moraleState(card: MoraleResource) {
   if (card.isGodPower) return card.tapped ? 'rested-god-power' : 'active-god-power'
   return card.tapped ? 'rested-morale' : 'active-morale'
@@ -211,6 +212,10 @@ function selectZoneCard(card: Card) {
   }
 }
 function handleSlot(row: number, slot: number, card: Card | null) {
+  if (props.promptSlotIds?.includes(`${row}:${slot}`)) {
+    emit('slot', row, slot, card)
+    return
+  }
   if (card && props.paymentChoiceIds?.includes(card.instanceId)) {
     emit('focus', card)
     emit('paymentResource', card.instanceId)
@@ -309,7 +314,7 @@ function beginCardAbility(card: Card) {
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              available: (!player.field[row][slot] && promptSlotIds?.includes(`${row}:${slot}`)) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
+              available: promptSlotIds?.includes(`${row}:${slot}`) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
               source: isSelected(player.field[row][slot]?.instanceId),
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
@@ -368,7 +373,8 @@ function beginCardAbility(card: Card) {
         <b class="morale-count resource-morale-count" data-ui-contract="resource-morale-count"
           :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
       </div>
-      <div class="morale-stack resource-morale-stack" data-ui-contract="resource-morale-stack">
+      <div class="morale-stack resource-morale-stack" data-ui-contract="resource-morale-stack"
+        :class="{ 'morale-remainder-1': visibleMoraleCount % 3 === 1, 'morale-remainder-2': visibleMoraleCount % 3 === 2 }">
       <button v-for="index in visibleTemporaryMoraleCount" :key="`temporary-${index}`" type="button"
         class="morale-orb temporary-morale" data-ui-contract="temporary-morale-selectable-lotus"
         :class="{ payable: temporaryMoralePayable(index), selected: paymentSelectedIds?.includes(temporaryMoraleChoiceId(index)) }"
@@ -465,6 +471,7 @@ function beginCardAbility(card: Card) {
 .resource-morale-count{height:34px;min-height:34px;padding:0 5px;border-color:color-mix(in srgb,var(--resource-accent,#d2c8a5) 48%,#5b625f);background:rgba(7,10,11,.72);box-shadow:none;color:#f0eee6;font-size:max(16px,var(--l12-board-readable,14px))}
 .l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 156px}.mat-piles{transform:translateX(-30px)}
 .resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}.resource-zone{gap:8px}.resource-morale-summary{grid-template-columns:68px 88px;height:38px}.resource-morale-label{min-width:68px;height:38px;padding:0 10px}.resource-morale-count{width:88px;max-width:88px;height:38px;min-height:38px;padding:0 12px}.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}
+.resource-morale-stack.morale-remainder-1::after,.resource-morale-stack.morale-remainder-2::after{content:'';display:block;flex:none;height:32px;pointer-events:none;visibility:hidden}.resource-morale-stack.morale-remainder-1::after{width:74px}.resource-morale-stack.morale-remainder-2::after{width:32px}
 </style>
 
 <style scoped>

@@ -450,7 +450,7 @@ public sealed partial class L12GameEngine
                 }
                 item.Data["telemachusTop"] = string.Join('|', top.Select(card => card.InstanceId));
                 var choices = top.Where(card => card.CardType == "legion"
-                            && L12StructuredCardRules.HasAnyRowRangeBonus(card)
+                            && L12StructuredCardRules.IsRangedLegion(card)
                         || card.CardType is "tactic" or "counter-tactic"
                             && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToArray();
@@ -594,6 +594,7 @@ public sealed partial class L12GameEngine
                     Text = "迦具土：选择用于支付1士气的资源", ValidChoices = resources,
                     MinChoose = moraleCost, MaxChoose = moraleCost, RequiredDeclaredChoice = "mode:morale",
                     AutoSelectWhenExact = resources.Count == moraleCost,
+                    AutoSelectEquivalentOrdinaryMorale = true,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 });
                 steps.Add(StarterStep("hand-card", "discardCost", "迦具土：选择弃置的1张手牌",
@@ -1085,7 +1086,7 @@ public sealed partial class L12GameEngine
             case "aeneas-promotion-search":
             {
                 var choices = player.Library.Where(card => card.CardType == "legion"
-                        && L12StructuredCardRules.HasAnyRowRangeBonus(card))
+                        && L12StructuredCardRules.IsRangedLegion(card))
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0 || !EmptySlots(player).Any())
                 {
@@ -1221,9 +1222,9 @@ public sealed partial class L12GameEngine
                 var targetId = mode == "mode:shock"
                     ? StarterDeclaredOne(item, "shockTarget")
                     : StarterDeclaredOne(item, "rangedTarget");
-                var target = FindOnField(player, targetId, out _, out _);
+                var target = FindOnField(player, targetId, out var targetRow, out _);
                 if (target is not null && L12StructuredCardRules.HasFaction(player, target, "olympus")
-                    && (mode != "mode:ranged" || L12StructuredCardRules.HasAnyRowRangeBonus(target)))
+                    && (mode != "mode:ranged" || L12StructuredCardRules.IsRangedLegion(target, targetRow)))
                 {
                     if (mode == "mode:shock")
                     {
@@ -1252,7 +1253,7 @@ public sealed partial class L12GameEngine
                 }
                 item.Data["telemachusTop"] = string.Join('|', top.Select(card => card.InstanceId));
                 var choices = top.Where(card => card.CardType == "legion"
-                            && L12StructuredCardRules.HasAnyRowRangeBonus(card)
+                            && L12StructuredCardRules.IsRangedLegion(card)
                         || card.CardType is "tactic" or "counter-tactic"
                             && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToArray();
@@ -1301,7 +1302,7 @@ public sealed partial class L12GameEngine
                 var player = State.Players[item.Controller];
                 var selected = chosen.Distinct(StringComparer.OrdinalIgnoreCase)
                     .Where(id => player.Library.Any(card => card.InstanceId == id && card.CardType == "legion"
-                        && L12StructuredCardRules.HasAnyRowRangeBonus(card)))
+                        && L12StructuredCardRules.IsRangedLegion(card)))
                     .Take(Math.Min(2, EmptySlots(player).Count())).ToArray();
                 if (selected.Length == 0)
                 {
@@ -1320,7 +1321,7 @@ public sealed partial class L12GameEngine
                 var chosenId = chosen.SingleOrDefault();
                 if (chosenId is not null && topIds.Contains(chosenId, StringComparer.OrdinalIgnoreCase)
                     && player.Library.FirstOrDefault(card => card.InstanceId == chosenId) is { } selected
-                    && (selected.CardType == "legion" && L12StructuredCardRules.HasAnyRowRangeBonus(selected)
+                    && (selected.CardType == "legion" && L12StructuredCardRules.IsRangedLegion(selected)
                         || selected.CardType is "tactic" or "counter-tactic"
                             && L12StructuredCardRules.HasFaction(player, selected, "olympus")))
                 {
