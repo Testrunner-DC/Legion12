@@ -60,7 +60,7 @@ const visibleMasters = computed(() => query.value
   ? analytics.value.masters.filter(row => `${row.masterName} ${row.masterId} ${row.strongestPlayer ?? ''} ${row.title ?? ''}`.toLocaleLowerCase().includes(query.value))
   : analytics.value.masters)
 const matrixMasters = computed(() => visibleMasters.value)
-const matrixMasterColumnWidth = '银臂努阿达'.length * 14 + 34
+const matrixMasterColumnWidth = '银臂努阿达'.length * 14 + 44
 const visibleHonors = computed(() => {
   const factionName = filters.find(item => item.id === faction.value)?.name
   const rows = faction.value ? honors.value.filter(row => row.faction === factionName) : honors.value
@@ -181,4 +181,5 @@ onMounted(load)
 @media(max-width:1050px){.player-table .thead,.player-table .tr{min-width:1180px}}
 .toolbar{display:flex;flex-wrap:wrap}.toolbar .tabs,.toolbar .ranges{flex:none}.toolbar .ranking-search{flex:0 1 360px;width:clamp(220px,24vw,380px);margin-left:auto}.toolbar .master-title-rules-button{flex:none}
 .matrix-rank-cell span,.matrix-cell span,.matrix-cell b{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.matrix-head span,.matrix-row-head b{max-width:96px}
+.ranking-page{--ranking-master-avatar:44px}.player-table .tr,.master-table .tr{min-height:68px;padding-block:7px}.master-avatar,.player-master-avatar,.matrix-master-avatar,.matrix-row-head .matrix-master-avatar{box-sizing:border-box;width:var(--ranking-master-avatar);height:var(--ranking-master-avatar);min-width:var(--ranking-master-avatar);max-width:var(--ranking-master-avatar);flex:0 0 var(--ranking-master-avatar);border-radius:0;object-fit:cover}.matrix-grid{grid-auto-rows:76px}.matrix-rank-head,.matrix-rank-cell,.matrix-corner,.matrix-head,.matrix-row-head,.matrix-cell{height:76px;min-height:76px;max-height:76px}.matrix-head,.matrix-row-head{gap:5px}.matrix-head span,.matrix-row-head b{max-width:calc(100% - 8px)}
 </style>

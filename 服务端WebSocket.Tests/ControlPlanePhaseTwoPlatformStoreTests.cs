@@ -305,7 +305,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             {
                 Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
                 var error = await response.Content.ReadFromJsonAsync<L12ApiError>();
-                Assert.Equal("content_approval_disabled", error!.Code);
+                Assert.Equal("approval_disabled", error!.Code);
             }
 
             var publishBatch = Assert.Single(store.ContentBatches(), item => item.Action == "publish");

@@ -18,6 +18,9 @@ const detailLoading = ref(false)
 const filters = ref({ search: '', mode: 'ranked', from: '', to: '', masterId: '', opponentMasterId: '', minimumSample: 10 })
 
 const cardById = computed(() => new Map(cards.value.map(card => [card.id, card])))
+const masterOptions = computed(() => cards.value
+  .filter(card => card.cardType === 'master')
+  .sort((left, right) => left.nameZh.localeCompare(right.nameZh, 'zh-CN')))
 const selectedCatalogCard = computed(() => detail.value ? cardById.value.get(detail.value.summary.cardId) : undefined)
 const summaryMetrics = computed(() => page.value.summary || {})
 
@@ -97,8 +100,8 @@ onMounted(async () => {
       <label>数据范围<select v-model="filters.mode"><option value="ranked">排位（平衡默认）</option><option value="casual">休闲</option><option value="friendly">好友房</option><option value="tournament">赛事</option></select></label>
       <label>开始日期<input v-model="filters.from" type="date"/></label>
       <label>结束日期<input v-model="filters.to" type="date"/></label>
-      <label>使用方主宰<input v-model="filters.masterId" placeholder="全部主宰"/></label>
-      <label>对手方主宰<input v-model="filters.opponentMasterId" placeholder="全部对手"/></label>
+      <label>使用方主宰<select v-model="filters.masterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`mine-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
+      <label>对手方主宰<select v-model="filters.opponentMasterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`enemy-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
       <label>最小样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
       <button class="query" :disabled="loading" @click="loadAnalytics(true)">分析</button>
     </section>

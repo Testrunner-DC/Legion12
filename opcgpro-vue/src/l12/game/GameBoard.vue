@@ -32,7 +32,7 @@ type GmPlacementRequest = {
   cardType: string
   triggerEffects: boolean
 }
-const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; gmPlacement?: GmPlacementRequest | null; gmPanelOpen?: boolean }>(), { readOnly: false, gmPlacement: null, gmPanelOpen: false })
+const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; replayFocusCard?: Card | null; gmPlacement?: GmPlacementRequest | null; gmPanelOpen?: boolean }>(), { readOnly: false, replayFocusCard: null, gmPlacement: null, gmPanelOpen: false })
 const emit = defineEmits<{ gmPlacementResolved: []; settings: [] }>()
 const scale = ref(1)
 const stageSize = computed(() => l12State.gmEnabled
@@ -43,6 +43,9 @@ const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const inspectorAnchor = ref<HTMLElement | null>(null)
 const inspectorFloatStyle = ref<Record<string, string>>({})
+watch(() => props.replayFocusCard, card => {
+  if (props.readOnly) focusCard.value = card ?? null
+}, { immediate: true })
 type BoardMode = 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'
 const mode = ref<BoardMode>('play')
 const mulliganIds = ref<string[]>([])
@@ -189,16 +192,16 @@ const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && f
 function updateInspectorFloatRect() {
   if (!modalInspectorVisible.value || !inspectorAnchor.value) return
   const rect = inspectorAnchor.value.getBoundingClientRect()
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const laneWidth = Math.min(258, Math.max(viewportWidth < 520 ? 92 : 118, viewportWidth * .19))
-  const top = Math.max(8, Math.min(rect.top, viewportHeight - 140))
+  const logicalWidth = inspectorAnchor.value.offsetWidth || rect.width
+  const logicalHeight = inspectorAnchor.value.offsetHeight || rect.height
+  const floatScale = logicalWidth > 0 ? rect.width / logicalWidth : 1
   inspectorFloatStyle.value = {
-    left: '8px',
-    top: `${top}px`,
-    width: `${Math.max(76, laneWidth - 16)}px`,
-    height: `${Math.max(120, viewportHeight - top - 8)}px`,
-    transform: 'none',
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${logicalWidth}px`,
+    height: `${logicalHeight}px`,
+    transform: `scale(${floatScale})`,
+    '--l12-board-readable': `${14 / Math.min(1, floatScale)}px`,
   }
 }
 watch(modalInspectorVisible, visible => {
@@ -425,9 +428,10 @@ const supportReady = computed(() => {
 
 function updateScale() {
   compactViewport.value = window.innerWidth < 820
-  // The fanned hand cards rotate a few pixels beyond their logical lane. Keep a small
-  // viewport-safe footer so their painted bounds are not clipped at exact 16:9 heights.
-  const availableHeight = window.innerHeight - 68
+  // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
+  // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
+  // reserve that overflow on both edges so every control stays visible at exact 16:9.
+  const availableHeight = window.innerHeight - 124
   const availableWidth = window.innerWidth - (props.gmPanelOpen && !compactViewport.value ? 344 : 0)
   scale.value = compactViewport.value
     ? Math.max(.7, Math.min(1, availableHeight / stageSize.value.height))
@@ -790,6 +794,7 @@ function statusTexts(card: Card) {
               </section>
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
               <Teleport to="body" :disabled="!modalInspectorVisible">
+                <div class="board-rail inspector-style-scope">
                 <section class="grand-panel card-inspector" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
                   <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
                   <h3>选中卡牌</h3>
@@ -805,6 +810,7 @@ function statusTexts(card: Card) {
                   </template>
                   <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
                 </section>
+                </div>
               </Teleport>
               </div>
               <div class="selected-card-utility-slot" data-ui-contract="selected-card-utility-dock">
@@ -1054,9 +1060,10 @@ function statusTexts(card: Card) {
 .board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:max(14px,var(--l12-board-readable,14px))}.board-target-controls span{color:#8f9894;font-size:max(14px,var(--l12-board-readable,14px))}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:800;line-height:1.45}
-.inspector-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}.inspector-card-tags span{padding:2px 5px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}
+.inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;white-space:nowrap}
 .session-disaster-panel{display:grid;min-height:126px;align-content:start;justify-items:start;padding:12px 14px!important}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:10px}.session-disaster-strip button{width:64px;min-width:64px;height:64px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
-.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.inspector-card-image{display:block;width:146px;height:204px;flex:0 0 204px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:208px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(146px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
+.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.inspector-card-image{display:block;width:168px;height:235px;max-width:100%;flex:0 0 235px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(168px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
+.inspector-style-scope{display:contents!important}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-readable,14px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}

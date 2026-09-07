@@ -247,7 +247,7 @@ public sealed partial class MatchRecorder
     {
         var stateJson = engine.SerializeFullState();
         var stateHash = engine.ComputeStateHash();
-        var occurredUtc = DateTimeOffset.UtcNow.ToString("O");
+        var occurredUtc = _utcNow().ToUniversalTime().ToString("O");
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
@@ -351,6 +351,7 @@ public sealed partial class MatchRecorder
             ? lastSignalSequence : newSignals.Max(signal => signal.Sequence));
         update.Parameters.AddWithValue("$match", engine.State.MatchId);
         await update.ExecuteNonQueryAsync();
+        await TouchSandboxRecordingAsync(connection, transaction, engine.State.MatchId, occurredUtc);
 
         if (rankedRuntime is not null)
             await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);

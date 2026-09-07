@@ -170,7 +170,7 @@ function answerDraw(accept: boolean) {
 
         <div v-if="toolView === 'menu'" class="tool-menu">
           <button type="button" @click="openBugFeedback">Bug反馈<span>打开普通反馈入口</span></button>
-          <button type="button" :disabled="!governance?.canRequestDraw || busy" @click="toolView = 'draw'; notice = ''">申请平局<span>{{ governance?.drawUnavailableReason || '双方同意后权威结束本局' }}</span></button>
+          <button type="button" :disabled="!governance?.canRequestDraw || busy" @click="toolView = 'draw'; notice = ''">申请平局<span>{{ governance?.drawUnavailableReason || '本局双方合计仅可申请一次' }}</span></button>
           <button type="button" :disabled="!governance?.opponentAccountId || busy" @click="blockOpponent">屏蔽对手<span>仅屏蔽好友申请，不影响本局或匹配</span></button>
           <button type="button" :disabled="!governance?.canReportOpponent || busy" @click="toolView = 'report'; notice = ''">举报对手<span>{{ governance?.reportUnavailableReason || '独立提交至对局治理' }}</span></button>
           <button v-if="drawRequest?.viewerCanRespond" type="button" class="attention" @click="responseOpen = true">处理平局申请<span>{{ drawRequest.requesterName }} 正在等待答复</span></button>
@@ -179,7 +179,7 @@ function answerDraw(accept: boolean) {
 
         <form v-else-if="toolView === 'draw'" @submit.prevent="submitDrawRequest">
           <label>申请原因<textarea v-model="drawReason" maxlength="1000" rows="5" placeholder="输入所出现的Bug给对手申请平局"/></label>
-          <p>真实双人进行中对局可申请；排位同样允许。对方拒绝后对局继续。</p>
+          <p>真实双人进行中对局可申请，排位同样允许；每场对局双方合计仅可发起一次，无论接受或拒绝都不能再次申请。对方仍可响应已经收到的申请。</p>
           <footer><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !drawReason.trim()" type="submit">{{ busy ? '提交中…' : '发送申请' }}</button></footer>
         </form>
 

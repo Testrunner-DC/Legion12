@@ -543,8 +543,11 @@ public sealed class FaithZealotMasterAuditRegressionTests
             return;
         }
 
-        // 唯一可用的临时士气会被声明器自动锁定；流程应直接进入两张战场费用的选择，
-        // 而不是在能力投影层误判为不可发动。
+        // 两种费用先由玩家声明模式；选定士气+军团后，唯一可用的临时士气会被自动锁定，
+        // 流程直接进入两张战场费用的选择，而不是在能力投影层误判为不可发动。
+        var mode = Prompt(game);
+        Assert.Contains("mode:morale-legions", mode.ValidChoices);
+        Resolve(game, mode, "mode:morale-legions");
         var fieldCost = Prompt(game);
         Assert.Equal("active-target", fieldCost.Kind);
         Assert.Equal("board-target", fieldCost.Data.GetValueOrDefault("choiceMode"));

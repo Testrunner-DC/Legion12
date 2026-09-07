@@ -72,6 +72,8 @@ public sealed partial class MatchRecorder
         L12AdminMatchQuery query)
     {
         if (string.IsNullOrWhiteSpace(accountId)) throw new ArgumentException("账号 ID 不能为空", nameof(accountId));
+        if (string.Equals(query.ModeId?.Trim(), "sandbox", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(new L12AdminMatchPage([], 0, null));
         return ListAdminMatchesAsync(query with { AccountId = accountId.Trim(), Player = null });
     }
 
@@ -83,7 +85,7 @@ public sealed partial class MatchRecorder
         var summaryCommand = connection.CreateCommand();
         summaryCommand.CommandText = $"""
             {AdminMatchSelect}
-            WHERE m.match_id=$match AND m.mode_id <> 'sandbox';
+            WHERE m.match_id=$match;
             """;
         summaryCommand.Parameters.AddWithValue("$match", matchId);
         L12AdminMatchSummary summary;
@@ -93,9 +95,10 @@ public sealed partial class MatchRecorder
             summary = ReadAdminMatchSummary(reader);
         }
 
-        var completed = summary.EndedUtc is not null;
-        var participants = await ReadParticipantDetailsAsync(connection, matchId, summary, completed);
-        if (!completed)
+        var sandbox = string.Equals(summary.ModeId, "sandbox", StringComparison.Ordinal);
+        var replayReadable = summary.EndedUtc is not null || sandbox;
+        var participants = await ReadParticipantDetailsAsync(connection, matchId, summary, replayReadable);
+        if (!replayReadable)
         {
             return new L12AdminMatchDetail(summary, participants, [], [],
                 EmptyCoverage(privateDuringActiveMatch: true));
@@ -103,8 +106,9 @@ public sealed partial class MatchRecorder
 
         if (includeReplay) await EnsureInlineReplayWithinLimitsAsync(connection, matchId);
         var replay = includeReplay ? (await GetMatchAsync(matchId))?.Commands ?? [] : [];
-        var facts = await ReadCardFactsAsync(connection, matchId);
-        var coverage = await ReadCoverageAsync(connection, matchId, privateDuringActiveMatch: false);
+        var facts = sandbox ? [] : await ReadCardFactsAsync(connection, matchId);
+        var coverage = sandbox ? EmptyCoverage(privateDuringActiveMatch: false)
+            : await ReadCoverageAsync(connection, matchId, privateDuringActiveMatch: false);
         return new L12AdminMatchDetail(summary, participants, replay, facts, coverage);
     }
 
@@ -147,7 +151,7 @@ public sealed partial class MatchRecorder
                 +COALESCE(length(CAST(e.error AS BLOB)),0)
             ),0)
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
-            WHERE m.match_id=$match AND m.mode_id<>'sandbox' AND m.ended_utc IS NOT NULL
+            WHERE m.match_id=$match AND (m.mode_id='sandbox' OR m.ended_utc IS NOT NULL)
             GROUP BY m.match_id;
             """;
         metadata.Parameters.AddWithValue("$match", normalizedMatchId);
@@ -315,19 +319,23 @@ public sealed partial class MatchRecorder
         out Dictionary<string, object> parameters)
     {
         parameters = new Dictionary<string, object>(StringComparer.Ordinal);
-        var clauses = new List<string> { "m.mode_id <> 'sandbox'" };
-        if (!string.IsNullOrWhiteSpace(query.ModeId))
+        var requestedMode = query.ModeId?.Trim().ToLowerInvariant();
+        var clauses = new List<string>
+        {
+            requestedMode == "sandbox" ? "m.mode_id='sandbox'" : "m.mode_id <> 'sandbox'",
+        };
+        if (!string.IsNullOrWhiteSpace(requestedMode) && requestedMode != "sandbox")
         {
             clauses.Add("m.mode_id=$mode");
-            parameters["$mode"] = query.ModeId.Trim().ToLowerInvariant();
+            parameters["$mode"] = requestedMode;
         }
         if (!string.IsNullOrWhiteSpace(query.Status))
         {
             switch (query.Status.Trim().ToLowerInvariant())
             {
                 case "ongoing": clauses.Add("m.ended_utc IS NULL"); break;
-                case "completed": clauses.Add("m.ended_utc IS NOT NULL AND m.error IS NULL AND m.winner IN (0,1)"); break;
-                case "invalid": clauses.Add("m.ended_utc IS NOT NULL AND (m.error IS NOT NULL OR m.winner IS NULL)"); break;
+                case "completed": clauses.Add("m.ended_utc IS NOT NULL AND m.error IS NULL AND (m.mode_id='sandbox' OR m.winner IN (0,1))"); break;
+                case "invalid": clauses.Add("m.ended_utc IS NOT NULL AND (m.error IS NOT NULL OR (m.mode_id<>'sandbox' AND m.winner IS NULL))"); break;
                 default: throw new ArgumentException("对局状态筛选无效", nameof(query));
             }
         }
@@ -400,9 +408,10 @@ public sealed partial class MatchRecorder
         var endedUtc = reader.IsDBNull(3) ? null : reader.GetString(3);
         var winner = reader.IsDBNull(4) ? (int?)null : reader.GetInt32(4);
         var error = reader.IsDBNull(5) ? null : reader.GetString(5);
+        var mode = reader.GetString(1);
         var status = endedUtc is null ? "ongoing"
-            : error is not null || winner is null ? "invalid" : "completed";
-        var hideDeck = endedUtc is null;
+            : error is not null || winner is null && mode != "sandbox" ? "invalid" : "completed";
+        var hideDeck = endedUtc is null && mode != "sandbox";
         var players = new[]
         {
             new L12AdminMatchPlayer(0, reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetString(8),

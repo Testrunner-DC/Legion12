@@ -2,6 +2,62 @@
 
 本文件是追加式修复台账。开始新的 Bug 修复前必须先检索本文件；修复卡效时必须记录全卡池同类扫描结果。
 
+### UI-20260907-267至271 后台入口、布局及回放整体验收
+
+- 账号列表默认排除已删除账号，刷新左侧独立已删除只读入口；单卡影响分析复用已存在的服务端双方masterId筛选，改为目录名称选择，不创建第二套统计。排行榜各主宰头像统一44px方形，对阵行76px与等宽列容纳完整内容。沙盒入口上排双方牌库、下排账号/天灾，窄屏按同一顺序。
+- 选中卡牌正常/弹框/最小化复用同一anchor、逻辑尺寸和舞台scale，图像增加约15%、标签自然宽度整体居中；修复Teleport丢失祖先样式。纯effect-decision二择直接发动/不发动，真实多选保留确认和权威来源绑定。资源列156px承载32px圆标、每行3枚最多12枚，与UI任务最新要求一致。
+- 回放优先保留录像文本，缺失主宰效果才由目录补充；目录失败只警告不阻断回放。不伪造历史能力可用性。行动卡按精确master/faction实例、上一Prompt来源、当前/前一公开区域及同帧结构化事件选择，不从隐藏手牌或系统日志猜测。
+- 根独立截图发现原几何守卫遗漏viewport下沿，1920×1080工具/手牌越界约29px；已增加缩放预留与视口边界断言，补1920×1080/1440×810/1280×720验证。占位卡图截图只证明容器布局，不冒称真实横图方向已由该图证明。
+- 根完整前端复跑288项UI契约、14px扫描、主题11/11、音乐、连接12/12、重入6/6、维护/摩点/Prompt、回放来源行为、卡图40/324、Vue类型与Vite构建全部通过；日志D:/GPT/Legion12/artifacts/batch275-root-frontend.log，动态图与report在batch270-ui-final。verify-replay-focus已加入常规npm门禁。
+- 旧4条登录/双人审批断言按新行为迁移，额外验证请求令牌竞态、权限、幂等、ExpectedVersion、高风险独立审计、dry-run、持久结果及旧请求不可自动执行；不删除安全检查来凑通过。生产身份以统一发布回执为准。
+
+### ADMIN-20260907-275 管理员专用沙盒回放与每周到期清理
+
+- 根因：GM沙盒原来只在内存/导出中保留状态，后台Bug带matchId却没有持久录像。现创建后权威状态入库，GM及普通沙盒指令连续记录；写入失败冻结或拒绝建立，不伪称命令已保存。
+- 管理员目录必须显式modeId=sandbox，详情/分页仍要求AdminMatchesRead；支持活跃及重启异常记录。玩家即使为沙盒创建者也不能读取，玩家历史、主宰排行与单卡统计不纳入；原分页条数/字节上限不放宽。过期仅对有权限管理员返回410 sandbox_replay_expired，保留最小tombstone及独立Bug主记录。
+- 新增sandbox_recordings、sandbox_replay_cleanup_schedule、sandbox_replay_expirations，UTC持久周计划及跨实例租约。严格超过7天才成为候选，每周一次，通常保留约7–14天；每录像独立事务，失败可重试。排位runtime/outbox/quarantine异常引用只告警保留，绝不连带删除；数据库active与内存房间双重保护。
+- 独立、可取消且被观察的后台循环，不在排位时钟循环中等待清理。断线保留5分钟重连宽限，仅无真人玩家/观战者时结束沙盒，从最后已录活动计保留时间；持久化失败不移除房间。重启孤儿可读但不恢复为活动房间，不补造历史缺失录像。
+- 同类扫描：所有IsSandbox记录跳过分支、RoomManager建立/GM命令/普通命令/退出/结局、MatchRecorder管理员/玩家/排行/分析查询与HTTP鉴权；保留正式对局隐私边界。
+- 新SandboxReplayRetentionTests 8项覆盖权限/410/Bug保留、严格7天边界、周计划跨重启、并发租约、异常排位引用、活跃双保护、断线重连竞态与观战保护、独立loop和持久化失败。专项与相邻42/42，根后端Batch完整2458/2458、限定平台88/88及全卡池原子/静态审计通过，日志D:/GPT/Legion12/artifacts/batch275-root-backend.log；只见NU1900漏洞源不可达警告。
+- 上线须先排空真实及待恢复局，旧离线GM残留只能按用户授权清理。新增schema为附加式，但回滚须核验新录沙盒与旧读取边界、保留新数据，不以旧备份覆盖；发布身份/实际周计划以最终回执为准。
+
+### RULE-20260907-274 单局双方共用一次平局申请机会
+
+- 根因：旧持久化检查只排除pending/accepting，拒绝后可创建新申请。改为同matchId存在任意申请即消耗机会；相同请求ID及内容先返回原记录，保持幂等。
+- 服务端锁内校验并保存，任一玩家、新请求ID、并发、重连与重启均不能重置。已有pending申请仍能回应，新对局重新计数。统一错误码draw_request_limit_reached及既有canRequestDraw/drawUnavailableReason投影，前端不自行计算次数。
+- 修改PlatformStore.MatchGovernance、RoomManager.MatchGovernance及MatchGovernanceTests；12/12定向回归覆盖24个并发请求、双方竞争、所有终态、重放和重启。无schema变化，不能清理旧申请来规避限制；发布状态以统一回执为准。
+
+### UI-20260907-270 公开触发完整文案与纯二择共享语义
+
+- 根因：公开触发已经解析triggerEffectText，但创建Prompt时错误采用概括candidate.Text。现优先完整触发段，仅缺失时保留旧回退。
+- 共享展示层仅对effect-decision且两项、含mode:none/no的可选效果统一发动/不发动；旧yes/no及mode:use/none兼容。真正多模式和普通二结果选择不变，不改费用/目标/次数/结算协议。
+- 全池扫描public-trigger option与显式mode:none：55处二模式、3处三模式，不按卡名写特例。PublicTriggerPromptPresentationRegressionTests真实引擎覆盖加拉哈德、芬恩、康斯坦丝三模式及加拉哈德圣杯主动的普通选择；红测2失败，修复4/4，相关Prompt/Trial6F/BQ263共42/42。最终整树仍须在沙盒回放修改结束后复跑。
+- 回退须配套Prompt前端显示，不得删除真实多选确认或公开隐藏候选；后端只提供原本应公开的完整效果元数据。
+
+### ADMIN-20260907-267 全后台有权限管理员直接执行
+
+- 根因：账号、赛事和内容已绕过复核，但共享命令总线仍把其他高风险命令写成requested并返回202；发布/回滚与独立审计归档仍被双人批准阻断。
+- 统一移除命令总线审批门槛和旧审批执行分支，保留身份权限、作用域、独立审计、ExpectedVersion、幂等签名、dry-run及已验证发布工件。发布与回滚入口先TryAuthorize，低权限请求正确403，不再提前捕获工件返回500。
+- 旧requested记录不删、不自动执行：同幂等键409 approval_request_retired，需新键重新提交；审批列表不再提供动作，旧审批API409 approval_disabled。安全状态保留兼容字段但无双人就绪/审批积压告警。UI已删除账号入口由L12-UI配套处理。
+- 同类扫描：L12AdminControlPlane、PlatformStore.AdminControlPlane/SecurityGovernance、L12WebSocketServer中所有高风险执行/审批调用；对应PhaseFiveRelease、PhaseSixSecurity、OperationsAndScopedRoles、PhaseTwoPlatformStore测试。指定PlatformStoreTests|ControlPlane为88/88，覆盖首请求执行、403、版本冲突、重放、新键失败重试、审计及旧pending不可执行；不跑GrandUMI游戏规则。
+- 无数据库迁移，不改历史记录。回滚须仅反向本批hunks，不能覆盖并行UI/规则改动；生产状态以本批发布回执为准。
+
+### CARD-20260907-272 荷鲁斯两种费用方式及权威文本
+
+- 用户明确确认文案与实际效果同步：弃置我方战场2张〈陵墓守卫〉，或消耗1士气并弃置我方战场2张军团；两种方式共用我方回合1次。墓地兵力不高于2000的太阳城军团休整登场不变。
+- 通过现有PendingActivation的option/RequiredDeclaredChoice声明费用模式，不新增独立结算通道；保留最终提交时费用、墓地目标及位置重验。休整守卫可弃；士气模式中同一守卫可先作士气休整再弃置；费用腾出格可作登场位。信仰狂热者免费复制仍不支付任何费用且不占正常次数。
+- 可用性与实际士气费用按模式判断，移除荷鲁斯仅靠文案“消耗1士气”正则禁用的误判。服务端与公开cards.st的effect/atomicReference、结构化能力与原子描述同步用户完整原文。
+- 同类扫描：horusRevive、composite-ordinary-payment、field-legion-cost、RequiredDeclaredChoice、Faith免费复制与MasterMoraleWaiver；未改其他主宰费用。具名守卫：HorusUpdatedTextIsIdenticalAcrossCatalogsAndStructuredViews、HorusCanDiscardTwoRestedTombGuardsWithoutMoraleAndUseTheSharedOnceLimit、HorusTombGuardCostCancellationAndDuplicateModeSubmissionDoNotPayCosts、HorusMoraleModeCanRestAndThenDiscardTheSameTombGuardResource，以及既有免费复制/临时士气/费用空位回归。
+- 定向Horus12/12、Starter54/54、原子324张legacy=0；根完整L12规则2444/2444通过。卡表两份哈希一致。规则/Prompt旧运行状态不假定可跨版本恢复，必须自然排空再部署。
+
+### BUG-20260907-273 临时鉴权失败与WebSocket握手恢复
+
+- 正式服健康及匿名/登录WS握手正常，但客户端存在可确定性复现的悬挂：临时auth/me失败保留token却不复验；initialized缓存短路；连接取消未释放pending Promise；session后未收到权威恢复完成时无限等待。不能将这些复现冒称用户当时网络已被精确还原。
+- auth/me设置5秒期限，网络/Abort/5xx按1/2/4/8/15秒退避，成功复验才触发现有App watcher建立连接；401清理凭据并停止重试。缓存身份一直verified=false，不能绕过权限验证。
+- WS设置10秒恢复握手期限，disconnect结算/释放pending连接，重复connect仍共用一次请求；socket与尝试序号共同隔离旧事件，recoveryComplete须匹配本次session代次。onerror不依赖随后close才重连。
+- 修改platform.ts、net.ts、独立check-l12-connection-recovery.mjs及package常规门禁链，不改服务端或真实房间。红测原实现3/9，新行为12/12，既有重入6/6、vue-tsc通过；证据D:/GPT/Legion12/artifacts/batch273-connection-recovery/verification.md。全部使用合成身份/Fetch/WS，未创建正式对局。
+- 部署后核验健康、鉴权/WS及沙盒入口；出现401仍要求真实重新登录，不能把永久鉴权拒绝变成重试或匿名连接。
+
 ### BATCH-20260907-266 最新报告与猎杀时刻规则更新（已批准，处理中）
 
 - 提交级Release补漏：4e3f927完整规则2440、平台87通过后，隔离前端构建因缺少`ops/windows/L12DeployTarget.ps1`而失败。根逐项扫描npm守卫的仓库外部读取，补复制目标白名单/指纹公共文件，并加源码清单守卫；不跳过门禁、不复用失败产物。后续以修正提交的全量Release重新验收，未影响生产。

@@ -778,7 +778,10 @@ public sealed partial class L12GameEngine
             {
                 promptData["uiPattern"] = "effect-decision";
                 promptData["sourceName"] = triggerCandidate?.SourceName ?? triggerSource.Name;
-                promptData["effectText"] = triggerCandidate?.Text ?? step.Text;
+                var triggerEffectText = triggerCandidate?.Data.GetValueOrDefault("triggerEffectText");
+                promptData["effectText"] = string.IsNullOrWhiteSpace(triggerEffectText)
+                    ? triggerCandidate?.Text ?? step.Text
+                    : triggerEffectText;
                 promptData["mode:use"] = "发动";
                 promptData["mode:none"] = "不发动";
             }

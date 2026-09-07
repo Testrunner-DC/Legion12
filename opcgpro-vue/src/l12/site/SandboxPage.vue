@@ -64,9 +64,9 @@ async function startSandbox() {
     <section>
       <header><div><small>TEST SANDBOX</small><h1>单人测试沙盒</h1><p>复用正式规则内核，GM 指令仅对本沙盒生效；沙盒不会进入个人对局记录或排位统计。</p></div><span :class="l12State.status"><i/>{{ l12State.status === 'online' ? '服务器在线' : '服务器离线' }}</span></header>
       <div class="sandbox-grid">
-        <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/profile">前往登录</router-link></div>
         <section class="sandbox-deck"><b>我方牌库</b><DeckProfile v-if="playerDeck" compact :master-id="playerDeck.masterId" :master-name="byId.get(playerDeck.masterId)?.nameZh" :name="playerDeck.name" context="我方"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!playerDeckError }">{{ playerDeckError || '符合沙盒构筑规则' }}</span><button type="button" @click="selectorTarget = 'sandbox-player'">更换牌库</button></section>
         <section class="sandbox-deck"><b>对手牌库</b><DeckProfile v-if="opponentDeck" compact :master-id="opponentDeck.masterId" :master-name="byId.get(opponentDeck.masterId)?.nameZh" :name="opponentDeck.name" context="对手"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!opponentDeckError }">{{ opponentDeckError || '符合沙盒构筑规则' }}</span><button type="button" @click="selectorTarget = 'sandbox-opponent'">更换牌库</button></section>
+        <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/profile">前往登录</router-link></div>
         <label><b>天灾模式</b><select v-model="disasterMode"><option value="none">不使用天灾</option><option value="random">随机天灾</option><option value="all">全部天灾</option><option value="custom">自定天灾（四张始终公开）</option></select></label>
       </div>
       <div class="capabilities"><article><b>卡牌与区域</b><span>加牌、置顶/置底、墓地、无视费用打出、击杀与状态切换。</span></article><article><b>阶段与数值</b><span>切换回合玩家和阶段，调整血量、天灾值、士气并触发天灾。</span></article><article><b>可复现记录</b><span>每条 GM 指令由服务端校验，并写入与实战相同的状态快照。</span></article></div>
@@ -84,4 +84,6 @@ async function startSandbox() {
 .sandbox-account{padding:14px;border:1px solid #344149;background:#0a1117}.sandbox-account b,.sandbox-account span{display:block}.sandbox-account span{padding:11px;border:1px solid #46545c;background:#070c10;color:#fff;font-weight:700}.sandbox-account a{display:inline-block;margin-top:8px}
 .sandbox-grid label :deep(.deck-profile){margin-bottom:10px}
 .sandbox-deck{padding:14px;border:1px solid #344149;background:#0a1117}.sandbox-deck>b,.sandbox-deck>span{display:block}.sandbox-deck :deep(.deck-profile){margin-bottom:10px}.sandbox-deck>span{min-height:28px;color:#70cda3;font-size:14px}.sandbox-deck>span.invalid{color:#e89aa2}.sandbox-deck>button{width:100%;padding:10px;border:1px solid #d8bb68;background:#151b1d;color:#ecd282;font-weight:900}.sandbox-deck>p{min-height:64px;margin:0 0 10px;color:#7d8b92}
+.sandbox-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.sandbox-grid label{box-sizing:border-box;min-height:0}.sandbox-grid input,.sandbox-grid select{box-sizing:border-box}
+@media(max-width:700px){.sandbox-grid{grid-template-columns:1fr}}
 </style>

@@ -520,6 +520,7 @@ public sealed class BackendReportRegressionTests
 
         var begin = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(begin.Accepted, begin.Error);
+        Choose(game, "mode:morale-legions");
         Choose(game, "horus-full-board-morale");
         Choose(game, revive.InstanceId, secondCost.InstanceId);
         Choose(game, revive.InstanceId);

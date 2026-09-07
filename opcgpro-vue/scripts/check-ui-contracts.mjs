@@ -27,6 +27,7 @@ const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
 const replayPage = read('../src/l12/ReplayPage.vue')
 const replayModel = read('../src/l12/replayModel.ts')
+const visualLayoutCheck = read('./verify-batch253-visual.mjs')
 const gameActions = read('../src/l12/game/GameActions.vue')
 const lobby = read('../src/l12/site/BattleHubPage.vue')
 const rankings = read('../src/l12/site/RankingsPage.vue')
@@ -97,6 +98,7 @@ const articleStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformSto
 const l12PromptModel = read('../../服务端WebSocket/TwelveLegions/Models.cs')
 const l12PromptSetup = read('../../服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs')
 const l12GameEngine = read('../../服务端WebSocket/TwelveLegions/L12GameEngine.cs')
+const l12AdminControlPlane = read('../../服务端WebSocket/TwelveLegions/L12AdminControlPlane.cs')
 const l12StructuredSemantics = read('../../服务端WebSocket/TwelveLegions/L12StructuredCardRules.StatusSemantics.cs')
 const l12OperationsStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs')
 const l12ServerDirectory = new URL('../../服务端WebSocket/TwelveLegions/', import.meta.url)
@@ -318,7 +320,7 @@ const contracts = [
     && board.includes('.battlefield-half.my-half::before{inset:0;') && !board.includes('.battlefield-half.my-half::before{bottom:-10px;')
     && board.includes('box-sizing:border-box;width:100%') && board.includes('justify-self:center')
     && playerMat.includes('width:min(100%,1320px);margin-inline:auto')
-    && playerMat.includes('.l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 140px}')
+    && playerMat.includes('.l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 156px}')
     && board.includes('.battlefield-half.my-half{grid-row:3}'), '双方战场外框及指挥官圣物、六格、牌堆、状态列整组必须在中央可用区居中，不得只居中六格或挤压常驻UI'],
   [playerMat.includes('grid-template-columns:140px 100px') && playerMat.includes('.master-column .mini-master{width:140px;height:196px}')
     && playerMat.includes('.master-column .mini-master>span{left:8px;right:8px;bottom:40px;overflow:visible;white-space:nowrap;text-overflow:clip;line-height:1.35}')
@@ -327,7 +329,7 @@ const contracts = [
     && board.includes('.felt-board :deep(.formation-slot .card-tile),.felt-board :deep(.formation-slot .card-tile.tapped){width:104px;height:146px'), '主宰容器必须在可读基准字号下单行容纳至少5个汉字；六格战场须为正方形且整体居中，场上军团卡不得小于圣物卡并须完整留在格内，主宰血量不得回退'],
   [playerMat.includes('.mat-piles .pile,.mat-piles .pile.deck{box-sizing:border-box;width:100px;height:140px;min-height:140px}')
     && playerMat.includes('.relic-zone{width:100px;height:140px}')
-    && playerMat.includes('transform:translateX(-26px)')
+    && playerMat.includes('transform:translateX(-30px)')
     && playerMat.includes('.mat-piles .pile span{left:5px;bottom:5px;padding:3px 6px')
     && playerMat.includes('.mat-piles .pile .pile-count{right:5px;top:5px;min-width:34px!important;height:28px!important;padding:0 8px!important'), '牌库和墓地外框必须与圣物区同尺寸，名称与留有内边距的计数盒必须完整收在各自容器内'],
   [l12Types.includes("'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'") && l12Types.includes('statusIcons?: string[]') && l12Types.includes('statusEffects?: CardStatusEffect[]'), '卡牌投影视图必须提供结构化 statusEffects/statusIcons 状态契约并兼容旧快照缺省'],
@@ -349,8 +351,8 @@ const contracts = [
     && playerMat.includes(':src="blackLotusLogoUrl" alt="黑色莲花临时士气"')
     && specialAssets.includes('/logo/black-lotus.png') && existsSync(blackLotusPath)
     && l12GameEngine.includes('current.TemporaryMorale = 0;'), '临时士气必须逐个显示为黑色莲花实体、进入可选支付交互，并由权威结束阶段在休整时清空'],
-  [playerMat.includes('.resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:140px;max-width:140px}')
-    && playerMat.includes('.resource-morale-stack{min-height:52px;justify-content:flex-start;gap:8px 12px;padding:9px}')
+  [playerMat.includes('.resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}')
+    && playerMat.includes('.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}')
     && playerMat.includes('.resource-morale-stack .morale-orb{width:32px;height:32px;min-width:32px')
     && playerMat.includes('const visibleMoraleLimit = 12')
     && playerMat.includes('.slice(0, Math.max(0, visibleMoraleLimit - visibleTemporaryMoraleCount.value))')
@@ -358,9 +360,9 @@ const contracts = [
     && playerMat.includes('.resource-zone{grid-column:4;grid-row:1/-1;display:flex')
     && playerMat.includes('align-self:center')
     && playerMat.includes('.side-opponent .resource-morale-stack{order:1;flex-wrap:wrap-reverse;align-content:flex-end}')
-    && !playerMat.includes('Array<null>'), '士气枚堆每行必须最多3枚；我方向下、对方向上换行，未追加的士气不得预占图标'],
+    && !playerMat.includes('Array<null>'), '士气枚堆每行必须最多3枚并逐行居中；我方向下、对方向上换行，未追加的士气不得预占图标'],
   [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])")
-    && prompt.includes("label(choice).trim() === '不响应'")
+    && prompt.includes("explicitLabel === '不响应' || explicitLabel === '不发动'")
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
     && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
@@ -375,7 +377,7 @@ const contracts = [
     && playerMat.includes('.resource-morale-summary{order:2;display:grid') && playerMat.includes('.side-opponent .resource-morale-summary{order:2}')
     && playerMat.includes('white-space:nowrap')
     && playerMat.includes('@click.stop="factionOpen = true; factionMinimized = false"')
-    && playerMat.includes('@click.stop="selectMoralePayment(morale.instanceId)"'), '阵营效果、同行士气标题/计数和三枚一行的士气堆必须共用140px边界并保留文字内距；资源组以牌库墓地整列上下居中，对方仅镜像组内顺序，并保持弹框与支付交互'],
+    && playerMat.includes('@click.stop="selectMoralePayment(morale.instanceId)"'), '阵营效果、同行士气标题/计数和三枚一行的士气堆必须共用156px边界并保留文字内距；资源组以牌库墓地整列上下居中，对方仅镜像组内顺序，并保持弹框与支付交互'],
   [!board.includes('房间 {{ game.roomCode }}') && !board.includes('MATCH {{ game.matchId.slice')
     && board.includes('.right-rail .action-panel :deep(.l12-actions>p){display:none}')
     && (board.match(/<GameActions /g) ?? []).length === 2
@@ -480,15 +482,16 @@ const contracts = [
   [rankings.includes('<h1>排行榜</h1>') && !rankings.includes('<h1>排位排行榜</h1>')
     && rankings.includes("import { masterProfileUrl } from '@/l12/specialAssets'")
     && (rankings.match(/data-ui-contract="ranking-master-avatar"/g) ?? []).length >= 3
-    && rankings.includes("const matrixMasterColumnWidth = '银臂努阿达'.length * 14 + 34")
+    && rankings.includes("const matrixMasterColumnWidth = '银臂努阿达'.length * 14 + 44")
     && rankings.includes('gridTemplateColumns: `64px repeat(${matrixMasters.length + 1}, ${matrixMasterColumnWidth}px)`')
     && rankings.includes('class="matrix-rank-head">排名</div>') && rankings.includes('class="matrix-rank-cell"')
     && rankings.includes('<template v-else><b>等待</b><span>更多对局</span></template>')
     && rankings.includes("if (value === undefined) return 'no-data'")
     && rankings.includes('.matrix-corner{position:sticky;z-index:6;top:0;left:64px')
     && rankings.includes('.matrix-row-head{position:sticky;z-index:3;left:64px')
-    && rankings.includes('grid-auto-rows:62px')
-    && rankings.includes('height:62px;min-height:62px;max-height:62px;overflow:hidden'), '排行榜名称必须收口，矩阵首列排名、次列我方主宰、全部主宰列按银臂努阿达等宽，空样本两行且全行固定62px'],
+    && rankings.includes('grid-auto-rows:76px')
+    && rankings.includes('height:76px;min-height:76px;max-height:76px}')
+    && rankings.includes('--ranking-master-avatar:44px'), '排行榜名称必须收口，矩阵首列排名、次列我方主宰、全部主宰列按银臂努阿达等宽，空样本两行且全行固定76px，并为44px主宰头像保留内距'],
   [disasterPoolPicker.includes('data-ui-contract="landscape-disaster-pool-picker"')
     && disasterPoolPicker.includes('class="pool-card-art"')
     && disasterPoolPicker.includes('intent="detail" fit="contain"')
@@ -512,7 +515,9 @@ const contracts = [
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('event.effectText?.trim() || event.text.trim()') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，花魁的馈赠必须明确展示加入手牌的卡名'],
   [prompt.includes("const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)") && prompt.includes(":intent=\"usesDetailCardImages ? 'detail' : 'thumb'\"") && prompt.split(":alt=\"entry.card.name || '天灾'\" intent=\"detail\"").length - 1 === 2 && prompt.includes("'disaster-choice': isDisasterChoice"), '公开天灾禁选、随机公开、触发确认及已公开历史必须请求详情级高清图，不得使用缩略图源'],
-  [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('@media(max-width:520px)') && board.includes("transform: 'none'") && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
+  [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('@media(max-width:520px)')
+    && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
+    && board.includes("'--l12-board-readable': `${14 / Math.min(1, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
   [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '公开'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
   [board.includes('data-ui-contract="dice-event-animation"') && board.includes("event.type === 'dice'") && battleLog.includes("dice: '掷骰'") && board.includes('@keyframes l12-dice-roll') && board.includes('.dice-reveal-animation{z-index:904}'), '普通掷骰事件必须在交互层下方播放非阻塞动画并保留可读日志'],
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list')
@@ -526,7 +531,7 @@ const contracts = [
     && matchRecords.includes("router.push({ name: 'match-replay'")
     && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录与JSON均须在玩家点击播放后进入独立回放路由，不得默认加载或嵌入渲染棋盘'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
-    && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" read-only />')
+    && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard" read-only />')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
     && replayPage.includes("loadingReplayPage ? '加载中' : '下一步'") && replayPage.includes("isAdminReplay.value ? '返回后台对局档案' : '返回对局记录'")
     && gameReentry.includes('!route.replay') && l12Net.includes('replay: router.currentRoute.value.meta.replay === true')
@@ -658,7 +663,10 @@ const contracts = [
   [!gmPanel.includes('手牌（GM 可操作）') && !gmPanel.includes('自动切换该方为回合玩家') && !gmPanel.includes('军团会返回棋盘'), 'GM 面板不得保留重复权限文字及已要求删除的说明'],
   [gameActions.includes("game.activePlayer !== me.playerIndex") && gameActions.includes("game.activePlayer === me.playerIndex") && !gameActions.includes('game.activePlayer !== game.you'), '沙盒双方抵挡、支援和阶段操作必须依据当前代操作玩家而非登录座位'],
   [!board.includes('当前子阶段：') && !board.includes('data-ui-contract="combat-substage"') && board.includes('pending.attackValue > 0') && board.includes("pendingDefense?.stage === 'DefenseChoice'") && gameActions.includes("pendingDefense?.stage === 'DefenseChoice'"), '进攻界面必须消费服务端子阶段与冻结进攻值，只在 DefenseChoice 开放抵挡/支援，并禁止显示内部子阶段调试文字'],
-  [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes("return 'OPTION'") && prompt.includes("return '发动'") && prompt.includes("return '不发动'") && prompt.includes('decisionEffectText') && prompt.includes('!isEffectDecision.value') && prompt.includes('确认选择'), '可选卡效发动框必须统一为 OPTION、来源名、当前效果文本、发动/不发动与确认选择，且不得居中展示来源卡图'],
+  [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes('isPureEffectDecision')
+    && prompt.includes("isDeclineChoice(id) ? '不发动' : '发动'") && prompt.includes('decisionEffectText')
+    && prompt.includes("if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }")
+    && prompt.includes('<footer v-if="!isPureEffectDecision"') && prompt.includes('!isPureEffectDecision">{{ kindLabel() }}'), '纯二选一卡效发动框必须仅显示来源、当前效果文本和等大的发动/不发动按钮，点击立即提交；多选与支付弹框仍保留确认区'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],
   [prompt.includes("import PromptCardCandidate from './PromptCardCandidate.vue'") && (prompt.match(/<PromptCardCandidate/g)?.length ?? 0) >= 6
     && promptCardCandidate.indexOf('<CardImage') < promptCardCandidate.indexOf('prompt-card-candidate__name')
@@ -830,9 +838,14 @@ const contracts = [
   [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
     && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
     && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],
-  [adminMatches.includes("view === 'recent'") && adminMatches.includes("view === 'player'")
+  [adminMatches.includes("type MatchView = 'recent' | 'player' | 'sandbox'") && adminMatches.includes("view === 'recent'") && adminMatches.includes("view === 'player'")
     && adminMatches.includes('participant.deckCards') && adminMatches.includes('结构化对局时间线')
-    && adminMatches.includes('进行中对局不展示私有构筑') && adminMatches.includes('沙盒不进入档案与分析'), '对局档案必须支持最近/按玩家查询、不可变构筑和权威时间线，并对进行中隐藏信息及沙盒数据失败关闭'],
+    && adminMatches.includes('进行中对局不展示私有构筑')
+    && adminMatches.includes("mode: view.value === 'sandbox' ? 'sandbox'")
+    && adminMatches.includes('管理员专用沙盒回放') && adminMatches.includes('实际通常保留约 7～14 天')
+    && adminMatches.includes("summary.status === 'completed' || (view.value === 'sandbox' && summary.modeId === 'sandbox')")
+    && adminMatches.includes("error.code === 'sandbox_replay_expired'") && adminMatches.includes('回放已过期')
+    && replayPage.includes("reason.code === 'sandbox_replay_expired'") && replayPage.includes("? '回放已过期'"), '对局档案必须支持最近/按玩家查询和独立的管理员沙盒排查；沙盒不混入正式记录，管理员可排查各状态沙盒，过期回放明确失败关闭'],
   [adminMatches.includes('data-ui-contract="match-snapshot-view-construction"')
     && adminMatches.includes('<DeckConstructionBrowser :entries="deckViewer.deckCards"')
     && deckConstructionBrowser.includes('aria-label="构筑筛选"')
@@ -870,7 +883,11 @@ const contracts = [
     && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],
   [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('friendApi.blocked()') && friendsPage.includes('selectedPresence?.canInvite') && friendsPage.includes('selectedPresence?.canSpectate'), '好友中心须支持申请、屏蔽，并按在线状态在邀请对战与观战之间切换'],
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
-  [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null') && platform.includes("platformRequest<PlatformAccount>('/api/auth/me')") && platform.includes('remember(account, requestToken)') && platform.includes('if (authRefreshPromise) return authRefreshPromise'), '账号初始化与权限刷新必须去重读取 /api/auth/me，并以权威响应覆盖本地缓存'],
+  [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null')
+    && platform.includes('if (authRefreshPromise) return authRefreshPromise')
+    && platform.includes("platformRequest<PlatformAccount>('/api/auth/me', { signal: controller.signal })")
+    && platform.includes('const requestToken = platformState.token') && platform.includes('if (platformState.token !== requestToken) return platformState.account')
+    && platform.includes('remember(account, requestToken)') && platform.includes('AUTH_REFRESH_REQUEST_TIMEOUT_MS'), '账号初始化与权限刷新必须去重、有界读取 /api/auth/me，按请求令牌防竞态并以权威响应覆盖本地缓存'],
   [platform.includes('response.status === 401 && requestToken && platformState.token === requestToken') && platform.includes('forgetAccount(requestToken)') && platform.includes('error instanceof PlatformRequestError && error.status === 401') && platform.includes('throw error'), '任意携带当前令牌的 401 必须按请求令牌防竞态清理，网络与 5xx 则保留令牌并保持未验证'],
   [platform.includes('response.status === 403 && requestToken && platformState.token === requestToken') && platform.includes('authState.verified = false') && platform.includes('refreshCurrentAccount({ force: true })') && platform.includes('if (!authState.verified) return false'), '403 必须使权限 UI 立即失败关闭并触发去重身份刷新，缓存身份不得直接授予权限'],
   [router.includes("meta: { requiresAdmin: true }") && router.includes('router.beforeEach(async to =>') && router.includes('refreshCurrentAccount({ force: true })') && router.includes("return { name: 'me', query: { redirect: to.fullPath } }") && adminPage.includes('await refreshCurrentAccount()') && adminPage.includes('if (!canAccessAdmin.value) return') && adminPage.includes('!authState.initialized || authState.refreshing'), '管理路由与 AdminPage 必须在加载管理数据前刷新权威身份，并在未验证或非管理员时失败关闭'],
@@ -882,17 +899,35 @@ const contracts = [
   [platform.includes('options: { revokeServer?: boolean } = {}') && profilePage.includes('logout({ revokeServer: false })'), '服务端已撤销当前或全部会话后必须只清理本机状态，不得用失效令牌重复调用撤销接口'],
   [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('revokeAccountSessions') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],
   [platform.includes("headers.set('X-Correlation-ID'") && platform.includes('PlatformRequestError') && adminPage.includes('关联 ID：'), 'HTTP 请求、错误提示与管理审计必须贯通关联 ID'],
-  [platform.includes('/api/admin/v1/commands') && platform.includes('/api/admin/v1/approvals') && adminPage.includes('管理操作记录') && adminPage.includes('受控发布待复核') && adminPage.includes('失败：'), '后台必须提供持久命令、受控发布复核、命令详情与失败原因入口'],
+  [platform.includes('/api/admin/v1/commands') && platform.includes('idempotencyKey: body.idempotencyKey || commandKey(prefix)')
+    && platform.includes('dryRun: boolean; expectedVersion?: number') && platform.includes('failureReason?: string; correlationId: string; resourceVersion: number')
+    && adminPage.includes('管理操作记录') && adminPage.includes('新操作直接执行并写入审计')
+    && adminPage.includes('历史待处理请求不会自动执行') && adminPage.includes('命令详情') && adminPage.includes('失败：')
+    && l12AdminControlPlane.includes('L12Authorization.HasPermission(command.Actor, permission)')
+    && l12AdminControlPlane.includes('HighRiskAuditAvailable()') && l12AdminControlPlane.includes('idempotency_conflict')
+    && l12AdminControlPlane.includes('version_conflict') && l12AdminControlPlane.includes('PersistAdminCommandResult')
+    && l12AdminControlPlane.includes('Outcome = normalized.DryRun ? "dry-run"')
+    && l12AdminControlPlane.includes('"approval_disabled"'), '后台新命令必须由有权限管理员直接执行，同时保留幂等、版本冲突、高风险审计失败关闭、持久结果和历史待审批隔离'],
   [platform.includes('/api/admin/v1/content/publish') && platform.includes('/api/admin/v1/content/rollback') && adminSiteContent.includes('直接发布') && adminSiteContent.includes('直接回滚') && !adminSiteContent.includes('双人审批'), '官网内容必须通过服务端批量命令直接发布与回滚，不得恢复前端逐键发布或双人审批'],
   [adminSiteContent.includes('previewContent') && adminSiteContent.includes('发布预览完成') && adminSiteContent.includes('wouldChange') && adminSiteContent.includes('未写入线上内容'), '内容后台必须展示不写入的发布预览与变化摘要'],
   [adminPage.includes('auditCommandId') && adminPage.includes('auditCorrelationId') && adminPage.includes('auditOutcome'), '审计页必须可按结果、命令 ID 与关联 ID 筛选'],
   [platform.includes("releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts')") && !platform.includes('registerReleaseArtifact') && adminPage.includes('Web 端没有注册入口'), '发布后台只能读取适配器提供的已验证工件，不得提供客户端工件注册或自报 verified 入口'],
-  [platform.includes('/api/admin/v1/releases/deploy') && platform.includes('/api/admin/v1/releases/rollback') && adminPage.includes('发布 dry-run') && adminPage.includes('提交双人审批') && adminPage.includes('提交回滚审批'), '发布与回滚必须支持 dry-run、环境版本和双人审批入口'],
+  [platform.includes('/api/admin/v1/releases/deploy') && platform.includes('/api/admin/v1/releases/rollback')
+    && platform.includes("commandBody('release-deploy', { artifactId, environment, expectedVersion, dryRun, reason })")
+    && platform.includes("commandBody('release-rollback', { targetRunId, expectedVersion, dryRun, reason })")
+    && adminPage.includes("hasPermission('releases.execute')") && adminPage.includes('@click="submitRelease(true)">dry-run')
+    && adminPage.includes('>执行发布</button>') && adminPage.includes('>回滚 dry-run</button>') && adminPage.includes('>执行回滚</button>')
+    && adminPage.includes("result.applied ? '发布已执行并写入审计' : '发布预演完成，未执行激活'")
+    && adminPage.includes("result.applied ? '回滚已执行并写入审计' : '回滚预演完成，未执行激活'")
+    && !adminPage.includes('adminApi.reviewApproval'), '发布与回滚必须验证权限并携带环境版本、幂等键、理由和dry-run；执行结果写入审计，前端不得恢复审批执行入口'],
   [platform.includes("releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments')") && adminPage.includes('运行态只读快照') && adminPage.includes('WebSocket 冒烟') && adminPage.includes('发布、失败与回滚记录'), '运行态必须来自显式只读适配器快照，并展示健康、WS 冒烟、失败和回滚记录'],
   [platform.includes('disabled?: boolean') && platform.includes('/status`, {') && adminPage.includes('账号变更立即执行并完整审计') && adminPage.includes('撤销会话'), '账号禁用/启用必须直接执行、记录版本审计，并提供旧令牌与 WebSocket 会话撤销入口'],
   [platform.includes("securityStatus: () => platformRequest<SecurityStatus>('/api/admin/v1/security/status')") && platform.includes('/api/admin/v1/security/audit-archives') && adminPage.includes('高风险审计') && adminPage.includes('恢复演练'), '后台必须展示安全告警、独立审计归档 dry-run/复核与恢复演练入口'],
   [platform.includes("mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')") && profilePage.includes('v-if="mfa?.enrollmentEnabled"') && !profilePage.includes('不会收集或保存 MFA 密钥'), 'MFA 未开放时必须隐藏工程提示，只有服务端明确开放注册能力后才显示入口'],
-  [adminPage.includes('仅服务器 CLI 可用') && adminPage.includes('发布复核离线恢复') && !platform.includes('bootstrapSecondApprover'), '受控发布恢复只能保留离线命令边界，不得新增 Web 凭据入口'],
+  [adminPage.includes('服务器离线恢复') && adminPage.includes('仅服务器 CLI 可用')
+    && adminPage.includes('后台操作不要求另一名管理员批准')
+    && !platform.includes('bootstrapSecondApprover') && !platform.includes('/offline-bootstrap')
+    && !adminPage.includes('type="password"'), '受控发布恢复只能保留服务器CLI离线边界，后台不得新增恢复凭据或第二审批人入口'],
   [platform.includes('export const tournamentApi') && platform.includes('/api/tournaments/import-legacy') && platform.includes('/matches/${encodeURIComponent(matchId)}/rulings'), '赛事中心必须通过服务端 API 完成赛事、旧数据导入与裁判写入'],
   [tournamentCenter.includes('预览导入（dry-run）') && tournamentCenter.includes('确认导入') && tournamentCenter.includes('legacyPreview.value.previewHash') && !tournamentCenter.includes('localStorage.setItem'), '本机旧赛事只能显式预览并确认导入，不得继续作为 localStorage 权威状态写回'],
   [tournamentCenter.includes('organizerAccountId === accountId.value') && tournamentCenter.includes('person.accountId===accountId') && tournamentCenter.includes('主办者与裁判权限仅在当前赛事内生效') && !tournamentCenter.includes('待审批命令'), '赛事主办者、裁判临时身份、牌库范围与并发写入必须使用服务端账号 ID 和赛事版本，且不得进入账号角色审批'],
@@ -989,6 +1024,15 @@ contracts.push(
   [playerMat.includes('inheritAttrs: false') && playerMat.includes('v-bind="$attrs"')
     && board.includes('--l12-board-readable') && board.includes('flex-wrap:wrap'),
     '多根PlayerMat必须显式向场面根节点传递外框样式，缩放字号不得破坏布局'],
+  [board.includes('.inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}')
+    && board.includes('.inspector-card-tags span{flex:0 0 auto;') && board.includes('white-space:nowrap')
+    && board.includes('.inspector-card-image{display:block;width:168px;height:235px;')
+    && board.includes('.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;'),
+    '选中卡牌多标签必须保持自然宽度并作为整体居中，必要时换行但不得拉伸；卡图在固定详情容器内放大约15%'],
+  [board.includes('const availableHeight = window.innerHeight - 124')
+    && visualLayoutCheck.includes("throw new Error('Hand leaves viewport at '")
+    && visualLayoutCheck.includes("throw new Error('Utility dock leaves viewport at '"),
+    '16:9棋盘缩放必须为手牌扇面和左下工具保留绘制边界，视觉验收须阻止二者离开视口'],
   [battleLog.includes('prompt-resolved') && battleLog.includes('turn-start')
     && battleLog.includes('emit(') && battleDock.includes('L12Settings') === false
     && board.includes('BattleUtilityDock'),
@@ -999,6 +1043,8 @@ contracts.push(
     && battleDock.includes('title="对局工具" aria-label="打开对局工具"')
     && battleDock.includes('<FriendsPage />') && battleDock.includes('friendApi.block(accountId)')
     && battleDock.includes('输入所出现的Bug给对手申请平局')
+    && battleDock.includes('governance.value?.canRequestDraw') && battleDock.includes('governance.value?.drawUnavailableReason')
+    && battleDock.includes('drawRequest.value?.viewerCanRespond') && battleDock.includes('每场对局双方合计仅可发起一次')
     && battleDock.includes("new CustomEvent('l12-open-bug-feedback')"),
     '选中卡牌下方工具坞必须是连续三等宽纯图标入口，并复用设置、好友、普通Bug反馈与好友屏蔽能力'],
   [matchGovernance.includes("type: 'requestMatchDraw'")

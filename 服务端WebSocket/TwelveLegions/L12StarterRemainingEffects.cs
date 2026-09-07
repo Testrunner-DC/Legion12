@@ -44,7 +44,10 @@ public sealed partial class L12GameEngine
             }
             case "horusRevive":
             {
-                var field = PublicLegions(player).Select(card => card.InstanceId).ToList();
+                var fieldCards = PublicLegions(player).ToList();
+                var field = fieldCards.Select(card => card.InstanceId).ToList();
+                var tombGuards = fieldCards.Where(card => L12StructuredCardSemantics.IsTombGuard(card.CardId))
+                    .Select(card => card.InstanceId).ToList();
                 var grave = player.Graveyard.Where(card => card.CardType == "legion" && card.BaseTroops <= 2000
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId).ToList();
@@ -69,22 +72,47 @@ public sealed partial class L12GameEngine
                 var prospectiveReviveExists = grave.Count > 0 || field.Any(id =>
                     FindOnField(player, id, out _, out _) is { } card && card.BaseTroops <= 2000
                     && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
-                if (field.Count < 2 || resources.Count < paymentCost || !prospectiveReviveExists)
-                    return CommandResult.Reject($"需要{paymentCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场");
+                var modes = new List<string>();
+                if (tombGuards.Count >= 2 && prospectiveReviveExists) modes.Add("mode:tomb-guards");
+                if (field.Count >= 2 && resources.Count >= paymentCost && prospectiveReviveExists)
+                    modes.Add("mode:morale-legions");
+                if (modes.Count == 0)
+                    return CommandResult.Reject("需要2张〈陵墓守卫〉，或可用士气资源与战场2张军团；支付后还需有兵力不高于2000的【太阳城】军团可从墓地登场");
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "option", DeclarationKey = "mode",
+                        Text = "荷鲁斯：选择费用支付方式",
+                        ValidChoices = modes, MinChoose = 1, MaxChoose = 1,
+                        ChoiceLabels = new(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["mode:tomb-guards"] = "弃置我方战场2张〈陵墓守卫〉",
+                            ["mode:morale-legions"] = paymentCost == 0
+                                ? "弃置我方战场2张军团（本次免除1士气）"
+                                : "消耗1士气并弃置我方战场2张军团",
+                        },
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "field-legion-cost", DeclarationKey = "fieldCosts",
+                        Text = "荷鲁斯：选择弃置的2张〈陵墓守卫〉（X/2）",
+                        ValidChoices = tombGuards, MinChoose = 2, MaxChoose = 2,
+                        RequiredDeclaredChoice = "mode:tomb-guards",
+                    },
                     new L12ActivationSelectionStep
                     {
                         Kind = "composite-ordinary-payment", DeclarationKey = "moraleCost",
                         Text = "荷鲁斯：支付费用——消耗1士气",
                         ValidChoices = resources, MinChoose = paymentCost, MaxChoose = paymentCost,
+                        RequiredDeclaredChoice = "mode:morale-legions",
                     },
                     new L12ActivationSelectionStep
                     {
                         Kind = "field-legion-cost", DeclarationKey = "fieldCosts",
-                        ReferenceDeclarationKey = "moraleCost",
                         Text = "荷鲁斯：支付费用——弃置我方战场2张军团（X/2）",
                         ValidChoices = field, MinChoose = 2, MaxChoose = 2,
+                        RequiredDeclaredChoice = "mode:morale-legions",
                     },
                     new L12ActivationSelectionStep
                     {
@@ -181,28 +209,35 @@ public sealed partial class L12GameEngine
             }
             case "horusRevive":
             {
+                var mode = values.FirstOrDefault();
+                if (mode is not ("mode:tomb-guards" or "mode:morale-legions"))
+                    return "荷鲁斯的费用支付方式无效";
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
-                var paymentCost = 1 - waived;
-                var paymentCount = 2 + paymentCost;
-                var resourceIds = values.Take(paymentCost).ToArray();
-                var costIds = values.Skip(paymentCost).Take(2).ToArray();
-                if (values.Length != paymentCount + 2 || resourceIds.Length != paymentCost || costIds.Length != 2
+                var paymentCost = mode == "mode:morale-legions" ? 1 - waived : 0;
+                var costStart = 1 + paymentCost;
+                var entryIndex = costStart + 2;
+                var resourceIds = values.Skip(1).Take(paymentCost).ToArray();
+                var costIds = values.Skip(costStart).Take(2).ToArray();
+                if (values.Length != entryIndex + 2 || resourceIds.Length != paymentCost || costIds.Length != 2
                     || costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
                     return "荷鲁斯的费用、墓地军团或位置选择不完整";
                 // CommitActiveAbility 在真正提交前会把玩家点选的资源预付，并放入等量
                 // 临时士气作为只供下层 ConsumeMorale 使用的一次性凭证。
-                if (player.TemporaryMorale < paymentCost
+                if (mode == "mode:morale-legions" && player.TemporaryMorale < paymentCost
                     && !CanConsumeSelectedResources(player, paymentCost, resourceIds))
                     return "荷鲁斯选择的士气资源已失效";
                 var costs = costIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
                 if (costs.Any(card => card is null || !IsFieldLegion(card))) return "荷鲁斯选择的弃置军团已失效";
-                var entryId = values[paymentCount];
+                if (mode == "mode:tomb-guards"
+                    && costs.Any(card => !L12StructuredCardSemantics.IsTombGuard(card!.CardId)))
+                    return "荷鲁斯选择的〈陵墓守卫〉费用已失效";
+                var entryId = values[entryIndex];
                 var entry = player.Graveyard.FirstOrDefault(card => card.InstanceId == entryId)
                     ?? costs.OfType<L12CardInstance>().FirstOrDefault(card => card.InstanceId == entryId);
                 if (entry is null || entry.CardType != "legion" || entry.BaseTroops > 2000
                     || !L12StructuredCardRules.HasFaction(player, entry, "taiyangcheng"))
                     return "荷鲁斯选择的墓地军团已失效";
-                var (row, slot) = ParseSlot(values[paymentCount + 1]);
+                var (row, slot) = ParseSlot(values[entryIndex + 1]);
                 if (row is < 0 or > 1 || slot is < 0 or > 2) return "荷鲁斯选择的登场位置无效";
                 var occupant = player.Field[row][slot];
                 if (occupant is not null && !costIds.Contains(occupant.InstanceId, StringComparer.OrdinalIgnoreCase))
@@ -271,21 +306,28 @@ public sealed partial class L12GameEngine
                 }
                 break;
             case "horusRevive":
-                var waived = Math.Min(1, player.MasterMoraleWaiverCredit);
-                var paymentCost = 1 - waived;
-                var paymentCount = 2 + paymentCost;
-                var selectedResourceIds = values.Take(paymentCost).ToArray();
-                var resourcesToConsume = player.TemporaryMorale >= paymentCost
-                    ? TemporaryMoralePaymentChoices(player).Take(paymentCost).ToArray()
-                    : selectedResourceIds;
-                if (!TryConsumeSelectedResources(player, paymentCost, resourcesToConsume)) return CommandResult.Reject("需要消耗1士气");
-                player.MasterMoraleWaiverCredit -= waived;
-                var selectedCostIds = values.Skip(paymentCost).Take(2).ToArray();
+                var horusMode = values[0];
+                var usesMoraleLegionCost = horusMode == "mode:morale-legions";
+                var waived = usesMoraleLegionCost ? Math.Min(1, player.MasterMoraleWaiverCredit) : 0;
+                var paymentCost = usesMoraleLegionCost ? 1 - waived : 0;
+                var selectedResourceIds = values.Skip(1).Take(paymentCost).ToArray();
+                if (usesMoraleLegionCost)
+                {
+                    var resourcesToConsume = player.TemporaryMorale >= paymentCost
+                        ? TemporaryMoralePaymentChoices(player).Take(paymentCost).ToArray()
+                        : selectedResourceIds;
+                    if (!TryConsumeSelectedResources(player, paymentCost, resourcesToConsume))
+                        return CommandResult.Reject("需要消耗1士气");
+                    player.MasterMoraleWaiverCredit -= waived;
+                }
+                var selectedCostIds = values.Skip(1 + paymentCost).Take(2).ToArray();
                 var costs = selectedCostIds.Select(id => FindOnField(player, id, out _, out _)!).ToArray();
                 foreach (var cost in costs)
                     if (!RemoveFromField(player, cost, true, "作为荷鲁斯效果的费用弃置", leaveKind: L12FieldLeaveKind.Discard))
                         return CommandResult.Reject("荷鲁斯选择的弃置军团已失效");
-                AddEvent("cost", controller, "荷鲁斯消耗1士气并弃置2张我方军团", [source, .. costs]);
+                AddEvent("cost", controller, usesMoraleLegionCost
+                    ? "荷鲁斯消耗1士气并弃置2张我方军团"
+                    : "荷鲁斯弃置2张我方〈陵墓守卫〉", [source, .. costs]);
                 break;
             case "sifCycle":
                 var sifCardIds = values.Where(value => !value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -1334,4 +1376,8 @@ public sealed partial class L12GameEngine
             $"雅典娜使{applied}张前排奥林匹斯军团本回合兵力+1000，且对主宰造成的伤害+1",
             source is null ? [] : [source]);
     }
+
+    private static bool HorusUsesTombGuardCostMode(string? target)
+        => (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
+            == "mode:tomb-guards";
 }

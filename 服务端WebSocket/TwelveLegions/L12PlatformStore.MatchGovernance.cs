@@ -103,9 +103,9 @@ public sealed partial class L12PlatformStore
                         "平局申请标识已被其他请求使用");
                 return DrawView(repeated);
             }
-            var active = _data.MatchDrawRequests.FirstOrDefault(row => row.MatchId == matchId
-                && row.Status is "pending" or "accepting");
-            if (active is not null) return DrawView(active);
+            if (_data.MatchDrawRequests.Any(row => row.MatchId == matchId))
+                throw new L12MatchGovernanceConflictException("draw_request_limit_reached",
+                    "每场对局双方合计仅可发起一次平局申请，本局机会已使用");
 
             var row = new MatchDrawRequestRow
             {

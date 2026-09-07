@@ -44,7 +44,12 @@ public sealed partial class L12RoomManager
                         : $"平局申请当前状态：{DrawStatusLabel(record.Status)}"));
                 return messages;
             }
-            catch (Exception error) when (error is ArgumentException or L12MatchGovernanceConflictException)
+            catch (L12MatchGovernanceConflictException error)
+            {
+                return MatchGovernanceFailure(sessionId, "request-draw", clientRequestId,
+                    error.Message, error.Code);
+            }
+            catch (ArgumentException error)
             {
                 return MatchGovernanceFailure(sessionId, "request-draw", clientRequestId, error.Message);
             }
@@ -278,10 +283,12 @@ public sealed partial class L12RoomManager
                 hasOpponent ? opponent.Name : null, false, "平局申请记录暂时不可用",
                 false, "对局举报服务暂时不可用", null);
         }
-        if (request?.Status is "pending" or "accepting")
+        if (request is not null)
         {
             drawAvailable = false;
-            drawReason = request.ViewerCanRespond ? "请先处理当前平局申请" : "已有平局申请等待处理";
+            drawReason = request.Status is "pending" or "accepting"
+                ? request.ViewerCanRespond ? "请先处理当前平局申请" : "已有平局申请等待处理"
+                : "每场对局双方合计仅可发起一次平局申请，本局机会已使用";
         }
         return new(true, hasOpponent ? opponent.AccountId : null, hasOpponent ? opponent.Name : null,
             drawAvailable, drawAvailable ? null : drawReason, hasOpponent,

@@ -196,28 +196,15 @@ public sealed partial class L12PlatformStore
             var activeApprovers = _data.Accounts.Count(item => !item.Disabled
                 && L12Authorization.HasPermission(item.Role, L12Permission.AdminApprovalsReview));
             var activeLocks = _data.LoginThrottles.Count(item => item.LockedUntil > now);
-            var directCommandIds = _data.AdminCommands
-                .Where(command => IsDirectExecutionCommandType(command.Type))
-                .Select(command => command.Id)
-                .ToHashSet(StringComparer.Ordinal);
-            var pending = _data.AdminApprovals
-                .Where(item => item.Status == "requested" && !directCommandIds.Contains(item.CommandId))
-                .ToArray();
             var archiveSegments = AuditArchiveSegmentsInternalSafe();
             var auditAvailable = HighRiskAuditAvailable();
             var retentionDays = AuditRetentionDays();
             var alerts = new List<L12SecurityAlertView>();
-            if (activeApprovers < 2)
-                alerts.Add(new("second-approver-missing", "critical", 2 - activeApprovers,
-                    "有效审批人少于2名，高风险命令无法形成可靠双人复核"));
             if (!auditAvailable)
                 alerts.Add(new("audit-unavailable", "critical", 1,
-                    "独立审计不可用，高风险命令与审批已失败关闭"));
+                    "独立审计不可用，高风险命令已失败关闭"));
             if (activeLocks > 0)
                 alerts.Add(new("login-lockout-active", "warning", activeLocks, "存在生效中的登录限流锁定"));
-            var oldestPending = pending.OrderBy(item => item.RequestedAt).FirstOrDefault()?.RequestedAt;
-            if (pending.Length >= 10 || oldestPending is { } oldest && now - oldest > TimeSpan.FromHours(24))
-                alerts.Add(new("approval-backlog", "warning", pending.Length, "待审批命令达到积压阈值"));
             var releaseFailures = _data.ReleaseRuns.Count(item => item.CompletedAt >= now.AddHours(-24)
                 && item.Status is "failed" or "rolled-back");
             if (releaseFailures > 0)
@@ -233,7 +220,7 @@ public sealed partial class L12PlatformStore
 
             return new(Version, activeApprovers, activeApprovers >= 2, OfflineBootstrapEnabled(),
                 OfflineBootstrapCredentialConfigured(), _data.Security.SecondApproverBootstrapUsedAt is not null,
-                _data.Accounts.Count(item => item.Disabled), activeLocks, pending.Length, oldestPending,
+                _data.Accounts.Count(item => item.Disabled), activeLocks, 0, null,
                 auditAvailable, retentionDays, archiveSegments.Count, lastArchive, MfaCapability(), alerts);
         }
     }

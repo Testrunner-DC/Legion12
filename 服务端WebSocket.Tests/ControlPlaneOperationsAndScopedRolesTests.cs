@@ -746,19 +746,22 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                     IdempotencyKey = "legacy-direct-role-approval",
                     ExpectedVersion = store.Account(target.Account.Id)!.PermissionVersion,
                 });
-            var legacyPending = new L12AdminCommandBus(store).Execute(legacyApproval,
-                L12Permission.AdminAccountRolesWrite,
-                current => L12AdminCommandResult<RoleCommandResult>.Ok(
-                    new RoleCommandResult(current.Payload.AccountId, current.Payload.Role, true)),
-                risk: L12AdminCommandRisk.High);
-            Assert.True(legacyPending.Pending);
+            var legacyPayloadJson = JsonSerializer.Serialize(legacyApproval.Payload, JsonOptions);
+            store.PersistAdminCommand(legacyApproval,
+                L12Authorization.Key(L12Permission.AdminAccountRolesWrite), L12AdminCommandRisk.High,
+                "legacy-pending-signature", legacyPayloadJson, "requested");
+            store.PersistAdminApprovalRequest(legacyApprovalId, admin.Account!);
             Assert.Empty(store.AdminApprovals());
             Assert.Equal(0, store.SecurityStatus(admin.Account!).PendingApprovals);
             using (var legacyReview = Authorized(HttpMethod.Post,
                        $"/api/admin/approvals/{legacyApprovalId}", admin.Token!, "legacy-role-review",
                        new { decision = "approve", reason = "must remain disabled" }))
             using (var response = await client.SendAsync(legacyReview))
+            {
                 Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                Assert.Equal("approval_disabled", (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+            }
+            Assert.Equal("requested", store.AdminCommand(legacyApprovalId)!.Status);
             Assert.Equal("admin", store.Account(target.Account.Id)!.Role);
 
             using (var rejectedLegacy = Authorized(HttpMethod.Put,

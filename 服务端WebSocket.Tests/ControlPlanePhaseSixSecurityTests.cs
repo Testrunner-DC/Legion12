@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -353,14 +352,13 @@ public sealed class ControlPlanePhaseSixSecurityTests
     }
 
     [Fact]
-    public void AuditFailureClosesHighRiskSubmissionAndApprovalAndRaisesAlert()
+    public void AuditFailureClosesHighRiskDirectSubmissionAndRaisesAlert()
     {
         var root = TempRoot();
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var reviewer = Promote(store, admin, "AuditReviewer", "admin");
             store.RecordAuthorizationDenied(null, new L12AdminAuditContext("audit-failure-source",
                     "admin.audit.read", RequestMethod: "GET", RequestPath: "/api/admin/audit",
                     Outcome: "denied", Reason: "authentication-required"),
@@ -379,21 +377,31 @@ public sealed class ControlPlanePhaseSixSecurityTests
             Assert.False(status.Mfa.SecretsPersisted);
 
             store.AuditAvailabilityProbeOverride = () => true;
-            var pending = SubmitArchive(store, admin, payload, "audit-fail-review", store.Version);
-            Assert.True(pending.Pending);
-            store.AuditAvailabilityProbeOverride = () => false;
-            var reviewed = ReviewArchive(store, pending.Command!.Id, reviewer);
-            Assert.Equal("audit_unavailable", reviewed.Code);
-            Assert.Equal("requested", store.AdminApprovals().Single(item => item.CommandId == pending.Command.Id).Status);
+            var retainedBefore = store.StorageStatus().RetainedAuditEvents;
+            var applied = SubmitArchive(store, admin, payload, "audit-direct-apply", store.Version);
+            Assert.True(applied.Success, $"{applied.Code}: {applied.Message}");
+            Assert.False(applied.Pending);
+            Assert.Single(store.AuditArchiveSegments(admin));
+            Assert.True(store.StorageStatus().RetainedAuditEvents >= retainedBefore);
+            Assert.Empty(store.AdminApprovals(status: null));
+            var directStatus = store.SecurityStatus(admin);
+            Assert.Equal(0, directStatus.PendingApprovals);
+            Assert.DoesNotContain(directStatus.Alerts,
+                item => item.Code is "second-approver-missing" or "approval-backlog");
 
-            Assert.True(L12Authorization.HasPermission(reviewer, L12Permission.AdminSecurityRead));
-            Assert.True(L12Authorization.HasPermission(reviewer, L12Permission.AdminAuditArchive));
+            store.AuditAvailabilityProbeOverride = () => false;
+            var blocked = SubmitArchive(store, admin, payload, "audit-direct-blocked", store.Version);
+            Assert.Equal("audit_unavailable", blocked.Code);
+            Assert.DoesNotContain(store.AdminCommands(), item => item.IdempotencyKey == "audit-direct-blocked");
+
+            Assert.True(L12Authorization.HasPermission(admin, L12Permission.AdminSecurityRead));
+            Assert.True(L12Authorization.HasPermission(admin, L12Permission.AdminAuditArchive));
         }
         finally { Directory.Delete(root, true); }
     }
 
     [Fact]
-    public void AuditArchiveDryRunApprovalRecoveryAndTamperDetectionAreNonDestructive()
+    public void AuditArchiveDryRunDirectExecutionRecoveryAndTamperDetectionAreNonDestructive()
     {
         var root = TempRoot();
         var path = Path.Combine(root, "platform.json");
@@ -401,7 +409,6 @@ public sealed class ControlPlanePhaseSixSecurityTests
         {
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
-            var reviewer = Promote(store, admin, "ArchiveReviewer", "admin");
             store.RecordAuthorizationDenied(null, new L12AdminAuditContext("archive-old-event",
                     "admin.audit.read", RequestMethod: "GET", RequestPath: "/api/admin/audit",
                     Outcome: "denied", Reason: "authentication-required"),
@@ -418,11 +425,11 @@ public sealed class ControlPlanePhaseSixSecurityTests
             Assert.False(Directory.Exists(Path.Combine(root, "audit-archives")));
 
             var retainedBefore = store.StorageStatus().RetainedAuditEvents;
-            var requested = SubmitArchive(store, admin, payload, "audit-archive-apply", store.Version);
-            Assert.True(requested.Pending);
-            Assert.Equal("self_review_forbidden", ReviewArchive(store, requested.Command!.Id, admin).Code);
-            var approved = ReviewArchive(store, requested.Command.Id, reviewer);
-            Assert.True(approved.Success, $"{approved.Code}: {approved.Message}");
+            var applied = SubmitArchive(store, admin, payload, "audit-archive-apply", store.Version);
+            Assert.True(applied.Success, $"{applied.Code}: {applied.Message}");
+            Assert.False(applied.Pending);
+            Assert.Equal("executed", applied.Command!.Status);
+            Assert.Empty(store.AdminApprovals(status: null));
             Assert.True(store.StorageStatus().RetainedAuditEvents >= retainedBefore);
             var segment = Assert.Single(store.AuditArchiveSegments(admin));
             Assert.True(segment.EventCount > 0);
@@ -503,21 +510,6 @@ public sealed class ControlPlanePhaseSixSecurityTests
             current => L12AdminCommandResult<L12AuditArchiveOperationView>.Ok(store.ArchiveAudit(current.Actor,
                 current.Payload, current.AuditContext, false)), L12AdminCommandRisk.High);
     }
-
-    private static L12AdminCommandResult<L12AdminCommandView> ReviewArchive(L12PlatformStore store,
-        string commandId, L12AccountView reviewer)
-        => new L12AdminCommandBus(store).Review(commandId, reviewer, new("approve", "archive-reviewed"),
-            new L12AdminAuditContext("review-" + commandId,
-                L12Authorization.Key(L12Permission.AdminApprovalsReview), CommandId: commandId),
-            (view, requester, audit) =>
-            {
-                var payload = view.Payload.Deserialize<L12AuditArchiveCommandPayload>(JsonOptions)!;
-                return JsonOk(store.ArchiveAudit(requester, payload, audit, true));
-            });
-
-    private static L12AdminCommandResult<JsonElement> JsonOk<T>(T value)
-        => new(true, "ok", "操作成功", JsonSerializer.SerializeToElement(value, JsonOptions),
-            StatusCodes.Status200OK);
 
     private static void AgeIndependentAuditEvents(string databasePath, DateTimeOffset start)
     {

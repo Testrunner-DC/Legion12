@@ -846,13 +846,29 @@ public sealed partial class L12RoomManager
             [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
             disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy);
         room.Game.InitializeGmDisasters();
-        // 沙盒状态只保留在内存和 GM 导出中，不进入玩家对局记录数据库。
         foreach (var playerIndex in new[] { 0, 1 })
         {
             var bootstrap = new L12Command("mulligan", CardInstanceIds: []);
             var result = room.Game.Handle(playerIndex, bootstrap);
             room.CommandSequence++;
             _ = result;
+        }
+        // 启动换牌是建立可操作沙盒的内部步骤，不冒充 GM 命令；将其完成后的
+        // 权威状态作为录像起点，后续所有合法命令从序号 1 连续记录。
+        room.CommandSequence = 0;
+        try
+        {
+            await _recorder.StartAsync(room.Game, "sandbox", session.AccountId, null,
+                [playerDeck, opponentDeck]);
+        }
+        catch (Exception persistenceError)
+        {
+            room.Closed = true;
+            _rooms.TryRemove(room.Code, out _);
+            _sessions.TryRemove(opponentId, out _);
+            ClearRoomMembership(session);
+            Console.Error.WriteLine($"Sandbox recording start ({room.Code}): {persistenceError.Message}");
+            return Error(sessionId, "沙盒录像暂时不可用，未建立未记录的沙盒", "sandboxRejected");
         }
         return BroadcastRoom(room).Concat(BroadcastGame(room)).ToArray();
     }
@@ -1283,9 +1299,26 @@ public sealed partial class L12RoomManager
                 return Error(sessionId, "缺少 GM 操作类型", "actionRejected");
             var result = room.Game.HandleGm(command);
             room.CommandSequence++;
-            // 沙盒不写入正式对局记录。
+            try
+            {
+                await _recorder.AppendAsync(room.Game, room.CommandSequence, -1,
+                    commandElement.GetRawText(), result);
+            }
+            catch (Exception persistenceError)
+            {
+                room.Closed = true;
+                Console.Error.WriteLine($"Sandbox GM recording ({room.Code}): {persistenceError.Message}");
+                return Error(sessionId, "沙盒命令未能持久化，房间已安全冻结", "actionRejected");
+            }
             if (!result.Accepted) return Error(sessionId, result.Error ?? "GM 操作被拒绝", "actionRejected");
-            return BroadcastGame(room);
+            var messages = BroadcastGame(room).ToList();
+            if (room.Game.State.Phase == L12Phase.GameOver)
+            {
+                var completionError = await CompleteTournamentRoomGameAsync(room);
+                if (completionError is not null)
+                    messages.AddRange(Error(sessionId, completionError, "sandboxRecordingPending"));
+            }
+            return messages;
         }
         finally { room.Gate.Release(); }
     }
@@ -1320,7 +1353,17 @@ public sealed partial class L12RoomManager
             var revisionBefore = room.Game.State.Revision;
             var result = room.Game.Handle(actingPlayerIndex, command);
             room.CommandSequence++;
-            // 沙盒不写入正式对局记录。
+            try
+            {
+                await _recorder.AppendAsync(room.Game, room.CommandSequence, actingPlayerIndex,
+                    commandElement.GetRawText(), result);
+            }
+            catch (Exception persistenceError)
+            {
+                room.Closed = true;
+                Console.Error.WriteLine($"Sandbox action recording ({room.Code}): {persistenceError.Message}");
+                return Error(sessionId, "沙盒命令未能持久化，房间已安全冻结", "actionRejected");
+            }
             if (!result.Accepted)
             {
                 var rejected = Error(sessionId, result.Error ?? "沙盒操作被拒绝", "actionRejected").ToList();
@@ -1330,7 +1373,7 @@ public sealed partial class L12RoomManager
             if (room.Game.State.Phase != L12Phase.GameOver) return BroadcastGame(room);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastGame(room).ToList();
-            if (errorMessage is not null) messages.AddRange(Error(sessionId, errorMessage, "tournamentResultPending"));
+            if (errorMessage is not null) messages.AddRange(Error(sessionId, errorMessage, "sandboxRecordingPending"));
             return messages;
         }
         finally { room.Gate.Release(); }
@@ -1398,6 +1441,19 @@ public sealed partial class L12RoomManager
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
+        if (room.IsSandbox && room.Game is not null && !room.CompletionRecorded)
+        {
+            try
+            {
+                _recorder.CloseSandboxAsync(room.Game).GetAwaiter().GetResult();
+                room.CompletionRecorded = true;
+            }
+            catch (Exception persistenceError)
+            {
+                Console.Error.WriteLine($"Sandbox recording close ({room.Code}): {persistenceError.Message}");
+                return Error(sessionId, "沙盒录像结束状态未能持久化，请稍后重试");
+            }
+        }
 
         if (room.TournamentId is not null)
         {
@@ -1570,6 +1626,18 @@ public sealed partial class L12RoomManager
                 // Governance is an auxiliary ledger. Its retryable storage failure must never
                 // prevent the authoritative game result from completing.
                 Console.Error.WriteLine($"Match draw cancellation ({room.Code}): {error.Message}");
+            }
+        }
+        if (room.IsSandbox && !room.CompletionRecorded)
+        {
+            try
+            {
+                await _recorder.CompleteSandboxAsync(room.Game);
+                room.CompletionRecorded = true;
+            }
+            catch (Exception error)
+            {
+                return $"沙盒录像结束写入待重试：{error.Message}";
             }
         }
         var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);

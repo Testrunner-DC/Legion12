@@ -7,13 +7,15 @@ namespace TwelveLegions.Server;
 public sealed partial class MatchRecorder : IAsyncDisposable
 {
     private readonly string _connectionString;
+    private readonly Func<DateTimeOffset> _utcNow;
 
     internal Action<string>? StorageFailureInjector { get; set; }
 
-    public MatchRecorder(string path)
+    public MatchRecorder(string path, Func<DateTimeOffset>? utcNow = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = path }.ToString();
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
     public async Task InitializeAsync()
@@ -49,14 +51,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "last_fact_signal_sequence", "INTEGER NOT NULL DEFAULT 0");
         await InitializeAnalyticsSchemaAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);
-        var closeSandboxResidue = connection.CreateCommand();
-        closeSandboxResidue.CommandText = """
-            UPDATE matches SET ended_utc=$utc,
-                error=COALESCE(error,'历史沙盒对局清理关闭')
-            WHERE ended_utc IS NULL AND mode_id='sandbox';
-            """;
-        closeSandboxResidue.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
-        await closeSandboxResidue.ExecuteNonQueryAsync();
+        await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",
@@ -84,7 +79,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
-        var startedUtc = DateTimeOffset.UtcNow.ToString("O");
+        var startedUtc = _utcNow().ToUniversalTime().ToString("O");
         var normalizedMode = string.IsNullOrWhiteSpace(modeId)
             ? "friendly" : modeId.Trim().ToLowerInvariant();
         var command = connection.CreateCommand();
@@ -121,6 +116,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
+        if (normalizedMode == "sandbox")
+            await InsertSandboxRecordingAsync(connection, transaction, state.MatchId, startedUtc);
         if (rankedRuntime is not null)
             await InsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
         StorageFailureInjector?.Invoke(rankedRuntime is null
@@ -160,7 +157,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash,first_player=$first
             WHERE match_id=$id AND ended_utc IS NULL;
             """;
-        command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$utc", _utcNow().ToUniversalTime().ToString("O"));
         command.Parameters.AddWithValue("$winner", (object?)engine.State.Winner ?? DBNull.Value);
         command.Parameters.AddWithValue("$hash", finalHash);
         command.Parameters.AddWithValue("$first", engine.State.FirstPlayer);

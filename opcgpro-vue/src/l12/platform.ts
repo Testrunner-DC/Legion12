@@ -442,6 +442,34 @@ export const authState = reactive({
 })
 
 let authRefreshPromise: Promise<PlatformAccount | null> | null = null
+export const AUTH_REFRESH_RETRY_BASE_MS = 1_000
+export const AUTH_REFRESH_REQUEST_TIMEOUT_MS = 5_000
+const AUTH_REFRESH_RETRY_MAX_MS = 15_000
+let authRefreshRetryTimer: ReturnType<typeof setTimeout> | null = null
+let authRefreshRetryAttempts = 0
+
+function clearAuthRefreshRetry(resetAttempts = false) {
+  if (authRefreshRetryTimer !== null) window.clearTimeout(authRefreshRetryTimer)
+  authRefreshRetryTimer = null
+  if (resetAttempts) authRefreshRetryAttempts = 0
+}
+
+function isTemporaryAuthFailure(error: unknown) {
+  if (error instanceof PlatformRequestError) return error.status >= 500
+  return error instanceof TypeError
+    || (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError')
+}
+
+function scheduleAuthRefreshRetry(requestToken: string) {
+  if (authRefreshRetryTimer !== null || !requestToken || platformState.token !== requestToken) return
+  const delay = Math.min(AUTH_REFRESH_RETRY_BASE_MS * (2 ** authRefreshRetryAttempts), AUTH_REFRESH_RETRY_MAX_MS)
+  authRefreshRetryAttempts += 1
+  authRefreshRetryTimer = window.setTimeout(() => {
+    authRefreshRetryTimer = null
+    if (platformState.token !== requestToken) return
+    void refreshCurrentAccount({ force: true }).catch(() => undefined)
+  }, delay)
+}
 
 export function hasPermission(permission: string) {
   if (!authState.verified) return false
@@ -494,6 +522,7 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
 }
 
 function remember(account: PlatformAccount, token: string) {
+  clearAuthRefreshRetry(true)
   platformState.account = account
   platformState.token = token
   authState.initialized = true
@@ -513,12 +542,15 @@ export function refreshCurrentAccount(options: { force?: boolean } = {}): Promis
   }
   if (!options.force && authState.verified) return Promise.resolve(platformState.account)
 
+  clearAuthRefreshRetry()
   const requestToken = platformState.token
+  const controller = new AbortController()
+  const requestTimeout = window.setTimeout(() => controller.abort(), AUTH_REFRESH_REQUEST_TIMEOUT_MS)
   authState.refreshing = true
   authState.verified = false
   const pending = (async () => {
     try {
-      const account = await platformRequest<PlatformAccount>('/api/auth/me')
+      const account = await platformRequest<PlatformAccount>('/api/auth/me', { signal: controller.signal })
       if (platformState.token !== requestToken) return platformState.account
       remember(account, requestToken)
       return account
@@ -527,11 +559,13 @@ export function refreshCurrentAccount(options: { force?: boolean } = {}): Promis
         // 网络与 5xx 不销毁可重试的 token，但绝不能继续把缓存身份当成已验证权限。
         authState.initialized = true
         authState.verified = false
+        if (isTemporaryAuthFailure(error)) scheduleAuthRefreshRetry(requestToken)
       }
       if (error instanceof PlatformRequestError && error.status === 401)
         return platformState.token === requestToken ? null : platformState.account
       throw error
     } finally {
+      window.clearTimeout(requestTimeout)
       if (platformState.token === requestToken) authState.refreshing = false
       authRefreshPromise = null
     }
@@ -541,7 +575,7 @@ export function refreshCurrentAccount(options: { force?: boolean } = {}): Promis
 }
 
 export function initializeAuth() {
-  if (authState.initialized) return Promise.resolve(platformState.account)
+  if (authState.initialized && (!platformState.token || authState.verified)) return Promise.resolve(platformState.account)
   return refreshCurrentAccount({ force: true })
 }
 
@@ -557,6 +591,7 @@ export async function login(username: string, password: string) {
 
 function forgetAccount(expectedToken?: string) {
   if (expectedToken !== undefined && platformState.token !== expectedToken) return
+  clearAuthRefreshRetry(true)
   disconnect()
   platformState.account = null
   platformState.token = ''

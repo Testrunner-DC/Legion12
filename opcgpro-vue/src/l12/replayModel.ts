@@ -1,5 +1,14 @@
 import type { ActionEvent, Card, GameState, Phase, PlayerView } from './types'
 
+export interface ReplayCardDefinition {
+  id: string
+  nameZh: string
+  cardType: string
+  faction: string
+  imageUrl?: string
+  effect?: string
+}
+
 export interface MatchSummary {
   matchId: string
   roomCode: string
@@ -116,17 +125,42 @@ function replayCard(raw: any): Card | null {
   }
 }
 
-function replayPlayer(raw: any): PlayerView {
+function replayAbility(raw: any) {
+  return {
+    id: value(raw, 'Id', 'id', ''), label: value(raw, 'Label', 'label', ''),
+    enabled: value(raw, 'Enabled', 'enabled', undefined), disabledReason: value(raw, 'DisabledReason', 'disabledReason', undefined),
+    triggerOnly: value(raw, 'TriggerOnly', 'triggerOnly', undefined),
+  }
+}
+
+function replayPlayer(raw: any, catalog?: ReadonlyMap<string, ReplayCardDefinition>): PlayerView {
   const zones = value<any>(raw, 'SpecialZones', 'specialZones', {})
   const fieldRaw = value<any[][]>(raw, 'Field', 'field', [[], []])
+  const masterId = value(raw, 'MasterId', 'masterId', '')
+  const masterDefinition = catalog?.get(masterId)
+  const rawMasterAbilities = value<any[]>(raw, 'MasterAbilities', 'masterAbilities', [])
+  const factionRaw = value<any>(raw, 'FactionEffect', 'factionEffect', null)
+  const factionCardId = value(factionRaw, 'CardId', 'cardId', '')
+  const factionDefinition = catalog?.get(factionCardId)
+  const rawFactionAbilities = value<any[]>(factionRaw, 'Abilities', 'abilities', [])
   return {
     playerIndex: value(raw, 'PlayerIndex', 'playerIndex', 0), name: value(raw, 'Name', 'name', '玩家'),
     deckName: value(raw, 'DeckName', 'deckName', ''), faction: value(raw, 'Faction', 'faction', ''),
     master: {
-      masterId: value(raw, 'MasterId', 'masterId', ''), masterName: value(raw, 'MasterName', 'masterName', '主宰'),
-      masterImageUrl: value(raw, 'MasterImageUrl', 'masterImageUrl', undefined), hp: value(raw, 'Hp', 'hp', 0),
+      masterId, masterName: value(raw, 'MasterName', 'masterName', masterDefinition?.nameZh ?? '主宰'),
+      masterImageUrl: value(raw, 'MasterImageUrl', 'masterImageUrl', masterDefinition?.imageUrl),
+      effectText: value(raw, 'MasterEffectText', 'masterEffectText', masterDefinition?.effect),
+      abilities: rawMasterAbilities.length ? rawMasterAbilities.map(replayAbility) : undefined,
+      hp: value(raw, 'Hp', 'hp', 0),
       maxHp: value(raw, 'MaxHp', 'maxHp', 0), tapped: value(raw, 'MasterTapped', 'masterTapped', false),
     },
+    factionEffect: factionRaw ? {
+      cardId: factionCardId,
+      name: value(factionRaw, 'Name', 'name', factionDefinition?.nameZh ?? '阵营效果'),
+      imageUrl: value(factionRaw, 'ImageUrl', 'imageUrl', factionDefinition?.imageUrl),
+      effectText: value(factionRaw, 'EffectText', 'effectText', factionDefinition?.effect ?? ''),
+      abilities: rawFactionAbilities.length ? rawFactionAbilities.map(replayAbility) : undefined,
+    } : undefined,
     libraryCount: value<any[]>(raw, 'Library', 'library', []).length,
     hand: value<any[]>(raw, 'Hand', 'hand', []).map(replayCard).filter(Boolean) as Card[],
     handCount: value<any[]>(raw, 'Hand', 'hand', []).length,
@@ -158,7 +192,7 @@ const phaseNames: Phase[] = [
   'Morale', 'Main', 'End', 'Defense', 'GameOver',
 ]
 
-export function replayGameAt(detail: MatchDetail, step: number): GameState | null {
+export function replayGameAt(detail: MatchDetail, step: number, catalog?: ReadonlyMap<string, ReplayCardDefinition>): GameState | null {
   const command = detail.commands[step]
   const raw = command?.state
   if (!raw) return null
@@ -179,7 +213,7 @@ export function replayGameAt(detail: MatchDetail, step: number): GameState | nul
     round: value(raw, 'Round', 'round', 1), disasterMode: value(raw, 'DisasterMode', 'disasterMode', 'all'),
     disasterValue: value(raw, 'DisasterValue', 'disasterValue', 0),
     activeDisaster: replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null)),
-    players: value<any[]>(raw, 'Players', 'players', []).map(replayPlayer),
+    players: value<any[]>(raw, 'Players', 'players', []).map(player => replayPlayer(player, catalog)),
     pendingDefense: defense ? {
       attackerPlayer: value(defense, 'AttackerPlayer', 'attackerPlayer', 0),
       attackerInstanceId: value(defense, 'AttackerInstanceId', 'attackerInstanceId', ''),
@@ -195,4 +229,134 @@ export function replayGameAt(detail: MatchDetail, step: number): GameState | nul
     recentEvents: events, lastAction: events.at(-1) ?? null,
     legalAttackTargets: {}, stateHash: command.stateHash ?? '',
   }
+}
+
+const replaySourceEventTypes = new Set([
+  'play', 'attack', 'move', 'reveal', 'disaster-reveal', 'effect-trigger',
+  'effect-activation', 'response',
+])
+const replaySystemEventTypes = new Set([
+  'phase', 'phase-detail', 'turn-start', 'turn-end', 'end-turn', 'dice', 'initiative-choice',
+  'prompt', 'prompt-resolved', 'priority-pass', 'stack-open', 'stack-push', 'stack-resolve',
+])
+
+function publicReplayCards(game: GameState): Card[] {
+  return [
+    ...(game.activeDisaster ? [game.activeDisaster] : []),
+    ...game.players.flatMap(player => [
+      ...player.field.flat().filter(Boolean) as Card[], ...(player.graveyard ?? []), ...(player.resolving ?? []),
+      ...(player.relic ? [player.relic] : []), ...(player.extraRelics ?? []), ...(player.specialZones?.trials ?? []),
+    ]),
+  ]
+}
+
+function replayDefinitionCard(definition: ReplayCardDefinition, instanceId: string): Card {
+  return {
+    instanceId, cardId: definition.id, name: definition.nameZh, cardType: definition.cardType,
+    faction: definition.faction, imageUrl: definition.imageUrl, effectText: definition.effect,
+    cost: 0, baseTroops: 0, troops: 0, disasterLevel: 0, tapped: false, summonRound: 0,
+  }
+}
+
+function replayMasterSource(game: GameState, playerIndex: number,
+  catalog: ReadonlyMap<string, ReplayCardDefinition>): Card | null {
+  const player = game.players.find(candidate => candidate.playerIndex === playerIndex)
+  if (!player) return null
+  const definition = catalog.get(player.master.masterId)
+  return {
+    instanceId: `master-${player.playerIndex}`, cardId: player.master.masterId,
+    name: player.master.masterName || definition?.nameZh || '主宰', cardType: 'master', faction: player.faction,
+    imageUrl: player.master.masterImageUrl ?? definition?.imageUrl,
+    effectText: player.master.effectText ?? definition?.effect,
+    cost: 0, baseTroops: 0, troops: 0, disasterLevel: 0,
+    tapped: Boolean(player.master.tapped), summonRound: 0,
+  }
+}
+
+function replayFactionSource(game: GameState, playerIndex: number,
+  catalogDefinitions: readonly ReplayCardDefinition[], catalog: ReadonlyMap<string, ReplayCardDefinition>): Card | null {
+  const player = game.players.find(candidate => candidate.playerIndex === playerIndex)
+  if (!player) return null
+  const factionEffect = player.factionEffect
+  const definition = factionEffect?.cardId
+    ? catalog.get(factionEffect.cardId)
+    : catalogDefinitions.find(card => card.faction === player.faction && card.cardType === 'rune' && card.nameZh.startsWith('士气·'))
+  if (!factionEffect && !definition) return null
+  return {
+    instanceId: `faction-${player.playerIndex}`, cardId: factionEffect?.cardId || definition!.id,
+    name: factionEffect?.name || definition!.nameZh, cardType: definition?.cardType || 'rune', faction: player.faction,
+    imageUrl: factionEffect?.imageUrl ?? definition?.imageUrl,
+    effectText: factionEffect?.effectText || definition?.effect,
+    cost: 0, baseTroops: 0, troops: 0, disasterLevel: 0, tapped: false, summonRound: 0,
+  }
+}
+
+function replayStructuredSource(game: GameState, instanceId: string,
+  catalogDefinitions: readonly ReplayCardDefinition[], catalog: ReadonlyMap<string, ReplayCardDefinition>): Card | null {
+  const masterMatch = /^master-(\d+)$/.exec(instanceId)
+  if (masterMatch) return replayMasterSource(game, Number(masterMatch[1]), catalog)
+  const factionMatch = /^faction-(\d+)$/.exec(instanceId)
+  if (factionMatch) return replayFactionSource(game, Number(factionMatch[1]), catalogDefinitions, catalog)
+  const masterOwner = game.players.find(player => player.master.masterId === instanceId)
+  return masterOwner ? replayMasterSource(game, masterOwner.playerIndex, catalog) : null
+}
+
+export function replayFocusCardAt(detail: MatchDetail, step: number,
+  catalogDefinitions: readonly ReplayCardDefinition[] = []): Card | null {
+  const catalog = new Map(catalogDefinitions.map(card => [card.id, card]))
+  const game = replayGameAt(detail, step, catalog)
+  const recorded = detail.commands[step]
+  if (!game || !recorded) return null
+  const command = recorded.command ?? {}
+  const commandType = String(command.type ?? command.Type ?? '').toLocaleLowerCase()
+  const previousRaw = detail.commands[step - 1]?.state
+  const promptId = String(command.promptId ?? command.PromptId ?? '')
+  const previousPrompt = promptId
+    ? value<any[]>(previousRaw, 'Prompts', 'prompts', []).find(prompt => value(prompt, 'PromptId', 'promptId', '') === promptId)
+    : null
+  const promptSourceInstanceId = previousPrompt ? value(previousPrompt, 'SourceInstanceId', 'sourceInstanceId', '') : ''
+  const explicitInstanceId = [promptSourceInstanceId, ...['sourceInstanceId', 'cardInstanceId', 'attackerInstanceId']
+    .map(key => command[key] ?? command[key[0].toUpperCase() + key.slice(1)])
+    ].find(value => typeof value === 'string' && value) as string | undefined
+  if (explicitInstanceId) {
+    const previousGame = step > 0 ? replayGameAt(detail, step - 1, catalog) : null
+    const structured = replayStructuredSource(game, explicitInstanceId, catalogDefinitions, catalog)
+      ?? (previousGame ? replayStructuredSource(previousGame, explicitInstanceId, catalogDefinitions, catalog) : null)
+    if (structured) return structured
+    const match = [...publicReplayCards(game), ...(previousGame ? publicReplayCards(previousGame) : [])]
+      .find(card => card.instanceId === explicitInstanceId)
+    if (match) return match
+  }
+  const explicitCardId = String(command.sourceCardId ?? command.SourceCardId
+    ?? (previousPrompt ? value(previousPrompt, 'SourceCardId', 'sourceCardId', '') : ''))
+  const explicitDefinition = catalog.get(explicitCardId)
+  if (explicitDefinition) return replayDefinitionCard(explicitDefinition, explicitInstanceId || `replay-source-${explicitCardId}`)
+  const actor = game.players[recorded.playerIndex]
+  if (actor && commandType.includes('master')) {
+    const definition = catalog.get(actor.master.masterId)
+    return {
+      instanceId: `master-${actor.playerIndex}`, cardId: actor.master.masterId, name: actor.master.masterName,
+      cardType: 'master', faction: actor.faction, imageUrl: actor.master.masterImageUrl,
+      effectText: actor.master.effectText ?? definition?.effect, cost: 0, baseTroops: 0, troops: 0,
+      disasterLevel: 0, tapped: Boolean(actor.master.tapped), summonRound: 0,
+    }
+  }
+  if (actor && commandType.includes('faction')) {
+    const definition = catalogDefinitions.find(card => card.cardType === 'faction' && card.faction === actor.faction)
+    if (definition) return {
+      instanceId: `faction-${actor.playerIndex}`, cardId: definition.id, name: definition.nameZh,
+      cardType: definition.cardType, faction: definition.faction, imageUrl: definition.imageUrl,
+      effectText: definition.effect, cost: 0, baseTroops: 0, troops: 0, disasterLevel: 0, tapped: false, summonRound: 0,
+    }
+  }
+  const previousSequence = step > 0
+    ? Math.max(0, ...value<any[]>(detail.commands[step - 1]?.state, 'Events', 'events', []).map(event => value(event, 'Sequence', 'sequence', 0)))
+    : 0
+  const sourceEvents = [...(game.recentEvents ?? [])]
+    .filter(event => event.sequence > previousSequence && !replaySystemEventTypes.has(event.type)
+      && replaySourceEventTypes.has(event.type) && event.cards?.length)
+  const actorSourceEvents = sourceEvents.filter(event => event.playerIndex === recorded.playerIndex)
+  const sourceEvent = (actorSourceEvents.length ? actorSourceEvents : sourceEvents)
+    .sort((left, right) => right.sequence - left.sequence)[0]
+  return sourceEvent?.cards?.[0] ?? null
 }

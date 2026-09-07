@@ -518,7 +518,8 @@ public sealed partial class L12GameEngine
                 && !player.SpecialZones.Trials.Any(card => card.CardId == "S02-06S4" && card.TrialCompleted))
                 return view with { Enabled = false, DisabledReason = "试炼《寻找圣杯之旅》尚未完成" };
             var match = System.Text.RegularExpressions.Regex.Match(view.Label, @"消耗\s*(\d+)\s*士气");
-            if (match.Success && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)
+            if (view.Id != "horusRevive" && match.Success
+                && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)
                 return view with { Enabled = false, DisabledReason = $"需要{cost}张活跃士气" };
             return view;
         }).ToList();
@@ -631,7 +632,7 @@ public sealed partial class L12GameEngine
             return "需要手牌、墓地中费用不高于4的【奥林匹斯】军团和空战场位置";
         if (ability == "horusRevive")
         {
-            var field = ownLegions;
+            var field = ownLegions.ToArray();
             var graveTarget = player.Graveyard.Any(card => card.CardType == "legion" && card.BaseTroops <= 2000
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
             var prospectiveTarget = graveTarget || field.Any(card => card.BaseTroops <= 2000
@@ -639,8 +640,11 @@ public sealed partial class L12GameEngine
             var visibleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
             var resources = player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
                 + ActiveTombGuardResources(player).Count();
-            if (field.Length < 2 || resources < visibleCost || !prospectiveTarget)
-                return $"需要{visibleCost}份可用士气资源、战场2张军团，并在支付后拥有兵力不高于2000的【太阳城】军团可从墓地登场";
+            var canUseTombGuardCost = field.Count(card =>
+                L12StructuredCardSemantics.IsTombGuard(card.CardId)) >= 2;
+            var canUseMoraleLegionCost = field.Length >= 2 && resources >= visibleCost;
+            if ((!canUseTombGuardCost && !canUseMoraleLegionCost) || !prospectiveTarget)
+                return "需要2张〈陵墓守卫〉，或可用士气资源与战场2张军团；支付后还需有兵力不高于2000的【太阳城】军团可从墓地登场";
         }
         return null;
     }

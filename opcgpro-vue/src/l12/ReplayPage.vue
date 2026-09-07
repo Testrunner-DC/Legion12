@@ -2,23 +2,28 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
-import { adminApi, platformRequest } from './platform'
-import { adminReplayDetail, consumeImportedReplay, replayGameAt, type MatchDetail } from './replayModel'
+import { loadDeckCatalog, type DeckCard } from './decks'
+import { adminApi, PlatformRequestError, platformRequest } from './platform'
+import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
 
 const route = useRoute()
 const router = useRouter()
 const detail = ref<MatchDetail | null>(null)
+const cards = ref<DeckCard[]>([])
 const selectedStep = ref(0)
 const playing = ref(false)
 const playbackSpeed = ref<1 | 2 | 3>(1)
 const loading = ref(true)
 const error = ref('')
+const catalogWarning = ref('')
 const replayNextCursor = ref<string | undefined>()
 const replayTotalCommands = ref(0)
 const loadingReplayPage = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
-const currentGame = computed(() => detail.value ? replayGameAt(detail.value, selectedStep.value) : null)
+const replayCatalog = computed(() => new Map(cards.value.map(card => [card.id, card])))
+const currentGame = computed(() => detail.value ? replayGameAt(detail.value, selectedStep.value, replayCatalog.value) : null)
+const replayFocusCard = computed(() => detail.value ? replayFocusCardAt(detail.value, selectedStep.value, cards.value) : null)
 const isAdminReplay = computed(() => route.name === 'admin-match-replay')
 const totalSteps = computed(() => isAdminReplay.value ? replayTotalCommands.value : detail.value?.commands.length ?? 0)
 const atFirst = computed(() => selectedStep.value <= 0)
@@ -50,7 +55,13 @@ onBeforeUnmount(stop)
 async function loadReplay() {
   loading.value = true
   error.value = ''
+  catalogWarning.value = ''
   try {
+    try { cards.value = await loadDeckCatalog() }
+    catch {
+      cards.value = []
+      catalogWarning.value = '卡牌资料暂不可用，回放仍可播放；部分主宰与阵营效果信息可能不完整。'
+    }
     if (route.name === 'json-replay') detail.value = consumeImportedReplay()
     else if (isAdminReplay.value) {
       const matchId = String(route.params.matchId ?? '')
@@ -69,7 +80,9 @@ async function loadReplay() {
     if (!detail.value.commands.length) throw new Error('这场对局没有可播放的状态快照')
     selectedStep.value = 0
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '读取回放失败'
+    error.value = reason instanceof PlatformRequestError && reason.status === 410 && reason.code === 'sandbox_replay_expired'
+      ? '回放已过期'
+      : reason instanceof Error ? reason.message : '读取回放失败'
   } finally { loading.value = false }
 }
 
@@ -100,7 +113,9 @@ async function ensureReplayStepLoaded(index: number) {
     replayTotalCommands.value = page.totalCommands
     return index < detail.value.commands.length
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '读取下一页回放失败'
+    error.value = reason instanceof PlatformRequestError && reason.status === 410 && reason.code === 'sandbox_replay_expired'
+      ? '回放已过期'
+      : reason instanceof Error ? reason.message : '读取下一页回放失败'
     stop()
     return false
   } finally { loadingReplayPage.value = false }
@@ -152,12 +167,14 @@ function returnFromReplay() {
 
 <template>
   <div class="game-page replay-page">
-    <GameBoard v-if="currentGame" :game="currentGame" read-only />
+    <GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard" read-only />
 
     <div class="replay-route-controls">
       <span v-if="detail">{{ detail.match.player0 }} VS {{ detail.match.player1 }}</span>
       <button @click="returnFromReplay">{{ returnLabel }}</button>
     </div>
+
+    <p v-if="catalogWarning" class="replay-catalog-warning" role="status">{{ catalogWarning }}</p>
 
     <div v-if="replayResult" class="replay-result" :data-state="replayResult.state" aria-live="polite">
       <strong>对局结束</strong>
@@ -185,6 +202,7 @@ function returnFromReplay() {
 .replay-route-controls span{max-width:310px;overflow:hidden;padding:0 7px;color:#aeb8b7;font-size:14px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}
 .replay-route-controls button,.replay-controls button,.replay-loading button{padding:8px 12px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-size:14px;font-weight:900}
 .replay-route-controls button:hover,.replay-controls button:hover:not(:disabled),.replay-loading button:hover{border-color:#d7c06f;color:#f4dda0}
+.replay-catalog-warning{position:fixed;z-index:3190;top:64px;right:14px;max-width:min(420px,calc(100vw - 28px));margin:0;padding:8px 11px;border:1px solid #8b7540;background:#171308ed;color:#dccb91;font-size:14px;font-weight:800;line-height:1.5;box-shadow:0 8px 24px #000}
 .replay-result{position:fixed;z-index:3200;left:50%;bottom:15px;display:flex;align-items:center;gap:12px;min-width:310px;padding:9px 13px;border:1px solid #b79c4e;background:#080d11f2;box-shadow:0 8px 24px #000;transform:translateX(-50%)}
 .replay-result>strong{padding-right:10px;border-right:1px solid #49545a;color:#d9c16f}.replay-result span{display:flex;min-width:100px;justify-content:space-between;gap:10px;color:#e7e4da;white-space:nowrap}.replay-result em{font-style:normal;font-weight:900}.replay-result span[data-result="胜"] em{color:#8fd9b1}.replay-result span[data-result="负"] em,.replay-result[data-state="invalid"] em{color:#d99199}.replay-result[data-state="draw"] em{color:#c5b76e}
 .replay-controls{position:fixed;z-index:3200;left:14px;bottom:14px;display:flex;align-items:center;gap:7px;padding:7px;border:1px solid #445057;background:#080d11ed;box-shadow:0 8px 24px #000}

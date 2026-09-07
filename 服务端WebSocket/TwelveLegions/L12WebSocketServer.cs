@@ -38,6 +38,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly TimeSpan _rankedClockWatchdogInterval;
     private CancellationTokenSource? _rankedClockWatchdogCancellation;
     private Task? _rankedClockWatchdogTask;
+    private readonly TimeSpan _sandboxReplayMaintenanceInterval;
+    private CancellationTokenSource? _sandboxReplayMaintenanceCancellation;
+    private Task? _sandboxReplayMaintenanceTask;
     private WebApplication? _app;
     private IReadOnlyList<string> _addresses = [];
 
@@ -46,7 +49,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     public L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform,
         L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl = null,
         string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null,
-        IL12ModianImportClient? modianImportClient = null)
+        IL12ModianImportClient? modianImportClient = null,
+        TimeSpan? sandboxReplayMaintenanceInterval = null)
     {
         _rooms = rooms;
         _recorder = recorder;
@@ -58,6 +62,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             ?? Environment.GetEnvironmentVariable(L12RankedNetworkPrivacy.EnvironmentKey);
         _rankedClockWatchdogInterval = rankedClockWatchdogInterval is { } interval && interval > TimeSpan.Zero
             ? interval : TimeSpan.FromSeconds(1);
+        _sandboxReplayMaintenanceInterval = sandboxReplayMaintenanceInterval is { } maintenanceInterval
+                                            && maintenanceInterval > TimeSpan.Zero
+            ? maintenanceInterval : TimeSpan.FromMinutes(5);
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -181,9 +188,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
+                var expired = match is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
+                    request.HttpContext.RequestAborted);
                 _platform.RecordAdminRead(authenticated.Account, permission, "match",
-                    includeReplay ? "read-replay" : "read-detail", matchId,
+                    expired ? "read-sandbox-replay-expired"
+                        : includeReplay ? "read-replay" : "read-detail", matchId,
                     AuditContext(request, permission));
+                if (expired)
+                    return ApiError(request, "sandbox_replay_expired", "沙盒录像已过期，Bug 报告仍已保留。",
+                        StatusCodes.Status410Gone);
                 return match is null ? Results.NotFound() : Results.Ok(match);
             }
             catch (L12ReplayPayloadTooLargeException error)
@@ -205,8 +218,14 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             {
                 var page = await _recorder.GetAdminReplayPageAsync(matchId, QueryValue(request, "cursor"),
                     limit ?? 50, request.HttpContext.RequestAborted);
-                _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-page",
+                var expired = page is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
+                    request.HttpContext.RequestAborted);
+                _platform.RecordAdminRead(authenticated.Account, permission, "match",
+                    expired ? "read-sandbox-replay-expired" : "read-replay-page",
                     matchId, AuditContext(request, permission));
+                if (expired)
+                    return ApiError(request, "sandbox_replay_expired", "沙盒录像已过期，Bug 报告仍已保留。",
+                        StatusCodes.Status410Gone);
                 return page is null ? Results.NotFound() : Results.Ok(page);
             }
             catch (ArgumentException error)
@@ -956,7 +975,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapPost("/api/admin/releases/deploy", (HttpRequest request, ReleaseDeployRequest body) =>
         {
             const L12Permission permission = L12Permission.ReleasesExecute;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             if (!TryReleaseCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             if (TryReplayReleaseCommand(request, authenticated.Account, permission, "release.deploy", key,
@@ -990,7 +1009,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapPost("/api/admin/releases/rollback", (HttpRequest request, ReleaseRollbackRequest body) =>
         {
             const L12Permission permission = L12Permission.ReleasesExecute;
-            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             if (!TryReleaseCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             if (TryReplayReleaseCommand(request, authenticated.Account, permission, "release.rollback", key,
@@ -1796,18 +1815,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             return Results.Ok(_platform.AdminApprovals(status ?? "requested", limit ?? 200));
         });
         _app.MapPost("/api/admin/approvals/{commandId}",
-            (HttpRequest request, string commandId, L12AdminApprovalDecision body) =>
+            (HttpRequest request, string commandId, L12AdminApprovalDecision _) =>
         {
             var stored = _platform.AdminCommand(commandId);
-            if (stored?.Type.StartsWith("tournament.", StringComparison.Ordinal) == true)
-                return ApiError(request, "tournament_approval_disabled", "赛事操作不使用审批流程",
-                    StatusCodes.Status409Conflict);
-            if (stored?.Type is "account.role.set" or "account.status.set")
-                return ApiError(request, "account_approval_disabled", "账号权限和状态变更直接执行，不使用审批流程",
-                    StatusCodes.Status409Conflict);
-            if (stored?.Type is "content.publish.batch" or "content.rollback.batch")
-                return ApiError(request, "content_approval_disabled", "站点内容发布和回滚直接执行，不使用审批流程",
-                    StatusCodes.Status409Conflict);
             var permission = stored?.Type.StartsWith("release.", StringComparison.Ordinal) == true
                     ? L12Permission.ReleaseApprovalsReview
                     : L12Permission.AdminApprovalsReview;
@@ -1817,9 +1827,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 L12Permission.ReleaseApprovalsReview => L12PlatformStore.CanReviewReleaseCommand,
                 _ => null,
             };
-            var outcome = _adminCommands.Review(commandId, authenticated.Account, body,
-                AuditContext(request, permission) with { CommandId = commandId }, ExecuteApprovedCommand,
-                permission, scopeValidator);
+            var outcome = _adminCommands.Review(commandId, authenticated.Account,
+                AuditContext(request, permission) with { CommandId = commandId }, permission, scopeValidator);
             return AdminReviewResponse(request, outcome);
         });
         _app.MapGet("/api/admin/security/status", (HttpRequest request) =>
@@ -1879,11 +1888,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             .Get<IServerAddressesFeature>()?.Addresses.ToArray() ?? _app.Urls.ToArray();
         _rankedClockWatchdogCancellation = new CancellationTokenSource();
         _rankedClockWatchdogTask = RunRankedClockWatchdogAsync(_rankedClockWatchdogCancellation.Token);
+        _sandboxReplayMaintenanceCancellation = new CancellationTokenSource();
+        _sandboxReplayMaintenanceTask = RunSandboxReplayMaintenanceAsync(
+            _sandboxReplayMaintenanceCancellation.Token);
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
     public async Task StopAsync()
     {
+        await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
         foreach (var socket in _sockets.Values)
         {
@@ -2244,6 +2257,48 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         var task = _rankedClockWatchdogTask;
         _rankedClockWatchdogCancellation = null;
         _rankedClockWatchdogTask = null;
+        if (cancellation is null) return;
+        cancellation.Cancel();
+        if (task is not null)
+        {
+            try { await task; }
+            catch (OperationCanceledException) { }
+        }
+        cancellation.Dispose();
+    }
+
+    private async Task RunSandboxReplayMaintenanceAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(_sandboxReplayMaintenanceInterval);
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await _rooms.RunSandboxReplayMaintenanceAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception error)
+                {
+                    // 租约会在失败后释放，下一个独立维护周期重试；不占用排位时钟循环。
+                    Console.Error.WriteLine($"Sandbox replay maintenance: {error.Message}");
+                }
+                if (!await timer.WaitForNextTickAsync(cancellationToken)) break;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private async Task StopSandboxReplayMaintenanceAsync()
+    {
+        var cancellation = _sandboxReplayMaintenanceCancellation;
+        var task = _sandboxReplayMaintenanceTask;
+        _sandboxReplayMaintenanceCancellation = null;
+        _sandboxReplayMaintenanceTask = null;
         if (cancellation is null) return;
         cancellation.Cancel();
         if (task is not null)
@@ -2948,14 +3003,6 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         request.HttpContext.Response.Headers["X-Command-ID"] = outcome.Command?.Id ?? command.CommandId;
         request.HttpContext.Response.Headers.ETag = $"\"{_platform.Version}\"";
         if (outcome.Replayed) request.HttpContext.Response.Headers["X-Idempotent-Replay"] = "true";
-        if (outcome.Pending)
-            return Results.Json(new
-            {
-                commandId = outcome.Command?.Id ?? command.CommandId,
-                status = "requested",
-                outcome.Message,
-                command = outcome.Command,
-            }, statusCode: StatusCodes.Status202Accepted);
         return outcome.Success
             ? Results.Ok(outcome.Value)
             : ApiError(request, outcome.Code, outcome.Message, outcome.StatusCode);
@@ -3010,7 +3057,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
                     error.Message, StatusCodes.Status400BadRequest);
             }
-        }, L12AdminCommandRisk.High, requiresApproval: false);
+        }, L12AdminCommandRisk.High);
 
     private L12AdminCommandResult<L12ContentBatchOperationView> ExecuteContentRollback(
         L12AdminCommandEnvelope<L12ContentRollbackCommandPayload> command, L12Permission permission)
@@ -3055,7 +3102,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Fail("content_validation_failed",
                     error.Message, StatusCodes.Status400BadRequest);
             }
-        }, L12AdminCommandRisk.High, requiresApproval: false);
+        }, L12AdminCommandRisk.High);
 
     private L12AdminCommandResult<L12EffectReviewView> ExecuteEffectReview(
         L12AdminCommandEnvelope<EffectReviewCommandPayload> command)
@@ -3184,151 +3231,6 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         }
     }
 
-    private L12AdminCommandResult<JsonElement> ExecuteApprovedCommand(L12AdminCommandView command,
-        L12AccountView requester, L12AdminAuditContext audit)
-    {
-        switch (command.Type)
-        {
-            case "account.role.set":
-            {
-                var payload = command.Payload.Deserialize<RoleCommandPayload>(CommandJsonOptions);
-                if (payload is null)
-                    return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload", "命令载荷无效",
-                        StatusCodes.Status400BadRequest);
-                var result = _platform.SetRole(requester, payload.AccountId, payload.Role, audit)
-                    ? L12AdminCommandResult<RoleCommandResult>.Ok(
-                        new RoleCommandResult(payload.AccountId, payload.Role, true), "账号角色已更新")
-                    : L12AdminCommandResult<RoleCommandResult>.Fail("invalid_role_change", "账号或角色无效",
-                        StatusCodes.Status400BadRequest);
-                return ToJsonResult(result);
-            }
-            case "account.status.set":
-            {
-                var payload = command.Payload.Deserialize<L12AccountStatusCommandPayload>(CommandJsonOptions);
-                if (payload is null)
-                    return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload", "命令载荷无效",
-                        StatusCodes.Status400BadRequest);
-                return ToJsonResult(ExecuteAccountStatus(requester, payload, audit, true));
-            }
-            case "content.publish.batch":
-            {
-                var payload = command.Payload.Deserialize<L12ContentPublishCommandPayload>(CommandJsonOptions);
-                if (payload is null)
-                    return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload", "命令载荷无效",
-                        StatusCodes.Status400BadRequest);
-                try
-                {
-                    var batch = _platform.PublishContentBatch(requester, payload, audit);
-                    return ToJsonResult(L12AdminCommandResult<L12ContentBatchOperationView>.Ok(
-                        new L12ContentBatchOperationView(true, batch, null), "内容批次已发布"));
-                }
-                catch (L12ContentStateConflictException error)
-                {
-                    return L12AdminCommandResult<JsonElement>.Fail("content_version_conflict", error.Message,
-                        StatusCodes.Status409Conflict);
-                }
-            }
-            case "content.rollback.batch":
-            {
-                var payload = command.Payload.Deserialize<L12ContentRollbackCommandPayload>(CommandJsonOptions);
-                if (payload is null)
-                    return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload", "命令载荷无效",
-                        StatusCodes.Status400BadRequest);
-                try
-                {
-                    var batch = _platform.RollbackContentBatch(requester, payload, audit);
-                    return ToJsonResult(L12AdminCommandResult<L12ContentBatchOperationView>.Ok(
-                        new L12ContentBatchOperationView(true, batch, null), "内容批次已回滚"));
-                }
-                catch (L12ContentStateConflictException error)
-                {
-                    return L12AdminCommandResult<JsonElement>.Fail("content_version_conflict", error.Message,
-                        StatusCodes.Status409Conflict);
-                }
-                catch (KeyNotFoundException error)
-                {
-                    return L12AdminCommandResult<JsonElement>.Fail("content_batch_not_found", error.Message,
-                        StatusCodes.Status404NotFound);
-                }
-            }
-            case "tournament.staff.set":
-                return ExecuteApprovedTournament<TournamentStaffCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentsManage,
-                    (payload, expected) => _platform.SetTournamentStaff(requester, payload.TournamentId,
-                        payload.Staff, expected, audit, true));
-            case "tournament.start":
-                return ExecuteApprovedTournament<TournamentTargetCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentsManage,
-                    (payload, expected) => _platform.StartTournament(requester, payload.TournamentId,
-                        expected, audit, true));
-            case "tournament.round.create":
-                return ExecuteApprovedTournament<TournamentTargetCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentsManage,
-                    (payload, expected) => _platform.CreateNextRound(requester, payload.TournamentId,
-                        expected, audit, true));
-            case "tournament.round.start":
-                return ExecuteApprovedTournament<TournamentRoundCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentsManage,
-                    (payload, expected) => _platform.StartTournamentRound(requester, payload.TournamentId,
-                        payload.RoundNumber, expected, audit, true));
-            case "tournament.ruling.apply":
-                return ExecuteApprovedTournament<TournamentRulingCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentRulingsWrite,
-                    (payload, expected) => _platform.ApplyTournamentRuling(requester, payload.TournamentId,
-                        payload.MatchId, payload.Ruling, expected, audit, true));
-            case "tournament.match.reference":
-                return ExecuteApprovedTournament<TournamentReferenceCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentRulingsWrite,
-                    (payload, expected) => _platform.LinkTournamentMatch(requester, payload.TournamentId,
-                        payload.MatchId, payload.Reference, expected, audit, true));
-            case "tournament.complete":
-                return ExecuteApprovedTournament<TournamentTargetCommandPayload, L12TournamentView>(command,
-                    requester, audit, L12Permission.TournamentsManage,
-                    (payload, expected) => _platform.CompleteTournament(requester, payload.TournamentId,
-                        expected, audit, true));
-            case "release.deploy":
-            case "release.rollback":
-            {
-                var payload = command.Payload.Deserialize<L12ReleaseCommandPayload>(CommandJsonOptions);
-                if (payload is null || command.ExpectedVersion is not { } expected)
-                    return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload",
-                        "发布命令载荷无效", StatusCodes.Status400BadRequest);
-                return ToJsonResult(ExecuteReleaseCommand(requester, payload, expected, audit, true));
-            }
-            case "security.audit.archive":
-            {
-                var payload = command.Payload.Deserialize<L12AuditArchiveCommandPayload>(CommandJsonOptions);
-                if (payload is null)
-                    return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload", "命令载荷无效",
-                        StatusCodes.Status400BadRequest);
-                return ToJsonResult(ExecuteAuditArchive(requester, payload, audit, true));
-            }
-            default:
-                return L12AdminCommandResult<JsonElement>.Fail("unsupported_command_type",
-                    "该命令类型不支持审批执行", StatusCodes.Status409Conflict);
-        }
-    }
-
-    private static L12AdminCommandResult<JsonElement> ToJsonResult<T>(L12AdminCommandResult<T> result)
-    {
-        if (!result.Success)
-            return L12AdminCommandResult<JsonElement>.Fail(result.Code, result.Message, result.StatusCode);
-        return new L12AdminCommandResult<JsonElement>(true, result.Code, result.Message,
-            JsonSerializer.SerializeToElement(result.Value, CommandJsonOptions), result.StatusCode);
-    }
-
-    private L12AdminCommandResult<JsonElement> ExecuteApprovedTournament<TPayload, TResult>(
-        L12AdminCommandView command, L12AccountView requester, L12AdminAuditContext audit,
-        L12Permission permission, Func<TPayload, long, TResult> operation)
-    {
-        var payload = command.Payload.Deserialize<TPayload>(CommandJsonOptions);
-        if (payload is null || command.ExpectedVersion is not { } expected)
-            return L12AdminCommandResult<JsonElement>.Fail("invalid_command_payload", "赛事命令载荷无效",
-                StatusCodes.Status400BadRequest);
-        return ToJsonResult(TournamentOperation(requester, audit, permission,
-            () => operation(payload, expected)));
-    }
-
     private static L12AdminCommandResult<L12SessionRevocationResult> SessionCommandResult(
         L12SessionRevocationResult result)
         => result.Found
@@ -3373,6 +3275,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
         _modianImports.Dispose();
         if (_app is not null) await _app.DisposeAsync();

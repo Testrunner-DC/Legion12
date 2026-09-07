@@ -206,6 +206,44 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
+    public void HorusUpdatedTextIsIdenticalAcrossCatalogsAndStructuredViews()
+    {
+        const string expected =
+            "我方 回合1次 可弃置我方战场2张<陵墓守卫> 或 消耗1士气并弃置我方战场2张军团：选择墓地1张兵力不高于2000的【太阳城】军团休整登场。";
+        var serverCard = Catalog.Cards["ST02-M1"];
+
+        Assert.Equal(expected, serverCard.Effect);
+        Assert.Equal($"Ability 1\n{expected}", serverCard.AtomicReference);
+
+        var frontendCatalogPath = FindRepositoryFile("opcgpro-vue", "public", "data", "l12", "cards.st.json");
+        using var frontendCatalog = JsonDocument.Parse(File.ReadAllText(frontendCatalogPath));
+        var frontendCard = frontendCatalog.RootElement.EnumerateArray()
+            .Single(card => card.GetProperty("id").GetString() == "ST02-M1");
+        Assert.Equal(expected, frontendCard.GetProperty("effect").GetString());
+        Assert.Equal($"Ability 1\n{expected}", frontendCard.GetProperty("atomicReference").GetString());
+
+        var game = Create(203901);
+        var abilities = Assert.IsAssignableFrom<IEnumerable<L12AbilityView>>(
+            Invoke(game, "GetAbilities", "ST02-M1"));
+        Assert.Equal(expected, Assert.Single(abilities, ability => ability.Id == "horusRevive").Label);
+
+        Assert.True(L12StructuredCardRules.TryGetStructuredAbilities("ST02-M1", out var structured));
+        Assert.Equal(expected, Assert.Single(structured, ability => ability.Trigger == "active").Text);
+    }
+
+    private static string FindRepositoryFile(params string[] pathParts)
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null;
+             directory = directory.Parent)
+        {
+            var candidate = Path.Combine([directory.FullName, .. pathParts]);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        throw new FileNotFoundException($"无法从测试输出目录定位仓库文件：{Path.Combine(pathParts)}");
+    }
+
+    [Fact]
     public void LustDisasterAddsTroopsAndPrepaysAttackDiscard()
     {
         var game = Create(20401);
@@ -378,6 +416,7 @@ public sealed class StarterBatch3BRegressionTests
 
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(start.Accepted, start.Error);
+        Choose(game, "mode:morale-legions");
         ChooseMany(game, firstCost.InstanceId, secondCost.InstanceId);
         Choose(game, revive.InstanceId);
         Choose(game, "0:1");
@@ -425,6 +464,7 @@ public sealed class StarterBatch3BRegressionTests
 
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(start.Accepted, start.Error);
+        Choose(game, "mode:morale-legions");
         var payment = Prompt(game);
         Assert.Equal("board-target", payment.Data.GetValueOrDefault("choiceMode"));
         Assert.False(morale.Tapped);
@@ -461,6 +501,7 @@ public sealed class StarterBatch3BRegressionTests
 
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(start.Accepted, start.Error);
+        Choose(game, "mode:morale-legions");
         Choose(game, chosen.InstanceId);
         var fieldCost = Prompt(game);
         Assert.Equal("board-target", fieldCost.Data.GetValueOrDefault("choiceMode"));
@@ -495,6 +536,7 @@ public sealed class StarterBatch3BRegressionTests
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
 
         Assert.True(start.Accepted, start.Error);
+        Choose(game, "mode:morale-legions");
         var payment = Prompt(game);
         Assert.Contains("temporary-morale:1", payment.ValidChoices);
         Assert.Contains(ordinary.InstanceId, payment.ValidChoices);
@@ -509,6 +551,119 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Same(revive, player.Field[0][0]);
         Assert.True(revive.Tapped);
         Assert.Contains(secondCost, player.Graveyard);
+    }
+
+    [Fact]
+    public void HorusCanDiscardTwoRestedTombGuardsWithoutMoraleAndUseTheSharedOnceLimit()
+    {
+        var game = Create(204253);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var firstGuard = Card("S01-0212", "horus-tomb-cost-1");
+        var secondGuard = Card("S01-0212", "horus-tomb-cost-2");
+        firstGuard.Tapped = true;
+        secondGuard.Tapped = true;
+        player.Field[0][0] = firstGuard;
+        player.Field[0][1] = secondGuard;
+
+        var abilities = Assert.IsType<List<L12AbilityView>>(
+            Invoke(game, "BuildAbilityViews", player, "ST02-M1", "master-0"));
+        Assert.True(Assert.Single(abilities, ability => ability.Id == "horusRevive").Enabled);
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        var mode = Prompt(game);
+        Assert.Contains("mode:tomb-guards", mode.ValidChoices);
+        Assert.DoesNotContain("mode:morale-legions", mode.ValidChoices);
+        Choose(game, "mode:tomb-guards");
+        ChooseMany(game, firstGuard.InstanceId, secondGuard.InstanceId);
+        Choose(game, firstGuard.InstanceId);
+        Choose(game, "0:0");
+        PassResponses(game);
+
+        Assert.Empty(player.Morale);
+        Assert.Same(firstGuard, player.Field[0][0]);
+        Assert.True(firstGuard.Tapped);
+        Assert.Contains(secondGuard, player.Graveyard);
+        Assert.Contains("active:master-0:horusRevive", player.UsedAbilities);
+
+        var repeated = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.False(repeated.Accepted);
+        Assert.Contains("已经发动", repeated.Error);
+    }
+
+    [Fact]
+    public void HorusTombGuardCostCancellationAndDuplicateModeSubmissionDoNotPayCosts()
+    {
+        var game = Create(204254);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var firstGuard = Card("S01-0212", "horus-tomb-cancel-1");
+        var secondGuard = Card("S01-0212", "horus-tomb-cancel-2");
+        firstGuard.Tapped = true;
+        secondGuard.Tapped = true;
+        player.Field[0][0] = firstGuard;
+        player.Field[0][1] = secondGuard;
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        var mode = Prompt(game);
+        var selectMode = game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:tomb-guards"));
+        Assert.True(selectMode.Accepted, selectMode.Error);
+        var costPrompt = Prompt(game);
+
+        var duplicate = game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:tomb-guards"));
+        Assert.False(duplicate.Accepted);
+        Assert.Same(costPrompt, Prompt(game));
+
+        ChooseMany(game, firstGuard.InstanceId, secondGuard.InstanceId);
+        var target = Prompt(game);
+        Assert.Contains(firstGuard.InstanceId, target.ValidChoices);
+        Assert.Contains(secondGuard.InstanceId, target.ValidChoices);
+        Assert.Contains("skip", target.ValidChoices);
+        Choose(game, "skip");
+
+        Assert.Same(firstGuard, player.Field[0][0]);
+        Assert.Same(secondGuard, player.Field[0][1]);
+        Assert.Empty(player.Graveyard);
+        Assert.Empty(player.UsedAbilities);
+        Assert.Empty(game.State.PendingActivations);
+    }
+
+    [Fact]
+    public void HorusMoraleModeCanRestAndThenDiscardTheSameTombGuardResource()
+    {
+        var game = Create(204255);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST02-M1");
+        var guard = Card("S01-0212", "horus-shared-tomb-resource");
+        var secondCost = Card("ST01-02", "horus-shared-tomb-second-cost");
+        player.Field[0][0] = guard;
+        player.Field[0][1] = secondCost;
+
+        var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        var mode = Prompt(game);
+        Assert.DoesNotContain("mode:tomb-guards", mode.ValidChoices);
+        Assert.Contains("mode:morale-legions", mode.ValidChoices);
+        Choose(game, "mode:morale-legions");
+
+        var fieldCost = Prompt(game);
+        Assert.Equal("board-target", fieldCost.Data.GetValueOrDefault("choiceMode"));
+        Assert.Contains(guard.InstanceId, fieldCost.ValidChoices);
+        ChooseMany(game, guard.InstanceId, secondCost.InstanceId);
+        Choose(game, guard.InstanceId);
+        Choose(game, "0:0");
+        PassResponses(game);
+
+        Assert.Same(guard, player.Field[0][0]);
+        Assert.True(guard.Tapped);
+        Assert.Contains(secondCost, player.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("消耗1士气并弃置2张我方军团", StringComparison.Ordinal));
     }
 
     [Fact]

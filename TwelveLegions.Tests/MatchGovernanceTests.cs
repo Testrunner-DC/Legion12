@@ -80,6 +80,88 @@ public sealed class MatchGovernanceTests
     }
 
     [Fact]
+    public async Task MatchAllowsOneDrawRequestAcrossBothPlayersTerminalStatesReloadAndNewMatches()
+    {
+        var path = Path.Combine(TempDirectory("draw-once"), "platform.json");
+        var store = new L12PlatformStore(path);
+        var first = store.Register("draw-once-first", "Password123!").Account!;
+        var second = store.Register("draw-once-second", "Password123!").Account!;
+        var now = DateTimeOffset.UtcNow;
+
+        var concurrent = await Task.WhenAll(Enumerable.Range(0, 24).Select(index => Task.Run(() =>
+        {
+            var requester = index % 2 == 0 ? first : second;
+            var responder = index % 2 == 0 ? second : first;
+            try
+            {
+                return store.CreateMatchDrawRequest($"draw-once-race-{index:D2}", "match-draw-once-race",
+                    "ONCE01", "casual", requester, responder, $"并发申请 {index}", now.AddMilliseconds(index));
+            }
+            catch (L12MatchGovernanceConflictException error)
+            {
+                Assert.Equal("draw_request_limit_reached", error.Code);
+                return null;
+            }
+        })));
+        var created = Assert.Single(concurrent.OfType<L12MatchDrawRequestView>());
+        var createdRequester = created.RequesterId == first.Id ? first : second;
+        var createdResponder = created.ResponderId == first.Id ? first : second;
+
+        var idempotent = store.CreateMatchDrawRequest(created.Id, created.MatchId, created.RoomCode,
+            created.ModeId, createdRequester, createdResponder, created.Reason, now.AddSeconds(1));
+        Assert.Equal(created.Id, idempotent.Id);
+        Assert.Equal("pending", idempotent.Status);
+        store.ResolveMatchDrawRequest(created.MatchId, created.Id, createdResponder, false, now.AddSeconds(2));
+
+        var requesterRetry = Assert.Throws<L12MatchGovernanceConflictException>(() =>
+            store.CreateMatchDrawRequest("draw-once-after-reject-requester", created.MatchId,
+                created.RoomCode, created.ModeId, createdRequester, createdResponder,
+                "拒绝后由原申请方再次申请", now.AddSeconds(3)));
+        Assert.Equal("draw_request_limit_reached", requesterRetry.Code);
+        var responderRetry = Assert.Throws<L12MatchGovernanceConflictException>(() =>
+            store.CreateMatchDrawRequest("draw-once-after-reject-responder", created.MatchId,
+                created.RoomCode, created.ModeId, createdResponder, createdRequester,
+                "拒绝后由另一方再次申请", now.AddSeconds(3)));
+        Assert.Equal("draw_request_limit_reached", responderRetry.Code);
+
+        var reloaded = new L12PlatformStore(path);
+        var recoveredRetry = Assert.Throws<L12MatchGovernanceConflictException>(() =>
+            reloaded.CreateMatchDrawRequest("draw-once-after-reload", created.MatchId,
+                created.RoomCode, created.ModeId, createdRequester, createdResponder,
+                "服务重启后再次申请", now.AddSeconds(4)));
+        Assert.Equal("draw_request_limit_reached", recoveredRetry.Code);
+
+        var accepted = reloaded.CreateMatchDrawRequest("draw-once-accepted", "match-draw-once-accepted",
+            "ONCE02", "ranked", first, second, "接受场景", now);
+        reloaded.ResolveMatchDrawRequest(accepted.MatchId, accepted.Id, second, true, now.AddSeconds(1));
+        var acceptedRetry = Assert.Throws<L12MatchGovernanceConflictException>(() =>
+            reloaded.CreateMatchDrawRequest("draw-once-after-accepted", accepted.MatchId,
+                accepted.RoomCode, accepted.ModeId, first, second, "接受后再次申请", now.AddSeconds(2)));
+        Assert.Equal("draw_request_limit_reached", acceptedRetry.Code);
+
+        var expired = reloaded.CreateMatchDrawRequest("draw-once-expired", "match-draw-once-expired",
+            "ONCE03", "casual", first, second, "过期场景", now);
+        Assert.Equal("expired", reloaded.MatchDrawRequestForClient(expired.MatchId, first.Id,
+            now + L12PlatformStore.MatchDrawRequestLifetime + TimeSpan.FromSeconds(1))!.Status);
+        var expiredRetry = Assert.Throws<L12MatchGovernanceConflictException>(() =>
+            reloaded.CreateMatchDrawRequest("draw-once-after-expired", expired.MatchId,
+                expired.RoomCode, expired.ModeId, second, first, "过期后再次申请", now.AddMinutes(6)));
+        Assert.Equal("draw_request_limit_reached", expiredRetry.Code);
+
+        var cancelled = reloaded.CreateMatchDrawRequest("draw-once-cancelled", "match-draw-once-cancelled",
+            "ONCE04", "casual", first, second, "取消场景", now);
+        reloaded.CancelOpenMatchDrawRequests(cancelled.MatchId, now.AddSeconds(1), "对局已结束");
+        var cancelledRetry = Assert.Throws<L12MatchGovernanceConflictException>(() =>
+            reloaded.CreateMatchDrawRequest("draw-once-after-cancelled", cancelled.MatchId,
+                cancelled.RoomCode, cancelled.ModeId, second, first, "取消后再次申请", now.AddSeconds(2)));
+        Assert.Equal("draw_request_limit_reached", cancelledRetry.Code);
+
+        var nextMatch = reloaded.CreateMatchDrawRequest("draw-once-next-match", "match-draw-once-next",
+            "ONCE05", "casual", second, first, "下一局可正常申请", now.AddMinutes(7));
+        Assert.Equal("pending", nextMatch.Status);
+    }
+
+    [Fact]
     public void PendingDrawExpiresAndCannotBeResolvedAfterReconnectProjection()
     {
         var store = new L12PlatformStore(Path.Combine(TempDirectory("draw-expiry"), "platform.json"));
@@ -228,6 +310,86 @@ public sealed class MatchGovernanceTests
         var admin = platform.Login("Admin", "L12master").Account!;
         Assert.Equal("accepted", Assert.Single(platform.MatchDrawRequests(admin,
             search: matchId)).Status);
+    }
+
+    [Fact]
+    public async Task RejectedDrawConsumesRoomOpportunityForBothPlayersWithoutBlockingOriginalResponse()
+    {
+        var directory = TempDirectory("room-draw-once");
+        var catalog = Catalog;
+        var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
+            officialCards: catalog.Cards);
+        var first = platform.Register("room-once-first", "Password123!").Account!;
+        var second = platform.Register("room-once-second", "Password123!").Account!;
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(catalog, recorder, platform);
+        var firstSession = Guid.NewGuid();
+        var secondSession = Guid.NewGuid();
+        manager.Connect(firstSession, first.Id, first.Username);
+        manager.Connect(secondSession, second.Id, second.Username);
+        var roomCode = MessageJson(manager.CreateRoom(firstSession)[0]).GetProperty("roomCode").GetString()!;
+        manager.JoinRoom(secondSession, roomCode);
+        await manager.SetReadyAsync(firstSession, true);
+        var started = await manager.SetReadyAsync(secondSession, true);
+        var matchId = MessageJson(started.First(message => message.SessionId == firstSession
+                && MessageJson(message).GetProperty("type").GetString() == "gameState"))
+            .GetProperty("state").GetProperty("matchId").GetString()!;
+
+        const string requestId = "draw-room-once-original";
+        const string reason = "本局出现无法继续的同步问题";
+        var requested = await manager.RequestMatchDrawAsync(firstSession, requestId, reason);
+        var incoming = MessageJson(requested.First(message => message.SessionId == secondSession
+            && MessageJson(message).GetProperty("type").GetString() == "gameState"))
+            .GetProperty("matchGovernance");
+        Assert.False(incoming.GetProperty("canRequestDraw").GetBoolean());
+        Assert.True(incoming.GetProperty("drawRequest").GetProperty("viewerCanRespond").GetBoolean());
+
+        var pendingBypass = MessageJson(Assert.Single(await manager.RequestMatchDrawAsync(secondSession,
+            "draw-room-once-pending-bypass", "另一方尝试绕过待处理申请")));
+        Assert.Equal("rejected", pendingBypass.GetProperty("status").GetString());
+        Assert.Equal("draw_request_limit_reached", pendingBypass.GetProperty("code").GetString());
+
+        var rejected = await manager.ResolveMatchDrawAsync(secondSession, requestId, false);
+        var rejectedState = MessageJson(rejected.First(message => message.SessionId == firstSession
+            && MessageJson(message).GetProperty("type").GetString() == "gameState"));
+        var governance = rejectedState.GetProperty("matchGovernance");
+        Assert.False(governance.GetProperty("canRequestDraw").GetBoolean());
+        Assert.Contains("仅可发起一次", governance.GetProperty("drawUnavailableReason").GetString());
+        Assert.Equal("rejected", governance.GetProperty("drawRequest").GetProperty("status").GetString());
+
+        foreach (var (sessionId, nextRequestId) in new[]
+                 {
+                     (firstSession, "draw-room-once-first-retry"),
+                     (secondSession, "draw-room-once-second-retry"),
+                 })
+        {
+            var retry = MessageJson(Assert.Single(await manager.RequestMatchDrawAsync(sessionId,
+                nextRequestId, "终态后尝试再次申请")));
+            Assert.Equal("rejected", retry.GetProperty("status").GetString());
+            Assert.Equal("draw_request_limit_reached", retry.GetProperty("code").GetString());
+        }
+
+        var idempotentRequest = await manager.RequestMatchDrawAsync(firstSession, requestId, reason);
+        Assert.Contains(idempotentRequest, message => message.SessionId == firstSession
+            && MessageJson(message).TryGetProperty("status", out var status)
+            && status.GetString() == "rejected");
+        var idempotentResponse = await manager.ResolveMatchDrawAsync(secondSession, requestId, false);
+        Assert.Contains(idempotentResponse, message => message.SessionId == secondSession
+            && MessageJson(message).TryGetProperty("status", out var status)
+            && status.GetString() == "rejected");
+
+        manager.Disconnect(firstSession);
+        var recoveredSession = Guid.NewGuid();
+        await manager.ConnectAsync(recoveredSession, first.Id, first.Username);
+        var recovered = await manager.RecoveryStateWithAckAsync(recoveredSession, recovered: true);
+        var recoveredGovernance = MessageJson(recovered.First(message => message.SessionId == recoveredSession
+                && MessageJson(message).GetProperty("type").GetString() == "gameState"))
+            .GetProperty("matchGovernance");
+        Assert.False(recoveredGovernance.GetProperty("canRequestDraw").GetBoolean());
+        Assert.Contains("仅可发起一次", recoveredGovernance.GetProperty("drawUnavailableReason").GetString());
+        var admin = platform.Login("Admin", "L12master").Account!;
+        Assert.Single(platform.MatchDrawRequests(admin, search: matchId));
     }
 
     [Fact]

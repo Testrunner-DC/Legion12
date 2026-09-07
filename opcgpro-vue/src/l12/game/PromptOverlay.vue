@@ -167,6 +167,7 @@ function naturalChoiceLabel(value: string | undefined, id: string) {
   return normalized && normalized !== id && !isInternalChoiceValue(normalized) ? normalized : null
 }
 function label(id: string) {
+  if (isPureEffectDecision.value) return isDeclineChoice(id) ? '不发动' : '发动'
   if (isEffectDecision.value) {
     if (['yes', 'mode:use'].includes(id.toLowerCase())) return '发动'
     if (['no', 'mode:none'].includes(id.toLowerCase())) return '不发动'
@@ -276,12 +277,18 @@ const showPreviewCard = computed(() => Boolean(previewCardId.value)
   && ['handled-card', 'information-card'].includes(previewPresentation.value))
 const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])
 function isDeclineChoice(choice: string) {
-  return declineChoices.has(choice.trim().toLowerCase()) || label(choice).trim() === '不响应'
+  const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
+  return declineChoices.has(choice.trim().toLowerCase()) || explicitLabel === '不响应' || explicitLabel === '不发动'
 }
 const orderedEffectChoices = computed(() => [
   ...currentChoices.value.filter(choice => !isDeclineChoice(choice)),
   ...currentChoices.value.filter(isDeclineChoice),
 ])
+const isPureEffectDecision = computed(() => Boolean(isEffectDecision.value
+  && prompt.value?.minChoose === 1 && prompt.value?.maxChoose === 1
+  && currentChoices.value.length === 2
+  && currentChoices.value.some(choice => isDeclineChoice(choice))
+  && currentChoices.value.some(choice => !isDeclineChoice(choice))))
 const displayedChoices = computed(() => {
   if (prompt.value?.kind === 'option') return orderedEffectChoices.value
   const listed = prompt.value?.data?.displayCardIds?.split('|').filter(Boolean)
@@ -333,7 +340,7 @@ const decisionEffectText = computed(() => prompt.value?.data?.effectText?.trim()
 function toggle(id: string) {
   const p = prompt.value
   if (!p || !p.validChoices.includes(id)) return
-  if (p.data?.choiceMode === 'instant') { resolveChoice(id); return }
+  if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }
   const index = selected.value.indexOf(id)
   if (index >= 0) { selected.value.splice(index, 1); return }
   if (p.maxChoose === 1) selected.value = [id]
@@ -474,7 +481,7 @@ function kindLabel() {
 
       <section v-else-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="prompt.text">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
-          <small>{{ kindLabel() }}</small><h2>{{ isEffectDecision ? (prompt.data?.sourceName || prompt.text) : prompt.text }}</h2>
+          <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ isEffectDecision ? (prompt.data?.sourceName || prompt.text) : prompt.text }}</h2>
           <p v-if="isEffectDecision" class="effect-decision-text l12-effect-body">{{ decisionEffectText }}</p>
           <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
         </header>
@@ -572,7 +579,7 @@ function kindLabel() {
             </button>
           </template>
         </div>
-        <footer class="prompt-action-footer">
+        <footer v-if="!isPureEffectDecision" class="prompt-action-footer">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
             <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
               :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"

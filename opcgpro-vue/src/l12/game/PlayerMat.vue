@@ -463,8 +463,8 @@ function beginCardAbility(card: Card) {
 .resource-morale-stack .morale-orb{width:32px;height:32px;min-width:32px}.resource-morale-stack .morale-orb img{width:21px;height:21px}.resource-morale-stack .morale-orb.temporary-morale img{width:23px;height:23px}
 .side-my{--resource-accent:#53bdc5}.side-opponent{--resource-accent:#c9505a}
 .resource-morale-count{height:34px;min-height:34px;padding:0 5px;border-color:color-mix(in srgb,var(--resource-accent,#d2c8a5) 48%,#5b625f);background:rgba(7,10,11,.72);box-shadow:none;color:#f0eee6;font-size:max(16px,var(--l12-board-readable,14px))}
-.l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 140px}.mat-piles{transform:translateX(-26px)}
-.resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:140px;max-width:140px}.resource-zone{gap:8px}.resource-morale-summary{grid-template-columns:60px 80px;height:38px}.resource-morale-label{min-width:60px;height:38px;padding:0 8px}.resource-morale-count{width:80px;max-width:80px;height:38px;min-height:38px;padding:0 10px}.resource-morale-stack{min-height:52px;justify-content:flex-start;gap:8px 12px;padding:9px}
+.l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 156px}.mat-piles{transform:translateX(-30px)}
+.resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}.resource-zone{gap:8px}.resource-morale-summary{grid-template-columns:68px 88px;height:38px}.resource-morale-label{min-width:68px;height:38px;padding:0 10px}.resource-morale-count{width:88px;max-width:88px;height:38px;min-height:38px;padding:0 12px}.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}
 </style>
 
 <style scoped>

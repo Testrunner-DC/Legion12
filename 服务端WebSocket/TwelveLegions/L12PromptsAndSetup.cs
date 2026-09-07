@@ -186,16 +186,20 @@ public sealed partial class L12GameEngine
         }
 
         var choiceSet = validChoices.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var isDecision = (choiceSet.SetEquals(["yes", "no"])
-                || choiceSet.SetEquals(["mode:use", "mode:none"]))
-            && kind is "optional" or "option";
+        var hasDecisionPresentation = string.Equals(data.GetValueOrDefault("uiPattern"),
+            "effect-decision", StringComparison.OrdinalIgnoreCase);
+        var hasBinaryDecision = TryGetBinaryEffectDecisionChoices(validChoices,
+            out var affirmativeChoice, out var declineChoice);
+        var isDecision = kind is "optional" or "option"
+            && hasBinaryDecision
+            && (hasDecisionPresentation
+                || choiceSet.SetEquals(["yes", "no"])
+                || choiceSet.SetEquals(["mode:use", "mode:none"]));
         if (isDecision)
         {
             data["uiPattern"] = "effect-decision";
-            data["yes"] = "发动";
-            data["mode:use"] = "发动";
-            data["no"] = "不发动";
-            data["mode:none"] = "不发动";
+            data[affirmativeChoice] = "发动";
+            data[declineChoice] = "不发动";
 
             if (stackItem is null)
             {
@@ -246,6 +250,23 @@ public sealed partial class L12GameEngine
         if (displayed.Length > 0) data["displayCardIds"] = string.Join('|', displayed);
     }
 
+    private static bool TryGetBinaryEffectDecisionChoices(IReadOnlyCollection<string> choices,
+        out string affirmativeChoice, out string declineChoice)
+    {
+        var distinctChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var decline = distinctChoices.FirstOrDefault(choice =>
+            choice.Equals("mode:none", StringComparison.OrdinalIgnoreCase)
+            || choice.Equals("no", StringComparison.OrdinalIgnoreCase));
+        declineChoice = decline ?? string.Empty;
+        affirmativeChoice = decline is null
+            ? string.Empty
+            : distinctChoices.FirstOrDefault(choice =>
+                !choice.Equals(decline, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
+        return distinctChoices.Length == 2
+            && !string.IsNullOrWhiteSpace(declineChoice)
+            && !string.IsNullOrWhiteSpace(affirmativeChoice);
+    }
+
     private static readonly IReadOnlyDictionary<string, string> CommonPlayerChoiceLabels
         = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -288,6 +309,8 @@ public sealed partial class L12GameEngine
             ["mode:summon"] = "使已声明军团登场",
             ["mode:shock"] = "所选军团本回合震击伤害+2000",
             ["mode:ranged"] = "所选远程军团本回合进攻时兵力+2000",
+            ["mode:tomb-guards"] = "弃置我方战场2张〈陵墓守卫〉",
+            ["mode:morale-legions"] = "消耗士气并弃置我方战场2张军团",
             ["row:0"] = "选择前排", ["row:1"] = "选择后排",
             ["pay:god-power"] = "支付神力", ["buff:strong"] = "获得强攻", ["buff:shock"] = "获得震击",
         };

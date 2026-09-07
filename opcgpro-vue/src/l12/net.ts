@@ -44,7 +44,10 @@ const initialEndpoint = location.protocol === 'https:' && !configuredEndpoint
   ? defaultEndpoint
   : (storedEndpoint || defaultEndpoint)
 
+export const CONNECTION_HANDSHAKE_TIMEOUT_MS = 10_000
 let connectPromise: Promise<void> | null = null
+let cancelPendingConnect: ((reason?: string) => void) | null = null
+let connectionAttemptSerial = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let matchmakingPollTimer: ReturnType<typeof setInterval> | null = null
@@ -254,52 +257,111 @@ export function connect(): Promise<void> {
   syncGameReentry()
   l12State.endpoint = normalizeEndpoint(l12State.endpoint)
   localStorage.setItem('l12-endpoint', l12State.endpoint)
+  const attempt = ++connectionAttemptSerial
   const pending = new Promise<void>((resolve, reject) => {
-    const socket = new WebSocket(l12State.endpoint)
+    let socket: WebSocket
     let settled = false
+    let failed = false
+    let claimedGeneration: number | null = null
+    let handshakeTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearHandshakeTimer = () => {
+      if (handshakeTimer !== null) window.clearTimeout(handshakeTimer)
+      handshakeTimer = null
+    }
+    const isCurrentAttempt = () => connectionAttemptSerial === attempt && l12State.socket === socket
+    const settle = (error?: Error) => {
+      if (settled) return
+      settled = true
+      clearHandshakeTimer()
+      if (cancelPendingConnect === cancel) cancelPendingConnect = null
+      if (error) reject(error)
+      else resolve()
+    }
+    const cancel = (reason = '连接已取消') => {
+      failed = true
+      settle(new Error(reason))
+    }
+
+    try { socket = new WebSocket(l12State.endpoint) }
+    catch (error) {
+      clearHeartbeat()
+      l12State.socket = null
+      l12State.status = 'offline'
+      l12State.connectionIssue = 'websocket'
+      l12State.recoveryPhase = 'disconnected'
+      l12State.notice = '暂时无法连接服务器，正在自动重试。'
+      syncGameReentry()
+      scheduleReconnect()
+      reject(error instanceof Error ? error : new Error(l12State.notice))
+      return
+    }
+    cancelPendingConnect = cancel
     l12State.socket = socket
+    handshakeTimer = window.setTimeout(() => {
+      if (!isCurrentAttempt() || settled || failed) return
+      failed = true
+      clearHeartbeat()
+      l12State.status = 'offline'
+      l12State.connectionIssue = 'websocket'
+      l12State.recoveryPhase = 'disconnected'
+      l12State.notice = '连接握手超时，正在自动重试。'
+      syncGameReentry()
+      settle(new Error(l12State.notice))
+      scheduleReconnect()
+      socket.close(4000, 'handshake timeout')
+    }, CONNECTION_HANDSHAKE_TIMEOUT_MS)
     socket.onopen = () => {
+      if (!isCurrentAttempt() || failed) {
+        socket.close(1000, 'stale connection attempt')
+        return
+      }
       l12State.recoveryPhase = 'authenticating'
       socket.send(JSON.stringify({ type: 'hello', authToken }))
     }
     socket.onmessage = (event) => {
       // 新连接已经接管后，丢弃旧 WebSocket 迟到的消息，避免恢复快照被旧状态回滚。
-      if (l12State.socket !== socket) return
+      if (!isCurrentAttempt() || failed) return
       const message = JSON.parse(String(event.data))
       if (message.type === 'session') {
+        claimedGeneration = Number(message.connectionGeneration || 0)
         l12State.sessionId = message.sessionId
         l12State.nickname = message.name
-        l12State.connectionGeneration = Number(message.connectionGeneration || 0)
+        l12State.connectionGeneration = claimedGeneration
         l12State.recoveryPhase = 'session-claimed'
         l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
         startHeartbeat(socket)
         syncGameReentry()
       }
       else if (message.type === 'authenticationRequired') {
+        failed = true
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'authentication'
         l12State.recoveryPhase = 'authentication-rejected'
         l12State.notice = message.message || '登录状态已失效，请重新登录账号'
         syncGameReentry()
-        if (!settled) { settled = true; reject(new Error(l12State.notice)) }
+        settle(new Error(l12State.notice))
         socket.close(4001, 'authentication rejected')
       }
       else if (message.type === 'passwordChangeRequired' || message.type === 'connectionRejected') {
+        failed = true
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'authentication'
         l12State.recoveryPhase = 'authentication-rejected'
         l12State.notice = message.message || '连接认证未完成'
         syncGameReentry()
-        if (!settled) { settled = true; reject(new Error(l12State.notice)) }
+        settle(new Error(l12State.notice))
         socket.close(4001, String(message.reason || 'connection rejected').slice(0, 120))
       }
       else if (message.type === 'sessionSuperseded') {
+        failed = true
         automaticConnectionEnabled = false
         l12State.connectionIssue = 'superseded'
         l12State.recoveryPhase = 'superseded'
         l12State.notice = message.message || '此账号已由另一个页面接管连接'
         syncGameReentry()
-        if (!settled) { settled = true; reject(new Error(l12State.notice)) }
+        settle(new Error(l12State.notice))
+        socket.close(4002, 'session superseded')
       }
       else if (message.type === 'pong') l12State.lastPongAt = new Date().toISOString()
       else if (message.type === 'roomState') {
@@ -401,7 +463,7 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'recoveryComplete') {
         const generation = Number(message.connectionGeneration || 0)
-        if (generation !== l12State.connectionGeneration) return
+        if (claimedGeneration === null || generation !== claimedGeneration || generation !== l12State.connectionGeneration) return
         const expectedMatchId = String(message.matchId || '')
         const expectedRevision = message.recoveryRevision == null ? null : Number(message.recoveryRevision)
         const snapshotMatches = l12State.leavingRoom || !expectedMatchId || (l12State.game?.matchId === expectedMatchId
@@ -436,7 +498,7 @@ export function connect(): Promise<void> {
         l12State.notice = ''
         if (l12State.leavingRoom) socket.send(JSON.stringify({ type: 'leaveRoom' }))
         syncGameReentry()
-        if (!settled) { settled = true; resolve() }
+        settle()
       }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
         || message.type === 'tournamentRoomRejected' || message.type === 'tournamentResultPending') {
@@ -447,15 +509,22 @@ export function connect(): Promise<void> {
       }
     }
     socket.onerror = () => {
-      if (l12State.socket !== socket) return
+      if (!isCurrentAttempt() || failed) return
+      failed = true
+      clearHeartbeat()
       l12State.status = 'offline'
       l12State.connectionIssue = 'websocket'
       l12State.notice = '暂时无法连接服务器，正在自动重试。'
+      l12State.recoveryPhase = 'disconnected'
       syncGameReentry()
-      if (!settled) { settled = true; reject(new Error(l12State.notice)) }
+      settle(new Error(l12State.notice))
+      scheduleReconnect()
+      socket.close(4000, 'websocket error')
     }
     socket.onclose = (event) => {
-      if (l12State.socket === socket) {
+      if (isCurrentAttempt()) {
+        failed = true
+        clearHandshakeTimer()
         clearHeartbeat()
         clearMatchmakingPolling()
         clearMatchmakingRecovery()
@@ -471,13 +540,16 @@ export function connect(): Promise<void> {
         l12State.pendingAction = false
         l12State.gmEnabled = false
         syncGameReentry()
-        if (!settled) { settled = true; reject(new Error(l12State.notice || '连接已关闭')) }
+        settle(new Error(l12State.notice || '连接已关闭'))
         if (![4001, 4002, 1008].includes(event.code)) scheduleReconnect()
       }
     }
   })
-  connectPromise = pending.finally(() => { connectPromise = null })
-  return connectPromise
+  const tracked = pending.finally(() => {
+    if (connectPromise === tracked) connectPromise = null
+  })
+  connectPromise = tracked
+  return tracked
 }
 
 export function startAutomaticConnection() {
@@ -496,12 +568,18 @@ export function stopAutomaticConnection() {
 
 export function disconnect() {
   automaticConnectionEnabled = false
+  connectionAttemptSerial += 1
   clearReconnectTimer()
   clearHeartbeat()
   clearMatchmakingPolling()
   clearMatchmakingRecovery()
-  l12State.socket?.close()
+  const socket = l12State.socket
   l12State.socket = null
+  const cancel = cancelPendingConnect
+  cancelPendingConnect = null
+  connectPromise = null
+  cancel?.()
+  socket?.close()
   l12State.status = 'offline'
   l12State.recoveryPhase = 'idle'
   l12State.connectionIssue = 'none'

@@ -248,10 +248,6 @@ public sealed record L12AdminCommandResult<T>(
     public static L12AdminCommandResult<T> Ok(T value, string message = "操作成功")
         => new(true, "ok", message, value, StatusCodes.Status200OK);
 
-    public static L12AdminCommandResult<T> Accepted(L12AdminCommandView command, bool replayed = false)
-        => new(true, "approval_required", "命令已提交审批", default, StatusCodes.Status202Accepted,
-            replayed, true, command);
-
     public static L12AdminCommandResult<T> Fail(string code, string message, int statusCode,
         L12AdminCommandView? command = null)
         => new(false, code, message, default, statusCode, Command: command);
@@ -270,8 +266,7 @@ public sealed class L12AdminCommandBus
         Func<L12AdminCommandEnvelope<TPayload>, L12AdminCommandResult<T>> execute,
         Func<L12AdminCommandEnvelope<TPayload>, L12AdminCommandResult<T>>? dryRun = null,
         L12AdminCommandRisk risk = L12AdminCommandRisk.Low,
-        Func<L12AccountView, bool>? scopedAuthorization = null,
-        bool requiresApproval = true)
+        Func<L12AccountView, bool>? scopedAuthorization = null)
     {
         if (!(scopedAuthorization?.Invoke(command.Actor)
               ?? L12Authorization.HasPermission(command.Actor, permission)))
@@ -337,15 +332,6 @@ public sealed class L12AdminCommandBus
 
             var stored = _platform.PersistAdminCommand(normalized, L12Authorization.Key(permission), risk,
                 signature, payloadJson, "requested");
-            if (risk == L12AdminCommandRisk.High && requiresApproval && !normalized.DryRun)
-            {
-                _platform.PersistAdminApprovalRequest(stored.Id, normalized.Actor);
-                _platform.RecordCommandOutcome(normalized.Actor,
-                    normalized.AuditContext with { Outcome = "pending", Reason = "approval-required" },
-                    normalized.Type, normalized.Scope, "approval-required");
-                return L12AdminCommandResult<T>.Accepted(stored.View);
-            }
-
             var invoke = normalized.DryRun
                 ? dryRun ?? (_ => L12AdminCommandResult<T>.Fail("dry_run_not_supported", "该命令暂不支持干运行",
                     StatusCodes.Status400BadRequest))
@@ -382,10 +368,7 @@ public sealed class L12AdminCommandBus
     public L12AdminCommandResult<L12AdminCommandView> Review(
         string commandId,
         L12AccountView reviewer,
-        L12AdminApprovalDecision decision,
         L12AdminAuditContext reviewContext,
-        Func<L12AdminCommandView, L12AccountView, L12AdminAuditContext,
-            L12AdminCommandResult<JsonElement>> execute,
         L12Permission reviewPermission = L12Permission.AdminApprovalsReview,
         Func<L12AdminCommandView, L12AccountView, bool>? canReviewScope = null)
     {
@@ -397,120 +380,25 @@ public sealed class L12AdminCommandBus
                 "当前账号没有审批权限", StatusCodes.Status403Forbidden);
         }
 
-        var normalizedDecision = decision.Decision?.Trim().ToLowerInvariant();
-        if (normalizedDecision is not ("approve" or "reject"))
-            return L12AdminCommandResult<L12AdminCommandView>.Fail("invalid_approval_decision",
-                "审批决定必须为 approve 或 reject", StatusCodes.Status400BadRequest);
-
-        return _platform.ExecuteAdminTransaction(() =>
+        var stored = _platform.AdminCommandRecord(commandId);
+        if (stored is null)
+            return L12AdminCommandResult<L12AdminCommandView>.Fail("command_not_found", "命令不存在",
+                StatusCodes.Status404NotFound);
+        if (canReviewScope is not null && !canReviewScope(stored.View, reviewer))
         {
-            var stored = _platform.AdminCommandRecord(commandId);
-            var approval = _platform.AdminApproval(commandId);
-            if (stored is null || approval is null)
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("command_not_found", "待审批命令不存在",
-                    StatusCodes.Status404NotFound);
+            _platform.RecordAuthorizationDenied(reviewer,
+                reviewContext with { CommandId = commandId, Outcome = "denied", Reason = "scope-denied" },
+                L12Authorization.Key(reviewPermission), "scope-denied");
+            return L12AdminCommandResult<L12AdminCommandView>.Fail("scope_denied",
+                "当前账号不在该命令的作用域内", StatusCodes.Status403Forbidden, stored.View);
+        }
 
-            if (stored.View.Risk == "high" && !_platform.HighRiskAuditAvailable())
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("audit_unavailable",
-                    "独立审计不可用，高风险审批已失败关闭", StatusCodes.Status503ServiceUnavailable, stored.View);
-
-            if (canReviewScope is not null && !canReviewScope(stored.View, reviewer))
-            {
-                _platform.RecordAuthorizationDenied(reviewer,
-                    reviewContext with { CommandId = commandId, Outcome = "denied", Reason = "scope-denied" },
-                    L12Authorization.Key(reviewPermission), "scope-denied");
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("scope_denied",
-                    "当前账号不在该命令的审批作用域内", StatusCodes.Status403Forbidden, stored.View);
-            }
-
-            if (stored.View.Status != "requested" || approval.Status != "requested")
-                return ReplayReview(stored.View);
-
-            if (stored.View.ActorId == reviewer.Id)
-            {
-                _platform.RecordAuthorizationDenied(reviewer,
-                    reviewContext with { CommandId = commandId, Outcome = "denied", Reason = "self-review-forbidden" },
-                    L12Authorization.Key(reviewPermission), "self-review-forbidden");
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("self_review_forbidden",
-                    "命令申请人不能审批自己的命令", StatusCodes.Status403Forbidden, stored.View);
-            }
-
-            if (normalizedDecision == "reject")
-            {
-                _platform.PersistAdminApprovalDecision(commandId, reviewer, "rejected", decision.Reason);
-                var rejection = L12AdminCommandResult<JsonElement>.Fail("approval_rejected",
-                    "命令已被审批人拒绝", StatusCodes.Status409Conflict);
-                stored = _platform.PersistAdminCommandResult(commandId, rejection, "rejected",
-                    string.IsNullOrWhiteSpace(decision.Reason) ? "approval-rejected" : decision.Reason);
-                _platform.RecordApprovalOutcome(reviewer, stored.View, reviewContext, "rejected", decision.Reason);
-                return L12AdminCommandResult<L12AdminCommandView>.Ok(stored.View, "命令已拒绝");
-            }
-
-            var requester = _platform.Account(stored.View.ActorId);
-            if (requester is null || !L12Authorization.TryFromKey(stored.View.Permission, out var requestedPermission)
-                || !L12Authorization.HasPermission(requester, requestedPermission))
-            {
-                _platform.PersistAdminApprovalDecision(commandId, reviewer, "approved", decision.Reason);
-                var revoked = L12AdminCommandResult<JsonElement>.Fail("requester_permission_revoked",
-                    "申请人的原始权限已失效", StatusCodes.Status409Conflict);
-                stored = _platform.PersistAdminCommandResult(commandId, revoked, "failed",
-                    "requester-permission-revoked");
-                _platform.RecordApprovalOutcome(reviewer, stored.View, reviewContext, "failed",
-                    "requester-permission-revoked");
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("requester_permission_revoked",
-                    "申请人的原始权限已失效", StatusCodes.Status409Conflict, stored.View);
-            }
-
-            if (stored.View.ExpectedVersion is { } expectedVersion
-                && _platform.AdminCommandResourceVersion(stored.View.Type, stored.View.Scope) is { } currentVersion
-                && expectedVersion != currentVersion)
-            {
-                _platform.PersistAdminApprovalDecision(commandId, reviewer, "approved", decision.Reason);
-                var conflict = L12AdminCommandResult<JsonElement>.Fail("version_conflict",
-                    "资源版本已变化，请重新提交命令", StatusCodes.Status409Conflict);
-                stored = _platform.PersistAdminCommandResult(commandId, conflict, "failed",
-                    "expected-version-mismatch");
-                _platform.RecordApprovalOutcome(reviewer, stored.View, reviewContext, "failed",
-                    "expected-version-mismatch");
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("version_conflict",
-                    "资源版本已变化，请重新提交命令", StatusCodes.Status409Conflict, stored.View);
-            }
-
-            _platform.PersistAdminApprovalDecision(commandId, reviewer, "approved", decision.Reason);
-            var executionAudit = reviewContext with
-            {
-                Permission = stored.View.Permission,
-                CommandId = stored.View.Id,
-                IdempotencyKey = stored.View.IdempotencyKey,
-                ExpectedVersion = stored.View.ExpectedVersion,
-                DryRun = stored.View.DryRun,
-                Reason = stored.View.Reason,
-                Outcome = "succeeded",
-            };
-            L12AdminCommandResult<JsonElement> outcome;
-            try
-            {
-                outcome = execute(stored.View, requester, executionAudit);
-            }
-            catch (Exception error)
-            {
-                outcome = L12AdminCommandResult<JsonElement>.Fail("command_failed", "命令执行失败",
-                    StatusCodes.Status500InternalServerError);
-                stored = _platform.PersistAdminCommandResult(commandId, outcome, "failed", error.Message);
-                _platform.RecordApprovalOutcome(reviewer, stored.View, reviewContext, "failed", error.Message);
-                return L12AdminCommandResult<L12AdminCommandView>.Fail("command_failed", "命令执行失败",
-                    StatusCodes.Status500InternalServerError, stored.View);
-            }
-
-            stored = _platform.PersistAdminCommandResult(commandId, outcome,
-                outcome.Success ? "executed" : "failed", outcome.Success ? null : outcome.Message);
-            _platform.RecordApprovalOutcome(reviewer, stored.View, reviewContext,
-                outcome.Success ? "executed" : "failed", outcome.Success ? decision.Reason : outcome.Message);
-            return outcome.Success
-                ? L12AdminCommandResult<L12AdminCommandView>.Ok(stored.View, "命令已批准并执行")
-                : L12AdminCommandResult<L12AdminCommandView>.Fail(outcome.Code, outcome.Message,
-                    outcome.StatusCode, stored.View);
-        });
+        _platform.RecordCommandOutcome(reviewer,
+            reviewContext with { CommandId = commandId, Outcome = "rejected", Reason = "approval-disabled" },
+            "approval.review", stored.View.Scope, "approval-disabled");
+        return L12AdminCommandResult<L12AdminCommandView>.Fail("approval_disabled",
+            "后台命令已改为有权限管理员直接执行；历史待审批命令不会执行，请使用新幂等键重新提交",
+            StatusCodes.Status409Conflict, stored.View);
     }
 
     private bool HasVersionConflict<TPayload>(L12AdminCommandEnvelope<TPayload> command)
@@ -533,7 +421,10 @@ public sealed class L12AdminCommandBus
 
     private static L12AdminCommandResult<T> Replay<T>(L12AdminCommandView command)
     {
-        if (command.Status == "requested") return L12AdminCommandResult<T>.Accepted(command, true);
+        if (command.Status == "requested")
+            return new L12AdminCommandResult<T>(false, "approval_request_retired",
+                "该命令来自已停用的审批流程，不会执行；请使用新幂等键重新提交", default,
+                StatusCodes.Status409Conflict, true, false, command);
         T? value = default;
         if (command.Result is { } result && result.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
             value = result.Deserialize<T>(JsonOptions);
@@ -542,16 +433,6 @@ public sealed class L12AdminCommandBus
             command.ResultMessage ?? (success ? "操作成功" : "命令执行失败"), value,
             command.ResultStatusCode ?? (success ? StatusCodes.Status200OK : StatusCodes.Status409Conflict),
             true, false, command);
-    }
-
-    private static L12AdminCommandResult<L12AdminCommandView> ReplayReview(L12AdminCommandView command)
-    {
-        if (command.Status == "executed")
-            return new L12AdminCommandResult<L12AdminCommandView>(true, "ok", "命令已经执行", command,
-                StatusCodes.Status200OK, true, Command: command);
-        return new L12AdminCommandResult<L12AdminCommandView>(false,
-            command.ResultCode ?? "command_not_pending", command.ResultMessage ?? "命令已不在待审批状态", default,
-            command.ResultStatusCode ?? StatusCodes.Status409Conflict, true, Command: command);
     }
 
     private static string? NormalizeIdempotencyKey(string? value)

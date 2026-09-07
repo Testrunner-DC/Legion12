@@ -370,7 +370,7 @@ public sealed partial class L12RoomManager
 
         foreach (var room in _rooms.Values.Where(candidate => candidate.Game is not null
                      && (candidate.Game.State.Phase != L12Phase.GameOver
-                         || !candidate.IsSandbox && !candidate.CompletionRecorded)).ToArray())
+                         || !candidate.CompletionRecorded)).ToArray())
         {
             await room.Gate.WaitAsync();
             try
@@ -386,7 +386,7 @@ public sealed partial class L12RoomManager
                     {
                         await ApplyRankedClockConclusionLockedAsync(room, now);
                     }
-                    else if (!room.IsSandbox && !room.CompletionRecorded)
+                    else if (!room.CompletionRecorded)
                     {
                         if (!room.MaintenanceAuthorityEventRecorded)
                         {

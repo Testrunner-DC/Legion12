@@ -6,6 +6,7 @@ import DeckConstructionBrowser from './DeckConstructionBrowser.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import {
   adminApi,
+  PlatformRequestError,
   type AdminMatchDetail,
   type AdminMatchPage,
   type AdminMatchParticipant,
@@ -20,7 +21,9 @@ const router = useRouter()
 
 function queryText(key: string) { return typeof route.query[key] === 'string' ? String(route.query[key]) : '' }
 
-const view = ref<'recent' | 'player'>(queryText('view') === 'player' ? 'player' : 'recent')
+type MatchView = 'recent' | 'player' | 'sandbox'
+const initialView: MatchView = queryText('view') === 'player' ? 'player' : queryText('view') === 'sandbox' ? 'sandbox' : 'recent'
+const view = ref<MatchView>(initialView)
 const page = ref<AdminMatchPage>({ items: [], total: 0 })
 const detail = ref<AdminMatchDetail | null>(null)
 const accounts = ref<PlatformAccount[]>([])
@@ -28,9 +31,10 @@ const cards = ref<DeckCard[]>([])
 const selectedAccountId = ref(queryText('accountId'))
 const loading = ref(false)
 const detailLoading = ref(false)
+const expiredReplayId = ref('')
 const deckViewer = ref<AdminMatchParticipant | null>(null)
 const filters = ref({
-  from: queryText('from'), to: queryText('to'), mode: queryText('mode'), status: queryText('status') || 'completed',
+  from: queryText('from'), to: queryText('to'), mode: initialView === 'sandbox' ? 'sandbox' : queryText('mode'), status: queryText('status') || (initialView === 'sandbox' ? '' : 'completed'),
   player: queryText('player'), masterId: queryText('masterId'),
 })
 
@@ -56,7 +60,7 @@ const playerSummary = computed(() => {
 })
 
 function modeLabel(mode: string) {
-  return ({ ranked: '排位', casual: '休闲', friendly: '好友房', tournament: '赛事', legacy: '历史' } as Record<string, string>)[mode] || mode || '未知模式'
+  return ({ ranked: '排位', casual: '休闲', friendly: '好友房', tournament: '赛事', sandbox: '沙盒', legacy: '历史' } as Record<string, string>)[mode] || mode || '未知模式'
 }
 function resultLabel(result: string) {
   return ({ win: '胜', loss: '负', draw: '和', invalid: '无效', pending: '进行中' } as Record<string, string>)[result] || result
@@ -103,7 +107,7 @@ async function loadMatches(reset = true) {
   loading.value = true
   try {
     const cursor = reset ? undefined : page.value.nextCursor || undefined
-    const query = { ...filters.value, player: filters.value.player || undefined, cursor, limit: 50 }
+    const query = { ...filters.value, mode: view.value === 'sandbox' ? 'sandbox' : filters.value.mode || undefined, player: filters.value.player || undefined, cursor, limit: 50 }
     const next = view.value === 'player'
       ? await adminApi.playerMatches(selectedAccountId.value, query)
       : await adminApi.matches(query)
@@ -119,18 +123,31 @@ async function loadMatches(reset = true) {
 }
 async function selectMatch(matchId: string) {
   detailLoading.value = true
+  expiredReplayId.value = ''
   try { detail.value = await adminApi.match(matchId) }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '对局详情加载失败') }
+  catch (error) {
+    detail.value = null
+    if (error instanceof PlatformRequestError && error.status === 410 && error.code === 'sandbox_replay_expired') {
+      expiredReplayId.value = matchId
+      emit('notice', '回放已过期')
+    } else emit('notice', error instanceof Error ? error.message : '对局详情加载失败')
+  }
   finally { detailLoading.value = false }
 }
-async function changeView(next: 'recent' | 'player') {
+async function changeView(next: MatchView) {
   view.value = next
+  filters.value.mode = next === 'sandbox' ? 'sandbox' : ''
+  filters.value.status = next === 'sandbox' ? '' : 'completed'
+  expiredReplayId.value = ''
   if (next === 'player') await ensureReferenceData()
   await loadMatches(true)
 }
 async function selectPlayer() { await loadMatches(true) }
+function canPlayReplay(summary: AdminMatchSummary) {
+  return summary.commandCount > 0 && (summary.status === 'completed' || (view.value === 'sandbox' && summary.modeId === 'sandbox'))
+}
 function playReplay() {
-  if (!detail.value || detail.value.summary.status !== 'completed' || detail.value.summary.commandCount < 1) return
+  if (!detail.value || !canPlayReplay(detail.value.summary)) return
   router.push({
     name: 'admin-match-replay', params: { matchId: detail.value.summary.matchId },
     query: {
@@ -156,19 +173,23 @@ onMounted(async () => {
 <template>
   <section class="match-admin">
     <header class="module-header">
-      <div><small>MATCH ARCHIVE</small><h2>对局档案</h2><p>从最近对局、玩家和实际构筑进入同一份赛后权威记录；沙盒不进入档案与分析。</p></div>
+      <div><small>MATCH ARCHIVE</small><h2>对局档案</h2><p>正式对局档案与沙盒排查严格分区；沙盒不进入玩家记录、排行或卡牌统计。</p></div>
       <button :disabled="loading" @click="loadMatches(true)">刷新</button>
     </header>
 
     <div class="view-tabs">
       <button :class="{ active: view === 'recent' }" @click="changeView('recent')">最近对局</button>
       <button :class="{ active: view === 'player' }" @click="changeView('player')">按玩家查询</button>
+      <button :class="{ active: view === 'sandbox' }" @click="changeView('sandbox')">沙盒排查</button>
     </div>
+
+    <aside v-if="view === 'sandbox'" class="sandbox-retention-note"><b>管理员专用沙盒回放</b><span>用于排查 Bug；每周清理超过 7 天的记录，实际通常保留约 7～14 天，活跃沙盒不清理。玩家无权查看，也不计入战绩、排行与卡牌统计。</span></aside>
 
     <section class="filter-panel">
       <label v-if="view === 'player'">玩家<select v-model="selectedAccountId" @change="selectPlayer"><option value="">选择玩家</option><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.username }} · {{ account.id.slice(0, 8) }}</option></select></label>
       <label v-else>玩家／账号<input v-model="filters.player" placeholder="账号、玩家名或 ID" @keyup.enter="loadMatches(true)"/></label>
-      <label>模式<select v-model="filters.mode"><option value="">全部正式模式</option><option value="ranked">排位</option><option value="casual">休闲</option><option value="friendly">好友房</option><option value="tournament">赛事</option></select></label>
+      <label v-if="view === 'sandbox'">模式<select disabled><option>沙盒</option></select></label>
+      <label v-else>模式<select v-model="filters.mode"><option value="">全部正式模式</option><option value="ranked">排位</option><option value="casual">休闲</option><option value="friendly">好友房</option><option value="tournament">赛事</option></select></label>
       <label>状态<select v-model="filters.status"><option value="">全部状态</option><option value="completed">已结束</option><option value="ongoing">进行中</option><option value="invalid">异常／无效</option></select></label>
       <label>开始日期<input v-model="filters.from" type="date"/></label>
       <label>结束日期<input v-model="filters.to" type="date"/></label>
@@ -177,8 +198,8 @@ onMounted(async () => {
     </section>
 
     <div class="metric-strip">
-      <article><small>符合条件</small><b>{{ page.total }}</b><span>场正式对局</span></article>
-      <article><small>本页已结束</small><b>{{ completedCount }}</b><span>不含沙盒</span></article>
+      <article><small>符合条件</small><b>{{ page.total }}</b><span>{{ view === 'sandbox' ? '场沙盒记录' : '场正式对局' }}</span></article>
+      <article><small>本页已结束</small><b>{{ completedCount }}</b><span>{{ view === 'sandbox' ? '管理员排查专用' : '不含沙盒' }}</span></article>
       <article><small>异常／无效</small><b>{{ abnormalCount }}</b><span>便于快速复盘</span></article>
       <article><small>平均时长</small><b>{{ durationLabel(averageDuration) }}</b><span>本页可计算对局</span></article>
       <article v-if="playerSummary"><small>{{ selectedPlayer?.username || '玩家' }}</small><b>{{ playerSummary.wins }}-{{ playerSummary.losses }}</b><span>{{ (playerSummary.rate * 100).toFixed(1) }}% 胜率</span></article>
@@ -186,19 +207,20 @@ onMounted(async () => {
 
     <div class="match-workspace">
       <section class="match-list panel-shell">
-        <header><b>{{ view === 'recent' ? '最近记录' : `${selectedPlayer?.username || '玩家'}的记录` }}</b><span>按开始时间倒序</span></header>
-        <button v-for="match in visibleMatches" :key="match.matchId" class="match-row" :class="{ selected: detail?.summary.matchId === match.matchId }" @click="selectMatch(match.matchId)">
+        <header><b>{{ view === 'recent' ? '最近记录' : view === 'sandbox' ? '沙盒排查记录' : `${selectedPlayer?.username || '玩家'}的记录` }}</b><span>按开始时间倒序</span></header>
+        <button v-for="match in visibleMatches" :key="match.matchId" class="match-row" :class="{ selected: detail?.summary.matchId === match.matchId || expiredReplayId === match.matchId }" @click="selectMatch(match.matchId)">
           <span class="match-identity"><small>{{ modeLabel(match.modeId) }} · {{ dateLabel(match.startedUtc) }}</small><b><template v-for="(player,index) in match.players" :key="player.accountId || player.displayName"><em v-if="index"> VS </em>{{ player.displayName }}</template></b><code>{{ match.matchId.slice(0, 12) }}</code></span>
           <span class="match-result"><b>{{ statusLabel(match) }}</b><small>{{ durationLabel(match.durationSeconds) }} · {{ match.commandCount }} 次操作</small></span>
           <span class="match-players"><i v-for="player in match.players" :key="`${match.matchId}-${player.accountId}`" :data-result="player.result"><CardImage v-if="player.masterId" :card-id="player.masterId" :alt="player.masterId" intent="thumb"/><em>{{ player.deckName || '未记录牌库' }}</em><b>{{ resultLabel(player.result) }}</b></i></span>
         </button>
         <div v-if="loading" class="empty">正在读取对局档案…</div>
-        <div v-else-if="!visibleMatches.length" class="empty">没有符合条件的正式对局</div>
+        <div v-else-if="!visibleMatches.length" class="empty">{{ view === 'sandbox' ? '没有符合条件的沙盒记录' : '没有符合条件的正式对局' }}</div>
         <button v-if="page.nextCursor" class="load-more" :disabled="loading" @click="loadMatches(false)">加载更早记录</button>
       </section>
 
       <section class="match-detail panel-shell">
         <div v-if="detailLoading" class="empty">正在读取赛后权威记录…</div>
+        <div v-else-if="expiredReplayId" class="empty expired-replay"><b>回放已过期</b><span>该沙盒记录已超过保留期限，无法继续读取详情或播放回放。</span><code>{{ expiredReplayId }}</code></div>
         <template v-else-if="detail">
           <header class="detail-header"><div><small>{{ modeLabel(detail.summary.modeId) }} · {{ coverageLabel(detail.coverage) }}</small><h3>{{ detail.summary.players.map(player => player.displayName).join(' VS ') }}</h3><p>{{ dateLabel(detail.summary.startedUtc) }} · {{ durationLabel(detail.summary.durationSeconds) }} · {{ statusLabel(detail.summary) }}</p></div><code>{{ detail.summary.matchId }}</code></header>
 
@@ -216,7 +238,7 @@ onMounted(async () => {
             <div v-else class="empty compact">旧记录尚无结构化卡牌事实；仍可查看赛果和构筑覆盖状态。</div>
           </section>
 
-          <section class="replay-launch"><div><h3>对局回放</h3><p>命令只在点击播放后按页读取，并使用玩家对局记录与 JSON 回放共用的全屏播放器。</p></div><button :disabled="detail.summary.status !== 'completed' || detail.summary.commandCount < 1" @click="playReplay">播放回放</button></section>
+          <section class="replay-launch"><div><h3>对局回放</h3><p>命令只在点击播放后按页读取，并使用玩家对局记录与 JSON 回放共用的全屏播放器。沙盒排查可读取进行中、已结束或异常记录。</p></div><button :disabled="!canPlayReplay(detail.summary)" @click="playReplay">播放回放</button></section>
         </template>
         <div v-else class="empty">选择一场对局查看玩家、构筑和时间线</div>
       </section>
@@ -226,7 +248,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.match-admin{display:grid;gap:12px}.module-header,.filter-panel,.metric-strip,.panel-shell{border:1px solid #35424a;background:#101821}.module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px}.module-header h2{margin:4px 0}.module-header p{margin:0}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{border:1px solid #4c5961;background:#080e13;color:#fff;padding:9px;font:700 14px 'Microsoft YaHei'}.view-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid #35424a;background:#080e13}.view-tabs button{padding:13px;border:0;border-bottom:3px solid transparent;background:transparent;color:#87949a;font-weight:900}.view-tabs button.active{border-bottom-color:#d4b65d;background:#201b10;color:#f0d579}.filter-panel{display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(5,minmax(125px,1fr)) auto;align-items:end;gap:8px;padding:12px}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:5px;color:#87949a;font-size:14px;font-weight:900}.filter-panel input,.filter-panel select{box-sizing:border-box;min-width:0;width:100%}.filter-panel .query{border-color:#91752e;background:#2b220d;color:#f1d471}.metric-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#35424a}.metric-strip article{display:flex;min-height:82px;flex-direction:column;justify-content:flex-end;gap:3px;padding:13px;background:#0c141a}.metric-strip b{font-size:21px}.metric-strip span{color:#77858b;font-size:14px}.match-workspace{display:grid;grid-template-columns:minmax(400px,.82fr) minmax(560px,1.18fr);gap:12px;align-items:start}.panel-shell{min-width:0}.match-list{max-height:calc(100vh - 185px);overflow:auto}.match-list>header{position:sticky;z-index:2;top:0;display:flex;justify-content:space-between;padding:13px;background:#0b1218;border-bottom:1px solid #35424a}.match-list>header span{color:#738087;font-size:14px}.match-row{display:grid;width:100%;grid-template-columns:minmax(190px,1fr) 100px;gap:9px;padding:13px;border:0;border-bottom:1px solid #29353c;background:transparent;color:#fff;text-align:left}.match-row:hover,.match-row.selected{background:#172129}.match-row.selected{box-shadow:inset 3px 0 #d0ae4f}.match-identity{display:flex;min-width:0;flex-direction:column;gap:4px}.match-identity small,.match-result small{color:#76848a;font-size:14px}.match-identity b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.match-identity b em{color:#c8aa52;font-style:normal}.match-identity code{color:#587179;font-size:14px}.match-result{text-align:right}.match-result b,.match-result small{display:block}.match-players{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:5px}.match-players i{display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:6px;padding:5px;border:1px solid #2f3b42;background:#0a1116;font-style:normal}.match-players .l12-card-image{width:25px;height:34px}.match-players em{overflow:hidden;color:#929da0;font-size:14px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.match-players i[data-result="win"] b{color:#72d1a7}.match-players i[data-result="loss"] b{color:#e7848e}.load-more{width:100%;padding:12px;border:0;background:#182229;color:#d5b85e;font-weight:900}.match-detail{padding:17px}.detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:13px;border-bottom:1px solid #35424a}.detail-header h3{margin:5px 0;font-size:18px}.detail-header p{margin:0}.detail-header code{max-width:240px;color:#6e858e;font-size:14px;overflow-wrap:anywhere}.participant-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.participant-card{min-width:0;padding:12px;border:1px solid #35424a;background:#0a1117}.participant-card>header{display:flex;align-items:center;gap:9px}.participant-card>header .l12-card-image{flex:none;width:42px;height:58px}.participant-card>header span{display:flex;min-width:0;flex-direction:column}.participant-card>header em{color:#829096;font-size:14px;font-style:normal}.view-construction{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:10px;padding:10px;border:1px solid #7e6b36;background:#231e10;color:#f0d276;font-weight:900}.view-construction small{color:#a99d79!important}.privacy-note{padding:15px;border:1px dashed #435159;color:#87949a}.fact-timeline{margin-top:12px;padding:12px;border:1px solid #35424a;background:#0a1117}.fact-timeline>header{display:flex;align-items:center;justify-content:space-between}.fact-timeline h3{margin:0}.fact-timeline p{margin:3px 0}.fact-timeline>header>b{color:#d8ba63}.fact-timeline ol{max-height:360px;overflow:auto;margin:10px 0 0;padding:0;list-style:none}.fact-timeline li{display:grid;grid-template-columns:50px minmax(120px,.8fr) minmax(150px,1fr) auto;align-items:center;gap:8px;padding:7px;border-top:1px solid #263239}.fact-timeline li>code{color:#6e858e}.fact-timeline li>span{display:flex;min-width:0;align-items:center;gap:7px}.fact-timeline li>span:nth-child(2){align-items:flex-start;flex-direction:column;gap:1px}.fact-timeline li small{color:#66767d!important;letter-spacing:0!important}.fact-timeline li .l12-card-image{flex:none;width:26px;height:36px}.fact-timeline li em{overflow:hidden;font-size:14px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.fact-timeline li>strong{color:#e5c76c}.replay-launch{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:12px;padding:12px;border:1px solid #39474e;background:#080e13}.replay-launch h3{margin:0;color:#d6bd70}.replay-launch p{margin:4px 0 0;color:#7f8d91;font-size:14px}.replay-launch button{flex:none;padding:10px 18px;border:1px solid #b79c4e;background:#2c2612;color:#f4dda0;font-weight:900}.replay-launch button:disabled{cursor:not-allowed;opacity:.35}.empty{display:grid;min-height:170px;place-items:center;color:#718087}.empty.compact{min-height:90px}.privacy-note{font-size:14px}.match-admin small{color:#d5b85e;font:900 14px monospace;letter-spacing:.12em}.deck-viewer-mask{position:fixed;z-index:5000;inset:0;display:grid;place-items:center;padding:20px;background:#010407d9;backdrop-filter:blur(8px)}.deck-viewer-modal{box-sizing:border-box;width:min(1000px,95vw);max-height:92vh;overflow:auto;padding:18px;border:1px solid #67747a;background:#101821;box-shadow:0 24px 70px #000;color:#fff}.deck-viewer-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #35424a}.deck-viewer-modal h2{margin:4px 0}.deck-viewer-modal>header button{width:36px;height:36px;border:1px solid #536068;background:#080e13;color:#fff;font-size:22px}.deck-viewer-modal>.construction-browser{margin-top:12px}
+.match-admin{display:grid;gap:12px}.module-header,.filter-panel,.metric-strip,.panel-shell,.sandbox-retention-note{border:1px solid #35424a;background:#101821}.module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px}.module-header h2{margin:4px 0}.module-header p{margin:0}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{border:1px solid #4c5961;background:#080e13;color:#fff;padding:9px;font:700 14px 'Microsoft YaHei'}.view-tabs{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #35424a;background:#080e13}.view-tabs button{padding:13px;border:0;border-bottom:3px solid transparent;background:transparent;color:#87949a;font-weight:900}.view-tabs button.active{border-bottom-color:#d4b65d;background:#201b10;color:#f0d579}.sandbox-retention-note{display:flex;align-items:center;gap:14px;padding:12px 16px;border-color:#66592f;background:#19170f;color:#a7b1b5}.sandbox-retention-note b{flex:none;color:#f0d579}.filter-panel{display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(5,minmax(125px,1fr)) auto;align-items:end;gap:8px;padding:12px}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:5px;color:#87949a;font-size:14px;font-weight:900}.filter-panel input,.filter-panel select{box-sizing:border-box;min-width:0;width:100%}.filter-panel select:disabled{opacity:1;color:#f0d579}.filter-panel .query{border-color:#91752e;background:#2b220d;color:#f1d471}.metric-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#35424a}.metric-strip article{display:flex;min-height:82px;flex-direction:column;justify-content:flex-end;gap:3px;padding:13px;background:#0c141a}.metric-strip b{font-size:21px}.metric-strip span{color:#77858b;font-size:14px}.match-workspace{display:grid;grid-template-columns:minmax(400px,.82fr) minmax(560px,1.18fr);gap:12px;align-items:start}.panel-shell{min-width:0}.match-list{max-height:calc(100vh - 185px);overflow:auto}.match-list>header{position:sticky;z-index:2;top:0;display:flex;justify-content:space-between;padding:13px;background:#0b1218;border-bottom:1px solid #35424a}.match-list>header span{color:#738087;font-size:14px}.match-row{display:grid;width:100%;grid-template-columns:minmax(190px,1fr) 100px;gap:9px;padding:13px;border:0;border-bottom:1px solid #29353c;background:transparent;color:#fff;text-align:left}.match-row:hover,.match-row.selected{background:#172129}.match-row.selected{box-shadow:inset 3px 0 #d0ae4f}.match-identity{display:flex;min-width:0;flex-direction:column;gap:4px}.match-identity small,.match-result small{color:#76848a;font-size:14px}.match-identity b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.match-identity b em{color:#c8aa52;font-style:normal}.match-identity code{color:#587179;font-size:14px}.match-result{text-align:right}.match-result b,.match-result small{display:block}.match-players{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:5px}.match-players i{display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:6px;padding:5px;border:1px solid #2f3b42;background:#0a1116;font-style:normal}.match-players .l12-card-image{width:25px;height:34px}.match-players em{overflow:hidden;color:#929da0;font-size:14px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.match-players i[data-result="win"] b{color:#72d1a7}.match-players i[data-result="loss"] b{color:#e7848e}.load-more{width:100%;padding:12px;border:0;background:#182229;color:#d5b85e;font-weight:900}.match-detail{padding:17px}.detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:13px;border-bottom:1px solid #35424a}.detail-header h3{margin:5px 0;font-size:18px}.detail-header p{margin:0}.detail-header code{max-width:240px;color:#6e858e;font-size:14px;overflow-wrap:anywhere}.participant-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.participant-card{min-width:0;padding:12px;border:1px solid #35424a;background:#0a1117}.participant-card>header{display:flex;align-items:center;gap:9px}.participant-card>header .l12-card-image{flex:none;width:42px;height:58px}.participant-card>header span{display:flex;min-width:0;flex-direction:column}.participant-card>header em{color:#829096;font-size:14px;font-style:normal}.view-construction{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:10px;padding:10px;border:1px solid #7e6b36;background:#231e10;color:#f0d276;font-weight:900}.view-construction small{color:#a99d79!important}.privacy-note{padding:15px;border:1px dashed #435159;color:#87949a}.fact-timeline{margin-top:12px;padding:12px;border:1px solid #35424a;background:#0a1117}.fact-timeline>header{display:flex;align-items:center;justify-content:space-between}.fact-timeline h3{margin:0}.fact-timeline p{margin:3px 0}.fact-timeline>header>b{color:#d8ba63}.fact-timeline ol{max-height:360px;overflow:auto;margin:10px 0 0;padding:0;list-style:none}.fact-timeline li{display:grid;grid-template-columns:50px minmax(120px,.8fr) minmax(150px,1fr) auto;align-items:center;gap:8px;padding:7px;border-top:1px solid #263239}.fact-timeline li>code{color:#6e858e}.fact-timeline li>span{display:flex;min-width:0;align-items:center;gap:7px}.fact-timeline li>span:nth-child(2){align-items:flex-start;flex-direction:column;gap:1px}.fact-timeline li small{color:#66767d!important;letter-spacing:0!important}.fact-timeline li .l12-card-image{flex:none;width:26px;height:36px}.fact-timeline li em{overflow:hidden;font-size:14px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.fact-timeline li>strong{color:#e5c76c}.replay-launch{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:12px;padding:12px;border:1px solid #39474e;background:#080e13}.replay-launch h3{margin:0;color:#d6bd70}.replay-launch p{margin:4px 0 0;color:#7f8d91;font-size:14px}.replay-launch button{flex:none;padding:10px 18px;border:1px solid #b79c4e;background:#2c2612;color:#f4dda0;font-weight:900}.replay-launch button:disabled{cursor:not-allowed;opacity:.35}.empty{display:grid;min-height:170px;place-items:center;color:#718087}.empty.compact{min-height:90px}.expired-replay{align-content:center;gap:8px;text-align:center}.expired-replay b{color:#f0d579;font-size:20px}.expired-replay code{color:#60737b}.privacy-note{font-size:14px}.match-admin small{color:#d5b85e;font:900 14px monospace;letter-spacing:.12em}.deck-viewer-mask{position:fixed;z-index:5000;inset:0;display:grid;place-items:center;padding:20px;background:#010407d9;backdrop-filter:blur(8px)}.deck-viewer-modal{box-sizing:border-box;width:min(1000px,95vw);max-height:92vh;overflow:auto;padding:18px;border:1px solid #67747a;background:#101821;box-shadow:0 24px 70px #000;color:#fff}.deck-viewer-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #35424a}.deck-viewer-modal h2{margin:4px 0}.deck-viewer-modal>header button{width:36px;height:36px;border:1px solid #536068;background:#080e13;color:#fff;font-size:22px}.deck-viewer-modal>.construction-browser{margin-top:12px}
 @media(max-width:1450px){.filter-panel{grid-template-columns:repeat(4,minmax(130px,1fr))}.match-workspace{grid-template-columns:minmax(360px,.75fr) minmax(520px,1.25fr)}}
 @media(max-width:1050px){.match-workspace{grid-template-columns:1fr}.match-list{max-height:520px}.metric-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:720px){.filter-panel{grid-template-columns:1fr 1fr}.participant-grid{grid-template-columns:1fr}.metric-strip{grid-template-columns:1fr 1fr}.detail-header{flex-direction:column}.fact-timeline li{grid-template-columns:42px 1fr}.fact-timeline li>span:nth-child(3){grid-column:2}.match-players{grid-template-columns:1fr}}

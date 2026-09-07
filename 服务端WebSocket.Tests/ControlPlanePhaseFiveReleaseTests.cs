@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
@@ -97,7 +99,7 @@ public sealed class ControlPlanePhaseFiveReleaseTests
     }
 
     [Fact]
-    public void ApprovalAndIdempotentResultSurviveRestartWithoutSelfReviewOrReexecution()
+    public void DirectExecutionAndIdempotentResultSurviveRestartWithoutReexecution()
     {
         var root = TempRoot();
         var path = Path.Combine(root, "platform.json");
@@ -106,25 +108,22 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
             var requester = Promote(store, admin, "ReleaseRequester", "admin");
-            var reviewer = Promote(store, admin, "ReleaseReviewer", "admin");
             var adapter = new FakeReleaseAdapter { Artifacts = [Artifact("release-restart", 'a', '1', "production")] };
             var payload = store.CaptureReleaseDeploy(requester, "release-restart", "production", adapter);
-            var requested = Submit(store, adapter, requester, payload, 0, "release-restart-key");
+            var applied = Submit(store, adapter, requester, payload, 0, "release-restart-key");
 
-            Assert.True(requested.Pending);
-            Assert.Equal(0, adapter.ExecuteCount);
-            var commandId = requested.Command!.Id;
-            var selfReview = Review(store, adapter, commandId, requester);
-            Assert.Equal("self_review_forbidden", selfReview.Code);
-            Assert.Equal(0, adapter.ExecuteCount);
+            Assert.True(applied.Success, $"{applied.Code}: {applied.Message}");
+            Assert.False(applied.Pending);
+            Assert.Equal(1, adapter.ExecuteCount);
+            var commandId = applied.Command!.Id;
+            Assert.Equal("executed", applied.Command.Status);
+            Assert.Empty(store.AdminApprovals(status: null));
+            var retiredReview = Review(store, commandId, requester);
+            Assert.Equal("approval_disabled", retiredReview.Code);
+            Assert.Equal(1, adapter.ExecuteCount);
 
             var reloaded = new L12PlatformStore(path);
             requester = reloaded.Account(requester.Id)!;
-            reviewer = reloaded.Account(reviewer.Id)!;
-            var approved = Review(reloaded, adapter, commandId, reviewer);
-
-            Assert.True(approved.Success, $"{approved.Code}: {approved.Message}; {approved.Command?.FailureReason}");
-            Assert.Equal(1, adapter.ExecuteCount);
             var run = Assert.Single(reloaded.ReleaseRuns(requester));
             Assert.Equal("succeeded", run.Status);
             Assert.Contains(run.Checks, item => item.Kind == "artifact-hash" && item.Success);
@@ -139,14 +138,50 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             Assert.True(replay.Replayed);
             Assert.Equal(1, adapter.ExecuteCount);
             Assert.Single(restarted.ReleaseRuns(requester));
-            Assert.Contains(restarted.AdminAudit("security"), item => item.CommandId == commandId
-                && item.Reason == "self-review-forbidden");
+            Assert.Contains(restarted.AdminAudit("command"), item => item.CommandId == commandId
+                && item.Outcome == "succeeded");
         }
         finally { Directory.Delete(root, true); }
     }
 
     [Fact]
-    public void EnvironmentVersionAndApprovalTimeHashCheckBlockStaleExecution()
+    public void LegacyPendingReleaseCannotBeReviewedOrReplayedAndFreshSubmissionExecutes()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var adapter = new FakeReleaseAdapter { Artifacts = [Artifact("release-legacy", 'a', '1', "production")] };
+            var payload = store.CaptureReleaseDeploy(admin, "release-legacy", "production", adapter);
+            var legacy = Envelope(admin, payload, 0, "release-legacy-pending", false);
+            var payloadJson = JsonSerializer.Serialize(legacy.Payload, JsonOptions);
+            store.PersistAdminCommand(legacy, L12Authorization.Key(L12Permission.ReleasesExecute),
+                L12AdminCommandRisk.High, ReleaseCommandSignature(legacy, payloadJson), payloadJson, "requested");
+            store.PersistAdminApprovalRequest(legacy.CommandId, admin);
+
+            var replay = Submit(store, adapter, admin, payload, 0, "release-legacy-pending");
+            Assert.False(replay.Success);
+            Assert.True(replay.Replayed);
+            Assert.Equal("approval_request_retired", replay.Code);
+            Assert.Equal(0, adapter.ExecuteCount);
+
+            var retiredReview = Review(store, legacy.CommandId, admin);
+            Assert.Equal("approval_disabled", retiredReview.Code);
+            Assert.Equal("requested", store.AdminCommand(legacy.CommandId)!.Status);
+            Assert.Empty(store.AdminApprovals(status: null));
+            Assert.Equal(0, store.SecurityStatus(admin).PendingApprovals);
+            Assert.Equal(0, adapter.ExecuteCount);
+
+            var fresh = Submit(store, adapter, admin, payload, 0, "release-legacy-fresh");
+            Assert.True(fresh.Success, $"{fresh.Code}: {fresh.Message}");
+            Assert.Equal(1, adapter.ExecuteCount);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void EnvironmentVersionAndArtifactHashCheckBlockStaleDirectExecution()
     {
         var root = TempRoot();
         try
@@ -154,7 +189,6 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
             var requester = Promote(store, admin, "RelConcReq", "admin");
-            var reviewer = Promote(store, admin, "RelConcRev", "admin");
             var adapter = new FakeReleaseAdapter
             {
                 Artifacts =
@@ -171,18 +205,16 @@ public sealed class ControlPlanePhaseFiveReleaseTests
                 store.CaptureReleaseDeploy(requester, "release-concurrent-b", "production", adapter),
                 0, "release-concurrent-2");
 
-            Assert.True(Review(store, adapter, first.Command!.Id, reviewer).Success);
-            var staleReview = Review(store, adapter, stale.Command!.Id, reviewer);
-            Assert.Equal("version_conflict", staleReview.Code);
+            Assert.True(first.Success, $"{first.Code}: {first.Message}");
+            Assert.False(first.Pending);
+            Assert.Equal("version_conflict", stale.Code);
             Assert.Equal(1, adapter.ExecuteCount);
 
-            var hashPending = Submit(store, adapter, requester,
-                store.CaptureReleaseDeploy(requester, "release-hash-change", "staging", adapter),
-                0, "release-hash-change-key");
+            var hashPayload = store.CaptureReleaseDeploy(requester, "release-hash-change", "staging", adapter);
             adapter.HashValidity["release-hash-change"] = false;
-            var hashReview = Review(store, adapter, hashPending.Command!.Id, reviewer);
+            var hashRejected = Submit(store, adapter, requester, hashPayload, 0, "release-hash-change-key");
 
-            Assert.Equal("artifact_hash_mismatch", hashReview.Code);
+            Assert.Equal("artifact_hash_mismatch", hashRejected.Code);
             Assert.Equal(1, adapter.ExecuteCount);
             Assert.Equal(0, store.ReleaseEnvironmentVersion("staging"));
             Assert.DoesNotContain(store.ReleaseRuns(requester), item => item.Environment == "staging");
@@ -200,18 +232,17 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
             var requester = Promote(store, admin, "RelFailReq", "admin");
-            var reviewer = Promote(store, admin, "RelFailRev", "admin");
             var adapter = new FakeReleaseAdapter { Artifacts = [Artifact("release-failure", 'a', '1', "production")] };
             adapter.ExecutionResults.Enqueue(new(true, new(false, "health.failed", 25),
                 new(false, "ws.failed", 30), true, true, "smoke-failed"));
-            var requested = Submit(store, adapter, requester,
+            var failed = Submit(store, adapter, requester,
                 store.CaptureReleaseDeploy(requester, "release-failure", "production", adapter),
                 0, "release-failure-key");
 
-            var reviewed = Review(store, adapter, requested.Command!.Id, reviewer);
-
-            Assert.False(reviewed.Success);
-            Assert.Equal("release_validation_failed", reviewed.Code);
+            Assert.False(failed.Success);
+            Assert.False(failed.Pending);
+            Assert.Equal("release_validation_failed", failed.Code);
+            Assert.Equal(1, adapter.ExecuteCount);
             var run = Assert.Single(store.ReleaseRuns(requester));
             Assert.Equal("rolled-back", run.Status);
             Assert.True(run.RollbackAttempted);
@@ -226,6 +257,22 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             Assert.Equal("rolled-back", Assert.Single(reloaded.ReleaseRuns(requester)).Status);
             Assert.Equal("unconfigured", Assert.Single(reloaded.ReleaseEnvironments(requester,
                 new L12DisabledReleaseControlAdapter()), item => item.Environment == "production").State);
+
+            var replay = Submit(reloaded, adapter, requester,
+                reloaded.CaptureReleaseDeploy(requester, "release-failure", "production", adapter),
+                0, "release-failure-key");
+            Assert.False(replay.Success);
+            Assert.True(replay.Replayed);
+            Assert.Equal("release_validation_failed", replay.Code);
+            Assert.Equal(1, adapter.ExecuteCount);
+
+            var retry = Submit(reloaded, adapter, requester,
+                reloaded.CaptureReleaseDeploy(requester, "release-failure", "production", adapter),
+                1, "release-failure-retry-key");
+            Assert.True(retry.Success, $"{retry.Code}: {retry.Message}");
+            Assert.Equal(2, adapter.ExecuteCount);
+            Assert.Equal(2, reloaded.ReleaseRuns(requester).Count);
+            Assert.Equal(2, reloaded.ReleaseEnvironmentVersion("production"));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -239,7 +286,6 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
             var requester = Promote(store, admin, "RelRollbackReq", "admin");
-            var reviewer = Promote(store, admin, "RelRollbackRev", "admin");
             var adapter = new FakeReleaseAdapter
             {
                 Artifacts =
@@ -251,16 +297,16 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             var first = Submit(store, adapter, requester,
                 store.CaptureReleaseDeploy(requester, "release-rollback-a", "production", adapter),
                 0, "release-rollback-deploy-a");
-            Assert.True(Review(store, adapter, first.Command!.Id, reviewer).Success);
+            Assert.True(first.Success, $"{first.Code}: {first.Message}");
             var firstRun = Assert.Single(store.ReleaseRuns(requester));
             var second = Submit(store, adapter, requester,
                 store.CaptureReleaseDeploy(requester, "release-rollback-b", "production", adapter),
                 1, "release-rollback-deploy-b");
-            Assert.True(Review(store, adapter, second.Command!.Id, reviewer).Success);
+            Assert.True(second.Success, $"{second.Code}: {second.Message}");
 
             var rollbackPayload = store.CaptureReleaseRollback(requester, firstRun.Id, adapter);
             var rollback = Submit(store, adapter, requester, rollbackPayload, 2, "release-rollback-command");
-            Assert.True(Review(store, adapter, rollback.Command!.Id, reviewer).Success);
+            Assert.True(rollback.Success, $"{rollback.Code}: {rollback.Message}");
 
             var rollbackRun = store.ReleaseRuns(requester).Single(item => item.Action == "rollback");
             Assert.Equal(firstRun.Id, rollbackRun.RollbackTargetRunId);
@@ -362,30 +408,42 @@ public sealed class ControlPlanePhaseFiveReleaseTests
 
             var deployBody = new { artifactId = "release-http", environment = "production",
                 idempotencyKey = "release-http-deploy", expectedVersion = 0, dryRun = false, reason = "release" };
+            using (var deniedDeploy = Authorized(HttpMethod.Post, "/api/admin/v1/releases/deploy",
+                       playerRegistration.Token!, "release-http-write-denied", deployBody))
+            using (var response = await client.SendAsync(deniedDeploy))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(0, adapter.ExecuteCount);
+
             string commandId;
             using (var deploy = Authorized(HttpMethod.Post, "/api/admin/v1/releases/deploy",
                        requesterRegistration.Token!, "release-http-request", deployBody))
             using (var response = await client.SendAsync(deploy))
             {
-                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-                commandId = (await response.Content.ReadFromJsonAsync<JsonElement>())
-                    .GetProperty("commandId").GetString()!;
-            }
-            Assert.Equal(0, adapter.ExecuteCount);
-
-            using (var self = Authorized(HttpMethod.Post, $"/api/admin/v1/approvals/{commandId}",
-                       requesterRegistration.Token!, "release-http-self-review",
-                       new { decision = "approve", reason = "must fail" }))
-            using (var response = await client.SendAsync(self))
-                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-            Assert.Equal(0, adapter.ExecuteCount);
-
-            using (var approval = Authorized(HttpMethod.Post, $"/api/admin/v1/approvals/{commandId}",
-                       reviewerRegistration.Token!, "release-http-approve",
-                       new { decision = "approve", reason = "verified" }))
-            using (var response = await client.SendAsync(approval))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.True((await response.Content.ReadFromJsonAsync<L12ReleaseOperationView>())!.Applied);
+                commandId = Assert.Single(response.Headers.GetValues("X-Command-ID"));
+            }
             Assert.Equal(1, adapter.ExecuteCount);
+            Assert.Equal("executed", store.AdminCommand(commandId)!.Status);
+            Assert.Empty(store.AdminApprovals(status: null));
+
+            using (var retiredApproval = Authorized(HttpMethod.Post, $"/api/admin/v1/approvals/{commandId}",
+                       reviewerRegistration.Token!, "release-http-review-disabled",
+                       new { decision = "approve", reason = "must stay disabled" }))
+            using (var response = await client.SendAsync(retiredApproval))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                Assert.Equal("approval_disabled", (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+            }
+            Assert.Equal(1, adapter.ExecuteCount);
+
+            using (var approvals = Authorized(HttpMethod.Get, "/api/admin/v1/approvals?status=requested",
+                       reviewerRegistration.Token!, "release-http-approval-list"))
+            using (var response = await client.SendAsync(approvals))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Empty((await response.Content.ReadFromJsonAsync<L12AdminApprovalView[]>())!);
+            }
 
             using (var replay = Authorized(HttpMethod.Post, "/api/admin/v1/releases/deploy",
                        requesterRegistration.Token!, "release-http-replay", deployBody))
@@ -425,8 +483,10 @@ public sealed class ControlPlanePhaseFiveReleaseTests
 
             Assert.Contains(store.AdminAudit("security"), item => item.CorrelationId == "release-http-denied"
                 && item.Reason == "permission-denied");
-            Assert.Contains(store.AdminAudit("security"), item => item.CorrelationId == "release-http-self-review"
-                && item.Reason == "self-review-forbidden");
+            Assert.Contains(store.AdminAudit("security"), item => item.CorrelationId == "release-http-write-denied"
+                && item.Reason == "permission-denied");
+            Assert.Contains(store.AdminAudit("command"), item => item.CorrelationId == "release-http-review-disabled"
+                && item.Reason == "approval-disabled");
             Assert.Contains(store.AdminAudit("security"), item => item.CorrelationId == "release-http-scope-denied"
                 && item.Reason == "scope-denied");
         }
@@ -457,18 +517,10 @@ public sealed class ControlPlanePhaseFiveReleaseTests
     }
 
     private static L12AdminCommandResult<L12AdminCommandView> Review(L12PlatformStore store,
-        IL12ReleaseControlAdapter adapter, string commandId, L12AccountView reviewer)
-        => new L12AdminCommandBus(store).Review(commandId, reviewer, new("approve", "verified by second operator"),
+        string commandId, L12AccountView reviewer)
+        => new L12AdminCommandBus(store).Review(commandId, reviewer,
             Context($"review-{commandId}") with { CommandId = commandId },
-            (command, requester, audit) =>
-            {
-                var payload = command.Payload.Deserialize<L12ReleaseCommandPayload>(JsonOptions)!;
-                var outcome = ExecuteRelease(store, adapter, requester, payload,
-                    command.ExpectedVersion!.Value, audit, true);
-                return outcome.Success
-                    ? L12AdminCommandResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(outcome.Value, JsonOptions))
-                    : L12AdminCommandResult<JsonElement>.Fail(outcome.Code, outcome.Message, outcome.StatusCode);
-            }, L12Permission.ReleaseApprovalsReview, L12PlatformStore.CanReviewReleaseCommand);
+            L12Permission.ReleaseApprovalsReview, L12PlatformStore.CanReviewReleaseCommand);
 
     private static L12AdminCommandResult<L12ReleaseOperationView> ExecuteRelease(L12PlatformStore store,
         IL12ReleaseControlAdapter adapter, L12AccountView actor, L12ReleaseCommandPayload payload,
@@ -509,6 +561,13 @@ public sealed class ControlPlanePhaseFiveReleaseTests
             $"release:{payload.Environment}", "test", dryRun, expectedVersion, payload,
             Context(idempotencyKey) with { CommandId = commandId, IdempotencyKey = idempotencyKey,
                 ExpectedVersion = expectedVersion, DryRun = dryRun });
+    }
+
+    private static string ReleaseCommandSignature(
+        L12AdminCommandEnvelope<L12ReleaseCommandPayload> command, string payloadJson)
+    {
+        var source = $"{command.Type}\n{command.Scope}\n{command.ExpectedVersion}\n{command.DryRun}\n{payloadJson}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
     }
 
     private static L12VerifiedReleaseArtifactView Artifact(string id, char commit, char releaseHash,

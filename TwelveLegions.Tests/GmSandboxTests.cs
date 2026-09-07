@@ -41,7 +41,7 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
-    public async Task RoomRejectsGmOutsideSandboxAndSandboxIsNotRecorded()
+    public async Task RoomRejectsGmOutsideSandboxAndRecordsSandboxOutsidePlayerHistory()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-gm-sandbox", Guid.NewGuid().ToString("N"));
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
@@ -85,8 +85,14 @@ public sealed class GmSandboxTests
             .GetProperty("state");
         Assert.Equal(23, state.GetProperty("players")[1].GetProperty("master").GetProperty("hp").GetInt32());
 
-        var detail = await recorder.GetMatchAsync(matchId);
-        Assert.Null(detail);
+        var detail = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(matchId));
+        var recorded = Assert.Single(detail.Commands);
+        Assert.Equal(-1, recorded.PlayerIndex);
+        Assert.True(recorded.Accepted);
+        Assert.Equal("setLife", recorded.Command.GetProperty("type").GetString());
+        Assert.Equal(23, recorded.State.GetProperty("Players")[1].GetProperty("Hp").GetInt32());
+        Assert.Empty(await recorder.ListMatchesForPlayerAsync("沙盒控制者"));
+        Assert.Null(await recorder.GetMatchForPlayerAsync(matchId, "沙盒控制者"));
     }
 
     [Fact]
@@ -737,8 +743,10 @@ public sealed class GmSandboxTests
         Assert.Contains(finished.GetProperty("players")[1].GetProperty("morale").EnumerateArray(),
             morale => morale.GetProperty("tapped").GetBoolean());
 
-        var detail = await recorder.GetMatchAsync(matchId);
-        Assert.Null(detail);
+        var detail = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(matchId));
+        Assert.Equal(5, detail.Commands.Count);
+        Assert.Equal(["addMorale", "setPhase", "placeCard", "activateAbility", "resolvePrompt"],
+            detail.Commands.Select(command => command.Command.GetProperty("type").GetString() ?? string.Empty).ToArray());
     }
 
     [Fact]

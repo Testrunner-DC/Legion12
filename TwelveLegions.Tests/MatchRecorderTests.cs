@@ -119,7 +119,7 @@ public sealed class MatchRecorderTests
     }
 
     [Fact]
-    public async Task StartupClosesOnlyUnfinishedSandboxAndPlayerHistoryShowsOnlyCompletedFormalMatches()
+    public async Task StartupClassifiesUnfinishedSandboxAsRetainedOrphanAndPlayerHistoryStaysFormalOnly()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-recorder-lifecycle", Guid.NewGuid().ToString("N"));
         var path = Path.Combine(directory, "matches.db");
@@ -141,7 +141,8 @@ public sealed class MatchRecorderTests
         var sandboxAfterStartup = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync("sandbox-residue"));
         var rankedAfterStartup = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync("ranked-unfinished"));
         Assert.NotNull(sandboxAfterStartup.Match.EndedUtc);
-        Assert.Equal("历史沙盒对局清理关闭", sandboxAfterStartup.Match.Error);
+        Assert.Equal("沙盒录像因服务重启结束", sandboxAfterStartup.Match.Error);
+        Assert.Empty(sandboxAfterStartup.Commands);
         Assert.Null(rankedAfterStartup.Match.EndedUtc);
         Assert.Empty(await recorder.ListMatchesForPlayerAsync("甲"));
         Assert.Null(await recorder.GetMatchForPlayerAsync("sandbox-residue", "甲"));
