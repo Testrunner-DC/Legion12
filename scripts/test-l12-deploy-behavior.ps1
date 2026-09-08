@@ -398,6 +398,7 @@ exec "$L12_TEST_REAL_TAR" "$@"
 
     $success = Invoke-ServerScenario -Name "success"
     Assert-True ($success.ExitCode -eq 0) "精确版本部署行为夹具失败：$($success.Output)"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $success.Root "opt\legion12-runtime\.maintenance-sandbox-drain"))) "成功发布后没有仅解除临时沙盒围栏。"
     Assert-True ($success.Commands.Contains("curl http://127.0.0.1:8083/health")) "成功路径没有核验目标机本地健康身份。"
     Assert-True ($success.Commands.Contains("curl https://legion-12.com/health")) "成功路径没有核验公网健康身份。"
     Assert-True ($success.Commands.Contains("ws://127.0.0.1:8083/ws")) "成功路径没有执行本机 WebSocket 探针。"
@@ -429,6 +430,7 @@ exec "$L12_TEST_REAL_TAR" "$@"
 
     $localStale = Invoke-ServerScenario -Name "local-stale" -LocalCommitOverride $commitA -WriteOnStart
     Assert-True ($localStale.ExitCode -ne 0) "本机仍运行旧提交时部署被错误判定成功。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $localStale.Root "opt\legion12-runtime\.maintenance-sandbox-drain")) "验证失败后错误解除沙盒发布围栏。"
     Assert-True ((Test-Path -LiteralPath (Join-Path $localStale.Root "opt\legion12-runtime\post-launch-write.txt"))) "失败处理覆盖了新服务启动后产生的 runtime 事实。"
     Assert-True ((Test-Path -LiteralPath (Join-Path $localStale.Root "opt\legion12-deployment\deployment-blocked.txt"))) "新服务启动后失败没有写 fail-closed 说明。"
     Assert-True (([regex]::Matches($localStale.Commands, 'systemctl start')).Count -eq 1) "新服务启动后失败错误重启了旧版本。"

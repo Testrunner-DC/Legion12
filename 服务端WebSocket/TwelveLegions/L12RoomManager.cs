@@ -26,6 +26,8 @@ public sealed record L12SessionClaimResult(string Type, Guid SessionId, string N
 
 public sealed partial class L12RoomManager
 {
+    internal const string MaintenanceSandboxFenceFileName = ".maintenance-sandbox-drain";
+
     private sealed class Session
     {
         public required Guid Id { get; init; }
@@ -136,15 +138,17 @@ public sealed partial class L12RoomManager
     private readonly SemaphoreSlim _sessionRecoveryGate = new(1, 1);
     private readonly List<MatchmakingEntry> _matchmaking = [];
     private readonly Func<DateTimeOffset> _utcNow;
+    private readonly Func<bool> _maintenanceSandboxFenceActive;
 
     public L12RoomManager(L12Catalog catalog, MatchRecorder recorder, L12PlatformStore? platform = null,
-        Func<DateTimeOffset>? utcNow = null)
+        Func<DateTimeOffset>? utcNow = null, Func<bool>? maintenanceSandboxFenceActive = null)
     {
         _catalog = catalog;
         _recorder = recorder;
         _recorder.AttachCatalog(catalog);
         _platform = platform;
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        _maintenanceSandboxFenceActive = maintenanceSandboxFenceActive ?? ReadMaintenanceSandboxFence;
     }
 
     public object Connect(Guid sessionId, string accountId, string? requestedName,
@@ -819,7 +823,11 @@ public sealed partial class L12RoomManager
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         request ??= new L12SandboxRequest();
         var currentPolicy = CaptureOperationsPolicy();
-        if (currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
+        if (MaintenanceSandboxFenceActive())
+            return OperationsBlocked(sessionId, "sandbox_deployment_fenced",
+                "版本切换准备中，暂时不能建立新的测试沙盒。");
+        if (currentPolicy.IsNewGameEntryBlocked(_utcNow())
+            && !HasMaintenanceSandboxPermission(session))
             return MaintenanceBlocked(sessionId, currentPolicy);
         var disasterMode = (request.DisasterMode ?? string.Empty).Trim().ToLowerInvariant();
         if (disasterMode is not ("all" or "random" or "custom" or "none"))
@@ -1924,6 +1932,55 @@ public sealed partial class L12RoomManager
     private static IReadOnlyList<OutgoingMessage> MaintenanceBlocked(Guid sessionId,
         L12OperationsPolicySnapshot policy)
         => OperationsBlocked(sessionId, "maintenance_active", "维护即将开始/维护中，对局功能已关闭。");
+
+    private bool HasMaintenanceSandboxPermission(Session session)
+    {
+        if (_platform is null || string.IsNullOrWhiteSpace(session.AccountId)) return false;
+        var account = _platform.Account(session.AccountId);
+        return account is { Disabled: false, Deleted: false, MustChangePassword: false, MustChangeUsername: false }
+               && L12Authorization.HasPermission(account, L12Permission.AdminOperationsWrite);
+    }
+
+    private bool MaintenanceSandboxFenceActive()
+    {
+        try
+        {
+            return _maintenanceSandboxFenceActive();
+        }
+        catch
+        {
+            // Deployment coordination is fail-closed: an unreadable fence must never permit a new sandbox.
+            return true;
+        }
+    }
+
+    private static bool ReadMaintenanceSandboxFence()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "runtime", MaintenanceSandboxFenceFileName);
+        try
+        {
+            _ = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private bool IsAuthorizedMaintenanceSandbox(Room room)
+        => room.IsSandbox
+           && room.GmControllerSessionId is { } controllerId
+           && _sessions.TryGetValue(controllerId, out var controller)
+           && HasMaintenanceSandboxPermission(controller);
 
     private bool TryOperationsEntryBlock(Guid sessionId, L12OperationsPolicySnapshot policy,
         string? matchModeId, out IReadOnlyList<OutgoingMessage> blocked,

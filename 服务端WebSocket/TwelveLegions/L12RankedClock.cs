@@ -388,6 +388,7 @@ public sealed partial class L12RoomManager
         if (!active && warningMinutes < 0) return;
 
         foreach (var room in _rooms.Values.Where(candidate => candidate.Game is not null
+                     && !IsAuthorizedMaintenanceSandbox(candidate)
                      && (candidate.Game.State.Phase != L12Phase.GameOver
                          || !candidate.CompletionRecorded)).ToArray())
         {

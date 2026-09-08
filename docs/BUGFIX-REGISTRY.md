@@ -3563,3 +3563,10 @@
 - 仓库修改与防回滚：Windows 部署脚本不再使用旧域 `HostKeyAlias`，新主域缺少独立 known_hosts 记录时只复用已人工信任的生产 IP `103.146.230.37` 指纹，仍保持严格主机密钥校验；UI 契约明确禁止部署脚本重新依赖旧主站域名。`DEPLOY-HK.md` 收口为单一主域并记录旧域下线、DNS 与回滚边界。
 - 生产备份与回滚：原始 Nginx 备份位于 `/root/legion12-nginx-backups/retire-old-domain-20260906T092149Z`；最终删除前的 Nginx、Certbot renewal/live/archive、校验和、符号链接清单与恢复步骤位于其子目录 `final-cleanup-pre-delete-20260906T110431Z`，权限保持 root-only。回滚须先恢复 DNS，再按 `RESTORE.txt` 校验并恢复证书和 vhost，只有 `nginx -t` 成功才 reload。
 - 验证：Cloudflare 记录数由8降至7且目标行消失；活动 Nginx、站点链接、available 配置、Certbot 与证书路径中的旧域引用均为0。新域主页和 health 为200、WebSocket协议1通过，www保留路径/查询308；Nginx与`legion12-test.service`均active/running，`NRestarts=0`，活动 release 保持`505384b0137d45fd093e813533df1262bdcb03c5-20260906T102029Z`不变。远端新提交整合后的Batch通过路由门禁、UI契约270/270、卡图契约40项/324张、Vue TypeScript及Vite 239模块生产构建；提交级Release使用受管缓存中的.NET SDK 10.0.302和从线上只读复制、SHA256一致且逐文件审计通过的schema v3卡图副本，规则2393/2393、平台74/74、UI270/270、卡图40项、324+38项内容寻址资源审计、TypeScript/Vite构建及发布包生成全部通过。首次Release仅因默认本地卡图目录仍是schema v2/248张及系统PATH只有.NET 10.0.203而前置拒绝，未发生测试失败，也未降低版本或资源门禁。
+# BATCH295｜维护沙盒权限与卡图置换（2026-09-09）
+
+- 根因：CreateSandboxAsync无条件继承普通维护门禁；预约维护到点的房间循环也会结束管理员沙盒。修复限定服务端当前账号AdminOperationsWrite，拒绝停用/删除/强制改密改名账号；普通匹配、好友房、赛事和GM控制者约束不扩大。
+- 同类扫描：RoomManager新局入口、RankedClock维护循环、WebSocket认证与gmAction、前端SandboxPage/net、所有maintenance/entryBlocked门禁。前端无单独阻断，复用服务端判定，不新增客户端权限真值。
+- 独立沙盒发布围栏防止维护豁免穿透真正版本切换，发布失败保留，成功只清围栏；不调用维护结束或启动服务器接口。
+- 三张卡图内容哈希：安格斯bc4d8a51278fe4a82433d90a0270f08e1efe656fef0c5bcc9bb64d1e3c8d36c2；荷鲁斯bd37d9e7f7e5ef1ca3eb8dd746f8c7d0adec8ce11977142bd8673cf555afe6da；迦具土42d66f31b42ca5fab89c09dde7d86a00322d0a77b816fbfa0e610fd2b460234d。标准生成5规格后合入完整362清单，版本5278138dba0e15a83ff147604ff522ec6bb862f9b8424a8829586b9c4be02055，总237123517字节，增加502529字节；其余359条不变。产物及操作证据在artifacts/batch295。
+- 验证：维护权限/预约到点专项2/2、沙盒22/22、相邻维护2/2；主对话独立完整Batch最终2592/2592、UI306、主题11/11、连接23/23、重入6/6、卡图40/324及Vue/Vite全部通过。发布行为夹具验证成功移除围栏、失败保留。前两轮完整测试仅在Windows fixture删除matches.db时报文件锁（业务断言已过），已改为各自连接串ClearPool并有界等待句柄释放，最终失败仍抛出；完整复跑通过，没有删断言或跳过测试。证据batch295/batch-verified.log。提交级Release及线上回执待后续补，不提前关闭后台Bug。

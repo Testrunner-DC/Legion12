@@ -421,17 +421,22 @@ public sealed class RankedSetupClockTests
         {
             await Recorder.DisposeAsync();
             if (!Directory.Exists(_directory)) return;
-            for (var attempt = 1; attempt <= 5; attempt++)
+            var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
             {
-                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                DataSource = MatchPath,
+            }.ToString();
+            for (var attempt = 1; attempt <= 8; attempt++)
+            {
+                using (var poolKey = new Microsoft.Data.Sqlite.SqliteConnection(connectionString))
+                    Microsoft.Data.Sqlite.SqliteConnection.ClearPool(poolKey);
                 try
                 {
                     Directory.Delete(_directory, true);
                     return;
                 }
-                catch (IOException) when (attempt < 5)
+                catch (IOException) when (OperatingSystem.IsWindows() && attempt < 8)
                 {
-                    await Task.Delay(40 * attempt);
+                    await Task.Delay(50 * attempt);
                 }
             }
         }

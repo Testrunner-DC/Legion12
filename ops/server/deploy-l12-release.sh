@@ -10,6 +10,7 @@ fi
 readonly active_dir="${test_root}/opt/legion12-test"
 readonly releases_dir="${test_root}/opt/legion12-releases"
 readonly runtime_dir="${test_root}/opt/legion12-runtime"
+readonly sandbox_fence="${runtime_dir}/.maintenance-sandbox-drain"
 readonly static_card_assets_dir="${test_root}/opt/legion12-static/card-assets"
 readonly deployment_dir="${test_root}/opt/legion12-deployment"
 readonly incoming_dir="${deployment_dir}/incoming"
@@ -489,6 +490,16 @@ else
 fi
 previous_commit="$(read_release_commit "$previous_target")"
 
+# This deployment fence is independent of the saved operations maintenance plan.
+# Keep it on failure; only a completely verified release may remove it.
+block_sandbox_creation() {
+  [[ ! -L "$sandbox_fence" && ( ! -e "$sandbox_fence" || -f "$sandbox_fence" ) ]] \
+    || fail "沙盒发布围栏不是普通文件，拒绝覆盖"
+  printf '%s\n' "$commit" > "$sandbox_fence"
+  chmod 0644 "$sandbox_fence"
+}
+if [[ -d "$runtime_dir" ]]; then block_sandbox_creation; fi
+
 failure_stage="stop-current-service"
 log "暂停服务并首次分离持久化运行数据"
 service_stopped=1
@@ -503,6 +514,7 @@ if [[ ! -d "$runtime_dir" ]]; then
   ln -s "$runtime_dir" "${active_dir}/publish/runtime"
 fi
 failure_stage="snapshot-runtime"
+block_sandbox_creation
 chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
 backup_runtime
@@ -584,6 +596,8 @@ EOF
 failure_stage="prune-runtime-backups"
 prune_runtime_backups
 
+# Do not call any maintenance-end/server-start operation or mutate its plan.
+rm -f -- "$sandbox_fence"
 rm -f -- "$release_archive"
 if [[ "$card_assets_archive" != "-" ]]; then rm -f -- "$card_assets_archive"; fi
 trap - ERR INT TERM
