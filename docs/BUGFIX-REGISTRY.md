@@ -3565,6 +3565,8 @@
 - 验证：Cloudflare 记录数由8降至7且目标行消失；活动 Nginx、站点链接、available 配置、Certbot 与证书路径中的旧域引用均为0。新域主页和 health 为200、WebSocket协议1通过，www保留路径/查询308；Nginx与`legion12-test.service`均active/running，`NRestarts=0`，活动 release 保持`505384b0137d45fd093e813533df1262bdcb03c5-20260906T102029Z`不变。远端新提交整合后的Batch通过路由门禁、UI契约270/270、卡图契约40项/324张、Vue TypeScript及Vite 239模块生产构建；提交级Release使用受管缓存中的.NET SDK 10.0.302和从线上只读复制、SHA256一致且逐文件审计通过的schema v3卡图副本，规则2393/2393、平台74/74、UI270/270、卡图40项、324+38项内容寻址资源审计、TypeScript/Vite构建及发布包生成全部通过。首次Release仅因默认本地卡图目录仍是schema v2/248张及系统PATH只有.NET 10.0.203而前置拒绝，未发生测试失败，也未降低版本或资源门禁。
 # BATCH295｜维护沙盒权限与卡图置换（2026-09-09）
 
+- 最终发布回执：应用eb199add360731fea37b6b69c8d21aae66619e4d已同步并正式上线；Release2592规则/102指定平台/UI306通过。线上管理员维护沙盒创建、GM、维护循环、重连及关闭通过，普通建房仍被拦截；维护配置v29逐字段一致。三图15规格哈希/字节/类型及详细玩家更新日志通过；没有无证据批量关闭后台报告。证据artifacts/batch295/FINAL-RECEIPT.md，以下“待后续补”为此前阶段。
+
 - 根因：CreateSandboxAsync无条件继承普通维护门禁；预约维护到点的房间循环也会结束管理员沙盒。修复限定服务端当前账号AdminOperationsWrite，拒绝停用/删除/强制改密改名账号；普通匹配、好友房、赛事和GM控制者约束不扩大。
 - 同类扫描：RoomManager新局入口、RankedClock维护循环、WebSocket认证与gmAction、前端SandboxPage/net、所有maintenance/entryBlocked门禁。前端无单独阻断，复用服务端判定，不新增客户端权限真值。
 - 独立沙盒发布围栏防止维护豁免穿透真正版本切换，发布失败保留，成功只清围栏；不调用维护结束或启动服务器接口。

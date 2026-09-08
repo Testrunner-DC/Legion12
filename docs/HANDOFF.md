@@ -1,6 +1,13 @@
 # 十二军团简短交接
 
-## BATCH295 正式发布准备
+## BATCH295 正式发布完成
+
+- 最终应用提交 `eb199add360731fea37b6b69c8d21aae66619e4d` 已推送 main 并正式部署到38.76.208.25/legion-12.com；仅一次实际版本切换。下方“准备/尚未部署”均为过程记录，以本条最终回执为准。提交级Release规则2592/2592、指定平台102/102、UI306及完整构建通过。
+- 本机/公网版本、HTTP与WebSocket、管理员登录、维护期沙盒创建/GM操作/2.5秒维护循环后存活/断线重连/主动退出全部通过；普通建房仍维护拦截。三张新图15规格逐一核对线上字节、SHA256和类型，详细更新日志已随同版本发布。
+- 运营配置版本29、预约2026-09-09 02:00 UTC+8、结束时间空、预计8小时及立即维护字段均与部署前完全一致；没有调用维护结束/启动服务器，普通新局入口仍关闭。仅移除本次独立发布沙盒围栏。正式服务active/running、NRestarts0；测试服务仍a1061e3/8084，未部署测试、未调整Cloudflare。
+- 部署前真实活动局0、排位active0/Outbox pending0；验收自建沙盒已退出。部署后runtime completed252、Outbox applied253、原quarantine2保留，新分析表/版本字段及受影响表检查通过。无新增所筛查的数据库锁/损坏/磁盘满/未处理异常日志。旧matches全库quick_check未完成，不宣称历史回放全库完整性已验收。
+- 完整runtime备份 `/opt/legion12-deployment/runtime-backups/runtime-before-eb199add3607-20260908T184239Z.tar.gz` 约2.1GiB；原版本与旧备份保留，没有覆盖生产数据。根盘剩余约3.9GiB、使用94%，仍需后续存储治理；本批未额外VACUUM或删除旧录像/备份。受批准的保留策略已随290–294代码上线，不能把页复用称为数据库文件已缩小。
+- 证据 `D:/GPT/Legion12/artifacts/batch295/FINAL-RECEIPT.md` 及同目录Release、deploy、public/admin/runtime-verification日志。此次无可凭原场景证据关闭的新后台报告，不批量回填。后续仅回执文档同步，不再次发布程序。
 
 - Release首轮发现fixture仍会与其他测试类的ClearAllPools竞争；仅MaintenanceSandboxAuthorizationTests和RankedSetupClockTests加入禁并行集合，保留各自ClearPool、有界释放与所有断言；两完整类7/7。生产源未再改，新的提交级Release必须重新通过，旧3f77836未推送或部署。
 
