@@ -32,7 +32,7 @@ async function loadMatches() {
   loading.value = true
   error.value = ''
   try {
-    matches.value = await platformRequest<MatchSummary[]>('/api/matches?limit=100')
+    matches.value = await platformRequest<MatchSummary[]>('/api/matches?limit=30')
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '读取对局记录失败'
   } finally { loading.value = false }
@@ -109,7 +109,7 @@ function resultLabel(match: MatchSummary) {
   <section class="match-records grand-panel">
     <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
     <header class="records-header">
-      <div><p class="kicker">MATCH RECORDS · SQLITE / JSON</p><h1>对局记录</h1></div>
+      <div><p class="kicker">PLAYER REPLAYS · RECENT 30 / JSON</p><h1>最近 30 场回放</h1></div>
       <div class="record-file-actions">
         <input ref="fileInput" type="file" accept="application/json,.json" @change="importReplay"/>
         <button @click="fileInput?.click()">打开 JSON 回放</button>

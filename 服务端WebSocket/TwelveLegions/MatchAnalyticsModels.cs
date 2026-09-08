@@ -50,7 +50,9 @@ public sealed record L12AdminMatchQuery(
     string? CardOwnerInitiative = null,
     string? RulesVersion = null,
     string? SeasonId = null,
-    bool RequireDecisiveResult = false);
+    bool RequireDecisiveResult = false,
+    string? EffectVersion = null,
+    bool RequireAnalyticsEligible = false);
 
 public sealed record L12CardAnalyticsQuery(
     string? Cursor = null,
@@ -65,7 +67,8 @@ public sealed record L12CardAnalyticsQuery(
     string? OpponentMasterId = null,
     string? Initiative = null,
     string? RulesVersion = null,
-    string? SeasonId = null);
+    string? SeasonId = null,
+    string? EffectVersion = null);
 
 public sealed record L12AdminMatchPlayer(
     int PlayerIndex,
@@ -137,6 +140,47 @@ public sealed record L12AnalyticsConfidenceInterval(
     double Low,
     double High);
 
+public sealed record L12AnalyticsUncertainty(
+    string Status,
+    string Method,
+    double? Low = null,
+    double? High = null,
+    string? Reason = null);
+
+public sealed record L12AnalyticsSampleStructure(
+    long ParticipantSamples,
+    long DistinctMatches,
+    long DistinctPlayers,
+    long KnownPlayerSamples,
+    long AnonymousPlayerSamples,
+    long MaximumPlayerContribution,
+    double MaximumPlayerContributionRate,
+    string DependencyStatus,
+    L12AnalyticsUncertainty Uncertainty);
+
+public sealed record L12AnalyticsStratifiedComparison(
+    long CarriedSamples,
+    long ComparisonSamples,
+    long InsufficientStrata,
+    long ExcludedIncludedSamples,
+    double? WinRate,
+    double? Delta,
+    string Weighting,
+    L12AnalyticsUncertainty? Uncertainty = null);
+
+public sealed record L12AnalyticsUsageMetric(
+    string Metric,
+    long ObservedParticipantSamples,
+    long EventCount,
+    long ExactFacts,
+    long InferredFacts,
+    long PartialFacts,
+    long? EligibleSamples,
+    string CoverageStatus);
+
+public sealed record L12CardAnalyticsUsage(
+    IReadOnlyList<L12AnalyticsUsageMetric> Metrics);
+
 public sealed record L12AnalyticsCoverage(
     int SchemaVersion,
     IReadOnlyList<string> SupportedKinds,
@@ -191,7 +235,10 @@ public sealed record L12CardAnalyticsItem(
     long ResolvedCount,
     long NegatedCount,
     long FizzledCount,
-    L12AnalyticsCoverage Coverage);
+    L12AnalyticsCoverage Coverage,
+    L12AnalyticsSampleStructure? SampleStructure = null,
+    L12AnalyticsStratifiedComparison? Comparison = null,
+    L12CardAnalyticsUsage? Usage = null);
 
 public sealed record L12CardAnalyticsPageSummary(
     long EligibleMatches,

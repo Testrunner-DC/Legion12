@@ -46,21 +46,32 @@ public sealed partial class MatchRecorder
     public async Task<L12CardAnalyticsPage> ListCardAnalyticsAsync(L12CardAnalyticsQuery query)
     {
         var normalized = NormalizeAnalyticsQuery(query);
+        var cacheKey = AnalyticsResultCacheKey("list", normalized);
+        if (TryReadAnalyticsResultCache<L12CardAnalyticsPage>(cacheKey, out var cached)) return cached!;
+        var cacheEpoch = AnalyticsCacheEpoch;
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
-        await PrepareAnalyticsScopeAsync(connection, normalized);
+        await PrepareAnalyticsScopeAsync(connection, normalized, includeFacts: false);
         var population = await ReadAnalyticsPopulationAsync(connection, normalized);
         var rows = await ReadCardAnalyticsRowsAsync(connection, normalized, includeCursor: true,
             normalized.Limit + 1);
         var hasMore = rows.Count > normalized.Limit;
         if (hasMore) rows.RemoveAt(rows.Count - 1);
-        var items = rows.Select(row => ToAnalyticsItem(row, population)).ToArray();
+        var cardIds = rows.Select(row => row.CardId).ToArray();
+        var structures = await ReadAnalyticsSampleStructuresAsync(connection, cardIds);
+        var comparisons = await ReadStratifiedComparisonsAsync(connection, cardIds);
+        var items = rows.Select(row => ToAnalyticsItem(row, population,
+            structures.GetValueOrDefault(row.CardId), comparisons.GetValueOrDefault(row.CardId),
+            factsLoaded: false)).ToArray();
         var total = await CountCardAnalyticsRowsAsync(connection, normalized);
-        var coverage = await ReadAnalyticsCoverageAsync(connection, normalized, population.SampleSize);
-        return new L12CardAnalyticsPage(items, total,
+        var coverage = await ReadAnalyticsCoverageAsync(connection, normalized, population.SampleSize,
+            factsLoaded: false);
+        var result = new L12CardAnalyticsPage(items, total,
             hasMore && rows.Count > 0 ? Base64UrlEncode(rows[^1].CardId) : null,
             new L12CardAnalyticsPageSummary(population.EligibleMatches, population.SampleSize,
                 population.BaselineWinRate, normalized.MinimumSampleSize, "participant", coverage));
+        StoreAnalyticsResultCache(cacheKey, result, cacheEpoch);
+        return result;
     }
 
     public async Task<L12CardAnalyticsDetail?> GetCardAnalyticsAsync(string cardId,
@@ -69,35 +80,18 @@ public sealed partial class MatchRecorder
         if (string.IsNullOrWhiteSpace(cardId)) return null;
         var normalizedCardId = cardId.Trim();
         var normalized = NormalizeAnalyticsQuery(query with { Cursor = null, Search = null });
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        await PrepareAnalyticsScopeAsync(connection, normalized);
-        var population = await ReadAnalyticsPopulationAsync(connection, normalized);
-        var row = await ReadSingleCardAnalyticsRowAsync(connection, normalized, normalizedCardId);
-        if (row is null || row.IncludedSamples < normalized.MinimumSampleSize) return null;
-        var summary = ToAnalyticsItem(row, population);
-        var breakdowns = new List<L12CardAnalyticsBreakdown>();
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, normalized, normalizedCardId,
-            "mode", "e.mode_id"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, normalized, normalizedCardId,
-            "master", "COALESCE(e.master_id,'unknown')"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, normalized, normalizedCardId,
-            "opponent-master", "COALESCE(e.opponent_master_id,'unknown')"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, normalized, normalizedCardId,
-            "initiative", InitiativeExpression("e")));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, normalized, normalizedCardId,
-            "rules-version", "COALESCE(e.rules_version,'legacy')"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, normalized, normalizedCardId,
-            "season", "COALESCE(e.season_id,'unassigned')"));
-        var quantities = await ReadQuantityDistributionAsync(connection, normalized, normalizedCardId);
-        var turns = await ReadTurnDistributionAsync(connection, normalized, normalizedCardId);
-        var matchups = await ReadMatchupsAsync(connection, normalized, normalizedCardId);
-        var privacySafeRecent = Array.Empty<L12AdminMatchSummary>();
-        if (includeRecentMatches)
+        var cacheKey = AnalyticsResultCacheKey("detail-statistics", normalized, normalizedCardId);
+        if (!TryReadAnalyticsResultCache<L12CardAnalyticsDetail>(cacheKey, out var statistics))
         {
-            var recent = await ListAdminMatchesAsync(new L12AdminMatchQuery(
+            var cacheEpoch = AnalyticsCacheEpoch;
+            statistics = await ComputeCardAnalyticsDetailAsync(normalizedCardId, normalized);
+            if (statistics is null) return null;
+            StoreAnalyticsResultCache(cacheKey, statistics, cacheEpoch);
+        }
+        if (!includeRecentMatches) return statistics!;
+        var recent = await ListAdminMatchesAsync(new L12AdminMatchQuery(
                 Limit: 20,
-                ModeId: normalized.ModeId,
+                ModeId: "ranked",
                 Status: "completed",
                 FromUtc: normalized.FromUtc,
                 ToUtc: normalized.ToUtc,
@@ -107,11 +101,47 @@ public sealed partial class MatchRecorder
                 CardOwnerInitiative: normalized.Initiative,
                 RulesVersion: normalized.RulesVersion,
                 SeasonId: normalized.SeasonId,
-                RequireDecisiveResult: true));
-            privacySafeRecent = recent.Items.Select(SanitizeAnalyticsRecentMatch).ToArray();
-        }
-        return new L12CardAnalyticsDetail(summary, breakdowns, quantities, turns, matchups,
-            privacySafeRecent, summary.Coverage);
+                RequireDecisiveResult: true,
+                EffectVersion: normalized.EffectVersion,
+                RequireAnalyticsEligible: true));
+        return statistics! with
+        {
+            RecentMatches = recent.Items.Select(SanitizeAnalyticsRecentMatch).ToArray(),
+        };
+    }
+
+    private async Task<L12CardAnalyticsDetail?> ComputeCardAnalyticsDetailAsync(string cardId,
+        L12CardAnalyticsQuery query)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await PrepareAnalyticsScopeAsync(connection, query, cardId, includeFacts: true);
+        var population = await ReadAnalyticsPopulationAsync(connection, query);
+        var row = await ReadSingleCardAnalyticsRowAsync(connection, query, cardId);
+        if (row is null || row.IncludedSamples < query.MinimumSampleSize) return null;
+        var target = new[] { cardId };
+        var structures = await ReadAnalyticsSampleStructuresAsync(connection, target);
+        var comparisons = await ReadStratifiedComparisonsAsync(connection, target);
+        var summary = ToAnalyticsItem(row, population, structures.GetValueOrDefault(cardId),
+            comparisons.GetValueOrDefault(cardId), factsLoaded: true);
+        var breakdowns = new List<L12CardAnalyticsBreakdown>();
+        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
+            "master", "COALESCE(e.master_id,'unknown')"));
+        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
+            "opponent-master", "COALESCE(e.opponent_master_id,'unknown')"));
+        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
+            "initiative", InitiativeExpression("e")));
+        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
+            "rules-version", "COALESCE(e.rules_version,'legacy')"));
+        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
+            "effect-version", "e.effect_version"));
+        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
+            "season", "COALESCE(e.season_id,'unassigned')"));
+        var quantities = await ReadQuantityDistributionAsync(connection, query, cardId);
+        var turns = await ReadTurnDistributionAsync(connection, query, cardId);
+        var matchups = await ReadMatchupsAsync(connection, query, cardId);
+        return new L12CardAnalyticsDetail(summary, breakdowns, quantities, turns, matchups, [],
+            summary.Coverage);
     }
 
     private static L12CardAnalyticsQuery NormalizeAnalyticsQuery(L12CardAnalyticsQuery query)
@@ -127,13 +157,15 @@ public sealed partial class MatchRecorder
             Search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim(),
             CandidateCardIds = query.CandidateCardIds?.Where(cardId => !string.IsNullOrWhiteSpace(cardId))
                 .Select(cardId => cardId.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            ModeId = string.IsNullOrWhiteSpace(query.ModeId) ? null : query.ModeId.Trim().ToLowerInvariant(),
+            // 单卡仪表盘只描述排位环境。为了兼容旧调用方，即使传入其他模式也固定为 ranked。
+            ModeId = "ranked",
             MasterId = string.IsNullOrWhiteSpace(query.MasterId) ? null : query.MasterId.Trim(),
             OpponentMasterId = string.IsNullOrWhiteSpace(query.OpponentMasterId)
                 ? null : query.OpponentMasterId.Trim(),
             Initiative = initiative,
             RulesVersion = string.IsNullOrWhiteSpace(query.RulesVersion) ? null : query.RulesVersion.Trim(),
             SeasonId = string.IsNullOrWhiteSpace(query.SeasonId) ? null : query.SeasonId.Trim(),
+            EffectVersion = string.IsNullOrWhiteSpace(query.EffectVersion) ? null : query.EffectVersion.Trim(),
         };
         if (normalized.FromUtc is { } from && normalized.ToUtc is { } to && from >= to)
             throw new ArgumentException("开始时间必须早于结束时间", nameof(query));
@@ -158,18 +190,17 @@ public sealed partial class MatchRecorder
         parameters = new Dictionary<string, object>(StringComparer.Ordinal);
         var clauses = new List<string>
         {
-            "m.mode_id <> 'sandbox'",
+            "m.mode_id='ranked'",
+            "m.analytics_version>=2",
+            "m.effect_version IS NOT NULL",
+            "trim(m.effect_version)<>''",
+            "lower(trim(m.effect_version))<>'unknown'",
             "m.ended_utc IS NOT NULL",
             "m.error IS NULL",
             "m.winner IN (0,1)",
             "p.deck_snapshot_coverage='exact'",
             "EXISTS(SELECT 1 FROM match_deck_cards snapshot WHERE snapshot.match_id=p.match_id AND snapshot.player_index=p.player_index)",
         };
-        if (query.ModeId is not null)
-        {
-            clauses.Add("m.mode_id=$mode");
-            parameters["$mode"] = query.ModeId;
-        }
         if (query.MasterId is not null)
         {
             clauses.Add("p.master_id=$master");
@@ -191,6 +222,11 @@ public sealed partial class MatchRecorder
             clauses.Add("m.rules_version=$rulesVersion");
             parameters["$rulesVersion"] = query.RulesVersion;
         }
+        if (query.EffectVersion is not null)
+        {
+            clauses.Add("m.effect_version=$effectVersion");
+            parameters["$effectVersion"] = query.EffectVersion;
+        }
         if (query.SeasonId is not null)
         {
             clauses.Add("m.season_id=$seasonId");
@@ -207,8 +243,8 @@ public sealed partial class MatchRecorder
             parameters["$to"] = to.ToUniversalTime().ToString("O");
         }
         return $"""
-            SELECT m.match_id,m.mode_id,m.rules_version,m.season_id,m.fact_schema_version,
-                   m.winner,m.first_player,m.started_utc,p.player_index,p.master_id,
+            SELECT m.match_id,m.mode_id,m.rules_version,m.effect_version,m.season_id,m.fact_schema_version,
+                   m.winner,m.first_player,m.started_utc,p.player_index,p.account_id,p.master_id,
                    opponent.master_id AS opponent_master_id
             FROM matches m
             JOIN match_participants p ON p.match_id=m.match_id
@@ -219,9 +255,70 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task PrepareAnalyticsScopeAsync(SqliteConnection connection,
-        L12CardAnalyticsQuery query)
+        L12CardAnalyticsQuery query, string? targetCardId = null, bool includeFacts = true)
     {
         var eligibleSelect = AnalyticsEligibleSelect(query, out var parameters);
+        var inclusionFilter = targetCardId is null ? string.Empty : "WHERE d.card_id=$targetCard";
+        var factFilter = targetCardId is null ? string.Empty : " AND f.card_id=$targetCard";
+        var summaryFilter = targetCardId is null ? string.Empty : " AND summary.card_id=$targetCard";
+        if (targetCardId is not null) parameters["$targetCard"] = targetCardId;
+        var factStatsSql = includeFacts
+            ? $"""
+              CREATE TEMP TABLE l12_analytics_fact_stats AS
+              SELECT f.match_id,f.player_index,f.card_id,
+                     MAX(CASE WHEN f.kind='draw' AND f.coverage='exact' THEN 1 ELSE 0 END) AS drawn,
+                     MAX(CASE WHEN f.kind='play' AND f.coverage='exact' THEN 1 ELSE 0 END) AS played,
+                     MAX(CASE WHEN f.kind='activate' AND f.coverage='exact' THEN 1 ELSE 0 END) AS activated_sample,
+                     MAX(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='exact' THEN 1 ELSE 0 END) AS settled_sample,
+                     MAX(CASE WHEN f.kind='resolve' AND f.coverage='exact' THEN 1 ELSE 0 END) AS resolved_sample,
+                     MAX(CASE WHEN f.kind='negate' AND f.coverage='exact' THEN 1 ELSE 0 END) AS negated_sample,
+                     MAX(CASE WHEN f.kind='fizzle' AND f.coverage='exact' THEN 1 ELSE 0 END) AS fizzled_sample,
+                     MAX(CASE WHEN f.kind IN ('draw','play','activate','resolve','negate','fizzle') THEN 1 ELSE 0 END) AS observed_sample,
+                     MIN(CASE WHEN f.kind='draw' AND f.coverage='exact' THEN f.turn END) AS first_draw_turn,
+                     MIN(CASE WHEN f.kind='play' AND f.coverage='exact' THEN f.turn END) AS first_play_turn,
+                     SUM(CASE WHEN f.kind='activate' THEN 1 ELSE 0 END) AS activated,
+                     SUM(CASE WHEN f.kind='resolve' THEN 1 ELSE 0 END) AS resolved,
+                     SUM(CASE WHEN f.kind='negate' THEN 1 ELSE 0 END) AS negated,
+                     SUM(CASE WHEN f.kind='fizzle' THEN 1 ELSE 0 END) AS fizzled,
+                     SUM(CASE WHEN f.coverage='exact' THEN 1 ELSE 0 END) AS exact_facts,
+                     SUM(CASE WHEN f.coverage='inferred' THEN 1 ELSE 0 END) AS inferred_facts,
+                     SUM(CASE WHEN f.coverage='partial' THEN 1 ELSE 0 END) AS partial_facts,
+                     SUM(CASE WHEN f.kind='draw' AND f.coverage='exact' THEN 1 ELSE 0 END) AS draw_exact,
+                     SUM(CASE WHEN f.kind='draw' AND f.coverage='inferred' THEN 1 ELSE 0 END) AS draw_inferred,
+                     SUM(CASE WHEN f.kind='draw' AND f.coverage='partial' THEN 1 ELSE 0 END) AS draw_partial,
+                     SUM(CASE WHEN f.kind='play' AND f.coverage='exact' THEN 1 ELSE 0 END) AS play_exact,
+                     SUM(CASE WHEN f.kind='play' AND f.coverage='inferred' THEN 1 ELSE 0 END) AS play_inferred,
+                     SUM(CASE WHEN f.kind='play' AND f.coverage='partial' THEN 1 ELSE 0 END) AS play_partial,
+                     SUM(CASE WHEN f.kind='activate' AND f.coverage='exact' THEN 1 ELSE 0 END) AS activation_exact,
+                     SUM(CASE WHEN f.kind='activate' AND f.coverage='inferred' THEN 1 ELSE 0 END) AS activation_inferred,
+                     SUM(CASE WHEN f.kind='activate' AND f.coverage='partial' THEN 1 ELSE 0 END) AS activation_partial,
+                     SUM(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='exact' THEN 1 ELSE 0 END) AS settlement_exact,
+                     SUM(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='inferred' THEN 1 ELSE 0 END) AS settlement_inferred,
+                     SUM(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='partial' THEN 1 ELSE 0 END) AS settlement_partial
+              FROM match_card_facts f
+              JOIN temp.l12_analytics_eligible e
+                ON e.match_id=f.match_id AND e.player_index=f.player_index
+              JOIN temp.l12_analytics_inclusions i
+                ON i.match_id=f.match_id AND i.player_index=f.player_index AND i.card_id=f.card_id
+              WHERE f.card_id IS NOT NULL AND f.kind<>'deck-included'{factFilter}
+                AND NOT EXISTS(
+                    SELECT 1 FROM match_card_fact_compactions compacted
+                    WHERE compacted.match_id=f.match_id)
+              GROUP BY f.match_id,f.player_index,f.card_id;
+              INSERT INTO temp.l12_analytics_fact_stats
+              SELECT summary.*
+              FROM match_card_fact_summaries summary
+              JOIN temp.l12_analytics_eligible e
+                ON e.match_id=summary.match_id AND e.player_index=summary.player_index
+              JOIN temp.l12_analytics_inclusions i
+                ON i.match_id=summary.match_id AND i.player_index=summary.player_index
+               AND i.card_id=summary.card_id
+              WHERE 1=1{summaryFilter};
+              """
+            : """
+              CREATE TEMP TABLE l12_analytics_fact_stats AS
+              SELECT * FROM match_card_fact_summaries WHERE 0;
+              """;
         var command = connection.CreateCommand();
         command.CommandText = $"""
             DROP TABLE IF EXISTS temp.l12_analytics_fact_stats;
@@ -239,59 +336,12 @@ public sealed partial class MatchRecorder
             SELECT e.match_id,e.player_index,d.card_id,SUM(d.quantity) AS quantity
             FROM temp.l12_analytics_eligible e
             JOIN match_deck_cards d ON d.match_id=e.match_id AND d.player_index=e.player_index
+            {inclusionFilter}
             GROUP BY e.match_id,e.player_index,d.card_id;
             CREATE UNIQUE INDEX temp.ix_l12_analytics_inclusions_card
                 ON l12_analytics_inclusions(card_id,match_id,player_index);
 
-            CREATE TEMP TABLE l12_analytics_fact_stats AS
-            SELECT f.match_id,f.player_index,f.card_id,
-                   MAX(CASE WHEN f.kind='draw' AND f.coverage='exact' THEN 1 ELSE 0 END) AS drawn,
-                   MAX(CASE WHEN f.kind='play' AND f.coverage='exact' THEN 1 ELSE 0 END) AS played,
-                   MAX(CASE WHEN f.kind='activate' AND f.coverage='exact' THEN 1 ELSE 0 END) AS activated_sample,
-                   MAX(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='exact' THEN 1 ELSE 0 END) AS settled_sample,
-                   MAX(CASE WHEN f.kind='resolve' AND f.coverage='exact' THEN 1 ELSE 0 END) AS resolved_sample,
-                   MAX(CASE WHEN f.kind='negate' AND f.coverage='exact' THEN 1 ELSE 0 END) AS negated_sample,
-                   MAX(CASE WHEN f.kind='fizzle' AND f.coverage='exact' THEN 1 ELSE 0 END) AS fizzled_sample,
-                   MAX(CASE WHEN f.kind IN ('draw','play','activate','resolve','negate','fizzle') THEN 1 ELSE 0 END) AS observed_sample,
-                   MIN(CASE WHEN f.kind='draw' AND f.coverage='exact' THEN f.turn END) AS first_draw_turn,
-                   MIN(CASE WHEN f.kind='play' AND f.coverage='exact' THEN f.turn END) AS first_play_turn,
-                   SUM(CASE WHEN f.kind='activate' THEN 1 ELSE 0 END) AS activated,
-                   SUM(CASE WHEN f.kind='resolve' THEN 1 ELSE 0 END) AS resolved,
-                   SUM(CASE WHEN f.kind='negate' THEN 1 ELSE 0 END) AS negated,
-                   SUM(CASE WHEN f.kind='fizzle' THEN 1 ELSE 0 END) AS fizzled,
-                   SUM(CASE WHEN f.coverage='exact' THEN 1 ELSE 0 END) AS exact_facts,
-                   SUM(CASE WHEN f.coverage='inferred' THEN 1 ELSE 0 END) AS inferred_facts,
-                   SUM(CASE WHEN f.coverage='partial' THEN 1 ELSE 0 END) AS partial_facts,
-                   SUM(CASE WHEN f.kind='draw' AND f.coverage='exact' THEN 1 ELSE 0 END) AS draw_exact,
-                   SUM(CASE WHEN f.kind='draw' AND f.coverage='inferred' THEN 1 ELSE 0 END) AS draw_inferred,
-                   SUM(CASE WHEN f.kind='draw' AND f.coverage='partial' THEN 1 ELSE 0 END) AS draw_partial,
-                   SUM(CASE WHEN f.kind='play' AND f.coverage='exact' THEN 1 ELSE 0 END) AS play_exact,
-                   SUM(CASE WHEN f.kind='play' AND f.coverage='inferred' THEN 1 ELSE 0 END) AS play_inferred,
-                   SUM(CASE WHEN f.kind='play' AND f.coverage='partial' THEN 1 ELSE 0 END) AS play_partial,
-                   SUM(CASE WHEN f.kind='activate' AND f.coverage='exact' THEN 1 ELSE 0 END) AS activation_exact,
-                   SUM(CASE WHEN f.kind='activate' AND f.coverage='inferred' THEN 1 ELSE 0 END) AS activation_inferred,
-                   SUM(CASE WHEN f.kind='activate' AND f.coverage='partial' THEN 1 ELSE 0 END) AS activation_partial,
-                   SUM(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='exact' THEN 1 ELSE 0 END) AS settlement_exact,
-                   SUM(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='inferred' THEN 1 ELSE 0 END) AS settlement_inferred,
-                   SUM(CASE WHEN f.kind IN ('resolve','negate','fizzle') AND f.coverage='partial' THEN 1 ELSE 0 END) AS settlement_partial
-            FROM match_card_facts f
-            JOIN temp.l12_analytics_eligible e
-              ON e.match_id=f.match_id AND e.player_index=f.player_index
-            JOIN temp.l12_analytics_inclusions i
-              ON i.match_id=f.match_id AND i.player_index=f.player_index AND i.card_id=f.card_id
-            WHERE f.card_id IS NOT NULL AND f.kind<>'deck-included'
-              AND NOT EXISTS(
-                  SELECT 1 FROM match_card_fact_compactions compacted
-                  WHERE compacted.match_id=f.match_id)
-            GROUP BY f.match_id,f.player_index,f.card_id;
-            INSERT INTO temp.l12_analytics_fact_stats
-            SELECT summary.*
-            FROM match_card_fact_summaries summary
-            JOIN temp.l12_analytics_eligible e
-              ON e.match_id=summary.match_id AND e.player_index=summary.player_index
-            JOIN temp.l12_analytics_inclusions i
-              ON i.match_id=summary.match_id AND i.player_index=summary.player_index
-             AND i.card_id=summary.card_id;
+            {factStatsSql}
             CREATE UNIQUE INDEX temp.ix_l12_analytics_fact_stats_card
                 ON l12_analytics_fact_stats(card_id,match_id,player_index);
             """;
@@ -447,8 +497,19 @@ public sealed partial class MatchRecorder
         => reader.IsDBNull(ordinal) ? 0 : reader.GetInt64(ordinal);
 
     private static async Task<L12AnalyticsCoverage> ReadAnalyticsCoverageAsync(
-        SqliteConnection connection, L12CardAnalyticsQuery query, long exactDeckSnapshots)
+        SqliteConnection connection, L12CardAnalyticsQuery query, long exactDeckSnapshots,
+        bool factsLoaded)
     {
+        if (!factsLoaded)
+        {
+            var inclusion = new L12AnalyticsMetricCoverage("inclusion", "participant",
+                exactDeckSnapshots, exactDeckSnapshots, exactDeckSnapshots, 0, 0);
+            return new L12AnalyticsCoverage(L12CardFactKinds.SchemaVersion, [], 0, 0, 0,
+                exactDeckSnapshots, 0, false, [inclusion],
+                AnalyticsLimitations.Concat([
+                    "List results omit card-fact scans; usage coverage is unknown until detail is requested.",
+                ]).ToArray());
+        }
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
         var command = connection.CreateCommand();
@@ -481,25 +542,15 @@ public sealed partial class MatchRecorder
     }
 
     private static L12CardAnalyticsItem ToAnalyticsItem(CardAnalyticsRow row,
-        AnalyticsPopulation population)
+        AnalyticsPopulation population, AnalyticsSampleStructureCounts? structure,
+        L12AnalyticsStratifiedComparison? comparison, bool factsLoaded)
     {
         var winRate = Rate(row.Wins, row.IncludedSamples);
-        var comparisonSamples = population.SampleSize - row.IncludedSamples;
-        var comparisonWins = population.Wins - row.Wins;
-        var comparisonWinRate = RateOrNull(comparisonWins, comparisonSamples);
         var winRateConfidence = WilsonInterval(row.Wins, row.IncludedSamples);
-        var baselineConfidence = comparisonSamples > 0
-            ? WilsonInterval(comparisonWins, comparisonSamples) : null;
-        var deltaConfidence = baselineConfidence is null
-            ? null : DifferenceInterval(winRateConfidence, baselineConfidence);
-        var metrics = new[]
+        var metrics = new List<L12AnalyticsMetricCoverage>
         {
             new L12AnalyticsMetricCoverage("inclusion", "participant", population.SampleSize,
                 row.IncludedSamples, row.IncludedSamples, 0, 0),
-            MetricCoverage("draw", row.IncludedSamples, row.DrawnSamples, row.DrawCoverage),
-            MetricCoverage("play", row.IncludedSamples, row.PlayedSamples, row.PlayCoverage),
-            MetricCoverage("activation", row.IncludedSamples, row.ActivatedSamples, row.ActivationCoverage),
-            MetricCoverage("settlement", row.ActivatedSamples, row.SettledSamples, row.SettlementCoverage),
         };
         var coverage = new L12AnalyticsCoverage(L12CardFactKinds.SchemaVersion, L12CardFactKinds.Supported,
             row.ExactFacts, row.InferredFacts, row.PartialFacts, row.IncludedSamples, 0, false,
@@ -507,18 +558,13 @@ public sealed partial class MatchRecorder
         return new L12CardAnalyticsItem(row.CardId, row.IncludedSamples, population.SampleSize,
             row.IncludedMatches, Rate(row.TotalQuantity, row.IncludedSamples),
             Rate(row.IncludedSamples, population.SampleSize), row.Wins, winRate, winRateConfidence,
-            comparisonWinRate, baselineConfidence,
-            comparisonWinRate is null ? null : winRate - comparisonWinRate.Value, deltaConfidence,
+            comparison?.WinRate, null, comparison?.Delta, null,
             row.DrawnMatches, row.PlayedMatches, row.DrawnSamples, row.PlayedSamples,
             row.ActivatedSamples, row.SettledSamples, row.ResolvedSamples, row.NegatedSamples,
             row.FizzledSamples, row.ActivatedCount, row.ResolvedCount, row.NegatedCount,
-            row.FizzledCount, coverage);
+            row.FizzledCount, coverage, ToSampleStructure(row, structure), comparison,
+            factsLoaded ? ToUsage(row) : null);
     }
-
-    private static L12AnalyticsMetricCoverage MetricCoverage(string metric, long eligible,
-        long observed, MetricCoverageCounts coverage)
-        => new(metric, "participant", eligible, observed, coverage.Exact, coverage.Inferred,
-            coverage.Partial);
 
     private static async Task<IReadOnlyList<L12CardAnalyticsBreakdown>> ReadBreakdownsAsync(
         SqliteConnection connection, L12CardAnalyticsQuery query, string cardId,
@@ -552,22 +598,14 @@ public sealed partial class MatchRecorder
         while (await reader.ReadAsync())
         {
             var populationSamples = reader.GetInt64(1);
-            var populationWins = ReadLong(reader, 2);
             var included = ReadLong(reader, 3);
             var includedMatches = ReadLong(reader, 4);
             var wins = ReadLong(reader, 5);
             var winRate = Rate(wins, included);
-            var comparisonSamples = populationSamples - included;
-            var comparisonWins = populationWins - wins;
-            var baseline = RateOrNull(comparisonWins, comparisonSamples);
             var winRateConfidence = WilsonInterval(wins, included);
-            var baselineConfidence = comparisonSamples > 0
-                ? WilsonInterval(comparisonWins, comparisonSamples) : null;
             result.Add(new L12CardAnalyticsBreakdown(dimension, reader.GetString(0), included,
-                populationSamples, includedMatches, wins, winRate, winRateConfidence, baseline,
-                baselineConfidence, baseline is null ? null : winRate - baseline.Value,
-                baselineConfidence is null ? null : DifferenceInterval(winRateConfidence,
-                    baselineConfidence)));
+                populationSamples, includedMatches, wins, winRate, winRateConfidence, null,
+                null, null, null));
         }
         return result;
     }
@@ -673,21 +711,12 @@ public sealed partial class MatchRecorder
         while (await reader.ReadAsync())
         {
             var eligible = reader.GetInt64(2);
-            var eligibleWins = ReadLong(reader, 3);
             var included = ReadLong(reader, 4);
             var wins = ReadLong(reader, 5);
             var winRate = Rate(wins, included);
-            var comparisonSamples = eligible - included;
-            var comparisonWins = eligibleWins - wins;
-            var baseline = RateOrNull(comparisonWins, comparisonSamples);
             var winRateConfidence = WilsonInterval(wins, included);
-            var baselineConfidence = comparisonSamples > 0
-                ? WilsonInterval(comparisonWins, comparisonSamples) : null;
             result.Add(new L12CardAnalyticsMatchup(reader.GetString(0), reader.GetString(1),
-                included, eligible, wins, winRate, winRateConfidence, baseline,
-                baselineConfidence, baseline is null ? null : winRate - baseline.Value,
-                baselineConfidence is null ? null : DifferenceInterval(winRateConfidence,
-                    baselineConfidence)));
+                included, eligible, wins, winRate, winRateConfidence, null, null, null, null));
         }
         return result;
     }
@@ -728,11 +757,6 @@ public sealed partial class MatchRecorder
         return new L12AnalyticsConfidenceInterval(RoundRate(Math.Max(0, center - margin)),
             RoundRate(Math.Min(1, center + margin)));
     }
-
-    private static L12AnalyticsConfidenceInterval DifferenceInterval(
-        L12AnalyticsConfidenceInterval included, L12AnalyticsConfidenceInterval baseline)
-        => new(RoundRate(Math.Max(-1, included.Low - baseline.High)),
-            RoundRate(Math.Min(1, included.High - baseline.Low)));
 
     private static double RoundRate(double value)
         => Math.Round(value, 6, MidpointRounding.AwayFromZero);

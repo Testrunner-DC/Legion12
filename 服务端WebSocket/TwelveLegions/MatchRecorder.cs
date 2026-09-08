@@ -69,6 +69,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "account_0", "TEXT");
         await EnsureColumnAsync(connection, "matches", "account_1", "TEXT");
         await EnsureColumnAsync(connection, "matches", "rules_version", "TEXT NOT NULL DEFAULT 'legacy'");
+        await EnsureColumnAsync(connection, "matches", "effect_version", "TEXT");
+        await EnsureColumnAsync(connection, "matches", "analytics_version", "INTEGER NOT NULL DEFAULT 0");
         await EnsureColumnAsync(connection, "matches", "rules_policy_version", "INTEGER NOT NULL DEFAULT 0");
         await EnsureColumnAsync(connection, "matches", "season_id", "TEXT");
         await EnsureColumnAsync(connection, "matches", "initial_state_json", "TEXT");
@@ -83,6 +85,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializeAnalyticsSchemaAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
+        await InitializePlayerReplayRetentionSchemaAsync(connection, _utcNow());
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",
@@ -122,9 +125,10 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             INSERT INTO matches(
                 match_id,room_code,seed,player_0,player_1,deck_0,deck_1,started_utc,mode_id,
                 account_0,account_1,rules_version,rules_policy_version,season_id,initial_state_json,
-                first_player,fact_schema_version,last_fact_signal_sequence,storage_version,hash_version)
+                first_player,fact_schema_version,last_fact_signal_sequence,storage_version,hash_version,
+                effect_version,analytics_version)
             VALUES($id,$room,$seed,$p0,$p1,$d0,$d1,$utc,$mode,$a0,$a1,$rules,$policy,$season,
-                   $initial,$first,$factSchema,$lastSignal,$storage,$hashVersion);
+                   $initial,$first,$factSchema,$lastSignal,$storage,$hashVersion,$effectVersion,$analyticsVersion);
             """;
         command.Parameters.AddWithValue("$id", state.MatchId);
         command.Parameters.AddWithValue("$room", state.RoomCode);
@@ -149,6 +153,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             ? 0 : initialSignals.Max(signal => signal.Sequence));
         command.Parameters.AddWithValue("$storage", journalV2 ? JournalStorageVersion : 1);
         command.Parameters.AddWithValue("$hashVersion", journalV2 ? 2 : 1);
+        command.Parameters.AddWithValue("$effectVersion", normalizedMode == "ranked"
+            ? (object?)engine?.AnalyticsEffectVersion ?? DBNull.Value : DBNull.Value);
+        command.Parameters.AddWithValue("$analyticsVersion", engine is not null && normalizedMode == "ranked" ? 2 : 0);
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
@@ -245,6 +252,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         StorageFailureInjector?.Invoke("before-match-complete-commit");
         await transaction.CommitAsync();
         _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
+        InvalidateAnalyticsCache();
         return changed;
     }
 

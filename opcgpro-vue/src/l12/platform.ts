@@ -190,6 +190,28 @@ export interface AdminCardAnalyticsItem {
   resolvedSamples: number; negatedSamples: number; fizzledSamples: number
   activatedCount: number; resolvedCount: number; negatedCount: number; fizzledCount: number
   coverage: AdminAnalyticsCoverage
+  sampleStructure?: AdminAnalyticsSampleStructure | null
+  comparison?: AdminAnalyticsStratifiedComparison | null
+  usage?: { metrics: AdminAnalyticsUsageMetric[] } | null
+}
+export interface AdminAnalyticsUsageMetric {
+  metric: string; observedParticipantSamples: number; eventCount: number
+  exactFacts: number; inferredFacts: number; partialFacts: number
+  eligibleSamples?: number | null; coverageStatus: string
+}
+export interface AdminAnalyticsUncertainty {
+  status: string; method: string; low?: number | null; high?: number | null; reason?: string | null
+}
+export interface AdminAnalyticsSampleStructure {
+  participantSamples: number; distinctMatches: number; distinctPlayers: number
+  knownPlayerSamples: number; anonymousPlayerSamples: number
+  maximumPlayerContribution: number; maximumPlayerContributionRate: number
+  dependencyStatus: string; uncertainty: AdminAnalyticsUncertainty
+}
+export interface AdminAnalyticsStratifiedComparison {
+  carriedSamples: number; comparisonSamples: number; insufficientStrata: number; excludedIncludedSamples: number
+  winRate?: number | null; delta?: number | null; weighting: string
+  uncertainty?: AdminAnalyticsUncertainty | null
 }
 export interface AdminCardAnalyticsPage {
   items: AdminCardAnalyticsItem[]; total: number; nextCursor?: string | null
@@ -785,14 +807,14 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
   },
-  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
+  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsPage>(`/api/admin/analytics/cards${params.size ? `?${params}` : ''}`)
   },
-  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; seasonId?: string; minimumSample?: number } = {}) => {
+  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])

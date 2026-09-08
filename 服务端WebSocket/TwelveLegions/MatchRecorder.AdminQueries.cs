@@ -40,9 +40,10 @@ public sealed partial class MatchRecorder
         "类型化击杀来源为精确事实；其他离场路径可能只表现为部分区域移动",
         "没有不可变构筑快照的旧对局不会进入单卡统计，且不会补造事实",
         "胜率差只表示观察到的相关性，不表示卡牌造成了胜负变化",
-        "对照胜率使用同一筛选或切片内未收录该卡的参赛方；不是多变量强度校正",
+        "对照按主宰、卡效版本、对方主宰与先后手分层，以携带方样本权重汇总；没有可比对照的分层不补值",
+        "重复玩家和同局双方并非独立样本；没有可靠依赖修正区间时只展示描述性差值，不判定正负收益",
         "排位分段和对手隐藏分值未写入 matches.db，当前无法用于强度校正",
-        "V2 只复用向前写入的结构化回合、覆盖级别和规则/赛季快照；旧记录不会伪造缺失值",
+        "仅分析具有新采样资格及卡效版本的排位对局；非排位和旧数据不纳入，也不回填",
     ];
 
     public async Task<L12AdminMatchPage> ListAdminMatchesAsync(L12AdminMatchQuery query)
@@ -329,36 +330,17 @@ public sealed partial class MatchRecorder
         throw new ArgumentException("回放分页游标无效", nameof(cursor));
     }
 
-    public async Task<IReadOnlyList<L12MatchSummary>> ListMatchesForAccountAsync(
-        string accountId, string legacyPlayerName, int limit = 50)
-    {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
-                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
-            FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
-            WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
-              AND (
-                    m.account_0=$account OR m.account_1=$account
-                    OR ((m.account_0 IS NULL AND m.player_0=$player)
-                        OR (m.account_1 IS NULL AND m.player_1=$player))
-                  )
-            GROUP BY m.match_id ORDER BY m.started_utc DESC LIMIT $limit;
-            """;
-        command.Parameters.AddWithValue("$account", accountId);
-        command.Parameters.AddWithValue("$player", legacyPlayerName);
-        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 200));
-        var matches = new List<L12MatchSummary>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) matches.Add(ReadSummary(reader));
-        return matches;
-    }
+    public Task<IReadOnlyList<L12MatchSummary>> ListMatchesForAccountAsync(
+        string accountId, string legacyPlayerName, int limit = 30) =>
+        ListRecentPlayerReplayMatchesAsync(accountId, legacyPlayerName, limit);
 
     public async Task<L12MatchDetail?> GetMatchForAccountAsync(
         string matchId, string accountId, string legacyPlayerName)
     {
+        // The URL must obey the same 30-match ownership window as the list.
+        // Check expiry before trying to reconstruct a journal whose checkpoints were pruned.
+        if (!await IsWithinRecentPlayerReplayWindowAsync(matchId, accountId, legacyPlayerName)
+            || await IsPlayerReplayPayloadExpiredAsync(matchId)) return null;
         var viewer = -1;
         await using (var connection = new SqliteConnection(_connectionString))
         {
@@ -460,6 +442,16 @@ public sealed partial class MatchRecorder
             parameters["$seasonId"] = query.SeasonId.Trim();
         }
         if (query.RequireDecisiveResult) clauses.Add("m.winner IN (0,1)");
+        if (query.RequireAnalyticsEligible)
+        {
+            clauses.Add("m.mode_id='ranked' AND m.analytics_version>=2");
+            clauses.Add("m.effect_version IS NOT NULL AND trim(m.effect_version)<>'' AND lower(trim(m.effect_version))<>'unknown'");
+        }
+        if (!string.IsNullOrWhiteSpace(query.EffectVersion))
+        {
+            clauses.Add("m.effect_version=$effectVersion");
+            parameters["$effectVersion"] = query.EffectVersion.Trim();
+        }
         if (!string.IsNullOrWhiteSpace(query.CardId))
         {
             var ownerClauses = new List<string> { "dc.match_id=m.match_id", "dc.card_id=$card" };

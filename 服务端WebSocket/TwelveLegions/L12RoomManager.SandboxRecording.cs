@@ -88,6 +88,24 @@ public sealed partial class L12RoomManager
             // 单卡事实维护与沙盒录像清理相互隔离；失败留待下一轮重试，不影响房间服务。
             Console.Error.WriteLine($"Card analytics storage maintenance: {error.Message}");
         }
+        try
+        {
+            // Daily payload retention is independent of the weekly sandbox schedule.
+            // Keep every in-memory match as well as unresolved Bug evidence out of the purge.
+            var activeMatches = _rooms.Values.Where(room => room.Game is not null)
+                .Select(room => room.Game!.State.MatchId).ToArray();
+            await _recorder.RunPlayerReplayCleanupIfDueAsync(activeMatchIds: activeMatches,
+                utcNow: now, cancellationToken: cancellationToken,
+                evidenceProvider: _platform is null ? null : _platform.UnresolvedReplayEvidence);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Player replay retention maintenance: {error.Message}");
+        }
         return replayCleanup;
     }
 }

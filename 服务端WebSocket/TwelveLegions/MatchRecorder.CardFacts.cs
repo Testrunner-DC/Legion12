@@ -459,6 +459,7 @@ public sealed partial class MatchRecorder
             : "before-ranked-final-commit");
         await transaction.CommitAsync();
         L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
+        if (rankedSettlement is not null) InvalidateAnalyticsCache();
         L12PerformanceMetrics.Duration("persistence.total", appendStartedAt);
         if (journalV2)
         {
@@ -515,8 +516,12 @@ public sealed partial class MatchRecorder
                 match_id,fact_key,command_sequence,revision,round,turn,phase,occurred_utc,kind,player_index,account_id,
                 card_id,card_instance_id,related_card_id,related_instance_id,source_zone,destination_zone,
                 amount,coverage,metadata_json)
-            VALUES($match,$key,$sequence,$revision,$round,$turn,$phase,$utc,$kind,$player,$account,$card,$instance,
-                   $relatedCard,$relatedInstance,$source,$destination,$amount,$coverage,$metadata);
+            SELECT $match,$key,$sequence,$revision,$round,$turn,$phase,$utc,$kind,$player,$account,$card,$instance,
+                   $relatedCard,$relatedInstance,$source,$destination,$amount,$coverage,$metadata
+            WHERE EXISTS(SELECT 1 FROM matches m WHERE m.match_id=$match
+                AND m.mode_id='ranked' AND m.analytics_version>=2
+                AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+                AND lower(trim(m.effect_version))<>'unknown');
             """;
         insert.Parameters.AddWithValue("$match", fact.MatchId);
         insert.Parameters.AddWithValue("$key", fact.FactKey);
@@ -845,6 +850,7 @@ public sealed partial class MatchRecorder
         }
 
         await transaction.CommitAsync();
+        InvalidateAnalyticsCache();
         return targets.Select(target => target.MatchId).Distinct(StringComparer.Ordinal).Count();
     }
 }

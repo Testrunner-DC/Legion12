@@ -169,7 +169,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized()
-                : Results.Ok(await _recorder.ListMatchesForAccountAsync(account.Id, account.Username, limit ?? 50));
+                : Results.Ok(await _recorder.ListMatchesForAccountAsync(account.Id, account.Username, limit ?? 30));
         });
         _app.MapGet("/api/matches/{matchId}", async (HttpRequest request, string matchId) =>
         {
@@ -208,6 +208,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 StringComparison.OrdinalIgnoreCase);
             try
             {
+                if (includeReplay && await _recorder.IsPlayerReplayPayloadExpiredAsync(matchId,
+                        request.HttpContext.RequestAborted))
+                {
+                    _platform.RecordAdminRead(authenticated.Account, permission, "match",
+                        "read-replay-payload-expired", matchId, AuditContext(request, permission));
+                    return ApiError(request, "replay_payload_expired",
+                        "该休闲／好友房录像已按保留规则清理；对局摘要与结算结果仍保留。",
+                        StatusCodes.Status410Gone);
+                }
                 var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
                 var expired = match is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
                     request.HttpContext.RequestAborted);
@@ -246,6 +255,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Response.Headers.CacheControl = "no-store";
             try
             {
+                if (await _recorder.IsPlayerReplayPayloadExpiredAsync(matchId,
+                        request.HttpContext.RequestAborted))
+                {
+                    _platform.RecordAdminRead(authenticated.Account, permission, "match",
+                        "read-replay-payload-expired", matchId, AuditContext(request, permission));
+                    return ApiError(request, "replay_payload_expired",
+                        "该休闲／好友房录像已按保留规则清理；对局摘要与结算结果仍保留。",
+                        StatusCodes.Status410Gone);
+                }
                 var page = await _recorder.GetAdminReplayPageAsync(matchId, QueryValue(request, "cursor"),
                     limit ?? 50, request.HttpContext.RequestAborted);
                 var expired = page is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
@@ -2623,14 +2641,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             MinimumSampleSize: QueryInt(request, 5, "minimumSampleSize", "minimumSample"),
             Search: search,
             CandidateCardIds: candidates,
-            ModeId: QueryValue(request, "modeId", "mode"),
+            ModeId: "ranked",
             MasterId: QueryValue(request, "masterId"),
             FromUtc: QueryDate(request, "fromUtc", "from"),
             ToUtc: QueryInclusiveEndDate(request, "toUtc", "to"),
             OpponentMasterId: QueryValue(request, "opponentMasterId"),
             Initiative: QueryValue(request, "initiative"),
             RulesVersion: QueryValue(request, "rulesVersion"),
-            SeasonId: QueryValue(request, "seasonId"));
+            SeasonId: QueryValue(request, "seasonId"),
+            EffectVersion: _recorder.ResolveAnalyticsEffectVersion(QueryValue(request, "effectVersion")));
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)

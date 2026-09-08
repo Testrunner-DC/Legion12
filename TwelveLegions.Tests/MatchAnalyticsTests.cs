@@ -117,6 +117,72 @@ public sealed class MatchAnalyticsTests
         Assert.Equal(0L, Convert.ToInt64(await duplicateFacts.ExecuteScalarAsync()));
     }
 
+    [Theory]
+    [InlineData("friendly")]
+    [InlineData("casual")]
+    public async Task NonRankedMatchesKeepDeckSnapshotsWithoutPersistingInitialOrIncrementalFacts(
+        string mode)
+    {
+        var directory = TestDirectory($"non-ranked-facts-{mode}");
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = Catalog();
+        var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
+        var matchId = $"non-ranked-{mode}";
+        var game = new L12GameEngine(catalog, matchId, "NOFACT", 32,
+            ["甲", "乙"], decks, skipPreparation: true);
+        Assert.NotEmpty(game.CardFactSignals);
+
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        await recorder.StartAsync(game, mode, "account-a", "account-b", decks);
+
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var afterStart = connection.CreateCommand();
+        afterStart.CommandText = """
+            SELECT
+                (SELECT COUNT(*) FROM match_card_facts WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_participants WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_deck_cards WHERE match_id=$match);
+            """;
+        afterStart.Parameters.AddWithValue("$match", matchId);
+        await using (var reader = await afterStart.ExecuteReaderAsync())
+        {
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(0, reader.GetInt32(0));
+            Assert.Equal(2, reader.GetInt32(1));
+            Assert.True(reader.GetInt32(2) > 0);
+        }
+
+        var selected = game.State.Players[0].Hand.Take(1).Select(card => card.InstanceId).ToList();
+        var result = game.Handle(0, new L12Command("mulligan", CardInstanceIds: selected));
+        Assert.True(result.Accepted);
+        Assert.NotEmpty(game.CardFactSignals);
+        await recorder.AppendAsync(game, 1, 0, "{\"type\":\"mulligan\"}", result);
+
+        var afterAppend = connection.CreateCommand();
+        afterAppend.CommandText = "SELECT COUNT(*) FROM match_card_facts WHERE match_id=$match;";
+        afterAppend.Parameters.AddWithValue("$match", matchId);
+        Assert.Equal(0L, Convert.ToInt64(await afterAppend.ExecuteScalarAsync()));
+
+        game.ConcludeByAuthority(0, "非排位事实门禁测试结束");
+        await recorder.AppendAuthorityAsync(game, 2, "非排位事实门禁测试结束");
+        await recorder.CompleteAsync(game);
+        var afterComplete = connection.CreateCommand();
+        afterComplete.CommandText = """
+            SELECT
+                (SELECT COUNT(*) FROM match_card_facts WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_card_fact_summaries WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_card_fact_compactions WHERE match_id=$match);
+            """;
+        afterComplete.Parameters.AddWithValue("$match", matchId);
+        await using var completedReader = await afterComplete.ExecuteReaderAsync();
+        Assert.True(await completedReader.ReadAsync());
+        Assert.Equal(0, completedReader.GetInt32(0));
+        Assert.Equal(0, completedReader.GetInt32(1));
+        Assert.Equal(0, completedReader.GetInt32(2));
+    }
+
     [Fact]
     public async Task AdminPrivacySandboxExclusionAndStableAccountFilteringAreEnforced()
     {
@@ -194,11 +260,12 @@ public sealed class MatchAnalyticsTests
         Assert.Equal(6, item.EligibleSampleSize);
         Assert.Equal(3, item.IncludedMatches);
         Assert.Equal(1, item.WinRate);
-        Assert.Equal(0, item.BaselineWinRate);
-        Assert.Equal(1, item.WinRateDelta);
-        Assert.NotNull(item.WinRateDeltaConfidence);
-        Assert.True(item.WinRateDeltaConfidence.Low <= 0
-                    && item.WinRateDeltaConfidence.High >= 0);
+        Assert.Null(item.BaselineWinRate);
+        Assert.Null(item.WinRateDelta);
+        Assert.Null(item.WinRateDeltaConfidence);
+        var comparison = Assert.IsType<L12AnalyticsStratifiedComparison>(item.Comparison);
+        Assert.Equal(0, comparison.CarriedSamples);
+        Assert.Equal(3, comparison.ExcludedIncludedSamples);
         Assert.Equal(1, page.Total);
 
         var oriented = await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
@@ -217,6 +284,7 @@ public sealed class MatchAnalyticsTests
         Assert.NotEmpty(detail.Breakdowns);
         Assert.Contains(detail.Breakdowns, breakdown => breakdown.Dimension == "opponent-master");
         Assert.Contains(detail.Breakdowns, breakdown => breakdown.Dimension == "rules-version");
+        Assert.Contains(detail.Breakdowns, breakdown => breakdown.Dimension == "effect-version");
         Assert.Equal(targetCard, detail.Summary.CardId);
     }
 
@@ -261,26 +329,28 @@ public sealed class MatchAnalyticsTests
         Assert.Equal(1, item.IncludedMatches);
         var expectedQuantity = deck.CardIds.Count(cardId => cardId == targetCard);
         Assert.Equal(expectedQuantity, item.AverageQuantity);
-        Assert.Equal(2, item.DrawnSamples);
-        Assert.Equal(2, item.PlayedSamples);
-        Assert.Equal(2, item.ActivatedSamples);
-        Assert.Equal(1, item.SettledSamples);
-        Assert.Equal(1, item.ResolvedSamples);
-        Assert.Equal(2, item.ResolvedCount);
+        Assert.Null(item.Usage);
         Assert.Null(item.BaselineWinRate);
         Assert.Null(item.BaselineWinRateConfidence);
         Assert.Null(item.WinRateDelta);
         Assert.Null(item.WinRateDeltaConfidence);
         Assert.True(item.WinRateConfidence.Low < item.WinRate
                     && item.WinRateConfidence.High > item.WinRate);
-        Assert.Contains(item.Coverage.Metrics, metric => metric.Metric == "draw"
-            && metric.Unit == "participant" && metric.ObservedSamples == 2
-            && metric.ExactFacts >= metric.ObservedSamples);
-        Assert.Contains(item.Coverage.Metrics, metric => metric.Metric == "settlement"
-            && metric.ObservedSamples == 1 && metric.PartialFacts == 1);
+        Assert.DoesNotContain(item.Coverage.Metrics, metric => metric.Metric == "draw");
 
         var detail = Assert.IsType<L12CardAnalyticsDetail>(await recorder.GetCardAnalyticsAsync(targetCard,
             new L12CardAnalyticsQuery(MinimumSampleSize: 1)));
+        Assert.Equal(2, detail.Summary.DrawnSamples);
+        Assert.Equal(2, detail.Summary.PlayedSamples);
+        Assert.Equal(2, detail.Summary.ActivatedSamples);
+        Assert.Equal(1, detail.Summary.SettledSamples);
+        Assert.Equal(1, detail.Summary.ResolvedSamples);
+        Assert.Equal(2, detail.Summary.ResolvedCount);
+        var settlement = Assert.Single(detail.Summary.Usage!.Metrics,
+            metric => metric.Metric == "settlement");
+        Assert.Null(settlement.EligibleSamples);
+        Assert.Equal("event-observed-only", settlement.CoverageStatus);
+        Assert.Equal(1, settlement.PartialFacts);
         Assert.Contains(detail.TurnDistribution, bucket => bucket.Turn == 0
             && bucket.FirstDrawSamples == 2 && bucket.FirstPlaySamples == 0);
         Assert.Contains(detail.TurnDistribution, bucket => bucket.Turn == 3
@@ -454,11 +524,12 @@ public sealed class MatchAnalyticsTests
             seed.CommandText = """
                 WITH RECURSIVE sample(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sample WHERE n<50000)
                 INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
-                    started_utc,ended_utc,winner,mode_id,rules_version,season_id,first_player,fact_schema_version)
+                    started_utc,ended_utc,winner,mode_id,rules_version,season_id,first_player,fact_schema_version,
+                    effect_version,analytics_version)
                 SELECT printf('perf-%04d',n),'PERF',n,'甲','乙','甲牌库','乙牌库',
                     printf('2026-09-%02dT12:00:00.0000000+00:00',1+(n%7)),
                     printf('2026-09-%02dT12:10:00.0000000+00:00',1+(n%7)),n%2,'ranked',
-                    printf('rules-%03d',n%250),printf('season-%03d',n%250),n%2,1
+                    printf('rules-%03d',n%250),printf('season-%03d',n%250),n%2,1,'perf-effect-v2',2
                 FROM sample;
 
                 WITH RECURSIVE sample(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sample WHERE n<50000),

@@ -5,7 +5,9 @@ namespace TwelveLegions.Server;
 public sealed partial class MatchRecorder
 {
     internal static readonly TimeSpan DetailedCardFactRetention = TimeSpan.FromDays(30);
+    internal static readonly TimeSpan NonAnalyticCardFactRetention = TimeSpan.FromDays(10);
     private static readonly TimeSpan CardFactMaintenanceInterval = TimeSpan.FromDays(1);
+    private static readonly TimeSpan CardFactBacklogRetryInterval = TimeSpan.FromMinutes(5);
     private readonly SemaphoreSlim _cardFactMaintenanceGate = new(1, 1);
     private long _nextCardFactMaintenanceUtcTicks = DateTimeOffset.MinValue.UtcDateTime.Ticks;
 
@@ -118,8 +120,14 @@ public sealed partial class MatchRecorder
             FROM match_card_facts f
             JOIN match_deck_cards d
               ON d.match_id=f.match_id AND d.player_index=f.player_index AND d.card_id=f.card_id
+            JOIN matches m ON m.match_id=f.match_id
             WHERE f.match_id=$match AND f.player_index IS NOT NULL AND f.card_id IS NOT NULL
               AND f.kind<>'deck-included'
+              AND m.mode_id='ranked' AND m.analytics_version>=2
+              AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+              AND lower(trim(m.effect_version))<>'unknown'
+              AND m.ended_utc IS NOT NULL AND m.error IS NULL
+              AND m.winner IN (0,1)
             GROUP BY f.match_id,f.player_index,f.card_id;
             """;
         summarize.Parameters.AddWithValue("$match", matchId);
@@ -130,8 +138,17 @@ public sealed partial class MatchRecorder
         mark.CommandText = """
             INSERT INTO match_card_fact_compactions(
                 match_id,summary_schema_version,source_fact_count,source_fact_max_id,compacted_utc)
-            SELECT $match,1,COUNT(*),COALESCE(MAX(id),0),$utc
-            FROM match_card_facts WHERE match_id=$match
+            SELECT m.match_id,1,
+                   (SELECT COUNT(*) FROM match_card_facts f WHERE f.match_id=m.match_id),
+                   (SELECT COALESCE(MAX(f.id),0) FROM match_card_facts f WHERE f.match_id=m.match_id),
+                   $utc
+            FROM matches m
+            WHERE m.match_id=$match
+              AND m.mode_id='ranked' AND m.analytics_version>=2
+              AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+              AND lower(trim(m.effect_version))<>'unknown'
+              AND m.ended_utc IS NOT NULL AND m.error IS NULL
+              AND m.winner IN (0,1)
             ON CONFLICT(match_id) DO UPDATE SET
                 summary_schema_version=excluded.summary_schema_version,
                 source_fact_count=excluded.source_fact_count,
@@ -162,7 +179,10 @@ public sealed partial class MatchRecorder
         select.CommandText = """
             SELECT m.match_id
             FROM matches m
-            WHERE m.mode_id<>'sandbox' AND m.ended_utc IS NOT NULL AND m.error IS NULL
+            WHERE m.mode_id='ranked' AND m.analytics_version>=2
+              AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+              AND lower(trim(m.effect_version))<>'unknown'
+              AND m.ended_utc IS NOT NULL AND m.error IS NULL
               AND m.winner IN (0,1)
               AND NOT EXISTS(SELECT 1 FROM match_card_fact_compactions c WHERE c.match_id=m.match_id)
             ORDER BY m.ended_utc,m.match_id
@@ -189,44 +209,82 @@ public sealed partial class MatchRecorder
     internal async Task<int> PruneCompactedCardFactDetailsAsync(DateTimeOffset? utcNow = null,
         int limit = 100, CancellationToken cancellationToken = default)
     {
-        var cutoff = (utcNow ?? _utcNow()).ToUniversalTime().Subtract(DetailedCardFactRetention)
-            .ToString("O");
+        var now = (utcNow ?? _utcNow()).ToUniversalTime();
+        var analyticCutoff = now.Subtract(DetailedCardFactRetention).ToString("O");
+        var nonAnalyticCutoff = now.Subtract(NonAnalyticCardFactRetention).ToString("O");
         await using var connection = await OpenWriteConnectionAsync(cancellationToken);
         var select = connection.CreateCommand();
         select.CommandText = """
-            SELECT c.match_id
-            FROM match_card_fact_compactions c
-            JOIN matches m ON m.match_id=c.match_id
-            WHERE c.details_pruned_utc IS NULL AND m.mode_id<>'sandbox'
-              AND m.ended_utc IS NOT NULL AND m.ended_utc<$cutoff
-            ORDER BY m.ended_utc,m.match_id
+            WITH candidates AS (
+                SELECT m.match_id,m.ended_utc,
+                       CASE WHEN m.mode_id='ranked' AND m.analytics_version>=2
+                              AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+                              AND lower(trim(m.effect_version))<>'unknown'
+                              AND m.error IS NULL AND m.winner IN (0,1)
+                            THEN 1 ELSE 0 END AS requires_summary
+                FROM matches m
+                WHERE m.mode_id IN ('casual','friendly','ranked') AND m.ended_utc IS NOT NULL
+                  AND EXISTS(SELECT 1 FROM match_card_facts f WHERE f.match_id=m.match_id)
+            )
+            SELECT candidate.match_id,candidate.requires_summary
+            FROM candidates candidate
+            WHERE (candidate.requires_summary=0 AND candidate.ended_utc<$nonAnalyticCutoff)
+               OR (candidate.requires_summary=1 AND candidate.ended_utc<$analyticCutoff
+                   AND EXISTS(
+                       SELECT 1 FROM match_card_fact_compactions compacted
+                       WHERE compacted.match_id=candidate.match_id
+                         AND compacted.details_pruned_utc IS NULL))
+            ORDER BY candidate.ended_utc,candidate.match_id
             LIMIT $limit;
             """;
-        select.Parameters.AddWithValue("$cutoff", cutoff);
+        select.Parameters.AddWithValue("$analyticCutoff", analyticCutoff);
+        select.Parameters.AddWithValue("$nonAnalyticCutoff", nonAnalyticCutoff);
         select.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 500));
-        var matchIds = new List<string>();
+        var candidates = new List<(string MatchId, bool RequiresSummary)>();
         await using (var reader = await select.ExecuteReaderAsync(cancellationToken))
-            while (await reader.ReadAsync(cancellationToken)) matchIds.Add(reader.GetString(0));
+            while (await reader.ReadAsync(cancellationToken))
+                candidates.Add((reader.GetString(0), reader.GetInt32(1) == 1));
 
         var pruned = 0;
-        foreach (var matchId in matchIds)
+        foreach (var candidate in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
             var delete = connection.CreateCommand();
             delete.Transaction = transaction;
-            delete.CommandText = "DELETE FROM match_card_facts WHERE match_id=$match;";
-            delete.Parameters.AddWithValue("$match", matchId);
-            await delete.ExecuteNonQueryAsync(cancellationToken);
+            delete.CommandText = """
+                DELETE FROM match_card_facts WHERE match_id=$match AND EXISTS(
+                    SELECT 1 FROM matches m WHERE m.match_id=$match
+                      AND m.mode_id IN ('casual','friendly','ranked') AND m.ended_utc IS NOT NULL
+                      AND CASE WHEN m.mode_id='ranked' AND m.analytics_version>=2
+                              AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+                              AND lower(trim(m.effect_version))<>'unknown'
+                              AND m.error IS NULL AND m.winner IN (0,1)
+                            THEN 1 ELSE 0 END=$requiresSummary
+                      AND (($requiresSummary=0 AND m.ended_utc<$nonAnalyticCutoff)
+                           OR ($requiresSummary=1 AND m.ended_utc<$analyticCutoff AND EXISTS(
+                               SELECT 1 FROM match_card_fact_compactions c
+                               WHERE c.match_id=m.match_id AND c.details_pruned_utc IS NULL))));
+                """;
+            delete.Parameters.AddWithValue("$match", candidate.MatchId);
+            delete.Parameters.AddWithValue("$requiresSummary", candidate.RequiresSummary ? 1 : 0);
+            delete.Parameters.AddWithValue("$nonAnalyticCutoff", nonAnalyticCutoff);
+            delete.Parameters.AddWithValue("$analyticCutoff", analyticCutoff);
+            if (await delete.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                continue;
+            }
             var mark = connection.CreateCommand();
             mark.Transaction = transaction;
             mark.CommandText = """
                 UPDATE match_card_fact_compactions SET details_pruned_utc=$utc
                 WHERE match_id=$match AND details_pruned_utc IS NULL;
                 """;
-            mark.Parameters.AddWithValue("$utc", (utcNow ?? _utcNow()).ToUniversalTime().ToString("O"));
-            mark.Parameters.AddWithValue("$match", matchId);
-            if (await mark.ExecuteNonQueryAsync(cancellationToken) != 1)
+            mark.Parameters.AddWithValue("$utc", now.ToString("O"));
+            mark.Parameters.AddWithValue("$match", candidate.MatchId);
+            var marked = await mark.ExecuteNonQueryAsync(cancellationToken);
+            if (candidate.RequiresSummary && marked != 1)
                 throw new InvalidOperationException("单卡事实清理标记冲突");
             await transaction.CommitAsync(cancellationToken);
             pruned++;
@@ -249,8 +307,10 @@ public sealed partial class MatchRecorder
             // 历史回填严格有界，避免在大库启动时形成长事务；新结束对局已同步紧凑化。
             var compacted = await CompactCompletedCardFactsBatchAsync(25, cancellationToken);
             var pruned = await PruneCompactedCardFactDetailsAsync(now, 100, cancellationToken);
+            var backlogLikely = compacted == 25 || pruned == 100;
             Volatile.Write(ref _nextCardFactMaintenanceUtcTicks,
-                now.Add(CardFactMaintenanceInterval).UtcDateTime.Ticks);
+                now.Add(backlogLikely ? CardFactBacklogRetryInterval : CardFactMaintenanceInterval)
+                    .UtcDateTime.Ticks);
             return (compacted, pruned);
         }
         finally
