@@ -256,11 +256,9 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", camp.InstanceId)).Accepted);
         Resolve(game, "mode:draw");
-        var cost = OnlyPrompt(game);
-        var paidId = cost.ValidChoices[0];
-        Resolve(game, paidId);
 
-        Assert.Contains(player.Morale, morale => morale.InstanceId == paidId && morale.Tapped);
+        Assert.Equal(camp.Cost + 1, player.Morale.Count(morale => morale.Tapped));
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.True(game.State.EffectStack.Count > 0,
             $"prompts={string.Join(';', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Continuation}:{prompt.Data.GetValueOrDefault("activationStep")}"))}; "
             + $"activations={string.Join(';', game.State.PendingActivations.Select(activation => $"{activation.Ability}:{activation.CurrentStep}"))}; "
@@ -270,7 +268,7 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         PassCurrentResponseWindow(game);
 
         Assert.Equal("camp-draw", game.State.EffectStack[^1].Data["atomicFlow"]);
-        Assert.Contains(player.Morale, morale => morale.InstanceId == paidId && morale.Tapped);
+        Assert.Equal(camp.Cost + 1, player.Morale.Count(morale => morale.Tapped));
     }
 
     [Fact]
@@ -293,12 +291,10 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", scout.InstanceId)).Accepted);
         Resolve(game, "mode:use");
-        var cost = OnlyPrompt(game);
-        var paidId = cost.ValidChoices[0];
-        Resolve(game, paidId);
 
         Assert.Equal("scout-reveal", game.State.EffectStack[^1].Data["atomicFlow"]);
-        Assert.Contains(player.Morale, morale => morale.InstanceId == paidId && morale.Tapped);
+        Assert.Equal(scout.Cost + 1, player.Morale.Count(morale => morale.Tapped));
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         PassCurrentResponseWindow(game);
         Assert.Equal("scout-shuffle-effect", game.State.EffectStack[^1].Data["atomicFlow"]);
         PassCurrentResponseWindow(game);
@@ -306,7 +302,7 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         var affectedChoice = OnlyPrompt(game);
         Assert.Equal(1, affectedChoice.PlayerIndex);
         Assert.Contains(hiddenHand.InstanceId, affectedChoice.ValidChoices);
-        Assert.Contains(player.Morale, morale => morale.InstanceId == paidId && morale.Tapped);
+        Assert.Equal(scout.Cost + 1, player.Morale.Count(morale => morale.Tapped));
     }
 
     [Fact]
@@ -415,17 +411,16 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         PassResponses(game);
         var consent = OnlyPrompt(game);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: consent.PromptId, Choice: "refuse")).Accepted);
+        var tappedBeforePrivateEffect = player.Morale.Count(morale => morale.Tapped);
         Resolve(game, "mode:use");
-        var cost = OnlyPrompt(game);
-        var paidId = cost.ValidChoices[0];
-        Resolve(game, paidId);
 
-        Assert.Contains(player.Morale, morale => morale.InstanceId == paidId && morale.Tapped);
+        Assert.Equal(tappedBeforePrivateEffect + 1, player.Morale.Count(morale => morale.Tapped));
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.DoesNotContain(disaster.InstanceId, System.Text.Json.JsonSerializer.Serialize(game.SnapshotFor(1)));
         game.State.EffectStack[^1].Negated = true;
         PassResponses(game);
 
-        Assert.Contains(player.Morale, morale => morale.InstanceId == paidId && morale.Tapped);
+        Assert.Equal(tappedBeforePrivateEffect + 1, player.Morale.Count(morale => morale.Tapped));
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("previewCardId") == disaster.InstanceId);
     }
 

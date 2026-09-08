@@ -1711,16 +1711,18 @@ public sealed class LatestBugRegressionTests
 
         var played = game.Handle(0, new L12Command("playCard", runePower.InstanceId));
         Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+        Assert.Equal(1, player.SpecialZones.Runes);
         var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rune-power-mode", mode.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
             Choice: "mode:search")).Accepted);
-        var resource = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("resource-payment", resource.Kind);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: resource.PromptId,
-            CardInstanceIds: resource.ValidChoices.Take(1).ToList())).Accepted);
-        PassResponses(game);
-
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rune-power-payment", payment.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            Choice: payment.ValidChoices[0])).Accepted);
         var pick = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.Equal("s2-rune-power-pick", pick.Data["action"]);
         Assert.Contains(eligible.InstanceId, pick.ValidChoices);
         Assert.DoesNotContain(neutral.InstanceId, pick.ValidChoices);

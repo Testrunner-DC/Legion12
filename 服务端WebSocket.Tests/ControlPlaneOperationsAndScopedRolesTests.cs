@@ -22,7 +22,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         try
         {
             var original = new L12PlatformStore(path);
-            var account = original.Register("LegacyRoleUser", "password-123").Account!;
+            var account = original.Register("tlegac900d1", "password-123").Account!;
             var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
             var row = mirror["Accounts"]!.AsArray().OfType<JsonObject>()
                 .Single(item => item["Id"]!.GetValue<string>() == account.Id);
@@ -58,9 +58,9 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
-            var organizer = store.Register("ScopedOrganizer", "password-123").Account!;
-            var referee = store.Register("ScopedReferee", "password-123").Account!;
-            var outsider = store.Register("ScopedOutsider", "password-123").Account!;
+            var organizer = store.Register("tscope4d437", "password-123").Account!;
+            var referee = store.Register("tscopef8d35", "password-123").Account!;
+            var outsider = store.Register("tscope1aa63", "password-123").Account!;
 
             Assert.True(store.SendFriendRequest(organizer.Id, referee.Id).Success);
             Assert.True(store.ResolveFriendRequest(referee.Id, organizer.Id, true).Success);
@@ -76,7 +76,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                 tournament.Id, new L12TournamentStaffPayload([]), tournament.Version,
                 Context("outsider-staff"), true));
 
-            var otherOrganizer = store.Register("OtherOrganizer", "password-123").Account!;
+            var otherOrganizer = store.Register("tother83f5c", "password-123").Account!;
             Assert.Throws<ArgumentException>(() => store.CreateTournament(otherOrganizer,
                 CreateTournamentPayload([referee.Id]), Context("not-friends"), true));
         }
@@ -370,7 +370,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                 DefaultRoomConfig = new L12DefaultRoomConfig("ranked", "friends", "public", "random"),
             }, current.Version, "default policy", Context("default-policy"));
 
-            var account = store.Register("DefaultDeckUser", "password-123").Account!;
+            var account = store.Register("tdefau38a1b", "password-123").Account!;
             var seeded = store.Decks(account.Id);
             Assert.NotEmpty(seeded);
             Assert.All(seeded, deck => Assert.Equal(selectedMaster, deck.MasterId));
@@ -427,8 +427,8 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             {
                 CardRestrictions = [new L12CardRestrictionConfig(bannedCardId, 0, "regression ban")],
             }, current.Version, "ban one card", Context("ban-card"));
-            var player = store.Register("RestrictedDeckUser", "password-123");
-            var opponent = store.Register("RestrictedOpponent", "password-123");
+            var player = store.Register("trestr8a851", "password-123");
+            var opponent = store.Register("trestr92f3c", "password-123");
 
             recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
@@ -493,8 +493,8 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.Equal("deckRejected", Payload(Assert.Single(rooms.SelectDeck(restrictedHost, bannedIndex)))["type"]!
                 .GetValue<string>());
 
-            var inviter = store.Register("InvitePolicyHost", "password-123").Account!;
-            var invitee = store.Register("InvitePolicyGuest", "password-123").Account!;
+            var inviter = store.Register("tinvit50595", "password-123").Account!;
+            var invitee = store.Register("tinvit307d9", "password-123").Account!;
             Assert.True(store.SendFriendRequest(inviter.Id, invitee.Id).Success);
             Assert.True(store.ResolveFriendRequest(invitee.Id, inviter.Id, true).Success);
             var inviterSession = Guid.NewGuid();
@@ -618,7 +618,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.Contains(newEngine.State.DisasterPool, card => card.CardId.StartsWith("S02-DS", StringComparison.Ordinal));
 
             var waitingHost = store.Register("WaitingHost", "password-123").Account!;
-            var waitingGuest = store.Register("WaitingGuest", "password-123").Account!;
+            var waitingGuest = store.Register("twaiti341e1", "password-123").Account!;
             var waitingHostSession = Guid.NewGuid();
             var waitingGuestSession = Guid.NewGuid();
             rooms.Connect(waitingHostSession, waitingHost.Id, waitingHost.Username);
@@ -673,9 +673,9 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
             var admin = store.Login("Admin", "L12master");
-            var target = store.Register("DirectRoleTarget", "password-123");
-            var tournamentOrganizer = store.Register("HttpScopedOrganizer", "password-123");
-            var tournamentReferee = store.Register("HttpScopedReferee", "password-123");
+            var target = store.Register("tdirecf9793", "password-123");
+            var tournamentOrganizer = store.Register("udf6bd3ecad", "password-123");
+            var tournamentReferee = store.Register("ub4fad6e2bb", "password-123");
             Assert.True(store.SendFriendRequest(tournamentOrganizer.Account!.Id,
                 tournamentReferee.Account!.Id).Success);
             Assert.True(store.ResolveFriendRequest(tournamentReferee.Account.Id,

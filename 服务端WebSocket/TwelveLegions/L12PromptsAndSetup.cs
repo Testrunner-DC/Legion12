@@ -190,16 +190,24 @@ public sealed partial class L12GameEngine
             "effect-decision", StringComparison.OrdinalIgnoreCase);
         var hasBinaryDecision = TryGetBinaryEffectDecisionChoices(validChoices,
             out var affirmativeChoice, out var declineChoice);
+        var isMultiModeDecision = kind == "option"
+            && validChoices.Count > 2
+            && validChoices.All(choice => choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+            && validChoices.Any(choice => choice.Equals("mode:none", StringComparison.OrdinalIgnoreCase));
         var isDecision = kind is "optional" or "option"
-            && hasBinaryDecision
-            && (hasDecisionPresentation
-                || choiceSet.SetEquals(["yes", "no"])
-                || choiceSet.SetEquals(["mode:use", "mode:none"]));
+            && (isMultiModeDecision
+                || hasBinaryDecision
+                && (hasDecisionPresentation
+                    || choiceSet.SetEquals(["yes", "no"])
+                    || choiceSet.SetEquals(["mode:use", "mode:none"])));
         if (isDecision)
         {
             data["uiPattern"] = "effect-decision";
-            data[affirmativeChoice] = "发动";
-            data[declineChoice] = "不发动";
+            if (hasBinaryDecision)
+            {
+                data[affirmativeChoice] = "发动";
+                data[declineChoice] = "不发动";
+            }
 
             if (stackItem is null)
             {
@@ -1233,7 +1241,6 @@ public sealed partial class L12GameEngine
         if (targets is not null) item.Targets.AddRange(targets);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
-        if (trigger == "disaster") item.Data["unrespondable"] = "true";
         if (trigger is "active" or "play")
             PublishEffectPresentation("effect-activation", controller, source, trigger, text, item.Data);
         else if (IsDirectTriggeredEffect(trigger, source, text))
@@ -1282,12 +1289,15 @@ public sealed partial class L12GameEngine
         var timing = ResponseTimingContext(top);
         var player = State.Players[playerIndex];
         var choices = new List<string>();
+        var disasterAuthorityTiming = IsDisasterAuthorityTiming(top);
         var protectedFromCounters = top.Controller != playerIndex && IsProtectedFromCounterTactics(top);
         var defenderAttackTimingRoot = top.Trigger == "opponent-attack";
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         var responseCards = player.Field[1].Where(card => card is { CardType: "tactic" }
             && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
         if (State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial || protectedFromCounters) responseCards = [];
+        if (disasterAuthorityTiming)
+            responseCards = responseCards.Where(card => !IsCounterTactic(card.CardId)).ToArray();
         foreach (var card in responseCards)
         {
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
@@ -1310,7 +1320,7 @@ public sealed partial class L12GameEngine
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
         var hasAnonymousPoolResponse = _concealHiddenResponseAvailability
             && CanMasterCardPoolRespondAtTiming(playerIndex, top, protectedFromCounters);
-        if (_autoPassEmptyResponses && choices.Count == 0 && !hasAnonymousPoolResponse)
+        if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0 && !hasAnonymousPoolResponse)
         {
             PassPriority(playerIndex);
             return;
@@ -1331,7 +1341,7 @@ public sealed partial class L12GameEngine
     /// </summary>
     private bool CanMasterCardPoolRespondAtTiming(int playerIndex, L12StackItem top, bool protectedFromCounters)
     {
-        if (top.Controller == playerIndex || protectedFromCounters) return false;
+        if (top.Controller == playerIndex || protectedFromCounters || IsDisasterAuthorityTiming(top)) return false;
         var player = State.Players[playerIndex];
         var timing = ResponseTimingContext(top);
         var pool = _catalog.Cards.Values.Where(card =>
@@ -1394,11 +1404,19 @@ public sealed partial class L12GameEngine
 
     private bool IsProtectedFromCounterTactics(L12StackItem top)
     {
-        if (top.Trigger == "disaster"
-            || top.Data.GetValueOrDefault("inheritedCounterTacticProtection") == "true") return true;
+        if (top.Data.GetValueOrDefault("inheritedCounterTacticProtection") == "true") return true;
         var source = FindSource(top);
         return source is not null
             && L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
+    }
+
+    private bool IsDisasterAuthorityTiming(L12StackItem top)
+    {
+        var timing = ResponseTimingContext(top);
+        return timing.Trigger.Equals("disaster", StringComparison.OrdinalIgnoreCase)
+            || timing.Trigger.Equals("authority-disaster", StringComparison.OrdinalIgnoreCase)
+            || timing.Trigger.Equals("authority-event", StringComparison.OrdinalIgnoreCase)
+                && timing.Data.GetValueOrDefault("eventType") is "disaster" or "authority-disaster";
     }
 
     private void ResolveStackResponse(int playerIndex, L12Prompt prompt, string choice)
@@ -1663,12 +1681,9 @@ public sealed partial class L12GameEngine
         card.Tapped = true;
         card.SummonRound = State.Round;
         player.Field[0][slot] = card;
-        ApplyDisasterLevelOnEntry(item.Controller, card, deferTriggerUntilStackSettles: true);
         State.PendingDefense.Target = new L12AttackTarget("legion", card.InstanceId);
         AddEvent("enter", item.Controller, $"{card.Name} 从手牌休整登场于前排，并成为本次进攻目标", card);
-        if (HasImmediateEffect(card, "enter"))
-            QueueOrPushTriggeredEffect(item.Controller, card, "enter", "【登场时】效果");
-        QueueS2GrailRoundTableEntry(item.Controller, card);
+        CompleteEffectLegionEntry(item.Controller, card, "hand");
         FinishStackItem(item);
     }
 
@@ -1692,6 +1707,7 @@ public sealed partial class L12GameEngine
         if (item.Trigger == "authority-event" && FindAuthorityEvent(item) is { } authorityEvent)
             authorityEvent.Resolved = true;
         var completedSource = FindSource(item);
+        QueueTombConstructLeaveFallback(item);
         var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
         var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction" or "s2-reaction";

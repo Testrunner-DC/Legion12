@@ -227,6 +227,7 @@ async function submitAuth() {
     if (authMode.value === 'login') await login(auth.username, auth.password)
     else await register(auth.username, auth.password)
     auth.password = ''
+    if (platformState.account?.mustChangeUsername) await router.push({ name: 'me', query: { reason: 'username-change-required' } })
   } catch (error) {
     authNotice.value = error instanceof Error ? error.message : '登录失败'
   } finally { authBusy.value = false }
@@ -372,7 +373,8 @@ onBeforeUnmount(() => {
         <header><div><small>BATTLE ACCOUNT</small><h2>登录后进入对战</h2></div><button title="返回主页" @click="router.push('/')">×</button></header>
         <p>对战、赛事、好友、排行榜和个人对局记录使用同一账号身份。</p>
         <div class="auth-tabs"><button :class="{ active: authMode === 'login' }" @click="authMode = 'login'">登录</button><button :class="{ active: authMode === 'register' }" @click="authMode = 'register'">注册</button></div>
-        <label>用户名<input v-model="auth.username" maxlength="20" autocomplete="username"/></label>
+        <label>用户名<input v-model="auth.username" autocomplete="username"/></label>
+        <small v-if="authMode === 'register'" class="username-rule-hint">2–11 个可见字符，不得包含冒充官方、辱骂、色情、违法交易或广告导流内容。</small>
         <label>密码<input v-model="auth.password" type="password" maxlength="128" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" @keyup.enter="submitAuth"/></label>
         <p v-if="authNotice" class="auth-notice">{{ authNotice }}</p>
         <button class="auth-submit" :disabled="authBusy || !auth.username.trim() || !auth.password" @click="submitAuth">{{ authMode === 'login' ? '登录并进入' : '注册并进入' }}</button>

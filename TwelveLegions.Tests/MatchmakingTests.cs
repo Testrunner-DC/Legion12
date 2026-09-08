@@ -16,7 +16,7 @@ public sealed class MatchmakingTests
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
         var first = platform.Register("queue-first", "Password123!").Account!;
-        var second = platform.Register("queue-second", "Password123!").Account!;
+        var second = platform.Register("tqueuea907f", "Password123!").Account!;
         platform.SelectRankedFaction(first.Id, "order");
         platform.SelectRankedFaction(second.Id, "chaos");
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));

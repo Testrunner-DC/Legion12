@@ -13,8 +13,8 @@ public sealed partial class PlatformStoreTests
         {
             var path = Path.Combine(root, "platform.json");
             var store = new L12PlatformStore(path);
-            var sender = store.Register("FriendSender", "test-pass-123").Account!.Id;
-            var receiver = store.Register("FriendReceiver", "test-pass-123").Account!.Id;
+            var sender = store.Register("tfrien3f334", "test-pass-123").Account!.Id;
+            var receiver = store.Register("tfrien3033c", "test-pass-123").Account!.Id;
             Assert.True(store.SendFriendRequest(sender, receiver).Success);
             Assert.Single(store.FriendRequests(receiver));
             Assert.True(store.BlockAccount(receiver, sender).Success);
@@ -24,7 +24,7 @@ public sealed partial class PlatformStoreTests
             Assert.Equal("好友申请已发送", hidden.Message);
             Assert.Equal("pending", Assert.Single(store.FriendRequests(sender)).Status);
             Assert.Empty(store.FriendRequests(receiver));
-            Assert.Equal("pending", Assert.Single(store.FindPlayers(sender, "FriendReceiver")).Status);
+            Assert.Equal("pending", Assert.Single(store.FindPlayers(sender, "tfrien3033c")).Status);
             Assert.Equal("好友申请已存在", store.SendFriendRequest(sender, receiver).Message);
             Assert.False(store.ResolveFriendRequest(receiver, sender, true).Success);
             store = new L12PlatformStore(path);

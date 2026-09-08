@@ -33,10 +33,10 @@ public sealed class ControlPlanePhaseSixSecurityTests
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
             var admin = store.Login("Admin", "L12master");
-            var reviewerRegistration = store.Register("SecurityReviewer", "password-456");
-            var target = store.Register("DisabledTarget", "password-789");
-            var targetOther = store.Login("DisabledTarget", "password-789");
-            var outsider = store.Register("SecurityOutsider", "password-000");
+            var reviewerRegistration = store.Register("tsecur56224", "password-456");
+            var target = store.Register("tdisab1e6eb", "password-789");
+            var targetOther = store.Login("tdisab1e6eb", "password-789");
+            var outsider = store.Register("tsecur5488a", "password-000");
             Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "admin"));
 
             var rooms = new L12RoomManager(catalog, recorder, store);
@@ -149,7 +149,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
             Assert.True(store.Account(target.Account.Id)!.Disabled);
             Assert.Null(store.AuthenticateToken(target.Token));
             Assert.Null(store.AuthenticateToken(targetOther.Token));
-            Assert.Equal("authentication_failed", store.Login("DisabledTarget", "password-789",
+            Assert.Equal("authentication_failed", store.Login("tdisab1e6eb", "password-789",
                 new L12LoginAttemptContext("disabled-login", "disabled-client", "/api/auth/login")).Code);
             await AssertWebSocketInvalidatedAsync(socket);
 
@@ -173,7 +173,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
 
             Assert.False(store.Account(target.Account.Id)!.Disabled);
             Assert.Null(store.AuthenticateToken(target.Token));
-            Assert.True(store.Login("DisabledTarget", "password-789",
+            Assert.True(store.Login("tdisab1e6eb", "password-789",
                 new L12LoginAttemptContext("reenabled-login", "reenabled-client", "/api/auth/login")).Success);
         }
         finally
@@ -199,31 +199,31 @@ public sealed class ControlPlanePhaseSixSecurityTests
         try
         {
             var store = new L12PlatformStore(path);
-            store.Register("RateLimitTarget", "password-123");
-            store.Register("RateLimitOther", "password-456");
-            Assert.True(store.Login("RateLimitOther", "password-456",
+            store.Register("tratelb73d9", "password-123");
+            store.Register("tratel5ef4e", "password-456");
+            Assert.True(store.Login("tratel5ef4e", "password-456",
                 new L12LoginAttemptContext("login-success", "client-success", "/api/auth/login")).Success);
 
             for (var index = 0; index < 4; index++)
             {
-                var failed = store.Login("RateLimitTarget", "wrong-password",
+                var failed = store.Login("tratelb73d9", "wrong-password",
                     new L12LoginAttemptContext($"login-fail-{index}", "client-a", "/api/auth/login"));
                 Assert.Equal("authentication_failed", failed.Code);
             }
-            var locked = store.Login("RateLimitTarget", "wrong-password",
+            var locked = store.Login("tratelb73d9", "wrong-password",
                 new L12LoginAttemptContext("login-lock", "client-a", "/api/auth/login"));
             Assert.Equal("login_rate_limited", locked.Code);
             Assert.True(locked.RetryAfterSeconds > 0);
 
-            var principalBypass = store.Login("rAtElImItTaRgEt", "password-123",
+            var principalBypass = store.Login("TrAtElB73D9", "password-123",
                 new L12LoginAttemptContext("login-case-bypass", "client-b", "/api/auth/login"));
             Assert.Equal("login_rate_limited", principalBypass.Code);
-            var clientBypass = store.Login("RateLimitOther", "password-456",
+            var clientBypass = store.Login("tratel5ef4e", "password-456",
                 new L12LoginAttemptContext("login-client-bypass", "client-a", "/api/auth/login"));
             Assert.Equal("login_rate_limited", clientBypass.Code);
 
             var reloaded = new L12PlatformStore(path);
-            var persisted = reloaded.Login("RateLimitTarget", "password-123",
+            var persisted = reloaded.Login("tratelb73d9", "password-123",
                 new L12LoginAttemptContext("login-restart-bypass", "client-c", "/api/auth/login"));
             Assert.Equal("login_rate_limited", persisted.Code);
             var audits = reloaded.AdminAudit("authentication", 100);
@@ -251,20 +251,20 @@ public sealed class ControlPlanePhaseSixSecurityTests
             recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
-            store.Register("HttpRateLimit", "password-123");
+            store.Register("u002c042048", "password-123");
             server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
 
             for (var index = 0; index < 4; index++)
             {
-                using var request = CorrelatedLogin("HttpRateLimit", "wrong", $"http-login-{index}");
+                using var request = CorrelatedLogin("u002c042048", "wrong", $"http-login-{index}");
                 using var response = await client.SendAsync(request);
                 Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
                 Assert.Equal($"http-login-{index}", Assert.Single(response.Headers.GetValues(
                     L12CorrelationIds.HeaderName)));
             }
-            using (var request = CorrelatedLogin("HttpRateLimit", "wrong", "http-login-locked"))
+            using (var request = CorrelatedLogin("u002c042048", "wrong", "http-login-locked"))
             using (var response = await client.SendAsync(request))
             {
                 Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
@@ -300,8 +300,8 @@ public sealed class ControlPlanePhaseSixSecurityTests
         try
         {
             var store = new L12PlatformStore(path);
-            var target = store.Register("BootstrapTarget", "password-123");
-            var alternate = store.Register("BootstrapAlternate", "password-456");
+            var target = store.Register("tboots64d8b", "password-123");
+            var alternate = store.Register("tbootsb5e4c", "password-456");
             Environment.SetEnvironmentVariable("L12_ENABLE_SECOND_APPROVER_BOOTSTRAP", null);
             Environment.SetEnvironmentVariable("L12_SECOND_APPROVER_BOOTSTRAP_TOKEN", null);
             Assert.Equal("bootstrap_disabled", store.BootstrapSecondApprover(target.Account!.Id, "x").Code);
@@ -335,8 +335,8 @@ public sealed class ControlPlanePhaseSixSecurityTests
             {
                 var readyStore = new L12PlatformStore(Path.Combine(otherRoot, "platform.json"));
                 var admin = readyStore.Login("Admin", "L12master").Account!;
-                var existing = readyStore.Register("ExistingApprover", "password-789").Account!;
-                var candidate = readyStore.Register("BootstrapCandidate", "password-000").Account!;
+                var existing = readyStore.Register("texist4cd1b", "password-789").Account!;
+                var candidate = readyStore.Register("tbootsa540f", "password-000").Account!;
                 Assert.True(readyStore.SetRole(admin, existing.Id, "admin"));
                 Assert.Equal("second_approver_already_ready",
                     readyStore.BootstrapSecondApprover(candidate.Id, credential).Code);
@@ -459,7 +459,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
         try
         {
             var store = new L12PlatformStore(path);
-            var account = store.Register("LegacySecurity", "password-123");
+            var account = store.Register("tlegaca79d6", "password-123");
             var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
             document.Remove("LoginThrottles");
             document.Remove("Security");

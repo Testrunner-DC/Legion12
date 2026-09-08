@@ -453,6 +453,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             for (var playerIndex = 0; playerIndex < players.Count; playerIndex++)
             {
                 if (players[playerIndex] is not JsonObject player) continue;
+                if (player["Name"] is JsonValue nameValue && nameValue.TryGetValue<string>(out var playerName))
+                    player["Name"] = L12UsernamePolicy.PublicName(playerName);
                 RedactCardArray(player["Library"] as JsonArray, "牌库");
                 if (playerIndex != viewer) RedactCardArray(player["Hand"] as JsonArray, "对方手牌");
                 RedactCoveredField(player["Field"] as JsonArray, playerIndex, viewer);
@@ -566,7 +568,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             ? value.GetString() ?? string.Empty : string.Empty;
 
     private static L12MatchSummary ReadSummary(SqliteDataReader reader) => new(
-        reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+        reader.GetString(0), reader.GetString(1), L12UsernamePolicy.PublicName(reader.GetString(2)),
+        L12UsernamePolicy.PublicName(reader.GetString(3)),
         reader.GetString(4), reader.GetString(5), reader.GetString(6),
         reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetInt32(8),
         reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10),

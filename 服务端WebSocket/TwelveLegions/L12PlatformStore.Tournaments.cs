@@ -447,7 +447,8 @@ public sealed partial class L12PlatformStore
                 query = query.Where(row => row.Name.Contains(value, StringComparison.OrdinalIgnoreCase)
                     || row.Code.Contains(value, StringComparison.OrdinalIgnoreCase));
             }
-            query = query.Where(row => row.Visibility == "public" || IsConfiguredStaff(row, viewer.Id)
+            var globalStaff = CanGloballyAccessTournaments(viewer);
+            query = query.Where(row => globalStaff || row.Visibility == "public" || IsConfiguredStaff(row, viewer.Id)
                 || row.Participants.Any(item => item.AccountId == viewer.Id));
             return new L12TournamentListView(Version, query.OrderByDescending(row => row.UpdatedAt)
                 .Select(row => ToView(row, viewer)).ToArray());
@@ -462,7 +463,9 @@ public sealed partial class L12PlatformStore
             var row = _data.Tournaments.FirstOrDefault(item => item.Id == idOrCode
                 || string.Equals(item.Code, idOrCode, StringComparison.OrdinalIgnoreCase));
             if (row is null) return null;
-            if (row.Visibility != "public" && !IsConfiguredStaff(row, viewer.Id)
+            if (row.Visibility != "public"
+                && !CanGloballyAccessTournaments(viewer)
+                && !IsConfiguredStaff(row, viewer.Id)
                 && !row.Participants.Any(item => item.AccountId == viewer.Id)) return null;
             return ToView(row, viewer);
         }
@@ -618,7 +621,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var row = RequireTournament(tournamentId, expectedVersion);
-            RequireOrganizer(actor, row);
+            RequireOrganizerOrGlobalManager(actor, row);
             if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事已开始或结束");
             var active = row.Participants.Where(item => !item.Dropped).ToArray();
             if (active.Length < 2) throw new ArgumentException("至少需要两名未退赛选手");
@@ -884,7 +887,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var row = RequireTournament(tournamentId, expectedVersion);
-            RequireOrganizer(actor, row);
+            RequireOrganizerOrGlobalManager(actor, row);
             if (row.Status != "running") throw new L12TournamentVersionConflictException("赛事未进行中");
             if (row.Rounds.Count == 0 || row.Rounds.Any(round => round.Status != "completed"))
                 throw new L12TournamentVersionConflictException("仍有未完成轮次");
@@ -1057,7 +1060,7 @@ public sealed partial class L12PlatformStore
         if (!string.Equals(participant.Deck.Hash, expectedDeckHash, StringComparison.Ordinal))
             throw new L12TournamentVersionConflictException("桌次绑定的牌库快照与报名快照不一致");
         var account = AccountById(accountId) ?? throw new L12TournamentVersionConflictException("参赛账号不存在");
-        return new L12TournamentRoomPlayer(accountId, account.Username, new L12PresetDeckDefinition
+        return new L12TournamentRoomPlayer(accountId, PublicUsername(account), new L12PresetDeckDefinition
         {
             Name = participant.Deck.Name,
             MasterId = participant.Deck.MasterId,
@@ -1555,8 +1558,8 @@ public sealed partial class L12PlatformStore
     {
         var organizer = _data.Accounts.FirstOrDefault(item => item.Id == row.OrganizerAccountId);
         var staff = row.RefereeAccountIds.Select(AccountById).Where(item => item is not null)
-            .Select(item => new L12TournamentStaffView(item!.Id, item.Username)).ToArray();
-        var configuredStaff = IsConfiguredStaff(row, viewer.Id);
+            .Select(item => new L12TournamentStaffView(item!.Id, PublicUsername(item))).ToArray();
+        var configuredStaff = IsConfiguredStaff(row, viewer.Id) || CanGloballyAccessTournaments(viewer);
         var canViewAllDecks = configuredStaff || row.Rules.DeckVisibility == "always"
             || row.Rules.DeckVisibility == "after" && row.Status == "completed";
         var visibleParticipantRows = row.Status == "registration" && row.RegistrationVisibility == "staff"
@@ -1572,7 +1575,7 @@ public sealed partial class L12PlatformStore
                 deck = new L12TournamentDeckSnapshotView(item.Deck.Name, item.Deck.Code, item.Deck.Hash,
                     item.Deck.SubmittedAt, item.Deck.LockedAt, item.Deck.MasterId, item.Deck.CardIds.ToArray(),
                     item.Deck.MoraleIds.ToArray(), item.Deck.SpecialIds.ToArray());
-            return new L12TournamentParticipantView(item.AccountId, account?.Username ?? "已删除账号",
+            return new L12TournamentParticipantView(item.AccountId, account is null ? "已删除账号" : PublicUsername(account),
                 item.CheckedIn, item.Dropped, item.Eliminated, item.Seed, deck);
         }).ToArray();
         var bracket = row.Rounds.Where(round => round.Stage == "elimination")
@@ -1582,11 +1585,11 @@ public sealed partial class L12PlatformStore
                     var a = AccountById(match.PlayerAAccountId);
                     var b = match.PlayerBAccountId is null ? null : AccountById(match.PlayerBAccountId);
                     return new L12TournamentBracketMatchView(match.Id, match.Table, match.PlayerAAccountId,
-                        a?.Username ?? "已删除账号", match.PlayerBAccountId,
-                        b?.Username ?? "轮空", match.Result, match.SourceMatchIds.ToArray());
+                        a is null ? "已删除账号" : PublicUsername(a), match.PlayerBAccountId,
+                        b is null ? "轮空" : PublicUsername(b), match.Result, match.SourceMatchIds.ToArray());
                 }).ToArray())).ToArray();
         return new L12TournamentView(row.Id, row.Code, row.Name, row.OrganizerAccountId,
-            organizer?.Username ?? "已删除账号", staff, row.Status, row.Format, row.Visibility, row.MaxPlayers,
+            organizer is null ? "已删除账号" : PublicUsername(organizer), staff, row.Status, row.Format, row.Visibility, row.MaxPlayers,
             row.StartAt, row.Description, new L12TournamentRulesSnapshotView(row.Rules.Ruleset,
                 row.Rules.DisasterMode, row.Rules.BanList, row.Rules.DisasterCardIds.ToArray(),
                 row.Rules.CardRestrictions.ToArray(), row.Rules.DeckVisibility, row.Rules.Hash,
@@ -1607,7 +1610,8 @@ public sealed partial class L12PlatformStore
                 var a = AccountById(match.PlayerAAccountId);
                 var b = match.PlayerBAccountId is null ? null : AccountById(match.PlayerBAccountId);
                 return new L12TournamentMatchView(match.Id, match.Table, match.PlayerAAccountId,
-                    a?.Username ?? "已删除账号", match.PlayerBAccountId, b?.Username ?? "轮空", match.RoomCode,
+                    a is null ? "已删除账号" : PublicUsername(a), match.PlayerBAccountId,
+                    b is null ? "轮空" : PublicUsername(b), match.RoomCode,
                     match.ReadyA, match.ReadyB, match.Status, match.Result, match.TimeExtensionMinutes,
                     match.StartedAt, match.Deadline, match.RecordedMatchId,
                     match.Rulings.Select(ruling => new L12TournamentRulingView(ruling.Id, ruling.MatchId,
@@ -1622,7 +1626,8 @@ public sealed partial class L12PlatformStore
             row.Standings.Select(ToStandingView).ToArray(), row.PairingFailure);
 
     private L12TournamentStandingView ToStandingView(TournamentStandingRow row)
-        => new(row.RoundNumber, row.Rank, row.AccountId, AccountById(row.AccountId)?.Username ?? "已删除账号",
+        => new(row.RoundNumber, row.Rank, row.AccountId, AccountById(row.AccountId) is { } account
+                ? PublicUsername(account) : "已删除账号",
             row.Wins, row.Losses, row.Draws, row.Byes, row.OpponentScore,
             row.OpponentsOpponentScore, row.Seed);
 
@@ -1658,13 +1663,26 @@ public sealed partial class L12PlatformStore
             throw new L12TournamentScopeException("仅赛事主办者可执行该操作");
     }
 
+    private void RequireOrganizerOrGlobalManager(L12AccountView actor, TournamentRow tournament)
+    {
+        RequireActiveTournament(tournament);
+        RequireActiveTournamentAccount(actor);
+        if (tournament.OrganizerAccountId != actor.Id
+            && !L12Authorization.HasPermission(actor, L12Permission.TournamentsManage))
+            throw new L12TournamentScopeException("仅赛事主办者或全局赛事管理员可执行该操作");
+    }
+
     private void RequireStaff(L12AccountView actor, TournamentRow tournament, L12Permission permission)
     {
         RequireActiveTournament(tournament);
         RequireActiveTournamentAccount(actor);
-        if (!IsStaff(tournament, actor.Id))
+        if (!IsStaff(tournament, actor.Id) && !L12Authorization.HasPermission(actor, permission))
             throw new L12TournamentScopeException("账号不在该赛事工作人员作用域内");
     }
+
+    private static bool CanGloballyAccessTournaments(L12AccountView actor)
+        => L12Authorization.HasPermission(actor, L12Permission.TournamentsManage)
+           || L12Authorization.HasPermission(actor, L12Permission.TournamentRulingsWrite);
 
     private void RequireActiveTournamentAccount(L12AccountView actor)
     {

@@ -84,7 +84,7 @@ public sealed class WebSocketConnectionGenerationTests
         var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var account = platform.Register("ws-generation-player", "Password123!").Account!;
+        var account = platform.Register("twsgenb45a4", "Password123!").Account!;
         var token = platform.Login(account.Username, "Password123!").Token!;
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();

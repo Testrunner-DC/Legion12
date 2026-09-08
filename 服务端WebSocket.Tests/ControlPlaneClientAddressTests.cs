@@ -58,8 +58,8 @@ public sealed class ControlPlaneClientAddressTests
             await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
-            store.Register("ProxyPlayerA", "test-password-123");
-            store.Register("ProxyPlayerB", "test-password-456");
+            store.Register("tproxy6ac44", "test-password-123");
+            store.Register("tproxy17866", "test-password-456");
             await using var server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
@@ -76,13 +76,13 @@ public sealed class ControlPlaneClientAddressTests
             }
             for (var i = 0; i < 5; i++)
                 Assert.Equal(i < 4 ? HttpStatusCode.Unauthorized : HttpStatusCode.TooManyRequests,
-                    await Login("ProxyPlayerA", "wrong", "192.0.2.10, 173.245.48.10"));
+                    await Login("tproxy6ac44", "wrong", "192.0.2.10, 173.245.48.10"));
             Assert.Equal(HttpStatusCode.OK,
-                await Login("ProxyPlayerB", "test-password-456", "192.0.2.11, 173.245.48.10"));
+                await Login("tproxy17866", "test-password-456", "192.0.2.11, 173.245.48.10"));
             Assert.Equal(HttpStatusCode.TooManyRequests,
-                await Login("ProxyPlayerA", "test-password-123", "192.0.2.11, 173.245.48.10"));
+                await Login("tproxy6ac44", "test-password-123", "192.0.2.11, 173.245.48.10"));
             Assert.Equal(HttpStatusCode.TooManyRequests,
-                await Login("ProxyPlayerB", "test-password-456", "192.0.2.250, 192.0.2.10, 173.245.48.10"));
+                await Login("tproxy17866", "test-password-456", "192.0.2.250, 192.0.2.10, 173.245.48.10"));
             await server.StopAsync();
         }
         finally

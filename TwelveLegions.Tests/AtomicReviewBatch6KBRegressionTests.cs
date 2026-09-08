@@ -156,6 +156,114 @@ public sealed class AtomicReviewBatch6KBRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0223")]
+    public void ImmortalGiftUsesCurrentCostAndMayDeclineTheWholeReaction()
+    {
+        var game = Create(8217);
+        var player = game.State.Players[0];
+        game.State.ActivePlayer = 1;
+        var gift = Card("S01-0223", "batch6kb-gift-decline");
+        var discounted = Card("S01-0208", "batch6kb-gift-discounted");
+        discounted.CostModifier = -2;
+        player.Field[1][0] = gift;
+
+        var discountedCandidates = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
+            Invoke(game, "BuildS1LeaveReactionCandidates", 0, discounted, true)).ToArray();
+        Assert.DoesNotContain(discountedCandidates, item => item.SourceCardId == "S01-0223");
+        Assert.Equal(3, discounted.Cost);
+        Assert.Equal(1, discounted.CurrentCost);
+
+        var boosted = Card("S01-0212", "batch6kb-gift-boosted");
+        boosted.CostModifier = 3;
+        var candidates = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
+            Invoke(game, "BuildS1LeaveReactionCandidates", 0, boosted, true)).ToArray();
+        var candidate = Assert.Single(candidates, item => item.SourceCardId == "S01-0223");
+        Assert.Equal(2, boosted.Cost);
+        Assert.Equal(5, boosted.CurrentCost);
+
+        Invoke(game, "QueueTriggerCandidates", (object)new[] { candidate });
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:none", mode.ValidChoices);
+        Assert.Contains("mode:use", mode.ValidChoices);
+        Resolve(game, "mode:none");
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceCardId == "S01-0223");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0223")]
+    public void ImmortalGiftActivationMayDrawWithoutSummoningATombGuard()
+    {
+        var game = Create(8218);
+        var player = game.State.Players[0];
+        game.State.ActivePlayer = 1;
+        var gift = Card("S01-0223", "batch6kb-gift-draw-only");
+        var left = Card("S01-0208", "batch6kb-gift-left");
+        var guard = Card("S01-0212", "batch6kb-gift-optional-guard");
+        var drawn = Card("S01-0201", "batch6kb-gift-drawn-card");
+        player.Field[1][0] = gift;
+        player.Graveyard.Add(guard);
+        player.Library.Add(drawn);
+
+        var candidate = Assert.Single(Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
+            Invoke(game, "BuildS1LeaveReactionCandidates", 0, left, true)),
+            item => item.SourceCardId == "S01-0223");
+        Invoke(game, "QueueTriggerCandidates", (object)new[] { candidate });
+        Resolve(game, "mode:use");
+        var summon = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:none", summon.ValidChoices);
+        Assert.Contains(guard.InstanceId, summon.ValidChoices);
+        Resolve(game, "mode:none");
+        PassResponses(game);
+
+        Assert.Contains(drawn, player.Hand);
+        Assert.Contains(guard, player.Graveyard);
+        Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card?.InstanceId == guard.InstanceId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "interaction:S01-0210+S01-0223")]
+    public void DecliningImmortalGiftDoesNotSuppressNitocrisDeathSummon()
+    {
+        var game = Create(8219);
+        var player = game.State.Players[0];
+        game.State.ActivePlayer = 1;
+        var gift = Card("S01-0223", "batch6kb-gift-with-nitocris");
+        var nitocris = Card("S01-0210", "batch6kb-nitocris-death");
+        var guard = Card("S01-0212", "batch6kb-nitocris-guard");
+        gift.Hidden = true;
+        player.Field[1][0] = gift;
+        player.Field[0][0] = nitocris;
+        player.Graveyard.Add(guard);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: nitocris.InstanceId)).Accepted);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-batch-order", order.Continuation);
+        var giftChoice = order.ValidChoices.Single(id => order.Data[id].Contains("不朽之礼", StringComparison.Ordinal));
+        var nitocrisChoice = order.ValidChoices.Single(id => order.Data[id].Contains("尼托克丽丝", StringComparison.Ordinal));
+        var ordered = game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [nitocrisChoice, giftChoice]));
+        Assert.True(ordered.Accepted, ordered.Error);
+
+        var giftMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:none", giftMode.ValidChoices);
+        Resolve(game, "mode:none");
+        var nitocrisTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(guard.InstanceId, nitocrisTarget.ValidChoices);
+        Resolve(game, guard.InstanceId);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Resolve(game, slot.ValidChoices[0]);
+        PassResponses(game);
+
+        Assert.Contains(nitocris, player.Graveyard);
+        Assert.DoesNotContain(guard, player.Graveyard);
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == guard.InstanceId);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S01-0201")]
     public void ThutmoseDeclaresThePublicKillTargetAndKeepsBothSegmentsIndependent()
     {

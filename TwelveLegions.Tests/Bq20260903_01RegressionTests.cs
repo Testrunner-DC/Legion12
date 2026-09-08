@@ -501,9 +501,6 @@ public sealed class Bq20260903_01RegressionTests
         var destroy = game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: construct.InstanceId));
         Assert.True(destroy.Accepted, destroy.Error);
-        var order = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Continuation == "trigger-batch-order");
-        ResolveOnlyPromptMany(game, [.. order.ValidChoices]);
         ResolveOnlyPrompt(game, "0:0");
         ResolveOnlyPrompt(game, "0:1");
         ResolveOnlyPrompt(game, "0:2");
@@ -525,12 +522,12 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
-    public void AmakineUsesPrintedOtherworldFactionAndMayTakeARoundTableKnight()
+    public void AmakineMayTakeACardWhoseOnlyPrintedTraitIsOtherworld()
     {
         var game = Create(69037);
         var player = game.State.Players[0];
         var amakine = Card("S02-0616", "amakine-round-table-source");
-        var roundTableKnight = Card("S02-0602", "amakine-round-table-target");
+        var roundTableKnight = Card("S02-0608", "amakine-otherworld-only-target");
         amakine.OwnerIndex = roundTableKnight.OwnerIndex = 0;
         player.Field[0][0] = amakine;
         player.Library.Insert(0, roundTableKnight);

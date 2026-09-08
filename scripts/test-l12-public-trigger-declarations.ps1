@@ -326,7 +326,12 @@ foreach ($legacyAttackPrompt in @(
     's2-percival-attack-discard', 's2-gawain-runes', 's2-richard-attack-squires',
     's2-scathach-rune'
 )) {
-    if ($allRuntime.IndexOf($legacyAttackPrompt, [StringComparison]::Ordinal) -ge 0) {
+    # Match a complete continuation token. A raw substring search made the short
+    # legacy token "ay-pay" collide with the unrelated "replay-payload-expired"
+    # API name and reported a false regression.
+    $escapedLegacyAttackPrompt = [Regex]::Escape($legacyAttackPrompt)
+    if ([Regex]::IsMatch($allRuntime,
+            "(?<![A-Za-z0-9-])$escapedLegacyAttackPrompt(?![A-Za-z0-9-])")) {
         throw "Legacy post-stack attack declaration continuation returned: $legacyAttackPrompt"
     }
 }

@@ -715,12 +715,9 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal("pending-activation", moralePrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
             Choice: "mode:morale")).Accepted);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("resource-payment", payment.Kind);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: payment.ValidChoices.Take(3).ToList())).Accepted);
 
         Assert.Equal(5, game.State.DisasterValue);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         var converted = Assert.Single(player.Morale, card => card.CardId == "S02-0010");
         Assert.True(converted.Tapped);
         Assert.DoesNotContain(player.Graveyard, card => card.InstanceId == lotus.InstanceId);
@@ -782,9 +779,6 @@ public sealed class S2UniversalEffectsTests
         var moralePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
             Choice: "mode:morale")).Accepted);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: payment.ValidChoices.Take(3).ToList())).Accepted);
         var converted = Assert.Single(player.Morale, card => card.CardId == "S02-0010");
         player.Morale.Remove(converted);
         player.Morale.Insert(0, converted);
@@ -956,12 +950,17 @@ public sealed class S2UniversalEffectsTests
             CardInstanceIds: ["drawCycle"])).Accepted);
         var returnPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("resource-return", returnPrompt.Kind);
+        var returned = player.Morale.First(card => card.InstanceId == returnPrompt.ValidChoices[0]);
+        returned.CannotUntapUntilRound = game.State.Round + 2;
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
-            CardInstanceIds: [returnPrompt.ValidChoices[0]])).Accepted);
+            CardInstanceIds: [returned.InstanceId])).Accepted);
 
         Assert.True(shennong.Tapped);
         Assert.DoesNotContain(usedKey, player.UsedAbilities);
         Assert.Equal(2, player.Morale.Count);
+        var returnedToDeck = Assert.Single(player.MoraleDeck, card => card.InstanceId == returned.InstanceId);
+        Assert.False(returnedToDeck.Tapped);
+        Assert.Equal(0, returnedToDeck.CannotUntapUntilRound);
     }
 
     [Fact]

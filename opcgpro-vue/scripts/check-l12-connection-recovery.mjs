@@ -584,6 +584,8 @@ const tests = [
     sendSuccessfulHandshake(secondSocket, 12)
     assert.equal(net.l12State.connectionGeneration, 12)
     assert.equal(net.l12State.status, 'online')
+    assert.equal(net.l12State.lastCloseCode, null, 'a recovered live socket must not report the prior generation close code')
+    assert.equal(net.l12State.lastCloseReason, '', 'a recovered live socket must not report the prior generation close reason')
   }],
 
   ['WebSocket error retries even when the browser has not emitted close yet', async () => {

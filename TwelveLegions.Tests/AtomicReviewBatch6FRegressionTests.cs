@@ -315,6 +315,10 @@ public sealed class AtomicReviewBatch6FRegressionTests
         });
         var declaration = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Equal("effect-decision", declaration.Data["uiPattern"]);
+        Assert.Equal("试炼进度+1", declaration.ChoiceLabels["mode:trial"]);
+        Assert.Equal("获得1枚符文", declaration.ChoiceLabels["mode:rune"]);
+        Assert.Equal("不发动", declaration.ChoiceLabels["mode:none"]);
         Assert.Contains("mode:trial", declaration.ValidChoices);
         Assert.Contains("mode:rune", declaration.ValidChoices);
         Resolve(game, "mode:trial");

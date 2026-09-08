@@ -3,14 +3,16 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { adminApi, authState, canAccessAdmin, hasPermission, platformState, refreshCurrentAccount, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type EffectAtomDescriptor, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
 import CardImage from '@/l12/CardImage.vue'
+import { cardTypeLabel } from '@/l12/cardPresentation'
 import AdminSiteContentPanel from './AdminSiteContentPanel.vue'
 import AdminOperationsPanel from './AdminOperationsPanel.vue'
 import AdminRankedIntegrityPanel from './AdminRankedIntegrityPanel.vue'
 import AdminMatchesPanel from './AdminMatchesPanel.vue'
 import AdminCardAnalyticsPanel from './AdminCardAnalyticsPanel.vue'
 import AdminMatchGovernancePanel from './AdminMatchGovernancePanel.vue'
+import TournamentCenterPage from './TournamentCenterPage.vue'
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations'
+type AdminTab = 'overview' | 'bugs' | 'accounts' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations' | 'tournaments'
 const route = useRoute()
 const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
 const adminMatchId = ref(typeof route.query.matchId === 'string' ? route.query.matchId : '')
@@ -226,7 +228,7 @@ onMounted(() => { void initializeAdminPage() })
         <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="tab = 'accounts'; loadAccounts()">♙ 账号与会话</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="tab = 'bugs'; loadBugs()">⚑ Bug 管理</button></nav>
         <nav><small>对局与数据</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="adminMatchId = ''; tab = 'matches'">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="tab = 'match-governance'">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="tab = 'card-analytics'">◈ 单卡分析</button></nav>
         <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'">▤ 站点内容工作台</button></nav>
-        <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><router-link to="/battle/tournaments">♜ 赛事中心</router-link><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
+        <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="tab = 'tournaments'">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
         <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="tab = 'effects'; loadEffects()">◇ 卡效原子化</button></nav>
         <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="tab = 'integrity'">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
       </aside>
@@ -240,7 +242,7 @@ onMounted(() => { void initializeAdminPage() })
         <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='card-analytics'"><small>平衡分析</small><b>单卡</b><span>入组、使用、结算与胜负关联</span></button>
         <button class="overview-card" @click="tab='content'"><small>站点内容</small><b>7 模块</b><span>素材、首页、资讯、视频、商品、分类与法务</span></button>
         <button class="overview-card" @click="tab='operations'"><small>游戏运营</small><b>版本化</b><span>赛季、天灾、禁限卡、模式与维护</span></button>
-        <router-link class="overview-card" to="/battle/tournaments"><small>赛事运营</small><b>临时职权</b><span>主办者与裁判仅对当场赛事生效</span></router-link>
+        <button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" class="overview-card" @click="tab='tournaments'"><small>赛事运营</small><b>玩家赛事</b><span>查看、轮次控制、判罚与归档</span></button>
         <button class="overview-card" @click="tab='effects'; loadEffects()"><small>卡牌与规则</small><b>{{ effectCoverage?.verifiedAbilities ?? 0 }}</b><span>已验证原子能力</span></button>
         <button class="overview-card" @click="tab='releases'; loadReleases()"><small>系统与发布</small><b>{{ releaseEnvironments.length }}</b><span>受监控环境</span></button>
         <button class="overview-card" @click="tab='audit'; loadAudit()"><small>安全与审计</small><b>{{ audits.length }}</b><span>当前查询记录</span></button>
@@ -253,6 +255,7 @@ onMounted(() => { void initializeAdminPage() })
       <AdminMatchesPanel v-else-if="tab === 'matches' && hasPermission('admin.matches.read')" :initial-match-id="adminMatchId" @notice="notice = $event"/>
       <AdminMatchGovernancePanel v-else-if="tab === 'match-governance' && hasPermission('admin.match-governance.read')" @notice="notice = $event"/>
       <AdminCardAnalyticsPanel v-else-if="tab === 'card-analytics' && hasPermission('admin.analytics.read')" @notice="notice = $event" @open-match="openAdminMatch"/>
+      <TournamentCenterPage v-else-if="tab === 'tournaments' && (hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write'))" admin-mode embedded/>
       <section v-else-if="tab === 'accounts'" class="panel account-panel">
         <header>
           <div><h2>账号、权限与会话</h2><p>账号变更立即执行并完整审计；状态、密码重置与逻辑删除均撤销相关会话，根 Admin 与操作者自身受保护。</p></div>
@@ -264,7 +267,7 @@ onMounted(() => { void initializeAdminPage() })
         </header>
         <div class="account-row head"><b>用户名 / 状态</b><span>建立时间</span><span>长期身份</span><span>有效权限</span><span>操作</span></div>
         <div v-for="account in activeAccounts" :key="account.id" class="account-row">
-          <b>{{ account.username }}<small :data-disabled="account.disabled">{{ account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangePassword"> · 必须修改密码</template><template v-if="account.emailVerified"> · 邮箱 {{ account.emailMasked }}</template><template v-if="account.disabledReason"> · {{ account.disabledReason }}</template></small></b>
+          <b>{{ account.username }}<small :data-disabled="account.disabled">{{ account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangeUsername"> · 待修改用户名</template><template v-if="account.mustChangePassword"> · 必须修改密码</template><template v-if="account.emailVerified"> · 邮箱 {{ account.emailMasked }}</template><template v-if="account.disabledReason"> · {{ account.disabledReason }}</template></small></b>
           <span>{{ new Date(account.createdAt).toLocaleString() }}</span>
           <select v-model="account.role" :disabled="account.username === 'Admin'"><option value="player">玩家</option><option value="admin">管理员</option></select>
           <small :title="account.permissions?.join('\n')">{{ account.permissions?.length ?? 0 }} 项</small>
@@ -312,7 +315,7 @@ onMounted(() => { void initializeAdminPage() })
             <div class="effect-scroll" tabindex="0" aria-label="全卡效能力清单，可上下滚动">
               <div class="effect-table-head"><span>卡牌</span><span>组合</span><span>迁移状态</span></div>
               <button v-for="card in effectCards" :key="card.cardId" class="effect-row" :class="{ selected: selectedEffect?.cardId === card.cardId }" @click="selectEffect(card)">
-                <span class="effect-identity"><CardImage :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="thumb" fit="cover" object-position="center 30%"/><span><code>{{ card.cardId }}</code><b>{{ card.name }}</b><small>{{ card.faction }} · {{ card.cardType }}</small></span></span>
+                <span class="effect-identity"><CardImage :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="thumb" fit="cover" object-position="center 30%"/><span><code>{{ card.cardId }}</code><b>{{ card.name }}</b><small>{{ card.faction }} · {{ cardTypeLabel(card.cardType) }}</small></span></span>
                 <span class="effect-count"><b>{{ card.abilities.length }}</b> 能力 / <b>{{ card.atomCount }}</b> 原子<small v-if="card.legacyAtomCount">{{ card.legacyAtomCount }} 个兜底节点</small><em class="review-pill" :data-review="card.reviewStatus">{{ reviewLabel(card.reviewStatus) }}</em></span>
                 <span class="status-pill" :data-status="card.migrationStatus">{{ statusLabel(card.migrationStatus) }}</span>
               </button>
@@ -322,7 +325,7 @@ onMounted(() => { void initializeAdminPage() })
           </section>
           <section class="panel effect-detail">
             <template v-if="selectedEffect">
-              <header><div><small>{{ selectedEffect.cardId }} · {{ selectedEffect.product }}</small><h2>{{ selectedEffect.name }}</h2><p>{{ selectedEffect.faction }} · {{ selectedEffect.cardType }}</p></div><span class="effect-header-status"><em class="review-pill" :data-review="selectedEffect.reviewStatus">{{ reviewLabel(selectedEffect.reviewStatus) }}</em><span class="status-pill" :data-status="selectedEffect.migrationStatus">{{ statusLabel(selectedEffect.migrationStatus) }}</span></span></header>
+              <header><div><small>{{ selectedEffect.cardId }} · {{ selectedEffect.product }}</small><h2>{{ selectedEffect.name }}</h2><p>{{ selectedEffect.faction }} · {{ cardTypeLabel(selectedEffect.cardType) }}</p></div><span class="effect-header-status"><em class="review-pill" :data-review="selectedEffect.reviewStatus">{{ reviewLabel(selectedEffect.reviewStatus) }}</em><span class="status-pill" :data-status="selectedEffect.migrationStatus">{{ statusLabel(selectedEffect.migrationStatus) }}</span></span></header>
               <div class="original-text"><b>卡面原文</b><p class="l12-effect-body">{{ selectedEffect.effectText || '无效果文本' }}</p></div>
               <article v-for="ability in selectedEffect.abilities" :key="ability.abilityId" class="ability-card">
                 <header><span><small>ABILITY {{ ability.sequence }}</small><b>{{ ability.trigger }}</b><em class="execution-model">{{ ability.executionModel }}</em></span><span class="effect-header-status"><em class="review-pill" :data-review="ability.reviewStatus">{{ reviewLabel(ability.reviewStatus) }}</em><span class="status-pill" :data-status="ability.migrationStatus">{{ statusLabel(ability.migrationStatus) }}</span></span></header>

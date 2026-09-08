@@ -168,8 +168,8 @@ public sealed class RankedClockAndIntegrityTests
 
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-integrity", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var player = store.Register("integrity-first", "Password123!").Account!;
-        var opponent = store.Register("integrity-second", "Password123!").Account!;
+        var player = store.Register("tinteg4eed1", "Password123!").Account!;
+        var opponent = store.Register("tintegb5e1d", "Password123!").Account!;
         store.SelectRankedFaction(player.Id, "order");
         store.SelectRankedFaction(opponent.Id, "chaos");
         var started = DateTimeOffset.UtcNow.AddMinutes(-10);
@@ -265,7 +265,7 @@ public sealed class RankedClockAndIntegrityTests
             var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
                 officialCards: catalog.Cards);
             var first = platform.Register("clock-first", "Password123!").Account!;
-            var second = platform.Register("clock-second", "Password123!").Account!;
+            var second = platform.Register("tclock80801", "Password123!").Account!;
             platform.SelectRankedFaction(first.Id, "order");
             platform.SelectRankedFaction(second.Id, "chaos");
             var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));

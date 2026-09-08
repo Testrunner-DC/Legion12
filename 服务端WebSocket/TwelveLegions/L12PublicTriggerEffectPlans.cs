@@ -89,11 +89,7 @@ public sealed partial class L12GameEngine
             _ => false,
         };
         if (!legal)
-        {
-            AddEvent("ability-cancelled", candidate.Controller,
-                $"〈{candidate.SourceName}〉的公开触发条件不成立，未生成空堆叠项");
             return false;
-        }
 
         if (plan == "gustav-ready")
         {
@@ -157,11 +153,7 @@ public sealed partial class L12GameEngine
             _ => true,
         };
         if (!legal)
-        {
-            AddEvent("ability-cancelled", candidate.Controller,
-                $"〈{candidate.SourceName}〉的触发条件不成立或没有合法声明对象，未生成空堆叠项");
             return false;
-        }
 
         if (plan == "alice-ready")
         {
@@ -218,11 +210,7 @@ public sealed partial class L12GameEngine
         {
             if (!CheckVerifiedAtomicCondition(atom.Parameters.GetValueOrDefault("expression"), candidate.Data,
                     source, controller, opponent))
-            {
-                AddEvent("ability-cancelled", candidate.Controller,
-                    $"〈{candidate.SourceName}〉的可选触发条件在时点建立时不成立，未生成候选", source);
                 return false;
-            }
         }
 
         candidate.Data["verifiedAtomicOptional"] = "true";
@@ -356,7 +344,8 @@ public sealed partial class L12GameEngine
                 PublicTriggerStep("option", "mode", "祷告仪式：对方拒绝公开后，预先声明是否消耗1份资源私下查看",
                     ["mode:none", "mode:use"]),
                 PublicTriggerStep("composite-ordinary-payment", "cost", "祷告仪式：预先选择消耗的1份资源",
-                    CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use"),
+                    CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use",
+                    autoSelectEquivalentOrdinaryMorale: true),
             ];
         }
         else if (batch6IBPlan is "teach-draw-cycle" or "ragnar-draw-cycle" or "olaf-draw-cycle"
@@ -647,7 +636,8 @@ public sealed partial class L12GameEngine
                     PublicTriggerStep("option", "mode", "月读：预先声明是否消耗1士气并位移另一张军团",
                         canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("composite-ordinary-payment", "cost", "月读：预先选择消耗的1份公开资源",
-                        CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use"),
+                        CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use",
+                        autoSelectEquivalentOrdinaryMorale: true),
                     PublicTriggerStep("field-legion", "target", "月读：预先选择双方战场另一张军团进行1格位移",
                         targets, requiredChoice: "mode:use"),
                     PublicTriggerStep("adjacent-slot", "slot", "月读：预先选择该军团位移后的相邻空位",
@@ -820,11 +810,16 @@ public sealed partial class L12GameEngine
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 steps =
                 [
-                    PublicTriggerStep("optional-card", "entryCard", "不朽之礼：预先声明抽牌后登场的陵墓守卫，或不登场", guards),
+                    PublicTriggerStep("option", "mode", "不朽之礼：预先声明是否发动抽取1张牌",
+                        ["mode:none", "mode:use"]),
+                    PublicTriggerStep("optional-card", "entryCard", "不朽之礼：预先声明抽牌后登场的陵墓守卫，或不登场",
+                        guards, requiredChoice: "mode:use"),
                     PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "不朽之礼：预先选择登场战场",
-                        ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true),
+                        ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true,
+                        requiredChoice: "mode:use"),
                     PublicTriggerStep("effect-entry-slot", "entrySlot", "不朽之礼：预先选择活跃登场位置",
-                        ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true),
+                        ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true,
+                        requiredChoice: "mode:use"),
                 ];
                 break;
             }
@@ -912,6 +907,13 @@ public sealed partial class L12GameEngine
         }
 
         if (steps is null) return false;
+        if (ShouldSilentlySkipUnavailableOptionalTrigger(steps))
+        {
+            CleanupPublicTriggerReservation(candidate);
+            State.PendingTriggerStackCandidates.Remove(candidate);
+            AdvanceTriggerBatches();
+            return true;
+        }
         if (steps.Count == 0 && !RequiresPrideMasterSurcharge(candidate.Controller, source))
         {
             candidate.Data["declaration-complete"] = "true";
@@ -925,11 +927,32 @@ public sealed partial class L12GameEngine
         return true;
     }
 
+    /// <summary>
+    /// A public optional trigger whose declaration has collapsed to an explicit decline-only
+    /// choice has no legal effect to activate.  Do not expose an implementation-detail prompt
+    /// or leave a trigger candidate waiting for the player to acknowledge that fact.  Every
+    /// following step must be conditional on accepting the unavailable option; an independent
+    /// mandatory continuation therefore remains eligible and is not swallowed by this guard.
+    /// </summary>
+    private static bool ShouldSilentlySkipUnavailableOptionalTrigger(
+        IReadOnlyList<L12ActivationSelectionStep> steps)
+    {
+        if (steps.Count == 0 || steps[0].Kind is not ("option" or "optional-card")) return false;
+        var choices = steps[0].ValidChoices;
+        if (choices.Count == 0 || choices.Any(choice => !IsPublicTriggerDeclineChoice(choice))) return false;
+        return steps.Skip(1).All(step => step.RequiredDeclaredChoice is not null
+            || step.SkipWhenReferenceIsNone || step.SkipWhenPreviousStepEmpty);
+    }
+
+    private static bool IsPublicTriggerDeclineChoice(string choice)
+        => choice is "mode:none" or "skip" or "decline" or "refuse" or "cancel";
+
     private static L12ActivationSelectionStep PublicTriggerStep(string kind, string key, string text,
         IEnumerable<string> choices, int min = 1, int max = 1, string? referenceKey = null,
         bool skipWhenReferenceIsNone = false, string? requiredChoice = null,
         int minReferenceCount = 0, int referenceChoiceIndex = 0, int? targetPlayerIndex = null,
-        bool allowCancel = true, string? selectionConstraint = null)
+        bool allowCancel = true, string? selectionConstraint = null,
+        bool autoSelectEquivalentOrdinaryMorale = false)
         => new()
         {
             Kind = kind,
@@ -952,6 +975,7 @@ public sealed partial class L12GameEngine
             ReferenceChoiceIndex = referenceChoiceIndex,
             TargetPlayerIndex = targetPlayerIndex,
             SelectionConstraint = selectionConstraint,
+            AutoSelectEquivalentOrdinaryMorale = autoSelectEquivalentOrdinaryMorale,
             ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mode:none"] = "不发动",
@@ -963,7 +987,7 @@ public sealed partial class L12GameEngine
     {
         var plans = new List<(L12CardInstance Guard, int Owner)>();
         var usedByOwner = new Dictionary<int, int>();
-        foreach (var instanceId in source.LastKnownAttachedCardIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var instanceId in source.LastKnownAttachedCardIds.Distinct(StringComparer.OrdinalIgnoreCase).Take(3))
         {
             var guard = FindAuthoritativeCard(instanceId);
             if (guard?.CardId != PublicTriggerTombGuardCard) continue;
@@ -1044,6 +1068,15 @@ public sealed partial class L12GameEngine
                 AdvanceTriggerBatches();
                 return true;
             }
+        }
+        if (key is ("S01-0223", "reaction", _) && mode == "mode:none")
+        {
+            CleanupPublicTriggerReservation(candidate);
+            State.PendingTriggerStackCandidates.Remove(candidate);
+            AddEvent("ability-cancelled", candidate.Controller,
+                "〈不朽之礼〉未发动，未进入堆叠");
+            AdvanceTriggerBatches();
+            return true;
         }
         if (declaredNone && candidate.Data.GetValueOrDefault("preserveIndependentStack") != "true")
         {

@@ -40,7 +40,7 @@ foreach ($contract in @(
     'sourceOwner.Graveyard.Remove(card)',
     'sourceOwner.Library.Remove(card)',
     'destination.Field[row][slot] = card',
-    'QueueNonHandEntry(destinationPlayerIndex, card'
+    'CompleteEffectLegionEntry(destinationPlayerIndex, card'
 )) {
     Assert-Contains $tryBody $contract "Private-zone summon transaction is missing: $contract"
 }

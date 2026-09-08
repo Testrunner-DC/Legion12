@@ -26,7 +26,9 @@ internal static partial class L12CompositeEffectPlans
     private static readonly HashSet<string> SingleResponseEffectPlans = new(StringComparer.OrdinalIgnoreCase)
     {
         "trigger:S01-0001:enter",
+        "trigger:S02-0101:enter",
         "active:S01-04M1:amaterasuReady",
+        "S02-0620",
     };
 
     internal static bool UsesSingleResponseEffect(string? planId)
@@ -175,8 +177,7 @@ internal static partial class L12CompositeEffectPlans
             ["S02-0620"] =
             [
                 new("rune-gain", "获得1符文"),
-                new("rune-search", "消耗1士气：查看牌库顶部3张牌",
-                    "mode:search", "ordinary-payment", "searchCost", 1),
+                new("rune-search-choice", "可消耗1士气：查看牌库顶部3张牌"),
             ],
             ["S02-0621"] =
             [
@@ -390,7 +391,7 @@ internal static partial class L12CompositeEffectPlans
         };
 
     private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
-        new(StringComparer.OrdinalIgnoreCase) { "S01-0015", "S02-0405" };
+        new(StringComparer.OrdinalIgnoreCase) { "S01-0015", "S02-0405", "S02-0620" };
 
     public static bool HasHandPlayPlan(string cardId)
         => HandPlayPlans.ContainsKey(cardId)
@@ -497,10 +498,10 @@ public sealed partial class L12GameEngine
                     }));
                 steps.Add(CompositeStep("composite-ordinary-payment", "campHealCost",
                     "野外扎营：预先选择治疗段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:heal"));
+                    requiredChoice: "mode:heal", autoSelectEquivalentOrdinaryMorale: true));
                 steps.Add(CompositeStep("composite-ordinary-payment", "campDrawCost",
                     "野外扎营：选择抽取1张牌所消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:draw"));
+                    requiredChoice: "mode:draw", autoSelectEquivalentOrdinaryMorale: true));
                 break;
             }
 
@@ -546,7 +547,7 @@ public sealed partial class L12GameEngine
                     }));
                 steps.Add(CompositeStep("composite-ordinary-payment", "scoutCost",
                     "前线侦查：预先选择洗回手牌段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:use"));
+                    requiredChoice: "mode:use", autoSelectEquivalentOrdinaryMorale: true));
                 break;
             }
 
@@ -667,7 +668,8 @@ public sealed partial class L12GameEngine
                         ["mode:morale"] = "消耗3士气：将此战术休整置入士气区并视为1张士气",
                     }));
                 steps.Add(CompositeStep("composite-ordinary-payment", "lotusCost", "黑色莲花：选择将此战术置入士气区所消耗的3份资源",
-                    CompositeOrdinaryPaymentChoices(player), 3, 3, requiredChoice: "mode:morale"));
+                    CompositeOrdinaryPaymentChoices(player), 3, 3, requiredChoice: "mode:morale",
+                    autoSelectEquivalentOrdinaryMorale: true));
                 break;
             }
 
@@ -739,18 +741,6 @@ public sealed partial class L12GameEngine
                     requiredChoice: "mode:search"));
                 break;
 
-            case "S02-0620":
-                steps.Add(CompositeStep("option", "mode", "符文之力：预先声明是否发动牌库查看段",
-                    ["mode:none", "mode:search"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "获得1符文",
-                        ["mode:search"] = "消耗1士气：查看牌库顶部3张牌，选择1张其他【彼界】卡牌展示并加入手牌，其余返回牌库底部",
-                    }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "searchCost", "符文之力：预先选择支付的1份资源",
-                    CompositeOrdinaryPaymentChoices(player), 1, requiredChoice: "mode:search"));
-                break;
-
             case "S02-0621":
             {
                 var roundTableTargets = PublicLegions(player)
@@ -772,7 +762,8 @@ public sealed partial class L12GameEngine
                     roundTableTargets, 1,
                     requiredChoice: "mode:buff"));
                 steps.Add(CompositeStep("composite-ordinary-payment", "buffCost", "圆桌领域：预先选择支付的1份资源",
-                    roundTablePayments, 1, requiredChoice: "mode:buff"));
+                    roundTablePayments, 1, requiredChoice: "mode:buff",
+                    autoSelectEquivalentOrdinaryMorale: true));
                 break;
             }
 
@@ -880,7 +871,8 @@ public sealed partial class L12GameEngine
     private static L12ActivationSelectionStep CompositeStep(string kind, string key, string text,
         IEnumerable<string> choices, int min, int max = 1, Dictionary<string, string>? labels = null,
         string? requiredChoice = null, string? referenceKey = null, int minimumReferenceCount = 0,
-        int referenceChoiceIndex = 0, bool autoSelectWhenExact = false)
+        int referenceChoiceIndex = 0, bool autoSelectWhenExact = false,
+        bool autoSelectEquivalentOrdinaryMorale = false)
         => new()
         {
             Kind = kind,
@@ -895,6 +887,7 @@ public sealed partial class L12GameEngine
             MinimumReferenceCount = minimumReferenceCount,
             ReferenceChoiceIndex = referenceChoiceIndex,
             AutoSelectWhenExact = autoSelectWhenExact,
+            AutoSelectEquivalentOrdinaryMorale = autoSelectEquivalentOrdinaryMorale,
         };
 
     private IEnumerable<string> CompositeOrdinaryPaymentChoices(L12PlayerState player)
@@ -1128,8 +1121,7 @@ public sealed partial class L12GameEngine
                     == declared.GetValueOrDefault("flipTargets", []).Count
                 && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.IsGodPower))
                 && (effectOnlyRepeat || mode == "mode:none" || ValidateGloryPlannedCost(player, declared)),
-            "S02-0620" => mode is "mode:none" or "mode:search"
-                && (effectOnlyRepeat || mode == "mode:none" || OrdinaryCost("searchCost")),
+            "S02-0620" => declared.Count == 0,
             "S02-0621" => mode is "mode:none" or "mode:buff"
                 && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士"))
                     && (effectOnlyRepeat || OrdinaryCost("buffCost"))),

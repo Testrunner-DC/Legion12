@@ -177,6 +177,8 @@ public sealed partial class L12GameEngine
         var xiaotian = player.Graveyard.LastOrDefault(card => card.CardId == "S02-01S1")
             ?? player.Removed.LastOrDefault(card => card.CardId == "S02-01S1")
             ?? CreateCard("S02-01S1", $"p{item.Controller}-xiaotian");
+        var originZone = player.Graveyard.Contains(xiaotian) ? "graveyard"
+            : player.Removed.Contains(xiaotian) ? "removed" : "generated";
         var (row, slot) = ParseSlot(destination);
         player.Graveyard.Remove(xiaotian);
         player.Removed.Remove(xiaotian);
@@ -184,6 +186,7 @@ public sealed partial class L12GameEngine
         xiaotian.SummonRound = State.Round;
         player.Field[row][slot] = xiaotian;
         AddEvent("enter", item.Controller, "〈哮天犬·稚〉在前排活跃登场", xiaotian);
+        CompleteEffectLegionEntry(item.Controller, xiaotian, originZone);
         FinishStackItem(item);
     }
 
@@ -653,9 +656,22 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
-        if (AtomicFlowKey(item, card) == "rune-search")
+        if (AtomicFlowKey(item, card) == "rune-search-choice")
         {
-            BeginRunePowerSearch(item);
+            var canPay = CompositeOrdinaryPaymentChoices(player).Any();
+            if (!canPay || player.Library.Count == 0)
+            {
+                FinishStackItem(item);
+                return true;
+            }
+            CreatePrompt(item.Controller, "option", "符文之力：是否消耗1士气发动牌库查看效果",
+                ["mode:search", "mode:none"], 1, 1, "card-effect", item.StackItemId,
+                data: new Dictionary<string, string>
+                {
+                    ["action"] = "s2-rune-power-mode",
+                    ["mode:search"] = "消耗1士气：查看牌库顶部3张牌",
+                    ["mode:none"] = "不发动",
+                });
             return true;
         }
         if (AtomicFlowKey(item, card) == "round-table-search")
@@ -1716,7 +1732,11 @@ public sealed partial class L12GameEngine
             }
             var top = player.Library[0];
             item.Data["amakine-top"] = top.InstanceId;
-            var choices = top.Faction == "otherworld" ? new[] { "hand", "top", "bottom" } : new[] { "top", "bottom" };
+            AddEvent("reveal", item.Controller, $"阿麦金展示牌库顶部的〈{top.Name}〉", top);
+            var isOnlyOtherworldTrait = top.Traits.Count == 1
+                && top.Traits.Contains("彼界", StringComparer.OrdinalIgnoreCase);
+            item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";
+            var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" } : new[] { "top", "bottom" };
             var data = new Dictionary<string, string>
             {
                 ["action"] = "s2-amakine-top-place", ["previewCardId"] = top.InstanceId,
@@ -1950,7 +1970,7 @@ public sealed partial class L12GameEngine
                 if (top is not null)
                 {
                     player.Library.Remove(top);
-                    if (chosen[0] == "hand" && top.Faction == "otherworld")
+                    if (chosen[0] == "hand" && item.Data.GetValueOrDefault("amakine-can-take") == "true")
                         AddCardToHandByEffect(player, top, "library", "阿麦金将牌库顶部的彼界卡牌加入手牌");
                     else if (chosen[0] == "bottom")
                     {
@@ -2121,6 +2141,39 @@ public sealed partial class L12GameEngine
                 PromptRunePowerBottomOrder(item, ids);
                 return true;
             }
+            case "s2-rune-power-mode":
+            {
+                if (chosen[0] == "mode:none")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                var paymentChoices = CompositeOrdinaryPaymentChoices(player).ToArray();
+                if (paymentChoices.Length == 0)
+                {
+                    AddEvent("effect-cancelled", item.Controller,
+                        "〈符文之力〉的可选牌库查看效果因没有可支付的士气而取消", FindSource(item) is { } source ? [source] : []);
+                    FinishStackItem(item);
+                    return true;
+                }
+                CreateResourcePaymentPrompt(item.Controller, 1, "card-effect", item.StackItemId,
+                    new Dictionary<string, string>
+                    {
+                        ["action"] = "s2-rune-power-payment",
+                        ["resourceKind"] = "ordinary-morale",
+                    });
+                return true;
+            }
+            case "s2-rune-power-payment":
+                if (!TryConsumeSelectedResources(player, 1, chosen))
+                {
+                    AddEvent("effect-cancelled", item.Controller,
+                        "〈符文之力〉的可选牌库查看效果因支付对象失效而取消", FindSource(item) is { } source ? [source] : []);
+                    FinishStackItem(item);
+                    return true;
+                }
+                BeginRunePowerSearch(item);
+                return true;
             case "s2-rune-power-bottom-order":
                 CompleteRunePowerBottomOrder(item, chosen);
                 return true;

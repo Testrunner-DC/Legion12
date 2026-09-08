@@ -876,10 +876,7 @@ public sealed partial class L12GameEngine
         player.Hand.Remove(card); card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
         State.Players[battlefield].Field[row][slot] = card;
         AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
-        ApplyDisasterLevelOnEntry(battlefield, card, deferTriggerUntilStackSettles: true);
-        if (HasImmediateEffect(card, "enter"))
-            QueueOrPushTriggeredEffect(battlefield, card, "enter", "【登场时】效果");
-        QueueS2GrailRoundTableEntry(battlefield, card);
+        CompleteEffectLegionEntry(battlefield, card, "hand");
     }
 
     private static bool IsCounterTactic(string cardId) => cardId is
@@ -1155,13 +1152,14 @@ public sealed partial class L12GameEngine
         QueueTriggerCandidates(candidates);
     }
 
-    private IEnumerable<L12TriggerCandidate> BuildS1LeaveReactionCandidates(int owner, L12CardInstance left)
+    private IEnumerable<L12TriggerCandidate> BuildS1LeaveReactionCandidates(int owner, L12CardInstance left,
+        bool includeTombConstruct = true)
     {
         var player = State.Players[owner];
         var candidates = new List<L12TriggerCandidate>();
         if (left.CardId == "S01-0417" && player.MasterId == "S01-04M2")
             candidates.Add(CreateTriggerCandidate(owner, left, "play", "【离场时】效果"));
-        if (left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
+        if (includeTombConstruct && left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
             candidates.Add(CreateTriggerCandidate(owner, left, "leave", "【离场时】效果"));
         if (!IsFieldLegion(left)) return candidates;
         var bloodEagle = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0320" });

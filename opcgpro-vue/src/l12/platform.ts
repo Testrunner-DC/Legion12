@@ -6,7 +6,7 @@ import type { RecordedCommand } from './replayModel'
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
   permissionVersion?: number; disabled?: boolean; disabledAt?: string; disabledReason?: string
-  mustChangePassword?: boolean; deleted?: boolean; deletedAt?: string; emailMasked?: string; emailVerified?: boolean
+  mustChangePassword?: boolean; mustChangeUsername?: boolean; deleted?: boolean; deletedAt?: string; emailMasked?: string; emailVerified?: boolean
   audioPreferences?: { musicEnabled: boolean; musicVolume: number; sfxEnabled: boolean; sfxVolume: number; cardSize: 'auto'|'small'|'medium'|'large'; animation: 'off'|'fast'|'standard' }
 }
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
@@ -248,7 +248,53 @@ export interface EffectiveOperationsPolicy {
 export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
 export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
 export interface RankedMasterTitleConfig { masterId: string; masterName: string; title: string }
-export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[] }
+export interface RankedTimeControlConfig {
+  totalTimeSeconds: number
+  operationTimeSeconds: number
+  reconnectGraceSeconds: number
+  disasterDecisionSeconds: number
+  mulliganDecisionSeconds: number
+}
+export const DEFAULT_RANKED_TIME_CONTROL: RankedTimeControlConfig = {
+  totalTimeSeconds: 1500,
+  operationTimeSeconds: 240,
+  reconnectGraceSeconds: 240,
+  disasterDecisionSeconds: 60,
+  mulliganDecisionSeconds: 60,
+}
+export interface RankedBroadcastConfig {
+  displaySeconds: number
+  lobbyDelaySeconds: number
+  intervalSeconds: number
+  winStreakThreshold: number
+  streakEndedThreshold: number
+  minimumTierIndex: number
+  winStreakEnabled: boolean
+  streakEndedEnabled: boolean
+  highestTierEnabled: boolean
+  factionTitleEnabled: boolean
+  masterTitleEnabled: boolean
+}
+export const DEFAULT_RANKED_BROADCAST_CONFIG: RankedBroadcastConfig = {
+  displaySeconds: 16,
+  lobbyDelaySeconds: 3,
+  intervalSeconds: 15,
+  winStreakThreshold: 5,
+  streakEndedThreshold: 5,
+  minimumTierIndex: 0,
+  winStreakEnabled: true,
+  streakEndedEnabled: true,
+  highestTierEnabled: true,
+  factionTitleEnabled: true,
+  masterTitleEnabled: true,
+}
+export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[]; timeControl: RankedTimeControlConfig; broadcast: RankedBroadcastConfig }
+export function normalizeRankedConfig(config: Omit<RankedConfig, 'timeControl'|'broadcast'> & { timeControl?: Partial<RankedTimeControlConfig>; broadcast?: Partial<RankedBroadcastConfig> }): RankedConfig {
+  return { ...config,
+    timeControl: { ...DEFAULT_RANKED_TIME_CONTROL, ...(config.timeControl ?? {}) },
+    broadcast: { ...DEFAULT_RANKED_BROADCAST_CONFIG, ...(config.broadcast ?? {}) },
+  }
+}
 export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[]; rankLabel: string; placementTitle?: string; selectedMasterTitle?: string; masterTitles: string[] }
 export interface RankedProfileHistory { seasonId: string; faction: string; sevenValue: number; placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number; archivedAt: string }
 export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
@@ -624,6 +670,14 @@ export async function changePassword(currentPassword: string, newPassword: strin
   return result
 }
 
+export async function changeUsername(currentPassword: string, newUsername: string) {
+  const result = await platformRequest<{ message: string; account: PlatformAccount }>('/api/auth/change-username', {
+    method: 'POST', body: JSON.stringify({ currentPassword, newUsername }),
+  })
+  remember(result.account, platformState.token)
+  return result
+}
+
 export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audioPreferences']>) =>
   platformRequest<NonNullable<PlatformAccount['audioPreferences']>>('/api/auth/audio-preferences', {
     method: 'PUT', body: JSON.stringify(value),
@@ -866,6 +920,7 @@ export const rankedApi = {
   },
   history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
+  broadcastSettings: () => platformRequest<RankedBroadcastConfig>('/api/ranked/broadcasts/settings'),
   claimBroadcast: (subscriptionStartedAt?: string) => {
     const params = subscriptionStartedAt ? `?subscriptionStartedAt=${encodeURIComponent(subscriptionStartedAt)}` : ''
     return platformRequest<RankedBroadcastClaim | null>(`/api/ranked/broadcasts/claim${params}`, { method: 'POST' })

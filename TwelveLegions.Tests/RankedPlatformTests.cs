@@ -12,7 +12,7 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-empty-identity", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var account = store.Register("empty-identity", "Password123!").Account!;
+        var account = store.Register("temptya0ad7", "Password123!").Account!;
 
         var identity = store.RankedBattleIdentity(account.Id, 0);
 
@@ -25,8 +25,8 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var first = store.Register("ranked-first", "Password123!").Account!;
-        var second = store.Register("ranked-second", "Password123!").Account!;
+        var first = store.Register("trankeff2d4", "Password123!").Account!;
+        var second = store.Register("tranked6015", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
 
@@ -48,8 +48,8 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-switch", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var first = store.Register("switch-first", "Password123!").Account!;
-        var second = store.Register("switch-second", "Password123!").Account!;
+        var first = store.Register("tswitc417e8", "Password123!").Account!;
+        var second = store.Register("tswitcbe334", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
         store.SettleRankedMatch("switch-match", first.Id, second.Id, 0);
@@ -71,8 +71,8 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-gap", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var strong = store.Register("ranked-strong", "Password123!").Account!;
-        var underdog = store.Register("ranked-underdog", "Password123!").Account!;
+        var strong = store.Register("tranke753f9", "Password123!").Account!;
+        var underdog = store.Register("tranke04938", "Password123!").Account!;
         store.SelectRankedFaction(strong.Id, "order");
         store.SelectRankedFaction(underdog.Id, "chaos");
         for (var index = 0; index < 5; index++) store.SettleRankedMatch($"gap-placement-{index}", strong.Id, underdog.Id, 0);
@@ -88,8 +88,8 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-streak", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var challenger = store.Register("ranked-challenger", "Password123!").Account!;
-        var streaking = store.Register("ranked-streaking", "Password123!").Account!;
+        var challenger = store.Register("trankead8d1", "Password123!").Account!;
+        var streaking = store.Register("tranke0df09", "Password123!").Account!;
         store.SelectRankedFaction(challenger.Id, "order");
         store.SelectRankedFaction(streaking.Id, "fate");
         for (var index = 0; index < 5; index++)
@@ -106,8 +106,8 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-title-tier", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var leader = store.Register("ranked-tier-leader", "Password123!").Account!;
-        var rival = store.Register("ranked-tier-rival", "Password123!").Account!;
+        var leader = store.Register("tranke53686", "Password123!").Account!;
+        var rival = store.Register("trankeb73d9", "Password123!").Account!;
         store.SelectRankedFaction(leader.Id, "order");
         store.SelectRankedFaction(rival.Id, "order");
         for (var index = 0; index < 5; index++)
@@ -135,8 +135,8 @@ public sealed class RankedPlatformTests
         var catalog = Catalog;
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
             catalog.PresetDecks, officialCards: catalog.Cards);
-        var amaterasu = store.Register("ranked-amaterasu", "Password123!").Account!;
-        var rival = store.Register("ranked-master-rival", "Password123!").Account!;
+        var amaterasu = store.Register("tranke6f6d2", "Password123!").Account!;
+        var rival = store.Register("trankefabe6", "Password123!").Account!;
         store.SelectRankedFaction(amaterasu.Id, "order");
         store.SelectRankedFaction(rival.Id, "chaos");
         for (var index = 0; index < 5; index++)
@@ -176,8 +176,8 @@ public sealed class RankedPlatformTests
         var catalog = Catalog;
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
             catalog.PresetDecks, officialCards: catalog.Cards);
-        var amaterasu = store.Register("import-amaterasu", "Password123!").Account!;
-        var rival = store.Register("import-rival", "Password123!").Account!;
+        var amaterasu = store.Register("timpor2f195", "Password123!").Account!;
+        var rival = store.Register("timpor3fc53", "Password123!").Account!;
         store.SelectRankedFaction(amaterasu.Id, "order");
         store.SelectRankedFaction(rival.Id, "chaos");
         for (var index = 0; index < 5; index++)
@@ -209,8 +209,8 @@ public sealed class RankedPlatformTests
         var catalog = Catalog;
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
             catalog.PresetDecks, officialCards: catalog.Cards);
-        var champion = store.Register("season-champion", "Password123!").Account!;
-        var rival = store.Register("season-rival", "Password123!").Account!;
+        var champion = store.Register("tseaso0614c", "Password123!").Account!;
+        var rival = store.Register("tseaso6a2c9", "Password123!").Account!;
         store.SelectRankedFaction(champion.Id, "order");
         store.SelectRankedFaction(rival.Id, "chaos");
         for (var index = 0; index < 5; index++)
@@ -241,9 +241,9 @@ public sealed class RankedPlatformTests
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-delivery", Guid.NewGuid().ToString("N"));
         var path = Path.Combine(directory, "platform.json");
         var store = new L12PlatformStore(path);
-        var first = store.Register("broadcast-first", "Password123!").Account!;
-        var second = store.Register("broadcast-second", "Password123!").Account!;
-        var viewer = store.Register("broadcast-viewer", "Password123!").Account!;
+        var first = store.Register("tbroadb3958", "Password123!").Account!;
+        var second = store.Register("tbroadb355a", "Password123!").Account!;
+        var viewer = store.Register("tbroad418d4", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
         for (var index = 0; index < 5; index++)
@@ -268,9 +268,9 @@ public sealed class RankedPlatformTests
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-subscription", Guid.NewGuid().ToString("N"));
         var path = Path.Combine(directory, "platform.json");
         var store = new L12PlatformStore(path);
-        var first = store.Register("bc-live-first", "Password123!").Account!;
-        var second = store.Register("bc-live-second", "Password123!").Account!;
-        var viewer = store.Register("bc-live-viewer", "Password123!").Account!;
+        var first = store.Register("tbclivc171f", "Password123!").Account!;
+        var second = store.Register("tbcliv9080f", "Password123!").Account!;
+        var viewer = store.Register("tbclivf139d", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
         for (var index = 0; index < 5; index++)
@@ -305,9 +305,9 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-clock", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var first = store.Register("bc-clock-first", "Password123!").Account!;
-        var second = store.Register("bc-clock-second", "Password123!").Account!;
-        var viewer = store.Register("bc-clock-viewer", "Password123!").Account!;
+        var first = store.Register("tbccloe7962", "Password123!").Account!;
+        var second = store.Register("tbcclo71042", "Password123!").Account!;
+        var viewer = store.Register("tbcclob96ee", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
         for (var index = 0; index < 5; index++)
@@ -322,9 +322,9 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-tabs", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var first = store.Register("bc-tabs-first", "Password123!").Account!;
-        var second = store.Register("bc-tabs-second", "Password123!").Account!;
-        var viewer = store.Register("bc-tabs-viewer", "Password123!").Account!;
+        var first = store.Register("tbctab0fa4a", "Password123!").Account!;
+        var second = store.Register("tbctabab421", "Password123!").Account!;
+        var viewer = store.Register("tbctabfd997", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
         for (var index = 0; index < 4; index++)
@@ -378,8 +378,8 @@ public sealed class RankedPlatformTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-replay", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
-        var first = store.Register("repeat-first", "Password123!").Account!;
-        var second = store.Register("repeat-second", "Password123!").Account!;
+        var first = store.Register("trepea1ca17", "Password123!").Account!;
+        var second = store.Register("trepeacf7fc", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
 
@@ -425,6 +425,84 @@ public sealed class RankedPlatformTests
         Assert.Equal("inconsistent_ranked_tier_values", error.Code);
         Assert.Equal(config.Factions[1].Tiers[2].BaseDelta,
             store.RankedConfig(admin).Factions[1].Tiers[2].BaseDelta);
+    }
+
+    [Fact]
+    public void RankedTimeControlPersistsValidValuesAndRejectsEveryOutOfRangeFieldWithAudit()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-time-control", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "platform.json");
+        var store = new L12PlatformStore(path);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var original = store.RankedConfig(admin);
+        Assert.Equal(new L12RankedTimeControlConfig(1500, 240, 240, 60, 60), original.TimeControl);
+        var configured = new L12RankedTimeControlConfig(1800, 300, 180, 75, 90);
+
+        var saved = store.UpdateRankedConfig(admin, original with { TimeControl = configured },
+            "调整排位计时", new L12AdminAuditContext("ranked-time-control"));
+
+        Assert.Equal(configured, saved.TimeControl);
+        Assert.Equal(configured, new L12PlatformStore(path).RankedConfig(admin).TimeControl);
+        Assert.Contains(store.AdminAudit(category: "operations"), audit =>
+            audit.Action == "ranked-config-apply" && audit.Reason == "调整排位计时");
+
+        var invalid = new[]
+        {
+            configured with { TotalTimeSeconds = 299 },
+            configured with { OperationTimeSeconds = 901 },
+            configured with { ReconnectGraceSeconds = 14 },
+            configured with { DisasterDecisionSeconds = 301 },
+            configured with { MulliganDecisionSeconds = 9 },
+        };
+        foreach (var value in invalid)
+            Assert.Throws<L12OperationsConfigException>(() => store.UpdateRankedConfig(admin,
+                saved with { TimeControl = value }, "非法范围", new L12AdminAuditContext("ranked-time-invalid")));
+        Assert.Equal(configured, store.RankedConfig(admin).TimeControl);
+    }
+
+    [Fact]
+    public void RankedBroadcastRulesPersistAndControlOnlyFutureBroadcasts()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-config", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "platform.json");
+        var store = new L12PlatformStore(path);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var first = store.Register("tbroadb4498", "Password123!").Account!;
+        var second = store.Register("tbroad76572", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        var original = store.RankedConfig(admin);
+        var configured = new L12RankedBroadcastConfig(28, 7, 21, 2, 8, 0,
+            true, false, false, false, false);
+
+        var saved = store.UpdateRankedConfig(admin, original with { Broadcast = configured },
+            "调整排位广播", new L12AdminAuditContext("ranked-broadcast-config"));
+
+        Assert.Equal(configured, saved.Broadcast);
+        Assert.Equal(configured, store.RankedBroadcastSettings());
+        store.SettleRankedMatch("broadcast-config-1", first.Id, second.Id, 0);
+        var secondResult = store.SettleRankedMatch("broadcast-config-2", first.Id, second.Id, 0);
+        Assert.Single(secondResult.Broadcasts, row => row.EventType == "win-streak");
+        Assert.DoesNotContain(secondResult.Broadcasts, row => row.EventType == "streak-ended");
+
+        var reloaded = new L12PlatformStore(path);
+        Assert.Equal(configured, reloaded.RankedBroadcastSettings());
+        var loaded = reloaded.RankedConfig(admin);
+        var blocked = configured with { MinimumTierIndex = 4 };
+        reloaded.UpdateRankedConfig(admin, loaded with { Broadcast = blocked },
+            "提高广播段位门槛", new L12AdminAuditContext("ranked-broadcast-tier"));
+        var thirdResult = reloaded.SettleRankedMatch("broadcast-config-3", first.Id, second.Id, 0);
+        Assert.DoesNotContain(thirdResult.Broadcasts, row => row.EventType == "win-streak");
+
+        foreach (var invalid in new[]
+        {
+            blocked with { DisplaySeconds = 4 }, blocked with { LobbyDelaySeconds = 121 },
+            blocked with { IntervalSeconds = 2 }, blocked with { WinStreakThreshold = 1 },
+            blocked with { StreakEndedThreshold = 101 }, blocked with { MinimumTierIndex = 5 },
+        })
+            Assert.Throws<L12OperationsConfigException>(() => reloaded.UpdateRankedConfig(admin,
+                reloaded.RankedConfig(admin) with { Broadcast = invalid }, "非法广播范围",
+                new L12AdminAuditContext("ranked-broadcast-invalid")));
     }
 
     private static L12RankedMasterTitleMatchFact[] TitleFacts(string prefix, string accountId,

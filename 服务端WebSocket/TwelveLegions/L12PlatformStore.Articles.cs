@@ -460,7 +460,9 @@ public sealed partial class L12PlatformStore
     }
 
     private string ArticleAccountName(string accountId) => string.IsNullOrWhiteSpace(accountId) ? "系统迁移"
-        : _data.Accounts.FirstOrDefault(item => item.Id == accountId)?.Username ?? "已注销管理员";
+        : _data.Accounts.FirstOrDefault(item => item.Id == accountId) is { } account
+            ? PublicUsername(account)
+            : "已注销管理员";
 
     private void AppendArticleRevision(ArticleRow row, string actorId, string action)
     {

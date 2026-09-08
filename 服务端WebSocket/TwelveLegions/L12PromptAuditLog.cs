@@ -19,8 +19,14 @@ public sealed partial class L12GameEngine
         // Capture permitted identities before zone movement, publish only once the
         // server has accepted this exact choice. Rejections never claim completion.
         var audit = prompt is null ? null : BuildResolvedPromptLog(prompt, choices.Distinct().ToArray());
+        var eventIndex = State.Events.Count;
         var result = ResolvePromptCore(playerIndex, command);
-        if (result.Accepted && audit is { } entry)
+        // A private search may end by explicitly revealing the selected card. Keep
+        // that permitted public result authoritative instead of masking it with a
+        // later generic "private choice complete" event.
+        var publiclyRevealedChoice = result.Accepted && prompt?.IsPrivate == true
+            && State.Events.Skip(eventIndex).Any(entry => entry.Type == "reveal" && entry.Cards.Length > 0);
+        if (result.Accepted && !publiclyRevealedChoice && audit is { } entry)
             AddEvent("prompt-resolved", playerIndex, entry.Text, entry.Cards);
         return result;
     }

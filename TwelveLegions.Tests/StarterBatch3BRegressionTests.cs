@@ -486,7 +486,7 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
-    public void HorusMixedPaymentConsumesOnlyChosenResourceWithoutSecondPaymentPrompt()
+    public void HorusEquivalentOrdinaryMoralePaymentIsDeterministicWithoutAResourcePrompt()
     {
         var game = Create(20425);
         var player = game.State.Players[0];
@@ -502,7 +502,6 @@ public sealed class StarterBatch3BRegressionTests
         var start = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
         Assert.True(start.Accepted, start.Error);
         Choose(game, "mode:morale-legions");
-        Choose(game, chosen.InstanceId);
         var fieldCost = Prompt(game);
         Assert.Equal("board-target", fieldCost.Data.GetValueOrDefault("choiceMode"));
         ChooseMany(game, revive.InstanceId, secondCost.InstanceId);
@@ -511,8 +510,8 @@ public sealed class StarterBatch3BRegressionTests
 
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         PassResponses(game);
-        Assert.False(untouched.Tapped);
-        Assert.True(chosen.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}"))
+        Assert.True(untouched.Tapped);
+        Assert.False(chosen.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}"))
             + $"; prompts={string.Join(',', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Text}"))}");
         Assert.Same(revive, player.Field[0][0]);
         Assert.True(revive.Tapped, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
@@ -854,7 +853,7 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
-    public void KagutsuchiEquivalentMoraleAutoPaymentReservesAcrossPrideSurcharge()
+    public void KagutsuchiCrossStepPrideReservationKeepsBothPaymentsManual()
     {
         var game = Create(204112);
         var player = game.State.Players[0];
@@ -870,6 +869,10 @@ public sealed class StarterBatch3BRegressionTests
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
         Choose(game, "mode:morale");
+        var basePayment = Prompt(game);
+        Assert.Equal("resource-payment", basePayment.Kind);
+        Assert.Contains("kagutsuchi-reserved-0", basePayment.ValidChoices);
+        Choose(game, "kagutsuchi-reserved-0");
         var surcharge = Prompt(game);
         Assert.Equal("resource-payment", surcharge.Kind);
         Assert.DoesNotContain("kagutsuchi-reserved-0", surcharge.ValidChoices);
@@ -1253,4 +1256,5 @@ public sealed class StarterBatch3BRegressionTests
             Invoke(game, "BuildAbilityViews", player, sky.CardId, sky.InstanceId));
         Assert.Equal(["skyCityDiscount"], afterCompletion.Select(ability => ability.Id));
     }
+
 }

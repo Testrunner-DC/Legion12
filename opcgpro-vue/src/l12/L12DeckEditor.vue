@@ -44,7 +44,7 @@ const factionLabels: Record<string, string> = {
   taiyangcheng: '太阳城', olympus: '奥林匹斯', otherworld: '彼界',
 }
 const typeLabels: Record<string, string> = {
-  legion: '军团', tactic: '战术', artifact: '圣物',
+  legion: '军团', tactic: '战术（主动／反击）', artifact: '圣物',
 }
 
 onMounted(async () => {

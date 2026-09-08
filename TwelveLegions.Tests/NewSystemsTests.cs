@@ -1051,8 +1051,15 @@ public sealed class NewSystemsTests
 
         var searchPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(eligible.InstanceId, searchPrompt.ValidChoices);
+        var beforeSearchResolution = game.State.Events.Count;
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: searchPrompt.PromptId,
             Choice: eligible.InstanceId)).Accepted);
+
+        var selectionEvents = game.State.Events.Skip(beforeSearchResolution).ToArray();
+        Assert.Contains(selectionEvents, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == eligible.InstanceId));
+        Assert.DoesNotContain(selectionEvents, entry => entry.Type == "prompt-resolved"
+            && entry.Cards.Length == 0);
 
         var orderPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("all-top-bottom", orderPrompt.Data["placementMode"]);

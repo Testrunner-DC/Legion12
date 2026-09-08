@@ -63,7 +63,9 @@ Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, chosen, "oth
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Otherworld hidden search must use effective faction.'
 Assert-Contains $trialCompletion 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Grail resolution must use effective Otherworld faction.'
 Assert-Contains $faction 'player.Graveyard.Where(card => card.Faction == "otherworld")' 'Crusade only-Otherworld printed-faction boundary must remain explicit.'
-Assert-Contains $faction 'top.Faction == "otherworld" ? new[] { "hand", "top", "bottom" }' 'Amakine only-Otherworld printed-faction boundary must remain explicit.'
+Assert-Contains $faction 'var isOnlyOtherworldTrait = top.Traits.Count == 1' 'Amakine must require exactly one printed trait.'
+Assert-Contains $faction 'item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";' 'Amakine only-Otherworld eligibility must be frozen before the choice.'
+Assert-Contains $faction 'var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" }' 'Amakine may offer hand only for cards whose sole printed trait is Otherworld.'
 
 Assert-Contains $active '$"active:{sourceInstanceId}:crusade-choice"' 'Crusade three modes must share the printed once-per-turn key.'
 $galahadStart = $faction.IndexOf('if (ability == "galahadGrailReward" && source.CardId == "S02-0604")', [StringComparison]::Ordinal)
@@ -78,7 +80,10 @@ if ($removeIndex -lt 0 -or $pushIndex -lt 0 -or $removeIndex -gt $pushIndex) {
 }
 Assert-Contains $galahad '["healMode"] = target' 'Galahad immutable optional-heal declaration is missing.'
 
-Assert-Contains $prompts 'if (trigger == "disaster") item.Data["unrespondable"] = "true";' 'Disaster effects must remain unrespondable.'
+Assert-Contains $prompts 'var disasterAuthorityTiming = IsDisasterAuthorityTiming(top);' 'Disaster response timing must use the shared root-timing classifier.'
+Assert-Contains $prompts 'responseCards = responseCards.Where(card => !IsCounterTactic(card.CardId)).ToArray();' 'Every counter tactic must remain excluded from disaster response windows.'
+Assert-Contains $prompts 'if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0' 'A disaster timing with no non-counter response must close without an empty response prompt.'
+Assert-Contains $prompts 'timing.Trigger.Equals("authority-disaster", StringComparison.OrdinalIgnoreCase)' 'Authority-triggered disasters must use the same counter-tactic exclusion.'
 Assert-Contains $disasters 'SetLibrariesReversedByDisaster(true);' 'Heaven Earth Change must reverse the real library order.'
 Assert-Contains $disasters 'SetLibrariesReversedByDisaster(false);' 'Heaven Earth Change must restore library order on leaving.'
 Assert-Contains $atomic 'Program("S02-DS05", "disaster"' 'Wrath neutral nonlethal master damage verified atomic program is missing.'

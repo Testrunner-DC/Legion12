@@ -139,6 +139,7 @@ public sealed partial class L12GameEngine
                 ValidChoices = paymentChoices,
                 MinChoose = 1,
                 MaxChoose = 1,
+                AutoSelectEquivalentOrdinaryMorale = true,
                 CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 DeclarationKey = "prideMasterSurcharge",
                 ReferenceDeclarationKey = modeStep is null ? null : "mode",
@@ -858,6 +859,12 @@ public sealed partial class L12GameEngine
         if (step.Kind is not ("resource-payment" or "composite-ordinary-payment")) return null;
         if (step.ValidChoices.Count == step.MinChoose) return step.ValidChoices;
         if (!step.AutoSelectEquivalentOrdinaryMorale) return null;
+        // When two steps reserve from the same resource pool (for example a master
+        // effect plus Pride), the earlier choice determines what remains legal for
+        // the later payment. Preserve that cross-step decision for the player.
+        if (HasPrideMasterSurchargeStep(activation)
+            && activation.SelectionSteps.Count(IsOrdinaryPaymentSelectionStep) > 1)
+            return null;
 
         var player = State.Players[activation.Controller];
         var semantics = step.ValidChoices.Select(choice => EquivalentOrdinaryMoralePaymentKey(player, choice)).ToArray();
@@ -1086,7 +1093,7 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void RejectPendingActivation(L12PendingActivation activation, string reason)
+    private void RejectPendingActivation(L12PendingActivation activation, string reason, bool emitEvent = true)
     {
         State.PendingActivations.Remove(activation);
         var cancelledFreeMasterActivation = ClearFreeMasterActivation(activation);
@@ -1102,11 +1109,11 @@ public sealed partial class L12GameEngine
         }
         if (activation.Ability is "composite-repeated-effect" or "repeated-tactic-effect")
         {
-            AddEvent("effect-cancelled", activation.Controller, reason);
+            if (emitEvent) AddEvent("effect-cancelled", activation.Controller, reason);
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
         }
-        AddEvent("ability-rejected", activation.Controller, reason);
+        if (emitEvent) AddEvent("ability-rejected", activation.Controller, reason);
         if (cancelledFreeMasterActivation)
         {
             ResumeAfterPostResolutionGeneratedInteraction();
@@ -1127,7 +1134,15 @@ public sealed partial class L12GameEngine
 
     private void ResumeResponseAfterCancelledDeclaration(L12PendingActivation activation)
     {
-        if (State.EffectStack.All(item => item.StackItemId != activation.ResponseTargetStackItemId)) return;
+        if (State.EffectStack.All(item => item.StackItemId != activation.ResponseTargetStackItemId))
+        {
+            State.ResponseWindow = null;
+            if (State.EffectStack.Count == 0)
+                AdvanceCombatTimelineIfIdle();
+            else if (!State.IsResolvingStack)
+                BeginResponseWindow(State.EffectStack[^1]);
+            return;
+        }
         State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = activation.Controller };
         OfferResponse();
     }
@@ -1309,10 +1324,11 @@ public sealed partial class L12GameEngine
         var materializedDeaths = deaths.ToArray();
         var candidates = materializedDeaths.SelectMany(entry =>
         {
-            var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.SourceSnapshot).ToList();
+            var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.SourceSnapshot,
+                includeTombConstruct: false).ToList();
             if (HasDeathTrigger(entry.SourceSnapshot))
-                sameTime.Add(CreateTriggerCandidate(entry.Controller, entry.SourceSnapshot, "death", "【阵亡时】效果",
-                    new Dictionary<string, string> { ["cause"] = "effect" }, entry.SourceSnapshot));
+                sameTime.Add(CreateDeathTriggerCandidate(entry.Controller, entry.SourceSnapshot,
+                    new Dictionary<string, string> { ["cause"] = "effect" }));
             return sameTime;
         }).ToList();
         foreach (var defeatedController in materializedDeaths.Select(entry => entry.Controller).Distinct())
@@ -1333,13 +1349,15 @@ public sealed partial class L12GameEngine
     private void QueueTriggerCandidates(IEnumerable<L12TriggerCandidate> candidates)
     {
         var supplied = candidates.ToArray();
-        var materialized = supplied.Where(PrepareBatch6JAEnterCandidate)
+        var materialized = supplied.Where(PrepareAttackPublicTriggerCandidate)
+            .Where(PrepareBatch6JAEnterCandidate)
             .Where(PrepareBatch6JBPublicTriggerCandidate)
             .Where(PrepareBatch6IBPublicTriggerCandidate)
             .Where(PrepareVerifiedAtomicOptionalCandidate).ToArray();
         if (materialized.Length == 0)
         {
             if (supplied.Length > 0) TrySettleScheduledDisasterIfIdle();
+            AdvanceCombatTimelineIfIdle();
             return;
         }
 
@@ -1370,6 +1388,29 @@ public sealed partial class L12GameEngine
         AttachDefaultTriggerCompositePlan(candidate);
         candidate.Data.TryAdd("triggerEffectText", ResolveTriggeredEffectDisplayText(card, trigger, text, candidate.Data));
         return candidate;
+    }
+
+    private L12TriggerCandidate CreateDeathTriggerCandidate(int controller, L12CardInstance sourceSnapshot,
+        IReadOnlyDictionary<string, string> data)
+    {
+        var deathData = new Dictionary<string, string>(data, StringComparer.OrdinalIgnoreCase);
+        if (sourceSnapshot.CardId == "S01-0204" && sourceSnapshot.LastKnownAttachedCardIds.Count > 0)
+            deathData["tombConstructLeaveFallback"] = "true";
+        return CreateTriggerCandidate(controller, sourceSnapshot, "death", "【阵亡时】效果",
+            deathData, sourceSnapshot);
+    }
+
+    private void QueueTombConstructLeaveFallback(L12StackItem item)
+    {
+        if (!item.Negated || item.SourceCardId != "S01-0204" || item.Trigger != "death"
+            || item.Data.GetValueOrDefault("tombConstructLeaveFallback") != "true") return;
+        var source = item.SourceSnapshot ?? FindSource(item);
+        if (source is null || TombConstructGuardPlans(source).Count == 0) return;
+        var fallback = CreateTriggerCandidate(item.Controller, source, "leave", "【离场时】效果",
+            new Dictionary<string, string> { ["tombConstructFallback"] = "true" }, source);
+        QueueTriggerCandidates([fallback]);
+        AddEvent("effect-trigger", item.Controller,
+            "陵墓构造体的【阵亡时】效果被无效，改由【离场时】效果直接发动", source);
     }
 
     /// <summary>

@@ -5,6 +5,7 @@ These rules apply to every change in this repository.
 ## Permanent visual baseline
 
 - Unless the user explicitly requests a typography exception, all rendered interface text uses the shared Chinese sans-serif (黑体) font stack; distinguish hierarchy with font weight and existing size, not decorative, serif, or monospace families. Text baked into card images and logos is not restyled.
+- Typography must be assigned by information role and usable space: card-effect prose, controls, metadata, and micro-labels may use separate responsive sizes and line heights. Do not restore a project-wide 14px minimum or mechanically wrap every declaration in one minimum-size token; validate legibility together with containment, wrapping, and the exact supported viewports.
 - Select controls and their expanded options must follow the dark site palette, including dialogs, Teleport content, disabled states, and light operating-system themes. Never introduce a pure-white native dropdown. Preserve native keyboard interaction and visible focus.
 - After typography/control changes, check narrow-screen containment, clipping, overlap and readability; keep the shared theme guard in the normal frontend verification chain.
 

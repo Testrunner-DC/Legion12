@@ -304,9 +304,10 @@ public sealed partial class L12GameEngine
         if (string.IsNullOrWhiteSpace(instanceId)) return;
         var card = State.Players[controller].Resolving.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
-        var candidates = BuildS1LeaveReactionCandidates(controller, card).ToList();
+        var candidates = BuildS1LeaveReactionCandidates(controller, card,
+            includeTombConstruct: false).ToList();
         if (HasDeathTrigger(card))
-            candidates.Add(CreateTriggerCandidate(controller, card, "death", "【阵亡时】效果",
+            candidates.Add(CreateDeathTriggerCandidate(controller, card,
                 new Dictionary<string, string> { ["cause"] = "combat", ["combatTiming"] = "death" }));
         var morrigan = BuildMorriganEnemyDeathCandidate(controller);
         if (morrigan is not null) candidates.Add(morrigan);

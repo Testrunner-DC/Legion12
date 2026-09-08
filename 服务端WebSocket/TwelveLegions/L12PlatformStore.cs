@@ -9,6 +9,7 @@ public sealed record L12AudioPreferencesView(bool MusicEnabled = true, double Mu
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt,
     bool PublicHistory, int PermissionVersion = 1, bool Disabled = false,
     DateTimeOffset? DisabledAt = null, string? DisabledReason = null, bool MustChangePassword = false,
+    bool MustChangeUsername = false,
     bool Deleted = false, DateTimeOffset? DeletedAt = null, string? EmailMasked = null,
     bool EmailVerified = false, L12AudioPreferencesView? AudioPreferences = null)
 {
@@ -75,6 +76,7 @@ public sealed partial class L12PlatformStore
         public string? NormalizedEmail { get; set; }
         public DateTimeOffset? EmailVerifiedAt { get; set; }
         public bool MustChangePassword { get; set; }
+        public bool MustChangeUsername { get; set; }
         public bool Deleted { get; set; }
         public bool MusicEnabled { get; set; } = true;
         public double MusicVolume { get; set; } = 0.35;
@@ -275,10 +277,6 @@ public sealed partial class L12PlatformStore
         public List<RankedIntegrityAuditRow> RankedIntegrityAudits { get; set; } = [];
     }
 
-    private static readonly string[] ForbiddenNames =
-    [
-        "管理员", "administer", "administrator", "system", "官方", "客服", "裁判", "gm", "fuck", "shit",
-    ];
     private readonly object _gate = new();
     private readonly string _path;
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
@@ -310,6 +308,7 @@ public sealed partial class L12PlatformStore
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();
         EnsureRootAdmin();
+        EnsureUsernameModeration();
         EnsureOperationsState();
         EnsureRankedState();
         EnsureArticleState();
@@ -477,6 +476,41 @@ public sealed partial class L12PlatformStore
         return (true, revokedSessionIds.Length == 0 ? "密码已修改" : $"密码已修改，已撤销其他 {revokedSessionIds.Length} 个会话");
     }
 
+    public (bool Success, string Message, L12AccountView? Account) ChangeUsername(string accountId,
+        string currentPassword, string newUsername, string? currentSessionId = null)
+    {
+        newUsername = newUsername.Trim();
+        var validation = L12UsernamePolicy.Validate(newUsername);
+        if (validation is not null) return (false, validation, null);
+        string[] revokedSessionIds;
+        L12AccountView changedAccount;
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Disabled && !item.Deleted);
+            if (row is null || !Verify(currentPassword, row)) return (false, "当前密码不正确", null);
+            if (!row.MustChangeUsername) return (false, "当前账号无需强制修改用户名", ToView(row));
+            if (_data.Accounts.Any(item => item.Id != accountId && !item.Deleted
+                    && string.Equals(item.Username, newUsername, StringComparison.OrdinalIgnoreCase)))
+                return (false, "用户名已存在", null);
+            var previousPublicName = PublicUsername(row);
+            row.Username = newUsername;
+            row.MustChangeUsername = false;
+            AddAdminAudit(ToView(row), "account", "username-changed", row.Id,
+                previousPublicName, newUsername, "玩家完成强制用户名更新");
+            var now = DateTimeOffset.UtcNow;
+            var sessionsToRevoke = _data.Sessions.Where(session => session.AccountId == accountId
+                && (string.IsNullOrWhiteSpace(currentSessionId) || session.Id != currentSessionId)
+                && session.RevokedAt is null && session.ExpiresAt > now).ToArray();
+            foreach (var session in sessionsToRevoke) session.RevokedAt = now;
+            revokedSessionIds = sessionsToRevoke.Select(session => session.Id).ToArray();
+            changedAccount = ToView(row);
+            Save();
+        }
+        NotifySessionsRevoked(revokedSessionIds);
+        return (true, revokedSessionIds.Length == 0 ? "用户名已修改"
+            : $"用户名已修改，已撤销其他 {revokedSessionIds.Length} 个会话", changedAccount);
+    }
+
     public IReadOnlyList<L12AccountView> Accounts()
     {
         lock (_gate) return _data.Accounts.OrderBy(row => row.CreatedAt).Select(ToView).ToArray();
@@ -522,7 +556,7 @@ public sealed partial class L12PlatformStore
             .OrderByDescending(row => row.CreatedAt)
             .Select(row => _data.Accounts.FirstOrDefault(account => account.Id == row.BlockedAccountId))
             .Where(row => row is not null)
-            .Select(row => new L12FriendView(row!.Id, row.Username, "blocked", "none", DateTimeOffset.UtcNow))
+            .Select(row => new L12FriendView(row!.Id, PublicUsername(row), "blocked", "none", DateTimeOffset.UtcNow))
             .ToArray();
     }
 
@@ -577,7 +611,7 @@ public sealed partial class L12PlatformStore
             {
                 var otherId = row.RequesterId == accountId ? row.AddresseeId : row.RequesterId;
                 var other = _data.Accounts.First(account => account.Id == otherId);
-                return new L12FriendView(other.Id, other.Username, "pending",
+                return new L12FriendView(other.Id, PublicUsername(other), "pending",
                     row.AddresseeId == accountId ? "incoming" : "outgoing", row.CreatedAt);
             }).ToArray();
     }
@@ -1120,11 +1154,27 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    private void EnsureUsernameModeration()
+    {
+        lock (_gate)
+        {
+            var changed = false;
+            foreach (var account in _data.Accounts.Where(account => !account.Deleted
+                         && !string.Equals(account.Username, "Admin", StringComparison.Ordinal)))
+            {
+                var mustChange = L12UsernamePolicy.RequiresChange(account.Username);
+                if (account.MustChangeUsername == mustChange) continue;
+                account.MustChangeUsername = mustChange;
+                changed = true;
+            }
+            if (changed) Save();
+        }
+    }
+
     private static string? ValidateCredentials(string username, string password)
     {
-        if (username.Length is < 2 or > 20) return "用户名长度需为 2–20 个字符";
-        if (username.Any(char.IsControl) || ForbiddenNames.Any(word => username.Contains(word, StringComparison.OrdinalIgnoreCase)))
-            return "用户名包含不允许使用的词语";
+        var usernameValidation = L12UsernamePolicy.Validate(username);
+        if (usernameValidation is not null) return usernameValidation;
         if (password.Length is < 8 or > 128) return "密码长度需为 8–128 个字符";
         return null;
     }
@@ -1301,9 +1351,14 @@ public sealed partial class L12PlatformStore
     private static string HashToken(string token)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
-    private static L12AccountView ToView(AccountRow row) => new(row.Id, row.Username, row.Role, row.CreatedAt,
+    private static string PublicUsername(AccountRow row)
+        => string.Equals(row.Username, "Admin", StringComparison.Ordinal) && row.Role == "admin"
+            ? row.Username
+            : L12UsernamePolicy.PublicName(row.Username);
+
+    private static L12AccountView ToView(AccountRow row) => new(row.Id, PublicUsername(row), row.Role, row.CreatedAt,
         row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason,
-        row.MustChangePassword, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null,
+        row.MustChangePassword, row.MustChangeUsername, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null,
         new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
             row.CardSize, row.Animation));
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
@@ -1312,7 +1367,7 @@ public sealed partial class L12PlatformStore
         var relation = FindFriendRow(viewerId, row.Id);
         if (relation?.Status == "suppressed" && relation.RequesterId != viewerId) relation = null;
         var direction = relation is null ? "none" : relation.AddresseeId == viewerId ? "incoming" : "outgoing";
-        return new L12FriendView(row.Id, row.Username, blocked ? "blocked" : relation?.Status == "suppressed" ? "pending" : relation?.Status ?? "none", blocked ? "none" : direction,
+        return new L12FriendView(row.Id, PublicUsername(row), blocked ? "blocked" : relation?.Status == "suppressed" ? "pending" : relation?.Status ?? "none", blocked ? "none" : direction,
             relation?.CreatedAt ?? row.CreatedAt);
     }
 
@@ -1323,7 +1378,8 @@ public sealed partial class L12PlatformStore
         row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
-        var author = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId)?.Username ?? "已注销玩家";
+        var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);
+        var author = owner is null ? "已注销玩家" : PublicUsername(owner);
         var deck = new L12AccountDeckView(row.Name, row.MasterId, row.CardIds.ToArray(), row.MoraleIds.ToArray(),
             row.SpecialIds.ToArray(), row.UpdatedAt);
         return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,

@@ -219,4 +219,11 @@ export interface RankedClockView {
   operationLimitMs: number
   reconnectLimitMs: number
   players: RankedClockPlayerView[]
+  timeControl?: {
+    totalTimeSeconds: number
+    operationTimeSeconds: number
+    reconnectGraceSeconds: number
+    disasterDecisionSeconds: number
+    mulliganDecisionSeconds: number
+  }
 }

@@ -106,13 +106,21 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             context.Response.Headers.AccessControlExposeHeaders =
                 $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
-            var passwordChangeAccount = context.Request.Path.StartsWithSegments("/api")
+            var restrictedAccount = context.Request.Path.StartsWithSegments("/api")
                 ? _platform.Authenticate(context.Request.Headers.Authorization) : null;
-            var passwordChangePathAllowed = context.Request.Path == "/api/auth/me"
+            var accountRecoveryPathAllowed = context.Request.Path == "/api/auth/me"
                 || context.Request.Path == "/api/auth/change-password"
+                || context.Request.Path == "/api/auth/change-username"
                 || context.Request.Path == "/api/auth/mfa/capability"
                 || context.Request.Path.StartsWithSegments("/api/auth/sessions");
-            if (passwordChangeAccount is { MustChangePassword: true } && !passwordChangePathAllowed)
+            if (restrictedAccount is { MustChangeUsername: true } && !accountRecoveryPathAllowed)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new L12ApiError("username_change_required",
+                    "必须先修改不合规的用户名", correlationId));
+                return;
+            }
+            if (restrictedAccount is { MustChangePassword: true } && !accountRecoveryPathAllowed)
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new L12ApiError("password_change_required",
@@ -168,6 +176,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
+            if (match is not null && match.Commands.Count == 0)
+                return ApiError(request, "replay_payload_expired",
+                    "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
+                    StatusCodes.Status410Gone);
             return match is null ? Results.NotFound() : Results.Ok(match);
         });
         _app.MapGet("/api/admin/matches", async (HttpRequest request) =>
@@ -199,12 +211,21 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
                 var expired = match is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
                     request.HttpContext.RequestAborted);
+                var replayPayloadExpired = includeReplay && match is not null
+                    && match.Summary.CommandCount == 0
+                    && (match.Summary.EndedUtc is not null
+                        || string.Equals(match.Summary.ModeId, "sandbox", StringComparison.Ordinal));
                 _platform.RecordAdminRead(authenticated.Account, permission, "match",
                     expired ? "read-sandbox-replay-expired"
+                        : replayPayloadExpired ? "read-replay-payload-expired"
                         : includeReplay ? "read-replay" : "read-detail", matchId,
                     AuditContext(request, permission));
                 if (expired)
                     return ApiError(request, "sandbox_replay_expired", "沙盒录像已过期，Bug 报告仍已保留。",
+                        StatusCodes.Status410Gone);
+                if (replayPayloadExpired)
+                    return ApiError(request, "replay_payload_expired",
+                        "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
                         StatusCodes.Status410Gone);
                 return match is null ? Results.NotFound() : Results.Ok(match);
             }
@@ -229,11 +250,17 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     limit ?? 50, request.HttpContext.RequestAborted);
                 var expired = page is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
                     request.HttpContext.RequestAborted);
+                var replayPayloadExpired = page is { TotalCommands: 0 };
                 _platform.RecordAdminRead(authenticated.Account, permission, "match",
-                    expired ? "read-sandbox-replay-expired" : "read-replay-page",
+                    expired ? "read-sandbox-replay-expired"
+                        : replayPayloadExpired ? "read-replay-payload-expired" : "read-replay-page",
                     matchId, AuditContext(request, permission));
                 if (expired)
                     return ApiError(request, "sandbox_replay_expired", "沙盒录像已过期，Bug 报告仍已保留。",
+                        StatusCodes.Status410Gone);
+                if (replayPayloadExpired)
+                    return ApiError(request, "replay_payload_expired",
+                        "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
                         StatusCodes.Status410Gone);
                 return page is null ? Results.NotFound() : Results.Ok(page);
             }
@@ -333,6 +360,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             catch (ArgumentException error) { return Results.BadRequest(new { message = error.Message }); }
         });
         _app.MapGet("/api/ranked/broadcasts", (int? limit) => Results.Ok(_platform.RankedBroadcasts(limit ?? 30)));
+        _app.MapGet("/api/ranked/broadcasts/settings", () => Results.Ok(_platform.RankedBroadcastSettings()));
         _app.MapPost("/api/ranked/broadcasts/claim", (HttpRequest request,
             DateTimeOffset? subscriptionStartedAt) =>
         {
@@ -420,6 +448,16 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             var result = _platform.ChangePassword(authenticated.Account.Id, body.CurrentPassword ?? string.Empty,
                 body.NewPassword ?? string.Empty, authenticated.SessionId);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapPost("/api/auth/change-username", (HttpRequest request, ChangeUsernameRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            var result = _platform.ChangeUsername(authenticated.Account.Id, body.CurrentPassword ?? string.Empty,
+                body.NewUsername ?? string.Empty, authenticated.SessionId);
+            return result.Success ? Results.Ok(new { result.Message, result.Account })
+                : Results.BadRequest(new { result.Message });
         });
         _app.MapPut("/api/auth/audio-preferences", (HttpRequest request, L12AudioPreferencesView body) =>
         {
@@ -2124,6 +2162,15 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 message = "必须先修改临时密码",
             })];
         }
+        if (authenticated.Account.MustChangeUsername)
+        {
+            _rooms.RecordConnectionClaimRejection(authenticated.Account.Id, "username-change-required");
+            return [new OutgoingMessage(sessionId, new
+            {
+                type = "usernameChangeRequired", reason = "username-change-required",
+                message = "必须先修改不合规的用户名",
+            })];
+        }
 
         L12SessionClaimResult claim;
         var capabilities = ReadProtocolCapabilities(root);
@@ -3390,6 +3437,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
 
 public sealed record AuthRequest(string? Username, string? Password);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+public sealed record ChangeUsernameRequest(string? CurrentPassword, string? NewUsername);
 public sealed record CurrentPasswordRequest(string? CurrentPassword);
 public sealed record EmailBindingRequest(string? Email, string? CurrentPassword);
 public sealed record ForgotPasswordRequest(string? Email);

@@ -524,6 +524,10 @@ public sealed class L12ActivationSelectionStep
     /// 仅用于“必须选择全部现有公开对象”的声明步；候选更多时仍由玩家明确选择。
     /// </summary>
     public bool AutoSelectWhenExact { get; init; }
+    /// <summary>
+    /// 本费用步骤仅在全部候选都是同卡号、同锁定后果的普通士气时允许确定性自动选择。
+    /// 临时士气、神力、黑色莲花、陵墓守卫及任何不同后果仍必须由玩家明确选择。
+    /// </summary>
     public bool AutoSelectEquivalentOrdinaryMorale { get; init; }
     /// <summary>复合效果预声明中的稳定字段名；为空时保持旧的扁平声明协议。</summary>
     public string? DeclarationKey { get; init; }

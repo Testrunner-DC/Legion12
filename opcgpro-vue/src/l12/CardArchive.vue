@@ -9,7 +9,7 @@ type CatalogCard = DeckCard
 type ArchivePage = 'catalog' | 'gallery'
 
 const typeLabels: Record<string, string> = {
-  legion: '军团', tactic: '战术', rune: '士气卡', artifact: '圣物',
+  legion: '军团', tactic: '战术（主动／反击）', rune: '士气卡', artifact: '圣物',
   divinity: '主城', master: '主宰', destruction: '天灾',
   token: '衍生卡牌', trial: '试炼卡', unknown: '待识别',
 }

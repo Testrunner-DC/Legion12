@@ -142,7 +142,7 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var fixture = Arrange(cardId, trigger, 9900 + index);
 
         var prompt = OnlyPrompt(fixture.Game);
-        if (cardId is "S02-0513" or "S02-0518" or "S02-0520")
+        if (cardId is "S01-0408" or "S02-0513" or "S02-0518" or "S02-0520")
         {
             Assert.Equal("stack-response", prompt.Continuation);
             Assert.Single(fixture.Game.State.EffectStack);
@@ -152,6 +152,59 @@ public sealed class AtomicReviewBatch6JARegressionTests
             Assert.Equal("pending-activation", prompt.Continuation);
             Assert.Empty(fixture.Game.State.EffectStack);
         }
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0408")]
+    [Trait("L12Evidence", "entry:takasugi-draw-before-target")]
+    public void TakasugiDrawsBeforeChoosingItsEntryTargetAndStillDrawsWithoutOne()
+    {
+        var game = Create(99601);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Library.Clear();
+        player.Hand.Clear();
+        var drawn = Card("S01-0002", "takasugi-entry-draw");
+        player.Library.Add(drawn);
+        for (var row = 0; row < 2; row++)
+            for (var slot = 0; slot < 3; slot++) opponent.Field[row][slot] = null;
+        var source = Card("S01-0408", "takasugi-entry-source");
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, source, "enter", "高杉晋作登场时效果", null,
+            new Dictionary<string, string>());
+        PassResponses(game);
+
+        Assert.Contains(drawn, player.Hand);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0408")]
+    [Trait("L12Evidence", "entry:takasugi-target-after-draw")]
+    public void TakasugiRequestsItsEntryTargetOnlyAfterTheDrawResolves()
+    {
+        var game = Create(99602);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Library.Clear();
+        player.Hand.Clear();
+        var drawn = Card("S01-0002", "takasugi-entry-draw-with-target");
+        var target = Card("S01-0201", "takasugi-entry-target");
+        player.Library.Add(drawn);
+        opponent.Field[0][0] = target;
+        var source = Card("S01-0408", "takasugi-entry-source-with-target");
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, source, "enter", "高杉晋作登场时效果", null,
+            new Dictionary<string, string>());
+        PassResponses(game);
+
+        var prompt = OnlyPrompt(game);
+        Assert.Equal("takasugi-enter-target", prompt.Data["action"]);
+        Assert.Contains(drawn, player.Hand);
+        Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        Resolve(game, target.InstanceId);
+        Assert.Equal(-2, target.CostModifier);
     }
 
     [Theory]
@@ -407,8 +460,11 @@ public sealed class AtomicReviewBatch6JARegressionTests
         Invoke(game, "AdvanceTriggerBatches");
 
         Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
         Assert.Empty(game.State.EffectStack);
-        Assert.Contains(game.State.Events, entry => entry.Type == "ability-cancelled");
+        Assert.DoesNotContain(game.State.Events,
+            entry => entry.Type is "ability-cancelled" or "ability-rejected");
     }
 
     private static void Resolve(L12GameEngine game, string choice)

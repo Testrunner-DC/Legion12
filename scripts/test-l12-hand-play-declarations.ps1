@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$ProjectRoot)
 
 $ErrorActionPreference = 'Stop'
@@ -78,7 +78,9 @@ if ($huntResolver.IndexOf('MoveGraveToLibraryBottom', [StringComparison]::Ordina
 $huntCatalogPath = Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions/Data/cards.s1.json'
 $huntCatalog = ([IO.File]::ReadAllText($huntCatalogPath, [Text.Encoding]::UTF8) | ConvertFrom-Json) |
     Where-Object id -eq 'S01-0319'
-if ($huntCatalog.effect -ne '将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团。') {
+$expectedHuntText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
+    '5bCG5aKT5ZywNOW8oOWNoeeJjOiHqumAiemhuuW6j+i/lOWbnuaIkeaWueeJjOW6k+W6lemDqO+8jOWHu+adgOWvueaWuTHlvKDlhbXlipvkuI3pq5jkuo42MDAw55qE5Yab5Zui44CC'))
+if ($huntCatalog.effect -ne $expectedHuntText) {
     throw 'Hunting Moment catalog text must match the approved non-cost wording.'
 }
 $huntTests = Read-Source 'Bq20260907_266RegressionTests.cs'

@@ -193,6 +193,24 @@ public sealed partial class L12GameEngine
         QueueS2GrailRoundTableEntry(playerIndex, card);
     }
 
+    /// <summary>
+    /// 效果使军团登场后的统一出口。来源区域只决定是否还需要建立“非手牌登场”
+    /// 权威事件；军团本身的【登场时】与公共登场观察者都不得因效果来源而遗漏。
+    /// </summary>
+    private void CompleteEffectLegionEntry(int playerIndex, L12CardInstance card, string originZone)
+    {
+        ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: true);
+        if (!originZone.Equals("hand", StringComparison.OrdinalIgnoreCase))
+        {
+            QueueNonHandEntry(playerIndex, card, originZone);
+            return;
+        }
+
+        if (HasImmediateEffect(card, "enter"))
+            QueueOrPushTriggeredEffect(playerIndex, card, "enter", "【登场时】效果");
+        QueueS2GrailRoundTableEntry(playerIndex, card);
+    }
+
     private void ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason)
     {
         if (!target.Tapped) return;

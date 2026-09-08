@@ -10,6 +10,11 @@ defineProps<{
 const emit = defineEmits<{
   command: [type: string, extra?: Record<string, unknown>]
 }>()
+function rankedSetupLimitLabel() {
+  const milliseconds = l12State.rankedClock?.operationLimitMs ?? 0
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1000))
+  return seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`
+}
 </script>
 
 <template>
@@ -17,7 +22,7 @@ const emit = defineEmits<{
     <template v-if="game.phase === 'Mulligan'">
       <p class="mulligan-role">你是{{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</p>
       <p>
-        选择起始手牌后确认调度<span v-if="l12State.rankedClock?.operationLimitMs === 60_000">；排位超时将保留全部原手牌</span>。
+        选择起始手牌后确认调度<span v-if="l12State.rankedClock?.operationLimitMs && l12State.rankedClock.operationLimitMs > 0">；排位限时 {{ rankedSetupLimitLabel() }}，超时将保留全部原手牌</span>。
       </p>
       <button class="primary" :disabled="me.mulliganDone || busy" @click="emit('command', 'mulligan')">
         {{ busy ? '处理中…' : me.mulliganDone ? '等待对方' : `确认调度 (${mulliganCount})` }}
@@ -47,5 +52,5 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.mulligan-role{color:#f0d274;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}
+.mulligan-role{color:#f0d274;font-size:var(--l12-board-copy,13px);font-weight:900}
 </style>

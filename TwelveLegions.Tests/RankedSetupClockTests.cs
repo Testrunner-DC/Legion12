@@ -179,6 +179,67 @@ public sealed class RankedSetupClockTests
         Assert.All(checkpoint.OperationRemainingMs, remaining => Assert.Equal(4 * 60_000, remaining));
     }
 
+    [Fact]
+    public async Task RankedRoomsFreezeConfiguredLimitsAndRecoveryKeepsThePersistedSnapshot()
+    {
+        var frozen = new L12RankedTimeControlConfig(1800, 300, 180, 75, 90);
+        await using var fixture = await RankedSetupFixture.CreateAsync("configured-freeze", frozen);
+        var initialClock = await fixture.ClockForAsync();
+        Assert.Equal(1_800_000, initialClock.GetProperty("totalLimitMs").GetInt64());
+        Assert.Equal(0, initialClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(180_000, initialClock.GetProperty("reconnectLimitMs").GetInt64());
+        Assert.Equal(75, initialClock.GetProperty("timeControl").GetProperty("disasterDecisionSeconds").GetInt32());
+        var checkpoint = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        Assert.Equal(frozen, checkpoint.TimeControl);
+
+        var admin = fixture.Platform.Login("Admin", "L12master").Account!;
+        var current = fixture.Platform.RankedConfig(admin);
+        var next = new L12RankedTimeControlConfig(2100, 360, 210, 80, 100);
+        fixture.Platform.UpdateRankedConfig(admin, current with { TimeControl = next },
+            "只影响新建排位", new L12AdminAuditContext("ranked-room-freeze"));
+
+        var unchangedClock = await fixture.ClockForAsync();
+        Assert.Equal(1_800_000, unchangedClock.GetProperty("totalLimitMs").GetInt64());
+        Assert.Equal(0, unchangedClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(180_000, unchangedClock.GetProperty("reconnectLimitMs").GetInt64());
+        await fixture.ResolveInitiativeAsync();
+        Assert.Equal(75_000, (await fixture.ClockForAsync()).GetProperty("operationLimitMs").GetInt64());
+        await fixture.AdvanceToMulliganAsync();
+        Assert.Equal(90_000, (await fixture.ClockForAsync()).GetProperty("operationLimitMs").GetInt64());
+
+        var identity = Guid.NewGuid().ToString("N")[..8];
+        var first = fixture.Platform.Register($"nf{identity}", "Password123!").Account!;
+        var second = fixture.Platform.Register($"ns{identity}", "Password123!").Account!;
+        fixture.Platform.SelectRankedFaction(first.Id, "order");
+        fixture.Platform.SelectRankedFaction(second.Id, "chaos");
+        var firstSession = Guid.NewGuid();
+        var secondSession = Guid.NewGuid();
+        fixture.Manager.Connect(firstSession, first.Id, first.Username);
+        fixture.Manager.Connect(secondSession, second.Id, second.Username);
+        await fixture.Manager.JoinMatchmakingAsync(firstSession, "ranked", null);
+        var matched = await fixture.Manager.JoinMatchmakingAsync(secondSession, "ranked", null);
+        var newClock = GameMessage(matched, firstSession).GetProperty("rankedClock");
+        Assert.Equal(2_100_000, newClock.GetProperty("totalLimitMs").GetInt64());
+        Assert.Equal(0, newClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(210_000, newClock.GetProperty("reconnectLimitMs").GetInt64());
+
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, fixture.ReloadPlatform(),
+            fixture.Clock.Read);
+        var summary = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(2, summary.Restored);
+        var replacement = Guid.NewGuid();
+        await restored.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+        var recovered = GameMessage(await restored.RecoveryStateWithAckAsync(replacement, recovered: true), replacement)
+            .GetProperty("rankedClock");
+        Assert.Equal(1_800_000, recovered.GetProperty("totalLimitMs").GetInt64());
+        Assert.Equal(90_000, recovered.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(180_000, recovered.GetProperty("reconnectLimitMs").GetInt64());
+        Assert.Equal(75, recovered.GetProperty("timeControl").GetProperty("disasterDecisionSeconds").GetInt32());
+    }
+
     private static bool TimeoutMarker(JsonElement command)
         => command.TryGetProperty("destination", out var destination)
            && destination.GetString() == "ranked-setup-timeout";
@@ -220,12 +281,20 @@ public sealed class RankedSetupClockTests
 
         private RankedSetupFixture(string directory) => _directory = directory;
 
-        public static async Task<RankedSetupFixture> CreateAsync(string suffix)
+        public static async Task<RankedSetupFixture> CreateAsync(string suffix,
+            L12RankedTimeControlConfig? timeControl = null)
         {
             var directory = Path.Combine(Path.GetTempPath(), $"l12-ranked-setup-{suffix}-{Guid.NewGuid():N}");
             var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
             var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
                 officialCards: catalog.Cards);
+            if (timeControl is not null)
+            {
+                var admin = platform.Login("Admin", "L12master").Account!;
+                var config = platform.RankedConfig(admin);
+                platform.UpdateRankedConfig(admin, config with { TimeControl = timeControl },
+                    "测试排位计时配置", new L12AdminAuditContext("ranked-setup-fixture"));
+            }
             var identity = Guid.NewGuid().ToString("N")[..8];
             var first = platform.Register($"sf{identity}", "Password123!").Account!;
             var second = platform.Register($"ss{identity}", "Password123!").Account!;

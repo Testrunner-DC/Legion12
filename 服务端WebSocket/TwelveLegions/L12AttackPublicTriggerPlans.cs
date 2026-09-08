@@ -137,7 +137,8 @@ public sealed partial class L12GameEngine
                     break;
                 case "ordinary-morale":
                     steps.Add(PublicTriggerStep("composite-ordinary-payment", "cost", $"{source.Name}：预先选择消耗的1份公开资源",
-                        CompositeOrdinaryPaymentChoices(player), requiredChoice: required));
+                        CompositeOrdinaryPaymentChoices(player), requiredChoice: required,
+                        autoSelectEquivalentOrdinaryMorale: true));
                     break;
                 case "grave-bottom-one":
                     steps.Add(PublicTriggerStep("grave-card", "cost", "奥拉夫二世：预先选择置于牌库底部的墓地1张牌",
@@ -219,6 +220,19 @@ public sealed partial class L12GameEngine
         if (result.Accepted) return true;
         RemoveUnstackedTriggerCandidate(candidate, result.Error ?? "进攻时效果的公开声明已失效，效果未入栈");
         return true;
+    }
+
+    private bool PrepareAttackPublicTriggerCandidate(L12TriggerCandidate candidate)
+    {
+        if (candidate.Trigger != "attack" || !candidate.Data.TryGetValue("attackPlan", out var planId)
+            || planId is "richard-defense" or "richard-squires" or "robin-rune" or "robin-draw" or "gawain-buff")
+            return true;
+        var plan = AttackPublicTriggerPlans.GetValueOrDefault(candidate.SourceCardId);
+        if (plan is null || !plan.Optional) return true;
+        // 【进攻时】声明只在原进攻军团仍位于战场时成立；这里不能使用最后已知信息，
+        // 否则来源已离场的可选效果仍会先生成 activation，再依赖后续自愈清理。
+        var source = FindOnField(State.Players[candidate.Controller], candidate.SourceInstanceId, out _, out _);
+        return source is not null && CanDeclareAttackPlan(candidate, plan, source);
     }
 
     private bool CanDeclareAttackPlan(L12TriggerCandidate candidate, AttackPublicTriggerPlan plan,

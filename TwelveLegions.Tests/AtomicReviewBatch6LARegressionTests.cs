@@ -244,7 +244,7 @@ public sealed class AtomicReviewBatch6LARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0101")]
-    public void YingzhengKillAndSubsequentMoraleReturnAreIndependentResponseItems()
+    public void YingzhengKillAndMoraleReturnShareOneNegatableResponseBoundary()
     {
         var (game, player, _, cost) = BeginYingzheng(8404);
         var other = Card("S02-0004", "batch6la-yingzheng-other");
@@ -254,35 +254,31 @@ public sealed class AtomicReviewBatch6LARegressionTests
         Assert.Contains(cost, player.Graveyard);
         Assert.Equal(8, player.Morale.Count);
         kill.Negated = true;
+        PassResponses(game);
 
-        var followup = PassUntilFlow(game, "yingzheng-return");
         Assert.Same(other, player.Field[0][1]);
         Assert.Equal(8, player.Morale.Count);
-        Assert.NotEqual(kill.StackItemId, followup.StackItemId);
-
-        PassResponses(game);
-        Assert.Empty(player.Morale);
-        Assert.Equal(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
+        Assert.NotEqual(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Text.Contains("返还全部士气", StringComparison.Ordinal));
     }
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0101")]
-    public void YingzhengReturnSegmentCanBeNegatedWithoutUndoingKillOrPaidCost()
+    public void YingzhengSuccessfulResponseResolvesKillAndMoraleReturnTogether()
     {
         var (game, player, _, cost) = BeginYingzheng(8405);
         var other = Card("S02-0004", "batch6la-yingzheng-killed");
         player.Field[0][1] = other;
 
         _ = PassUntilFlow(game, "yingzheng-kill");
-        var followup = PassUntilFlow(game, "yingzheng-return");
-        followup.Negated = true;
         PassResponses(game);
 
         Assert.DoesNotContain(other, player.Field.SelectMany(row => row));
         Assert.Contains(other, player.Graveyard);
         Assert.Contains(cost, player.Graveyard);
-        Assert.Equal(8, player.Morale.Count);
-        Assert.NotEqual(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
+        Assert.Empty(player.Morale);
+        Assert.Equal(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
     }
 
     [Fact]

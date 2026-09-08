@@ -611,6 +611,10 @@ export function connect(): Promise<void> {
         }
         reconnectAttempts = 0
         l12State.retryCount = 0
+        // Close metadata belongs to the previous socket generation. Once the full
+        // authoritative recovery handshake succeeds it must not taint new Bug diagnostics.
+        l12State.lastCloseCode = null
+        l12State.lastCloseReason = ''
         l12State.status = 'online'
         l12State.recoveryPhase = 'snapshot-acknowledged'
         l12State.connectionIssue = l12State.operationsPolicy?.maintenance.active ? 'maintenance' : 'none'

@@ -16,6 +16,8 @@ const loading = ref(false)
 const error = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedSummary = computed(() => imported.value?.match ?? selected.value)
+const canUseSelectedReplay = computed(() => Boolean(imported.value
+  || (selectedSummary.value?.endedUtc && selectedSummary.value.commandCount > 0)))
 
 onMounted(async () => {
   await loadMatches()
@@ -48,7 +50,8 @@ function playSelected() {
     router.push({ name: 'json-replay' })
     return
   }
-  if (selected.value) router.push({ name: 'match-replay', params: { matchId: selected.value.matchId } })
+  if (selected.value?.endedUtc && selected.value.commandCount > 0)
+    router.push({ name: 'match-replay', params: { matchId: selected.value.matchId } })
 }
 
 async function resolveSelectedDetail() {
@@ -110,7 +113,7 @@ function resultLabel(match: MatchSummary) {
       <div class="record-file-actions">
         <input ref="fileInput" type="file" accept="application/json,.json" @change="importReplay"/>
         <button @click="fileInput?.click()">打开 JSON 回放</button>
-        <button :disabled="!selectedSummary" @click="exportReplay">保存 JSON</button>
+        <button :disabled="!canUseSelectedReplay" @click="exportReplay">保存 JSON</button>
         <button @click="loadMatches">刷新记录</button>
       </div>
     </header>
@@ -146,8 +149,9 @@ function resultLabel(match: MatchSummary) {
             <b>{{ resultLabel(selectedSummary) }}</b>
             <small>{{ imported?.commands.length ?? selectedSummary.commandCount }} 个回放步骤</small>
           </div>
-          <p>回放将在独立的完整对战界面中打开。进入播放器前不会加载或渲染棋盘。</p>
-          <button class="primary" :disabled="!imported && !selectedSummary.endedUtc" @click="playSelected">播放回放</button>
+          <p v-if="!imported && selectedSummary.commandCount === 0">这场对局的回放载荷已清理，摘要与结算结果仍保留。</p>
+          <p v-else>回放将在独立的完整对战界面中打开。进入播放器前不会加载或渲染棋盘。</p>
+          <button class="primary" :disabled="!canUseSelectedReplay" @click="playSelected">播放回放</button>
         </section>
       </main>
       <div v-else class="records-placeholder">{{ loading ? '正在读取对局记录…' : '选择一场对局，或打开 JSON 回放' }}</div>

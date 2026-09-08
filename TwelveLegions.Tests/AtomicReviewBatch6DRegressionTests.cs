@@ -253,7 +253,7 @@ public sealed class AtomicReviewBatch6DRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0204")]
     [Trait("L12Evidence", "entry:cross-control-owner-snapshot")]
-    public void TombConstructIndependentDeathAndLeaveTriggersUseTheOwnerSnapshotWithoutDuplicatingGuards()
+    public void TombConstructNegatedDeathUsesLeaveFallbackAndOwnerSnapshotWithoutDuplicatingGuards()
     {
         var game = Create(7802);
         var owner = game.State.Players[0];
@@ -266,9 +266,8 @@ public sealed class AtomicReviewBatch6DRegressionTests
 
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 1,
             CardInstanceId: construct.InstanceId)).Accepted);
-        var order = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Continuation == "trigger-batch-order");
-        Assert.Equal(2, order.ValidChoices.Count);
+        var firstSlot = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
         Assert.Contains(construct, owner.Graveyard);
         Assert.Contains(guard, owner.Graveyard);
 
@@ -278,13 +277,11 @@ public sealed class AtomicReviewBatch6DRegressionTests
         for (var slot = 0; slot < 3; slot++)
             controller.Field[row][slot] = Card("S01-0102", $"batch6d-block-{row}-{slot}", 1);
 
-        ResolveMany(game, [.. order.ValidChoices]);
-        var firstSlot = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", firstSlot.Continuation);
         Assert.Contains("0:0", firstSlot.ValidChoices);
         Resolve(game, "0:0");
         var firstEffect = Assert.Single(game.State.EffectStack,
             item => item.SourceCardId == "S01-0204");
+        Assert.Equal("death", firstEffect.Trigger);
         Assert.NotNull(firstEffect.SourceSnapshot);
         firstEffect.Negated = true;
         PassResponses(game);
@@ -295,6 +292,8 @@ public sealed class AtomicReviewBatch6DRegressionTests
         Resolve(game, "0:1");
         PassResponses(game);
 
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Text.Contains("离场", StringComparison.Ordinal));
         Assert.Same(guard, owner.Field[0][1]);
         Assert.DoesNotContain(guard, owner.Graveyard);
         Assert.DoesNotContain(controller.Field.SelectMany(row => row), card => card?.InstanceId == guard.InstanceId);

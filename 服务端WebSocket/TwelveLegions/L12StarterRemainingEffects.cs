@@ -106,6 +106,7 @@ public sealed partial class L12GameEngine
                         Text = "荷鲁斯：支付费用——消耗1士气",
                         ValidChoices = resources, MinChoose = paymentCost, MaxChoose = paymentCost,
                         RequiredDeclaredChoice = "mode:morale-legions",
+                        AutoSelectEquivalentOrdinaryMorale = true,
                     },
                     new L12ActivationSelectionStep
                     {

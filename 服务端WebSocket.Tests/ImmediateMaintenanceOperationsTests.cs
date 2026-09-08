@@ -173,8 +173,8 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
             var admin = store.Login("Admin", "L12master");
-            store.Register("MaintHttp", "password-123");
-            var player = store.Login("MaintHttp", "password-123");
+            store.Register("uaf7e9ae33f", "password-123");
+            var player = store.Login("uaf7e9ae33f", "password-123");
             Assert.True(player.Success);
             Assert.NotNull(player.Token);
             Assert.NotNull(store.AuthenticateToken(player.Token));
@@ -292,9 +292,9 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
             var admin = store.Login("Admin", "L12master").Account!;
-            var host = store.Register("ImmediateHost", "password-123").Account!;
-            var guest = store.Register("ImmediateGuest", "password-123").Account!;
-            var waiting = store.Register("ImmediateWaiting", "password-123").Account!;
+            var host = store.Register("timmed8ad19", "password-123").Account!;
+            var guest = store.Register("timmede60be", "password-123").Account!;
+            var waiting = store.Register("timmed693af", "password-123").Account!;
             var rooms = new L12RoomManager(catalog, recorder, store);
             var hostSession = Guid.NewGuid();
             var guestSession = Guid.NewGuid();

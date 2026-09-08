@@ -234,9 +234,11 @@ public sealed class AtomicReviewBatch6KARegressionTests
         var counter = Card("S01-0021", "batch6ka-regency");
         counter.Hidden = true;
         counter.SetRound = 0;
-        var summon = Card("S01-0003", "batch6ka-regency-summon");
+        var summon = Card("S01-0208", "batch6ka-regency-ayi");
+        var tombGuard = Card("S01-0212", "batch6ka-regency-ayi-guard");
         defender.Field[1][0] = counter;
         defender.Hand.Add(summon);
+        defender.Graveyard.Add(tombGuard);
         game.State.ActivePlayer = 1;
         AddReadyMorale(attackerOwner, 4);
 
@@ -295,6 +297,18 @@ public sealed class AtomicReviewBatch6KARegressionTests
         }
         Assert.Contains(summon, defender.Field.SelectMany(row => row));
         Assert.Same(summon, defender.Field[0][1]);
+
+        var ayiDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", ayiDeclaration.Continuation);
+        Assert.Contains(tombGuard.InstanceId, ayiDeclaration.ValidChoices);
+        Resolve(game, tombGuard.InstanceId);
+        var guardSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", guardSlot.Kind);
+        Resolve(game, guardSlot.ValidChoices[0]);
+        PassResponses(game);
+
+        Assert.DoesNotContain(tombGuard, defender.Graveyard);
+        Assert.Contains(defender.Field.SelectMany(row => row), card => card?.InstanceId == tombGuard.InstanceId);
     }
 
     [Fact]

@@ -41,7 +41,7 @@ public sealed partial class L12GameEngine
         candidate.Data["batch6JAConditionLocked"] = "true";
         // “可翻转1张士气”的唯一决定就是选择目标。目标选择界面本身提供不发动，
         // 不再先询问一次“是否发动”，并将目标选择延后到效果真正结算时。
-        if (plan is "morale-flip" or "theseus-flip" or "morale-flip-two")
+        if (plan is "morale-flip" or "theseus-flip" or "morale-flip-two" or "takasugi")
             candidate.Data["declaration-complete"] = "true";
         if (plan is "canopic-one" or "canopic-four"
             && !PublicLegions(State.Players[candidate.Controller]).Any(card =>
@@ -68,8 +68,6 @@ public sealed partial class L12GameEngine
                 && step.ValidChoices.Count < step.MinChoose))
         {
             State.PendingTriggerStackCandidates.Remove(candidate);
-            AddEvent("ability-cancelled", candidate.Controller,
-                $"〈{candidate.SourceName}〉没有合法的公开声明对象，未生成空堆叠项", source);
             AdvanceTriggerBatches();
             return true;
         }
@@ -184,8 +182,9 @@ public sealed partial class L12GameEngine
                     enemy.Where(card => card.CurrentCost <= 2).Select(card => card.InstanceId));
                 One("enemy-legion", "target2", "土方岁三：预先选择另一张费用不高于1的目标",
                     enemy.Where(card => card.CurrentCost <= 1).Select(card => card.InstanceId)); break;
-            case "takasugi": One("enemy-legion", "target", "高杉晋作：预先选择费用-2目标",
-                enemy.Select(card => card.InstanceId)); break;
+            case "takasugi":
+                // 抽牌先结算；目标属于效果正文的后续选择，不能因当前没有目标而取消整段登场效果。
+                break;
             case "abe": One("field-legion", "target", "安倍晴明：预先选择获得免死的我方军团",
                 own.Select(card => card.InstanceId)); break;
             case "tachibana": One("enemy-legion", "target", "立花誾千代：预先选择费用-3目标",
@@ -465,8 +464,17 @@ public sealed partial class L12GameEngine
             case "uesugi": KillTarget(item, One("target"), "被上杉谦信击杀"); break;
             case "hijikata": foreach (var id in new[] { One("target1"), One("target2") }) if (!string.IsNullOrEmpty(id)) KillTarget(item, id, "被土方岁三击杀"); break;
             case "takasugi":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "高杉晋作效果抽牌时牌库为空");
-                if (FindOnField(opponent, One("target"), out _, out _) is { } taka) AddTimedModifier(taka, 0, -2, State.TurnSerial, source.Name); break;
+                if (!Draw(player, 1))
+                {
+                    SetWinner(1 - item.Controller, "高杉晋作效果抽牌时牌库为空");
+                    FinishStackItem(item);
+                    return true;
+                }
+                var takasugiTargets = PublicLegions(opponent).Select(card => card.InstanceId).ToArray();
+                if (takasugiTargets.Length == 0) break;
+                CreateResolutionChoicePrompt(item, "enemy-legion", "高杉晋作：抽牌后选择对方1张军团，本回合费用-2",
+                    takasugiTargets, "takasugi-enter-target", []);
+                return true;
             case "abe": if (FindOnField(player, One("target"), out _, out _) is { } abe) GrantImmortalUntilNextTurnStart(abe, item.Controller); break;
             case "tachibana": if (FindOnField(opponent, One("target"), out _, out _) is { } tachibana) AddTimedModifier(tachibana, 0, -3, State.TurnSerial, source.Name); break;
             case "inahime":

@@ -1,38 +1,59 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { authState, platformState } from '@/l12/platform'
+import { useRoute } from 'vue-router'
+import { authState, platformState, rankedApi } from '@/l12/platform'
 import {
   claimNextRankedBroadcast,
   completeCurrentRankedBroadcast,
+  configureRankedBroadcastPlayback,
   rankedBroadcastAnimationStyle,
+  rankedBroadcastIntervalMs,
+  rankedBroadcastLobbyDelayMs,
   rankedBroadcastPlayback,
 } from './rankedBroadcastPlayback'
 
 let timer: number | undefined
+let mounted = false
+let lobbyReadyAt = 0
+const route = useRoute()
 const animationStyle = computed(() => rankedBroadcastAnimationStyle())
 
-function schedule(delay = 15_000) {
+function schedule(delay = rankedBroadcastIntervalMs()) {
   if (timer) window.clearTimeout(timer)
   timer = window.setTimeout(() => { void load() }, delay)
 }
 
 async function load() {
+  try { configureRankedBroadcastPlayback(await rankedApi.broadcastSettings()) } catch { /* Keep safe defaults. */ }
   const claim = await claimNextRankedBroadcast()
   if (!claim) schedule()
+}
+
+function loadAfterLobbyDelay() {
+  const remaining = lobbyReadyAt - Date.now()
+  if (remaining > 0) schedule(remaining)
+  else void load()
 }
 
 function complete(event: AnimationEvent) {
   if (event.target !== event.currentTarget) return
   const completed = completeCurrentRankedBroadcast()
-  schedule(completed ? 500 : 5_000)
+  schedule(completed ? rankedBroadcastIntervalMs() : 5_000)
 }
 
-watch(() => `${authState.verified}:${platformState.account?.id ?? ''}`, () => { void load() })
-watch(() => rankedBroadcastPlayback.claim?.broadcast.id ?? '', (id, previous) => {
-  if (!id && previous) schedule(500)
+watch(() => `${authState.verified}:${platformState.account?.id ?? ''}`, () => {
+  if (mounted) loadAfterLobbyDelay()
 })
-onMounted(() => { void load() })
-onBeforeUnmount(() => { if (timer) window.clearTimeout(timer) })
+watch(() => rankedBroadcastPlayback.claim?.broadcast.id ?? '', (id, previous) => {
+  if (!id && previous) schedule(rankedBroadcastIntervalMs())
+})
+onMounted(async () => {
+  try { configureRankedBroadcastPlayback(await rankedApi.broadcastSettings()) } catch { /* Keep safe defaults. */ }
+  mounted = true
+  lobbyReadyAt = route.path === '/lobby' ? Date.now() + rankedBroadcastLobbyDelayMs() : 0
+  loadAfterLobbyDelay()
+})
+onBeforeUnmount(() => { mounted = false; if (timer) window.clearTimeout(timer) })
 </script>
 <template><div v-if="rankedBroadcastPlayback.claim" class="ranked-ticker" aria-label="排位快讯"><b>排位快讯</b><div><span :key="rankedBroadcastPlayback.claim.broadcast.id" :style="animationStyle" @animationend="complete">📣 {{ rankedBroadcastPlayback.claim.broadcast.message }}</span></div></div></template>
 <style scoped>

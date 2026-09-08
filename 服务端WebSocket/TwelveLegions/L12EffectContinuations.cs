@@ -56,6 +56,17 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
                 FinishStackItem(item); break;
             }
+            case "takasugi-enter-target":
+            {
+                var opponent = State.Players[1 - item.Controller];
+                if (FindOnField(opponent, chosen[0], out _, out _) is { } target && IsFieldLegion(target))
+                    AddTimedModifier(target, 0, -2, State.TurnSerial, item.SourceName);
+                else if (source is not null)
+                    AddEvent("effect-cancelled", item.Controller, "高杉晋作抽牌后的目标已失效；抽牌结果保留", source);
+                else AddEvent("effect-cancelled", item.Controller, "高杉晋作抽牌后的目标已失效；抽牌结果保留");
+                FinishStackItem(item);
+                break;
+            }
             case "march-followup-decision":
                 if (chosen.Contains("mode:use", StringComparer.OrdinalIgnoreCase))
                     _ = BeginEffectMoraleReturn(item, 2, "march-followup-paid");
@@ -155,7 +166,8 @@ public sealed partial class L12GameEngine
     /// 不制造只剩“不发动”的无意义询问；目标若不属于费用，应由后续结算流程再选择。
     /// </summary>
     private void BeginOptionalPaidEffectFollowup(L12StackItem item, bool conditionMet, int cost,
-        string effectText, string operation, Dictionary<string, string>? extra = null)
+        string effectText, string operation, Dictionary<string, string>? extra = null,
+        L12CardInstance? privatePreview = null)
     {
         var player = State.Players[item.Controller];
         if (!conditionMet || cost < 0 || ActiveResourceCount(player) < cost)
@@ -176,8 +188,14 @@ public sealed partial class L12GameEngine
         };
         if (extra is not null)
             foreach (var pair in extra) data[$"optional:{pair.Key}"] = pair.Value;
+        if (privatePreview is not null)
+        {
+            data["previewCardId"] = privatePreview.InstanceId;
+            data["previewPresentation"] = "information-card";
+        }
         CreateResolutionChoicePrompt(item, "option", effectText,
-            ["mode:none", "mode:use"], "optional-paid-effect", data);
+            ["mode:none", "mode:use"], "optional-paid-effect", data,
+            isPrivate: privatePreview is not null);
     }
 
     private void ContinueOptionalPaidEffectFollowup(L12StackItem item, L12Prompt prompt,
@@ -313,8 +331,7 @@ public sealed partial class L12GameEngine
         var (row, slot) = ParseSlot(slotChoice);
         player.Library.Remove(card); card.SummonRound = State.Round; card.Tapped = false; player.Field[row][slot] = card;
         AddEvent("put", item.Controller, $"李靖使 {card.Name} 活跃登场", card);
-        ApplyDisasterLevelOnEntry(item.Controller, card, deferTriggerUntilStackSettles: true);
-        QueueNonHandEntry(item.Controller, card, "library");
+        CompleteEffectLegionEntry(item.Controller, card, "library");
         FinishStackItem(item);
     }
 

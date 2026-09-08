@@ -20,7 +20,7 @@ export function cardTypeFilterKey(cardType: string) {
 
 export function cardTypeLabel(cardType: string) {
   const labels: Record<string, string> = {
-    legion: '军团', tactic: '战术', 'counter-tactic': '战术', rune: '士气卡', artifact: '圣物',
+    legion: '军团', tactic: '主动战术', 'counter-tactic': '反击战术', rune: '士气卡', artifact: '圣物',
     divinity: '主城', master: '主宰', destruction: '天灾', disaster: '天灾',
     token: '衍生卡牌', trial: '试炼卡', unknown: '待识别',
   }

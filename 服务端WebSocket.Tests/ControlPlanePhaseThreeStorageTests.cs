@@ -97,7 +97,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
         try
         {
             var store = new L12PlatformStore(path);
-            var account = store.Register("PhaseThreeUser", "password-123");
+            var account = store.Register("tphase4e5f0", "password-123");
             var version = store.Version;
 
             var reloaded = new L12PlatformStore(path);
@@ -120,7 +120,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
         try
         {
             var store = new L12PlatformStore(path);
-            var registered = store.Register("AudioPreferenceUser", "password-123").Account!;
+            var registered = store.Register("taudio2e2f5", "password-123").Account!;
 
             var saved = store.UpdateAudioPreferences(registered.Id,
                 new L12AudioPreferencesView(false, 0.82, true, 0.47, "large", "fast"));
@@ -133,7 +133,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Assert.Equal("fast", saved.Animation);
 
             var reloaded = new L12PlatformStore(path);
-            var fromAnotherLogin = reloaded.Login("AudioPreferenceUser", "password-123").Account!;
+            var fromAnotherLogin = reloaded.Login("taudio2e2f5", "password-123").Account!;
             Assert.Equal(saved, fromAnotherLogin.AudioPreferences);
         }
         finally { Directory.Delete(root, true); }
@@ -178,7 +178,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
         try
         {
             var store = new L12PlatformStore(path);
-            var account = store.Register("FallbackReader", "password-123").Account!;
+            var account = store.Register("tfallbf8420", "password-123").Account!;
             File.WriteAllText(store.TransactionalStoragePath, "not-a-sqlite-database");
 
             var fallback = new L12PlatformStore(path);
@@ -186,8 +186,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Assert.Equal("json-fallback-readonly", fallback.StorageStatus().Mode);
             Assert.Contains(fallback.Accounts(), item => item.Id == account.Id);
             Assert.Throws<L12PlatformStorageUnavailableException>(() =>
-                fallback.Register("NoFallbackWrite", "password-456"));
-            Assert.DoesNotContain(fallback.Accounts(), item => item.Username == "NoFallbackWrite");
+                fallback.Register("tnofal291e3", "password-456"));
+            Assert.DoesNotContain(fallback.Accounts(), item => item.Username == "tnofal291e3");
         }
         finally { Directory.Delete(root, true); }
     }

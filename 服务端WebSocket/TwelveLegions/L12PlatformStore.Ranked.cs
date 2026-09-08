@@ -5,9 +5,29 @@ public sealed record L12RankedTierConfig(string Name, int Minimum, int BaseDelta
 public sealed record L12RankedMasterTitleConfig(string MasterId, string MasterName, string Title);
 public sealed record L12RankedFactionConfig(string Id, string Name, string Color, string Icon,
     string FirstTitle, string TopFiveTitle, IReadOnlyList<L12RankedTierConfig> Tiers);
+public sealed record L12RankedTimeControlConfig(
+    int TotalTimeSeconds,
+    int OperationTimeSeconds,
+    int ReconnectGraceSeconds,
+    int DisasterDecisionSeconds,
+    int MulliganDecisionSeconds);
+public sealed record L12RankedBroadcastConfig(
+    int DisplaySeconds,
+    int LobbyDelaySeconds,
+    int IntervalSeconds,
+    int WinStreakThreshold,
+    int StreakEndedThreshold,
+    int MinimumTierIndex,
+    bool WinStreakEnabled,
+    bool StreakEndedEnabled,
+    bool HighestTierEnabled,
+    bool FactionTitleEnabled,
+    bool MasterTitleEnabled);
 public sealed record L12RankedConfigView(int PlacementMatches, int PlacementMaximum,
     bool BroadcastEnabled, IReadOnlyList<L12RankedFactionConfig> Factions,
-    IReadOnlyList<L12RankedMasterTitleConfig> MasterTitles);
+    IReadOnlyList<L12RankedMasterTitleConfig> MasterTitles,
+    L12RankedTimeControlConfig? TimeControl = null,
+    L12RankedBroadcastConfig? Broadcast = null);
 public sealed record L12RankedProfileView(string AccountId, string Username, string SeasonId,
     string? Faction, int SevenValue, string DisplayValue, int PlacementPlayed, int PlacementWins,
     bool Placed, int Wins, int Losses, int WinStreak, int LossStreak, string Tier,
@@ -85,6 +105,8 @@ public sealed partial class L12PlatformStore
         public int PlacementMatches { get; set; } = 5;
         public int PlacementMaximum { get; set; } = 29999;
         public bool BroadcastEnabled { get; set; } = true;
+        public L12RankedTimeControlConfig? TimeControl { get; set; }
+        public L12RankedBroadcastConfig? Broadcast { get; set; }
         public List<RankedFactionRow> Factions { get; set; } = [];
         public List<RankedMasterTitleRow> MasterTitles { get; set; } = [];
     }
@@ -221,6 +243,11 @@ public sealed partial class L12PlatformStore
             _data.RankedMasterRecordedMatchIds ??= [];
             _data.RankedIntegrityAudits ??= [];
             _data.RankedConfig.MasterTitles ??= [];
+            if (_data.RankedConfig.TimeControl is null)
+            {
+                _data.RankedConfig.TimeControl = DefaultRankedTimeControl();
+                changed = true;
+            }
             if (_data.RankedBroadcastDeliveryCutover is null)
             {
                 _data.RankedBroadcastDeliveryCutover = DateTimeOffset.UtcNow;
@@ -246,6 +273,12 @@ public sealed partial class L12PlatformStore
     private static string DefaultMasterTitle(string masterName)
         => $"最强{(masterName == "天照大神" ? "天照" : masterName)}";
 
+    internal static L12RankedTimeControlConfig DefaultRankedTimeControl()
+        => new(1500, 240, 240, 60, 60);
+
+    internal static L12RankedBroadcastConfig DefaultRankedBroadcastConfig()
+        => new(16, 3, 15, 5, 5, 0, true, true, true, true, true);
+
     private static RankedConfigRow DefaultRankedConfig()
     {
         static List<RankedTierRow> Tiers() =>
@@ -258,6 +291,8 @@ public sealed partial class L12PlatformStore
         ];
         return new RankedConfigRow
         {
+            TimeControl = DefaultRankedTimeControl(),
+            Broadcast = DefaultRankedBroadcastConfig(),
             Factions =
             [
                 new() { Id = "order", Name = "秩序", Color = "#5ea4c7", FirstTitle = "秩序冠首", TopFiveTitle = "秩序中枢", Tiers = Tiers() },
@@ -271,6 +306,16 @@ public sealed partial class L12PlatformStore
     {
         if (actor is not null) EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
         lock (_gate) return ToView(_data.RankedConfig!);
+    }
+
+    internal L12RankedTimeControlConfig RankedTimeControl()
+    {
+        lock (_gate) return NormalizeRankedTimeControl(_data.RankedConfig?.TimeControl);
+    }
+
+    public L12RankedBroadcastConfig RankedBroadcastSettings()
+    {
+        lock (_gate) return NormalizeRankedBroadcastConfig(_data.RankedConfig?.Broadcast);
     }
 
     public L12RankedConfigView UpdateRankedConfig(L12AccountView actor, L12RankedConfigView value,
@@ -386,7 +431,8 @@ public sealed partial class L12PlatformStore
                 .Take(Math.Clamp(limit, 1, 2000))
                 .Select(row => new L12RankedSeasonHonorView(row.SeasonId,
                     string.IsNullOrWhiteSpace(row.SeasonName) ? row.SeasonId : row.SeasonName,
-                    string.IsNullOrWhiteSpace(row.UsernameSnapshot) ? AccountName(row.AccountId) : row.UsernameSnapshot,
+                    string.IsNullOrWhiteSpace(row.UsernameSnapshot) ? AccountName(row.AccountId)
+                        : L12UsernamePolicy.PublicName(row.UsernameSnapshot),
                     FactionFor(row.Faction).Name,
                     string.IsNullOrWhiteSpace(row.Tier) ? FactionFor(row.Faction).Tiers[RankedTierIndex(row.SevenValue)].Name : row.Tier,
                     row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.Titles.ToArray(), row.ArchivedAt))
@@ -859,6 +905,7 @@ public sealed partial class L12PlatformStore
         int firstStreakBefore, int secondStreakBefore, string? firstMasterId, string? secondMasterId)
     {
         if (!_data.RankedConfig!.BroadcastEnabled) return [];
+        var config = NormalizeRankedBroadcastConfig(_data.RankedConfig.Broadcast);
         var winnerRow = winner == 0 ? first : second;
         var loserRow = winner == 0 ? second : first;
         var loserStreakBefore = winner == 0 ? secondStreakBefore : firstStreakBefore;
@@ -870,20 +917,26 @@ public sealed partial class L12PlatformStore
         }
         var faction = FactionFor(winnerRow.Faction!);
         var winnerName = AccountName(winnerRow.AccountId);
-        if (winnerRow.WinStreak >= 5) Add("win-streak", $"【{faction.Name}】{winnerName} 已取得 {winnerRow.WinStreak} 连胜");
-        if (loserStreakBefore >= 5) Add("streak-ended", $"【{faction.Name}】{winnerName} 终结了 {AccountName(loserRow.AccountId)} 的 {loserStreakBefore} 连胜");
+        var winnerMeetsTier = TierIndex(winnerRow) >= config.MinimumTierIndex;
+        if (config.WinStreakEnabled && winnerMeetsTier && winnerRow.WinStreak >= config.WinStreakThreshold)
+            Add("win-streak", $"【{faction.Name}】{winnerName} 已取得 {winnerRow.WinStreak} 连胜");
+        if (config.StreakEndedEnabled && winnerMeetsTier && loserStreakBefore >= config.StreakEndedThreshold)
+            Add("streak-ended", $"【{faction.Name}】{winnerName} 终结了 {AccountName(loserRow.AccountId)} 的 {loserStreakBefore} 连胜");
         if (!winnerRow.ReachedHighestTier && TierIndex(winnerRow) == 4)
         {
             winnerRow.ReachedHighestTier = true;
-            Add("highest-tier", $"【{faction.Name}】{winnerName} 晋升至 {faction.Tiers[4].Name}");
+            if (config.HighestTierEnabled)
+                Add("highest-tier", $"【{faction.Name}】{winnerName} 晋升至 {faction.Tiers[4].Name}");
         }
         var after = FactionRank(winnerRow);
         var afterTitle = FactionPlacementTitle(winnerRow, after);
-        if (afterTitle is not null && beforeTitles.GetValueOrDefault(winnerRow.AccountId) != afterTitle)
+        if (config.FactionTitleEnabled && winnerMeetsTier && afterTitle is not null
+            && beforeTitles.GetValueOrDefault(winnerRow.AccountId) != afterTitle)
             Add(after == 1 ? "faction-first" : "faction-top-five",
                 $"【{faction.Name}】{winnerName} 获得称号「{afterTitle}」");
         var afterMasterChampions = CurrentMasterChampions();
-        foreach (var masterId in new[] { firstMasterId, secondMasterId }.Where(id => !string.IsNullOrWhiteSpace(id))
+        foreach (var masterId in (config.MasterTitleEnabled && winnerMeetsTier
+            ? new[] { firstMasterId, secondMasterId } : []).Where(id => !string.IsNullOrWhiteSpace(id))
                      .Select(id => id!).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!afterMasterChampions.TryGetValue(masterId, out var champion)
@@ -1112,14 +1165,19 @@ public sealed partial class L12PlatformStore
     private int FloorFor(int value) => _data.RankedConfig!.Factions[0].Tiers.Where(tier => value >= tier.Minimum).Max(tier => tier.Minimum);
     private static int StreakTerminationReward(int opponentValue) => opponentValue >= 100000 ? 1250
         : opponentValue >= 60000 ? 750 : opponentValue >= 30000 ? 400 : opponentValue >= 15000 ? 200 : 0;
-    private string AccountName(string id) => _data.Accounts.FirstOrDefault(row => row.Id == id)?.Username ?? "已注销玩家";
+    private string AccountName(string id)
+    {
+        var account = _data.Accounts.FirstOrDefault(row => row.Id == id);
+        return account is null ? "已注销玩家" : PublicUsername(account);
+    }
 
     private static L12RankedConfigView ToView(RankedConfigRow row) => new(row.PlacementMatches,
         row.PlacementMaximum, row.BroadcastEnabled, row.Factions.Select(faction => new L12RankedFactionConfig(
             faction.Id, faction.Name, faction.Color, faction.Icon, faction.FirstTitle, faction.TopFiveTitle,
             faction.Tiers.Select(tier => new L12RankedTierConfig(tier.Name, tier.Minimum, tier.BaseDelta,
                 tier.WinStreakCap, tier.LossProtectionCap, tier.RatingGapCap, tier.Color, tier.Icon)).ToArray())).ToArray(),
-        row.MasterTitles.Select(item => new L12RankedMasterTitleConfig(item.MasterId, item.MasterName, item.Title)).ToArray());
+        row.MasterTitles.Select(item => new L12RankedMasterTitleConfig(item.MasterId, item.MasterName, item.Title)).ToArray(),
+        NormalizeRankedTimeControl(row.TimeControl), NormalizeRankedBroadcastConfig(row.Broadcast));
     private L12RankedSettlementView ToView(RankedSettlementRow row) => new(row.MatchId, row.AccountId,
         FactionFor(row.Faction).Name, row.Outcome, row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before, row.After,
         row.Delta, row.TierBefore, row.TierAfter, row.Components.ToArray(), row.SettledAt);
@@ -1133,7 +1191,9 @@ public sealed partial class L12PlatformStore
         if (value.Factions.Count != 3 || !value.Factions.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(RankedFactionIds))
             throw new L12OperationsConfigException("invalid_ranked_factions", "排位派系必须且只能为秩序、混沌、命运");
         var row = new RankedConfigRow { PlacementMatches = value.PlacementMatches,
-            PlacementMaximum = value.PlacementMaximum, BroadcastEnabled = value.BroadcastEnabled };
+            PlacementMaximum = value.PlacementMaximum, BroadcastEnabled = value.BroadcastEnabled,
+            TimeControl = NormalizeRankedTimeControl(value.TimeControl),
+            Broadcast = NormalizeRankedBroadcastConfig(value.Broadcast) };
         foreach (var faction in value.Factions)
         {
             if (faction.Tiers.Count != 5) throw new L12OperationsConfigException("invalid_ranked_tiers", "每个派系必须恰好配置5个段位");
@@ -1166,5 +1226,37 @@ public sealed partial class L12PlatformStore
             });
         }
         return row;
+    }
+
+    internal static L12RankedTimeControlConfig NormalizeRankedTimeControl(L12RankedTimeControlConfig? value)
+    {
+        value ??= DefaultRankedTimeControl();
+        if (value.TotalTimeSeconds is < 300 or > 7200)
+            throw new L12OperationsConfigException("invalid_ranked_total_time", "排位总操作时限需为300–7200秒");
+        if (value.OperationTimeSeconds is < 15 or > 900
+            || value.OperationTimeSeconds > value.TotalTimeSeconds)
+            throw new L12OperationsConfigException("invalid_ranked_operation_time", "排位单步时限需为15–900秒且不得超过总操作时限");
+        if (value.ReconnectGraceSeconds is < 15 or > 900)
+            throw new L12OperationsConfigException("invalid_ranked_reconnect_grace", "排位断线宽限需为15–900秒");
+        if (value.DisasterDecisionSeconds is < 10 or > 300
+            || value.MulliganDecisionSeconds is < 10 or > 300)
+            throw new L12OperationsConfigException("invalid_ranked_setup_time", "排位天灾选择与调度时限均需为10–300秒");
+        return value;
+    }
+
+    internal static L12RankedBroadcastConfig NormalizeRankedBroadcastConfig(L12RankedBroadcastConfig? value)
+    {
+        value ??= DefaultRankedBroadcastConfig();
+        if (value.DisplaySeconds is < 5 or > 120)
+            throw new L12OperationsConfigException("invalid_ranked_broadcast_display", "广播显示时长需为5–120秒");
+        if (value.LobbyDelaySeconds is < 0 or > 120)
+            throw new L12OperationsConfigException("invalid_ranked_broadcast_lobby_delay", "大厅进入延迟需为0–120秒");
+        if (value.IntervalSeconds is < 3 or > 600)
+            throw new L12OperationsConfigException("invalid_ranked_broadcast_interval", "广播间隔需为3–600秒");
+        if (value.WinStreakThreshold is < 2 or > 100 || value.StreakEndedThreshold is < 2 or > 100)
+            throw new L12OperationsConfigException("invalid_ranked_broadcast_streak", "连胜与终结连胜门槛需为2–100场");
+        if (value.MinimumTierIndex is < 0 or > 4)
+            throw new L12OperationsConfigException("invalid_ranked_broadcast_tier", "广播最低段位必须是第1–5段");
+        return value;
     }
 }

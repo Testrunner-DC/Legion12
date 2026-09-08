@@ -18,7 +18,7 @@ const handElement = ref<HTMLElement | null>(null)
 const handWidth = ref(900)
 let resizeObserver: ResizeObserver | null = null
 const cardCount = computed(() => props.hidden ? (props.count ?? 0) : (props.cards?.length ?? 0))
-const cardWidth = computed(() => 86)
+const cardWidth = computed(() => 96)
 const minimumStep = computed(() => 26)
 const maximumStep = computed(() => 76)
 const fanStep = computed(() => {
@@ -31,8 +31,9 @@ function fanStyle(index: number, count: number) {
   const offset = index - (count - 1) / 2
   const radius = Math.max(0.5, (count - 1) / 2)
   const centerLift = Math.max(0, radius - Math.abs(offset))
+  const angleLimit = count >= 12 ? 4 : 7
   return {
-    '--fan-angle': `${Math.max(-7, Math.min(7, offset * 1.35))}deg`,
+    '--fan-angle': `${Math.max(-angleLimit, Math.min(angleLimit, offset * 1.35))}deg`,
     '--fan-lift': `${Math.min(8, centerLift * 2.2)}px`,
     '--fan-shift': `${index === 0 ? 0 : fanStep.value - cardWidth.value}px`,
   }
@@ -65,13 +66,12 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 <style scoped>
 /* Reserve real layout space for the selected card's action, fan lift and tilt.
    The clock is in the adjacent normal-flow lane, not an overlay to out-z-index. */
-.l12-hand:not(.hidden){height:calc(164px + max(14px,var(--l12-board-readable,14px)) * 1.5);padding-top:calc(40px + max(14px,var(--l12-board-readable,14px)) * 1.5);box-sizing:border-box}
-.l12-hand.opponent-hand:not(.hidden){padding-top:0;padding-bottom:calc(40px + max(14px,var(--l12-board-readable,14px)) * 1.5);align-items:flex-start}
+.l12-hand{box-sizing:border-box;padding-inline:8px}.l12-hand:not(.hidden){height:160px;padding-top:18px;box-sizing:border-box}.l12-hand.opponent-hand:not(.hidden){padding-top:0;padding-bottom:18px;align-items:flex-start}
 .l12-hand>.hand-card-wrap,.l12-hand>.card-back{margin-left:var(--fan-shift,0)}
-.l12-hand:not(.hidden)>.hand-card-wrap:not(:first-child){margin-left:calc(var(--fan-shift,0px) - 7px)}
+.l12-hand>.hand-card-wrap:not(:first-child),.l12-hand>.card-back:not(:first-child){margin-left:calc(var(--fan-shift,0px) - 7px)}
 .l12-hand.overflowing{justify-content:flex-start;overflow-x:auto;overflow-y:hidden;scrollbar-color:#5f6866 #111516;scrollbar-width:thin}
 .l12-hand.overflowing>.hand-card-wrap,.l12-hand.overflowing>.card-back{flex:none}
 .l12-hand.overflowing .hand-actions{top:auto;bottom:calc(100% + 4px)}
 .l12-hand.overflowing.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}
-.l12-hand.hidden .card-back{box-sizing:border-box;width:86px;height:120px}
+.l12-hand .hand-card-wrap{width:96px;height:134px;flex-basis:96px}.l12-hand .hand-card-wrap .card-tile{width:96px;height:134px;flex-basis:96px}.l12-hand.hidden .card-back{box-sizing:border-box;width:96px;height:134px}
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { masterProfileUrl } from '@/l12/specialAssets'
+import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 import {
   platformState,
@@ -115,7 +116,7 @@ onMounted(load)
         <b>#{{ row.rank }}</b>
         <strong class="player-name"><span class="username">{{ row.username }} <i v-if="row.username === platformState.account?.username" class="me-badge">我</i></span></strong>
         <span>{{ row.faction }}</span><span>{{ row.tier }}</span>
-        <span class="title-list player-title-cell"><small v-for="title in row.titles" :key="title" class="title-badge"><i>✦</i>{{ title }}</small><span v-if="!row.titles?.length">—</span></span>
+        <span class="title-list player-title-cell"><RankedIdentityBadge v-for="title in row.titles" :key="title" class="title-badge" :label="title"/><span v-if="!row.titles?.length">—</span></span>
         <span v-if="row.favoriteMasterId" class="player-master"><img class="player-master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.favoriteMasterId)" :alt="`${row.favoriteMasterName || row.favoriteMasterId}头像`"/><b>{{ row.favoriteMasterName || row.favoriteMasterId }}</b></span><span v-else>—</span>
         <strong>{{ row.displayValue }}</strong><span>{{ row.wins + row.losses }}</span>
         <span><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><strong>{{ percent((row.wins + row.losses) ? row.wins * 100 / (row.wins + row.losses) : 0) }}</strong>
@@ -138,7 +139,7 @@ onMounted(load)
     <section v-else-if="tab === 'history'" class="rank-panel honor-table">
       <div class="thead"><span>赛季</span><span>获奖玩家</span><span>派系</span><span>赛季段位</span><span>赛季七曜值</span><span>获得称号</span></div>
       <div v-for="row in visibleHonors" :key="`${row.seasonId}-${row.username}-${row.titles.join('|')}`" class="tr">
-        <strong>{{ row.seasonName }}<small>{{ row.seasonId }}</small></strong><b>{{ row.username }}</b><span>{{ row.faction }}</span><span>{{ row.tier }}</span><strong>{{ row.displayValue }}</strong><span class="title-list"><small v-for="title in row.titles" :key="title" class="title-badge"><i>✦</i>{{ title }}</small></span>
+        <strong>{{ row.seasonName }}<small>{{ row.seasonId }}</small></strong><b>{{ row.username }}</b><span>{{ row.faction }}</span><span>{{ row.tier }}</span><strong>{{ row.displayValue }}</strong><span class="title-list"><RankedIdentityBadge v-for="title in row.titles" :key="title" class="title-badge" :label="title"/></span>
       </div>
       <div v-if="!visibleHonors.length" class="empty">尚无已经结算并冻结的历史赛季称号</div>
     </section>
@@ -177,7 +178,6 @@ onMounted(load)
 .player-table .thead,.player-table .tr{grid-template-columns:56px minmax(110px,.9fr) .55fr .65fr minmax(150px,1.25fr) minmax(130px,1fr) .8fr .45fr .68fr .58fr}
 .master-avatar,.matrix-master-avatar{border-radius:0}
 .player-table{overflow-x:auto}.player-title-cell{align-content:center}.player-title-cell>span{color:#697880}.player-master{display:flex;align-items:center;gap:8px;min-width:0}.player-master-avatar{width:34px;height:34px;flex:0 0 34px;border:1px solid #66747b;border-radius:0;background:#080d11;object-fit:cover}.player-master b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}
-.ranking-page span,.ranking-page small,.ranking-page p,.ranking-page button,.ranking-page input,.ranking-page em,.ranking-page i,.ranking-page .thead,.ranking-page .tr,.ranking-page .summary-strip strong.updated,.ranking-page .champion-title,.ranking-page .player-master b,.ranking-page .matrix-row-head b,.ranking-page .matrix-cell b{font-size:14px!important}
 @media(max-width:1050px){.player-table .thead,.player-table .tr{min-width:1180px}}
 .toolbar{display:flex;flex-wrap:wrap}.toolbar .tabs,.toolbar .ranges{flex:none}.toolbar .ranking-search{flex:0 1 360px;width:clamp(220px,24vw,380px);margin-left:auto}.toolbar .master-title-rules-button{flex:none}
 .matrix-rank-cell span,.matrix-cell span,.matrix-cell b{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.matrix-head span,.matrix-row-head b{max-width:96px}

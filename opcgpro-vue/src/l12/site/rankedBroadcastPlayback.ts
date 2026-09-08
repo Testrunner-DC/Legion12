@@ -4,6 +4,8 @@ import {
   PlatformRequestError,
   platformState,
   rankedApi,
+  DEFAULT_RANKED_BROADCAST_CONFIG,
+  type RankedBroadcastConfig,
   type RankedBroadcastClaim,
 } from '@/l12/platform'
 
@@ -25,6 +27,7 @@ export const rankedBroadcastPlayback = reactive<{
   playbackStartedAt: number
   playbackDurationMs: number
   loading: boolean
+  settings: RankedBroadcastConfig
 }>({
   accountId: '',
   subscriptionStartedAt: '',
@@ -32,7 +35,20 @@ export const rankedBroadcastPlayback = reactive<{
   playbackStartedAt: 0,
   playbackDurationMs: STANDARD_PLAYBACK_MS,
   loading: false,
+  settings: { ...DEFAULT_RANKED_BROADCAST_CONFIG },
 })
+
+export function configureRankedBroadcastPlayback(settings: RankedBroadcastConfig) {
+  rankedBroadcastPlayback.settings = { ...DEFAULT_RANKED_BROADCAST_CONFIG, ...settings }
+}
+
+export function rankedBroadcastIntervalMs() {
+  return Math.max(3, rankedBroadcastPlayback.settings.intervalSeconds) * 1_000
+}
+
+export function rankedBroadcastLobbyDelayMs() {
+  return Math.max(0, rankedBroadcastPlayback.settings.lobbyDelaySeconds) * 1_000
+}
 
 let pending: Promise<RankedBroadcastClaim | null> | null = null
 let subscriptionGeneration = 0
@@ -175,7 +191,8 @@ function beginPlayback(claim: RankedBroadcastClaim) {
   rankedBroadcastPlayback.claim = claim
   rankedBroadcastPlayback.playbackStartedAt = Date.now()
   rankedBroadcastPlayback.playbackDurationMs = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ? REDUCED_PLAYBACK_MS : STANDARD_PLAYBACK_MS
+    ? Math.min(REDUCED_PLAYBACK_MS, rankedBroadcastPlayback.settings.displaySeconds * 1_000)
+    : Math.max(5_000, rankedBroadcastPlayback.settings.displaySeconds * 1_000)
   if (playbackTimer) window.clearTimeout(playbackTimer)
   playbackTimer = window.setTimeout(() => { finishVisibleClaim(true) },
     rankedBroadcastPlayback.playbackDurationMs + 250)

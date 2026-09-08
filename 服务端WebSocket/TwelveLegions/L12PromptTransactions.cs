@@ -115,7 +115,8 @@ public sealed partial class L12GameEngine
 
             foreach (var prompt in prompts) State.PendingPrompts.Remove(prompt);
             RejectPendingActivation(activation,
-                "待处理选择事务的提示、来源或步骤已失效；已安全取消且未继续结算");
+                "待处理选择事务的提示、来源或步骤已失效；已安全取消且未继续结算",
+                emitEvent: activation.TriggerCandidateId is null);
             changed = true;
         }
 
@@ -126,8 +127,6 @@ public sealed partial class L12GameEngine
                 activation.ActivationId == prompt.ActivationId && PromptMatchesActivation(prompt, activation));
             if (matches == 1) continue;
             State.PendingPrompts.Remove(prompt);
-            AddEvent("prompt-orphan-cleared", prompt.PlayerIndex,
-                "已清理无法对应合法待处理效果的选择提示");
             changed = true;
         }
         return changed;
@@ -143,11 +142,21 @@ public sealed partial class L12GameEngine
             return false;
 
         if (activation.TriggerCandidateId is not null)
-            return State.PendingTriggerStackCandidates.Any(candidate =>
+        {
+            var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(candidate =>
                 candidate.CandidateId == activation.TriggerCandidateId
                 && candidate.Controller == activation.Controller
                 && candidate.SourceInstanceId == activation.SourceInstanceId
                 && candidate.SourceCardId == activation.SourceCardId);
+            if (candidate is null) return false;
+            // 进攻时可选效果在声明期间仍依赖原进攻军团。若来源被移走，不能依赖
+            // LastKnownInformation 留下一个永远无法提交的选择事务；死亡/离场触发则仍可
+            // 按最后已知信息正常声明与结算。
+            if (candidate.Trigger.Equals("attack", StringComparison.OrdinalIgnoreCase))
+                return FindOnField(State.Players[activation.Controller], activation.SourceInstanceId, out _, out _)
+                    ?.CardId == activation.SourceCardId;
+            return true;
+        }
 
         if (activation.ResponseTargetStackItemId is not null)
             return State.EffectStack.Any(item => item.StackItemId == activation.ResponseTargetStackItemId)

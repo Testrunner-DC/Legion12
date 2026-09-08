@@ -1988,6 +1988,36 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void MistletoeCharmMaySpendZeroRunesAndPayItsPrintedMoraleCost()
+    {
+        var game = Create(63120);
+        var player = game.State.Players[0];
+        var tactic = Card("S02-0622", "mistletoe-zero-runes");
+        var target = Card("S02-0602", "mistletoe-zero-target");
+        player.Hand.Clear();
+        player.Hand.Add(tactic);
+        game.State.Players[1].Field[0][0] = target;
+        player.SpecialZones.Runes = 2;
+        AddMorale(player, tactic.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        var runePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, runePrompt.MinChoose);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
+            CardInstanceIds: [])).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(2, player.SpecialZones.Runes);
+        Assert.Equal(tactic.Cost, player.Morale.Count(card => card.Tapped));
+        Assert.Equal(2000, target.Troops);
+    }
+
+    [Fact]
     public void OtherworldRuneOptionsUseEffectTextAndCanBeCancelledBeforeAutomaticPayment()
     {
         var game = CreateWithFirstMaster("S02-06M1", 63081);
@@ -2379,6 +2409,32 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "hand")).Accepted);
         Assert.Contains(top, player.Hand);
         Assert.DoesNotContain(top, player.Library);
+        Assert.Contains(game.SnapshotFor(1).RecentEvents, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == top.InstanceId));
+    }
+
+    [Fact]
+    public void AmakineCannotTakeAnOtherworldCardWithAnAdditionalTrait()
+    {
+        var game = Create(63101);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        var amakine = Card("S02-0616", "amakine-only-trait-source");
+        var roundTableKnight = Card("S02-0602", "amakine-extra-trait-card");
+        player.Field[0][0] = amakine;
+        player.Library.Insert(0, roundTableKnight);
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(playerIndex, new L12Command("activateAbility", amakine.InstanceId,
+            Ability: "amakineTop"));
+
+        Assert.True(activation.Accepted, activation.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("hand", prompt.ValidChoices);
+        Assert.Contains("top", prompt.ValidChoices);
+        Assert.Contains("bottom", prompt.ValidChoices);
+        Assert.Contains(game.SnapshotFor(1).RecentEvents, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == roundTableKnight.InstanceId));
     }
 
     [Fact]
@@ -3521,12 +3577,9 @@ public sealed class S2FactionRegressionTests
         Assert.Equal("s2-limu-tactic", tactic.Data["action"]);
         Assert.Equal(runePower.InstanceId, tactic.Data["previewCardId"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: tactic.PromptId, Choice: "play")).Accepted);
-
-        var mode = Assert.Single(game.State.PendingPrompts);
-        var declared = game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:none"));
-        Assert.True(declared.Accepted, declared.Error);
         PassResponses(game);
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Empty(game.State.PendingPrompts);
 
         Assert.Equal(1, player.SpecialZones.Runes);
         Assert.Contains(runePower, player.Graveyard);
@@ -3637,6 +3690,8 @@ public sealed class S2FactionRegressionTests
         Assert.False(xiaotian.HasPrintedCost);
         Assert.False(xiaotian.Tapped);
         Assert.Equal(2000, xiaotian.Troops);
+        Assert.Contains(game.State.AuthorityEvents, authorityEvent => authorityEvent.Type == "non-hand-entry"
+            && authorityEvent.SourceInstanceId == xiaotian.InstanceId && authorityEvent.Resolved);
     }
 
     [Fact]
@@ -3724,12 +3779,8 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(fieldKnight.InstanceId, buffTarget.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: buffTarget.PromptId,
             Choice: fieldKnight.InstanceId)).Accepted);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            Choice: payment.ValidChoices[0])).Accepted);
-        PassResponses(game);
-
         var search = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.Equal("s2-round-table-search", search.Data["action"]);
         Assert.Equal([searchedKnight.InstanceId], search.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: search.PromptId, Choice: searchedKnight.InstanceId)).Accepted);
@@ -4302,6 +4353,8 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(3000, wukong.Troops);
         Assert.True(wukong.HasCharge);
         Assert.DoesNotContain(player.Morale, morale => returned.Contains(morale.InstanceId));
+        Assert.Contains(game.State.AuthorityEvents, authorityEvent => authorityEvent.Type == "non-hand-entry"
+            && authorityEvent.SourceInstanceId == wukong.InstanceId && authorityEvent.Resolved);
 
         using var snapshot = JsonDocument.Parse(JsonSerializer.Serialize(game.SnapshotFor(0)));
         var master = snapshot.RootElement.GetProperty("Players")[0].GetProperty("master");

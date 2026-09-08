@@ -37,6 +37,8 @@ export const router = createRouter({
 })
 
 router.beforeEach(async to => {
+  if (authState.verified && platformState.account?.mustChangeUsername && to.name !== 'me')
+    return { name: 'me', query: { redirect: to.fullPath, reason: 'username-change-required' } }
   if (to.meta.requiresAdmin !== true && to.meta.requiresAccount !== true) return true
   let timeout: number | undefined
   try {
@@ -49,6 +51,8 @@ router.beforeEach(async to => {
   } catch { /* 权限校验不可用时保持失败关闭。 */ }
   finally { window.clearTimeout(timeout) }
   if (!authState.verified || !platformState.account) return { name: 'me', query: { redirect: to.fullPath } }
+  if (platformState.account.mustChangeUsername && to.name !== 'me')
+    return { name: 'me', query: { redirect: to.fullPath, reason: 'username-change-required' } }
   if (platformState.account.mustChangePassword && to.name !== 'me')
     return { name: 'me', query: { redirect: to.fullPath, reason: 'password-change-required' } }
   if (to.meta.requiresAdmin !== true) return true

@@ -19,7 +19,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var organizer = Promote(store, admin, "RuleSnapHost", "organizer");
+            var organizer = Promote(store, admin, "RuleSnap", "organizer");
             var policy = store.CaptureOperationsPolicy();
             var restrictions = new[] { new L12CardRestrictionConfig("S01-0001", 1, "赛事限一") };
             var payload = CreatePayload() with
@@ -55,9 +55,9 @@ public sealed class ControlPlanePhaseFourTournamentTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var organizer = Promote(store, admin, "ScopeOrganizer", "organizer");
-            var referee = Promote(store, admin, "ScopeReferee", "referee");
-            var outsider = Promote(store, admin, "ScopeOutsider", "referee");
+            var organizer = Promote(store, admin, "ScopeOrg", "organizer");
+            var referee = Promote(store, admin, "ScopeRef", "referee");
+            var outsider = Promote(store, admin, "ScopeOut", "referee");
             var player = store.Register("ScopePlayer", "password-123").Account!;
             MakeFriends(store, organizer, referee);
 
@@ -86,10 +86,10 @@ public sealed class ControlPlanePhaseFourTournamentTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var organizer = Promote(store, admin, "VersionOrganizer", "organizer");
+            var organizer = Promote(store, admin, "VersionOrg", "organizer");
             var tournament = store.CreateTournament(organizer, CreatePayload(), Context("version-create"), true);
             var tournamentVersion = tournament.Version;
-            store.Register("UnrelatedAccount", "password-123");
+            store.Register("tunrela63e4", "password-123");
 
             var payload = new L12TournamentRegistrationPayload("版本牌库", "DECK-V1");
             var command = Envelope("tournament.registration.update", organizer,
@@ -132,10 +132,10 @@ public sealed class ControlPlanePhaseFourTournamentTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var organizer = Promote(store, admin, "ApprovalOrganizer", "organizer");
-            var reviewer = Promote(store, admin, "ApprovalReferee", "referee");
-            var outsider = Promote(store, admin, "ApprovalOutsider", "referee");
-            var player = store.Register("ApprovalPlayer", "password-123").Account!;
+            var organizer = Promote(store, admin, "ApproveOrg", "organizer");
+            var reviewer = Promote(store, admin, "ApproveRef", "referee");
+            var outsider = Promote(store, admin, "ApproveOut", "referee");
+            var player = store.Register("tappro73608", "password-123").Account!;
             MakeFriends(store, organizer, reviewer);
             var tournament = store.CreateTournament(organizer, CreatePayload([reviewer.Id]),
                 Context("approval-create"), true);
@@ -180,7 +180,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
-            var organizer = Promote(store, admin, "FlowOrganizer", "organizer");
+            var organizer = Promote(store, admin, "FlowOrg", "organizer");
             var player = store.Register("FlowPlayer", "password-123").Account!;
             var tournament = store.CreateTournament(organizer, CreatePayload(deckVisibility: "after"),
                 Context("flow-create"), true);
@@ -252,8 +252,8 @@ public sealed class ControlPlanePhaseFourTournamentTests
         {
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
-            var organizer = Promote(store, admin, "ImportOrganizer", "organizer");
-            var known = store.Register("KnownLegacyPlayer", "password-123").Account!;
+            var organizer = Promote(store, admin, "ImportOrg", "organizer");
+            var known = store.Register("tknowncce30", "password-123").Account!;
             var input = new L12LegacyTournamentInput(
                 Id: "legacy-local-1", Code: "OLD123", Name: "旧本地赛事", Organizer: "FakeOrganizer",
                 Referees: ["UnknownReferee"], Status: "registration", Format: "swiss", Visibility: "public",
@@ -262,7 +262,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
                 CheckInMinutes: 5,
                 Participants:
                 [
-                    new("KnownLegacyPlayer", "Known Deck", "KNOWN"),
+                    new("tknowncce30", "Known Deck", "KNOWN"),
                     new("UnknownLegacyPlayer", "Unknown Deck", "UNKNOWN"),
                 ],
                 Rounds: [], CreatedAt: null, UpdatedAt: null, CompletedAt: null);
@@ -308,9 +308,9 @@ public sealed class ControlPlanePhaseFourTournamentTests
             await recorder.InitializeAsync();
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
             var adminLogin = store.Login("Admin", "L12master");
-            var organizerRegistration = store.Register("HttpTourOrganizer", "password-123");
-            var organizerLogin = store.Login("HttpTourOrganizer", "password-123");
-            var player = store.Register("HttpTourPlayer", "password-123");
+            var organizerRegistration = store.Register("uba9966f533", "password-123");
+            var organizerLogin = store.Login("uba9966f533", "password-123");
+            var player = store.Register("u7dedfe0803", "password-123");
             var rooms = new L12RoomManager(catalog, recorder, store);
             server = new L12WebSocketServer(rooms, recorder, store, catalog);
             await server.StartAsync(0);
@@ -356,14 +356,14 @@ public sealed class ControlPlanePhaseFourTournamentTests
             using (var response = await client.SendAsync(missingVersion))
                 Assert.Equal((HttpStatusCode)428, response.StatusCode);
 
-            using (var outOfScope = Authorized(HttpMethod.Post, $"/api/tournaments/{created.Id}/start",
+            using (var globalAdminValidation = Authorized(HttpMethod.Post, $"/api/tournaments/{created.Id}/start",
                        adminLogin.Token!, "tour-scope-denied",
                        new TournamentActionRequest("scope-denied", created.Version, false, "not staff")))
-            using (var response = await client.SendAsync(outOfScope))
-                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            using (var response = await client.SendAsync(globalAdminValidation))
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
             Assert.Single(store.Tournaments(organizerLogin.Account!).Items);
-            Assert.Contains(store.AdminAudit("security"), item => item.CorrelationId == "tour-scope-denied"
+            Assert.DoesNotContain(store.AdminAudit("security"), item => item.CorrelationId == "tour-scope-denied"
                 && item.Reason == "scope-denied");
         }
         finally

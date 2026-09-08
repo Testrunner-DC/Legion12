@@ -268,7 +268,7 @@ public sealed class ControlPlaneModianImportTests
                 modianImportClient: fake);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
-            var player = store.Register("ModianPlayer", "password-123");
+            var player = store.Register("tmodiac343e", "password-123");
             var admin = store.Login("Admin", "L12master");
 
             using (var playerPreview = Authorized(HttpMethod.Get, "/api/admin/articles/modian/preview", player.Token!))

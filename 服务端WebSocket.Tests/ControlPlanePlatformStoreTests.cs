@@ -40,9 +40,9 @@ public sealed class ControlPlanePlatformStoreTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
-            var first = store.Register("SessionOwner", "password-123");
-            var second = store.Login("SessionOwner", "password-123");
-            var outsider = store.Register("SessionOther", "password-456");
+            var first = store.Register("tsessi3b900", "password-123");
+            var second = store.Login("tsessi3b900", "password-123");
+            var outsider = store.Register("tsessi8973e", "password-456");
             var ownerAuthentication = store.AuthenticateSession($"Bearer {first.Token}")!;
             var outsiderAuthentication = store.AuthenticateSession($"Bearer {outsider.Token}")!;
             var ownerSessions = store.Sessions(first.Account!.Id, ownerAuthentication.SessionId);
@@ -97,8 +97,8 @@ public sealed class ControlPlanePlatformStoreTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
-            var current = store.Register("PasswordOwner", "password-123");
-            var oldDevice = store.Login("PasswordOwner", "password-123");
+            var current = store.Register("tpassw6ab37", "password-123");
+            var oldDevice = store.Login("tpassw6ab37", "password-123");
             var currentAuthentication = store.AuthenticateSession($"Bearer {current.Token}")!;
 
             var changed = store.ChangePassword(current.Account!.Id, "password-123", "new-password-456",
@@ -107,8 +107,8 @@ public sealed class ControlPlanePlatformStoreTests
             Assert.True(changed.Success);
             Assert.NotNull(store.AuthenticateToken(current.Token));
             Assert.Null(store.AuthenticateToken(oldDevice.Token));
-            Assert.False(store.Login("PasswordOwner", "password-123").Success);
-            Assert.True(store.Login("PasswordOwner", "new-password-456").Success);
+            Assert.False(store.Login("tpassw6ab37", "password-123").Success);
+            Assert.True(store.Login("tpassw6ab37", "new-password-456").Success);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -121,7 +121,7 @@ public sealed class ControlPlanePlatformStoreTests
         try
         {
             var store = new L12PlatformStore(path);
-            var registered = store.Register("LegacySession", "password-123");
+            var registered = store.Register("tlegacd8e56", "password-123");
             var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
             document.Remove("Version");
             foreach (var account in document["Accounts"]!.AsArray().OfType<JsonObject>())
@@ -191,7 +191,7 @@ public sealed class ControlPlanePlatformStoreTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
-            var target = store.Register("CommandTarget", "password-123").Account!;
+            var target = store.Register("tcomma39194", "password-123").Account!;
             var admin = store.Login("Admin", "L12master").Account!;
             var bus = new L12AdminCommandBus(store);
             var expectedVersion = target.PermissionVersion;
@@ -269,9 +269,9 @@ public sealed class ControlPlanePlatformStoreTests
                 Assert.NotEqual("bad id!", generated);
             }
 
-            var owner = store.Register("HttpOwner", "password-123");
-            var ownerOther = store.Login("HttpOwner", "password-123");
-            var outsider = store.Register("HttpOther", "password-456");
+            var owner = store.Register("u70dd381208", "password-123");
+            var ownerOther = store.Login("u70dd381208", "password-123");
+            var outsider = store.Register("u1e37f287ab", "password-456");
             var outsiderSession = store.AuthenticateTokenSession(outsider.Token)!.SessionId;
 
             using (var forbidden = Authorized(HttpMethod.Get, "/api/admin/accounts", owner.Token!, "deny-http-1"))

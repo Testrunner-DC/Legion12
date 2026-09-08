@@ -119,6 +119,9 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.Contains(drawn, player.Hand);
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(["mode:none", "mode:use"], mode.ValidChoices);
+        Assert.True(mode.IsPrivate);
+        Assert.Equal(drawn.InstanceId, mode.Data["previewCardId"]);
+        Assert.Equal("information-card", mode.Data["previewPresentation"]);
         Assert.Equal(1, player.Morale.Count(card => !card.Tapped));
 
         ResolveSinglePrompt(game, "mode:use");

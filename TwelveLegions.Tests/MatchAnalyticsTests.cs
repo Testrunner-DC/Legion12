@@ -314,7 +314,7 @@ public sealed class MatchAnalyticsTests
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
         var player = platform.Register("api-player", "Password123!").Account!;
-        var opponent = platform.Register("api-opponent", "Password123!").Account!;
+        var opponent = platform.Register("tapiop030a1", "Password123!").Account!;
         var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
         var matchPath = Path.Combine(directory, "matches.db");
         await using var recorder = new MatchRecorder(matchPath);
@@ -398,6 +398,53 @@ public sealed class MatchAnalyticsTests
             using (var legacy = Authorized(HttpMethod.Get, "/api/matches/api-match", adminLogin.Token!))
             using (var response = await client.SendAsync(legacy))
                 Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+            await using (var connection = new SqliteConnection($"Data Source={matchPath}"))
+            {
+                await connection.OpenAsync();
+                var purge = connection.CreateCommand();
+                purge.CommandText = "DELETE FROM match_events WHERE match_id='api-match';";
+                Assert.True(await purge.ExecuteNonQueryAsync() > 0);
+            }
+            using (var playerReplay = Authorized(HttpMethod.Get, "/api/matches/api-match", playerLogin.Token!))
+            using (var response = await client.SendAsync(playerReplay))
+            {
+                Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
+                Assert.Equal("replay_payload_expired",
+                    (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+            }
+            using (var playerSummaries = Authorized(HttpMethod.Get, "/api/matches", playerLogin.Token!))
+            using (var response = await client.SendAsync(playerSummaries))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var summaries = await response.Content.ReadFromJsonAsync<L12MatchSummary[]>();
+                Assert.Contains(summaries!, summary => summary.MatchId == "api-match"
+                    && summary.CommandCount == 0 && summary.EndedUtc is not null);
+            }
+            using (var adminReplay = Authorized(HttpMethod.Get,
+                       "/api/admin/matches/api-match/replay", adminLogin.Token!))
+            using (var response = await client.SendAsync(adminReplay))
+            {
+                Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
+                Assert.Equal("replay_payload_expired",
+                    (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+            }
+            using (var adminInlineReplay = Authorized(HttpMethod.Get,
+                       "/api/admin/matches/api-match?includeReplay=true", adminLogin.Token!))
+            using (var response = await client.SendAsync(adminInlineReplay))
+            {
+                Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
+                Assert.Equal("replay_payload_expired",
+                    (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+            }
+            using (var preservedSummary = Authorized(HttpMethod.Get,
+                       "/api/admin/matches/api-match", adminLogin.Token!))
+            using (var response = await client.SendAsync(preservedSummary))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var detail = await response.Content.ReadFromJsonAsync<L12AdminMatchDetail>();
+                Assert.Equal(0, detail!.Summary.CommandCount);
+            }
 
             Assert.Contains(platform.AdminAudit(category: "match"), audit =>
                 audit.ActorId == adminLogin.Account!.Id && audit.Action == "read-list"

@@ -18,8 +18,8 @@ public sealed class MatchGovernanceTests
         var directory = TempDirectory("report");
         var path = Path.Combine(directory, "platform.json");
         var store = new L12PlatformStore(path);
-        var reporter = store.Register("governance-reporter", "Password123!").Account!;
-        var reported = store.Register("governance-reported", "Password123!").Account!;
+        var reporter = store.Register("tgover516c3", "Password123!").Account!;
+        var reported = store.Register("tgovera015b", "Password123!").Account!;
         var now = DateTimeOffset.UtcNow;
 
         var created = store.CreatePlayerMatchReport("report-request-0001", "match-report-1", "ROOM01",
@@ -50,9 +50,9 @@ public sealed class MatchGovernanceTests
         var directory = TempDirectory("draw-cas");
         var path = Path.Combine(directory, "platform.json");
         var store = new L12PlatformStore(path);
-        var requester = store.Register("draw-requester", "Password123!").Account!;
-        var responder = store.Register("draw-responder", "Password123!").Account!;
-        var outsider = store.Register("draw-outsider", "Password123!").Account!;
+        var requester = store.Register("tdrawrd2dfe", "Password123!").Account!;
+        var responder = store.Register("tdrawr6ba84", "Password123!").Account!;
+        var outsider = store.Register("tdrawo055e0", "Password123!").Account!;
         var now = DateTimeOffset.UtcNow;
         var created = store.CreateMatchDrawRequest("draw-request-0001", "match-draw-1", "ROOM02",
             "casual", requester, responder, "同步后卡在结算窗口", now);
@@ -84,8 +84,8 @@ public sealed class MatchGovernanceTests
     {
         var path = Path.Combine(TempDirectory("draw-once"), "platform.json");
         var store = new L12PlatformStore(path);
-        var first = store.Register("draw-once-first", "Password123!").Account!;
-        var second = store.Register("draw-once-second", "Password123!").Account!;
+        var first = store.Register("tdrawo02d56", "Password123!").Account!;
+        var second = store.Register("tdrawoef96b", "Password123!").Account!;
         var now = DateTimeOffset.UtcNow;
 
         var concurrent = await Task.WhenAll(Enumerable.Range(0, 24).Select(index => Task.Run(() =>
@@ -165,8 +165,8 @@ public sealed class MatchGovernanceTests
     public void PendingDrawExpiresAndCannotBeResolvedAfterReconnectProjection()
     {
         var store = new L12PlatformStore(Path.Combine(TempDirectory("draw-expiry"), "platform.json"));
-        var requester = store.Register("expiry-requester", "Password123!").Account!;
-        var responder = store.Register("expiry-responder", "Password123!").Account!;
+        var requester = store.Register("texpir09807", "Password123!").Account!;
+        var responder = store.Register("texpir8f059", "Password123!").Account!;
         var now = DateTimeOffset.UtcNow;
         var created = store.CreateMatchDrawRequest("draw-request-expiry", "match-draw-expiry", "ROOM03",
             "ranked", requester, responder, "客户端恢复后无法继续操作", now);
@@ -186,8 +186,8 @@ public sealed class MatchGovernanceTests
     {
         var path = Path.Combine(TempDirectory("accept-resume"), "platform.json");
         var store = new L12PlatformStore(path);
-        var requester = store.Register("resume-requester", "Password123!").Account!;
-        var responder = store.Register("resume-responder", "Password123!").Account!;
+        var requester = store.Register("tresum1a3a3", "Password123!").Account!;
+        var responder = store.Register("tresumded94", "Password123!").Account!;
         var now = DateTimeOffset.UtcNow;
         var created = store.CreateMatchDrawRequest("draw-accept-resume", "match-accept-resume", "ROOM05",
             "casual", requester, responder, "接受处理中服务重启", now);
@@ -206,8 +206,8 @@ public sealed class MatchGovernanceTests
         var directory = TempDirectory("ranked-draw");
         var path = Path.Combine(directory, "platform.json");
         var store = new L12PlatformStore(path);
-        var first = store.Register("ranked-draw-first", "Password123!").Account!;
-        var second = store.Register("ranked-draw-second", "Password123!").Account!;
+        var first = store.Register("tranke0aac5", "Password123!").Account!;
+        var second = store.Register("tranke93d96", "Password123!").Account!;
         store.SelectRankedFaction(first.Id, "order");
         store.SelectRankedFaction(second.Id, "chaos");
         var beforeFirst = store.RankedProfile(first.Id);
@@ -254,8 +254,8 @@ public sealed class MatchGovernanceTests
         var catalog = Catalog;
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var first = platform.Register("room-draw-first", "Password123!").Account!;
-        var second = platform.Register("room-draw-second", "Password123!").Account!;
+        var first = platform.Register("troomd1b12e", "Password123!").Account!;
+        var second = platform.Register("troomd2d148", "Password123!").Account!;
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();
         var manager = new L12RoomManager(catalog, recorder, platform);
@@ -319,8 +319,8 @@ public sealed class MatchGovernanceTests
         var catalog = Catalog;
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var first = platform.Register("room-once-first", "Password123!").Account!;
-        var second = platform.Register("room-once-second", "Password123!").Account!;
+        var first = platform.Register("troomo18927", "Password123!").Account!;
+        var second = platform.Register("troomo2b923", "Password123!").Account!;
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();
         var manager = new L12RoomManager(catalog, recorder, platform);
@@ -399,7 +399,7 @@ public sealed class MatchGovernanceTests
         var catalog = Catalog;
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var player = platform.Register("sandbox-governance", "Password123!").Account!;
+        var player = platform.Register("tsandb9d5fa", "Password123!").Account!;
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();
         var manager = new L12RoomManager(catalog, recorder, platform);
@@ -427,8 +427,8 @@ public sealed class MatchGovernanceTests
         var catalog = Catalog;
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var first = platform.Register("natural-end-first", "Password123!").Account!;
-        var second = platform.Register("natural-end-second", "Password123!").Account!;
+        var first = platform.Register("tnaturb3928", "Password123!").Account!;
+        var second = platform.Register("tnatur5e4cf", "Password123!").Account!;
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();
         var manager = new L12RoomManager(catalog, recorder, platform);
@@ -469,8 +469,8 @@ public sealed class MatchGovernanceTests
         var catalog = Catalog;
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var first = platform.Register("ranked-room-first", "Password123!").Account!;
-        var second = platform.Register("ranked-room-second", "Password123!").Account!;
+        var first = platform.Register("tranked0c65", "Password123!").Account!;
+        var second = platform.Register("tranke17624", "Password123!").Account!;
         platform.SelectRankedFaction(first.Id, "order");
         platform.SelectRankedFaction(second.Id, "chaos");
         var beforeFirst = platform.RankedProfile(first.Id);
@@ -531,8 +531,8 @@ public sealed class MatchGovernanceTests
         var catalog = Catalog;
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var reporter = platform.Register("http-report-player", "Password123!").Account!;
-        var reported = platform.Register("http-report-target", "Password123!").Account!;
+        var reporter = platform.Register("u6c01d28ffd", "Password123!").Account!;
+        var reported = platform.Register("ue33770f6c7", "Password123!").Account!;
         platform.CreatePlayerMatchReport("http-report-request", "http-governance-match", "ROOM04",
             "casual", reporter, reported, "需要管理员核查的对局行为", DateTimeOffset.UtcNow);
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));

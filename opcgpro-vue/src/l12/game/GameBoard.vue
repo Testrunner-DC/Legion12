@@ -21,6 +21,7 @@ import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
 import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 import CardImage from '../CardImage.vue'
+import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
 
 type GmPlacementRequest = {
@@ -201,7 +202,10 @@ function updateInspectorFloatRect() {
     width: `${logicalWidth}px`,
     height: `${logicalHeight}px`,
     transform: `scale(${floatScale})`,
-    '--l12-board-readable': `${14 / Math.min(1, floatScale)}px`,
+    '--l12-board-copy': `${13 / Math.min(1, floatScale)}px`,
+    '--l12-board-meta': `${11 / Math.min(1, floatScale)}px`,
+    '--l12-board-micro': `${9 / Math.min(1, floatScale)}px`,
+    '--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`,
   }
 }
 watch(modalInspectorVisible, visible => {
@@ -219,6 +223,13 @@ const osirisVictoryDisabledReason = computed(() => osirisVictoryAbility.value?.d
 const sessionDisasterSlots = computed<(DisasterCardView | null)[]>(() =>
   Array.from({ length: 4 }, (_, index) => sessionDisasters.value[index] ?? null),
 )
+const resolvedDisasterIds = computed(() => new Set((props.game.removedDisasters ?? []).map(card => card.instanceId)))
+function sessionDisasterState(card: DisasterCardView | null) {
+  if (!card || card.hidden) return 'unrevealed'
+  if (card.instanceId === props.game.activeDisaster?.instanceId) return 'active'
+  if (resolvedDisasterIds.value.has(card.instanceId)) return 'resolved'
+  return 'revealed'
+}
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
@@ -766,29 +777,31 @@ function statusTexts(card: Card) {
 
 <template>
   <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }">
-    <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-readable': `${14 / Math.min(1, scale)}px` }">
+    <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
-          <section v-if="sessionDisasters.length" class="grand-panel session-disaster-panel" aria-label="本局天灾">
-            <h3>本局天灾</h3>
-            <div class="session-disaster-strip">
-              <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
-                :class="{ hidden: !card || card.hidden, inactive: card && !card.hidden && card.instanceId !== game.activeDisaster?.instanceId, replaceable: game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 }" :disabled="!card || card.hidden" :title="card && !card.hidden ? (game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 ? `${card.name} · 点击更换` : card.name) : '未揭示天灾'"
-                @click="card && focusSessionDisaster(card, index)" @mouseenter="card && isVisibleDisasterCard(card) && (focusCard = card)">
-                <img v-if="!card || card.hidden" :src="destructionRoundBackUrl" alt="未揭示天灾"/>
-                <img v-else :src="disasterRoundUrl(card.cardId, card.imageUrl)" :alt="card.name || '天灾'"/>
-              </button>
-            </div>
-          </section>
-          <div class="left-detail-layout">
-            <div class="left-card-column">
-              <section class="grand-panel current-disaster-panel" data-ui-contract="left-current-disaster">
+          <div v-if="sessionDisasters.length" class="left-disaster-row">
+            <section class="grand-panel session-disaster-panel" aria-label="本局天灾">
+              <h3>本局天灾</h3>
+              <div class="session-disaster-strip">
+                <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
+                  :class="[sessionDisasterState(card), { hidden: !card || card.hidden, replaceable: game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 }]" :disabled="!card || card.hidden" :title="card && !card.hidden ? (game.disasterMode === 'custom' && l12State.gmEnabled && index < 3 ? `${card.name} · 点击更换` : card.name) : '未揭示天灾'"
+                  @click="card && focusSessionDisaster(card, index)" @mouseenter="card && isVisibleDisasterCard(card) && (focusCard = card)">
+                  <img v-if="!card || card.hidden" :src="destructionRoundBackUrl" alt="未揭示天灾"/>
+                  <img v-else :src="disasterRoundUrl(card.cardId, card.imageUrl)" :alt="card.name || '天灾'"/>
+                </button>
+              </div>
+            </section>
+            <section class="grand-panel current-disaster-panel" data-ui-contract="left-current-disaster">
                 <button type="button" class="current-disaster-card" :disabled="!game.activeDisaster"
                   @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
                   <CardImage v-if="game.activeDisaster" :card-id="game.activeDisaster.cardId" :legacy-url="game.activeDisaster.imageUrl" :alt="game.activeDisaster.name" intent="board" eager />
                   <img v-else src="/assets/l12/card-back-disaster.png" alt="天灾牌背" />
                 </button>
-              </section>
+            </section>
+          </div>
+          <div class="left-detail-layout">
+            <div class="left-card-column">
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
               <Teleport to="body" :disabled="!modalInspectorVisible">
                 <div class="board-rail inspector-style-scope">
@@ -831,7 +844,7 @@ function statusTexts(card: Card) {
           <HandArea v-else class="opponent-hand" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="board-status-lane opponent-status-lane" data-ui-contract="opponent-status-safe-lane">
             <PlayerTurnClock class="board-player-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
-              :active="game.activePlayer === viewEnemy.playerIndex" :ranked-clock="l12State.rankedClock" />
+              :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
@@ -933,7 +946,7 @@ function statusTexts(card: Card) {
           </div>
           <div class="board-status-lane my-status-lane" data-ui-contract="player-status-safe-lane">
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
-              :active="game.activePlayer === viewMe.playerIndex" :ranked-clock="l12State.rankedClock" />
+              :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
           <HandArea :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
@@ -944,23 +957,21 @@ function statusTexts(card: Card) {
         <aside class="board-rail right-rail">
           <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
             <article class="player-summary opponent-summary">
-              <header><h3>对方</h3><span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span></header>
-              <strong>{{ viewEnemy.name || '未命名玩家' }}</strong>
-              <dl>
-                <div><dt>主宰</dt><dd>{{ viewEnemy.master.masterName || '未知主宰' }}</dd></div>
-                <div><dt>血量</dt><dd>{{ viewEnemy.master.hp }}/{{ viewEnemy.master.maxHp }}</dd></div>
-              </dl>
-              <small v-if="enemyBadge?.rankLabel || enemyBadge?.masterTitle" class="battle-title"><b v-if="enemyBadge?.rankLabel">{{ enemyBadge.rankLabel }}</b><i v-if="enemyBadge?.masterTitle">{{ enemyBadge.masterTitle }}</i></small>
+              <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
+              <div class="player-summary-meta">
+                <RankedIdentityBadge class="rank-badge" variant="tier" compact :label="enemyBadge?.rankLabel || '未定级'" />
+                <RankedIdentityBadge class="title-badge" variant="title" compact :label="enemyBadge?.masterTitle || '暂无称号'" />
+                <span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span>
+              </div>
             </article>
             <hr/>
             <article class="player-summary my-summary">
-              <header><h3>我方</h3><span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span></header>
-              <strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong>
-              <dl>
-                <div><dt>主宰</dt><dd>{{ viewMe.master.masterName || '未知主宰' }}</dd></div>
-                <div><dt>血量</dt><dd>{{ viewMe.master.hp }}/{{ viewMe.master.maxHp }}</dd></div>
-              </dl>
-              <small v-if="myBadge?.rankLabel || myBadge?.masterTitle" class="battle-title"><b v-if="myBadge?.rankLabel">{{ myBadge.rankLabel }}</b><i v-if="myBadge?.masterTitle">{{ myBadge.masterTitle }}</i></small>
+              <div class="player-summary-primary"><b>我方</b><strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong></div>
+              <div class="player-summary-meta">
+                <RankedIdentityBadge class="rank-badge" variant="tier" compact :label="myBadge?.rankLabel || '未定级'" />
+                <RankedIdentityBadge class="title-badge" variant="title" compact :label="myBadge?.masterTitle || '暂无称号'" />
+                <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
+              </div>
             </article>
           </section>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
@@ -1012,16 +1023,16 @@ function statusTexts(card: Card) {
 <style scoped>
 .board-stage{aspect-ratio:16/9}
 .board-viewport.gm-panel-docked{right:344px}
-.stage-layout{display:grid;grid-template-columns:340px 92px minmax(0,1fr) 300px;align-items:stretch;gap:8px}
+.stage-layout{display:grid;grid-template-columns:340px 92px minmax(0,1fr) 320px;align-items:stretch;gap:8px}
 .stage-layout>.board-rail{width:auto;min-width:0}
 .left-rail{display:flex}.left-detail-layout{display:flex;min-height:0;flex:1}.left-card-column{display:flex;width:100%;min-width:0;min-height:0;flex-direction:column;gap:10px}.left-rail>.grand-panel,.left-card-column>.grand-panel,.left-card-column>.card-inspector-anchor{box-sizing:border-box;width:100%}.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto;align-items:stretch}
-.current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-readable,14px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
+.current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;margin-block:242px;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-copy,13px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
 .board-center{--l12-hand-lane-height:160px;display:grid;grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height);align-items:stretch;gap:6px}
-.board-center>.l12-hand{box-sizing:border-box;width:100%;height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);align-self:stretch}
-.board-center.timed-board>.l12-hand:not(.hidden){width:calc(100% - 232px);padding-right:72px;justify-self:start}
+.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:100%;height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);align-self:stretch;transform:translateX(-10px)}
+.board-center.timed-board>.l12-hand{width:calc(100% - 400px);padding-right:0;justify-self:center}
 .board-center>.opponent-hand{grid-row:1}.opponent-status-lane{grid-row:2}.felt-board{grid-row:3}.my-status-lane{grid-row:4}.board-center>.l12-hand:last-child{grid-row:5}
-.board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(dt,dd,.connection-state,.battle-title b,.battle-title i){font-size:var(--l12-board-readable,14px)!important}.player-summary dl>div{grid-template-columns:3em minmax(0,1fr)!important}
-.right-rail{width:auto}.player-summary dl>div{grid-template-columns:3em minmax(0,1fr)}.player-summary header{flex-wrap:wrap}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
+.board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
+.right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
 .felt-board{
   --l12-board-seam-safe-height:44px;
   box-sizing:border-box;
@@ -1032,11 +1043,10 @@ function statusTexts(card: Card) {
   align-items:stretch;
 }
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
-.player-panel{box-sizing:border-box;height:auto!important;min-height:286px;flex:none;overflow:visible!important}
-.player-summary{display:grid;min-width:0;gap:6px}.player-summary header{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:8px}.player-summary header h3{margin:0}.player-summary strong{max-width:none!important;overflow:visible!important;white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere;word-break:break-word;line-height:1.35!important}
-.player-summary dl{display:grid;gap:3px;margin:0}.player-summary dl>div{display:grid;grid-template-columns:31px minmax(0,1fr);gap:5px;align-items:start}.player-summary dt{color:#687270;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}.player-summary dd{min-width:0;margin:0;color:#c8ccc8;font-size:max(14px,var(--l12-board-readable,14px));font-weight:800;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
-.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:max(14px,var(--l12-board-readable,14px))!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
-.player-panel>hr{margin:9px 0!important}.player-summary .battle-title{display:flex;min-width:0;flex-wrap:wrap;gap:4px;margin-top:1px}.player-summary .battle-title b,.player-summary .battle-title i{max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.player-panel{box-sizing:border-box;height:auto!important;min-height:144px;flex:none;overflow:hidden!important}
+.player-summary{display:grid;min-width:0;gap:7px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:6px}.player-summary-primary>b{color:#d2525b;font-size:var(--l12-board-copy,13px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(15px,var(--l12-board-copy,13px))!important;line-height:1.35!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:grid;min-width:0;grid-template-columns:max-content max-content minmax(0,1fr);align-items:center;column-gap:4px;color:#aeb7b5;font-size:var(--l12-board-copy,13px);line-height:1.35}.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-self:end;justify-content:flex-end;margin-left:0!important;font-size:clamp(9px,var(--l12-board-micro,9px),11px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:var(--l12-board-copy,13px)!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}
 .battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch;justify-self:center}
 .battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
@@ -1046,23 +1056,24 @@ function statusTexts(card: Card) {
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
 .board-midline-anchor{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(238,238,228,.35),transparent)}
 .battlefield-half.my-half{grid-row:3}
-.felt-board :deep(.formation){width:100%;height:318px;grid-template-columns:repeat(3,157px);grid-template-rows:repeat(2,157px);justify-content:center;gap:4px 8px}
-.felt-board :deep(.formation-slot .card-tile),.felt-board :deep(.formation-slot .card-tile.tapped){width:104px;height:146px;flex-basis:104px}
-.felt-board :deep(.formation-slot .field-actions){bottom:calc(50% + 79px)}
-.session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
-.board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;pointer-events:auto}.board-mode-hint button{min-width:58px;min-height:44px;padding:6px 12px;border:1px solid #747d7b;background:#171b1c;color:#f1eee4;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900}.board-mode-hint button:hover{border-color:#e0b85a;background:#292419}
-.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;letter-spacing:.04em;text-align:center}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
-.combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:max(14px,var(--l12-board-readable,14px))}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-readable,14px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:max(14px,var(--l12-board-readable,14px))}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
-.record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:max(14px,var(--l12-board-readable,14px));white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:max(14px,var(--l12-board-readable,14px));line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
-.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:max(14px,var(--l12-board-readable,14px))}.board-target-controls span{color:#8f9894;font-size:max(14px,var(--l12-board-readable,14px))}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
+.felt-board :deep(.formation){width:100%;height:350px;grid-template-columns:repeat(3,173px);grid-template-rows:repeat(2,173px);justify-content:end;gap:4px 8px}
+.felt-board :deep(.formation-slot .card-tile),.felt-board :deep(.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}
+.felt-board :deep(.formation-slot .field-actions){bottom:calc(50% + 86.5px)}
+.session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:var(--l12-board-copy,13px);font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
+.board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.board-mode-hint button{min-width:58px;min-height:44px;padding:6px 12px;border:1px solid #747d7b;background:#171b1c;color:#f1eee4;font-size:var(--l12-board-copy,13px);font-weight:900}.board-mode-hint button:hover{border-color:#e0b85a;background:#292419}
+.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
+.combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:var(--l12-board-copy,13px)}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-copy,13px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:var(--l12-board-copy,13px)}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
+.record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:var(--l12-board-copy,13px);white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:var(--l12-board-copy,13px);line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
+.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:var(--l12-board-copy,13px)}.board-target-controls span{color:#8f9894;font-size:var(--l12-board-copy,13px)}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
-.inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:800;line-height:1.45}
-.inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;white-space:nowrap}
-.session-disaster-panel{display:grid;min-height:126px;align-content:start;justify-items:start;padding:12px 14px!important}.session-disaster-strip{display:flex;width:100%;align-items:center;gap:10px}.session-disaster-strip button{width:64px;min-width:64px;height:64px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden{border-color:#49504e;filter:brightness(.72)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 10px rgba(115,212,197,.45)}
+.inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.45}
+.inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}
+.left-disaster-row{display:grid;width:100%;grid-template-columns:132px minmax(0,1fr);gap:8px;flex:none}.left-disaster-row>.grand-panel{box-sizing:border-box;width:100%;min-width:0;min-height:178px}.session-disaster-panel{display:grid;align-content:center;justify-items:center;padding:8px!important}.session-disaster-panel h3{width:100%;margin:0 0 8px}.session-disaster-strip{display:grid;width:max-content;grid-template-columns:repeat(2,51.2px);gap:8px}.session-disaster-strip button{width:51.2px;min-width:51.2px;height:51.2px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden,.session-disaster-strip button.unrevealed{border-color:#49504e;filter:grayscale(1) brightness(.58)}.session-disaster-strip button.revealed{border-color:#69716f;filter:grayscale(.85) brightness(.58)}.session-disaster-strip button.resolved{border-color:#76508f;box-shadow:0 0 8px rgba(133,75,174,.28);filter:grayscale(.35) brightness(.64) saturate(.82)}.session-disaster-strip button.active{border-color:#bc6cff;box-shadow:0 0 13px rgba(187,87,255,.72),inset 0 0 0 1px rgba(231,202,255,.42);filter:none}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#d49aff;box-shadow:0 0 11px rgba(190,102,255,.52)}.left-disaster-row>.current-disaster-panel{display:grid;place-items:center;padding:10px!important}
+.session-disaster-panel h3{text-align:center}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.inspector-card-image{display:block;width:168px;height:235px;max-width:100%;flex:0 0 235px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(168px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
 .inspector-style-scope{display:contents!important}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
-.dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-readable,14px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
+.dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
-.battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:max(14px,var(--l12-board-readable,14px));font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
+.battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
 </style>

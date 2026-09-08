@@ -58,7 +58,7 @@ watch(visible, values => {
         </button>
         <p v-if="!visible.length">没有符合筛选条件的卡牌</p>
       </div>
-      <aside v-if="selected"><CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/><small>{{ selected.number }}</small><h4>{{ selected.nameZh }}</h4><p>{{ cardTypeLabel(cardTypeFilterKey(selected.cardType)) }} · {{ selected.faction }}</p><div>{{ selected.effect || '无效果文字' }}</div></aside>
+      <aside v-if="selected"><CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/><small>{{ selected.number }}</small><h4>{{ selected.nameZh }}</h4><p>{{ cardTypeLabel(selected.cardType) }} · {{ selected.faction }}</p><div>{{ selected.effect || '无效果文字' }}</div></aside>
     </div>
   </section>
 </template>

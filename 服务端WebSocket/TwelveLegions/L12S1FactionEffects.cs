@@ -1107,13 +1107,15 @@ public sealed partial class L12GameEngine
             }
             case "sunDraw": Draw(player, 1); FinishStackItem(item); return true;
             case "asgardDraw":
+                var drawn = player.Library.FirstOrDefault();
                 Draw(player, 1);
                 BeginOptionalPaidEffectFollowup(item,
                     player.Hp <= 5,
                     1,
                     "若我方主宰血量不高于5，可额外消耗1士气：我方主宰增加1点血量。",
                     "heal-master",
-                    new Dictionary<string, string> { ["amount"] = "1", ["reason"] = "阿斯加德阵营效果" });
+                    new Dictionary<string, string> { ["amount"] = "1", ["reason"] = "阿斯加德阵营效果" },
+                    drawn);
                 return true;
             case "alvidaSummon":
             {
@@ -1741,14 +1743,8 @@ public sealed partial class L12GameEngine
         card.SummonRound = State.Round;
         destination.Field[row][slot] = card;
         AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
-        ApplyDisasterLevelOnEntry(destinationPlayerIndex, card, deferTriggerUntilStackSettles: true);
-        if (fromHand)
-        {
-            if (HasImmediateEffect(card, "enter"))
-                QueueOrPushTriggeredEffect(destinationPlayerIndex, card, "enter", "【登场时】效果");
-            QueueS2GrailRoundTableEntry(destinationPlayerIndex, card);
-        }
-        else QueueNonHandEntry(destinationPlayerIndex, card, fromLibrary ? "library" : "graveyard");
+        CompleteEffectLegionEntry(destinationPlayerIndex, card,
+            fromHand ? "hand" : fromLibrary ? "library" : "graveyard");
         return true;
     }
 

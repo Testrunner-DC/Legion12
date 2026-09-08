@@ -12,7 +12,8 @@ internal sealed record L12RankedRuntimeCheckpoint(
     long[] TotalRemainingMs, long[] OperationRemainingMs, bool[] Acting,
     DateTimeOffset LastSettledAt, string? ConclusionKind, bool AuthorityEventRecorded,
     bool[] Connected, DateTimeOffset?[] DisconnectedAt,
-    string[] IntegrityClientKeys, long[] ConnectionGenerations, DateTimeOffset UpdatedAt);
+    string[] IntegrityClientKeys, long[] ConnectionGenerations, DateTimeOffset UpdatedAt,
+    L12RankedTimeControlConfig? TimeControl = null);
 
 internal sealed record L12RankedSettlementEnvelope(
     int Version, string MatchId, string FirstAccountId, string SecondAccountId,
@@ -104,6 +105,14 @@ public sealed partial class MatchRecorder
         if (runtime.TotalRemainingMs.Any(value => value < 0)
             || runtime.OperationRemainingMs.Any(value => value < 0))
             throw new InvalidDataException("排位计时快照不能为负数");
+        try
+        {
+            _ = L12PlatformStore.NormalizeRankedTimeControl(runtime.TimeControl);
+        }
+        catch (L12OperationsConfigException error)
+        {
+            throw new InvalidDataException("排位计时配置快照无效", error);
+        }
     }
 
     private static void ValidateSettlement(L12RankedSettlementEnvelope payload)

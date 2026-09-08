@@ -16,7 +16,7 @@ public sealed class RankedMasterTitleProjectionTests
             Guid.NewGuid().ToString("N"), "platform.json");
         var catalog = Catalog;
         var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
-        var candidate = store.Register("window-candidate", "Password123!").Account!;
+        var candidate = store.Register("twindo582e7", "Password123!").Account!;
         var now = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
         var facts = CandidateFacts("window", candidate.Id, 20, now).ToList();
         facts[0] = facts[0] with { EndedAt = now - L12PlatformStore.RankedMasterTitleWindow };
@@ -50,7 +50,7 @@ public sealed class RankedMasterTitleProjectionTests
         var store = new L12PlatformStore(Path.Combine(Path.GetTempPath(), "l12-master-title-mirror",
             Guid.NewGuid().ToString("N"), "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var candidate = store.Register("mirror-candidate", "Password123!").Account!;
+        var candidate = store.Register("tmirro3795c", "Password123!").Account!;
         var now = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
         var personal = CandidateFacts("mirror-personal", candidate.Id, 20, now,
             secondMaster: TargetMaster);
@@ -108,8 +108,8 @@ public sealed class RankedMasterTitleProjectionTests
             officialCards: catalog.Cards);
         var accounts = new[]
         {
-            store.Register("zzz-nickname", "Password123!").Account!,
-            store.Register("aaa-nickname", "Password123!").Account!,
+            store.Register("tzzzni774d9", "Password123!").Account!,
+            store.Register("taaani84fd1", "Password123!").Account!,
         };
         var expected = accounts.OrderBy(account => account.Id, StringComparer.Ordinal).First();
         var now = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
@@ -130,7 +130,7 @@ public sealed class RankedMasterTitleProjectionTests
         var store = new L12PlatformStore(Path.Combine(Path.GetTempPath(), "l12-master-title-upgrade",
             Guid.NewGuid().ToString("N"), "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var candidate = store.Register("upgrade-candidate", "Password123!").Account!;
+        var candidate = store.Register("tupgra7f271", "Password123!").Account!;
         var now = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
         var incomplete = Fact("upgrade-match", candidate.Id, "upgrade-opponent", 0, 0, now);
         var complete = incomplete with { FinalRound = 6 };

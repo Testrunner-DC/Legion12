@@ -342,10 +342,10 @@ public sealed class TournamentFullFlowTests
             var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
                 officialCards: catalog.Cards);
-            var organizer = store.Register("RoomFlowHost", "password-123").Account!;
-            var player = store.Register("RoomFlowPlayer", "password-123").Account!;
-            var outsider = store.Register("RoomFlowOutside", "password-123").Account!;
-            var referee = store.Register("RoomFlowJudge", "password-123").Account!;
+            var organizer = store.Register("troomf68569", "password-123").Account!;
+            var player = store.Register("troomf35d5f", "password-123").Account!;
+            var outsider = store.Register("troomf5f5ec", "password-123").Account!;
+            var referee = store.Register("troomfdc6b4", "password-123").Account!;
             MakeFriends(store, organizer, referee);
             var tournament = CreateAndRegister(store, organizer, [player],
                 Payload("single") with { RefereeAccountIds = [referee.Id] });
@@ -571,7 +571,7 @@ public sealed class TournamentFullFlowTests
             var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "ShareLink");
             var tournament = CreateAndRegister(store, organizer, players,
                 Payload("swiss") with { Visibility = "code" });
-            var visitor = store.Register("ShareLinkVisitor", "password-123").Account!;
+            var visitor = store.Register("tshare0731d", "password-123").Account!;
 
             Assert.DoesNotContain(store.Tournaments(visitor, null, null, false).Items,
                 item => item.Id == tournament.Id);
@@ -594,9 +594,10 @@ public sealed class TournamentFullFlowTests
         var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
         var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var organizer = store.Register($"{prefix}Host", "password-123").Account!;
+        var fixturePrefix = $"t{prefix[..Math.Min(6, prefix.Length)]}";
+        var organizer = store.Register($"{fixturePrefix}H", "password-123").Account!;
         var players = Enumerable.Range(2, totalPlayers - 1)
-            .Select(index => store.Register($"{prefix}P{index}", "password-123").Account!).ToArray();
+            .Select(index => store.Register($"{fixturePrefix}P{index}", "password-123").Account!).ToArray();
         return (store, organizer, players);
     }
 

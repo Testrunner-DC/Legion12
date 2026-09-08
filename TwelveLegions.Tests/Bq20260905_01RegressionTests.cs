@@ -235,4 +235,39 @@ public sealed class Bq20260905_01RegressionTests
         Assert.Contains(warrior, player.Library);
         Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == hammer.InstanceId);
     }
+
+    [Fact]
+    public void ThorHammerLetsTwoWarriorsRepresentItsThreeCardGraveCost()
+    {
+        var game = CreateWithFirstMaster("S02-03M1", 90505);
+        var player = game.State.Players[0];
+        var hammer = Card("S02-0301", "thor-hammer-two-warriors");
+        var first = Card("ST03-08", "thor-hammer-warrior-first");
+        var second = Card("ST03-08", "thor-hammer-warrior-second");
+        player.Graveyard.AddRange([hammer, first, second]);
+
+        var begin = game.Handle(0, new L12Command("activateAbility", hammer.InstanceId,
+            Ability: "thorHammerRevive"));
+        Assert.True(begin.Accepted, begin.Error);
+        ChooseMany(game, first.InstanceId, second.InstanceId);
+
+        var firstCount = Assert.Single(game.State.PendingPrompts);
+        var firstAsOne = Assert.Single(firstCount.ValidChoices,
+            choice => firstCount.ChoiceLabels[choice].Contains("视为1张", StringComparison.Ordinal));
+        Choose(game, firstAsOne);
+
+        var secondCount = Assert.Single(game.State.PendingPrompts);
+        var secondAsTwo = Assert.Single(secondCount.ValidChoices,
+            choice => secondCount.ChoiceLabels[choice].Contains("视为2张", StringComparison.Ordinal));
+        Choose(game, secondAsTwo);
+
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Choose(game, slotPrompt.ValidChoices[0]);
+        PassResponses(game);
+
+        Assert.DoesNotContain(first, player.Graveyard);
+        Assert.DoesNotContain(second, player.Graveyard);
+        Assert.Equal([first.InstanceId, second.InstanceId], player.Library.Select(card => card.InstanceId));
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == hammer.InstanceId);
+    }
 }

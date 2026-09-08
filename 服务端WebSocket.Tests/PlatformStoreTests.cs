@@ -186,7 +186,7 @@ public sealed partial class PlatformStoreTests
             var path = Path.Combine(root, "platform.json");
             var store = new L12PlatformStore(path);
             var admin = store.Login("Admin", "L12master").Account!;
-            var editor = store.Register("ContentEditor", "password-123").Account!;
+            var editor = store.Register("tconteb4845", "password-123").Account!;
             Assert.True(store.SetRole(admin, editor.Id, "admin"));
 
             var draft = store.SaveContentDraft(admin, "home.hero.title", "新的首页标题");
@@ -198,7 +198,7 @@ public sealed partial class PlatformStoreTests
 
             var review = store.SaveEffectReview(admin, "S01-0001", "S01-0001:A1", "confirmed", "已核对规则书");
             Assert.Equal("confirmed", review.Status);
-            Assert.Contains(store.AdminAudit(), row => row.Category == "account" && row.Target == "ContentEditor");
+            Assert.Contains(store.AdminAudit(), row => row.Category == "account" && row.Target == "tconteb4845");
             Assert.Contains(store.AdminAudit("content"), row => row.Action == "publish" && row.Target == "home.hero.title");
             Assert.Contains(store.AdminAudit("effect"), row => row.Comment == "已核对规则书");
 

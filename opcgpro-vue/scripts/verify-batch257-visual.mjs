@@ -44,7 +44,9 @@ const profile = {
 }
 const rankedOverview = {
   profile, factionTotals: { 秩序: 10642, 混沌: 21858, 命运: 57131 },
-  config: { placementMatches: 5, placementMaximum: 15000, broadcastEnabled: true, factions, masterTitles: [] }, history: [],
+  config: { placementMatches: 5, placementMaximum: 15000, broadcastEnabled: true, factions, masterTitles: [],
+    timeControl: { totalTimeSeconds: 7200, operationTimeSeconds: 900, reconnectGraceSeconds: 900,
+      disasterDecisionSeconds: 300, mulliganDecisionSeconds: 300 } }, history: [],
 }
 rankedApi.overview = async () => rankedOverview
 rankedApi.history = async () => []
@@ -149,9 +151,9 @@ try {
     heights: [...document.querySelectorAll('.matrix-rank-cell,.matrix-row-head,.matrix-cell')].map(element => element.getBoundingClientRect().height),
   }))
   if (matrix.firstHeading !== '排名') throw new Error('Ranking is not the first matchup column')
-  if (!closeEnough([...matrix.headerWidths, ...matrix.rowWidths]) || Math.abs(matrix.headerWidths[0] - 104) > 1) throw new Error('Master matchup columns are not equal 104px columns')
+  if (!closeEnough([...matrix.headerWidths, ...matrix.rowWidths]) || Math.abs(matrix.headerWidths[0] - 114) > 1) throw new Error('Master matchup columns are not equal 114px columns')
   if (!matrix.emptyLabels.length || matrix.emptyLabels.some(label => label.replace(/\s+/g, '') !== '等待更多对局')) throw new Error('Empty matchup cells do not show the required two-line label')
-  if (matrix.heights.some(height => Math.abs(height - 62) > 1)) throw new Error(`Matchup rows changed from 62px: ${matrix.heights.join(', ')}`)
+  if (matrix.heights.some(height => Math.abs(height - 76) > 1)) throw new Error(`Matchup rows changed from 76px: ${matrix.heights.join(', ')}`)
   await page.screenshot({ path: path.join(output, 'rankings-matrix-1280.png'), fullPage: true })
 
   await page.goto(base)
@@ -167,6 +169,27 @@ try {
   const activeText = (await page.locator('.maintenance-banner').textContent()).replace(/\s+/g, ' ').trim()
   if (!activeText.includes('服务器维护中') || !activeText.includes('结束时间待定')) throw new Error('Active maintenance without endsAt is not explained')
   await page.screenshot({ path: path.join(output, 'maintenance-active-open-ended.png'), fullPage: true })
+
+  for (const [width, height] of [[1920, 1080], [1280, 720], [760, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height })
+    await page.goto(base)
+    await page.locator('.faction-totals--overview').waitFor()
+    await page.getByRole('button', { name: '排位规则', exact: true }).click()
+    await page.locator('.ranked-rules-modal').waitFor()
+    const rules = await page.locator('.ranked-rules-modal').evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      const text = element.textContent?.replace(/\s+/g, ' ').trim() || ''
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+        width: rect.width, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, text }
+    })
+    if (rules.left < -1 || rules.right > width + 1 || rules.top < -1 || rules.bottom > height + 1)
+      throw new Error(`Ranked timing rules leave viewport at ${width}x${height}`)
+    if (rules.scrollWidth > rules.clientWidth + 1) throw new Error(`Ranked timing rules overflow horizontally at ${width}x${height}`)
+    for (const expected of ['120 分钟', '15 分钟', '5 分钟', '超时由服务器从合法候选中自动选择', '超时保留原手牌'])
+      if (!rules.text.includes(expected)) throw new Error(`Ranked timing rules miss ${expected} at ${width}x${height}`)
+    if (rules.text.includes('总操作时间25分钟')) throw new Error('Ranked timing rules retained the stale fixed limit')
+    await page.screenshot({ path: path.join(output, `ranked-time-control-${width}x${height}.png`), fullPage: false })
+  }
 
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto(`${base}?shell=1`)

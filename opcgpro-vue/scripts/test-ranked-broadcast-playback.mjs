@@ -95,6 +95,12 @@ const vite = await createServer({
         export const authState = reactive(source.authState)
         export const platformState = reactive(source.platformState)
         export const rankedApi = source.rankedApi
+        export const DEFAULT_RANKED_BROADCAST_CONFIG = {
+          displaySeconds: 16, lobbyDelaySeconds: 3, intervalSeconds: 15,
+          winStreakThreshold: 5, streakEndedThreshold: 5, minimumTierIndex: 0,
+          winStreakEnabled: true, streakEndedEnabled: true, highestTierEnabled: true,
+          factionTitleEnabled: true, masterTitleEnabled: true,
+        }
         export class PlatformRequestError extends Error {
           constructor(message, status, code = '', correlationId = '') {
             super(message); this.status = status; this.code = code; this.correlationId = correlationId

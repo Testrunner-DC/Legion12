@@ -854,6 +854,55 @@ public sealed class RankedPersistenceRecoveryTests
             (await restoredRecorder.GetMatchAsync(healthy.MatchId))!.Match.MatchId);
     }
 
+    [Fact]
+    public async Task LegacyRuntimeWithoutTimeControlRestoresHistoricalDefaultInsteadOfCurrentAdminValue()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("legacy-time-control");
+        var admin = fixture.Platform.Login("Admin", "L12master").Account!;
+        var config = fixture.Platform.RankedConfig(admin);
+        fixture.Platform.UpdateRankedConfig(admin, config with
+        {
+            TimeControl = new L12RankedTimeControlConfig(2100, 360, 210, 80, 100),
+        }, "模拟旧快照后的新配置", new L12AdminAuditContext("legacy-time-control"));
+
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var read = connection.CreateCommand();
+            read.CommandText = "SELECT checkpoint_json FROM ranked_match_runtime WHERE match_id=$match;";
+            read.Parameters.AddWithValue("$match", fixture.MatchId);
+            var runtime = JsonNode.Parse((string)(await read.ExecuteScalarAsync())!)!.AsObject();
+            Assert.True(runtime.Remove("TimeControl"));
+            var runtimeJson = runtime.ToJsonString();
+            var runtimeHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(runtimeJson))).ToLowerInvariant();
+            var update = connection.CreateCommand();
+            update.CommandText = "UPDATE ranked_match_runtime SET checkpoint_json=$json,checkpoint_hash=$hash WHERE match_id=$match;";
+            update.Parameters.AddWithValue("$json", runtimeJson);
+            update.Parameters.AddWithValue("$hash", runtimeHash);
+            update.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, fixture.ReloadPlatform(),
+            () => fixture.Clock.UtcNow);
+        var summary = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(1, summary.Restored);
+        var replacement = Guid.NewGuid();
+        await restored.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+        var message = (await restored.RecoveryStateWithAckAsync(replacement, recovered: true))
+            .Where(item => item.SessionId == replacement).Select(MessageJson)
+            .Single(payload => payload.GetProperty("type").GetString() == "gameState");
+        var clock = message.GetProperty("rankedClock");
+        Assert.Equal(1_500_000, clock.GetProperty("totalLimitMs").GetInt64());
+        Assert.Equal(240_000, clock.GetProperty("reconnectLimitMs").GetInt64());
+        Assert.Equal(60, clock.GetProperty("timeControl").GetProperty("disasterDecisionSeconds").GetInt32());
+        Assert.Equal(60, clock.GetProperty("timeControl").GetProperty("mulliganDecisionSeconds").GetInt32());
+    }
+
     private static JsonElement MessageJson(OutgoingMessage message)
         => JsonSerializer.SerializeToElement(message.Payload, WebJson);
 

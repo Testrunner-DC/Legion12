@@ -6,7 +6,7 @@ import GmPanel from './game/GmPanel.vue'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
-import { gameAction, l12State, leaveRoom, returnToRoom } from './net'
+import { gameAction, l12State, leaveRoom } from './net'
 
 const router = useRouter()
 const game = computed(() => l12State.game)
@@ -61,10 +61,14 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
-  const tournamentCode = l12State.room?.tournamentCode ?? game.value?.tournamentCode
-  if (l12State.spectating || l12State.room?.sandbox || l12State.room?.tournamentId || game.value?.tournamentId) leaveRoom()
-  else if (l12State.room && game.value?.phase === 'GameOver') returnToRoom()
-  router.push(tournamentCode ? { path: '/battle/tournaments', query: { code: tournamentCode } } : '/lobby')
+  const tournamentCode = l12State.room?.tournamentCode
+  if (game.value?.phase === 'GameOver') {
+    leaveRoom()
+    router.push('/lobby')
+    return
+  }
+  if (l12State.spectating || l12State.room?.sandbox || tournamentCode) leaveRoom()
+  router.push(tournamentCode ? `/battle/tournaments?code=${encodeURIComponent(tournamentCode)}` : '/lobby')
 }
 </script>
 

@@ -42,5 +42,5 @@ function selectCard(card: Card) {
 </template>
 
 <style scoped>
-.graveyard-card-entry{position:relative}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:5px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
+.graveyard-card-entry{position:relative}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:5px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
 </style>

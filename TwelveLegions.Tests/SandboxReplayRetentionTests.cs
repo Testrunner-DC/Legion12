@@ -71,7 +71,7 @@ public sealed class SandboxReplayRetentionTests
 
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
-        var player = platform.Register("sandbox-api-player", "Password123!").Account!;
+        var player = platform.Register("tsandb04a63", "Password123!").Account!;
         var bug = platform.AddBug(player, "沙盒回放问题", "用于验证过期后 Bug 主记录仍保留", "/sandbox",
             game.State.RoomCode, game.State.MatchId, "test-client");
         var manager = new L12RoomManager(catalog, recorder, platform, () => now);

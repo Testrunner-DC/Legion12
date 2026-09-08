@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
-import { canAccessAdmin, changePassword, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, rankedApi, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession, type RankedOverview } from '@/l12/platform'
+import { canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, rankedApi, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession, type RankedOverview } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 
@@ -13,6 +13,8 @@ const notice = ref('')
 const authNotice = ref('')
 const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '', currentPassword: '', newPassword: '' })
+const usernameChange = reactive({ username: '', currentPassword: '' })
+const usernameChangeNotice = ref('')
 const emailForm = reactive({ email: '', currentPassword: '' })
 const authBusy = ref(false)
 const route = useRoute()
@@ -26,7 +28,7 @@ const selectedMasterTitle = ref('')
 const masterTitleRulesOpen = ref(false)
 
 async function loadAccountData() {
-  if (!platformState.account || platformState.account.mustChangePassword) return
+  if (!platformState.account || platformState.account.mustChangePassword || platformState.account.mustChangeUsername) return
   const [matchResult, sessionResult, rankedResult] = await Promise.allSettled([
     platformRequest<Match[]>('/api/matches?limit=200'), sessionApi.list(), rankedApi.overview(),
   ])
@@ -49,7 +51,7 @@ async function saveRankedTitle() {
   finally { authBusy.value = false }
 }
 async function loadEmailStatus() {
-  if (!emailFeatureEnabled.value || !platformState.account || platformState.account.mustChangePassword) { emailStatus.value = null; return }
+  if (!emailFeatureEnabled.value || !platformState.account || platformState.account.mustChangePassword || platformState.account.mustChangeUsername) { emailStatus.value = null; return }
   try { emailStatus.value = await emailApi.status() } catch { emailStatus.value = null }
 }
 async function loadEmailCapability() {
@@ -88,6 +90,11 @@ async function submitAuth() {
     if (authMode.value === 'login') await login(auth.username, auth.password)
     else await register(auth.username, auth.password)
     authenticationCompleted = Boolean(platformState.account)
+    if (platformState.account?.mustChangeUsername) {
+      notice.value = '当前用户名不符合规则，必须先修改用户名'
+      auth.password = ''
+      return
+    }
     if (platformState.account?.mustChangePassword) {
       notice.value = '当前使用管理员临时密码登录，必须先在下方修改密码'
       auth.password = ''
@@ -110,6 +117,24 @@ async function submitAuth() {
       notice.value = `账号已登录，但后续数据同步失败：${error instanceof Error ? error.message : '请稍后重试'}`
     else authNotice.value = authenticationFailureMessage(error)
   }
+  finally { authBusy.value = false }
+}
+async function submitUsernameChange() {
+  if (authBusy.value) return
+  authBusy.value = true; usernameChangeNotice.value = ''
+  try {
+    const result = await changeUsername(usernameChange.currentPassword, usernameChange.username)
+    usernameChange.currentPassword = ''; usernameChange.username = ''
+    notice.value = result.message
+    if (!platformState.account?.mustChangePassword) {
+      await ensureOfficialPrebuiltDecks()
+      await loadAccountData()
+      await loadEmailCapability()
+      const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+        && !route.query.redirect.startsWith('//') ? route.query.redirect : ''
+      if (redirect) await router.replace(redirect)
+    }
+  } catch (error) { usernameChangeNotice.value = error instanceof Error ? error.message : '用户名修改失败' }
   finally { authBusy.value = false }
 }
 async function submitPassword() {
@@ -193,7 +218,7 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
       <template v-if="!platformState.account">
         <div class="auth-tabs"><button type="button" :disabled="authBusy" :class="{ active: authMode === 'login' }" @click="selectAuthMode('login')">登录</button><button type="button" :disabled="authBusy" :class="{ active: authMode === 'register' }" @click="selectAuthMode('register')">注册</button></div>
         <form class="account-form auth-form" :aria-busy="authBusy" @submit.prevent="submitAuth">
-          <label>用户名<input v-model="auth.username" maxlength="20" autocomplete="username" required :disabled="authBusy"/></label>
+          <label>用户名<input v-model="auth.username" autocomplete="username" required :disabled="authBusy"/><small>长度为 2–11 个可见字符，不得包含冒充官方、辱骂、色情、违法交易或广告导流内容。</small></label>
           <label>密码<input v-model="auth.password" type="password" maxlength="128" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" required :disabled="authBusy"/></label>
           <button class="primary" type="submit" :disabled="authBusy || !auth.username.trim() || !auth.password">{{ authSubmitLabel }}</button>
           <p v-if="authNotice" class="auth-notice" role="alert" aria-live="assertive" aria-atomic="true">{{ authNotice }}</p>
@@ -222,6 +247,18 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
     </section>
     <div class="profile-grid"><section class="panel"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel links"><header><h2>数据与工具</h2></header><router-link to="/battle/records"><b>对局记录与 JSON 回放</b><span>导出、导入并在实战棋盘查看 →</span></router-link><router-link to="/decks"><b>我的牌库</b><span>账号牌库、牌库码与牌库图分享 →</span></router-link><router-link to="/battle/rankings"><b>排行榜</b><span>玩家榜、主宰榜与对阵矩阵 →</span></router-link></section></div>
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
+    <div v-if="platformState.account?.mustChangeUsername" class="username-change-gate" role="dialog" aria-modal="true" aria-labelledby="username-change-title">
+      <form class="username-change-card" @submit.prevent="submitUsernameChange">
+        <small>ACCOUNT ACTION REQUIRED</small>
+        <h2 id="username-change-title">请修改用户名</h2>
+        <p>当前用户名包含不允许的内容或超出长度上限，违禁部分已隐藏。完成修改前不能使用对战及其他账号功能。</p>
+        <b>当前显示：{{ platformState.account.username }}</b>
+        <label>新用户名<input v-model="usernameChange.username" autocomplete="username" autofocus required/><span>2–11 个可见字符</span></label>
+        <label>当前密码<input v-model="usernameChange.currentPassword" type="password" autocomplete="current-password" required/></label>
+        <p v-if="usernameChangeNotice" class="username-change-error" role="alert">{{ usernameChangeNotice }}</p>
+        <div><button class="logout" type="button" :disabled="authBusy" @click="signOut">退出账号</button><button class="primary" type="submit" :disabled="authBusy || !usernameChange.username.trim() || !usernameChange.currentPassword">{{ authBusy ? '正在修改…' : '确认修改' }}</button></div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -234,6 +271,6 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
 .recovery-link{display:inline-block;margin-top:12px;color:#70cbd2;font-size:14px;text-decoration:none}.password-required{padding:10px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}.email-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.email-manager h3{margin:0;font-size:14px}.email-manager p,.email-manager small{margin:4px 0;color:#7f8c91;font-size:14px}.email-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:8px}.email-form label{margin:12px 0 0}.email-form button{padding:10px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.email-form button.danger{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.email-form button:disabled{opacity:.45}.mail-unavailable{display:block;margin-top:8px!important;color:#d9a46d!important}@media(max-width:900px){.email-form{grid-template-columns:1fr 1fr}.email-form button{width:100%}}
 .title-manager{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,auto);align-items:center;gap:10px;margin-top:14px;padding:14px;border:1px solid #6a4a91;background:#100b1c}.title-manager-heading{display:flex;grid-column:1/-1;align-items:center;justify-content:space-between;gap:10px}.title-manager-heading button{flex:0 0 auto;margin-left:auto}.title-manager b,.title-manager span{display:block}.title-manager-description{color:#9a8aaa;font-size:14px;line-height:1.6}.title-manager-controls{display:grid;grid-template-columns:minmax(180px,260px) auto;gap:10px;justify-self:end}.title-manager select,.title-manager button{padding:10px;border:1px solid #8062a8;background:#090611;color:#eee2ff;font-weight:900}.title-manager button{border-color:#d5af55;background:#33260c;color:#f1d67d}.title-manager button:disabled{opacity:.45}.title-manager em{justify-self:end;color:#8c7d9d;font-size:14px;font-style:normal}@media(max-width:760px){.title-manager{grid-template-columns:1fr}.title-manager-heading{grid-column:1;flex-wrap:wrap}.title-manager-controls{width:100%;grid-template-columns:minmax(0,1fr) auto;justify-self:stretch}.title-manager em{justify-self:start}}@media(max-width:420px){.title-manager-heading button{width:100%;margin-left:0}.title-manager-controls{grid-template-columns:1fr}.title-manager-controls button{width:100%}}
 .rank-links{display:flex;align-items:center;gap:9px}.rank-links button{padding:8px 11px;border:1px solid #a9873f;background:#261d0e;color:#f0d477;font-size:14px;font-weight:900}
-.profile-page span,.profile-page small,.profile-page p,.profile-page button,.profile-page input,.profile-page select,.profile-page label,.profile-page a,.profile-page em,.profile-page code,.profile-page i{font-size:14px!important}
+.username-change-gate{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:18px;background:#020609e8;backdrop-filter:blur(8px)}.username-change-card{width:min(520px,100%);padding:26px;border:1px solid #9f7d36;background:#0d151b;color:#edf0ed;box-shadow:0 24px 80px #000}.username-change-card>small{color:#54c5cc;font-weight:900;letter-spacing:.14em}.username-change-card h2{margin:8px 0 10px;font-size:24px}.username-change-card>p{color:#99a5a8;line-height:1.7}.username-change-card>b{display:block;padding:10px 12px;border-left:3px solid #d7b75d;background:#211b0f;color:#f0d77f}.username-change-card label{display:block;margin-top:16px;font-weight:900}.username-change-card input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #53626a;background:#070d11;color:#fff}.username-change-card label span{display:block;margin-top:5px;color:#77878c;font-size:13px;font-weight:500}.username-change-card>div{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.username-change-card .primary{margin:0}.username-change-error{padding:9px 11px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}
 @media(max-width:760px){.rank-overview>header{align-items:flex-start;flex-direction:column;gap:10px}.rank-links{width:100%;justify-content:space-between}}
 </style>

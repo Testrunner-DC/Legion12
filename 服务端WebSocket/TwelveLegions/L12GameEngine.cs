@@ -171,7 +171,12 @@ public sealed partial class L12GameEngine
     {
         if (playerIndex is < 0 or > 1) return CommandResult.Reject("无效玩家");
         if (State.Phase == L12Phase.GameOver) return CommandResult.Reject("对局已经结束");
-        if (ReconcilePendingActivationTransactions()) State.Revision++;
+        var ownedPromptBeforeReconcile = command.Type == "resolvePrompt"
+            && !string.IsNullOrWhiteSpace(command.PromptId)
+            && State.PendingPrompts.Any(prompt => prompt.PromptId == command.PromptId
+                && prompt.PlayerIndex == playerIndex);
+        var reconciledPendingTransactions = ReconcilePendingActivationTransactions();
+        if (reconciledPendingTransactions) State.Revision++;
 
         // Capture this before resolving the command: a disaster prompt/stack item may be
         // removed during resolution, but deaths caused by that disaster must still not
@@ -184,6 +189,12 @@ public sealed partial class L12GameEngine
 
         var result = command.Type switch
         {
+            // If authoritative reconciliation invalidated the exact prompt that this
+            // player was submitting, the requested choice can no longer have an effect.
+            // Treat that stale acknowledgement as idempotently accepted: the orphan was
+            // already removed and its combat/stack continuation was safely resumed.
+            "resolvePrompt" when ownedPromptBeforeReconcile
+                && State.PendingPrompts.All(prompt => prompt.PromptId != command.PromptId) => CommandResult.Ok(),
             "resolvePrompt" => ResolvePrompt(playerIndex, command),
             "mulligan" => Mulligan(playerIndex, command.CardInstanceIds ?? []),
             "advancePhase" => CommandResult.Reject("触发天灾至主要阶段由服务器自动结算"),
@@ -616,9 +627,7 @@ public sealed partial class L12GameEngine
         if (ability == "completeTrial" && source.CardType == "trial"
             && (source.TrialCompleted || source.TrialProgress < 8))
             return "试炼进度达到8后才可完成试炼";
-        if (source.CardType == "trial"
-            && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover"
-            && !source.TrialCompleted)
+        if (source.CardType == "trial" && ability != "completeTrial" && !source.TrialCompleted)
             return "该试炼尚未完成";
         if (ability == "palaceReward" && player.ReturnedMoraleThisTurn <= 1)
             return "本回合返还士气需高于1张";
@@ -927,7 +936,13 @@ public sealed partial class L12GameEngine
     }
 
     private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
-        => SetDisasterValue(State.DisasterValue + delta, playerIndex, text);
+    {
+        SetDisasterValue(State.DisasterValue + delta, playerIndex, text);
+        // 所有卡效都经由这一入口调整天灾值。达到现行“超过 8”阈值后只登记一次，
+        // 由 AfterStackSettled 在当前效果、衍生触发和响应事务全部关闭后翻开下一张天灾。
+        if (DisastersEnabled && State.DisasterValue > 8)
+            State.CheckDisasterAfterStack = true;
+    }
 
     private L12CardInstance CreateCard(string cardId, string instanceId)
     {
@@ -1216,8 +1231,9 @@ public sealed partial class L12GameEngine
     {
         var eligible = player.Morale.Where(card => !requireActive || !card.Tapped).ToArray();
         if (count <= 0 || eligible.Length <= count) return false;
-        // 只有选择会改变公开结算结果时才询问：活跃/休整、普通/神力，以及返还后进入墓地的黑色莲花。
-        return eligible.Select(card => $"{card.Tapped}:{card.IsGodPower}:{card.CardId == "S02-0010"}")
+        // 返还对象会恢复为活跃并清除 CannotUntap 锁；但若候选卡号或锁定状态不同，
+        // 自动替玩家选牌会改变“哪一张未返还士气仍留在场上”的后续结果，必须询问。
+        return eligible.Select(card => $"{card.Tapped}:{card.IsGodPower}:{card.CardId}:{card.CannotUntapUntilRound}")
             .Distinct(StringComparer.Ordinal).Skip(1).Any();
     }
 
@@ -1547,10 +1563,11 @@ public sealed partial class L12GameEngine
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueDeathTrigger)
         {
-            var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot).ToList();
+            var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot,
+                includeTombConstruct: !isDefeat).ToList();
             if (isDefeat && HasDeathTrigger(sourceSnapshot))
-                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, sourceSnapshot, "death", "【阵亡时】效果",
-                    new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }, sourceSnapshot));
+                candidates.Add(CreateDeathTriggerCandidate(player.PlayerIndex, sourceSnapshot,
+                    new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }));
             if (isDefeat)
             {
                 var morrigan = BuildMorriganEnemyDeathCandidate(player.PlayerIndex);

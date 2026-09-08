@@ -22,7 +22,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
         try
         {
             var store = new L12PlatformStore(path);
-            var supportRegistration = store.Register("PersistentSupport", "password-123");
+            var supportRegistration = store.Register("tpersi1012f", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
             Assert.True(store.SetRole(admin, supportRegistration.Account!.Id, "admin"));
             var support = store.AuthenticateToken(supportRegistration.Token)!;
@@ -72,7 +72,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
         try
         {
             var store = new L12PlatformStore(path);
-            var target = store.Register("ApprovalTarget", "password-123").Account!;
+            var target = store.Register("tappro20472", "password-123").Account!;
             var adminLogin = store.Login("Admin", "L12master");
             var expectedVersion = target.PermissionVersion;
             var commandId = Guid.NewGuid().ToString("N");
@@ -111,7 +111,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
-            var player = store.Register("DeniedPlayer", "password-123").Account!;
+            var player = store.Register("tdenie00295", "password-123").Account!;
             var bug = store.AddBug(player, "拒绝", "不应被越权更新", "/test", null, null, "test");
             var deniedCommand = BugCommand(player, bug.Id, "denied-bug-1", store.Version, "closed",
                 correlationId: "denied-command-1");
@@ -149,7 +149,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
         try
         {
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
-            var editorRegistration = store.Register("ContentEditor", "password-123");
+            var editorRegistration = store.Register("tconteb4845", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
             Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "admin"));
             var editor = store.Account(editorRegistration.Account.Id)!;
@@ -217,7 +217,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
         try
         {
             var store = new L12PlatformStore(path);
-            var editorRegistration = store.Register("LegacyEditor", "password-123");
+            var editorRegistration = store.Register("tlegac470cc", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
             Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "admin"));
             var legacy = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
@@ -274,8 +274,8 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
 
             var admin = store.Login("Admin", "L12master");
-            var editorRegistration = store.Register("HttpPhaseTwoEditor", "password-123");
-            var reviewerRegistration = store.Register("HttpPhaseTwoReviewer", "password-456");
+            var editorRegistration = store.Register("uc33adbd042", "password-123");
+            var reviewerRegistration = store.Register("u415b1f409c", "password-456");
             Assert.True(store.SetRole(admin.Account!, editorRegistration.Account!.Id, "admin"));
             Assert.True(store.SetRole(admin.Account!, reviewerRegistration.Account!.Id, "admin"));
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { RankedClockView } from '../types'
+import type { GameState, RankedClockView } from '../types'
 
 const props = defineProps<{
   playerIndex: number
   side: 'my' | 'opponent'
   active: boolean
+  phase: GameState['phase']
   rankedClock?: RankedClockView | null
 }>()
 
@@ -19,8 +20,8 @@ const clock = computed(() => {
   const player = snapshot?.players.find(entry => entry.playerIndex === props.playerIndex)
   if (!snapshot || !player) return null
   const elapsed = Math.max(0, nowMs.value - snapshot.receivedAtMs)
-  const preparation = snapshot.operationLimitMs <= 60_000
-  const timedPreparation = snapshot.operationLimitMs === 60_000
+  const preparation = ['Initiative', 'DisasterPreparation', 'Mulligan'].includes(props.phase)
+  const timedPreparation = preparation && snapshot.operationLimitMs > 0
   const normalTicking = !preparation && player.connected && player.acting ? elapsed : 0
   const operationTicking = player.acting && (timedPreparation || (!preparation && player.connected)) ? elapsed : 0
   return {
@@ -56,11 +57,11 @@ function formatClock(value: number) {
 </template>
 
 <style scoped>
-.player-turn-clock{box-sizing:border-box;display:grid;width:168px;min-height:96px;align-content:center;gap:5px;padding:7px 9px;border:1px solid #505b5f;background:rgba(5,9,11,.94);box-shadow:0 7px 18px rgba(0,0,0,.72);color:#aeb6b7;pointer-events:none}
-.player-turn-clock strong{display:block;padding:3px 5px;border:1px solid #4c5558;color:#8d9697;font-size:max(14px,var(--l12-board-readable,14px));letter-spacing:.04em;text-align:center;white-space:nowrap}
+.player-turn-clock{box-sizing:border-box;display:grid;width:138px;min-height:96px;align-content:center;gap:5px;padding:7px 8px;border:1px solid #505b5f;background:rgba(5,9,11,.94);box-shadow:0 7px 18px rgba(0,0,0,.72);color:#aeb6b7;pointer-events:none}
+.player-turn-clock strong{display:block;padding:3px 5px;border:1px solid #4c5558;color:#8d9697;font-size:var(--l12-board-copy,13px);letter-spacing:.04em;text-align:center;white-space:nowrap}
 .player-turn-clock span{display:grid;min-width:0;justify-items:center;gap:1px;text-align:center}
-.player-turn-clock small{color:#879092;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;white-space:nowrap}
-.player-turn-clock b{color:#f2eee2;font-family:monospace;font-size:max(14px,var(--l12-board-readable,14px));font-weight:900;letter-spacing:.02em;white-space:nowrap}
+.player-turn-clock small{color:#879092;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}
+.player-turn-clock b{color:#f2eee2;font-family:monospace;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.02em;white-space:nowrap}
 .player-turn-clock.active{border-color:#d5b65f;box-shadow:0 0 12px rgba(213,182,95,.3),0 7px 18px rgba(0,0,0,.72)}
 .player-turn-clock.active strong,.player-turn-clock.active b{border-color:#d5b65f;color:#f1d77e}
 .player-turn-clock.side-opponent.active{border-color:#c9505a}.player-turn-clock.side-opponent.active strong,.player-turn-clock.side-opponent.active b{border-color:#c9505a;color:#f28e96}

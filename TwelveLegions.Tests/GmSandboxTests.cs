@@ -237,7 +237,7 @@ public sealed class GmSandboxTests
     }
 
     [Fact]
-    public void TombConstructDeathCreatesIndependentDeathAndLeaveTriggers()
+    public void TombConstructSuccessfulDeathTriggerSuppressesTheLeaveFallback()
     {
         var game = new L12GameEngine(Catalog, "gm-tomb-construct", "GMTOMB", 12061,
             ["甲", "乙"], [0, 1], skipPreparation: true);
@@ -262,13 +262,24 @@ public sealed class GmSandboxTests
         Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: construct.InstanceId)).Accepted);
 
-        var orderPrompt = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Continuation == "trigger-batch-order");
-        Assert.Equal(2, orderPrompt.ValidChoices.Count);
-        Assert.Contains(orderPrompt.ValidChoices,
-            id => orderPrompt.Data.GetValueOrDefault($"trigger:{id}") == "death");
-        Assert.Contains(orderPrompt.ValidChoices,
-            id => orderPrompt.Data.GetValueOrDefault($"trigger:{id}") == "leave");
+        var slotPrompt = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: slotPrompt.ValidChoices[0])).Accepted);
+        while (game.State.PendingPrompts.SingleOrDefault()?.Kind == "response")
+        {
+            var response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+
+        var guard = Assert.Single(game.State.Players[0].Field.SelectMany(row => row),
+            card => card?.InstanceId == "tomb-construct-guard")!;
+        Assert.True(guard.Tapped);
+        Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
+            candidate => candidate.SourceCardId == "S01-0204" && candidate.Trigger == "leave");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Text.Contains("离场", StringComparison.Ordinal));
     }
 
     [Fact]
