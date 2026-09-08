@@ -42,6 +42,39 @@ log() { printf '[L12 testrun deploy] %s\n' "$*"; }
 fail() { printf '[L12 testrun deploy] ERROR: %s\n' "$*" >&2; return 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"; }
 
+prune_testrun_storage() {
+  local active_target="$1"
+  local previous_target="$2"
+  local candidate
+  local referenced_asset
+  local asset_candidate
+  local keep_assets=()
+
+  [[ "$active_target" == "${releases_dir}/"* && "$active_target" != "$releases_dir" ]] \
+    || fail "active release escapes the testrun release root"
+  [[ "$previous_target" == "${releases_dir}/"* && "$previous_target" != "$releases_dir" ]] \
+    || fail "previous release escapes the testrun release root"
+
+  for candidate in "$active_target" "$previous_target"; do
+    referenced_asset="$(readlink -f "${candidate}/opcgpro-vue/dist/card-assets")"
+    [[ "$referenced_asset" == "${static_card_assets_dir}/"* && "$referenced_asset" != "$static_card_assets_dir" ]] \
+      || fail "release card assets escape the testrun cache root"
+    keep_assets+=("$referenced_asset")
+  done
+
+  while IFS= read -r -d '' candidate; do
+    [[ "$candidate" == "$active_target" || "$candidate" == "$previous_target" ]] && continue
+    rm -rf -- "$candidate"
+  done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0)
+
+  while IFS= read -r -d '' asset_candidate; do
+    [[ "$asset_candidate" == "${keep_assets[0]}" || "$asset_candidate" == "${keep_assets[1]}" ]] && continue
+    rm -rf -- "$asset_candidate"
+  done < <(find "$static_card_assets_dir" -mindepth 1 -maxdepth 1 -type d -print0)
+
+  find "$incoming_dir" -mindepth 1 -maxdepth 1 -type f -mtime +2 -delete
+}
+
 assert_unblocked() {
   local marker="${deployment_dir}/deployment-blocked.txt"
   [[ ! -e "$marker" && ! -L "$marker" ]] || fail "manual reconciliation marker exists: ${marker}"
@@ -511,7 +544,8 @@ deployedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 chmod 0600 "${deployment_dir}/deployment-info.txt"
 mapfile -t backups < <(find "$backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%T@:%p\n' | sort -rn)
-for ((index=3; index<${#backups[@]}; index+=1)); do rm -f -- "${backups[$index]#*:}"; done
+for ((index=1; index<${#backups[@]}; index+=1)); do rm -f -- "${backups[$index]#*:}"; done
+prune_testrun_storage "$release_dir" "$previous_target"
 rm -f -- "${deployment_dir}/deployment-blocked.txt"
 cleanup
 trap - ERR INT TERM

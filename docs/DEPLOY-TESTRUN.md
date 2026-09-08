@@ -1,6 +1,6 @@
 # Legion12 公网隔离验收站
 
-`testrun.legion-12.com` 是公开访问、无 Basic Auth 的验收环境。它与正式站只共用同一台主机，不共用服务、端口、活动版本、运行数据或卡图缓存。
+`testrun.legion-12.com` 是公开访问、无 Basic Auth 的验收环境。它与正式站只共用同一台主机，不共用服务、端口、活动版本或运行数据。卡图使用独立的测试缓存命名空间；当测试包与正式服引用同一个内容哈希时，可由 root 预置为只读硬链接，从而复用不可变数据块而不复制约 237 MB 文件。哈希不同则必须上传到独立测试缓存。
 
 | 边界 | 验收站固定值 |
 | --- | --- |
@@ -31,7 +31,7 @@
    - `verify-l12-health.mjs`（远端名为 `verify-l12-testrun-health.mjs`）
 4. 以 root 调用 bootstrap：`bootstrap-l12-testrun.sh <commit> <releaseSha256> <releaseArchive> <assetHash> <assetSha256|-> <assetArchive|->`。参数路径必须与上一步的固定路径完全一致。
 
-Bootstrap 不读取、复制或解析任何正式环境文件。它创建随机 64 位十六进制管理员密码，并把唯一允许的键写入 root-only `0600` 环境文件；邮件功能固定关闭、所有 SMTP 值固定为空、`L12_PUBLIC_BASE_URL` 固定为 `https://testrun.legion-12.com`。`publish/runtime` 只能链接独立验收 runtime，内容寻址卡图也只会复用或写入 `/opt/legion12-testrun-static/card-assets`；归档内携带 runtime、卡图、链接、特殊文件、越界路径或额外顶层目录都会在切换前被拒绝。
+Bootstrap 不读取、复制或解析任何正式环境文件。它创建随机 64 位十六进制管理员密码，并把唯一允许的键写入 root-only `0600` 环境文件；邮件功能固定关闭、所有 SMTP 值固定为空、`L12_PUBLIC_BASE_URL` 固定为 `https://testrun.legion-12.com`。`publish/runtime` 只能链接独立验收 runtime，内容寻址卡图只会使用 `/opt/legion12-testrun-static/card-assets` 下已经完整校验的目标。若用正式服同哈希卡图预置硬链接，必须保持 root 所有、目录 `0755`、文件 `0644`，并由 bootstrap 重新核对 manifest、文件长度和全树内容哈希；测试服务没有写卡图权限。归档内携带 runtime、卡图、链接、特殊文件、越界路径或额外顶层目录都会在切换前被拒绝。
 
 HTTP bootstrap vhost 只开放 ACME challenge，其他请求统一 503；它不会用明文 HTTP 暴露登录或后台。取得证书后，以 root 执行 `/usr/local/sbin/activate-legion12-testrun-tls`。激活器只把验收站 enabled 链接从受管 HTTP 配置切至受管 TLS 配置；Nginx 语法、HTTPS health、首页和公网 WebSocket 任一失败都会恢复 ACME-only HTTP 配置。不要在 TLS 激活前让测试人员登录。
 
@@ -52,7 +52,7 @@ pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
 
 入口只接受 `root@testrun.legion-12.com` 或 `root@38.76.208.25`，实际连接固定为 `38.76.208.25`，并强制 `StrictHostKeyChecking=yes`、该 IP 的 `HostKeyAlias` 及显式 known_hosts。它拒绝脏工作区、与 HEAD 不同的 manifest、错误 schema/文件名/SHA256/提交标记、链接或特殊成员、越界路径、runtime、内嵌卡图和额外顶层内容。
 
-服务器日常入口 `/usr/local/sbin/deploy-legion12-testrun-release` 只读取并校验现有 TLS vhost，不安装、替换或 reload Nginx，不修改 env/systemd，不使用正式服务、正式端口或正式 runtime。它停止验收服务后快照验收 runtime，以原子链接切换版本，并同时核验本机/公网提交身份、首页、卡牌页和 WebSocket。新版本失败时只恢复上一测试版本并重启验收服务，不自动用快照覆盖可能已产生的新测试数据；若旧版本也无法验证，则保持验收服务停止并写入 `deployment-blocked.txt` 等待人工对账。
+服务器日常入口 `/usr/local/sbin/deploy-legion12-testrun-release` 只读取并校验现有 TLS vhost，不安装、替换或 reload Nginx，不修改 env/systemd，不使用正式服务、正式端口或正式 runtime。它停止验收服务后快照验收 runtime，以原子链接切换版本，并同时核验本机/公网提交身份、首页、卡牌页和 WebSocket。新版本失败时只恢复上一测试版本并重启验收服务，不自动用快照覆盖可能已产生的新测试数据；若旧版本也无法验证，则保持验收服务停止并写入 `deployment-blocked.txt` 等待人工对账。成功后只保留当前与上一测试程序、最新 1 份测试 runtime 快照、被这两个程序实际引用的卡图哈希，并删除超过 2 天的测试 incoming 文件；正式服任何目录都不在该清理范围。
 
 ## 聚焦验证与激活后检查
 

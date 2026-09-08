@@ -4,7 +4,8 @@
 
 ## 当前发布批次
 
-- `OPS-20260908-288-TESTRUN-ISOLATION` 已按用户确认完成公开测试服本地安全链：固定 `testrun.legion-12.com`、8084、`legion12-testrun.service`、独立 release/runtime/env/卡图缓存，任何人可访问且不加 Basic Auth。首次 bootstrap 不再复制正式 env，邮件和 SMTP 失败关闭；HTTP 仅 ACME+503，TLS 单独激活；日常发布不碰 Nginx/env/systemd，失败只恢复测试程序且不覆盖数据。Windows 入口固定新机 IP 与显式 known_hosts。专用行为测试及主代理复跑通过；未改 DNS、联网服务器、提交、推送或部署。启用仍需 DNS、干净 Release、首次 bootstrap、证书、TLS 激活与公网 HTTP/WS/systemd 现场核验。
+- `OPS-20260908-288-TESTRUN-ISOLATION` 已推进到新机 8084：Release `a1061e3b618fd9026393dbc84acd544d98ee9b38` 完整门禁通过，`legion12-testrun.service` active/running、重启 0，本机 health/WS 协议 1 通过；独立 env/runtime/release 已建立，邮件关闭，HTTP 仅 ACME+503。正式服仍为 `eac1ec9...`、8083、重启 0。相同哈希的 1812 个卡图文件在独立测试命名空间以 root 只读硬链接复用，不重复占块。Cloudflare/DNS、证书和公网 TLS 按用户要求延后，公网测试站尚未开放。
+- 空间整理已删除 3 个可重建非活动旧程序、APT 缓存和用户明确批准的 4 个旧 runtime 快照；只保留最新正式回滚快照，根盘约 6.6 GiB 可用/89%。新维护策略将测试成功发布收敛为当前+上一程序、1 份 runtime 快照和实际引用卡图。正式 `matches.db` 约 41.8 GB；v2 最近 10,243 条命令不再保存完整状态，旧 635 场 v1 是主要历史占用，后续须按 `docs/SERVER-STORAGE-MAINTENANCE.md` 在副本验证迁移，当前未改生产数据库。
 
 - `OPS-20260908-287-WORKSTREAM-COMMAND` 已按用户确认建立三对话指挥体系：本对话独占需求裁定、租约、集成、Batch/Release、台账、Git及生产操作；`L12-UI` 只在显式租约内承担 UI；`L12-Effect` 只作为卡效辅助，主对话仍可直接修改卡效。采用单文件单写入者、越界冻结后顺序交接、专业工作流只跑专项/Focused、主对话统一一次 Batch/Release的去重流程。只有预计节省约30%以上时间且写入不重叠时才建议再分工。规范见 `docs/WORKSTREAM-COORDINATION.md`；本批仅本地，未提交、推送或部署。
 

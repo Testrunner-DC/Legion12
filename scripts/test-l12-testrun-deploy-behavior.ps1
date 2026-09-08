@@ -75,6 +75,15 @@ try {
     $tlsSource = Get-Content -LiteralPath $tlsNginx -Raw
     $envSource = Get-Content -LiteralPath $envExample -Raw
 
+    foreach ($contract in @(
+        'prune_testrun_storage "$release_dir" "$previous_target"',
+        'for ((index=1; index<${#backups[@]}; index+=1))',
+        'find "$incoming_dir" -mindepth 1 -maxdepth 1 -type f -mtime +2 -delete',
+        'find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0'
+    )) {
+        Assert-True ($dailySource.Contains($contract)) "Missing minimal testrun retention contract: $contract"
+    }
+
     Assert-True (-not $bootstrapSource.Contains('/etc/legion12-test.env')) "Bootstrap still reads the production environment file."
     Assert-True ($bootstrapSource.Contains('openssl rand -hex 32')) "Bootstrap does not generate an independent admin secret."
     Assert-True ($bootstrapSource.Contains('L12_EMAIL_FEATURE_ENABLED=false')) "Bootstrap does not force email off."

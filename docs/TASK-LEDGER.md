@@ -18,12 +18,14 @@
 
 ## 活跃批次
 
-### 2026-09-08 公开测试服同机隔离与安全发布链（本地门禁通过）
+### 2026-09-08 公开测试服同机隔离与安全发布链（8084 已部署，DNS/TLS 待启用）
 
-- `OPS-20260908-288-TESTRUN-ISOLATION` 已获用户确认：测试域固定为 `testrun.legion-12.com`，公开访问且不设置 Basic Auth；账号、数据库、回放、后台设置、运行数据和卡图缓存仍与正式服完全隔离。
+- `OPS-20260908-288-TESTRUN-ISOLATION` 已获用户确认：测试域固定为 `testrun.legion-12.com`，公开访问且不设置 Basic Auth；账号、数据库、回放、后台设置和运行数据与正式服完全隔离。卡图位于独立测试命名空间；同一内容哈希使用 root 只读硬链接复用不可变数据块，哈希不同时才保存独立实体。
 - 首次 bootstrap 不再复制正式 env，会生成独立管理员密码并强制关闭邮件/SMTP/审批引导；HTTP 只开放 ACME，其余 503，证书就绪后由独立 TLS 激活器切换。日常发布只操作 8084、`legion12-testrun.service` 和测试 release/runtime，不修改 Nginx、env、systemd 或任何正式路径；失败保留数据并验证恢复上一测试程序。
 - 测试服务以 Nice/CPU/IO/OOM 权重让正式服优先，移除半核硬限额，内存设为 High 768M/Max 896M；正式活动目录、runtime 和静态缓存由 systemd 标记不可访问。Windows 入口固定 `38.76.208.25` 与显式已核验 known_hosts，归档、manifest、提交和 SHA256 均失败关闭。
-- 三个 shell 语法、两份 PowerShell 解析、专用部署行为测试及主代理 `git diff --check` 均通过。当前只完成本地基础设施，未改 DNS、连接服务器、提交、推送或部署；实际启用仍需 DNS、干净 Release、首次 bootstrap、证书、TLS 激活和公网 HTTP/WebSocket/systemd 现场验收。
+- 提交 `a1061e3b618fd9026393dbc84acd544d98ee9b38` 的 Release 已通过规则 2533/2533、平台 102/102、UI 305 项及完整生产构建。新机首次 bootstrap 已完成：`legion12-testrun.service` 在 8084 active/running、重启 0，本机 health 与 WebSocket 协议 1 通过；正式 8083 继续运行 `eac1ec9...`、重启 0。测试程序约 110 MB、runtime 初始约 640 KB，1812 个卡图文件复用同 inode、未复制实体数据。HTTP 在 DNS/TLS 前保持 ACME-only + 503；Cloudflare、证书与公网 TLS 按用户要求延后，尚不得宣称公网测试站已开放。
+- 服务器整理已获授权并执行：删除 3 个本机可重建的非活动旧程序与 APT 缓存；随后按再次明确授权删除 4 个旧 runtime 快照 4,704,130,000 字节，只保留最新 `runtime-before-eac1ec93d5ff-20260908T072800Z.tar.gz`（2,142,860,396 字节）。根盘从约 97%/2.0 GiB 可用降至约 89%/6.6 GiB 可用；活动数据库、当前/上一程序和正式服务均未切换。
+- 维护策略新增测试成功发布后只保留当前/上一程序、最新 1 份测试 runtime 快照、实际引用卡图和 2 天内 incoming；旧 v1 回放压缩及容量阈值详见 `docs/SERVER-STORAGE-MAINTENANCE.md`。当前 635 场 v1（其中 125 条未结记录）仍需经过逐场重放校验后迁移，禁止直接清空或原地 VACUUM。
 
 ### 2026-09-08 三对话指挥与分工体系（本地规范）
 

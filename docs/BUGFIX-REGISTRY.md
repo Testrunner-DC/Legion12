@@ -4,12 +4,14 @@
 
 ### OPS-20260908-288-TESTRUN-ISOLATION 公开测试服同机隔离与安全发布链
 
-- 状态与边界：用户确认测试服使用 `testrun.legion-12.com` 且任何人可访问，不增加 Basic Auth。本条只完成本地发布基础设施，未修改 DNS、连接服务器、申请证书、提交、推送或部署；正式服服务、端口、runtime、卡图缓存及部署脚本均未改动。
+- 状态与边界：用户确认测试服使用 `testrun.legion-12.com` 且任何人可访问，不增加 Basic Auth。新机 8084、独立 service/env/runtime/release 已完成首次 bootstrap 和本机 health/WS 验证；正式 8083 未切换、未重启。DNS、证书和公网 TLS 按用户要求延后，当前仍是 ACME-only + 503，不能视为公网已开放。
 - 根因：旧 bootstrap 会在测试 env 不存在时复制 `/etc/legion12-test.env`，可能继承正式凭据、邮件和站点配置；它还会在每次执行时重新启用 HTTP vhost，存在把已启用 TLS 降级的风险。仓库没有测试服专用日常原子发布器、Windows 目标锁和失败回滚夹具，无法证明测试发布不会误触正式服。
 - 修复：首次 bootstrap、TLS 激活和日常发布拆为三个独立入口。Bootstrap 首次运行时生成独立随机管理员密码，固定关闭邮件、清空 SMTP、关闭双人审批引导，并严格限定测试域、8084、`legion12-testrun.service`、独立 runtime、独立 release 与 `/opt/legion12-testrun-static/card-assets`。HTTP 只开放 ACME challenge，其余 503；TLS 激活失败恢复 HTTP 引导。日常发布只切换测试 release，不安装或 reload Nginx，不修改 env/systemd；新版本失败时保留 runtime 并验证恢复上一测试程序，旧版本无法验证则停止测试服务并留下人工对账标记。
 - 资源与安全：测试服务移除半核硬限制，改用 `Nice=10`、`CPUWeight=10`、`IOWeight=10` 和 `OOMScoreAdjust=750` 让正式服务优先；内存采用 `MemoryHigh=768M`、`MemoryMax=896M`。systemd 只允许写测试 runtime，并将正式活动目录、runtime 和静态缓存设为不可访问。Windows 发布入口只接受测试域或 `38.76.208.25`，实际连接固定该 IP，强制显式 known_hosts、严格主机密钥校验，并校验提交绑定的 schema 3 manifest、SHA256、tar 成员和归档边界。
 - 防回滚与验证：同类扫描覆盖测试 bootstrap、Nginx、systemd、Windows 正式部署入口和既有发布行为夹具；正式发布文件没有变化。三个 shell 脚本 `sh -n`、两份 PowerShell 解析、`scripts/test-l12-testrun-deploy-behavior.ps1` 及全树 `git diff --check` 由执行代理和主代理分别通过。专用夹具覆盖任意主机、归档篡改/额外成员、正式端口/服务/runtime/静态缓存隔离、邮件关闭、HTTP/TLS 边界，以及新版本健康失败后恢复旧测试版本且不覆盖运行数据。
-- 激活前置：仍需建立 DNS、在干净提交上生成 Release、使用已核验 SSH 指纹首次 bootstrap、签发证书并显式激活 TLS，随后核验公网 HTTPS、health、WebSocket 和 systemd 实际资源状态。没有这些现场收据时不得声称测试服已上线。
+- 最小体积与清理：提交 `a1061e3...` 的 Release 已通过规则 2533/2533、平台 102/102、UI 305 及构建；首次 bootstrap 后测试程序约 110 MB、runtime 约 640 KB。相同卡图哈希通过独立命名空间中的 root 只读硬链接复用 1812 个不可变文件。用户授权清理 3 个可重建非活动旧程序、APT 缓存及 4 个旧 runtime 快照，保留活动/上一程序、活动数据库与最新 2.143 GB 回滚快照；根盘从约 97%/2.0 GiB 可用改善到约 89%/6.6 GiB 可用。
+- 长期维护：测试服成功发布只保留当前/上一程序、最新 1 份测试 runtime 快照、实际引用卡图和 2 天内 incoming。正式 `matches.db` 约 41.8 GB，635 场 v1 逐命令完整状态构成历史主体；v2 最近 10,243 条命令的 `state_json` 平均 2 字节、Brotli 检查点约从 416 KB 降为 16.6 KB。旧 v1 必须先逐场重放校验再迁移，当前未修改生产数据库、未 VACUUM。完整边界见 `docs/SERVER-STORAGE-MAINTENANCE.md`。
+- 公网激活前置：仍需建立 DNS、签发证书并显式激活 TLS，随后核验公网 HTTPS、health、WebSocket 和 systemd 实际资源状态。没有这些现场收据时不得声称公网测试站已上线。
 
 ### OPS-20260908-287-WORKSTREAM-COMMAND 三对话指挥与分工体系
 
