@@ -127,6 +127,8 @@ public sealed partial class L12GameEngine
                 activation.ActivationId == prompt.ActivationId && PromptMatchesActivation(prompt, activation));
             if (matches == 1) continue;
             State.PendingPrompts.Remove(prompt);
+            AddEvent("activation-reconciled", prompt.PlayerIndex,
+                "孤立选择提示已由服务端安全清理，未继续结算");
             changed = true;
         }
         return changed;
