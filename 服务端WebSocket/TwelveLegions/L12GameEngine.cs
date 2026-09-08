@@ -65,10 +65,11 @@ public sealed partial class L12GameEngine
         bool? autoPassEmptyResponses = null,
         bool? concealHiddenResponseAvailability = null,
         L12OperationsPolicySnapshot? operationsPolicy = null,
-        int stateFormatVersion = 0)
+        int stateFormatVersion = 0,
+        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
             deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
-            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion)
+            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot)
     {
     }
 
@@ -84,7 +85,8 @@ public sealed partial class L12GameEngine
         bool? autoPassEmptyResponses = null,
         bool? concealHiddenResponseAvailability = null,
         L12OperationsPolicySnapshot? operationsPolicy = null,
-        int stateFormatVersion = 0)
+        int stateFormatVersion = 0,
+        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
@@ -102,6 +104,9 @@ public sealed partial class L12GameEngine
             Seed = seed,
             DisasterMode = NormalizeDisasterMode(disasterMode),
             OperationsPolicy = operationsPolicy ?? L12OperationsPolicyDefaults.FromCatalog(catalog),
+            EffectPresentationSnapshot = effectPresentationSnapshot is { Count: > 0 }
+                ? effectPresentationSnapshot.ToList()
+                : null,
             ActivePlayer = 0,
             FirstPlayer = 0,
             Players =
@@ -2014,9 +2019,14 @@ public sealed partial class L12GameEngine
     }
 
     private void AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
+        => AddEventCore(type, playerIndex, text, null, cards);
+
+    private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
+        params L12CardInstance[] cards)
     {
         State.EventSequence++;
-        State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text, cards.Select(card => card.Clone()).ToArray());
+        State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
+            cards.Select(card => card.Clone()).ToArray()) { EffectText = effectText };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= 2)
         {

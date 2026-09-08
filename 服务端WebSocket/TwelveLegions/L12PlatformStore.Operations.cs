@@ -802,7 +802,7 @@ public sealed partial class L12PlatformStore
             if (item is null)
                 throw new L12OperationsConfigException("invalid_announcement", "长期公告条目不能为空");
             var id = RequireOperationsId(item.Id, "长期公告 ID");
-            var content = OptionalOperationsText(item.Content, 1000);
+            var content = OptionalOperationsMultilineText(item.Content, 1000);
             if (item.Enabled && string.IsNullOrWhiteSpace(content))
                 throw new L12OperationsConfigException("announcement_content_required", "启用长期公告时必须填写内容");
             EnsureTimeRange(item.StartsAt, item.EndsAt, $"长期公告 {id}");
@@ -1117,6 +1117,15 @@ public sealed partial class L12PlatformStore
     {
         var normalized = value?.Trim() ?? string.Empty;
         if (normalized.Length > maxLength || normalized.Any(char.IsControl))
+            throw new L12OperationsConfigException("invalid_operations_config", "配置文本长度或字符无效");
+        return normalized;
+    }
+
+    private static string OptionalOperationsMultilineText(string? value, int maxLength)
+    {
+        var normalized = (value ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n').Trim();
+        if (normalized.Length > maxLength || normalized.Any(character => character != '\n' && char.IsControl(character)))
             throw new L12OperationsConfigException("invalid_operations_config", "配置文本长度或字符无效");
         return normalized;
     }

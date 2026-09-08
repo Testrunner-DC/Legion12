@@ -422,6 +422,9 @@ public sealed partial class L12PlatformStore
             foreach (var review in _data.EffectReviews.Where(row =>
                          string.Equals(row.Reviewer, oldUsername, StringComparison.Ordinal)))
                 review.Reviewer = "已注销管理员";
+            foreach (var presentation in _data.EffectPresentationOverrides.Where(row =>
+                         string.Equals(row.UpdatedBy, oldUsername, StringComparison.Ordinal)))
+                presentation.UpdatedBy = "已注销管理员";
             foreach (var ruling in _data.Tournaments.SelectMany(t => t.Rounds).SelectMany(r => r.Matches)
                          .SelectMany(m => m.Rulings).Where(r => r.ActorId == account.Id))
                 ruling.ActorName = "已注销管理员";

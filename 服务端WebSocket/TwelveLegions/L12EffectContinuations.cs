@@ -293,7 +293,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (player.Library.Count == 0) { FinishStackItem(item); return; }
         var top = player.Library[0];
-        AddEvent("reveal", item.Controller, $"李靖展示牌库顶部的〈{top.Name}〉", top);
+        AddPresentationEvent("reveal", item.Controller, $"李靖展示牌库顶部的〈{top.Name}〉",
+            "S01-0103", "top-card", top);
         item.Data["revealed"] = top.InstanceId;
         var choices = new List<string> { "top", "bottom" };
         if (top.CardType == "legion" && top.Faction == "tianting" && top.CurrentCost <= 5
@@ -476,8 +477,9 @@ public sealed partial class L12GameEngine
             player.Library.Remove(card);
             PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
                 $"花魁的馈赠展示〈{card.Name}〉并加入手牌",
-                $"花魁的馈赠将〈{card.Name}〉加入手牌");
-            AddEvent("search", item.Controller, $"花魁的馈赠将〈{card.Name}〉加入手牌", card);
+                $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "reveal-add");
+            AddPresentationEvent("search", item.Controller,
+                $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "search-add", card);
         }
         var remaining = item.Data["oiran-cards"].Split('|').Where(id => id != choice).ToList();
         if (remaining.Count <= 1)

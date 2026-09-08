@@ -56,6 +56,26 @@ public sealed record L12EffectAtom(
     string Source,
     string Stage = "resolution");
 
+public sealed record L12EffectPresentationScene(
+    string SceneId,
+    string CardId,
+    string AbilityId,
+    string Trigger,
+    string DefaultText,
+    string? OverrideText = null,
+    string EventType = "effect",
+    string Label = "能力动效",
+    IReadOnlyList<string>? AllowedPlaceholders = null)
+{
+    public string EffectiveText => L12EffectPresentationText.Normalize(string.IsNullOrWhiteSpace(OverrideText)
+        ? DefaultText
+        : OverrideText);
+
+    public bool Overridden => !string.IsNullOrWhiteSpace(OverrideText);
+
+    public IReadOnlyList<string> Placeholders => AllowedPlaceholders ?? [];
+}
+
 public sealed record L12AtomicAbility(
     string AbilityId,
     string CardId,
@@ -71,7 +91,10 @@ public sealed record L12AtomicAbility(
     string ReviewStatus = "unreviewed",
     string ReviewSource = "automatic",
     string StructureHash = "",
-    string LegacyAbilityId = "");
+    string LegacyAbilityId = "")
+{
+    public IReadOnlyList<L12EffectPresentationScene> Presentations { get; init; } = [];
+}
 
 public sealed record L12AtomicCardEffect(
     string CardId,
@@ -145,17 +168,103 @@ public static class L12AtomicAbilityIdentity
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())))[..16].ToLowerInvariant();
         var trigger = Regex.Replace(ability.Trigger.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
         if (string.IsNullOrWhiteSpace(trigger)) trigger = "effect";
-        return ability with
+        var assigned = ability with
         {
             AbilityId = $"{cardId}:ability:{trigger}:{hash}",
             Sequence = sequence,
             StructureHash = hash,
             LegacyAbilityId = $"{cardId}:ability:{sequence}",
         };
+        return assigned with { Presentations = L12EffectPresentationScenes.Build(assigned) };
     }
 
     private static string Normalize(string? value)
         => Regex.Replace(value?.Trim() ?? string.Empty, @"\s+", " ");
+}
+
+/// <summary>
+/// 将会触发公开效果展示的能力映射为稳定、可覆盖的文案场景。场景标识跟随
+/// 能力结构标识而不是展示顺序，因此后台重排能力不会让既有文案覆盖串位。
+/// 静态、持续与替代效果没有独立的效果动画，不生成可编辑场景。
+/// </summary>
+public static class L12EffectPresentationScenes
+{
+    public static L12AtomicAbility[] AttachCardContext(IReadOnlyList<L12AtomicAbility> abilities)
+    {
+        var tombConstructSharedBody = abilities.FirstOrDefault(ability => ability.CardId == "S01-0204"
+            && ability.Trigger == "leave")?.Text;
+        var attached = abilities.Select(ability => ability with
+        {
+            Presentations = Build(ability, tombConstructSharedBody),
+        }).ToArray();
+        return L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached);
+    }
+
+    public static IReadOnlyList<L12EffectPresentationScene> Build(L12AtomicAbility ability,
+        string? tombConstructSharedBody = null)
+    {
+        if (!IsAnimated(ability)) return [];
+
+        var defaultText = ability.CardId == "S01-0204" && ability.Trigger == "death"
+            && !string.IsNullOrWhiteSpace(tombConstructSharedBody)
+                ? TombConstructText(tombConstructSharedBody, "阵亡时")
+                : DefaultText(ability.Text, ability.Trigger);
+        var scenes = new List<L12EffectPresentationScene>
+        {
+            Scene(ability, ability.Trigger, defaultText),
+        };
+
+        // 〈陵墓构造体〉的阵亡效果被无效后会建立一个新的离场候选。它和原本的
+        // 阵亡动画是两个真实运行时场景，必须拥有彼此独立的编辑键。
+        if (ability.CardId == "S01-0204" && ability.Trigger == "leave")
+            scenes.Add(Scene(ability, "tomb-leave-fallback",
+                TombConstructText(ability.Text, "离场时")));
+
+        return scenes;
+    }
+
+    private static bool IsAnimated(L12AtomicAbility ability)
+        => ability.Trigger is not "static" and not "continuous"
+            && ability.ExecutionModel is not "continuous" and not "granted-continuous" and not "replacement";
+
+    private static L12EffectPresentationScene Scene(L12AtomicAbility ability, string trigger, string text)
+        => new($"{ability.AbilityId}:presentation:{NormalizeKey(trigger)}",
+            ability.CardId, ability.AbilityId, trigger, text,
+            EventType: "effect", Label: $"{trigger} 能力动效");
+
+    private static string DefaultText(string text, string trigger)
+    {
+        var trimmed = text.Trim();
+        const string enterAttack = "登场时/进攻时";
+        if (trimmed.StartsWith(enterAttack, StringComparison.Ordinal))
+        {
+            var timing = trigger is "enter" or "promotion-enter" ? "登场时"
+                : trigger == "attack" ? "进攻时"
+                : enterAttack;
+            return $"{timing}{trimmed[enterAttack.Length..]}";
+        }
+
+        const string deathLeave = "阵亡时 离场时";
+        if (trimmed.StartsWith(deathLeave, StringComparison.Ordinal))
+        {
+            var timing = trigger == "tomb-leave-fallback" ? "离场时" : "阵亡时";
+            return $"{timing}{trimmed[deathLeave.Length..]}";
+        }
+
+        return trimmed;
+    }
+
+    private static string TombConstructText(string text, string timing)
+    {
+        var trimmed = text.Trim();
+        foreach (var prefix in new[] { "阵亡时", "离场时" })
+            if (trimmed.StartsWith(prefix, StringComparison.Ordinal))
+                return $"{timing}{trimmed[prefix.Length..]}";
+        return $"{timing} {trimmed}".Trim();
+    }
+
+    private static string NormalizeKey(string value)
+        => Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
 }
 
 /// <summary>
@@ -289,8 +398,8 @@ public sealed class L12AtomicEffectCatalog
             if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text)) continue;
             sourceAbilities.Add(BuildStructuredAbility(card, overlay, sourceAbilities.Count + 1));
         }
-        var abilities = sourceAbilities
-            .Select((ability, index) => L12AtomicAbilityIdentity.Assign(card.Id, ability, index + 1)).ToArray();
+        var abilities = L12EffectPresentationScenes.AttachCardContext(sourceAbilities
+            .Select((ability, index) => L12AtomicAbilityIdentity.Assign(card.Id, ability, index + 1)).ToArray());
         var legacy = abilities.Sum(ability => ability.Atoms.Count(atom => atom.Kind == L12AtomKinds.Legacy));
         var executable = abilities.Sum(ability => ability.Atoms.Count(atom => atom.RuntimeExecutable));
         var atomCount = abilities.Sum(ability => ability.Atoms.Count);
@@ -492,6 +601,7 @@ public sealed class L12AtomicEffectCatalog
     private static string DetectTrigger(L12CardDefinition card, string text)
         => text.Contains("登场时") ? "enter"
             : text.Contains("阵亡时") ? "death"
+            : text.Contains("离场时") ? "leave"
             : text.Contains("进攻后") || text.Contains("击杀时") ? "after-attack"
             : text.Contains("进攻时") ? "attack"
             : text.Contains("回合开始时") ? "turn-start"
@@ -505,7 +615,7 @@ public sealed class L12AtomicEffectCatalog
     private static string ExecutionModelFor(string trigger, string text)
         => trigger switch
         {
-            "enter" or "death" or "after-attack" or "attack" or "turn-start" or "turn-end" or "disaster" => "triggered",
+            "enter" or "death" or "leave" or "after-attack" or "attack" or "turn-start" or "turn-end" or "disaster" => "triggered",
             "active" or "play" => "activated",
             "promotion" => "summon-flow",
             "static" when ContainsAny(text, "作为代替", "代替承受", "代替阵亡") => "replacement",

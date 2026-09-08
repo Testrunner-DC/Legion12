@@ -741,7 +741,9 @@ public sealed partial class L12GameEngine
                 var choices = top.Where(card => card.Faction == "tianting").Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0)
                 {
-                    AddEvent("reveal", item.Controller, "山河社稷图检索未命中，向对手展示顶部 3 张牌", top);
+                    AddPresentationEvent("reveal", item.Controller,
+                        "山河社稷图检索未命中，向对手展示顶部 3 张牌",
+                        "S01-0117", "search-miss", top);
                     BeginAllTopBottomReorder(item, "shanhe", top.Select(card => card.InstanceId),
                         "山河社稷图：排列其余卡牌，并将其全部放回牌库顶部或全部放回牌库底部");
                     return;
@@ -823,7 +825,8 @@ public sealed partial class L12GameEngine
         var card = player.Library.First(candidate => candidate.InstanceId == cardId);
         player.Library.Remove(card);
         PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
-            $"刘备展示〈{card.Name}〉并加入手牌", $"刘备将{card.Name}加入手牌");
+            $"刘备展示〈{card.Name}〉并加入手牌", $"刘备将{card.Name}加入手牌",
+            "S01-0105", "search-hit");
         FinishStackItem(item);
     }
 
@@ -833,7 +836,8 @@ public sealed partial class L12GameEngine
         var card = player.Library.First(candidate => candidate.InstanceId == cardId);
         player.Library.Remove(card);
         PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
-            $"山河社稷图展示〈{card.Name}〉并加入手牌", $"山河社稷图将{card.Name}加入手牌");
+            $"山河社稷图展示〈{card.Name}〉并加入手牌", $"山河社稷图将{card.Name}加入手牌",
+            "S01-0117", "search-hit");
         var remaining = item.Data["shanhe-top"].Split('|').Where(id => id != cardId).ToArray();
         if (remaining.Length == 0) { FinishStackItem(item); return; }
         BeginAllTopBottomReorder(item, "shanhe", remaining,

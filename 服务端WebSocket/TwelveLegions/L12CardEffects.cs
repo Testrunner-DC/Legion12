@@ -136,7 +136,8 @@ public sealed partial class L12GameEngine
                 else FinishStackItem(item);
                 return;
             case "服部半藏":
-                AddEvent("hidden-reveal", item.Controller, $"{card.Name}展示后发动隐匿", card);
+                AddPresentationEvent("hidden-reveal", item.Controller,
+                    $"{card.Name}展示后发动隐匿", "S01-0415", "enter-hide", card);
                 card.Hidden = true;
                 FinishStackItem(item); return;
             case "稻姬本多小松":

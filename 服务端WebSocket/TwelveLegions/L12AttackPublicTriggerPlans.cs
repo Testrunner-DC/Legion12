@@ -455,7 +455,9 @@ public sealed partial class L12GameEngine
             }
             case "show-hand-tactic":
                 if (player.Hand.FirstOrDefault(card => card.InstanceId == costIds[0]) is { } shown)
-                    AddEvent("reveal", candidate.Controller, $"奥德修斯展示手牌中的〈{shown.Name}〉作为进攻效果费用", shown);
+                    AddPresentationEvent("reveal", candidate.Controller,
+                        $"奥德修斯展示手牌中的〈{shown.Name}〉作为进攻效果费用",
+                        "S02-0509", "attack-cost", shown);
                 break;
             case "god-power":
                 if (player.Morale.First(card => card.InstanceId == costIds[0]) is { } power)
@@ -580,7 +582,8 @@ public sealed partial class L12GameEngine
                 var top = player.Library.FirstOrDefault();
                 if (top is not null)
                 {
-                    AddEvent("reveal", item.Controller, $"平阳昭公主展示牌库顶部的〈{top.Name}〉", top);
+                    AddPresentationEvent("reveal", item.Controller,
+                        $"平阳昭公主展示牌库顶部的〈{top.Name}〉", "S02-0103", "top-card", top);
                     if (L12StructuredCardRules.HasFaction(player, top, "tianting") && top.CurrentCost <= 5)
                     {
                         if (source is not null)

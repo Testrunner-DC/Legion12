@@ -376,7 +376,7 @@ public sealed partial class L12GameEngine
                         player.Library.Remove(selected);
                         PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                             $"寻找圣杯之旅展示〈{selected.Name}〉并加入手牌",
-                            "寻找圣杯之旅将彼界军团展示并加入手牌");
+                            "寻找圣杯之旅将彼界军团展示并加入手牌", "S02-06S4", "search-hit");
                     }
                 }
                 ShuffleLibrary(player, "寻找圣杯之旅检索结算");

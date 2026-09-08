@@ -432,7 +432,8 @@ public sealed partial class L12RoomManager
         session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
         room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
-            operationsPolicy: policy, stateFormatVersion: 2);
+            operationsPolicy: policy, stateFormatVersion: 2,
+            effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
         InitializeRankedClock(room);
         try
         {
@@ -889,7 +890,7 @@ public sealed partial class L12RoomManager
             _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
             disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
-            stateFormatVersion: 2);
+            stateFormatVersion: 2, effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
         room.Game.InitializeGmDisasters();
         foreach (var playerIndex in new[] { 0, 1 })
         {
@@ -1155,7 +1156,8 @@ public sealed partial class L12RoomManager
         var game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code,
             Random.Shared.Next(), members.Select(member => member.Name).ToArray(),
             members.Select(SelectedDeck).ToArray(), disasterMode: room.Options.DisasterMode,
-            operationsPolicy: room.OperationsPolicy, stateFormatVersion: 2);
+            operationsPolicy: room.OperationsPolicy, stateFormatVersion: 2,
+            effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
         // 只有对局记录成功落库后才发布可操作引擎；失败时下一次进入/恢复可安全重试。
         await _recorder.StartAsync(game, "tournament", members[0].AccountId, members[1].AccountId,
             members.Select(SelectedDeck).ToArray());
@@ -1232,7 +1234,7 @@ public sealed partial class L12RoomManager
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
                     playerNames, selectedDecks,
                     disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
-                    stateFormatVersion: 2);
+                    stateFormatVersion: 2, effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
                 InitializeRankedClock(room);
                 var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
                 await StartRecordedGameAsync(room, startedMembers, selectedDecks);

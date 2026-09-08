@@ -690,7 +690,9 @@ public sealed partial class L12GameEngine
                 {
                     player.Library.Remove(hammer);
                     player.Hand.Add(hammer);
-                    AddEvent("reveal", playerIndex, $"{player.Name}展示卡牌〈雷神之锤〉", hammer);
+                    AddPresentationEvent("reveal", playerIndex, $"{player.Name}展示卡牌〈雷神之锤〉",
+                        "S02-03M1", "setup-hammer",
+                        new Dictionary<string, string>(StringComparer.Ordinal) { ["playerName"] = player.Name }, hammer);
                     AddEvent("setup", playerIndex, "〈雷神索尔〉将1张〈雷神之锤〉加入起始手牌", hammer);
                 }
                 if (!State.PendingPrompts.Any(item => item.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)))

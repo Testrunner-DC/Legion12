@@ -465,7 +465,8 @@ public sealed partial class L12GameEngine
                     player.Graveyard.Remove(recover);
                     PubliclyRevealThenAddCardToHandByEffect(player, recover, "graveyard",
                         $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌",
-                        $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌");
+                        $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌",
+                        "ST03-03", "grave-hit");
                 }
                 else AddEvent("effect-cancelled", item.Controller,
                     "弗蕾迪斯选择的墓地军团已离开墓地，本次回收未生效");

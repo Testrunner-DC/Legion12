@@ -46,7 +46,11 @@ public sealed record L12AdminMatchQuery(
     DateTimeOffset? ToUtc = null,
     string? CardId = null,
     string? CardOwnerMasterId = null,
-    string? CardOwnerOpponentMasterId = null);
+    string? CardOwnerOpponentMasterId = null,
+    string? CardOwnerInitiative = null,
+    string? RulesVersion = null,
+    string? SeasonId = null,
+    bool RequireDecisiveResult = false);
 
 public sealed record L12CardAnalyticsQuery(
     string? Cursor = null,
@@ -58,7 +62,10 @@ public sealed record L12CardAnalyticsQuery(
     string? MasterId = null,
     DateTimeOffset? FromUtc = null,
     DateTimeOffset? ToUtc = null,
-    string? OpponentMasterId = null);
+    string? OpponentMasterId = null,
+    string? Initiative = null,
+    string? RulesVersion = null,
+    string? SeasonId = null);
 
 public sealed record L12AdminMatchPlayer(
     int PlayerIndex,
@@ -117,6 +124,19 @@ public sealed record L12CardFactView(
     string Coverage,
     JsonElement Metadata);
 
+public sealed record L12AnalyticsMetricCoverage(
+    string Metric,
+    string Unit,
+    long EligibleSamples,
+    long ObservedSamples,
+    long ExactFacts,
+    long InferredFacts,
+    long PartialFacts);
+
+public sealed record L12AnalyticsConfidenceInterval(
+    double Low,
+    double High);
+
 public sealed record L12AnalyticsCoverage(
     int SchemaVersion,
     IReadOnlyList<string> SupportedKinds,
@@ -126,6 +146,7 @@ public sealed record L12AnalyticsCoverage(
     long ExactDeckSnapshots,
     long InferredDeckSnapshots,
     bool PrivateDuringActiveMatch,
+    IReadOnlyList<L12AnalyticsMetricCoverage> Metrics,
     IReadOnlyList<string> Limitations);
 
 public sealed record L12AdminMatchDetail(
@@ -148,13 +169,24 @@ public sealed record L12CardAnalyticsItem(
     long SampleSize,
     long EligibleSampleSize,
     long IncludedMatches,
+    double AverageQuantity,
     double InclusionRate,
     long Wins,
     double WinRate,
-    double BaselineWinRate,
-    double WinRateDelta,
+    L12AnalyticsConfidenceInterval WinRateConfidence,
+    double? BaselineWinRate,
+    L12AnalyticsConfidenceInterval? BaselineWinRateConfidence,
+    double? WinRateDelta,
+    L12AnalyticsConfidenceInterval? WinRateDeltaConfidence,
     long DrawnMatches,
     long PlayedMatches,
+    long DrawnSamples,
+    long PlayedSamples,
+    long ActivatedSamples,
+    long SettledSamples,
+    long ResolvedSamples,
+    long NegatedSamples,
+    long FizzledSamples,
     long ActivatedCount,
     long ResolvedCount,
     long NegatedCount,
@@ -164,8 +196,9 @@ public sealed record L12CardAnalyticsItem(
 public sealed record L12CardAnalyticsPageSummary(
     long EligibleMatches,
     long SampleSize,
-    double BaselineWinRate,
+    double? BaselineWinRate,
     int MinimumSampleSize,
+    string StatisticalUnit,
     L12AnalyticsCoverage Coverage);
 
 public sealed record L12CardAnalyticsPage(
@@ -182,11 +215,41 @@ public sealed record L12CardAnalyticsBreakdown(
     long IncludedMatches,
     long Wins,
     double WinRate,
-    double BaselineWinRate,
-    double WinRateDelta);
+    L12AnalyticsConfidenceInterval WinRateConfidence,
+    double? BaselineWinRate,
+    L12AnalyticsConfidenceInterval? BaselineWinRateConfidence,
+    double? WinRateDelta,
+    L12AnalyticsConfidenceInterval? WinRateDeltaConfidence);
+
+public sealed record L12CardAnalyticsQuantityBucket(
+    int Quantity,
+    long SampleSize,
+    long Wins,
+    double WinRate);
+
+public sealed record L12CardAnalyticsTurnBucket(
+    int Turn,
+    long FirstDrawSamples,
+    long FirstPlaySamples);
+
+public sealed record L12CardAnalyticsMatchup(
+    string MasterId,
+    string OpponentMasterId,
+    long SampleSize,
+    long EligibleSampleSize,
+    long Wins,
+    double WinRate,
+    L12AnalyticsConfidenceInterval WinRateConfidence,
+    double? BaselineWinRate,
+    L12AnalyticsConfidenceInterval? BaselineWinRateConfidence,
+    double? WinRateDelta,
+    L12AnalyticsConfidenceInterval? WinRateDeltaConfidence);
 
 public sealed record L12CardAnalyticsDetail(
     L12CardAnalyticsItem Summary,
     IReadOnlyList<L12CardAnalyticsBreakdown> Breakdowns,
+    IReadOnlyList<L12CardAnalyticsQuantityBucket> QuantityDistribution,
+    IReadOnlyList<L12CardAnalyticsTurnBucket> TurnDistribution,
+    IReadOnlyList<L12CardAnalyticsMatchup> Matchups,
     IReadOnlyList<L12AdminMatchSummary> RecentMatches,
     L12AnalyticsCoverage Coverage);

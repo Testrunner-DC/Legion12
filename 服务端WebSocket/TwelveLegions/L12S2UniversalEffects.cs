@@ -314,7 +314,7 @@ public sealed partial class L12GameEngine
                     player.Library.Remove(target);
                     PubliclyRevealThenAddCardToHandByEffect(player, target, "library",
                         $"万物统御之戒展示并将〈{target.Name}〉加入手牌",
-                        $"万物统御之戒将{target.Name}加入手牌");
+                        $"万物统御之戒将{target.Name}加入手牌", "S02-0008", "search-hit");
                 }
                 ShuffleLibrary(player, "万物统御之戒检索结算");
                 FinishStackItem(item);
@@ -392,7 +392,9 @@ public sealed partial class L12GameEngine
             CreatePrompt(playerIndex, "information-confirm", $"祷告仪式公开下1张天灾卡〈{disaster.Name}〉", [], 0, 0,
                 "s2-prayer-public-confirm", item.StackItemId, isPrivate: false,
                 data: new Dictionary<string, string>(data));
-        AddEvent("reveal", item.Controller, $"〈祷告仪式〉公开下1张天灾卡〈{disaster.Name}〉", disaster);
+        AddPresentationEvent("reveal", item.Controller,
+            $"〈祷告仪式〉公开下1张天灾卡〈{disaster.Name}〉",
+            "S02-0012", "public-disaster", disaster);
     }
 
     private void BeginPrayerPrivatePreview(L12StackItem item)

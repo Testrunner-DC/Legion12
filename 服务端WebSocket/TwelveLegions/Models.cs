@@ -627,7 +627,11 @@ public sealed record L12ActionEvent(
     string Type,
     int? PlayerIndex,
     string Text,
-    L12CardInstance[] Cards);
+    L12CardInstance[] Cards)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectText { get; init; }
+}
 
 public sealed class L12GameState
 {
@@ -639,6 +643,8 @@ public sealed class L12GameState
     public required int Seed { get; init; }
     public required L12PlayerState[] Players { get; init; }
     public required L12OperationsPolicySnapshot OperationsPolicy { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<L12FrozenEffectPresentation>? EffectPresentationSnapshot { get; init; }
     public int ActivePlayer { get; set; }
     public int FirstPlayer { get; set; }
     public int DiceWinner { get; set; }

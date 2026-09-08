@@ -2,6 +2,34 @@
 
 本文件是追加式修复台账。开始新的 Bug 修复前必须先检索本文件；修复卡效时必须记录全卡池同类扫描结果。
 
+### OPS-20260908-288-TESTRUN-ISOLATION 公开测试服同机隔离与安全发布链
+
+- 状态与边界：用户确认测试服使用 `testrun.legion-12.com` 且任何人可访问，不增加 Basic Auth。本条只完成本地发布基础设施，未修改 DNS、连接服务器、申请证书、提交、推送或部署；正式服服务、端口、runtime、卡图缓存及部署脚本均未改动。
+- 根因：旧 bootstrap 会在测试 env 不存在时复制 `/etc/legion12-test.env`，可能继承正式凭据、邮件和站点配置；它还会在每次执行时重新启用 HTTP vhost，存在把已启用 TLS 降级的风险。仓库没有测试服专用日常原子发布器、Windows 目标锁和失败回滚夹具，无法证明测试发布不会误触正式服。
+- 修复：首次 bootstrap、TLS 激活和日常发布拆为三个独立入口。Bootstrap 首次运行时生成独立随机管理员密码，固定关闭邮件、清空 SMTP、关闭双人审批引导，并严格限定测试域、8084、`legion12-testrun.service`、独立 runtime、独立 release 与 `/opt/legion12-testrun-static/card-assets`。HTTP 只开放 ACME challenge，其余 503；TLS 激活失败恢复 HTTP 引导。日常发布只切换测试 release，不安装或 reload Nginx，不修改 env/systemd；新版本失败时保留 runtime 并验证恢复上一测试程序，旧版本无法验证则停止测试服务并留下人工对账标记。
+- 资源与安全：测试服务移除半核硬限制，改用 `Nice=10`、`CPUWeight=10`、`IOWeight=10` 和 `OOMScoreAdjust=750` 让正式服务优先；内存采用 `MemoryHigh=768M`、`MemoryMax=896M`。systemd 只允许写测试 runtime，并将正式活动目录、runtime 和静态缓存设为不可访问。Windows 发布入口只接受测试域或 `38.76.208.25`，实际连接固定该 IP，强制显式 known_hosts、严格主机密钥校验，并校验提交绑定的 schema 3 manifest、SHA256、tar 成员和归档边界。
+- 防回滚与验证：同类扫描覆盖测试 bootstrap、Nginx、systemd、Windows 正式部署入口和既有发布行为夹具；正式发布文件没有变化。三个 shell 脚本 `sh -n`、两份 PowerShell 解析、`scripts/test-l12-testrun-deploy-behavior.ps1` 及全树 `git diff --check` 由执行代理和主代理分别通过。专用夹具覆盖任意主机、归档篡改/额外成员、正式端口/服务/runtime/静态缓存隔离、邮件关闭、HTTP/TLS 边界，以及新版本健康失败后恢复旧测试版本且不覆盖运行数据。
+- 激活前置：仍需建立 DNS、在干净提交上生成 Release、使用已核验 SSH 指纹首次 bootstrap、签发证书并显式激活 TLS，随后核验公网 HTTPS、health、WebSocket 和 systemd 实际资源状态。没有这些现场收据时不得声称测试服已上线。
+
+### OPS-20260908-287-WORKSTREAM-COMMAND 三对话指挥与分工体系
+
+- 用户确认以本对话为主对话、`L12-UI` 为 UI 工作担当、`L12-Effect` 为卡效修改辅助；主对话仍执行卡效，并要求分工必须真正提升效率而非增加冲突、等待和重复验证。
+- 已将单一指挥权、显式写入租约、单文件单写入者、高冲突文件默认归主对话、越界冻结后顺序交接、专业工作流只跑专项/Focused、主对话统一 Batch/Release、紧急事故收回单一指挥等规则写入 `AGENTS.md` 和 `docs/WORKSTREAM-COORDINATION.md`。
+- 新增分工建议门槛：任务可独立验收、写入基本不重叠、预计节省约30%以上实际时间且交接成本低于收益；小修、规则歧义、公共热文件、紧急线上问题不拆分。分工对话只能报告“冻结交接”，不能代表整体完成、同步、部署或 Bug 关闭。
+- 本条是本地流程规范，不修改业务、卡效、UI、数据库或生产；未提交、推送、部署。回滚仅需删除新增协议并回退 `AGENTS.md` 对应章节，不得以回滚流程文档为由改动其他共享工作。
+
+### BATCH-20260908-286-CARD-ANALYTICS 单卡影响分析事实仪表盘
+
+- 状态与边界：用户明确批准先修统计正确性、隐私，再完成 V1 现有事实仪表盘，并只在安全范围铺 V2 地基。本条只修改本地仓库，未提交、推送、部署、连接生产数据库或变更线上后台状态。
+- 根因：旧 API 的主样本实际是“参赛方 × 对局”，但界面称为对局；抽到/打出用 `COUNT(DISTINCT match_id)`，同一局双方携带时会少算；同筛选没有未携带参赛方时把分母 0 显示成 0% 基线；全局事实条数、覆盖参赛方和漏斗事件混为一体。最近列表另走宽查询，可能命中活动局并返回账号、昵称、牌库名；单卡详情只要求 `admin.analytics.read`，没有为档案下钻再检查 `admin.matches.read`。有效和局又因 `winner IS NULL` 被归入 invalid，HTML 日期上界则排除了所选结束日全天。
+- 修复：分析总体现在只含非沙盒、已结束、无错误、有明确胜负且存在精确不可变构筑的参赛方；卡牌包含按 `match_id + player_index + card_id` 聚合，所有核心样本与使用节点均用参赛方单位，只有显式 `IncludedMatches`／兼容 draw/play match 字段保留实体对局计数。未携带对照为空时 `BaselineWinRate`、`WinRateDelta` 及其区间返回 `null`。抽到、打出、发动和结算只统计 `coverage=exact` 的参赛方出现，事实事件数及 exact/inferred/partial 数量分栏展示；每个指标单独返回 eligible、observed 和覆盖事实数。
+- 仪表盘：默认排位近 30 个自然日，可筛指定卡牌、模式、包含式结束日期、使用方/对方主宰、先/后手、规则版本、赛季和最小样本；核心指标增加平均携带数量，并为收录方胜率、未收录基线返回 Wilson 95% 区间，为两者差值返回 Newcombe 型区间。列表、对阵热图与切片只在差值区间完全高于/低于 0 时着正/负色，不再用固定 ±5% 阈值。“使用路径”明确各节点独立、不要求单调；另展示事实事件、携带数量、首次抽到/打出回合、resolve/negate/fizzle 结算、六类切片、指标级质量和限制。最近对局复用同一 decisive population，只返回已结束记录；账号、昵称和牌库名在 recorder 层脱敏，且 endpoint 只有在同时持有 `admin.matches.read` 时才包含该下钻。界面遵循深色中文黑体和窄屏收容。
+- 状态一致性：管理员档案从已持久化的 `authorityConclusion.agreedDraw` 区分合法和局与普通无胜者权威作废；前者列为 completed/draw，后者及有 error 的结束局仍列为 invalid。胜率分析排除所有无明确胜者记录，避免把和局或作废局伪装成胜负。日期字符串 `yyyy-MM-dd` 的结束边界转换到次日 00:00 的排他上界；前端本地日期先转成对应 UTC 边界，完整时间戳继续保持排他语义。
+- V2 与性能：`match-analytics` 组件 schema 升至 2，仅增加构筑归属、事实归属/类型/回合/coverage 和已完成分析作用域三个 additive 索引，以及可演进的指标覆盖返回；事实 schema 仍维持真实版本，不声称旧数据已补齐。每次请求先按筛选把 eligible 参赛方、构筑收录和卡牌事实统计物化到连接级 TEMP 表并各自建索引，详情的列表、六类切片、数量、时点、对阵与质量不再重复扫描基础事实表；不做启动全库回填或高风险持久缓存。列表 200、单维切片 200、时间桶 200、数量桶 20、对阵 200、最近记录 20 均有界。合成 5 万场、10 万参赛方、10 万事实的回归确认 EXPLAIN 命中 `ix_matches_analytics_scope` 与 `ix_match_card_facts_analytics_owner`；列表 + 完整详情实测 4.795 秒（预算 <10 秒），全部响应上限通过。生产库约 27GB，未来发布必须单独评估建索引耗时、WAL、锁与磁盘峰值，不能在本地结果基础上直接执行生产迁移。
+- 同类扫描：`rg -n "DISTINCT.*match_id|BaselineWinRate|PrivateDuringActiveMatch|ended_utc|DrawnMatches|PlayedMatches|AnalyticsCoverage" 服务端WebSocket/TwelveLegions TwelveLegions.Tests opcgpro-vue/src/l12` 覆盖列表、详情、六类 breakdown、对阵、最近记录、管理员状态、日期解析及前端消费者；没有修改卡效语义或卡池。既有 `FEATURE-20260904-225` 的稳定账号筛选、沙盒排除、活动局私密和匿名化约束全部保留。
+- 回归与门禁：先新增回归并确认因新 query/model/coverage 字段缺失而编译失败；最终 `MatchAnalyticsTests` 12/12，覆盖同局双参赛方、null 对照、精确/部分事实隔离、全部切片、最近局脱敏/权限开关、合法和局、日期边界、平均携带数量、null/存在区间、小样本点估计为 +100% 但差值区间仍跨 0、请求内 TEMP 聚合和 10 万参赛方性能。Focused 与最终从头 Batch 均退出 0：规则 2528/2528、原子 324 张且旧入口 0、UI 契约 305、语义字号、深色主题 11/11、连接 23/23、回放保留、重入 6/6、维护、摩点、Prompt、回放焦点、排位广播、卡图 40 项/324 张、Vue 类型及 Vite 255 模块生产构建通过。首轮 Batch 曾因无关 watchdog 测试 fixture 清理 SQLite 的瞬时文件锁为 2527/2528；Release 定向复跑 1/1 后完整 Batch 2528/2528，未修改该测试或实现。
+- 文件：`MatchAnalyticsModels.cs`、`MatchRecorder.CardAnalytics.cs`、`MatchRecorder.AdminQueries.cs`、`MatchRecorder.CardFacts.cs`、`L12WebSocketServer.cs`、`MatchAnalyticsTests.cs`、`platform.ts`、`AdminCardAnalyticsPanel.vue`、`check-ui-contracts.mjs`及本条三份文档。回滚应用层时必须同时回滚新字段消费者；additive 索引可保留，不得为回滚删库、改写事实或把缺失旧数据填成 0。
+
 ### BATCH-20260908-285 用户名治理、赛事全局管理与对战界面收口
 
 - 用户名统一为 2–11 个 Unicode 可见字符，最长示例“对方测试长昵称十二军团”通过；违禁内容按命中字符以 `*` 公共显示，存量命中账号下次登录必须改名，完成前阻断业务 HTTP 与 WebSocket。改名保留当前会话并撤销其他设备会话。

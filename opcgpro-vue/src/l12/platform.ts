@@ -61,10 +61,16 @@ export interface EffectAtomDescriptor {
 export interface EffectAtom {
   atomId: string; kind: string; label: string; order: number; parameters: Record<string, string>; runtimeExecutable: boolean; source: string; stage: string
 }
+export interface EffectPresentationScene {
+  sceneId: string; cardId: string; abilityId: string; trigger: string; defaultText: string
+  overrideText?: string; effectiveText: string; overridden: boolean; eventType: string; label: string
+  allowedPlaceholders?: string[]; placeholders: string[]
+}
 export interface AtomicAbility {
   abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
   migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number; executionModel: string
   reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
+  presentations?: EffectPresentationScene[]
 }
 export interface AtomicCardEffect {
   cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string
@@ -160,8 +166,14 @@ export interface AdminMatchCardFact {
 }
 export interface AdminAnalyticsCoverage {
   schemaVersion: number; supportedKinds: string[]; exactFacts: number; inferredFacts: number; partialFacts: number
-  exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean; limitations: string[]
+  exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
+  metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
+export interface AdminAnalyticsMetricCoverage {
+  metric: string; unit: string; eligibleSamples: number; observedSamples: number
+  exactFacts: number; inferredFacts: number; partialFacts: number
+}
+export interface AdminAnalyticsConfidenceInterval { low: number; high: number }
 export interface AdminMatchDetail {
   summary: AdminMatchSummary; participants: AdminMatchParticipant[]
   replay: RecordedCommand[]; cardFacts: AdminMatchCardFact[]
@@ -171,21 +183,28 @@ export interface AdminReplayPage {
   items: RecordedCommand[]; nextCursor?: string; limit: number; pageBytes: number; totalCommands: number; totalBytes: number
 }
 export interface AdminCardAnalyticsItem {
-  cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; inclusionRate: number; wins: number; winRate: number
-  baselineWinRate?: number | null; winRateDelta?: number | null; drawnMatches: number; playedMatches: number
+  cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; averageQuantity: number; inclusionRate: number; wins: number; winRate: number
+  winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null; drawnMatches: number; playedMatches: number
+  drawnSamples: number; playedSamples: number; activatedSamples: number; settledSamples: number
+  resolvedSamples: number; negatedSamples: number; fizzledSamples: number
   activatedCount: number; resolvedCount: number; negatedCount: number; fizzledCount: number
   coverage: AdminAnalyticsCoverage
 }
 export interface AdminCardAnalyticsPage {
   items: AdminCardAnalyticsItem[]; total: number; nextCursor?: string | null
-  summary?: { eligibleMatches?: number; sampleSize?: number; baselineWinRate?: number; minimumSampleSize?: number; coverage?: AdminMatchDetail['coverage'] }
+  summary?: { eligibleMatches?: number; sampleSize?: number; baselineWinRate?: number | null; minimumSampleSize?: number; statisticalUnit?: string; coverage?: AdminMatchDetail['coverage'] }
 }
 export interface AdminCardAnalyticsBreakdown {
   dimension: string; value: string; sampleSize: number; eligibleSampleSize: number; includedMatches?: number; wins: number; winRate: number
-  baselineWinRate?: number | null; winRateDelta?: number | null
+  winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null
 }
 export interface AdminCardAnalyticsDetail {
   summary: AdminCardAnalyticsItem; breakdowns: AdminCardAnalyticsBreakdown[]
+  quantityDistribution: Array<{ quantity: number; sampleSize: number; wins: number; winRate: number }>
+  turnDistribution: Array<{ turn: number; firstDrawSamples: number; firstPlaySamples: number }>
+  matchups: Array<{ masterId: string; opponentMasterId: string; sampleSize: number; eligibleSampleSize: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null; winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null }>
   recentMatches: AdminMatchSummary[]; coverage: AdminAnalyticsCoverage
 }
 export interface AdminCommand {
@@ -733,6 +752,13 @@ function commandBody<T extends Record<string, unknown>>(prefix: string, body: T)
   return { ...body, idempotencyKey: body.idempotencyKey || commandKey(prefix) }
 }
 
+function localDateBoundary(value: string | undefined, inclusiveEnd = false) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const [year, month, day] = value.split('-').map(Number)
+  const boundary = new Date(year, month - 1, day + (inclusiveEnd ? 1 : 0), 0, 0, 0, 0)
+  return boundary.toISOString()
+}
+
 export const adminApi = {
   rankedIntegrityAudits: (query: { accountId?: string; matchId?: string; reviewOnly?: boolean; limit?: number } = {}) => {
     const params = new URLSearchParams()
@@ -741,7 +767,7 @@ export const adminApi = {
   },
   matches: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string; player?: string; masterId?: string } = {}) => {
     const params = new URLSearchParams()
-    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
+    const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true) }
     ;['mode', 'from', 'to'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/matches${params.size ? `?${params}` : ''}`)
@@ -754,21 +780,21 @@ export const adminApi = {
   },
   playerMatches: (accountId: string, query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string } = {}) => {
     const params = new URLSearchParams()
-    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to }
+    const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true) }
     ;['mode', 'from', 'to'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
   },
-  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; search?: string; minimumSample?: number } = {}) => {
+  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
-    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to, minimumSampleSize: query.minimumSample }
+    const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsPage>(`/api/admin/analytics/cards${params.size ? `?${params}` : ''}`)
   },
-  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; minimumSample?: number } = {}) => {
+  cardAnalyticsDetail: (cardId: string, query: { from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; seasonId?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
-    const mapped = { ...query, modeId: query.mode, fromUtc: query.from, toUtc: query.to, minimumSampleSize: query.minimumSample }
+    const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
@@ -849,6 +875,12 @@ export const adminApi = {
   },
   effect: (cardId: string) => platformRequest<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
   reviewEffect: (cardId: string, body: { abilityId?: string; status: string; note?: string }) => platformRequest<EffectReview>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/review`, { method: 'PUT', body: JSON.stringify(commandBody('effect-review', body)) }),
+  saveEffectPresentation: (cardId: string, sceneId: string, text: string) => platformRequest<EffectPresentationScene>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/presentations/${encodeURIComponent(sceneId)}`, {
+    method: 'PUT', body: JSON.stringify(commandBody('effect-presentation', { text, reason: '更新卡牌动效文案' })),
+  }),
+  restoreEffectPresentation: (cardId: string, sceneId: string) => platformRequest<EffectPresentationScene>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/presentations/${encodeURIComponent(sceneId)}/restore`, {
+    method: 'POST', body: JSON.stringify(commandBody('effect-presentation-restore', { reason: '恢复默认卡牌动效文案' })),
+  }),
   releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts'),
   releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments'),
   releaseRuns: (query: { environment?: string; status?: string } = {}) => {

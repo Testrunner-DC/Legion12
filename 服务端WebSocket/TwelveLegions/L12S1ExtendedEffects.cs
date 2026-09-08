@@ -310,7 +310,12 @@ public sealed partial class L12GameEngine
             case "前线侦查":
             case "scout-reveal":
             {
-                AddEvent("reveal", item.Controller, $"前线侦查查看对方全部{enemy.Hand.Count}张手牌", enemy.Hand.ToArray());
+                AddPresentationEvent("reveal", item.Controller,
+                    $"前线侦查查看对方全部{enemy.Hand.Count}张手牌", "S01-0013", "opponent-hand",
+                    new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["count"] = enemy.Hand.Count.ToString(),
+                    }, enemy.Hand.ToArray());
                 FinishStackItem(item);
                 return true;
             }
@@ -816,7 +821,8 @@ public sealed partial class L12GameEngine
             var selected = player.Library.First(card => card.InstanceId == choice);
             player.Library.Remove(selected);
             PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
-                $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌");
+                $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
+                "S01-0007", "reveal-add");
         }
         var remaining = topIds.Where(id => id != choice && player.Library.Any(card => card.InstanceId == id)).ToArray();
         if (remaining.Length <= 1)

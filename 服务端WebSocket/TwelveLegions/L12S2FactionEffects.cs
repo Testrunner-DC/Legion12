@@ -438,7 +438,9 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                AddEvent("reveal", item.Controller, "始皇帝 嬴政登场时未满足发动条件，展示我方所有手牌", player.Hand.ToArray());
+                AddPresentationEvent("reveal", item.Controller,
+                    "始皇帝 嬴政登场时未满足发动条件，展示我方所有手牌",
+                    "S02-0101", "condition-failed-hand", player.Hand.ToArray());
                 FinishStackItem(item);
                 return true;
             }
@@ -813,7 +815,7 @@ public sealed partial class L12GameEngine
                     player.Graveyard.Remove(target);
                     PubliclyRevealThenAddCardToHandByEffect(player, target, "graveyard",
                         $"忒修斯展示墓地的〈{target.Name}〉并加入手牌",
-                        $"忒修斯将〈{target.Name}〉加入手牌");
+                        $"忒修斯将〈{target.Name}〉加入手牌", "S02-0518", "grave-hit");
                     AddEvent("return", item.Controller, $"{target.Name}从墓地回到手牌", target);
                 }
                 else AddEvent("effect-cancelled", item.Controller,
@@ -1639,7 +1641,9 @@ public sealed partial class L12GameEngine
                     .Select(card => card.InstanceId).ToList();
                 if (choices.Count == 0)
                 {
-                    AddEvent("reveal", item.Controller, "梅林查看牌库，但未找到费用不高于4的主动战术", source);
+                    AddPresentationEvent("reveal", item.Controller,
+                        "梅林查看牌库，但未找到费用不高于4的主动战术",
+                        "S02-0603", "search-miss", source);
                     ShuffleLibrary(player, "梅林检索未命中");
                     FinishStackItem(item);
                     return true;
@@ -1732,7 +1736,8 @@ public sealed partial class L12GameEngine
             }
             var top = player.Library[0];
             item.Data["amakine-top"] = top.InstanceId;
-            AddEvent("reveal", item.Controller, $"阿麦金展示牌库顶部的〈{top.Name}〉", top);
+            AddPresentationEvent("reveal", item.Controller,
+                $"阿麦金展示牌库顶部的〈{top.Name}〉", "S02-0616", "top-card", top);
             var isOnlyOtherworldTrait = top.Traits.Count == 1
                 && top.Traits.Contains("彼界", StringComparer.OrdinalIgnoreCase);
             item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";
@@ -1817,7 +1822,8 @@ public sealed partial class L12GameEngine
                 {
                     player.Library.Remove(selected);
                     PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
-                        $"梅林展示〈{selected.Name}〉并加入手牌", "梅林检索主动战术");
+                        $"梅林展示〈{selected.Name}〉并加入手牌", "梅林检索主动战术",
+                        "S02-0603", "search-hit");
                 }
                 ShuffleLibrary(player, "梅林检索结算");
                 FinishStackItem(item);
@@ -1886,7 +1892,7 @@ public sealed partial class L12GameEngine
                         player.Library.Remove(selected);
                         PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                             $"普罗米修斯展示〈{selected.Name}〉并加入手牌",
-                            "普罗米修斯将奥林匹斯卡牌加入手牌");
+                            "普罗米修斯将奥林匹斯卡牌加入手牌", "S02-05M2", "search-hit");
                     }
                 }
                 var remaining = topIds.Where(id => player.Library.Any(card => card.InstanceId == id)).ToArray();
@@ -1918,7 +1924,7 @@ public sealed partial class L12GameEngine
                         player.Library.Remove(selected);
                         PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                             $"武田信玄展示〈{selected.Name}〉并加入手牌",
-                            "武田信玄检索高天原军团");
+                            "武田信玄检索高天原军团", "S02-0401", "search-hit");
                     }
                 }
                 ShuffleLibrary(player, "武田信玄检索结算");
@@ -2035,7 +2041,9 @@ public sealed partial class L12GameEngine
                 player.Hand.Remove(shown);
                 player.Library.Insert(0, shown);
                 item.Data["heracles-shown-cost"] = shown.CurrentCost.ToString();
-                AddEvent("reveal", item.Controller, $"赫拉克勒斯·晋升展示手牌中的〈{shown.Name}〉并放回牌库顶部", shown);
+                AddPresentationEvent("reveal", item.Controller,
+                    $"赫拉克勒斯·晋升展示手牌中的〈{shown.Name}〉并放回牌库顶部",
+                    "S02-0501", "promotion-cost-resolution", shown);
                 ContinueHeraclesPromotionTargetChoice(item);
                 return true;
             }
@@ -2136,7 +2144,7 @@ public sealed partial class L12GameEngine
                     player.Library.Remove(selected);
                     PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                         $"〈符文之力〉展示〈{selected.Name}〉并加入手牌",
-                        "符文之力将【彼界】卡牌加入手牌");
+                        "符文之力将【彼界】卡牌加入手牌", "S02-0620", "search-hit");
                 }
                 PromptRunePowerBottomOrder(item, ids);
                 return true;
@@ -2214,7 +2222,7 @@ public sealed partial class L12GameEngine
                     player.Library.Remove(selected);
                     PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                         $"圆桌领域展示〈{selected.Name}〉并加入手牌",
-                        "圆桌领域将【圆桌骑士】军团加入手牌");
+                        "圆桌领域将【圆桌骑士】军团加入手牌", "S02-0621", "search-hit");
                 }
                 ShuffleLibrary(player, "圆桌领域检索结算");
                 FinishStackItem(item);
@@ -2233,7 +2241,7 @@ public sealed partial class L12GameEngine
                         player.Library.Remove(selected);
                         PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                             $"八尺琼勾玉展示〈{selected.Name}〉并加入手牌",
-                            "八尺琼勾玉将【高天原】的【骑兵】军团加入手牌");
+                            "八尺琼勾玉将【高天原】的【骑兵】军团加入手牌", "S02-0404", "search-hit");
                     }
                 }
                 ShuffleLibrary(player, "八尺琼勾玉检索结算");
@@ -2249,7 +2257,7 @@ public sealed partial class L12GameEngine
                     player.Library.Remove(selected);
                     PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                         $"〈荣耀之路〉展示〈{selected.Name}〉并加入手牌",
-                        "荣耀之路将【奥林匹斯】卡牌加入手牌");
+                        "荣耀之路将【奥林匹斯】卡牌加入手牌", "S02-0521", "search-hit");
                 }
                 ShuffleLibrary(player, "荣耀之路检索结算");
                 FinishStackItem(item);
@@ -2305,7 +2313,8 @@ public sealed partial class L12GameEngine
         }
         var top = player.Library[0];
         item.Data["s2-limu-top"] = top.InstanceId;
-        AddEvent("reveal", item.Controller, "李牧登场时，展示牌库顶的1张牌。", top);
+        AddPresentationEvent("reveal", item.Controller, "李牧登场时，展示牌库顶的1张牌。",
+            "S02-0102", "top-card", top);
         if (top.CardType != "tactic" || IsCounterTactic(top.CardId) || top.CurrentCost > 4)
         {
             MoveS2LiMuRevealedToBottom(item);
@@ -2359,7 +2368,8 @@ public sealed partial class L12GameEngine
         var top = player.Library.Take(5).ToArray();
         item.Data["s2-fortune-cards"] = string.Join('|', top.Select(card => card.InstanceId));
         if (top.Length > 0)
-            AddEvent("reveal", item.Controller, "〈武运在天 铠甲在前〉展示牌库顶部5张牌", top);
+            AddPresentationEvent("reveal", item.Controller,
+                "〈武运在天 铠甲在前〉展示牌库顶部5张牌", "S02-0405", "top-five", top);
         var artifacts = top.Where(card => card.CardType == "artifact").ToArray();
         if (artifacts.Length == 0)
         {
@@ -2408,7 +2418,8 @@ public sealed partial class L12GameEngine
             player.Library.Remove(selected!);
             PubliclyRevealThenAddCardToHandByEffect(player, selected!, "library",
                 $"〈武运在天 铠甲在前〉确认将〈{selected!.Name}〉加入手牌",
-                $"〈武运在天 铠甲在前〉将〈{selected.Name}〉加入手牌");
+                $"〈武运在天 铠甲在前〉将〈{selected.Name}〉加入手牌", "S02-0405",
+                stage == "artifact" ? "artifact-picked" : "uesugi-picked");
         }
 
         if (stage == "artifact") PromptS2FortuneUesugi(item);
@@ -2658,7 +2669,8 @@ public sealed partial class L12GameEngine
         }
 
         item.Data["s2-okita-top"] = top.InstanceId;
-        AddEvent("reveal", item.Controller, $"冲田总司展示牌库顶部的〈{top.Name}〉", top);
+        AddPresentationEvent("reveal", item.Controller,
+            $"冲田总司展示牌库顶部的〈{top.Name}〉", "S02-0403", "top-card", top);
         var eligible = L12StructuredCardRules.HasFaction(player, top, "gaotianyuan") && top.CurrentCost <= 3
             && top.CardType is "legion" or "artifact" or "tactic";
         if (!eligible || top.CardType == "legion" && !EffectGeneratedFreePlaySlots(player).Any())

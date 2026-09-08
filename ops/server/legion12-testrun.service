@@ -18,12 +18,31 @@ Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=L12_LISTEN_HOST=127.0.0.1
 Environment=L12_ALLOWED_ORIGINS=https://testrun.legion-12.com
 EnvironmentFile=/etc/legion12-testrun.env
-CPUQuota=50%
-MemoryMax=512M
+Nice=10
+CPUWeight=10
+IOWeight=10
+OOMScoreAdjust=750
+MemoryHigh=768M
+MemoryMax=896M
+MemorySwapMax=256M
+TasksMax=256
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectHome=true
 ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+InaccessiblePaths=/opt/legion12-test /opt/legion12-runtime /opt/legion12-static
 ReadWritePaths=/opt/legion12-testrun-runtime
 
 [Install]

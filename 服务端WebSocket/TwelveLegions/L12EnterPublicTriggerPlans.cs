@@ -363,7 +363,9 @@ public sealed partial class L12GameEngine
                 {
                     var card = player.Hand.First(entry => entry.InstanceId == discard);
                     player.Hand.Remove(card); player.Library.Insert(0, card);
-                    AddEvent("reveal", candidate.Controller, $"赫拉克勒斯·晋升展示〈{card.Name}〉并放回牌库顶部", card);
+                    AddPresentationEvent("reveal", candidate.Controller,
+                        $"赫拉克勒斯·晋升展示〈{card.Name}〉并放回牌库顶部",
+                        "S02-0501", "promotion-cost-declaration", card);
                 }
                 else if (plan == "horemheb")
                 {

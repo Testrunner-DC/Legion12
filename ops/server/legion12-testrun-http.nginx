@@ -1,6 +1,6 @@
-# Bootstrap-only HTTP virtual host. Keep this file enabled until the ACME
-# certificate for testrun.legion-12.com has been issued, then replace it with
-# legion12-testrun.nginx.
+# Bootstrap-only ACME virtual host. It deliberately does not expose the app
+# over plaintext HTTP. Keep it enabled only until the certificate exists, then
+# activate legion12-testrun.nginx with activate-l12-testrun-tls.sh.
 server {
     listen 80;
     listen [::]:80;
@@ -10,50 +10,9 @@ server {
         root /var/www/certbot;
     }
 
-    location = /ws {
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-        proxy_pass http://127.0.0.1:8084;
-    }
-
-    # Match the TLS virtual host: only site-media receives the 32m multipart allowance.
-    location = /api/admin/site/media {
-        client_max_body_size 32m;
-        error_page 413 = @site_media_too_large;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:8084;
-    }
-
-    location @site_media_too_large {
-        default_type application/json;
-        return 413 '{"code":"media_upload_too_large","message":"图片上传总量不能超过 32MB，请压缩原图后重试"}';
-    }
-
-    location ^~ /api/ {
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:8084;
-    }
-
-    location = /health {
-        proxy_set_header Host $host;
-        proxy_pass http://127.0.0.1:8084;
-    }
-
     location / {
-        root /opt/legion12-testrun/opcgpro-vue/dist;
-        try_files $uri $uri/ /index.html;
+        add_header Retry-After 300 always;
+        default_type text/plain;
+        return 503 'testrun TLS bootstrap in progress\n';
     }
 }

@@ -564,7 +564,7 @@ const contracts = [
   [deckEditor.includes("deck.name === activeDeckName") && deckEditor.includes('.saved-list b{color:#f1eee5}') && deckEditor.includes('.saved-list span{color:#aab4b0}') && deckEditor.includes('.saved-list article.active{border-color:#86e8ee;background:#123e42'), '牌库编辑器左下牌库列表及当前牌库状态必须保持高对比'],
   [board.includes('card.playCost ?? card.currentCost ?? card.cost'), '手牌可打出校验必须使用服务端动态费用'],
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
-  [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('event.effectText?.trim() || event.text.trim()') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，花魁的馈赠必须明确展示加入手牌的卡名'],
+  [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，后台覆盖优先于花魁兼容文案'],
   [prompt.includes("const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)") && prompt.includes(":intent=\"usesDetailCardImages ? 'detail' : 'thumb'\"") && prompt.split(":alt=\"entry.card.name || '天灾'\" intent=\"detail\"").length - 1 === 2 && prompt.includes("'disaster-choice': isDisasterChoice"), '公开天灾禁选、随机公开、触发确认及已公开历史必须请求详情级高清图，不得使用缩略图源'],
   [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('@media(max-width:520px)')
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
@@ -819,10 +819,12 @@ const contracts = [
     && platform.includes("response.status === 413 && path === '/api/admin/site/media'")
     && wsServer.includes('IHttpMaxRequestBodySizeFeature') && wsServer.includes('SiteMediaRequestMaxBytes')
     && nginxSite.includes('client_max_body_size 1m;')
-    && [nginxSite, nginxHttpSite].every(source => source.includes('location = /api/admin/site/media')
-      && source.includes('client_max_body_size 32m;') && source.includes('media_upload_too_large'))
+    && nginxSite.includes('location = /api/admin/site/media')
+    && nginxSite.includes('client_max_body_size 32m;') && nginxSite.includes('media_upload_too_large')
+    && !nginxHttpSite.includes('location = /api/admin/site/media') && !nginxHttpSite.includes('proxy_pass')
+    && nginxHttpSite.includes("return 503 'testrun TLS bootstrap in progress")
     && serverDeploy.includes("grep -Fq 'location = /api/admin/site/media'")
-    && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须在浏览器、Nginx 精确路由和 ASP.NET 端统一执行 16MB 原图/32MB 请求边界，并在控件近旁显示用途、比例、像素和裁切安全区'],
+    && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须在浏览器、TLS Nginx 精确路由和 ASP.NET 端统一执行 16MB 原图/32MB 请求边界，HTTP 引导不得暴露应用，并在控件近旁显示用途、比例、像素和裁切安全区'],
   [mediaUploadField.includes("createImageBitmap(source, { imageOrientation: 'from-image' })")
     && mediaUploadField.includes('v-if="isHero" class="hero-upload-field"')
     && mediaUploadField.includes("type HeroVariantKey = 'desktop' | 'mobile' | 'thumbnail'")
@@ -931,15 +933,38 @@ const contracts = [
     && deckConstructionBrowser.includes('aria-label="构筑筛选"')
     && deckConstructionBrowser.includes('entry.quantity') && deckConstructionBrowser.includes('const selected = computed')
     && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，档案正文不得继续平铺单卡'],
-  [adminCardAnalytics.includes('使用漏斗') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
+  [adminCardAnalytics.includes('使用路径') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
     && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
-    && adminCardAnalytics.includes('同条件基线') && adminCardAnalytics.includes('不把相关性描述成因果'), '单卡分析必须展示收录至结算漏斗、同条件基线、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
-  [adminCardAnalytics.includes('使用方主宰') && adminCardAnalytics.includes('对手方主宰')
+    && adminCardAnalytics.includes('同条件基线') && adminCardAnalytics.includes('不把相关性描述成因果'), '单卡分析必须展示各节点独立的使用路径、同条件基线、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
+  [adminCardAnalytics.includes('使用方主宰') && adminCardAnalytics.includes('对方主宰')
     && adminCardAnalytics.includes('adminApi.cardAnalytics({ ...filters.value')
     && adminCardAnalytics.includes('adminApi.cardAnalyticsDetail(cardId, filters.value)')
     && adminCardAnalytics.includes('data-ui-contract="card-analytics-low-sample-warning"')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
-    && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '单卡分析必须区分使用方/对手方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
+    && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '单卡分析必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
+  [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('没有未收录参赛方时基线显示“—”')
+    && adminCardAnalytics.includes('detail.summary.drawnSamples') && adminCardAnalytics.includes('detail.summary.playedSamples')
+    && adminCardAnalytics.includes('detail.summary.activatedSamples') && adminCardAnalytics.includes('detail.summary.settledSamples')
+    && platform.includes('drawnSamples: number') && platform.includes('settledSamples: number'), '单卡分析使用路径必须统一使用参赛方样本，不能混入事件次数；没有对照时必须显示空值，不能伪造0%基线'],
+  [adminCardAnalytics.includes('首次抽到／打出回合') && adminCardAnalytics.includes('携带数量分布')
+    && adminCardAnalytics.includes('主宰对阵热图') && adminCardAnalytics.includes('数据质量与覆盖')
+    && adminCardAnalytics.includes('最近已结束对局') && adminCardAnalytics.includes('规则版本')
+    && adminCardAnalytics.includes('赛季') && adminCardAnalytics.includes('先后手')
+    && platform.includes('turnDistribution: Array') && platform.includes('quantityDistribution: Array')
+    && platform.includes('matchups: Array') && platform.includes('metrics: AdminAnalyticsMetricCoverage[]'), '单卡事实仪表盘必须保留时点、携带量、对阵、切片、指标级覆盖与仅已结束下钻'],
+  [platform.includes('function localDateBoundary') && platform.includes('toUtc: localDateBoundary(query.to, true)')
+    && l12ServerSources.includes('QueryInclusiveEndDate') && l12ServerSources.includes('SanitizeAnalyticsRecentMatch')
+    && l12ServerSources.includes('Status: "completed"') && l12ServerSources.includes('AccountId = null')
+    && !adminCardAnalytics.includes('monospace'), '日期筛选的结束日必须包含当天；分析权限响应不得泄露近期对局身份/牌库，仪表盘必须保持黑体栈'],
+  [adminCardAnalytics.includes("mode: 'ranked'") && adminCardAnalytics.includes('today.getDate() - 29')
+    && adminCardAnalytics.includes('平均携带数量') && adminCardAnalytics.includes('averageQuantity.toFixed(2)')
+    && adminCardAnalytics.includes('95% 差值区间') && adminCardAnalytics.includes('winRateDeltaConfidence.low > 0')
+    && !adminCardAnalytics.includes('winRateDelta >= .05')
+    && platform.includes('AdminAnalyticsConfidenceInterval') && platform.includes('averageQuantity: number'), '单卡仪表盘默认排位近30日，核心指标必须展示平均携带量和95% Wilson／差值区间，方向着色不得使用固定百分点阈值'],
+  [l12ServerSources.includes('PrepareAnalyticsScopeAsync')
+    && l12ServerSources.includes('CREATE TEMP TABLE l12_analytics_eligible')
+    && l12ServerSources.includes('CREATE TEMP TABLE l12_analytics_fact_stats')
+    && l12ServerSources.includes('WilsonInterval') && l12ServerSources.includes('DifferenceInterval'), '单卡分析必须在一次请求内物化并复用按对局参赛方聚合，避免每个详情模块重复扫描事实表，并使用服务端置信区间'],
   [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
   [profileAuthForm.includes('@submit.prevent="submitAuth"') && profileAuthForm.includes('type="submit"')
     && (profileAuthForm.match(/\brequired\b/g)?.length ?? 0) === 2

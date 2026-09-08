@@ -10,11 +10,22 @@ public sealed partial class MatchRecorder
     public const long MaximumInlineReplayBytes = 32L * 1024 * 1024;
     public const int MaximumReplayPageCommands = 100;
     public const long MaximumReplayPageBytes = 4L * 1024 * 1024;
-    private const string AdminMatchSelect = """
+    private const string AdminAgreedDrawPredicate = """
+        EXISTS(
+            SELECT 1 FROM match_events conclusion
+            WHERE conclusion.match_id=m.match_id
+              AND json_extract(CASE WHEN json_valid(conclusion.command_json)=1
+                      THEN conclusion.command_json ELSE '{}' END,'$.type')='authorityConclusion'
+              AND json_extract(CASE WHEN json_valid(conclusion.command_json)=1
+                      THEN conclusion.command_json ELSE '{}' END,'$.agreedDraw')=1
+        )
+        """;
+    private static readonly string AdminMatchSelect = $"""
         SELECT m.match_id,m.mode_id,m.started_utc,m.ended_utc,m.winner,m.error,
                (SELECT COUNT(*) FROM match_events e WHERE e.match_id=m.match_id),
                p0.account_id,p0.display_name,p0.master_id,p0.deck_name,
-               p1.account_id,p1.display_name,p1.master_id,p1.deck_name
+               p1.account_id,p1.display_name,p1.master_id,p1.deck_name,
+               CASE WHEN {AdminAgreedDrawPredicate} THEN 1 ELSE 0 END
         FROM matches m
         JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
         JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
@@ -22,15 +33,16 @@ public sealed partial class MatchRecorder
 
     private static readonly string[] AnalyticsLimitations =
     [
-        "zone-move and legion damage use command-boundary state deltas; intermediate transitions are partial",
-        "damage facts without an authoritative source are target-only and are marked partial",
-        "search-or-hand-add is exact on the centralized effect helper; direct or legacy hand moves are command-boundary partial",
-        "fizzle is partial when a structured failure cannot be correlated with a live stack item",
-        "kill is exact for typed kill-source resolution; other destruction paths may only appear as partial zone moves",
-        "legacy matches without immutable deck snapshots are excluded from card analytics",
-        "win-rate differences are observational and do not establish causal card impact",
-        "baselineWinRate uses non-including player samples in the same filter or breakdown stratum; it is not a multivariate adjustment",
-        "rank/tier and opponent hidden rating are not stored in matches.db and are unavailable for strength adjustment",
+        "区域移动和军团伤害使用命令边界状态差分；命令内的中间变化只标记为部分覆盖",
+        "缺少权威来源的伤害事实只记录受击对象，并标记为部分覆盖",
+        "公共效果入口加入手牌为精确事实；旧入口或直接移动只保留命令边界部分事实",
+        "无法与存活堆叠项关联的空结算只标记为部分覆盖",
+        "类型化击杀来源为精确事实；其他离场路径可能只表现为部分区域移动",
+        "没有不可变构筑快照的旧对局不会进入单卡统计，且不会补造事实",
+        "胜率差只表示观察到的相关性，不表示卡牌造成了胜负变化",
+        "对照胜率使用同一筛选或切片内未收录该卡的参赛方；不是多变量强度校正",
+        "排位分段和对手隐藏分值未写入 matches.db，当前无法用于强度校正",
+        "V2 只复用向前写入的结构化回合、覆盖级别和规则/赛季快照；旧记录不会伪造缺失值",
     ];
 
     public async Task<L12AdminMatchPage> ListAdminMatchesAsync(L12AdminMatchQuery query)
@@ -397,8 +409,12 @@ public sealed partial class MatchRecorder
             switch (query.Status.Trim().ToLowerInvariant())
             {
                 case "ongoing": clauses.Add("m.ended_utc IS NULL"); break;
-                case "completed": clauses.Add("m.ended_utc IS NOT NULL AND m.error IS NULL AND (m.mode_id='sandbox' OR m.winner IN (0,1))"); break;
-                case "invalid": clauses.Add("m.ended_utc IS NOT NULL AND (m.error IS NOT NULL OR (m.mode_id<>'sandbox' AND m.winner IS NULL))"); break;
+                case "completed":
+                    clauses.Add($"m.ended_utc IS NOT NULL AND m.error IS NULL AND (m.mode_id='sandbox' OR m.winner IN (0,1) OR {AdminAgreedDrawPredicate})");
+                    break;
+                case "invalid":
+                    clauses.Add($"m.ended_utc IS NOT NULL AND (m.error IS NOT NULL OR (m.mode_id<>'sandbox' AND m.winner IS NULL AND NOT {AdminAgreedDrawPredicate}))");
+                    break;
                 default: throw new ArgumentException("对局状态筛选无效", nameof(query));
             }
         }
@@ -433,6 +449,17 @@ public sealed partial class MatchRecorder
             clauses.Add("m.started_utc < $to");
             parameters["$to"] = to.ToUniversalTime().ToString("O");
         }
+        if (!string.IsNullOrWhiteSpace(query.RulesVersion))
+        {
+            clauses.Add("m.rules_version=$rulesVersion");
+            parameters["$rulesVersion"] = query.RulesVersion.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(query.SeasonId))
+        {
+            clauses.Add("m.season_id=$seasonId");
+            parameters["$seasonId"] = query.SeasonId.Trim();
+        }
+        if (query.RequireDecisiveResult) clauses.Add("m.winner IN (0,1)");
         if (!string.IsNullOrWhiteSpace(query.CardId))
         {
             var ownerClauses = new List<string> { "dc.match_id=m.match_id", "dc.card_id=$card" };
@@ -445,6 +472,15 @@ public sealed partial class MatchRecorder
             {
                 ownerClauses.Add("opponent.master_id=$cardOwnerOpponentMaster");
                 parameters["$cardOwnerOpponentMaster"] = query.CardOwnerOpponentMasterId.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(query.CardOwnerInitiative))
+            {
+                var initiative = query.CardOwnerInitiative.Trim().ToLowerInvariant();
+                if (initiative is not ("first" or "second"))
+                    throw new ArgumentException("先后手筛选必须是 first 或 second", nameof(query));
+                ownerClauses.Add(initiative == "first"
+                    ? "m.first_player=owner.player_index"
+                    : "m.first_player IS NOT NULL AND m.first_player<>owner.player_index");
             }
             clauses.Add($"EXISTS(SELECT 1 FROM match_deck_cards dc JOIN match_participants owner ON owner.match_id=dc.match_id AND owner.player_index=dc.player_index JOIN match_participants opponent ON opponent.match_id=owner.match_id AND opponent.player_index<>owner.player_index WHERE {string.Join(" AND ", ownerClauses)})");
             parameters["$card"] = query.CardId.Trim();
@@ -472,8 +508,10 @@ public sealed partial class MatchRecorder
         var winner = reader.IsDBNull(4) ? (int?)null : reader.GetInt32(4);
         var error = reader.IsDBNull(5) ? null : reader.GetString(5);
         var mode = reader.GetString(1);
+        var agreedDraw = ReadLong(reader, 15) == 1;
         var status = endedUtc is null ? "ongoing"
-            : error is not null || winner is null && mode != "sandbox" ? "invalid" : "completed";
+            : error is not null || winner is null && mode != "sandbox" && !agreedDraw
+                ? "invalid" : "completed";
         var hideDeck = endedUtc is null && mode != "sandbox";
         var players = new[]
         {
@@ -618,14 +656,19 @@ public sealed partial class MatchRecorder
                 inferredDecks = reader.IsDBNull(1) ? 0 : reader.GetInt64(1);
             }
         }
+        var metrics = new[]
+        {
+            new L12AnalyticsMetricCoverage("all-card-facts", "fact", exactDecks + inferredDecks,
+                exact + inferred + partial, exact, inferred, partial),
+        };
         return new L12AnalyticsCoverage(L12CardFactKinds.SchemaVersion, L12CardFactKinds.Supported,
             exact, inferred, partial, exactDecks, inferredDecks, privateDuringActiveMatch,
-            AnalyticsLimitations);
+            metrics, AnalyticsLimitations);
     }
 
     private static L12AnalyticsCoverage EmptyCoverage(bool privateDuringActiveMatch)
         => new(L12CardFactKinds.SchemaVersion, L12CardFactKinds.Supported, 0, 0, 0, 0, 0,
-            privateDuringActiveMatch, AnalyticsLimitations);
+            privateDuringActiveMatch, [], AnalyticsLimitations);
 
     private static JsonElement ParseJsonElement(string json)
     {

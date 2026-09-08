@@ -184,7 +184,8 @@ public sealed partial class L12GameEngine
                 if (player.Library.Count == 0) { FinishStackItem(item); break; }
                 var top = player.Library[0];
                 player.Library.RemoveAt(0);
-                AddEvent("reveal", item.Controller, $"诸葛亮展示 {top.Name}", top);
+                AddPresentationEvent("reveal", item.Controller, $"诸葛亮展示 {top.Name}",
+                    "S01-0111", item.Trigger == "death" ? "death-top-card" : "attack-top-card", top);
                 if (top.CardType == "artifact")
                 {
                     player.Resolving.Add(top);

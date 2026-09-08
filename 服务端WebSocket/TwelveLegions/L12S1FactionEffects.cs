@@ -531,7 +531,8 @@ public sealed partial class L12GameEngine
                 var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]);
                 player.Library.Remove(selected);
                 PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
-                    $"卡诺匹斯箱展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌");
+                    $"卡诺匹斯箱展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
+                    "S01-0216", "search-hit");
                 ShuffleLibrary(player, "卡诺匹斯箱检索结算");
                 FinishStackItem(item); return true;
             }
@@ -1564,7 +1565,7 @@ public sealed partial class L12GameEngine
             player.Library.Remove(selected);
             PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                 $"法老王的庆典展示〈{selected.Name}〉并加入手牌",
-                $"法老王的庆典将{selected.Name}加入手牌");
+                $"法老王的庆典将{selected.Name}加入手牌", "S01-0222", "search-hit");
         }
         var eligible = FestivalCardsStillInLibrary(item, player).Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").ToArray();
         if (eligible.Length == 0) { PromptPharaohFestivalOrder(item); return; }
@@ -1621,7 +1622,8 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller]; var top = player.Library.Take(count).ToArray(); item.Data["faction-search-top"] = string.Join('|', top.Select(card => card.InstanceId)); item.Data["faction-search-context"] = context;
         if (context == "sun-divinity" && top.Length > 0)
-            AddEvent("reveal", item.Controller, "众神之乡公开牌库顶部3张牌", top);
+            AddPresentationEvent("reveal", item.Controller, "众神之乡公开牌库顶部3张牌",
+                "S01-02D1", "top-three", top);
         const int max = 1;
         var choices = top.Where(card => L12StructuredCardRules.HasFaction(player, card, faction)
             && card.CardId != excluded).Select(card => card.InstanceId).ToArray();
@@ -1647,7 +1649,8 @@ public sealed partial class L12GameEngine
             var card = player.Library.First(candidate => candidate.InstanceId == id);
             player.Library.Remove(card);
             PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
-                $"〈{item.SourceName}〉展示〈{card.Name}〉并加入手牌", $"{card.Name}因效果加入手牌");
+                $"〈{item.SourceName}〉展示〈{card.Name}〉并加入手牌", $"{card.Name}因效果加入手牌",
+                item.SourceCardId, "search-hit");
         }
         var remaining = item.Data["faction-search-top"].Split('|').Where(id => player.Library.Any(card => card.InstanceId == id)).ToList();
         PromptFactionSearchOrder(item, remaining);

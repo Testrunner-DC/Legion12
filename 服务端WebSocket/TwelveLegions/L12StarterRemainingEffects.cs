@@ -1328,7 +1328,8 @@ public sealed partial class L12GameEngine
                 {
                     _ = PubliclyRevealThenMoveLibraryCardToHandByEffect(player, selected.InstanceId,
                         $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌",
-                        $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌");
+                        $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌",
+                        "ST05-06", "search-hit");
                 }
                 var remaining = topIds.Where(id => !string.Equals(id, chosenId,
                     StringComparison.OrdinalIgnoreCase) && player.Library.Any(card => card.InstanceId == id)).ToArray();

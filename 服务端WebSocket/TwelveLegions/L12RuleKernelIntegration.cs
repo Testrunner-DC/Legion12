@@ -1386,7 +1386,11 @@ public sealed partial class L12GameEngine
         if (data is not null)
             foreach (var pair in data) candidate.Data[pair.Key] = pair.Value;
         AttachDefaultTriggerCompositePlan(candidate);
-        candidate.Data.TryAdd("triggerEffectText", ResolveTriggeredEffectDisplayText(card, trigger, text, candidate.Data));
+        var triggerEffectText = ResolveTriggeredEffectDisplayText(card, trigger, text, candidate.Data);
+        candidate.Data.TryAdd("triggerEffectText", triggerEffectText);
+        var presentationSceneId = ResolveEffectPresentationSceneId(card, trigger, candidate.Data, triggerEffectText);
+        if (!string.IsNullOrWhiteSpace(presentationSceneId))
+            candidate.Data.TryAdd("presentationSceneId", presentationSceneId);
         return candidate;
     }
 
@@ -1409,8 +1413,9 @@ public sealed partial class L12GameEngine
         var fallback = CreateTriggerCandidate(item.Controller, source, "leave", "【离场时】效果",
             new Dictionary<string, string> { ["tombConstructFallback"] = "true" }, source);
         QueueTriggerCandidates([fallback]);
-        AddEvent("effect-trigger", item.Controller,
-            "陵墓构造体的【阵亡时】效果被无效，改由【离场时】效果直接发动", source);
+        AddPresentationEvent("effect-trigger", item.Controller,
+            "陵墓构造体的【阵亡时】效果被无效，改由【离场时】效果直接发动",
+            "S01-0204", "tomb-fallback-transition", source);
     }
 
     /// <summary>
@@ -1622,7 +1627,11 @@ public sealed partial class L12GameEngine
 
     private void PublishEffectPresentation(string eventType, int? controller, L12CardInstance source,
         string trigger, string fallback, IReadOnlyDictionary<string, string>? data = null)
-        => AddEvent(eventType, controller, ResolveEffectPresentationText(source, trigger, fallback, data), source);
+    {
+        var text = ResolveEffectPresentationText(source, trigger, fallback, data);
+        var sceneId = ResolveEffectPresentationSceneId(source, trigger, data, text);
+        AddPresentationEventById(eventType, controller, text, sceneId, source);
+    }
 
     private bool HasDeathTrigger(L12CardInstance card)
         => card.SuppressDeathUntilTurn < State.TurnSerial && (card.CardId is "S01-0102" or "S01-0108" or "S01-0417"
@@ -1726,7 +1735,8 @@ public sealed partial class L12GameEngine
         else State.EffectStack.Add(item);
         RevealSetReactionSourceWhenStacked(candidate);
         var source = FindSource(item) ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
-        AddEvent("effect-trigger", candidate.Controller, triggerEffectText, source);
+        AddPresentationEventById("effect-trigger", candidate.Controller, triggerEffectText,
+            candidate.Data.GetValueOrDefault("presentationSceneId"), source);
         AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{stackText}进入同一时点触发批次",
             source);
     }

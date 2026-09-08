@@ -4,9 +4,12 @@ import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import {
   adminApi,
+  type AdminAnalyticsConfidenceInterval,
+  type AdminCardAnalyticsBreakdown,
   type AdminCardAnalyticsDetail,
   type AdminCardAnalyticsItem,
   type AdminCardAnalyticsPage,
+  type AdminMatchSummary,
 } from '@/l12/platform'
 
 const emit = defineEmits<{ notice: [message: string]; openMatch: [matchId: string] }>()
@@ -15,7 +18,18 @@ const detail = ref<AdminCardAnalyticsDetail | null>(null)
 const cards = ref<DeckCard[]>([])
 const loading = ref(false)
 const detailLoading = ref(false)
-const filters = ref({ search: '', mode: 'ranked', from: '', to: '', masterId: '', opponentMasterId: '', minimumSample: 10 })
+function localDateInput(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const today = new Date()
+const thirtyDayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29)
+const filters = ref({
+  search: '', mode: 'ranked', from: localDateInput(thirtyDayStart), to: localDateInput(today), masterId: '', opponentMasterId: '',
+  initiative: '', rulesVersion: '', seasonId: '', minimumSample: 10,
+})
 
 const cardById = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const masterOptions = computed(() => cards.value
@@ -23,6 +37,12 @@ const masterOptions = computed(() => cards.value
   .sort((left, right) => left.nameZh.localeCompare(right.nameZh, 'zh-CN')))
 const selectedCatalogCard = computed(() => detail.value ? cardById.value.get(detail.value.summary.cardId) : undefined)
 const summaryMetrics = computed(() => page.value.summary || {})
+const maximumTiming = computed(() => Math.max(1, ...(detail.value?.turnDistribution || [])
+  .flatMap(bucket => [bucket.firstDrawSamples, bucket.firstPlaySamples])))
+const maximumQuantity = computed(() => Math.max(1, ...(detail.value?.quantityDistribution || [])
+  .map(bucket => bucket.sampleSize)))
+const matchupRows = computed(() => Array.from(new Set((detail.value?.matchups || []).map(row => row.masterId))))
+const matchupColumns = computed(() => Array.from(new Set((detail.value?.matchups || []).map(row => row.opponentMasterId))))
 
 function percent(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
@@ -32,15 +52,26 @@ function signedPercent(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
   return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`
 }
+function confidenceLabel(value?: AdminAnalyticsConfidenceInterval | null, signed = false) {
+  if (!value) return '—'
+  return `${signed ? signedPercent(value.low) : percent(value.low)} – ${signed ? signedPercent(value.high) : percent(value.high)}`
+}
 function ratio(value: number, total: number) { return total > 0 ? Math.min(1, Math.max(0, value / total)) : 0 }
 function coverageLabel(value: AdminCardAnalyticsItem['coverage'] | AdminCardAnalyticsDetail['coverage']) {
   if (!value) return '暂无覆盖说明'
   if (value.inferredFacts || value.inferredDeckSnapshots) return '含历史推断数据'
-  if (value.partialFacts) return '含命令边界推断'
+  if (value.partialFacts) return '精确事实 + 部分覆盖'
   return '结构化精确事实'
 }
+function metricLabel(metric: string) {
+  return ({ inclusion: '构筑收录', draw: '首次抽到', play: '从手牌打出', activation: '效果发动', settlement: '结算状态', 'all-card-facts': '全部卡牌事实' } as Record<string, string>)[metric] || metric
+}
 function modeLabel(mode: string) {
-  return ({ ranked: '排位', casual: '休闲', friendly: '好友房', tournament: '赛事' } as Record<string, string>)[mode] || mode
+  return ({ '': '全部模式', ranked: '排位', casual: '休闲', friendly: '好友房', tournament: '赛事' } as Record<string, string>)[mode] || mode
+}
+function masterLabel(masterId?: string | null) {
+  if (!masterId || masterId === 'unknown') return '未知主宰'
+  return cardById.value.get(masterId)?.nameZh || masterId
 }
 function dateLabel(value?: string | null) {
   if (!value) return '—'
@@ -49,18 +80,44 @@ function dateLabel(value?: string | null) {
 }
 function resultText(item: AdminCardAnalyticsItem) {
   if (isLowSample(item)) return '低样本，仅供参考'
-  if (typeof item.winRateDelta !== 'number') return '缺少同条件对照'
-  if (item.winRateDelta >= .05) return '正向关联'
-  if (item.winRateDelta <= -.05) return '负向关联'
-  return '接近对照基线'
+  if (!item.winRateDeltaConfidence) return '缺少同条件未收录对照'
+  if (item.winRateDeltaConfidence.low > 0) return '95% 区间支持正向关联'
+  if (item.winRateDeltaConfidence.high < 0) return '95% 区间支持负向关联'
+  return '95% 区间跨过零，方向未确定'
 }
 function isLowSample(item: AdminCardAnalyticsItem) {
   return item.sampleSize < Math.max(filters.value.minimumSample, 30)
 }
 function resultTone(item: AdminCardAnalyticsItem) {
-  if (isLowSample(item) || typeof item.winRateDelta !== 'number') return 'neutral'
-  return item.winRateDelta >= .05 ? 'positive' : item.winRateDelta <= -.05 ? 'negative' : 'neutral'
+  if (isLowSample(item)) return 'neutral'
+  return deltaTone(item.winRateDeltaConfidence)
 }
+function deltaTone(value?: AdminAnalyticsConfidenceInterval | null) {
+  if (!value) return 'unavailable'
+  return value.low > 0 ? 'positive' : value.high < 0 ? 'negative' : 'neutral'
+}
+function dimensionLabel(value: string) {
+  return ({ mode: '模式', master: '使用方主宰', 'opponent-master': '对方主宰', initiative: '先后手', 'rules-version': '规则版本', season: '赛季' } as Record<string, string>)[value] || value
+}
+function dimensionValue(row: AdminCardAnalyticsBreakdown) {
+  if (row.dimension === 'mode') return modeLabel(row.value)
+  if (row.dimension === 'master' || row.dimension === 'opponent-master') return masterLabel(row.value)
+  if (row.dimension === 'initiative') return row.value === 'first' ? '先手' : row.value === 'second' ? '后手' : '未知'
+  if (row.dimension === 'season' && row.value === 'unassigned') return '未记录赛季'
+  return row.value
+}
+function matchupCell(masterId: string, opponentMasterId: string) {
+  return detail.value?.matchups.find(row => row.masterId === masterId && row.opponentMasterId === opponentMasterId)
+}
+function recentMatchup(match: AdminMatchSummary) {
+  return match.players.map(player => masterLabel(player.masterId)).join(' 对阵 ')
+}
+function recentResult(match: AdminMatchSummary) {
+  const owner = match.players.find(player => player.result === 'win')
+  if (owner) return `${masterLabel(owner.masterId)}获胜`
+  return match.players.every(player => player.result === 'draw') ? '平局' : '已结算'
+}
+
 async function loadAnalytics(reset = true) {
   loading.value = true
   try {
@@ -77,8 +134,10 @@ async function loadAnalytics(reset = true) {
 async function selectCard(cardId: string) {
   detailLoading.value = true
   try { detail.value = await adminApi.cardAnalyticsDetail(cardId, filters.value) }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '单卡分析详情加载失败') }
-  finally { detailLoading.value = false }
+  catch (error) {
+    detail.value = null
+    emit('notice', error instanceof Error ? error.message : '单卡分析详情加载失败')
+  } finally { detailLoading.value = false }
 }
 
 onMounted(async () => {
@@ -91,91 +150,144 @@ onMounted(async () => {
 <template>
   <section class="card-analytics">
     <header class="module-header">
-      <div><small>CARD IMPACT ANALYTICS</small><h2>单卡影响分析</h2><p>分析构筑收录、抽到、打出、发动与结算后的胜负关联；不把相关性描述成因果。</p></div>
-      <button :disabled="loading" @click="loadAnalytics(true)">刷新</button>
+      <div><small>卡牌事实仪表盘</small><h2>单卡影响分析</h2><p>以参赛方为统计单位，分析指定卡牌的构筑、使用时点、结算与胜负关联；不把相关性描述成因果。</p></div>
+      <button :disabled="loading" @click="loadAnalytics(true)">刷新事实</button>
     </header>
 
-    <section class="filter-panel">
-      <label class="search">卡牌<input v-model="filters.search" placeholder="卡名或编号" @keyup.enter="loadAnalytics(true)"/></label>
-      <label>数据范围<select v-model="filters.mode"><option value="ranked">排位（平衡默认）</option><option value="casual">休闲</option><option value="friendly">好友房</option><option value="tournament">赛事</option></select></label>
+    <section class="filter-panel" aria-label="单卡分析筛选">
+      <label class="search">指定卡牌<input v-model="filters.search" placeholder="卡名、编号或 ID" @keyup.enter="loadAnalytics(true)"/></label>
+      <label>模式<select v-model="filters.mode"><option value="">全部正式模式</option><option value="ranked">排位</option><option value="casual">休闲</option><option value="friendly">好友房</option><option value="tournament">赛事</option></select></label>
       <label>开始日期<input v-model="filters.from" type="date"/></label>
-      <label>结束日期<input v-model="filters.to" type="date"/></label>
+      <label>结束日期（含当天）<input v-model="filters.to" type="date"/></label>
       <label>使用方主宰<select v-model="filters.masterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`mine-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
-      <label>对手方主宰<select v-model="filters.opponentMasterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`enemy-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
-      <label>最小样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
-      <button class="query" :disabled="loading" @click="loadAnalytics(true)">分析</button>
+      <label>对方主宰<select v-model="filters.opponentMasterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`enemy-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
+      <label>先后手<select v-model="filters.initiative"><option value="">全部</option><option value="first">先手</option><option value="second">后手</option></select></label>
+      <label>规则版本<input v-model.trim="filters.rulesVersion" placeholder="全部版本"/></label>
+      <label>赛季<input v-model.trim="filters.seasonId" placeholder="全部赛季"/></label>
+      <label>最小参赛方样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
+      <button class="query" :disabled="loading" @click="loadAnalytics(true)">按条件分析</button>
     </section>
-    <p class="sample-contract" data-ui-contract="card-analytics-low-sample-warning">样本量低于 {{ Math.max(filters.minimumSample, 30) }} 时标记“低样本，仅供参考”；低于最小样本的卡牌不进入结果。使用方与对手方主宰会同时约束样本、入组率和同条件基线。</p>
+    <p class="sample-contract" data-ui-contract="card-analytics-low-sample-warning">所有比率均以“参赛方 × 对局”为一份样本；同一局双方都携带时计两份样本。低于 {{ Math.max(filters.minimumSample, 30) }} 份标记“低样本，仅供参考”；没有未收录参赛方时基线显示“—”，不会伪造为 0%。</p>
 
     <div class="scope-summary">
-      <article><small>正式对局</small><b>{{ summaryMetrics.eligibleMatches ?? 0 }}</b><span>{{ modeLabel(filters.mode) }}，不含沙盒</span></article>
-      <article><small>有数据卡牌</small><b>{{ page.total }}</b><span>符合当前切片</span></article>
-      <article><small>精确事实</small><b>{{ summaryMetrics.coverage?.exactFacts ?? 0 }}</b><span>由权威事件直接记录</span></article>
-      <article><small>推断／部分事实</small><b>{{ (summaryMetrics.coverage?.inferredFacts ?? 0) + (summaryMetrics.coverage?.partialFacts ?? 0) }}</b><span>不会混作精确指标</span></article>
+      <article><small>正式已结束对局</small><b>{{ summaryMetrics.eligibleMatches ?? 0 }}</b><span>{{ modeLabel(filters.mode) }}，排除沙盒、错误终局与无明确胜者记录</span></article>
+      <article><small>参赛方样本</small><b>{{ summaryMetrics.sampleSize ?? 0 }}</b><span>统计单位：参赛方 × 对局</span></article>
+      <article><small>达到门槛的卡牌</small><b>{{ page.total }}</b><span>已先筛选再分页</span></article>
+      <article><small>事实质量</small><b>{{ summaryMetrics.coverage?.exactFacts ?? 0 }}</b><span>精确 {{ summaryMetrics.coverage?.exactFacts ?? 0 }} · 部分 {{ summaryMetrics.coverage?.partialFacts ?? 0 }}</span></article>
     </div>
 
     <div class="analytics-workspace">
       <section class="card-list panel-shell">
-        <header><b>卡牌清单</b><span>按样本与编号查询</span></header>
+        <header><div><b>卡牌清单</b><span>选择一张卡查看完整事实</span></div><em>{{ page.items.length }} / {{ page.total }}</em></header>
         <button v-for="item in page.items" :key="item.cardId" class="card-row" :class="{ selected: detail?.summary.cardId === item.cardId }" :data-low-sample="isLowSample(item)" @click="selectCard(item.cardId)">
           <CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/>
-          <span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }} · {{ item.includedMatches }} 场收录</small><em>{{ coverageLabel(item.coverage) }}</em></span>
+          <span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }}</small><em>{{ item.sampleSize }} 份参赛方样本 · {{ item.includedMatches }} 场</em></span>
           <span class="row-numbers"><b>{{ percent(item.winRate) }}</b><small :data-tone="resultTone(item)">{{ signedPercent(item.winRateDelta) }}</small></span>
         </button>
-        <div v-if="loading" class="empty">正在聚合卡牌事实…</div>
-        <div v-else-if="!page.items.length" class="empty">没有达到样本条件的卡牌</div>
+        <div v-if="loading" class="empty">正在聚合结构化事实…</div>
+        <div v-else-if="!page.items.length" class="empty">没有达到样本门槛的卡牌</div>
         <button v-if="page.nextCursor" class="load-more" :disabled="loading" @click="loadAnalytics(false)">加载更多卡牌</button>
       </section>
 
       <main class="analysis-detail panel-shell">
-        <div v-if="detailLoading" class="empty">正在读取分层分析…</div>
+        <div v-if="detailLoading" class="empty">正在读取分层事实…</div>
         <template v-else-if="detail">
           <header class="card-heading">
             <CardImage :card-id="detail.summary.cardId" :legacy-url="selectedCatalogCard?.imageUrl" :alt="selectedCatalogCard?.nameZh || detail.summary.cardId" intent="detail" eager/>
-            <div><small>{{ detail.summary.cardId }} · {{ selectedCatalogCard?.faction || '未知阵营' }}</small><h3>{{ selectedCatalogCard?.nameZh || detail.summary.cardId }}</h3><p>{{ coverageLabel(detail.coverage) }} · {{ detail.summary.sampleSize }} 场样本</p><em :data-tone="resultTone(detail.summary)">{{ resultText(detail.summary) }}</em></div>
+            <div><small>{{ detail.summary.cardId }} · {{ selectedCatalogCard?.faction || '未知阵营' }}</small><h3>{{ selectedCatalogCard?.nameZh || detail.summary.cardId }}</h3><p>{{ coverageLabel(detail.coverage) }} · {{ detail.summary.sampleSize }} 份参赛方样本 / {{ detail.summary.includedMatches }} 场</p><em :data-tone="resultTone(detail.summary)">{{ resultText(detail.summary) }}</em></div>
           </header>
 
-          <section class="key-metrics">
-            <article><small>入组率</small><b>{{ percent(detail.summary.inclusionRate) }}</b><span>{{ detail.summary.includedMatches }} 场收录</span></article>
-            <article><small>入组胜率</small><b>{{ percent(detail.summary.winRate) }}</b><span>{{ detail.summary.wins }} 场获胜</span></article>
-            <article><small>同条件基线</small><b>{{ percent(detail.summary.baselineWinRate) }}</b><span>同筛选范围未收录该卡样本</span></article>
-            <article><small>胜率关联差</small><b :data-tone="resultTone(detail.summary)">{{ signedPercent(detail.summary.winRateDelta) }}</b><span>不是因果结论</span></article>
+          <section class="key-metrics" aria-label="核心指标">
+            <article><small>构筑收录率</small><b>{{ percent(detail.summary.inclusionRate) }}</b><span>{{ detail.summary.sampleSize }} / {{ detail.summary.eligibleSampleSize }} 份参赛方</span></article>
+            <article><small>平均携带数量</small><b>{{ detail.summary.averageQuantity.toFixed(2) }}</b><span>每份收录构筑中的平均张数</span></article>
+            <article><small>收录方胜率</small><b>{{ percent(detail.summary.winRate) }}</b><span>{{ detail.summary.wins }} 胜 / {{ detail.summary.sampleSize }} 份 · 95% CI {{ confidenceLabel(detail.summary.winRateConfidence) }}</span></article>
+            <article><small>同条件基线（未收录）</small><b>{{ percent(detail.summary.baselineWinRate) }}</b><span>{{ typeof detail.summary.baselineWinRate === 'number' ? `95% CI ${confidenceLabel(detail.summary.baselineWinRateConfidence)}` : '当前范围没有对照样本' }}</span></article>
+            <article><small>胜率关联差</small><b :data-tone="resultTone(detail.summary)">{{ signedPercent(detail.summary.winRateDelta) }}</b><span>95% 差值区间 {{ confidenceLabel(detail.summary.winRateDeltaConfidence, true) }}</span></article>
           </section>
 
-          <section class="funnel-panel">
-            <header><div><h3>使用漏斗</h3><p>同一张卡从构筑机会到成功结算的实际路径。</p></div></header>
-            <div class="funnel">
-              <article><span><b>构筑收录</b><em>{{ detail.summary.includedMatches }}</em></span><i><b style="width:100%"/></i></article>
-              <article><span><b>实际抽到</b><em>{{ detail.summary.drawnMatches }}</em></span><i><b :style="{ width: `${ratio(detail.summary.drawnMatches, detail.summary.includedMatches) * 100}%` }"/></i></article>
-              <article><span><b>从手牌打出</b><em>{{ detail.summary.playedMatches }}</em></span><i><b :style="{ width: `${ratio(detail.summary.playedMatches, detail.summary.includedMatches) * 100}%` }"/></i></article>
-              <article><span><b>效果发动</b><em>{{ detail.summary.activatedCount }}</em></span><i><b :style="{ width: `${ratio(detail.summary.activatedCount, Math.max(detail.summary.activatedCount, detail.summary.includedMatches)) * 100}%` }"/></i></article>
-              <article><span><b>正常结算</b><em>{{ detail.summary.resolvedCount }}</em></span><i><b :style="{ width: `${ratio(detail.summary.resolvedCount, Math.max(1, detail.summary.activatedCount)) * 100}%` }"/></i></article>
+          <div class="dashboard-pair">
+            <section class="dashboard-panel usage-panel">
+              <header><div><h3>使用路径</h3><p>各节点独立统计参赛方是否出现精确事实，不假设节点数量单调。</p></div></header>
+              <div class="funnel">
+                <article><span><b>构筑收录</b><em>{{ detail.summary.sampleSize }}</em></span><i><b style="width:100%"/></i></article>
+                <article><span><b>实际抽到</b><em>{{ detail.summary.drawnSamples }}</em></span><i><b :style="{ width: `${ratio(detail.summary.drawnSamples, detail.summary.sampleSize) * 100}%` }"/></i></article>
+                <article><span><b>从手牌打出</b><em>{{ detail.summary.playedSamples }}</em></span><i><b :style="{ width: `${ratio(detail.summary.playedSamples, detail.summary.sampleSize) * 100}%` }"/></i></article>
+                <article><span><b>效果发动</b><em>{{ detail.summary.activatedSamples }}</em></span><i><b :style="{ width: `${ratio(detail.summary.activatedSamples, detail.summary.sampleSize) * 100}%` }"/></i></article>
+                <article><span><b>出现结算状态</b><em>{{ detail.summary.settledSamples }}</em></span><i><b :style="{ width: `${ratio(detail.summary.settledSamples, detail.summary.sampleSize) * 100}%` }"/></i></article>
+              </div>
+            </section>
+
+            <section class="dashboard-panel settlement-panel">
+              <header><div><h3>结算状态</h3><p>上方为参赛方样本，下方保留事实事件次数。</p></div></header>
+              <div class="settlement-grid">
+                <article><small>正常结算</small><b>{{ detail.summary.resolvedSamples }}</b><span>{{ detail.summary.resolvedCount }} 次事实</span></article>
+                <article><small>被无效</small><b>{{ detail.summary.negatedSamples }}</b><span>{{ detail.summary.negatedCount }} 次事实</span></article>
+                <article><small>目标失效／空结算</small><b>{{ detail.summary.fizzledSamples }}</b><span>{{ detail.summary.fizzledCount }} 次事实</span></article>
+                <article><small>发动事件</small><b>{{ detail.summary.activatedSamples }}</b><span>{{ detail.summary.activatedCount }} 次事实</span></article>
+              </div>
+            </section>
+          </div>
+
+          <div class="dashboard-pair distributions">
+            <section class="dashboard-panel">
+              <header><div><h3>携带数量分布</h3><p>数量来自不可变赛后构筑快照。</p></div></header>
+              <div v-if="detail.quantityDistribution.length" class="quantity-bars">
+                <article v-for="bucket in detail.quantityDistribution" :key="bucket.quantity"><b>{{ bucket.quantity }} 张</b><i><span :style="{ width: `${ratio(bucket.sampleSize, maximumQuantity) * 100}%` }"/></i><em>{{ bucket.sampleSize }} 份 · 胜率 {{ percent(bucket.winRate) }}</em></article>
+              </div>
+              <div v-else class="empty compact">没有精确携带数量</div>
+            </section>
+            <section class="dashboard-panel">
+              <header><div><h3>首次抽到／打出回合</h3><p>只统计 coverage=exact 的首次时点。</p></div><div class="legend"><span class="draw">抽到</span><span class="play">打出</span></div></header>
+              <div v-if="detail.turnDistribution.length" class="turn-chart">
+                <article v-for="bucket in detail.turnDistribution" :key="bucket.turn"><b>回合 {{ bucket.turn }}</b><div><i class="draw" :style="{ width: `${ratio(bucket.firstDrawSamples, maximumTiming) * 100}%` }"/><span>{{ bucket.firstDrawSamples }}</span></div><div><i class="play" :style="{ width: `${ratio(bucket.firstPlaySamples, maximumTiming) * 100}%` }"/><span>{{ bucket.firstPlaySamples }}</span></div></article>
+              </div>
+              <div v-else class="empty compact">没有精确首次抽到／打出事实</div>
+            </section>
+          </div>
+
+          <section class="dashboard-panel matchup-panel">
+            <header><div><h3>主宰对阵热图</h3><p>行是使用方主宰，列是对方主宰；格内显示收录方胜率与参赛方样本。</p></div></header>
+            <div v-if="detail.matchups.length" class="heat-scroll">
+              <table><thead><tr><th>使用方 ＼ 对方</th><th v-for="opponent in matchupColumns" :key="opponent">{{ masterLabel(opponent) }}</th></tr></thead><tbody><tr v-for="master in matchupRows" :key="master"><th>{{ masterLabel(master) }}</th><td v-for="opponent in matchupColumns" :key="`${master}-${opponent}`" :data-tone="deltaTone(matchupCell(master, opponent)?.winRateDeltaConfidence)"><template v-if="matchupCell(master, opponent)"><b>{{ percent(matchupCell(master, opponent)?.winRate) }}</b><span>{{ matchupCell(master, opponent)?.sampleSize }} 份</span><small>{{ signedPercent(matchupCell(master, opponent)?.winRateDelta) }} · CI {{ confidenceLabel(matchupCell(master, opponent)?.winRateDeltaConfidence, true) }}</small></template><span v-else>—</span></td></tr></tbody></table>
             </div>
-            <div class="resolution-strip"><span>被无效 <b>{{ detail.summary.negatedCount }}</b></span><span>目标失效／空结算 <b>{{ detail.summary.fizzledCount }}</b></span></div>
+            <div v-else class="empty compact">当前样本不足以形成对阵格</div>
           </section>
 
-          <section class="breakdowns">
-            <header><div><h3>条件切片</h3><p>按模式、主宰、对阵、先后手与规则版本分开观察，避免总体胜率误导。</p></div></header>
-            <div class="breakdown-head"><span>维度</span><span>条件</span><span>样本</span><span>胜率</span><span>基线</span><span>关联差</span></div>
-            <article v-for="row in detail.breakdowns" :key="`${row.dimension}-${row.value}`"><small>{{ row.dimension }}</small><b>{{ row.value }}</b><span>{{ row.sampleSize }}</span><span>{{ percent(row.winRate) }}</span><span>{{ percent(row.baselineWinRate) }}</span><strong :data-tone="typeof row.winRateDelta === 'number' && row.winRateDelta >= .05 ? 'positive' : typeof row.winRateDelta === 'number' && row.winRateDelta <= -.05 ? 'negative' : 'neutral'">{{ signedPercent(row.winRateDelta) }}</strong></article>
-            <div v-if="!detail.breakdowns?.length" class="empty compact">样本尚不足以形成可靠的条件切片</div>
+          <section class="dashboard-panel breakdowns">
+            <header><div><h3>条件切片</h3><p>模式、双方主宰、先后手、规则版本与赛季分别计算同层对照。</p></div></header>
+            <div class="breakdown-head"><span>维度</span><span>条件</span><span>收录样本</span><span>层内总样本</span><span>胜率</span><span>基线</span><span>关联差</span></div>
+            <article v-for="row in detail.breakdowns" :key="`${row.dimension}-${row.value}`"><small>{{ dimensionLabel(row.dimension) }}</small><b>{{ dimensionValue(row) }}</b><span>{{ row.sampleSize }}</span><span>{{ row.eligibleSampleSize }}</span><span>{{ percent(row.winRate) }}</span><span>{{ percent(row.baselineWinRate) }}</span><strong :data-tone="deltaTone(row.winRateDeltaConfidence)">{{ signedPercent(row.winRateDelta) }}<small>CI {{ confidenceLabel(row.winRateDeltaConfidence, true) }}</small></strong></article>
+            <div v-if="!detail.breakdowns.length" class="empty compact">样本尚不足以形成条件切片</div>
           </section>
 
-          <section class="recent-matches">
-            <header><div><h3>包含该卡的最近对局</h3><p>直接下钻到双方构筑和赛后时间线。</p></div></header>
-            <button v-for="match in detail.recentMatches" :key="match.matchId" @click="emit('openMatch', match.matchId)"><span><b>{{ match.players.map(player => player.displayName).join(' VS ') }}</b><small>{{ modeLabel(match.modeId) }} · {{ dateLabel(match.startedUtc) }}</small></span><code>{{ match.matchId.slice(0, 12) }}</code><em>查看对局 →</em></button>
-            <div v-if="!detail.recentMatches?.length" class="empty compact">暂无可下钻的新格式对局</div>
+          <section class="dashboard-panel quality-panel">
+            <header><div><h3>数据质量与覆盖</h3><p>按指标展示观察样本与事实覆盖；旧记录缺失不会被补成零。</p></div><strong>Schema v{{ detail.coverage.schemaVersion }}</strong></header>
+            <div class="coverage-grid">
+              <article v-for="metric in detail.coverage.metrics" :key="metric.metric"><b>{{ metricLabel(metric.metric) }}</b><span>观察 {{ metric.observedSamples }} / 可用 {{ metric.eligibleSamples }} 份</span><small>精确 {{ metric.exactFacts }} · 部分 {{ metric.partialFacts }} · 推断 {{ metric.inferredFacts }}</small></article>
+            </div>
+            <details><summary>已知限制（{{ detail.coverage.limitations.length }}）</summary><ul><li v-for="limitation in detail.coverage.limitations" :key="limitation">{{ limitation }}</li></ul></details>
+          </section>
+
+          <section class="dashboard-panel recent-matches">
+            <header><div><h3>最近已结束对局</h3><p>只返回已完成记录；分析权限响应已去除账号、昵称和牌库名，下钻另受对局档案权限保护。</p></div></header>
+            <button v-for="match in detail.recentMatches" :key="match.matchId" @click="emit('openMatch', match.matchId)"><span><b>{{ recentMatchup(match) }}</b><small>{{ modeLabel(match.modeId) }} · {{ dateLabel(match.endedUtc || match.startedUtc) }} · {{ recentResult(match) }}</small></span><span class="match-id">{{ match.matchId.slice(0, 12) }}</span><em>查看档案 →</em></button>
+            <div v-if="!detail.recentMatches.length" class="empty compact">暂无符合当前切片的已结束对局</div>
           </section>
         </template>
-        <div v-else class="empty">选择一张卡查看影响分析</div>
+        <div v-else class="empty">选择一张卡查看事实仪表盘</div>
       </main>
     </div>
   </section>
 </template>
 
 <style scoped>
-.card-analytics{display:grid;gap:12px}.module-header,.filter-panel,.scope-summary,.panel-shell{border:1px solid #35424a;background:#101821}.module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px}.module-header h2{margin:4px 0}.module-header p{margin:0}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{border:1px solid #4c5961;background:#080e13;color:#fff;padding:9px;font:700 14px 'Microsoft YaHei'}.filter-panel{display:grid;grid-template-columns:minmax(210px,1.5fr) repeat(6,minmax(120px,1fr)) auto;align-items:end;gap:8px;padding:12px}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:5px;color:#87949a;font-size:14px;font-weight:900}.filter-panel input,.filter-panel select{box-sizing:border-box;min-width:0;width:100%}.filter-panel .query{border-color:#91752e;background:#2b220d;color:#f1d471}.sample-contract{margin:0;padding:9px 12px;border-left:3px solid #d4b65d;background:#17170f;color:#aeb4ac;font-size:14px}.scope-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#35424a}.scope-summary article{display:flex;min-height:82px;flex-direction:column;justify-content:flex-end;gap:3px;padding:13px;background:#0c141a}.scope-summary b{font-size:21px}.scope-summary span{color:#77858b;font-size:14px}.analytics-workspace{display:grid;grid-template-columns:minmax(340px,.68fr) minmax(650px,1.32fr);align-items:start;gap:12px}.panel-shell{min-width:0}.card-list{max-height:calc(100vh - 185px);overflow:auto}.card-list>header{position:sticky;z-index:2;top:0;display:flex;justify-content:space-between;padding:13px;background:#0b1218;border-bottom:1px solid #35424a}.card-list>header span{color:#738087;font-size:14px}.card-row{display:grid;width:100%;grid-template-columns:44px minmax(0,1fr) 72px;align-items:center;gap:9px;padding:9px;border:0;border-bottom:1px solid #29353c;background:transparent;color:#fff;text-align:left}.card-row:hover,.card-row.selected{background:#172129}.card-row.selected{box-shadow:inset 3px 0 #d0ae4f}.card-row[data-low-sample="true"]{border-left:3px solid #d4b65d}.card-row>.l12-card-image{width:44px;height:61px}.card-row>span{display:flex;min-width:0;flex-direction:column;gap:3px}.card-row span b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-row span small{color:#718087!important;letter-spacing:0!important}.card-row span em{color:#68aeb2;font-size:14px;font-style:normal}.row-numbers{text-align:right}.row-numbers small[data-tone="positive"],[data-tone="positive"]{color:#72d1a7!important}.row-numbers small[data-tone="negative"],[data-tone="negative"]{color:#e7848e!important}[data-tone="neutral"]{color:#d7bd6b!important}.load-more{width:100%;padding:12px;border:0;background:#182229;color:#d5b85e;font-weight:900}.analysis-detail{padding:17px}.card-heading{display:grid;grid-template-columns:118px minmax(0,1fr);align-items:center;gap:16px;padding-bottom:15px;border-bottom:1px solid #35424a}.card-heading>.l12-card-image{width:118px;height:164px}.card-heading h3{margin:6px 0;font-size:24px}.card-heading p{margin:0}.card-heading em{display:inline-block;margin-top:9px;padding:5px 8px;border:1px solid currentColor;background:#0a1116;font-size:14px;font-style:normal;font-weight:900}.key-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px}.key-metrics article{display:flex;min-height:92px;flex-direction:column;justify-content:flex-end;gap:4px;padding:12px;border:1px solid #35424a;background:#0a1117}.key-metrics b{font-size:21px}.key-metrics span{color:#76848a;font-size:14px}.funnel-panel,.breakdowns,.recent-matches{margin-top:12px;padding:13px;border:1px solid #35424a;background:#0a1117}.funnel-panel>header,.breakdowns>header,.recent-matches>header{border-bottom:1px solid #2d3940;padding-bottom:9px}.funnel-panel h3,.breakdowns h3,.recent-matches h3{margin:0}.funnel-panel p,.breakdowns p,.recent-matches p{margin:3px 0}.funnel{display:grid;gap:8px;margin-top:12px}.funnel article>span{display:flex;justify-content:space-between;margin-bottom:4px;font-size:14px}.funnel article>span em{color:#d7bd6b;font-style:normal}.funnel i{display:block;height:7px;overflow:hidden;background:#1a252c}.funnel i b{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#4b999d,#d0b04f)}.resolution-strip{display:flex;gap:8px;margin-top:10px}.resolution-strip span{flex:1;padding:8px;border:1px solid #3d4850;color:#89969b;font-size:14px}.resolution-strip b{float:right;color:#e4c66e}.breakdown-head,.breakdowns>article{display:grid;grid-template-columns:90px minmax(150px,1fr) 60px 70px 70px 75px;align-items:center;gap:7px;padding:8px}.breakdown-head{margin-top:8px;color:#718087;font-size:14px;font-weight:900}.breakdowns>article{border-top:1px solid #28343b;font-size:14px}.breakdowns>article small{color:#67b7bc!important}.breakdowns>article strong{text-align:right}.recent-matches>button{display:grid;width:100%;grid-template-columns:minmax(0,1fr) 100px auto;align-items:center;gap:8px;padding:9px;border:0;border-bottom:1px solid #29353c;background:transparent;color:#fff;text-align:left}.recent-matches>button:hover{background:#172129}.recent-matches>button span{display:flex;min-width:0;flex-direction:column}.recent-matches>button span small{color:#718087!important;letter-spacing:0!important}.recent-matches code{color:#67818a}.recent-matches em{color:#d7bd6b;font-size:14px;font-style:normal}.empty{display:grid;min-height:170px;place-items:center;color:#718087}.empty.compact{min-height:90px}.card-analytics small{color:#d5b85e;font:900 14px monospace;letter-spacing:.12em}
-@media(max-width:1450px){.filter-panel{grid-template-columns:repeat(4,minmax(130px,1fr))}.analytics-workspace{grid-template-columns:minmax(320px,.6fr) minmax(580px,1.4fr)}}
-@media(max-width:1050px){.analytics-workspace{grid-template-columns:1fr}.card-list{max-height:500px}.key-metrics{grid-template-columns:1fr 1fr}}
-@media(max-width:720px){.filter-panel{grid-template-columns:1fr 1fr}.scope-summary{grid-template-columns:1fr 1fr}.card-heading{grid-template-columns:88px minmax(0,1fr)}.card-heading>.l12-card-image{width:88px;height:122px}.breakdown-head,.breakdowns>article{grid-template-columns:70px 1fr 55px}.breakdown-head span:nth-child(n+4),.breakdowns>article>*:nth-child(n+4){display:none}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches code{display:none}}
+.card-analytics,.card-analytics :deep(*){font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.card-analytics{--line:#33434d;--panel:#0e171f;--panel-2:#091117;--muted:#839198;--gold:#e0c46f;--cyan:#64c8ce;display:grid;gap:12px;color:#f1f3ef;color-scheme:dark}.module-header,.filter-panel,.scope-summary,.panel-shell{border:1px solid var(--line);background:var(--panel)}.module-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:19px 21px;background:linear-gradient(115deg,#101b24,#15160f)}.module-header small,.card-heading small{color:var(--gold);font-size:13px;font-weight:900;letter-spacing:.12em}.module-header h2{margin:4px 0;font-size:clamp(23px,2.2vw,30px)}.module-header p{max-width:850px;margin:0;color:#99a5a8;line-height:1.65}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{box-sizing:border-box;min-height:40px;border:1px solid #53636d;background:#060d12;color:#f4f3ed;padding:9px 10px;font-size:14px;font-weight:800}.module-header button{flex:none;color:var(--gold)}.filter-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end;gap:9px;padding:13px}.filter-panel .search{grid-column:span 2}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:6px;color:#aab4b7;font-size:13px;font-weight:900}.filter-panel input,.filter-panel select{width:100%;min-width:0}.filter-panel select option{background:#071016;color:#fff}.filter-panel input:focus,.filter-panel select:focus,.filter-panel button:focus-visible{border-color:var(--cyan);outline:2px solid #64c8ce55;outline-offset:1px}.filter-panel .query{border-color:#9a7c30;background:#31270e;color:#f4d77b}.sample-contract{margin:0;padding:10px 13px;border-left:3px solid var(--gold);background:#18170e;color:#b8beb7;font-size:13px;line-height:1.65}.scope-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}.scope-summary article{display:flex;min-height:92px;flex-direction:column;justify-content:flex-end;gap:4px;padding:14px;background:#0a131a}.scope-summary small{color:#8f9da2;font-size:13px;font-weight:900}.scope-summary b{font-size:23px}.scope-summary span{color:#74838a;font-size:13px;line-height:1.45}.analytics-workspace{display:grid;grid-template-columns:minmax(300px,.58fr) minmax(640px,1.42fr);align-items:start;gap:12px}.panel-shell{min-width:0}.card-list{max-height:calc(100vh - 160px);overflow:auto}.card-list>header{position:sticky;z-index:2;top:0;display:flex;align-items:center;justify-content:space-between;padding:13px;background:#081118;border-bottom:1px solid var(--line)}.card-list>header div{display:grid;gap:3px}.card-list>header span,.card-list>header em{color:#77878e;font-size:13px;font-style:normal}.card-row{display:grid;width:100%;grid-template-columns:45px minmax(0,1fr) 72px;align-items:center;gap:10px;padding:10px;border:0;border-bottom:1px solid #283740;background:transparent;color:#fff;text-align:left}.card-row:hover,.card-row.selected{background:#17242d}.card-row.selected{box-shadow:inset 3px 0 var(--gold)}.card-row[data-low-sample="true"]{border-left:3px solid #91772f}.card-row>.l12-card-image{width:45px;height:63px}.card-row>span{display:flex;min-width:0;flex-direction:column;gap:3px}.card-row span b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-row span small{color:#718189;font-size:12px;letter-spacing:.03em}.card-row span em{color:#78bdc1;font-size:12px;font-style:normal}.row-numbers{text-align:right}.row-numbers b{font-size:16px}.row-numbers small[data-tone="positive"],[data-tone="positive"]{color:#73ddb0!important}.row-numbers small[data-tone="negative"],[data-tone="negative"]{color:#ef8994!important}[data-tone="neutral"]{color:#e1c56e!important}[data-tone="unavailable"]{color:#73838a!important}.load-more{width:100%;padding:13px;border:0;background:#15222a;color:var(--gold);font-weight:900}.analysis-detail{padding:17px}.card-heading{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:17px;padding-bottom:16px;border-bottom:1px solid var(--line)}.card-heading>.l12-card-image{width:112px;height:156px}.card-heading h3{margin:6px 0;font-size:clamp(22px,2vw,28px)}.card-heading p{margin:0;color:#8d9a9f;line-height:1.55}.card-heading em{display:inline-block;margin-top:10px;padding:6px 9px;border:1px solid currentColor;background:#071016;font-size:13px;font-style:normal;font-weight:900}.key-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.key-metrics article{display:flex;min-height:98px;flex-direction:column;justify-content:flex-end;gap:4px;padding:13px;border:1px solid var(--line);background:#071016}.key-metrics small{color:#84939a;font-size:13px;font-weight:900}.key-metrics b{font-size:22px}.key-metrics span{color:#77868c;font-size:12px;line-height:1.5}.dashboard-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.dashboard-panel{min-width:0;margin-top:12px;padding:14px;border:1px solid var(--line);background:#071016}.dashboard-pair .dashboard-panel{margin-top:0}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid #2b3942}.dashboard-panel h3{margin:0;font-size:17px}.dashboard-panel p{margin:4px 0 0;color:#7d8c92;font-size:13px;line-height:1.55}.funnel{display:grid;gap:9px;margin-top:13px}.funnel article>span{display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px}.funnel article>span em{color:var(--gold);font-style:normal}.funnel i,.quantity-bars i{display:block;height:8px;overflow:hidden;background:#18262e}.funnel i b,.quantity-bars i span{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#32878e,var(--gold))}.settlement-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:13px}.settlement-grid article{display:grid;min-height:78px;align-content:end;gap:4px;padding:11px;border:1px solid #2c3c45;background:#0d1820}.settlement-grid small{color:#89979c;font-size:12px}.settlement-grid b{font-size:20px}.settlement-grid span{color:#6f8087;font-size:12px}.quantity-bars,.turn-chart{display:grid;gap:9px;margin-top:13px}.quantity-bars article{display:grid;grid-template-columns:48px minmax(80px,1fr) minmax(120px,auto);align-items:center;gap:9px;font-size:12px}.quantity-bars em{color:#89979c;font-style:normal;text-align:right}.turn-chart{max-height:320px;overflow:auto}.turn-chart article{display:grid;grid-template-columns:68px 1fr 1fr;align-items:center;gap:8px;font-size:12px}.turn-chart article>div{position:relative;display:flex;height:18px;align-items:center;background:#14222a}.turn-chart i{height:100%;min-width:1px}.turn-chart i.draw{background:#47aeb5}.turn-chart i.play{background:#d4b354}.turn-chart article span{position:absolute;right:5px;color:#fff;font-size:11px;font-weight:900}.legend{display:flex;gap:10px;color:#8d999e;font-size:12px}.legend span::before{content:'';display:inline-block;width:8px;height:8px;margin-right:5px}.legend .draw::before{background:#47aeb5}.legend .play::before{background:#d4b354}.heat-scroll{margin-top:12px;overflow:auto}.heat-scroll table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px}.heat-scroll th,.heat-scroll td{min-width:100px;padding:9px;border:1px solid #2c3b44;text-align:center}.heat-scroll th{background:#101c24;color:#b9c3c5}.heat-scroll td{background:#0c171e}.heat-scroll td[data-tone="positive"]{background:#0d342c}.heat-scroll td[data-tone="negative"]{background:#35141c}.heat-scroll td[data-tone="neutral"]{background:#302c17}.heat-scroll td b,.heat-scroll td span,.heat-scroll td small{display:block}.heat-scroll td b{font-size:15px}.heat-scroll td span{margin-top:3px;color:#90a0a5}.heat-scroll td small{margin-top:3px;color:currentColor}.breakdown-head,.breakdowns>article{display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 75px;align-items:center;gap:8px;padding:9px}.breakdown-head{margin-top:8px;color:#74838a;font-size:12px;font-weight:900}.breakdowns>article{border-top:1px solid #293840;font-size:12px}.breakdowns>article small{color:#70c1c6;font-weight:900}.breakdowns>article strong{text-align:right}.quality-panel>header>strong{color:var(--gold);font-size:13px}.coverage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}.coverage-grid article{display:grid;gap:5px;padding:11px;border:1px solid #2d3c44;background:#0c171e}.coverage-grid b{font-size:13px}.coverage-grid span,.coverage-grid small{color:#829198;font-size:12px;line-height:1.45}.quality-panel details{margin-top:11px;border:1px solid #2c3b43;background:#0a141a}.quality-panel summary{padding:10px;color:#c6b777;font-size:13px;cursor:pointer}.quality-panel ul{margin:0;padding:0 28px 12px;color:#87969b;font-size:12px;line-height:1.65}.recent-matches>button{display:grid;width:100%;grid-template-columns:minmax(0,1fr) 108px auto;align-items:center;gap:9px;padding:10px;border:0;border-bottom:1px solid #293840;background:transparent;color:#fff;text-align:left}.recent-matches>button:hover,.recent-matches>button:focus-visible{background:#15232b;outline:1px solid var(--cyan);outline-offset:-1px}.recent-matches>button span:first-child{display:flex;min-width:0;flex-direction:column;gap:4px}.recent-matches>button small{color:#74858b;font-size:12px}.recent-matches .match-id{overflow:hidden;color:#75909b;font-size:12px;text-overflow:ellipsis}.recent-matches em{color:var(--gold);font-size:12px;font-style:normal}.empty{display:grid;min-height:170px;place-items:center;color:#718189;text-align:center}.empty.compact{min-height:80px}button:disabled{cursor:not-allowed;opacity:.5}
+.key-metrics{grid-template-columns:repeat(5,1fr)}
+.breakdown-head,.breakdowns>article{grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 105px}
+.breakdowns>article strong{display:grid;gap:2px}.breakdowns>article strong small{font-size:10px;font-weight:700}
+@media(max-width:1500px){.analytics-workspace{grid-template-columns:minmax(290px,.52fr) minmax(600px,1.48fr)}.filter-panel{grid-template-columns:repeat(4,minmax(140px,1fr))}.filter-panel .search{grid-column:span 2}}
+@media(max-width:1120px){.analytics-workspace{grid-template-columns:1fr}.card-list{max-height:440px}.key-metrics{grid-template-columns:1fr 1fr}.scope-summary{grid-template-columns:1fr 1fr}}
+@media(max-width:820px){.dashboard-pair{grid-template-columns:1fr}.breakdowns{overflow:auto}.breakdown-head,.breakdowns>article{min-width:720px}.module-header{align-items:flex-start}.module-header button{margin-top:3px}}
+@media(max-width:650px){.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search{grid-column:1/-1}.scope-summary,.key-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
+@media(max-width:430px){.filter-panel,.scope-summary,.key-metrics,.settlement-grid{grid-template-columns:1fr}.module-header{display:grid}.module-header button{width:100%}.card-row{grid-template-columns:42px minmax(0,1fr) 64px}.turn-chart article{grid-template-columns:62px 1fr}.turn-chart article>div:last-child{grid-column:2}.card-heading{grid-template-columns:72px minmax(0,1fr)}.card-heading>.l12-card-image{width:72px;height:100px}}
 </style>

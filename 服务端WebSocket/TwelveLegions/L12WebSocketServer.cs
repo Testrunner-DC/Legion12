@@ -319,7 +319,10 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Response.Headers.CacheControl = "no-store";
             try
             {
-                var detail = await _recorder.GetCardAnalyticsAsync(cardId, CardAnalyticsQuery(request));
+                var includeRecentMatches = L12Authorization.HasPermission(authenticated.Account,
+                    L12Permission.AdminMatchesRead);
+                var detail = await _recorder.GetCardAnalyticsAsync(cardId, CardAnalyticsQuery(request),
+                    includeRecentMatches);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-detail",
                     cardId, AuditContext(request, permission));
                 return detail is null ? Results.NotFound() : Results.Ok(detail);
@@ -1818,14 +1821,16 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             string? atomKind, int? page, int? pageSize) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminEffectsRead, out _, out var failure)) return failure;
-            return Results.Ok(_platform.ApplyEffectReviews(
-                _catalog.AtomicEffects.Query(search, status, product, atomKind, page ?? 1, pageSize ?? 50)));
+            var reviewed = _platform.ApplyEffectReviews(
+                _catalog.AtomicEffects.Query(search, status, product, atomKind, page ?? 1, pageSize ?? 50));
+            return Results.Ok(_platform.ApplyEffectPresentationOverrides(reviewed));
         });
         _app.MapGet("/api/admin/effects/{cardId}", (HttpRequest request, string cardId) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminEffectsRead, out _, out var failure)) return failure;
             var effect = _catalog.AtomicEffects.Find(cardId);
-            return effect is null ? Results.NotFound() : Results.Ok(_platform.ApplyEffectReviews(effect));
+            if (effect is null) return Results.NotFound();
+            return Results.Ok(_platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect)));
         });
         _app.MapPut("/api/admin/effects/{cardId}/review", (HttpRequest request, string cardId, EffectReviewRequest body) =>
         {
@@ -1837,6 +1842,32 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 body.IdempotencyKey, body.ExpectedVersion, body.DryRun, body.Reason);
             var outcome = _adminCommands.Execute(command, permission, ExecuteEffectReview,
                 current => ValidateEffectReview(current, false));
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPut("/api/admin/effects/{cardId}/presentations/{sceneId}",
+            (HttpRequest request, string cardId, string sceneId, EffectPresentationRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminEffectsReview;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            var payload = new EffectPresentationCommandPayload(cardId, sceneId, body.Text, false);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "effect.presentation.save",
+                $"effect-presentation:{sceneId}", payload, body.IdempotencyKey, body.ExpectedVersion,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, ExecuteEffectPresentation,
+                current => ValidateEffectPresentation(current, false));
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/effects/{cardId}/presentations/{sceneId}/restore",
+            (HttpRequest request, string cardId, string sceneId, EffectPresentationRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminEffectsReview;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            var payload = new EffectPresentationCommandPayload(cardId, sceneId, null, true);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "effect.presentation.restore",
+                $"effect-presentation:{sceneId}", payload, body.IdempotencyKey, body.ExpectedVersion,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, ExecuteEffectPresentation,
+                current => ValidateEffectPresentation(current, false));
             return AdminCommandResponse(request, command, outcome);
         });
         _app.MapGet("/api/admin/commands", (HttpRequest request, string? status, string? type,
@@ -2572,7 +2603,9 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             MasterId: QueryValue(request, "masterId"),
             Winner: QueryNullableInt(request, "winner", "result"),
             FromUtc: QueryDate(request, "fromUtc", "from"),
-            ToUtc: QueryDate(request, "toUtc", "to"));
+            ToUtc: QueryInclusiveEndDate(request, "toUtc", "to"),
+            RulesVersion: QueryValue(request, "rulesVersion"),
+            SeasonId: QueryValue(request, "seasonId"));
 
     private L12CardAnalyticsQuery CardAnalyticsQuery(HttpRequest request)
     {
@@ -2593,8 +2626,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             ModeId: QueryValue(request, "modeId", "mode"),
             MasterId: QueryValue(request, "masterId"),
             FromUtc: QueryDate(request, "fromUtc", "from"),
-            ToUtc: QueryDate(request, "toUtc", "to"),
-            OpponentMasterId: QueryValue(request, "opponentMasterId"));
+            ToUtc: QueryInclusiveEndDate(request, "toUtc", "to"),
+            OpponentMasterId: QueryValue(request, "opponentMasterId"),
+            Initiative: QueryValue(request, "initiative"),
+            RulesVersion: QueryValue(request, "rulesVersion"),
+            SeasonId: QueryValue(request, "seasonId"));
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)
@@ -2627,6 +2663,19 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     {
         var value = QueryValue(request, names);
         if (value is null) return null;
+        if (!DateTimeOffset.TryParse(value, out var parsed))
+            throw new ArgumentException($"查询参数 {names[0]} 必须是 ISO-8601 时间");
+        return parsed;
+    }
+
+    private static DateTimeOffset? QueryInclusiveEndDate(HttpRequest request, params string[] names)
+    {
+        var value = QueryValue(request, names);
+        if (value is null) return null;
+        if (DateOnly.TryParseExact(value, "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var date))
+            return new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).AddDays(1);
         if (!DateTimeOffset.TryParse(value, out var parsed))
             throw new ArgumentException($"查询参数 {names[0]} 必须是 ISO-8601 时间");
         return parsed;
@@ -3286,6 +3335,43 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             ability?.StructureHash, command.AuditContext), "审查记录已保存");
     }
 
+    private L12AdminCommandResult<L12EffectPresentationScene> ExecuteEffectPresentation(
+        L12AdminCommandEnvelope<EffectPresentationCommandPayload> command)
+        => ValidateEffectPresentation(command, true);
+
+    private L12AdminCommandResult<L12EffectPresentationScene> ValidateEffectPresentation(
+        L12AdminCommandEnvelope<EffectPresentationCommandPayload> command, bool apply)
+    {
+        var effect = _catalog.AtomicEffects.Find(command.Payload.CardId);
+        if (effect is null)
+            return L12AdminCommandResult<L12EffectPresentationScene>.Fail("effect_not_found",
+                "卡牌效果不存在", StatusCodes.Status404NotFound);
+        var scene = effect.Abilities.SelectMany(ability => ability.Presentations)
+            .FirstOrDefault(item => string.Equals(item.SceneId, command.Payload.SceneId,
+                StringComparison.Ordinal));
+        if (scene is null)
+            return L12AdminCommandResult<L12EffectPresentationScene>.Fail("stale_presentation_scene",
+                "动效场景标识已过期，请刷新后重试", StatusCodes.Status409Conflict);
+        try
+        {
+            if (command.Payload.Restore)
+            {
+                if (apply) _platform.RestoreEffectPresentationDefault(command.Actor, scene, command.AuditContext);
+                return L12AdminCommandResult<L12EffectPresentationScene>.Ok(
+                    scene with { OverrideText = null }, apply ? "已恢复默认动效文案" : "干运行验证通过");
+            }
+            var normalized = L12EffectPresentationText.Validate(command.Payload.Text, scene.Placeholders);
+            if (apply) _platform.SaveEffectPresentationOverride(command.Actor, scene, normalized, command.AuditContext);
+            return L12AdminCommandResult<L12EffectPresentationScene>.Ok(
+                scene with { OverrideText = normalized }, apply ? "动效文案已保存" : "干运行验证通过");
+        }
+        catch (ArgumentException error)
+        {
+            return L12AdminCommandResult<L12EffectPresentationScene>.Fail("invalid_presentation_text",
+                error.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
     private L12AdminCommandResult<L12AccountStatusOperationView> ExecuteAccountStatus(L12AccountView actor,
         L12AccountStatusCommandPayload payload, L12AdminAuditContext audit, bool apply)
     {
@@ -3497,6 +3583,9 @@ public sealed record ContentRollbackRequest(string? BatchId, string? Idempotency
 public sealed record EffectReviewRequest(string? AbilityId, string? Status, string? Note,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record EffectReviewCommandPayload(string CardId, string? AbilityId, string Status, string? Note);
+public sealed record EffectPresentationRequest(string? Text = null, string? IdempotencyKey = null,
+    long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record EffectPresentationCommandPayload(string CardId, string SceneId, string? Text, bool Restore);
 public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode,
     string? MatchId, string? Version, L12ClientConnectionDiagnosticView? ClientDiagnostic = null);
 public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes,

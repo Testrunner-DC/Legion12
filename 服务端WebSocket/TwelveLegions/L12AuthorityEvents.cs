@@ -245,9 +245,15 @@ public sealed partial class L12GameEngine
     }
 
     private void PubliclyRevealThenAddCardToHandByEffect(L12PlayerState player, L12CardInstance card,
-        string originZone, string revealText, string handAddReason)
+        string originZone, string revealText, string handAddReason, string producerCardId,
+        string presentationSceneKey, IReadOnlyDictionary<string, string>? presentationValues = null)
     {
-        AddEvent("reveal", player.PlayerIndex, revealText, card);
+        presentationValues ??= new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["cardName"] = card.Name,
+        };
+        AddPresentationEvent("reveal", player.PlayerIndex, revealText, producerCardId,
+            presentationSceneKey, presentationValues, card);
         AddCardToHandByEffect(player, card, originZone, handAddReason);
     }
 
@@ -262,11 +268,17 @@ public sealed partial class L12GameEngine
     }
 
     private bool PubliclyRevealThenMoveLibraryCardToHandByEffect(L12PlayerState player,
-        string instanceId, string revealText, string handAddReason)
+        string instanceId, string revealText, string handAddReason, string producerCardId,
+        string presentationSceneKey, IReadOnlyDictionary<string, string>? presentationValues = null)
     {
         var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return false;
-        AddEvent("reveal", player.PlayerIndex, revealText, card);
+        presentationValues ??= new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["cardName"] = card.Name,
+        };
+        AddPresentationEvent("reveal", player.PlayerIndex, revealText, producerCardId,
+            presentationSceneKey, presentationValues, card);
         return MoveLibraryCardToHandByEffect(player, instanceId, handAddReason);
     }
 

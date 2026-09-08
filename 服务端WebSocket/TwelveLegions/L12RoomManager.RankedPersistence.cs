@@ -185,8 +185,14 @@ public sealed partial class L12RoomManager
             var policy = policyElement.Deserialize<L12OperationsPolicySnapshot>(RankedRecoveryJson)
                 ?? throw new InvalidDataException("初始状态缺少运营规则快照");
             var disasterMode = Property(initial, "DisasterMode", "disasterMode").GetString() ?? "season";
+            var presentationElement = PropertyOrNull(initial, "EffectPresentationSnapshot",
+                "effectPresentationSnapshot");
+            var presentationSnapshot = presentationElement?.ValueKind == JsonValueKind.Array
+                ? presentationElement.Value.Deserialize<List<L12FrozenEffectPresentation>>(RankedRecoveryJson)
+                : null;
             engine = new L12GameEngine(_catalog, source.MatchId, source.RoomCode, source.Seed,
-                source.PlayerNames, source.Decks, disasterMode: disasterMode, operationsPolicy: policy);
+                source.PlayerNames, source.Decks, disasterMode: disasterMode, operationsPolicy: policy,
+                effectPresentationSnapshot: presentationSnapshot);
             if (!string.Equals(engine.ComputeStateHash(), HashStateJson(source.InitialStateJson),
                     StringComparison.Ordinal))
                 throw new InvalidDataException("初始状态重放校验失败");

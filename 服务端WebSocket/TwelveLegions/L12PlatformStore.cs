@@ -177,6 +177,16 @@ public sealed partial class L12PlatformStore
         public string StructureHash { get; set; } = string.Empty;
     }
 
+    private sealed class EffectPresentationOverrideRow
+    {
+        public string CardId { get; set; } = string.Empty;
+        public string AbilityId { get; set; } = string.Empty;
+        public string SceneId { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     private sealed class SessionRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -251,6 +261,7 @@ public sealed partial class L12PlatformStore
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
         public List<SiteCategoryRow> SiteCategories { get; set; } = [];
         public List<EffectReviewRow> EffectReviews { get; set; } = [];
+        public List<EffectPresentationOverrideRow> EffectPresentationOverrides { get; set; } = [];
         public List<AdminAuditRow> AdminAudit { get; set; } = [];
         public List<AdminCommandRow> AdminCommands { get; set; } = [];
         public List<AdminApprovalRow> AdminApprovals { get; set; } = [];

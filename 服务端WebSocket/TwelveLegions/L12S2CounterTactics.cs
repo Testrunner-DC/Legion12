@@ -146,7 +146,8 @@ public sealed partial class L12GameEngine
         }
 
         var revealed = player.Library[0];
-        AddEvent("reveal", item.Controller, $"〈乾坤·阴〉展示牌库顶部的〈{revealed.Name}〉", revealed);
+        AddPresentationEvent("reveal", item.Controller,
+            $"〈乾坤·阴〉展示牌库顶部的〈{revealed.Name}〉", "S02-0106", "top-card", revealed);
         if (revealed.CardType != "legion" || revealed.Faction != "tianting" || revealed.CurrentCost > 3)
         {
             player.Library.RemoveAt(0);

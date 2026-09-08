@@ -54,6 +54,20 @@ These rules apply before any implementation plan or task action.
 8. This repository has unusually long task history. Never fork the complete conversation into a child agent. Use `fork_turns="none"` or the smallest bounded recent-turn window and pass a compact written brief. A child must not receive raw prior tool output, card images, test logs, or repeated user history unless the subtask requires that exact evidence.
 9. Treat `D:\GPT\Legion12\app` as the canonical physical checkout after the storage migration. `D:\GPT\Legion12\workspace` and older paths are compatibility junctions only. Generated output, dependency caches, archives, and session logs must stay under the governed D-drive directories documented in `docs/STORAGE-GOVERNANCE.md`.
 
+## Three-thread command structure
+
+The persistent user-facing work split is documented in `docs/WORKSTREAM-COORDINATION.md` and applies in addition to model-complexity routing.
+
+1. The primary conversation is the only command, integration, and release authority. It owns intake, user rulings, priority, batch scope, workstream leases, final diff review, Batch/Release verification, task/bug records, Git publication, deployment, rollback, update logs, and the final completion claim.
+2. `L12-UI` is the bounded UI workstream. It may own Vue/HTML/CSS, visual interaction, responsive layout, UI contracts, frontend behavior tests, and visual evidence only when the primary conversation grants an explicit lease. It must stop and return a proposed contract before changing gameplay semantics, server APIs, storage, authorization, or release operations.
+3. `L12-Effect` is an auxiliary card-effect workstream, not the exclusive card-effect authority. The primary conversation may implement card effects directly. `L12-Effect` may own a bounded card-effect engine/rule batch, full-pool same-type scan, and deterministic effect regressions only when explicitly leased; user rule interpretation remains with the primary conversation.
+4. A batch has exactly one writer per file. Every delegated write lease must name the batch, baseline, allowed files, forbidden/shared files, expected result, tests, and return format. No second workstream may edit a leased file until the owner reports it frozen or the primary conversation revokes the lease.
+5. High-conflict files, public protocol/model files, task/bug records, and release configuration default to primary ownership. If a specialist discovers a needed cross-boundary change, it preserves the tree and requests a sequential handoff; it does not widen its lease.
+6. Specialists run only their focused checks. The primary conversation runs the integrated Batch once; Release runs once only for an authorized synchronization or deployment. Do not make three conversations repeat the same broad suite.
+7. A specialist may report only `frozen for handoff`, not overall project completion, synchronization, deployment, or Bug closure. The primary conversation must independently inspect the diff and evidence before accepting it.
+8. Emergency incidents, production recovery, authentication, privacy, concurrency, database integrity, WebSocket recovery, and deployment stay under primary command. Specialist writers freeze when requested so the incident can be handled from one authority path.
+9. Propose a new conversation split to the user only when the work is independently bounded, expected to save material elapsed time (normally at least 30%), has disjoint write ownership, and its handoff cost is smaller than the parallel benefit. Small fixes, ambiguous rules, hot shared files, and tightly coupled cross-module work stay in the primary conversation.
+
 ## Change batches and validation tiers
 
 0. Start a new independent task by reading `docs/HANDOFF.md`, checking its recorded versions against Git and the requested scope, and locating only the relevant ledger/registry entries. Do not load or delegate the entire historical conversation. Update the handoff after a batch when its state changes; distinguish development, remote and deployed commits.

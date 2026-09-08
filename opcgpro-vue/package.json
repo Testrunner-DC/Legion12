@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "check:ranked-broadcast": "node scripts/check-ranked-broadcast-playback.mjs && node scripts/test-ranked-broadcast-playback.mjs",
-    "check:ui-contracts": "node scripts/check-ui-contracts.mjs && node scripts/check-l12-readable-fonts.mjs && node scripts/check-l12-theme.mjs && node scripts/check-l12-music-behavior.mjs && node scripts/check-l12-connection-recovery.mjs && node scripts/check-l12-replay-retention.mjs && node scripts/check-l12-game-reentry.mjs && node scripts/check-l12-immediate-maintenance.mjs && node scripts/check-modian-import-contracts.mjs && node scripts/check-l12-prompt-presentation.mjs && node scripts/verify-replay-focus.mjs",
+    "check:ui-contracts": "node scripts/check-ui-contracts.mjs && node scripts/check-l12-readable-fonts.mjs && node scripts/check-l12-theme.mjs && node scripts/check-l12-music-behavior.mjs && node scripts/check-l12-connection-recovery.mjs && node scripts/check-l12-replay-retention.mjs && node scripts/check-l12-game-reentry.mjs && node scripts/check-l12-immediate-maintenance.mjs && node scripts/check-modian-import-contracts.mjs && node scripts/check-l12-prompt-presentation.mjs && node scripts/check-effect-presentation-contracts.mjs && node scripts/verify-replay-focus.mjs",
     "check:release-version": "node scripts/check-client-release-version.mjs",
     "check:card-assets": "node scripts/check-l12-card-assets.mjs",
     "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",

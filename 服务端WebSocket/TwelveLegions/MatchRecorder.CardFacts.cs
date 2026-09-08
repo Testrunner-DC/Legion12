@@ -104,10 +104,17 @@ public sealed partial class MatchRecorder
                 ON match_participants(master_id, match_id, player_index);
             CREATE INDEX IF NOT EXISTS ix_match_deck_cards_card
                 ON match_deck_cards(card_id, match_id, player_index);
+            CREATE INDEX IF NOT EXISTS ix_match_deck_cards_analytics_owner
+                ON match_deck_cards(match_id, player_index, card_id, quantity);
             CREATE INDEX IF NOT EXISTS ix_match_card_facts_match_sequence
                 ON match_card_facts(match_id, command_sequence, id);
             CREATE INDEX IF NOT EXISTS ix_match_card_facts_card_kind
                 ON match_card_facts(card_id, kind, match_id, player_index);
+            CREATE INDEX IF NOT EXISTS ix_match_card_facts_analytics_owner
+                ON match_card_facts(match_id, player_index, card_id, kind, turn, coverage);
+            CREATE INDEX IF NOT EXISTS ix_matches_analytics_scope
+                ON matches(mode_id, started_utc, season_id, rules_version, first_player, match_id)
+                WHERE ended_utc IS NOT NULL AND error IS NULL;
             INSERT OR IGNORE INTO match_participants(
                 match_id,player_index,account_id,display_name,master_id,master_name,deck_name,deck_snapshot_coverage)
             SELECT match_id,0,account_0,player_0,NULL,NULL,deck_0,'legacy-unavailable' FROM matches;
@@ -115,7 +122,7 @@ public sealed partial class MatchRecorder
                 match_id,player_index,account_id,display_name,master_id,master_name,deck_name,deck_snapshot_coverage)
             SELECT match_id,1,account_1,player_1,NULL,NULL,deck_1,'legacy-unavailable' FROM matches;
             INSERT INTO match_recorder_schema(component,version,migrated_utc)
-            VALUES('match-analytics',1,$utc)
+            VALUES('match-analytics',2,$utc)
             ON CONFLICT(component) DO UPDATE SET
                 version=MAX(version,excluded.version), migrated_utc=excluded.migrated_utc;
             """;
