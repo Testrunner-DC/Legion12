@@ -32,7 +32,7 @@ public sealed class SandboxReplayRetentionTests
         Assert.Equal(now.AddDays(7), initialSchedule.NextRunUtc);
 
         var game = new L12GameEngine(catalog, "sandbox-admin-replay", "SBOX01", 901,
-            ["沙盒控制者", "测试对手"], decks, skipPreparation: true);
+            ["沙盒控制者", "测试对手"], decks, skipPreparation: true, stateFormatVersion: 2);
         Assert.True(game.Handle(0, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
         Assert.True(game.Handle(1, new L12Command("mulligan", CardInstanceIds: [])).Accepted);
         await recorder.StartAsync(game, "sandbox", "sandbox-owner", null, decks);
@@ -43,9 +43,11 @@ public sealed class SandboxReplayRetentionTests
             var result = game.HandleGm(command);
             Assert.True(result.Accepted);
             var json = JsonSerializer.Serialize(command);
-            await recorder.AppendAsync(game, sequence, -1, json, result);
+            await recorder.AppendAsync(game, sequence, -1, json, result,
+                $"sandbox-gm-{sequence}");
             if (sequence == 1)
-                await recorder.AppendAsync(game, sequence, -1, json, result);
+                await recorder.AppendAsync(game, sequence, -1, json, result,
+                    $"sandbox-gm-{sequence}");
         }
 
         var stored = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(game.State.MatchId));
@@ -53,6 +55,12 @@ public sealed class SandboxReplayRetentionTests
         Assert.Equal(23, stored.Commands.Select(command => command.Sequence).Distinct().Count());
         Assert.All(stored.Commands, command => Assert.Equal(-1, command.PlayerIndex));
         Assert.Contains(hiddenOpponentCard, stored.Commands[^1].State.GetRawText());
+        var retainedV2Rows = await ReadPersistenceRowCountsAsync(matchPath, game.State.MatchId);
+        Assert.Equal(MatchRecorder.JournalStorageVersion, retainedV2Rows.StorageVersion);
+        Assert.Equal(23, retainedV2Rows.Commands);
+        Assert.Equal(23, retainedV2Rows.Requests);
+        Assert.True(retainedV2Rows.ActionEvents > 0);
+        Assert.True(retainedV2Rows.Checkpoints > 0);
         Assert.Empty(await recorder.ListMatchesForAccountAsync("sandbox-owner", "沙盒控制者"));
         Assert.Null(await recorder.GetMatchForAccountAsync(game.State.MatchId, "sandbox-owner", "沙盒控制者"));
         Assert.Empty(await recorder.ListRankingMatchesAsync());
@@ -97,26 +105,15 @@ public sealed class SandboxReplayRetentionTests
         Assert.True(await recorder.IsSandboxReplayExpiredAsync(game.State.MatchId));
         Assert.Contains(platform.Bugs(null), item => item.Id == bug.Id && item.MatchId == game.State.MatchId);
 
-        await using (var connection = new SqliteConnection($"Data Source={matchPath}"))
+        var removedRows = await ReadPersistenceRowCountsAsync(matchPath, game.State.MatchId);
+        Assert.Equal(0, removedRows.StorageVersion);
+        Assert.All(new[]
         {
-            await connection.OpenAsync();
-            var inspect = connection.CreateCommand();
-            inspect.CommandText = """
-                SELECT
-                    (SELECT COUNT(*) FROM matches WHERE match_id=$match),
-                    (SELECT COUNT(*) FROM match_events WHERE match_id=$match),
-                    (SELECT COUNT(*) FROM match_participants WHERE match_id=$match),
-                    (SELECT COUNT(*) FROM match_deck_cards WHERE match_id=$match),
-                    (SELECT COUNT(*) FROM match_card_facts WHERE match_id=$match),
-                    (SELECT COUNT(*) FROM sandbox_recordings WHERE match_id=$match),
-                    (SELECT COUNT(*) FROM sandbox_replay_expirations WHERE match_id=$match);
-                """;
-            inspect.Parameters.AddWithValue("$match", game.State.MatchId);
-            await using var reader = await inspect.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
-            for (var index = 0; index < 6; index++) Assert.Equal(0, reader.GetInt32(index));
-            Assert.Equal(1, reader.GetInt32(6));
-        }
+            removedRows.Matches, removedRows.Commands, removedRows.Requests,
+            removedRows.ActionEvents, removedRows.Checkpoints, removedRows.Participants,
+            removedRows.DeckCards, removedRows.CardFacts, removedRows.Recordings,
+        }, count => Assert.Equal(0, count));
+        Assert.Equal(1, removedRows.Expirations);
 
         await AssertApiVisibilityAsync(manager, recorder, platform, catalog, game.State.MatchId,
             player.Username, "Password123!", hiddenOpponentCard, expired: true);
@@ -141,8 +138,13 @@ public sealed class SandboxReplayRetentionTests
             foreach (var id in new[] { "sandbox-protected", "sandbox-expired", "sandbox-ranked-anomaly" })
             {
                 var game = new L12GameEngine(catalog, id, id == "sandbox-protected" ? "PROT01" : "EXPR01",
-                    id.GetHashCode(), ["甲", "乙"], decks, skipPreparation: true);
+                    id.GetHashCode(), ["甲", "乙"], decks, skipPreparation: true, stateFormatVersion: 2);
                 await first.StartAsync(game, "sandbox", "account-a", null, decks);
+                var command = new L12GmCommand("setLife", 0, Value: 19);
+                var result = game.HandleGm(command);
+                Assert.True(result.Accepted);
+                await first.AppendAsync(game, 1, -1, JsonSerializer.Serialize(command), result,
+                    $"request-{id}");
                 Assert.True(await first.CloseSandboxAsync(game));
             }
         }
@@ -176,6 +178,23 @@ public sealed class SandboxReplayRetentionTests
             Assert.NotNull(await restarted.GetMatchAsync("sandbox-protected"));
             Assert.Null(await restarted.GetMatchAsync("sandbox-expired"));
             Assert.NotNull(await restarted.GetMatchAsync("sandbox-ranked-anomaly"));
+            var expiredRows = await ReadPersistenceRowCountsAsync(path, "sandbox-expired");
+            Assert.All(new[]
+            {
+                expiredRows.Matches, expiredRows.Commands, expiredRows.Requests,
+                expiredRows.ActionEvents, expiredRows.Checkpoints,
+            }, count => Assert.Equal(0, count));
+            Assert.Equal(1, expiredRows.Expirations);
+            foreach (var protectedId in new[] { "sandbox-protected", "sandbox-ranked-anomaly" })
+            {
+                var protectedRows = await ReadPersistenceRowCountsAsync(path, protectedId);
+                Assert.Equal(1, protectedRows.Matches);
+                Assert.Equal(1, protectedRows.Commands);
+                Assert.Equal(1, protectedRows.Requests);
+                Assert.True(protectedRows.ActionEvents > 0);
+                Assert.True(protectedRows.Checkpoints > 0);
+                Assert.Equal(0, protectedRows.Expirations);
+            }
         }
 
         now = origin.AddDays(13);
@@ -190,6 +209,66 @@ public sealed class SandboxReplayRetentionTests
         Assert.Equal(1, nextWeeklyRun.Deleted);
         Assert.Null(await secondRestart.GetMatchAsync("sandbox-protected"));
         Assert.NotNull(await secondRestart.GetMatchAsync("sandbox-ranked-anomaly"));
+        var rankedRowsAfterSecondRun = await ReadPersistenceRowCountsAsync(path,
+            "sandbox-ranked-anomaly");
+        Assert.Equal(1, rankedRowsAfterSecondRun.Requests);
+        Assert.True(rankedRowsAfterSecondRun.ActionEvents > 0);
+        Assert.True(rankedRowsAfterSecondRun.Checkpoints > 0);
+    }
+
+    [Fact]
+    public async Task V2SandboxPurgeFailureRollsBackParentTombstoneAndEveryChildTable()
+    {
+        var directory = TestDirectory("v2-purge-rollback");
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = Catalog();
+        var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
+        var origin = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var now = origin;
+        await using var recorder = new MatchRecorder(path, () => now);
+        await recorder.InitializeAsync();
+        var game = new L12GameEngine(catalog, "sandbox-v2-purge-rollback", "ROLL01", 20260908,
+            ["甲", "乙"], decks, skipPreparation: true, stateFormatVersion: 2);
+        await recorder.StartAsync(game, "sandbox", "rollback-owner", null, decks);
+        var command = new L12GmCommand("setLife", 0, Value: 19);
+        var result = game.HandleGm(command);
+        Assert.True(result.Accepted);
+        await recorder.AppendAsync(game, 1, -1, JsonSerializer.Serialize(command), result,
+            "rollback-request");
+        Assert.True(await recorder.CloseSandboxAsync(game));
+        var before = await ReadPersistenceRowCountsAsync(path, game.State.MatchId);
+        Assert.Equal(MatchRecorder.JournalStorageVersion, before.StorageVersion);
+        Assert.Equal(1, before.Commands);
+        Assert.Equal(1, before.Requests);
+        Assert.True(before.ActionEvents > 0);
+        Assert.True(before.Checkpoints > 0);
+
+        var injected = false;
+        recorder.StorageFailureInjector = stage =>
+        {
+            if (stage != "before-sandbox-replay-purge-commit" || injected) return;
+            injected = true;
+            throw new IOException("injected purge failure");
+        };
+        now = origin.AddDays(7).AddSeconds(1);
+        await Assert.ThrowsAsync<IOException>(() =>
+            recorder.RunSandboxReplayCleanupIfDueAsync(utcNow: now));
+        recorder.StorageFailureInjector = null;
+        Assert.True(injected);
+        Assert.Equal(before, await ReadPersistenceRowCountsAsync(path, game.State.MatchId));
+        await AssertCleanupLeaseReleasedAsync(path);
+
+        var retried = await recorder.RunSandboxReplayCleanupIfDueAsync(utcNow: now);
+        Assert.True(retried.Ran);
+        Assert.Equal(1, retried.Deleted);
+        var removed = await ReadPersistenceRowCountsAsync(path, game.State.MatchId);
+        Assert.All(new[]
+        {
+            removed.Matches, removed.Commands, removed.Requests, removed.ActionEvents,
+            removed.Checkpoints, removed.Participants, removed.DeckCards, removed.CardFacts,
+            removed.Recordings,
+        }, count => Assert.Equal(0, count));
+        Assert.Equal(1, removed.Expirations);
     }
 
     [Fact]
@@ -563,6 +642,55 @@ public sealed class SandboxReplayRetentionTests
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return request;
     }
+
+    private static async Task<SandboxPersistenceRowCounts> ReadPersistenceRowCountsAsync(
+        string path, string matchId)
+    {
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var inspect = connection.CreateCommand();
+        inspect.CommandText = """
+            SELECT
+                COALESCE((SELECT storage_version FROM matches WHERE match_id=$match),0),
+                (SELECT COUNT(*) FROM matches WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_events WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_action_requests WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_action_events WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_state_checkpoints WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_participants WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_deck_cards WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_card_facts WHERE match_id=$match),
+                (SELECT COUNT(*) FROM sandbox_recordings WHERE match_id=$match),
+                (SELECT COUNT(*) FROM sandbox_replay_expirations WHERE match_id=$match);
+            """;
+        inspect.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await inspect.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new SandboxPersistenceRowCounts(
+            reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3),
+            reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7),
+            reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10));
+    }
+
+    private static async Task AssertCleanupLeaseReleasedAsync(string path)
+    {
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var inspect = connection.CreateCommand();
+        inspect.CommandText = """
+            SELECT lease_owner,lease_expires_utc
+            FROM sandbox_replay_cleanup_schedule WHERE singleton_id=1;
+            """;
+        await using var reader = await inspect.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(reader.IsDBNull(0));
+        Assert.True(reader.IsDBNull(1));
+    }
+
+    private sealed record SandboxPersistenceRowCounts(
+        int StorageVersion, int Matches, int Commands, int Requests, int ActionEvents,
+        int Checkpoints, int Participants, int DeckCards, int CardFacts, int Recordings,
+        int Expirations);
 
     private static L12Catalog Catalog()
         => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));

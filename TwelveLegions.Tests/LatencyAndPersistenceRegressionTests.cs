@@ -405,6 +405,82 @@ public sealed class LatencyAndPersistenceRegressionTests
     }
 
     [Fact]
+    public async Task RecorderWriteConnectionsBoundRetainedJournalSizeWithoutLeavingWalMode()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-journal-size-limit",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var engine = new L12GameEngine(Catalog, "journal-size-limit", "WAL001", 20260908,
+            ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
+        await recorder.StartAsync(engine, "sandbox");
+        var result = engine.HandleGm(new L12GmCommand("setLife", 0, Value: 19));
+        Assert.True(result.Accepted);
+        await recorder.AppendAsync(engine, 1, -1,
+            JsonSerializer.Serialize(new L12GmCommand("setLife", 0, Value: 19)), result,
+            "journal-limit-request");
+
+        await using var connection = await recorder.OpenWriteConnectionAsync();
+        var mode = connection.CreateCommand();
+        mode.CommandText = "PRAGMA main.journal_mode;";
+        Assert.Equal("wal", Convert.ToString(await mode.ExecuteScalarAsync()),
+            ignoreCase: true);
+        var limit = connection.CreateCommand();
+        limit.CommandText = "PRAGMA main.journal_size_limit;";
+        Assert.Equal(MatchRecorder.JournalSizeLimitBytes,
+            Convert.ToInt64(await limit.ExecuteScalarAsync()));
+        var stored = connection.CreateCommand();
+        stored.CommandText = "SELECT state_json FROM match_events WHERE match_id=$match;";
+        stored.Parameters.AddWithValue("$match", engine.State.MatchId);
+        Assert.Equal("{}", Convert.ToString(await stored.ExecuteScalarAsync()));
+    }
+
+    [Fact]
+    public async Task V2CommandStateAnomalyIsReportedAndRejectedByApplicationAndSchema()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-v2-state-anomaly",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var engine = new L12GameEngine(Catalog, "v2-state-anomaly", "ANOM02", 20260908,
+            ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
+        await recorder.StartAsync(engine, "sandbox");
+
+        var validation = Assert.Throws<InvalidDataException>(() =>
+            MatchRecorder.ValidateJournalV2CommandStateJson("{\"unexpected\":true}"));
+        Assert.Contains("必须保持", validation.Message, StringComparison.Ordinal);
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            var invalid = connection.CreateCommand();
+            invalid.CommandText = """
+                INSERT INTO match_events(
+                    match_id,sequence,received_utc,player_index,command_json,accepted,error,
+                    revision,state_hash,state_json,request_id)
+                VALUES($match,1,$utc,0,'{}',1,NULL,1,'invalid-hash',
+                       '{"unexpected":true}','invalid-request');
+                """;
+            invalid.Parameters.AddWithValue("$match", engine.State.MatchId);
+            invalid.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+            var schemaError = await Assert.ThrowsAsync<SqliteException>(() =>
+                invalid.ExecuteNonQueryAsync());
+            Assert.Equal(19, schemaError.SqliteErrorCode);
+            Assert.Contains("v2 match_events.state_json", schemaError.Message,
+                StringComparison.Ordinal);
+        }
+
+        var result = engine.HandleGm(new L12GmCommand("setLife", 0, Value: 18));
+        Assert.True(result.Accepted);
+        await recorder.AppendAsync(engine, 1, -1,
+            JsonSerializer.Serialize(new L12GmCommand("setLife", 0, Value: 18)), result,
+            "valid-request");
+        var detail = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(engine.State.MatchId));
+        Assert.Single(detail.Commands);
+    }
+
+    [Fact]
     public void 协商增量可重建完整视角且不会跨连接泄露隐藏信息并定期全量()
     {
         var playerCodec = new L12SnapshotWireCodec();

@@ -125,8 +125,7 @@ public sealed partial class MatchRecorder
     internal async Task<bool> AbandonSandboxAsync(L12GameEngine engine, string reason)
     {
         var now = _utcNow().ToUniversalTime().ToString("O");
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var metadata = connection.CreateCommand();
         metadata.Transaction = transaction;
@@ -169,8 +168,7 @@ public sealed partial class MatchRecorder
     private async Task<bool> FinalizeSandboxAsync(L12GameEngine engine)
     {
         var now = _utcNow().ToUniversalTime().ToString("O");
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var metadata = connection.CreateCommand();
         metadata.Transaction = transaction;
@@ -229,8 +227,7 @@ public sealed partial class MatchRecorder
         var leaseClaimed = false;
         try
         {
-            await using var connection = new SqliteConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
+            await using var connection = await OpenWriteConnectionAsync(cancellationToken);
 
             DateTimeOffset lastRun;
             DateTimeOffset persistedNext;
@@ -355,6 +352,9 @@ public sealed partial class MatchRecorder
                 purge.CommandText = """
                     INSERT INTO sandbox_replay_expirations(match_id,expired_utc) VALUES($match,$utc)
                     ON CONFLICT(match_id) DO UPDATE SET expired_utc=excluded.expired_utc;
+                    DELETE FROM match_action_requests WHERE match_id=$match;
+                    DELETE FROM match_action_events WHERE match_id=$match;
+                    DELETE FROM match_state_checkpoints WHERE match_id=$match;
                     DELETE FROM match_card_facts WHERE match_id=$match;
                     DELETE FROM match_deck_cards WHERE match_id=$match;
                     DELETE FROM match_participants WHERE match_id=$match;
@@ -369,6 +369,7 @@ public sealed partial class MatchRecorder
                 deleteMatch.CommandText = "DELETE FROM matches WHERE match_id=$match AND mode_id='sandbox';";
                 deleteMatch.Parameters.AddWithValue("$match", matchId);
                 deleted += await deleteMatch.ExecuteNonQueryAsync(cancellationToken);
+                StorageFailureInjector?.Invoke("before-sandbox-replay-purge-commit");
 
                 var refreshLease = connection.CreateCommand();
                 refreshLease.Transaction = purgeTransaction;
@@ -413,8 +414,7 @@ public sealed partial class MatchRecorder
             {
                 try
                 {
-                    await using var recovery = new SqliteConnection(_connectionString);
-                    await recovery.OpenAsync(CancellationToken.None);
+                    await using var recovery = await OpenWriteConnectionAsync(CancellationToken.None);
                     using var release = recovery.BeginTransaction(deferred: false);
                     var command = recovery.CreateCommand();
                     command.Transaction = release;

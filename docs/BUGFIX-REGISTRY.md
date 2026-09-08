@@ -2,6 +2,24 @@
 
 本文件是追加式修复台账。开始新的 Bug 修复前必须先检索本文件；修复卡效时必须记录全卡池同类扫描结果。
 
+### OPS-20260908-289-REPLAY-ANALYTICS-COMPACTION 回放公共数据复用与单卡分析紧凑存储
+
+- 状态与边界：本批只修改本地回放/单卡事实持久化和维护策略，未推送、未部署、未连接或写入生产数据库。测试服公网 DNS/TLS 仍按用户要求延后；当前内部 8084 版本不包含本批改动。
+- 回放复用：v2 原本已由版本化规则程序、卡牌目录、最小命令和每 32 revision 的 Brotli 检查点重建固定动作。本批进一步把独立动作审计中的 `Cards` 从完整 `L12CardInstance` 克隆改为 `CardId + InstanceId` 引用，保留事件类型、操作者、当时文本与效果文本；回放重建、随机状态和状态哈希仍以命令/检查点为准，不从当前卡库猜测旧局。这样避免每个动作重复保存卡名、图片、效果及整张可变卡牌状态。
+- 单卡分析：新增 additive `match_card_fact_summaries` 与 `match_card_fact_compactions`。正式赛果终局事务按“对局 + 玩家 + 卡号”保存仪表盘必需的布尔值、首次回合、发动/结算计数和 exact/inferred/partial 覆盖数；查询对已紧凑局只读汇总，对历史未紧凑局仍读原始事实。构筑数量继续只读 `match_deck_cards`，不再额外写 `deck-included` 事实；每条新事实不再复制账号标识，身份从 `match_participants` 关联。
+- 有界维护：逐条卡牌事实保留 30 天供后台排障，之后在汇总存在时原子清理；每天至多运行一次，历史每批紧凑 25 场、清理 100 场，失败不影响房间服务并留待下一轮。重复终局不会用已清理的空明细覆盖既有汇总；胜率、置信区间、模式/主宰/对阵/先后手/赛季切片继续按查询计算，不落重复缓存。
+- 同类扫描：`rg -n "match_action_events|match_card_facts|deck-included|fact_stats|CompleteAsync" 服务端WebSocket/TwelveLegions TwelveLegions.Tests` 确认动作审计没有业务读取者，匿名化仍可处理保留文本；单卡仪表盘只需要汇总列，管理员近期事实详情在 30 天内保持原样。沙盒继续按独立 7 天/每周保留规则整局删除，不进入单卡分析。
+- 回归：`MatchRecorderTests` 验证动作事件仅含卡牌引用且不含兵力/效果全文；`MatchAnalyticsTests` 验证终局紧凑、构筑不重复、事实不复制账号、30 天清理前后完整仪表盘 JSON 相同及重复终局不破坏汇总。回放/沙盒/持久化/分析组合专项 52/52；合并沙盒 v2/WAL 护栏后的完整 Focused 与 Batch 均为 2538/2538，`git diff --check` 退出 0。
+
+### BUG-20260908-SANDBOX-V2-RETENTION 沙盒 v2 子表孤儿与 WAL 留存边界
+
+- 状态与边界：本批只修改本地 Recorder 持久化及回归测试，未提交、推送、部署、连接或写入生产数据库。沙盒录像仍严格超过 7 天才可清理，持久周计划仍每 7 天运行一次；活动内存房间、数据库 active 状态和排位 runtime/outbox/quarantine 保护条件未放宽。
+- 根因：沙盒到期事务只显式清理 v1 命令、参赛方、构筑和卡牌事实，遗漏 storage v2 新增的 `match_action_requests`、`match_action_events`、`match_state_checkpoints`。SQLite 外键未在 Recorder 连接串强制开启，因此不能依赖删除 `matches` 自动级联，三表会留下不可达孤儿并持续占盘。另所有连接沿用 `journal_size_limit=-1`，WAL reset 后可能保留历史峰值；v2 普通命令写入 2 字节 `{}` 仅靠赋值约定，缺少失败关闭的回归护栏。
+- 修复：逐录像 purge 在原有 eligibility 二次核验后，于同一个 `BEGIN IMMEDIATE` 事务中先删除 v2 请求、完整事件和检查点，再删除原有子表、sandbox 元数据和父 match；新增提交前故障注入证明任一步失败时父记录、全部子表和 tombstone 一起回滚，租约释放后同一到期运行可安全重试。活动房间和异常排位引用仍保留全部 v2 行。
+- WAL 与异常护栏：Recorder 所有会写主库的连接统一在事务前设置连接级 `journal_size_limit=64 MiB`，保持持久 `journal_mode=WAL`，不执行在线 checkpoint 或 VACUUM。该设置只限制正常 checkpoint/reset 后保留的 journal/WAL 尺寸，不是长读者或大事务期间的瞬时硬上限。Schema 新增低开销 v2 INSERT trigger，应用写入前同时做常量比较；非 `{}` 时只记无身份/内容的聚合指标与错误日志并拒绝事务，v1 完整状态继续允许。
+- 同类扫描：`rg -n "new SqliteConnection|OpenWriteConnectionAsync|INSERT|UPDATE|DELETE|BeginTransaction" 服务端WebSocket/TwelveLegions -g 'MatchRecorder*.cs'` 复核初始化、开局、命令追加、匿名化、结束、排位 runtime/outbox/quarantine、沙盒结束/清理和单卡事实压缩写路径均使用受限写连接；剩余 raw 连接仅执行主库 SELECT 或 TEMP 分析查询。清理候选和事务内二次核验的 mode、状态、严格时间、active 及三类排位引用条件保持一致。
+- 回归与门禁：`SandboxReplayRetentionTests` 明确创建 v2 请求/事件/检查点，覆盖过期后父表及三张 v2 子表均为 0、活动与排位保护记录原样保留、提交前失败全表原子回滚及重试；`LatencyAndPersistenceRegressionTests` 覆盖 64 MiB 默认值、实际写入后仍为 WAL、应用 guard 与 Schema trigger 双层拒绝非 `{}`。两类目标测试 34/34；最终 `verify-l12-change.ps1 -Level Focused` 退出 0，规则 2537/2537、静态卡效守卫与 `git diff --check` 全通过。按任务边界未运行 Release。
+
 ### OPS-20260908-288-TESTRUN-ISOLATION 公开测试服同机隔离与安全发布链
 
 - 状态与边界：用户确认测试服使用 `testrun.legion-12.com` 且任何人可访问，不增加 Basic Auth。新机 8084、独立 service/env/runtime/release 已完成首次 bootstrap 和本机 health/WS 验证；正式 8083 未切换、未重启。DNS、证书和公网 TLS 按用户要求延后，当前仍是 ACME-only + 503，不能视为公网已开放。

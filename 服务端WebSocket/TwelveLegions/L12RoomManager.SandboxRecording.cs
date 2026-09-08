@@ -73,6 +73,21 @@ public sealed partial class L12RoomManager
             .Where(candidate => candidate.IsSandbox && candidate.Game is not null)
             .Select(candidate => candidate.Game!.State.MatchId)
             .ToArray();
-        return await _recorder.RunSandboxReplayCleanupIfDueAsync(activeSandboxMatches, now, cancellationToken);
+        var replayCleanup = await _recorder.RunSandboxReplayCleanupIfDueAsync(
+            activeSandboxMatches, now, cancellationToken);
+        try
+        {
+            await _recorder.RunCardFactStorageMaintenanceIfDueAsync(now, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            // 单卡事实维护与沙盒录像清理相互隔离；失败留待下一轮重试，不影响房间服务。
+            Console.Error.WriteLine($"Card analytics storage maintenance: {error.Message}");
+        }
+        return replayCleanup;
     }
 }

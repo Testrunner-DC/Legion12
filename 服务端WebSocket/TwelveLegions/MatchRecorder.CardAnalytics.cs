@@ -279,8 +279,19 @@ public sealed partial class MatchRecorder
               ON e.match_id=f.match_id AND e.player_index=f.player_index
             JOIN temp.l12_analytics_inclusions i
               ON i.match_id=f.match_id AND i.player_index=f.player_index AND i.card_id=f.card_id
-            WHERE f.card_id IS NOT NULL
+            WHERE f.card_id IS NOT NULL AND f.kind<>'deck-included'
+              AND NOT EXISTS(
+                  SELECT 1 FROM match_card_fact_compactions compacted
+                  WHERE compacted.match_id=f.match_id)
             GROUP BY f.match_id,f.player_index,f.card_id;
+            INSERT INTO temp.l12_analytics_fact_stats
+            SELECT summary.*
+            FROM match_card_fact_summaries summary
+            JOIN temp.l12_analytics_eligible e
+              ON e.match_id=summary.match_id AND e.player_index=summary.player_index
+            JOIN temp.l12_analytics_inclusions i
+              ON i.match_id=summary.match_id AND i.player_index=summary.player_index
+             AND i.card_id=summary.card_id;
             CREATE UNIQUE INDEX temp.ix_l12_analytics_fact_stats_card
                 ON l12_analytics_fact_stats(card_id,match_id,player_index);
             """;

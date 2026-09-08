@@ -181,4 +181,40 @@ public sealed class MatchRecorderTests
         conflicting.ConcludeByAuthority(0, "冲突重放");
         await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.CompleteAsync(conflicting));
     }
+
+    [Fact]
+    public async Task JournalActionAuditStoresCardReferencesInsteadOfRepeatedRenderedCardSnapshots()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-recorder-compact-events",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var game = new L12GameEngine(catalog, "compact-events", "EVENTS", 805,
+            ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        await recorder.StartAsync(game);
+        var gm = new L12GmCommand("placeCard", 0, "S01-0109", Row: 0, Slot: 0,
+            TriggerEffects: false);
+        var result = game.HandleGm(gm);
+        Assert.True(result.Accepted, result.Error);
+        await recorder.AppendAsync(game, 1, -1, JsonSerializer.Serialize(gm), result);
+
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT event_json FROM match_action_events
+            WHERE match_id='compact-events' AND json_array_length(event_json,'$.Cards')>0
+            ORDER BY event_sequence LIMIT 1;
+            """;
+        var json = Assert.IsType<string>(await command.ExecuteScalarAsync());
+        using var document = JsonDocument.Parse(json);
+        var card = document.RootElement.GetProperty("Cards")[0];
+        Assert.False(string.IsNullOrWhiteSpace(card.GetProperty("CardId").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(card.GetProperty("InstanceId").GetString()));
+        Assert.False(card.TryGetProperty("Troops", out _));
+        Assert.False(card.TryGetProperty("EffectText", out _));
+        Assert.True(json.Length < 512, $"紧凑动作事件不应重复持久化整张卡牌：{json.Length} bytes");
+    }
 }

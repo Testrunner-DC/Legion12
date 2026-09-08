@@ -7,6 +7,7 @@ namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder : IAsyncDisposable
 {
+    internal const long JournalSizeLimitBytes = 64L * 1024 * 1024;
     private readonly string _connectionString;
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly ConcurrentDictionary<string, Dictionary<string, CardLocation>> _factLocationBaselines =
@@ -22,10 +23,31 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
+    internal async Task<SqliteConnection> OpenWriteConnectionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        try
+        {
+            await connection.OpenAsync(cancellationToken);
+            var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA main.journal_size_limit={JournalSizeLimitBytes};";
+            var configuredLimit = Convert.ToInt64(
+                await command.ExecuteScalarAsync(cancellationToken));
+            if (configuredLimit != JournalSizeLimitBytes)
+                throw new InvalidOperationException("SQLite 未接受对局日志文件大小限制");
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
     public async Task InitializeAsync()
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
             PRAGMA journal_mode=WAL;
@@ -86,8 +108,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     {
         if (decks is not null && decks.Count != 2)
             throw new ArgumentException("正式对局构筑快照必须恰好包含两名玩家", nameof(decks));
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var startedUtc = _utcNow().ToUniversalTime().ToString("O");
         var normalizedMode = string.IsNullOrWhiteSpace(modeId)
@@ -188,37 +209,43 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     {
         if (engine.State.Phase != L12Phase.GameOver)
             throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var finalHash = engine.ComputeStateHash();
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash,first_player=$first
             WHERE match_id=$id AND ended_utc IS NULL;
             """;
-        command.Parameters.AddWithValue("$utc", _utcNow().ToUniversalTime().ToString("O"));
+        var completedUtc = _utcNow().ToUniversalTime().ToString("O");
+        command.Parameters.AddWithValue("$utc", completedUtc);
         command.Parameters.AddWithValue("$winner", (object?)engine.State.Winner ?? DBNull.Value);
         command.Parameters.AddWithValue("$hash", finalHash);
         command.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
         command.Parameters.AddWithValue("$id", engine.State.MatchId);
-        if (await command.ExecuteNonQueryAsync() == 1)
-        {
-            _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
-            return true;
-        }
+        var changed = await command.ExecuteNonQueryAsync() == 1;
 
-        var existing = connection.CreateCommand();
-        existing.CommandText = "SELECT winner,final_hash,ended_utc FROM matches WHERE match_id=$id;";
-        existing.Parameters.AddWithValue("$id", engine.State.MatchId);
-        await using var reader = await existing.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待结束的正式对局记录");
-        var recordedWinner = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
-        var recordedHash = reader.IsDBNull(1) ? null : reader.GetString(1);
-        if (reader.IsDBNull(2) || recordedWinner != engine.State.Winner
-            || !string.Equals(recordedHash, finalHash, StringComparison.Ordinal))
-            throw new InvalidOperationException("重复结束请求与已记录的正式赛果冲突");
+        if (!changed)
+        {
+            var existing = connection.CreateCommand();
+            existing.Transaction = transaction;
+            existing.CommandText = "SELECT winner,final_hash,ended_utc FROM matches WHERE match_id=$id;";
+            existing.Parameters.AddWithValue("$id", engine.State.MatchId);
+            await using var reader = await existing.ExecuteReaderAsync();
+            if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待结束的正式对局记录");
+            var recordedWinner = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
+            var recordedHash = reader.IsDBNull(1) ? null : reader.GetString(1);
+            if (reader.IsDBNull(2) || recordedWinner != engine.State.Winner
+                || !string.Equals(recordedHash, finalHash, StringComparison.Ordinal))
+                throw new InvalidOperationException("重复结束请求与已记录的正式赛果冲突");
+        }
+        if (changed || !await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
+            await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, completedUtc);
+        StorageFailureInjector?.Invoke("before-match-complete-commit");
+        await transaction.CommitAsync();
         _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
-        return false;
+        return changed;
     }
 
     public async Task<IReadOnlyList<L12MatchSummary>> ListMatchesAsync(int limit = 50)

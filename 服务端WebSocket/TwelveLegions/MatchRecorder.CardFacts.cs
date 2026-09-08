@@ -34,8 +34,6 @@ public sealed partial class MatchRecorder
         string Zone,
         int Troops);
 
-    private sealed record ParticipantIdentity(int PlayerIndex, string? AccountId);
-
     private static async Task InitializeAnalyticsSchemaAsync(SqliteConnection connection)
     {
         var command = connection.CreateCommand();
@@ -128,6 +126,7 @@ public sealed partial class MatchRecorder
             """;
         command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync();
+        await InitializeAnalyticsCompactionSchemaAsync(connection);
     }
 
     private static async Task PersistMatchStartAnalyticsAsync(
@@ -188,28 +187,16 @@ public sealed partial class MatchRecorder
                     deckCard.Parameters.AddWithValue("$quantity", group.Count());
                     await deckCard.ExecuteNonQueryAsync();
 
-                    await InsertFactAsync(connection, transaction, new PendingCardFact(
-                        state.MatchId, $"start:deck:{playerIndex}:{section.Key}:{group.Key.ToUpperInvariant()}",
-                        "deck-included", 0, state.Revision, state.Round, state.TurnSerial,
-                        state.Phase.ToString(), occurredUtc, playerIndex, accountId,
-                        group.Key, null, null, null, "deck", section.Key, group.Count(), coverage,
-                        JsonSerializer.Serialize(new { section = section.Key, quantity = group.Count() })));
                 }
             }
         }
 
         foreach (var signal in initialSignals)
         {
-            var accountId = signal.PlayerIndex switch
-            {
-                0 => account0,
-                1 => account1,
-                _ => null,
-            };
             await InsertFactAsync(connection, transaction, new PendingCardFact(
                 state.MatchId, $"signal:{signal.Sequence}", signal.Kind, 0, signal.Revision,
                 signal.Round, signal.Turn, signal.Phase, occurredUtc,
-                signal.PlayerIndex, accountId, signal.CardId, signal.CardInstanceId, null, null,
+                signal.PlayerIndex, null, signal.CardId, signal.CardInstanceId, null, null,
                 signal.SourceZone, signal.DestinationZone, signal.Amount, signal.Coverage,
                 JsonSerializer.Serialize(signal.Data ?? new Dictionary<string, string>())));
         }
@@ -264,8 +251,7 @@ public sealed partial class MatchRecorder
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
         var occurredUtc = _utcNow().ToUniversalTime().ToString("O");
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var transactionStartedAt = L12PerformanceMetrics.Start();
         var identityReplacements = await ReadIdentityReplacementsAsync(
@@ -275,6 +261,7 @@ public sealed partial class MatchRecorder
             commandJson = ApplyIdentityReplacements(commandJson, identityReplacements);
             stateJson = ApplyIdentityReplacements(stateJson, identityReplacements);
         }
+        if (journalV2) ValidateJournalV2CommandStateJson(stateJson);
 
         var duplicate = connection.CreateCommand();
         duplicate.Transaction = transaction;
@@ -405,7 +392,6 @@ public sealed partial class MatchRecorder
         StorageFailureInjector?.Invoke(rankedRuntime is null
             ? "after-match-command-write" : "after-ranked-command-write");
 
-        var identities = await ReadParticipantIdentitiesAsync(connection, transaction, engine.State.MatchId);
         var newSignals = engine.CardFactSignals.Where(signal => signal.Sequence > lastSignalSequence).ToArray();
         var explicitFacts = newSignals
             .Where(signal => signal.CardInstanceId is not null)
@@ -415,19 +401,16 @@ public sealed partial class MatchRecorder
         {
             foreach (var fact in ExtractDeltaFacts(
                          previousLocations ?? CaptureLocations(previousStateJson!), engine.State, sequence, occurredUtc,
-                         identities, explicitFacts))
+                         explicitFacts))
                 await InsertFactAsync(connection, transaction, fact);
         }
 
         foreach (var signal in newSignals)
         {
-            var accountId = signal.PlayerIndex is { } signalPlayer
-                ? identities.GetValueOrDefault(signalPlayer)?.AccountId
-                : null;
             await InsertFactAsync(connection, transaction, new PendingCardFact(
                 engine.State.MatchId, $"signal:{signal.Sequence}", signal.Kind, sequence, signal.Revision,
                 signal.Round, signal.Turn, signal.Phase, occurredUtc,
-                signal.PlayerIndex, accountId, signal.CardId, signal.CardInstanceId, null, null,
+                signal.PlayerIndex, null, signal.CardId, signal.CardInstanceId, null, null,
                 signal.SourceZone, signal.DestinationZone, signal.Amount, signal.Coverage,
                 ApplyIdentityReplacements(
                     JsonSerializer.Serialize(signal.Data ?? new Dictionary<string, string>()),
@@ -452,7 +435,11 @@ public sealed partial class MatchRecorder
         if (rankedRuntime is not null)
             await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
         if (rankedSettlement is not null)
+        {
             await CompleteRankedMatchAndEnqueueAsync(connection, transaction, engine, rankedSettlement);
+            if (!await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
+                await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, occurredUtc);
+        }
         if (journalV2)
         {
             await PersistActionEventsAsync(connection, transaction, engine, sequence, occurredUtc,
@@ -516,24 +503,6 @@ public sealed partial class MatchRecorder
         return json;
     }
 
-    private static async Task<Dictionary<int, ParticipantIdentity>> ReadParticipantIdentitiesAsync(
-        SqliteConnection connection, SqliteTransaction transaction, string matchId)
-    {
-        var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT player_index,account_id FROM match_participants WHERE match_id=$match;";
-        command.Parameters.AddWithValue("$match", matchId);
-        var result = new Dictionary<int, ParticipantIdentity>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var playerIndex = reader.GetInt32(0);
-            result[playerIndex] = new ParticipantIdentity(playerIndex,
-                reader.IsDBNull(1) ? null : reader.GetString(1));
-        }
-        return result;
-    }
-
     private static async Task InsertFactAsync(SqliteConnection connection, SqliteTransaction transaction,
         PendingCardFact fact)
     {
@@ -577,7 +546,6 @@ public sealed partial class MatchRecorder
         L12GameState currentState,
         long commandSequence,
         string occurredUtc,
-        IReadOnlyDictionary<int, ParticipantIdentity> identities,
         IReadOnlySet<(string Kind, string InstanceId)> explicitFacts)
     {
         var current = CaptureLocations(currentState);
@@ -587,11 +555,10 @@ public sealed partial class MatchRecorder
         foreach (var pair in current.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             var currentCard = pair.Value;
-            var accountId = identities.GetValueOrDefault(currentCard.PlayerIndex)?.AccountId;
             if (!previous.TryGetValue(pair.Key, out var previousCard))
             {
                 facts.Add(DeltaFact("zone-move", ++ordinal, currentState, commandSequence,
-                    occurredUtc, currentCard, accountId, null, currentCard.Zone,
+                    occurredUtc, currentCard, null, null, currentCard.Zone,
                     coverage: "partial", metadata: new { origin = "generated", timing = "command-boundary" }));
                 continue;
             }
@@ -599,14 +566,14 @@ public sealed partial class MatchRecorder
             if (!string.Equals(previousCard.Zone, currentCard.Zone, StringComparison.Ordinal))
             {
                 facts.Add(DeltaFact("zone-move", ++ordinal, currentState, commandSequence,
-                    occurredUtc, currentCard, accountId, previousCard.Zone,
+                    occurredUtc, currentCard, null, previousCard.Zone,
                     currentCard.Zone, coverage: "partial", metadata: new { timing = "command-boundary" }));
                 if (currentCard.Zone == "hand"
                     && !explicitFacts.Contains(("draw", currentCard.InstanceId))
                     && !explicitFacts.Contains(("search-or-hand-add", currentCard.InstanceId)))
                 {
                     facts.Add(DeltaFact("search-or-hand-add", ++ordinal, currentState,
-                        commandSequence, occurredUtc, currentCard, accountId,
+                        commandSequence, occurredUtc, currentCard, null,
                         previousCard.Zone, "hand", coverage: "partial",
                         metadata: new { reason = "authoritative-zone-transition" }));
                 }
@@ -615,7 +582,7 @@ public sealed partial class MatchRecorder
             if (currentCard.Troops < previousCard.Troops)
             {
                 facts.Add(DeltaFact("damage", ++ordinal, currentState, commandSequence,
-                    occurredUtc, currentCard, accountId, currentCard.Zone,
+                    occurredUtc, currentCard, null, currentCard.Zone,
                     currentCard.Zone, previousCard.Troops - currentCard.Troops, "partial",
                     new { role = "target", sourceAttribution = "unavailable" }));
             }
@@ -625,9 +592,8 @@ public sealed partial class MatchRecorder
         {
             if (current.ContainsKey(pair.Key)) continue;
             var card = pair.Value;
-            var accountId = identities.GetValueOrDefault(card.PlayerIndex)?.AccountId;
             facts.Add(DeltaFact("zone-move", ++ordinal, currentState, commandSequence,
-                occurredUtc, card, accountId, card.Zone, "vanished",
+                occurredUtc, card, null, card.Zone, "vanished",
                 coverage: "partial", metadata: new { destination = "untracked-or-vanished", timing = "command-boundary" }));
         }
         return facts;
@@ -788,8 +754,7 @@ public sealed partial class MatchRecorder
     private async Task<int> AnonymizeIdentityAsync(string? accountId, string playerName, string anonymousName)
     {
         if (string.IsNullOrWhiteSpace(accountId) && string.IsNullOrWhiteSpace(playerName)) return 0;
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var targets = new List<(string MatchId, int PlayerIndex)>();
         var select = connection.CreateCommand();

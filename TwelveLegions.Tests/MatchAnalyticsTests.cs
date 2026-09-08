@@ -96,7 +96,7 @@ public sealed class MatchAnalyticsTests
         Assert.Empty(detail.Replay);
         Assert.NotEmpty(detail.Participants[0].DeckCards);
         Assert.Equal("exact", detail.Participants[0].DeckSnapshotCoverage);
-        Assert.Contains(detail.CardFacts, fact => fact.Kind == "deck-included");
+        Assert.DoesNotContain(detail.CardFacts, fact => fact.Kind == "deck-included");
         var draw = Assert.Single(detail.CardFacts,
             fact => fact.Kind == "draw" && fact.CommandSequence == 1);
         Assert.Equal(1, draw.CommandSequence);
@@ -233,10 +233,6 @@ public sealed class MatchAnalyticsTests
         var game = new L12GameEngine(catalog, "participant-units", "UNIT01", 55,
             ["甲", "乙"], [deck, deck], skipPreparation: true);
         await recorder.StartAsync(game, "ranked", "unit-a", "unit-b", [deck, deck]);
-        game.ConcludeByAuthority(0, "参赛方统计口径测试结束");
-        await recorder.AppendAuthorityAsync(game, 1, "参赛方统计口径测试结束");
-        await recorder.CompleteAsync(game);
-
         await using (var connection = new SqliteConnection($"Data Source={path}"))
         {
             await connection.OpenAsync();
@@ -253,6 +249,9 @@ public sealed class MatchAnalyticsTests
                     coverage: playerIndex == 0 ? "exact" : "partial");
             }
         }
+        game.ConcludeByAuthority(0, "参赛方统计口径测试结束");
+        await recorder.AppendAuthorityAsync(game, 1, "参赛方统计口径测试结束");
+        await recorder.CompleteAsync(game);
 
         var page = await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
             MinimumSampleSize: 1, CandidateCardIds: [targetCard]));
@@ -845,6 +844,76 @@ public sealed class MatchAnalyticsTests
                  + (SELECT COUNT(*) FROM match_card_facts WHERE account_id='delete-account');
             """;
         Assert.Equal(0L, Convert.ToInt64(await identifiers.ExecuteScalarAsync()));
+    }
+
+    [Fact]
+    public async Task CompletedMatchFactsCompactWithoutChangingDashboardAndDetailedFactsExpireAfterThirtyDays()
+    {
+        var now = new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero);
+        var directory = TestDirectory("fact-compaction");
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = Catalog();
+        var deck = catalog.DeckAt(0);
+        var targetCard = deck.CardIds[0];
+        await using var recorder = new MatchRecorder(path, () => now);
+        await recorder.InitializeAsync();
+        var game = new L12GameEngine(catalog, "fact-compaction", "COMPACT", 804,
+            ["甲", "乙"], [deck, deck], skipPreparation: true);
+        await recorder.StartAsync(game, "ranked", "compact-a", "compact-b", [deck, deck]);
+        game.ConcludeByAuthority(0, "紧凑统计测试结束");
+        await recorder.AppendAuthorityAsync(game, 1, "紧凑统计测试结束");
+        await recorder.CompleteAsync(game);
+
+        var before = Assert.Single((await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
+            MinimumSampleSize: 1, CandidateCardIds: [targetCard]))).Items,
+            item => item.CardId == targetCard);
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                SELECT
+                    (SELECT COUNT(*) FROM match_card_fact_compactions WHERE match_id='fact-compaction'),
+                    (SELECT COUNT(*) FROM match_card_fact_summaries WHERE match_id='fact-compaction'),
+                    (SELECT COUNT(*) FROM match_card_facts WHERE match_id='fact-compaction'),
+                    (SELECT COUNT(*) FROM match_card_facts
+                     WHERE match_id='fact-compaction' AND kind='deck-included'),
+                    (SELECT COUNT(*) FROM match_card_facts
+                     WHERE match_id='fact-compaction' AND account_id IS NOT NULL);
+                """;
+            await using var reader = await inspect.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(1, reader.GetInt32(0));
+            Assert.True(reader.GetInt32(1) > 0);
+            Assert.True(reader.GetInt32(2) > 0);
+            Assert.Equal(0, reader.GetInt32(3));
+            Assert.Equal(0, reader.GetInt32(4));
+        }
+
+        Assert.Equal(1, await recorder.PruneCompactedCardFactDetailsAsync(now.AddDays(31)));
+        Assert.False(await recorder.CompleteAsync(game));
+        var after = Assert.Single((await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
+            MinimumSampleSize: 1, CandidateCardIds: [targetCard]))).Items,
+            item => item.CardId == targetCard);
+        Assert.Equal(JsonSerializer.Serialize(before), JsonSerializer.Serialize(after));
+
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                SELECT
+                    (SELECT COUNT(*) FROM match_card_facts WHERE match_id='fact-compaction'),
+                    (SELECT COUNT(*) FROM match_card_fact_summaries WHERE match_id='fact-compaction'),
+                    (SELECT COUNT(*) FROM match_card_fact_compactions
+                     WHERE match_id='fact-compaction' AND details_pruned_utc IS NOT NULL);
+                """;
+            await using var reader = await inspect.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(0, reader.GetInt32(0));
+            Assert.True(reader.GetInt32(1) > 0);
+            Assert.Equal(1, reader.GetInt32(2));
+        }
     }
 
     private static HttpRequestMessage Authorized(HttpMethod method, string path, string token)

@@ -112,6 +112,13 @@ public sealed partial class MatchRecorder
             );
             CREATE INDEX IF NOT EXISTS ix_match_action_requests_recent
                 ON match_action_requests(match_id, command_sequence DESC);
+            CREATE TRIGGER IF NOT EXISTS trg_match_events_v2_sparse_state
+            BEFORE INSERT ON match_events
+            WHEN NEW.state_json <> '{}'
+              AND COALESCE((SELECT storage_version FROM matches WHERE match_id=NEW.match_id),1) >= 2
+            BEGIN
+                SELECT RAISE(ABORT, 'v2 match_events.state_json must remain {}');
+            END;
             """;
         await command.ExecuteNonQueryAsync();
         await EnsureColumnAsync(connection, "match_state_checkpoints", "random_state_version",
@@ -121,6 +128,14 @@ public sealed partial class MatchRecorder
 
     private static bool UsesJournalV2(L12GameEngine? engine)
         => engine?.State.StateFormatVersion >= JournalStorageVersion;
+
+    internal static void ValidateJournalV2CommandStateJson(string stateJson)
+    {
+        if (string.Equals(stateJson, "{}", StringComparison.Ordinal)) return;
+        L12PerformanceMetrics.Value("persistence.v2-state-json-anomaly", 1);
+        Console.Error.WriteLine("[L12存储异常] v2 普通命令 state_json 非空对象，已拒绝持久化。");
+        throw new InvalidDataException("v2 普通命令 state_json 必须保持为 '{}'");
+    }
 
     private static async Task PersistActionEventsAsync(SqliteConnection connection,
         SqliteTransaction transaction, L12GameEngine engine, long commandSequence,
@@ -140,7 +155,19 @@ public sealed partial class MatchRecorder
             insert.Parameters.AddWithValue("$command", commandSequence);
             insert.Parameters.AddWithValue("$revision", engine.State.Revision);
             insert.Parameters.AddWithValue("$json", ApplyIdentityReplacements(
-                JsonSerializer.Serialize(actionEvent), identityReplacements));
+                JsonSerializer.Serialize(new
+                {
+                    actionEvent.Sequence,
+                    actionEvent.Type,
+                    actionEvent.PlayerIndex,
+                    actionEvent.Text,
+                    Cards = actionEvent.Cards.Select(card => new
+                    {
+                        card.CardId,
+                        card.InstanceId,
+                    }).ToArray(),
+                    actionEvent.EffectText,
+                }), identityReplacements));
             insert.Parameters.AddWithValue("$utc", occurredUtc);
             await insert.ExecuteNonQueryAsync();
         }

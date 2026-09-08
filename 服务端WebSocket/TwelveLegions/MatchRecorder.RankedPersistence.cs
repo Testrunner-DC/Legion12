@@ -231,8 +231,7 @@ public sealed partial class MatchRecorder
         if (checkpoints.Count == 0) return;
         var unique = checkpoints.GroupBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.Last()).ToArray();
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         foreach (var checkpoint in unique)
             await UpsertRankedRuntimeAsync(connection, transaction, checkpoint);
@@ -358,8 +357,7 @@ public sealed partial class MatchRecorder
 
     internal async Task QuarantineRankedSettlementAsync(string matchId, string payloadHash, string reason)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE ranked_settlement_outbox
@@ -375,8 +373,7 @@ public sealed partial class MatchRecorder
 
     internal async Task MarkRankedSettlementAppliedAsync(string matchId, string payloadHash)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -405,8 +402,7 @@ public sealed partial class MatchRecorder
 
     internal async Task RecordRankedSettlementFailureAsync(string matchId, string error)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE ranked_settlement_outbox
@@ -420,8 +416,7 @@ public sealed partial class MatchRecorder
 
     internal async Task ClearAppliedRankedSettlementErrorAsync(string matchId, string payloadHash)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE ranked_settlement_outbox SET last_error=NULL
@@ -856,8 +851,7 @@ public sealed partial class MatchRecorder
     internal async Task FinalizeIncompatibleRankedAsync(L12RankedRecoverySource source,
         L12RankedSettlementEnvelope settlement, string reason)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var latestHash = source.Commands.LastOrDefault()?.StateHash ?? source.StateCheckpoint?.StateHash;
         var complete = connection.CreateCommand();
