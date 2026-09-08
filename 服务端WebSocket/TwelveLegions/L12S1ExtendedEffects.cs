@@ -901,7 +901,8 @@ public sealed partial class L12GameEngine
             return PublicLegions(State.Players[playerIndex]).Any()
                 && (timing.Trigger == "opponent-attack"
                     ? playerIndex == defendingPlayer
-                    : timing.Trigger is "enter" or "play" or "active" or "disaster");
+                    : IsLegionEntryEffectTrigger(timing.Trigger)
+                        || timing.Trigger is "play" or "active" or "disaster");
         return cardId switch
         {
             "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,

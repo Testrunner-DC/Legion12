@@ -7,20 +7,58 @@ if [[ -n "$test_root" ]]; then
   [[ "${L12_DEPLOY_TEST_MODE:-0}" == "1" && "$test_root" == /* && "$test_root" != "/" && "$test_root" == *"/l12-deploy-behavior-"* ]] \
     || { printf '[L12 部署] 错误：测试根目录不满足隔离约束\n' >&2; exit 2; }
 fi
+log() { printf '[L12 部署] %s\n' "$*"; }
+fail() { printf '[L12 部署] 错误：%s\n' "$*" >&2; return 1; }
+
+readonly requested_mode="${1:-}"
+if [[ "$requested_mode" == "prepare-storage" ]]; then
+  artifact_root_option="${2:-}"
+else
+  artifact_root_option="${11:-/opt}"
+fi
+case "$artifact_root_option" in
+  /opt|/www/legion12) ;;
+  *) fail "服务器制品根只允许 /opt 或 /www/legion12"; exit 2 ;;
+esac
+readonly artifact_root_option
+readonly external_artifact_mode="$(if [[ "$artifact_root_option" == "/www/legion12" ]]; then printf 1; else printf 0; fi)"
+
 readonly active_dir="${test_root}/opt/legion12-test"
-readonly releases_dir="${test_root}/opt/legion12-releases"
 readonly runtime_dir="${test_root}/opt/legion12-runtime"
 readonly sandbox_fence="${runtime_dir}/.maintenance-sandbox-drain"
-readonly static_card_assets_dir="${test_root}/opt/legion12-static/card-assets"
 readonly deployment_dir="${test_root}/opt/legion12-deployment"
-readonly incoming_dir="${deployment_dir}/incoming"
-readonly runtime_backup_dir="${deployment_dir}/runtime-backups"
 readonly failure_dir="${deployment_dir}/failures"
 readonly service_name="legion12-test.service"
 readonly public_host="legion-12.com"
 readonly lock_file="${test_root}/run/lock/legion12-deploy.lock"
 readonly service_override_dir="${test_root}/etc/systemd/system/${service_name}.d"
 readonly environment_file="${test_root}/etc/legion12-test.env"
+readonly default_releases_dir="${test_root}/opt/legion12-releases"
+readonly default_incoming_dir="${deployment_dir}/incoming"
+readonly default_runtime_backup_dir="${deployment_dir}/runtime-backups"
+readonly default_static_card_assets_dir="${test_root}/opt/legion12-static/card-assets"
+readonly external_mount="${test_root}/www"
+readonly external_artifact_root="${external_mount}/legion12"
+if [[ "$external_artifact_mode" == "1" ]]; then
+  readonly artifact_root="$external_artifact_root"
+  readonly releases_dir="${artifact_root}/releases"
+  readonly incoming_dir="${artifact_root}/incoming"
+  readonly runtime_backup_dir="${artifact_root}/runtime-backups"
+  readonly static_card_assets_dir="${artifact_root}/card-assets"
+  readonly stage_parent="${artifact_root}/staging"
+else
+  readonly artifact_root="${test_root}/opt"
+  readonly releases_dir="$default_releases_dir"
+  readonly incoming_dir="$default_incoming_dir"
+  readonly runtime_backup_dir="$default_runtime_backup_dir"
+  readonly static_card_assets_dir="$default_static_card_assets_dir"
+  readonly stage_parent="${test_root}/opt"
+fi
+readonly external_prepare_min_bytes=$((14 * 1024 * 1024 * 1024))
+readonly external_backup_max_bytes=$((4 * 1024 * 1024 * 1024))
+readonly external_reserve_bytes=$((8 * 1024 * 1024 * 1024))
+readonly external_release_unpacked_max_bytes=$((1 * 1024 * 1024 * 1024))
+readonly external_card_unpacked_max_bytes=$((512 * 1024 * 1024))
 if [[ -n "$test_root" ]]; then
   readonly public_base="${L12_DEPLOY_PUBLIC_BASE:-https://${public_host}}"
   readonly local_base="${L12_DEPLOY_LOCAL_BASE:-http://127.0.0.1:8083}"
@@ -37,9 +75,230 @@ fi
 readonly service_user="legion12"
 readonly web_user="www-data"
 
-log() { printf '[L12 部署] %s\n' "$*"; }
-fail() { printf '[L12 部署] 错误：%s\n' "$*" >&2; return 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || fail "服务器缺少命令：$1"; }
+
+assert_plain_directory() {
+  local path="$1"
+  local resolved
+  if [[ ! -d "$path" || -L "$path" ]]; then
+    fail "受管目录不是普通目录：${path}"
+    return 1
+  fi
+  if ! resolved="$(readlink -f -- "$path")"; then
+    fail "无法解析受管目录：${path}"
+    return 1
+  fi
+  if [[ "$resolved" != "$path" ]]; then
+    fail "受管目录包含符号链接或越界：${path}"
+    return 1
+  fi
+  return 0
+}
+
+assert_existing_directories_plain() {
+  local path
+  for path in "$@"; do
+    if [[ -e "$path" || -L "$path" ]]; then
+      if ! assert_plain_directory "$path"; then return 1; fi
+    fi
+  done
+  return 0
+}
+
+external_available_bytes() {
+  local available
+  if [[ -n "$test_root" ]]; then
+    available="${L12_DEPLOY_TEST_EXTERNAL_AVAILABLE_BYTES:-$((20 * 1024 * 1024 * 1024))}"
+  else
+    if ! require_command df; then return 1; fi
+    if ! available="$(df -B1 --output=avail "$external_mount" | awk 'NR == 2 { gsub(/[[:space:]]/, "", $1); print $1 }')"; then
+      fail "无法读取外置制品盘可用容量"
+      return 1
+    fi
+  fi
+  if [[ ! "$available" =~ ^[0-9]+$ ]]; then
+    fail "无法读取外置制品盘可用容量"
+    return 1
+  fi
+  printf '%s\n' "$available"
+  return 0
+}
+
+validate_external_mount() {
+  [[ "$external_artifact_mode" == "1" ]] || return 0
+  local mount_target root_source external_source mount_options configured_target
+  if ! assert_plain_directory "$external_mount"; then return 1; fi
+  if [[ -n "$test_root" ]]; then
+    mount_target="${L12_DEPLOY_TEST_EXTERNAL_MOUNT_TARGET:-$external_mount}"
+    root_source="test-root-device"
+    external_source="${L12_DEPLOY_TEST_EXTERNAL_MOUNT_SOURCE:-test-external-device}"
+    mount_options="${L12_DEPLOY_TEST_EXTERNAL_MOUNT_OPTIONS:-rw,relatime}"
+    configured_target="${L12_DEPLOY_TEST_EXTERNAL_FSTAB_TARGET:-$external_mount}"
+  else
+    if ! require_command findmnt; then return 1; fi
+    if ! mount_target="$(findmnt -n -T "$external_mount" -o TARGET)"; then return 1; fi
+    if ! root_source="$(findmnt -n -T / -o SOURCE)"; then return 1; fi
+    if ! external_source="$(findmnt -n -T "$external_mount" -o SOURCE)"; then return 1; fi
+    if ! mount_options="$(findmnt -n -T "$external_mount" -o OPTIONS)"; then return 1; fi
+    if ! configured_target="$(findmnt --fstab -n -T "$external_mount" -o TARGET)"; then return 1; fi
+  fi
+  if [[ "$mount_target" != "$external_mount" ]]; then
+    fail "外置制品根不在独立精确挂载点"
+    return 1
+  fi
+  if [[ -z "$root_source" || -z "$external_source" || "$root_source" == "$external_source" ]]; then
+    fail "外置制品盘与根盘不是独立文件系统"
+    return 1
+  fi
+  if [[ ",$mount_options," != *,rw,* || ",$mount_options," == *,ro,* ]]; then
+    fail "外置制品盘不是发布流程所需的 rw 挂载"
+    return 1
+  fi
+  if [[ "$configured_target" != "$external_mount" ]]; then
+    fail "外置制品盘缺少持久挂载配置"
+    return 1
+  fi
+  return 0
+}
+
+validate_external_prepare_capacity() {
+  [[ "$external_artifact_mode" == "1" ]] || return 0
+  local available
+  if ! available="$(external_available_bytes)"; then return 1; fi
+  if (( available < external_prepare_min_bytes )); then
+    fail "外置制品盘可用容量不足 14 GiB；停止上传、解包和全量快照"
+    return 1
+  fi
+  return 0
+}
+
+prepare_storage_paths() {
+  if [[ "$external_artifact_mode" == "1" ]]; then
+    if ! validate_external_mount; then return 1; fi
+    if ! validate_external_prepare_capacity; then return 1; fi
+    if ! assert_existing_directories_plain \
+      "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
+    if ! mkdir -p "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
+    if ! chmod 0755 "$artifact_root" "$static_card_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
+    if ! chmod 0700 "$incoming_dir" "$runtime_backup_dir"; then return 1; fi
+    if ! assert_plain_directory "$artifact_root"; then return 1; fi
+    if ! assert_plain_directory "$incoming_dir"; then return 1; fi
+    if ! assert_plain_directory "$runtime_backup_dir"; then return 1; fi
+    if ! assert_plain_directory "$static_card_assets_dir"; then return 1; fi
+    if ! assert_plain_directory "$stage_parent"; then return 1; fi
+    if ! assert_plain_directory "$releases_dir"; then return 1; fi
+    if [[ -z "$test_root" ]]; then
+      if [[ "$(stat -c '%a' "$artifact_root")" != "755" || "$(stat -c '%a' "$stage_parent")" != "755" ||
+            "$(stat -c '%a' "$releases_dir")" != "755" || "$(stat -c '%a' "$static_card_assets_dir")" != "755" ||
+            "$(stat -c '%a' "$incoming_dir")" != "700" || "$(stat -c '%a' "$runtime_backup_dir")" != "700" ]]; then
+        fail "外置制品目录权限不符合发布边界"
+        return 1
+      fi
+    fi
+    if ! runuser -u "$service_user" -- test -x "$artifact_root" -a -x "$stage_parent" -a -x "$releases_dir"; then
+      fail "服务账号无法穿越外置 release/staging 路径"
+      return 1
+    fi
+    if ! runuser -u "$web_user" -- test -x "$artifact_root" -a -x "$stage_parent" -a -x "$static_card_assets_dir"; then
+      fail "Nginx 账号无法穿越外置 release/card-assets 路径"
+      return 1
+    fi
+  else
+    if ! mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir"; then return 1; fi
+    if ! chmod 0755 "$(dirname "$static_card_assets_dir")" "$static_card_assets_dir" "$releases_dir"; then return 1; fi
+  fi
+  if ! mkdir -p "$deployment_dir"; then return 1; fi
+  return 0
+}
+
+archive_unpacked_bytes() {
+  local archive="$1"
+  local total
+  if ! total="$(tar --numeric-owner -tvzf "$archive" | awk '{ total += $3 } END { printf "%.0f", total }')"; then
+    fail "无法计算压缩包解包容量"
+    return 1
+  fi
+  if [[ ! "$total" =~ ^[0-9]+$ ]]; then
+    fail "无法计算压缩包解包容量"
+    return 1
+  fi
+  printf '%s\n' "$total"
+  return 0
+}
+
+validate_external_deploy_capacity() {
+  local release_unpacked_bytes="$1"
+  local card_unpacked_bytes="$2"
+  [[ "$external_artifact_mode" == "1" ]] || return 0
+  if (( release_unpacked_bytes > external_release_unpacked_max_bytes )); then
+    fail "运行包解包容量超过外置发布上限"
+    return 1
+  fi
+  if (( card_unpacked_bytes > external_card_unpacked_max_bytes )); then
+    fail "卡图包解包容量超过外置发布上限"
+    return 1
+  fi
+  local available required
+  if ! available="$(external_available_bytes)"; then return 1; fi
+  required=$((external_backup_max_bytes + release_unpacked_bytes + card_unpacked_bytes + external_reserve_bytes))
+  if (( available < required )); then
+    fail "外置制品盘无法同时容纳有界快照、解包内容和 8 GiB 余量；停止发布且不自动删除旧备份"
+    return 1
+  fi
+  return 0
+}
+
+assert_new_path() {
+  local path="$1"
+  if [[ -e "$path" || -L "$path" ]]; then
+    fail "拒绝覆盖既有发布制品：${path}"
+    return 1
+  fi
+  return 0
+}
+
+create_owned_directory() {
+  local path="$1"
+  if ! assert_new_path "$path"; then return 1; fi
+  if ! mkdir "$path"; then
+    fail "无法创建本次发布专属目录：${path}"
+    return 1
+  fi
+  return 0
+}
+
+create_owned_file() {
+  local path="$1"
+  if ! assert_new_path "$path"; then return 1; fi
+  if ! ( set -o noclobber; : > "$path" ); then
+    fail "无法独占创建本次发布临时文件：${path}"
+    return 1
+  fi
+  return 0
+}
+
+assert_incoming_file() {
+  local path="$1"
+  local expected="$2"
+  local resolved_parent
+  if [[ "$path" != "$expected" ]]; then
+    fail "上传包不在固定 incoming 目录"
+    return 1
+  fi
+  if [[ ! -f "$path" || -L "$path" ]]; then
+    fail "上传包不是普通文件"
+    return 1
+  fi
+  if ! resolved_parent="$(readlink -f -- "$(dirname "$path")")"; then
+    fail "无法解析上传包父目录"
+    return 1
+  fi
+  if [[ "$resolved_parent" != "$incoming_dir" ]]; then
+    fail "上传包路径包含符号链接或越界"
+    return 1
+  fi
+  return 0
+}
 
 assert_deployment_unblocked() {
   local blocked_file="${deployment_dir}/deployment-blocked.txt"
@@ -50,7 +309,7 @@ assert_deployment_unblocked() {
 
 self_test() {
   test "$(id -u)" -eq 0 || fail "必须以 root 身份执行"
-  for command_name in id flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown sort timeout date seq; do
+  for command_name in id flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown sort timeout date seq head stat dirname basename; do
     require_command "$command_name"
   done
   test -e "$active_dir" || fail "当前部署入口不存在：${active_dir}"
@@ -129,6 +388,13 @@ verify_release_websocket() {
 validate_card_assets_tree() {
   local root="$1"
   local expected_hash="$2"
+  if [[ -n "$test_root" && "${L12_DEPLOY_TEST_SKIP_CARD_ASSET_CONTENT_VALIDATION:-0}" == "1" ]]; then
+    assert_plain_directory "$root" || return 1
+    test -f "${root}/card-assets.manifest.json" || return 1
+    test -f "${root}/card-assets.preload.json" || return 1
+    test -d "${root}/cards" || return 1
+    return 0
+  fi
   node - "$root" "$expected_hash" <<'NODE'
 const { createHash } = require('node:crypto')
 const { lstatSync, readFileSync } = require('node:fs')
@@ -220,7 +486,23 @@ if [[ "${1:-}" == "self-test" ]]; then
   exit 0
 fi
 
-mode="${1:-}"
+if [[ "$requested_mode" == "prepare-storage" ]]; then
+  if [[ "$artifact_root_option" != "/opt" && "$artifact_root_option" != "/www/legion12" ]]; then
+    fail "用法：$0 prepare-storage </opt|/www/legion12>"
+    exit 2
+  fi
+  if [[ "${L12_DEPLOY_LOCKED:-0}" != "1" ]]; then
+    export L12_DEPLOY_LOCKED=1
+    exec flock --close --nonblock "$lock_file" "$0" "$@"
+  fi
+  assert_deployment_unblocked
+  self_test
+  prepare_storage_paths
+  log "服务器制品目录已通过固定路径、挂载与容量预检：${artifact_root_option}"
+  exit 0
+fi
+
+mode="$requested_mode"
 commit="${2:-}"
 release_sha256="${3:-}"
 release_archive="${4:-}"
@@ -230,10 +512,10 @@ legacy_cards_archive="${7:--}"
 card_assets_hash="${8:--}"
 card_assets_sha256="${9:--}"
 card_assets_archive="${10:--}"
-[[ "$mode" == "deploy" || "$mode" == "dry-run" ]] || fail "用法：$0 <deploy|dry-run> <提交> <运行包SHA256> <运行包> <- legacy已退役> <- > <- > <优化卡图版本> <优化卡图SHA256|-> <优化卡图包|->"
+[[ "$mode" == "deploy" || "$mode" == "dry-run" ]] || fail "用法：$0 <deploy|dry-run> <提交> <运行包SHA256> <运行包> <- legacy已退役> <- > <- > <优化卡图版本> <优化卡图SHA256|-> <优化卡图包|-> [/opt|/www/legion12]"
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "提交哈希格式错误"
 [[ "$release_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "运行包 SHA256 格式错误"
-[[ "$release_archive" == "${incoming_dir}/l12-release-${commit}.tar.gz" ]] || fail "运行包不在允许目录"
+assert_incoming_file "$release_archive" "${incoming_dir}/l12-release-${commit}.tar.gz"
 [[ "$legacy_cards_hash" == "-" && "$legacy_cards_sha256" == "-" && "$legacy_cards_archive" == "-" ]] || fail "旧版 /cards 卡图链路已退役"
 
 if [[ "$card_assets_hash" == "-" ]]; then
@@ -242,7 +524,7 @@ else
   [[ "$card_assets_hash" =~ ^[0-9a-f]{64}$ ]] || fail "优化卡图版本格式错误"
   if [[ "$card_assets_archive" != "-" ]]; then
     [[ "$card_assets_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "优化卡图包 SHA256 格式错误"
-    [[ "$card_assets_archive" == "${incoming_dir}/l12-card-assets-${card_assets_hash}.tar.gz" ]] || fail "优化卡图包不在允许目录"
+    assert_incoming_file "$card_assets_archive" "${incoming_dir}/l12-card-assets-${card_assets_hash}.tar.gz"
   else
     [[ "$card_assets_sha256" == "-" ]] || fail "复用优化卡图缓存时 SHA256 必须为 -"
   fi
@@ -260,15 +542,19 @@ if [[ "$card_assets_hash" != "-" ]]; then
   grep -Fq 'location = /card-assets/card-assets.manifest.json' <<<"$nginx_dump" || fail "Nginx 未接入优化卡图 manifest 缓存片段"
   grep -Fq 'max-age=31536000, immutable' <<<"$nginx_dump" || fail "Nginx 未接入内容寻址长缓存策略"
 fi
-mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir"
-chmod 0755 "$(dirname "$static_card_assets_dir")" "$static_card_assets_dir" "$releases_dir"
-test -f "$release_archive" || fail "找不到运行包"
+prepare_storage_paths
 [[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "运行包 SHA256 校验失败"
 validate_archive "$release_archive"
 
 short_commit="${commit:0:12}"
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-stage_dir="${test_root}/opt/legion12-staging-${short_commit}-${timestamp}"
+if [[ -n "$test_root" && -n "${L12_DEPLOY_TEST_TIMESTAMP:-}" ]]; then
+  [[ "$L12_DEPLOY_TEST_TIMESTAMP" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || fail "测试发布时间戳无效"
+  timestamp="$L12_DEPLOY_TEST_TIMESTAMP"
+else
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+stage_candidate="${stage_parent}/legion12-staging-${short_commit}-${timestamp}"
+stage_dir=""
 stage_card_assets_dir=""
 release_dir="${releases_dir}/${commit}-${timestamp}"
 previous_target=""
@@ -279,6 +565,10 @@ switched=0
 active_entry_changed=0
 new_service_launch_attempted=0
 runtime_backup=""
+runtime_backup_partial=""
+runtime_backup_checksum=""
+runtime_backup_checksum_partial=""
+runtime_backup_sha256=""
 runtime_restore_dir=""
 failed_runtime_dir=""
 failure_stage="preflight"
@@ -287,6 +577,8 @@ cleanup() {
   if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then rm -rf -- "$stage_dir"; fi
   if [[ -n "$stage_card_assets_dir" && -d "$stage_card_assets_dir" ]]; then rm -rf -- "$stage_card_assets_dir"; fi
   if [[ -n "$runtime_restore_dir" && -d "$runtime_restore_dir" ]]; then rm -rf -- "$runtime_restore_dir"; fi
+  if [[ -n "$runtime_backup_partial" && -f "$runtime_backup_partial" && ! -L "$runtime_backup_partial" ]]; then rm -f -- "$runtime_backup_partial"; fi
+  if [[ -n "$runtime_backup_checksum_partial" && -f "$runtime_backup_checksum_partial" && ! -L "$runtime_backup_checksum_partial" ]]; then rm -f -- "$runtime_backup_checksum_partial"; fi
   rm -f -- "$release_archive"
   if [[ "$card_assets_archive" != "-" ]]; then rm -f -- "$card_assets_archive"; fi
 }
@@ -295,9 +587,55 @@ backup_runtime() {
   mkdir -p "$runtime_backup_dir"
   chmod 0700 "$runtime_backup_dir"
   runtime_backup="${runtime_backup_dir}/runtime-before-${short_commit}-${timestamp}.tar.gz"
-  tar -czf "$runtime_backup" -C "$runtime_dir" .
+  runtime_backup_checksum="${runtime_backup}.sha256"
+  local backup_partial_candidate="${runtime_backup}.partial"
+  local checksum_partial_candidate="${runtime_backup_checksum}.partial"
+  assert_plain_directory "$runtime_backup_dir" || return 1
+  assert_new_path "$runtime_backup" || return 1
+  assert_new_path "$backup_partial_candidate" || return 1
+  assert_new_path "$runtime_backup_checksum" || return 1
+  assert_new_path "$checksum_partial_candidate" || return 1
+  create_owned_file "$backup_partial_candidate" || return 1
+  runtime_backup_partial="$backup_partial_candidate"
+  create_owned_file "$checksum_partial_candidate" || return 1
+  runtime_backup_checksum_partial="$checksum_partial_candidate"
+
+  if [[ "$external_artifact_mode" == "1" ]]; then
+    local backup_limit="$external_backup_max_bytes"
+    if [[ -n "$test_root" && -n "${L12_DEPLOY_TEST_BACKUP_MAX_BYTES:-}" ]]; then
+      [[ "$L12_DEPLOY_TEST_BACKUP_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || fail "测试备份上限无效"
+      backup_limit="$L12_DEPLOY_TEST_BACKUP_MAX_BYTES"
+    fi
+    if ! ( tar -czf - -C "$runtime_dir" . | head -c "$((backup_limit + 1))" > "$runtime_backup_partial" ); then
+      fail "外置 runtime 快照创建失败或超过 4 GiB 硬上限"
+      return 1
+    fi
+    if (( $(stat -c '%s' "$runtime_backup_partial") > backup_limit )); then
+      fail "外置 runtime 快照超过 4 GiB 硬上限"
+      return 1
+    fi
+  else
+    ( tar -czf - -C "$runtime_dir" . > "$runtime_backup_partial" ) \
+      || { fail "runtime 快照创建失败"; return 1; }
+  fi
+
+  chmod 0600 "$runtime_backup_partial"
+  tar -tzf "$runtime_backup_partial" >/dev/null || { fail "runtime 快照压缩流完整性校验失败"; return 1; }
+  runtime_backup_sha256="$(sha256sum "$runtime_backup_partial" | awk '{print $1}')" || return 1
+  [[ "$runtime_backup_sha256" =~ ^[0-9a-f]{64}$ ]] || { fail "runtime 快照 SHA256 计算失败"; return 1; }
+  printf '%s  %s\n' "$runtime_backup_sha256" "$(basename "$runtime_backup")" > "$runtime_backup_checksum_partial" \
+    || { fail "runtime 快照 SHA256 sidecar 写入失败"; return 1; }
+  chmod 0600 "$runtime_backup_checksum_partial"
+  mv -Tn "$runtime_backup_partial" "$runtime_backup"
+  [[ -f "$runtime_backup" && ! -L "$runtime_backup" && ! -e "$runtime_backup_partial" ]] \
+    || { fail "runtime 快照最终目标发生竞争或未能原子发布"; return 1; }
+  runtime_backup_partial=""
+  mv -Tn "$runtime_backup_checksum_partial" "$runtime_backup_checksum"
+  [[ -f "$runtime_backup_checksum" && ! -L "$runtime_backup_checksum" && ! -e "$runtime_backup_checksum_partial" ]] \
+    || { fail "runtime 快照 SHA256 sidecar 发生竞争或未能原子发布"; return 1; }
+  runtime_backup_checksum_partial=""
   chmod 0600 "$runtime_backup"
-  log "已创建持久化运行数据快照：${runtime_backup}"
+  log "已创建并校验持久化运行数据快照：${runtime_backup}"
 }
 
 restore_runtime_backup() {
@@ -317,11 +655,16 @@ restore_runtime_backup() {
 }
 
 prune_runtime_backups() {
+  if [[ "$external_artifact_mode" == "1" ]]; then
+    log "外置 runtime 快照不自动删除；长期总数由人工存储治理处理"
+    return 0
+  fi
   local rows=()
-  local index
+  local index old_backup
   mapfile -t rows < <(find "$runtime_backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%T@:%p\n' | sort -rn)
   for ((index=5; index<${#rows[@]}; index+=1)); do
-    rm -f -- "${rows[$index]#*:}"
+    old_backup="${rows[$index]#*:}"
+    rm -f -- "$old_backup" "${old_backup}.sha256"
   done
 }
 
@@ -361,6 +704,7 @@ write_failure_record() {
     printf 'previousCommit=%s\n' "$previous_commit"
     printf 'runtime=%s\n' "$runtime_dir"
     printf 'runtimeBackup=%s\n' "$runtime_backup"
+    printf 'runtimeBackupSha256=%s\n' "$runtime_backup_sha256"
     printf 'failedRuntime=%s\n' "$failed_runtime_dir"
     printf 'recordedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } > "$incident_temp" || return 1
@@ -421,8 +765,45 @@ rollback_on_error() {
 }
 trap rollback_on_error ERR INT TERM
 
+assert_new_path "$stage_candidate"
+assert_new_path "$release_dir"
+release_unpacked_bytes=0
+if [[ "$external_artifact_mode" == "1" ]]; then
+  release_unpacked_bytes="$(archive_unpacked_bytes "$release_archive")"
+fi
+card_unpacked_bytes=0
+card_assets_target=""
+card_assets_requires_install=0
+if [[ "$card_assets_hash" != "-" ]]; then
+  preferred_card_assets_target="${static_card_assets_dir}/${card_assets_hash}"
+  if [[ "$external_artifact_mode" == "1" && ( -e "$preferred_card_assets_target" || -L "$preferred_card_assets_target" ) ]]; then
+    card_assets_target="$preferred_card_assets_target"
+  elif [[ "$external_artifact_mode" == "1" && ( -e "${default_static_card_assets_dir}/${card_assets_hash}" || -L "${default_static_card_assets_dir}/${card_assets_hash}" ) ]]; then
+    card_assets_target="${default_static_card_assets_dir}/${card_assets_hash}"
+  elif [[ "$external_artifact_mode" == "0" && ( -e "$preferred_card_assets_target" || -L "$preferred_card_assets_target" ) ]]; then
+    card_assets_target="$preferred_card_assets_target"
+  else
+    card_assets_target="$preferred_card_assets_target"
+    card_assets_requires_install=1
+  fi
+
+  if [[ "$card_assets_requires_install" -eq 1 ]]; then
+    [[ "$card_assets_archive" != "-" ]] || fail "服务器没有该优化卡图缓存，且未提供优化卡图包"
+    [[ "$(sha256sum "$card_assets_archive" | awk '{print $1}')" == "$card_assets_sha256" ]] || fail "优化卡图包 SHA256 校验失败"
+    validate_archive "$card_assets_archive"
+    if [[ "$external_artifact_mode" == "1" ]]; then
+      card_unpacked_bytes="$(archive_unpacked_bytes "$card_assets_archive")"
+    fi
+    assert_new_path "$card_assets_target"
+  else
+    validate_card_assets_tree "$card_assets_target" "$card_assets_hash"
+  fi
+fi
+validate_external_deploy_capacity "$release_unpacked_bytes" "$card_unpacked_bytes"
+
 log "展开预构建运行包 ${commit}"
-mkdir -p "$stage_dir"
+create_owned_directory "$stage_candidate"
+stage_dir="$stage_candidate"
 tar --no-same-owner --no-same-permissions -xzf "$release_archive" -C "$stage_dir"
 test -f "${stage_dir}/.deployment-commit" || fail "运行包缺少提交标记"
 [[ "$(tr -d '\r\n' < "${stage_dir}/.deployment-commit")" == "$commit" ]] || fail "运行包提交标记不匹配"
@@ -431,17 +812,12 @@ test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "运行包缺少前�
 test -r "${stage_dir}/scripts/ws-smoke.mjs" || fail "运行包缺少 WebSocket 冒烟脚本"
 test ! -e "${stage_dir}/opcgpro-vue/dist/cards" || fail "运行包不应重复携带卡图缓存"
 
-test ! -e "${stage_dir}/opcgpro-vue/dist/card-assets" || fail "运行包不应重复携带优化卡图缓存"
-card_assets_target=""
+[[ ! -e "${stage_dir}/opcgpro-vue/dist/card-assets" && ! -L "${stage_dir}/opcgpro-vue/dist/card-assets" ]] || fail "运行包不应重复携带优化卡图缓存"
 if [[ "$card_assets_hash" != "-" ]]; then
-  card_assets_target="${static_card_assets_dir}/${card_assets_hash}"
-  if [[ ! -d "$card_assets_target" ]]; then
-    [[ "$card_assets_archive" != "-" ]] || fail "服务器没有该优化卡图缓存，且未提供优化卡图包"
-    test -f "$card_assets_archive" || fail "找不到优化卡图包"
-    [[ "$(sha256sum "$card_assets_archive" | awk '{print $1}')" == "$card_assets_sha256" ]] || fail "优化卡图包 SHA256 校验失败"
-    validate_archive "$card_assets_archive"
-    stage_card_assets_dir="${test_root}/opt/legion12-card-assets-staging-${card_assets_hash}-${timestamp}"
-    mkdir -p "$stage_card_assets_dir"
+  if [[ "$card_assets_requires_install" -eq 1 ]]; then
+    stage_card_assets_candidate="${stage_parent}/legion12-card-assets-staging-${card_assets_hash}-${timestamp}"
+    create_owned_directory "$stage_card_assets_candidate"
+    stage_card_assets_dir="$stage_card_assets_candidate"
     tar --no-same-owner --no-same-permissions -xzf "$card_assets_archive" -C "$stage_card_assets_dir"
     test -f "${stage_card_assets_dir}/card-assets.manifest.json" || fail "优化卡图包缺少 manifest"
     test -f "${stage_card_assets_dir}/card-assets.preload.json" || fail "优化卡图包缺少 preload 清单"
@@ -451,13 +827,13 @@ if [[ "$card_assets_hash" != "-" ]]; then
     find "$stage_card_assets_dir" -type d -exec chmod 0755 {} +
     find "$stage_card_assets_dir" -type f -exec chmod 0644 {} +
     if [[ "$mode" == "deploy" ]]; then
-      mv "$stage_card_assets_dir" "$card_assets_target"
+      mv -Tn "$stage_card_assets_dir" "$card_assets_target"
+      [[ -d "$card_assets_target" && ! -L "$card_assets_target" && ! -e "$stage_card_assets_dir" ]] \
+        || fail "优化卡图最终目录发生竞争或未能原子发布"
       stage_card_assets_dir=""
     else
       card_assets_target="$stage_card_assets_dir"
     fi
-  else
-    validate_card_assets_tree "$card_assets_target" "$card_assets_hash"
   fi
   runuser -u "$web_user" -- test -r "${card_assets_target}/card-assets.manifest.json" || fail "Nginx 账号无法读取优化卡图 manifest"
   sample_card_asset="$(find "${card_assets_target}/cards" -type f -print -quit)"
@@ -530,7 +906,9 @@ EOF
 systemctl daemon-reload
 
 failure_stage="install-release"
-mv "$stage_dir" "$release_dir"
+mv -Tn "$stage_dir" "$release_dir"
+[[ -d "$release_dir" && ! -L "$release_dir" && ! -e "$stage_dir" ]] \
+  || fail "release 最终目录发生竞争或未能原子发布"
 stage_dir=""
 if [[ -L "$active_dir" ]]; then
   : # previous_target and previous_commit were captured before stopping the service.
@@ -580,13 +958,15 @@ NODE
 fi
 
 cat > "${deployment_dir}/deployment-info.txt" <<EOF
-Legion12 香港测试服
+Legion12 正式服
 源仓库：https://github.com/Testrunner-DC/Legion12
 源提交：${commit}
 活动版本：${release_dir}
 上一版本：${previous_target}
+服务器制品根：${artifact_root_option}
 共享运行数据：${runtime_dir}
 部署前运行数据快照：${runtime_backup}
+部署前运行数据快照SHA256：${runtime_backup_sha256}
 旧版 /cards 卡图：已退役
 内容寻址优化卡图版本：${card_assets_hash}
 域名：${public_host}

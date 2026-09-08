@@ -12,7 +12,7 @@
 
 | 卡号 / 卡名 | 项数 | 最短规则断言 | 运行时代码证据 | 测试证据 | 唯一状态 |
 |---|---:|---|---|---|---|
-| S01-0401 本多忠胜 | 2 | 登场冲锋确定；进攻全体费用-1与随后击杀分别响应，公开击杀目标在首段入栈前声明，两段互不回滚。 | `L12AttackPublicTriggerPlans`、`L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
+| S01-0401 本多忠胜 | 2 | 登场冲锋确定；进攻必须执行全体费用-1，随后按当前费用声明击杀目标并独立响应；无目标只跳过击杀，两段互不回滚（BATCH296 P3）。 | `L12AttackPublicTriggerPlans`、`L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6KCRegressionTests`、`BackendReportBatch296SequencingTests` | 明确错误→已修复 |
 | S01-0402 织田信长 | 2 | 登场击杀与进攻士气费用/全体费用层均在公共声明后结算，已付士气不因无效返还。 | `L12EnterPublicTriggerPlans`、`L12AttackPublicTriggerPlans` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6HRegressionTests` | 通过 |
 | S01-0403 上杉谦信 | 4 | 登场阈值按公开反击数计算；阵亡的最多2张手牌身份私密、格位公开，声明后位置重验且不覆盖。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 通过 |
 | S01-0404 真田幸村 | 1 | 登场获得冲锋是无选择确定效果，不生成空声明。 | `L12AtomicRuntimeIntegration`、`AtomicEffects` | `RuleKernelTests`、`NewSystemsTests` | 通过 |
@@ -30,7 +30,7 @@
 | S01-0416 稻姬本多小松 | 3 | 远程静态正确；登场与进攻共用公开前排阵营军团查询，排除隐匿且包含戒指下的通用军团。 | `L12EnterPublicTriggerPlans`、`L12AttackPublicTriggerPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
 | S01-0417 草薙剑 | 2 | 登场击杀目标前置；两个主动模式仅可选公开军团并按戒指阵营；圣物/军团形态始终是单一实例，离场按所有者回牌库顶。 | `L12EnterPublicTriggerPlans`、`L12PublicActiveEffectPlans`、`L12AuthoritativeCardZones` | `AtomicReviewBatch6DRegressionTests`、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
 | S01-0418 天诛 | 1 | 打出前声明公开费用不高于7的击杀目标；付费/移入Resolving后无效不回手，目标失效不改选。 | `L12CompositeEffectPlans`、`L12HandPlay` | `AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
-| S01-0419 花魁的馈赠 | 1 | 顶3身份只在首段合法开始后查看，选牌展示入手、其余私密排序回底；随后公开士气先声明且独立响应，戒指阵营正确。 | `L12CompositeEffectPlans`、`L12S1FactionEffects`、`L12StructuredCardRules` | `AtomicReviewBatch6CRegressionTests`、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |
+| S01-0419 花魁的馈赠 | 1 | 顶3身份只在首段合法开始后查看，选牌展示入手、其余私密排序回底；随后士气段按支付后的当前状态声明恢复对象且独立响应，戒指阵营正确（BATCH296 P1）。 | `L12CompositeEffectPlans`、`L12S1FactionEffects`、`L12StructuredCardRules` | `AtomicReviewBatch6CRegressionTests`、`AtomicReviewBatch6KCRegressionTests`、`BackendReportBatch296P1Tests` | 明确错误→已修复 |
 | S01-0420 切腹仪式 | 2 | 仅在对方进攻后触发；抽1与同句公开目标减费同段，目标在候选入栈前声明并在结算重验。 | `L12PublicResponseEffectPlans`、`L12S1ExtendedEffects` | `AtomicReviewBatch6JBRegressionTests`、`CombatTimelineRegressionTests` | 通过 |
 | S01-04C1 士气·高天原 | 1 | 回合1次先选择并消耗2士气；效果结算先抽1，再按结算后的场面选择活跃军团及相邻空位，目标选择可直接“不位移”，不得在费用阶段预选。 | `L12ActiveAbilities`、`L12EffectContinuations` | `AtomicReviewBatch3RegressionTests`、`NewSystemsTests` | 明确错误→已修复 |
 | S01-04D1 黄泉之门 | 3 | 两个回合次数独立；抽牌/全体费用与随后两击杀分成4段；主动休整的公开墓地目标先声明，戒指下通用墓地卡可被回收。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12StructuredCardRules` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |

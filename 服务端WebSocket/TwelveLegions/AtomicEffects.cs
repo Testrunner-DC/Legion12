@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
@@ -65,7 +66,12 @@ public sealed record L12EffectPresentationScene(
     string? OverrideText = null,
     string EventType = "effect",
     string Label = "能力动效",
-    IReadOnlyList<string>? AllowedPlaceholders = null)
+    IReadOnlyList<string>? AllowedPlaceholders = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Flow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SegmentIndex = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SegmentCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BranchLabel = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, string>? RequiredChoices = null)
 {
     public string EffectiveText => L12EffectPresentationText.Normalize(string.IsNullOrWhiteSpace(OverrideText)
         ? DefaultText
@@ -197,7 +203,8 @@ public static class L12EffectPresentationScenes
         {
             Presentations = Build(ability, tombConstructSharedBody),
         }).ToArray();
-        return L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached);
+        return L12EffectPresentationVariants.Attach(
+            L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached));
     }
 
     public static IReadOnlyList<L12EffectPresentationScene> Build(L12AtomicAbility ability,

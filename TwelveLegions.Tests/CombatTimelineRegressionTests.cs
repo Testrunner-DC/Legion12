@@ -620,6 +620,75 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "bug:BUG-20260908-a9503661")]
+    [Trait("L12Evidence", "bug:BUG-20260908-2e0f11ea")]
+    public void XiaotianDeathAndPercivalCounterattackKeepDefenseOnActualVictimAndResumeCombat()
+    {
+        var game = Create(296501);
+        ReadyForCombat(game);
+        var xiaotian = Card("S02-01S1", "batch296-xiaotian-attacker");
+        xiaotian.Troops = 2000;
+        var percival = Card("S02-0606", "batch296-percival-defender");
+        percival.Troops = 4000;
+        game.State.Players[0].Field[0][0] = xiaotian;
+        game.State.Players[1].Field[0][0] = percival;
+        var moraleBefore = game.State.Players[0].Morale.Count;
+        game.State.Players[0].MoraleDeck.Add(new L12MoraleCard
+        {
+            CardId = "S01-01C1", InstanceId = "batch296-xiaotian-death-morale",
+        });
+        var attack = game.Handle(0, new L12Command("attack", xiaotian.InstanceId,
+            Target: new L12AttackTarget("legion", percival.InstanceId)));
+        Assert.True(attack.Accepted, attack.Error);
+
+        var defendedCounterattack = false;
+        var choseDeathEffect = false;
+        for (var step = 0; step < 70; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is not null)
+            {
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("mode:use") ? "mode:use"
+                    : prompt.ValidChoices.Contains("skip") ? "skip"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices[0];
+                if (choice == "mode:use" && prompt.PlayerIndex == 0) choseDeathEffect = true;
+                var resolved = game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
+                Assert.True(resolved.Accepted, resolved.Error);
+                continue;
+            }
+            var pending = game.State.PendingDefense;
+            if (pending is null) break;
+            if (pending.Stage != L12CombatStage.DefenseChoice)
+                Assert.Fail($"Unexpected stalled combat stage: {pending.Stage}");
+            if (pending.AttackerPlayer == 1 && pending.Target.Type == "master")
+            {
+                Assert.Equal(0, game.State.ActivePlayer);
+                Assert.Equal(2000, pending.AttackValue);
+                Assert.Single(game.State.SuspendedCombatContexts);
+                Assert.False(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+                defendedCounterattack = true;
+            }
+            var defense = game.Handle(1 - pending.AttackerPlayer,
+                new L12Command("resolveDefense", CardInstanceIds: []));
+            Assert.True(defense.Accepted, defense.Error);
+        }
+
+        Assert.True(defendedCounterattack);
+        Assert.True(choseDeathEffect);
+        Assert.Null(game.State.PendingDefense);
+        Assert.Empty(game.State.SuspendedCombatContexts);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Equal(L12Phase.Main, game.State.Phase);
+        Assert.Equal(moraleBefore + 1, game.State.Players[0].Morale.Count);
+        Assert.True(game.State.Players[0].Morale[^1].Tapped);
+        Assert.Same(percival, game.State.Players[1].Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "combat-resume");
+    }
+
+    [Fact]
     public void AttackerAfterAttackFinishesBeforeDefenderAfterAttackAndMainWaitsForBoth()
     {
         var game = Create(82808);

@@ -379,7 +379,7 @@ const contracts = [
     && playerMat.includes('@keyframes l12-combat-target-cue'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、支援候选及其他可交互对象不得复用目标发光'],
   [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-selectable-lotus"')
     && (playerMat.match(/data-ui-contract="temporary-morale-selectable-lotus"/g) ?? []).length === 1
-    && playerMat.includes('const spendableMorale = computed(() => activeMorale.value)')
+    && playerMat.includes('props.player.spendableResourceCount ??')
     && playerMat.includes('temporaryMoraleChoiceId(index)')
     && playerMat.includes('temporaryMoralePayable(index)')
     && playerMat.includes(':src="blackLotusLogoUrl" alt="黑色莲花临时士气"')
@@ -734,7 +734,7 @@ const contracts = [
   [gmPanel.includes("run('returnCardToHand'") && gmPanel.includes('返回手牌'), 'GM 场上卡牌必须提供返回所有者手牌的操作'],
   [gmPanel.includes("run('resetCardEffects'") && gmPanel.includes('重置效果'), 'GM 场上卡牌必须提供重置所选卡牌回合1次效果限制的操作'],
   [!gmPanel.includes('手牌（GM 可操作）') && !gmPanel.includes('自动切换该方为回合玩家') && !gmPanel.includes('军团会返回棋盘'), 'GM 面板不得保留重复权限文字及已要求删除的说明'],
-  [gameActions.includes("game.activePlayer !== me.playerIndex") && gameActions.includes("game.activePlayer === me.playerIndex") && !gameActions.includes('game.activePlayer !== game.you'), '沙盒双方抵挡、支援和阶段操作必须依据当前代操作玩家而非登录座位'],
+  [gameActions.includes("me.playerIndex === 1 - game.pendingDefense.attackerPlayer") && !gameActions.includes("game.activePlayer !== me.playerIndex") && gameActions.includes("game.activePlayer === me.playerIndex") && !gameActions.includes('game.activePlayer !== game.you'), '抵挡与支援必须依据本次战斗的防御方（含回合外反击）；阶段操作仍依据回合玩家，沙盒使用当前代操作席位'],
   [!board.includes('当前子阶段：') && !board.includes('data-ui-contract="combat-substage"') && board.includes('pending.attackValue > 0') && board.includes("pendingDefense?.stage === 'DefenseChoice'") && gameActions.includes("pendingDefense?.stage === 'DefenseChoice'"), '进攻界面必须消费服务端子阶段与冻结进攻值，只在 DefenseChoice 开放抵挡/支援，并禁止显示内部子阶段调试文字'],
   [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes('isPureEffectDecision')
     && prompt.includes('isDirectActivationChoice')

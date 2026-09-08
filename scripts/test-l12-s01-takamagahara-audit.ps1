@@ -20,6 +20,7 @@ $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $extended = Read-Source 'L12S1ExtendedEffects.cs'
 $prompts = Read-Source 'L12PromptsAndSetup.cs'
 $tests = Read-Source 'AtomicReviewBatch6KCRegressionTests.cs'
+$sequencingTests = Read-Source 'BackendReportBatch296SequencingTests.cs'
 $audit = Read-Source 'S01-TAKAMAGAHARA-ABILITY-AUDIT.md'
 
 $expectedCards = @(
@@ -43,7 +44,20 @@ foreach ($plan in @(
     'active:S01-04M1:amaterasuReady'
 )) { Assert-Contains $composite $plan "Batch 6K-C independent plan is missing: $plan" }
 Assert-Contains $composite 'divine-punishment-effect' 'Divine Punishment must consume its prestack target declaration.'
-Assert-Contains $attackPlans '["S01-0401"] = new("honda", TargetKind: "enemy-after-cost-debuff"' 'Honda must remain in the attack public-trigger plan.'
+# BATCH296 P3: mandatory debuff precedes the independent optional kill declaration.
+Assert-Contains $attackPlans '["S01-0401"] = new("honda", Optional: false)' 'Honda must retain its mandatory attack trigger even without a kill candidate.'
+if ($attackPlans.Contains('enemy-after-cost-debuff')) {
+    throw 'Honda must not gate its mandatory debuff on an early kill candidate.'
+}
+if ([regex]::Matches($composite, 'new\("honda-kill",[^)]*DeclareAtSegmentStart: true\)').Count -ne 1) {
+    throw 'Honda must declare its independent kill at the follow-up segment start.'
+}
+Assert-Contains $composite 'PublicLegions(opponent).Where(card => card.CurrentCost == 0)' 'Honda follow-up candidates must use current post-debuff cost.'
+foreach ($regression in @(
+    'HondaAlwaysAppliesTheDebuffThenDeclaresOnlyCurrentZeroCostTargets',
+    'HondaWithoutAZeroCostTargetKeepsTheMandatoryDebuffAndCreatesNoEmptyPrompt',
+    'HondaLateTargetInvalidationDoesNotUndoTheDebuffOrMoveItsFieldSource'
+)) { Assert-Contains $sequencingTests $regression "Honda approved sequencing regression is missing: $regression" }
 Assert-Contains $extended 'private static IEnumerable<L12CardInstance> PublicFactionLegions' 'Public faction selectors must share the public-legion filter.'
 Assert-Contains $extended 'L12StructuredCardRules.HasFaction(player, card, faction)' 'Faction selectors must honor the World Ring in every zone.'
 Assert-Contains $prompts 'var next = State.DeferredEffectStack[^1];' 'Independent deferred segments must be exposed one response item at a time.'

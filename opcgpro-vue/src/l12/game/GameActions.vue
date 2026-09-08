@@ -28,12 +28,12 @@ function rankedSetupLimitLabel() {
         {{ busy ? '处理中…' : me.mulliganDone ? '等待对方' : `确认调度 (${mulliganCount})` }}
       </button>
     </template>
-    <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && game.activePlayer !== me.playerIndex && defenseTargetType === 'master'">
+    <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && me.playerIndex === 1 - game.pendingDefense.attackerPlayer && defenseTargetType === 'master'">
       <p>从手牌选择军团弃置抵挡；合计兵力须不低于进攻军团。</p>
       <button class="primary" :disabled="defenseCount === 0 || busy" @click="emit('command', 'resolveDefense')">弃置抵挡 ({{ defenseCount }})</button>
       <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense')">不抵挡 · 主宰承受伤害</button>
     </template>
-    <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && game.activePlayer !== me.playerIndex && defenseTargetType === 'legion'">
+    <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && me.playerIndex === 1 - game.pendingDefense.attackerPlayer && defenseTargetType === 'legion'">
       <p v-if="canSupport">可选择正后方军团及任意具有协防的后排军团；允许复数军团联合支援。</p>
       <p v-else>当前没有能够完成支援的后排军团。</p>
       <button class="primary" :disabled="!supportReady || busy" @click="emit('command', 'resolveDefense')">确认支援 ({{ supportIds.length }})</button>

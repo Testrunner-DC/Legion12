@@ -305,7 +305,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
-    public void AttackerMayCounterDefenderAttackReactionButCannotUseOwnOpponentAttackReaction()
+    public void AttackerMayCounterDefenderAttackReactionAndAmbushTheOpponentsAmbushEffect()
     {
         var game = Create(seed: 6225);
         var attacker = Instance("S02-0004", "response-chain-attacker");
@@ -338,7 +338,7 @@ public sealed class S2UniversalEffectsTests
         var attackerResponse = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(0, attackerResponse.PlayerIndex);
         Assert.Contains(absoluteDefense.InstanceId, attackerResponse.ValidChoices);
-        Assert.DoesNotContain(attackerAmbush.InstanceId, attackerResponse.ValidChoices);
+        Assert.Contains(attackerAmbush.InstanceId, attackerResponse.ValidChoices);
     }
 
     [Fact]

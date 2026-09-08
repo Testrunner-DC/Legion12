@@ -15,7 +15,7 @@ public sealed partial class L12GameEngine
     private static readonly IReadOnlyDictionary<string, AttackPublicTriggerPlan> AttackPublicTriggerPlans =
         new Dictionary<string, AttackPublicTriggerPlan>(StringComparer.OrdinalIgnoreCase)
         {
-            ["S01-0401"] = new("honda", TargetKind: "enemy-after-cost-debuff", Optional: false),
+            ["S01-0401"] = new("honda", Optional: false),
             ["S01-0104"] = new("hanxin", "return-morale"),
             ["S01-0106"] = new("guanyu", "return-morale"),
             ["S01-0203"] = new("menes", "discard-own-legion"),
@@ -97,6 +97,14 @@ public sealed partial class L12GameEngine
             return false;
         if (planId is "richard-defense" or "robin-rune" or "gawain-buff")
             return false;
+        if (planId == "honda")
+        {
+            foreach (var pair in CompositeFirstSegmentData("trigger:S01-0401:attack",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                candidate.Data[pair.Key] = pair.Value;
+            candidate.Data["declaration-complete"] = "true";
+            return false;
+        }
 
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
@@ -196,11 +204,6 @@ public sealed partial class L12GameEngine
                     steps.Add(PublicTriggerStep("enemy-legion", "target", "高杉晋作：预先选择对方1张军团",
                         PublicLegions(opponent).Select(card => card.InstanceId), requiredChoice: required));
                     break;
-                case "enemy-after-cost-debuff":
-                    steps.Add(PublicTriggerStep("enemy-legion", "killTarget",
-                        "本多忠胜：选择费用-1后将被击杀的军团",
-                        PublicLegions(opponent).Where(card => card.CurrentCost <= 1).Select(card => card.InstanceId)));
-                    break;
                 case "enemy-covered-counter":
                     steps.Add(PublicTriggerStep("covered-counter", "target", "源博雅：预先选择对方后排1张覆盖的反击战术",
                         opponent.Field[1].Where(card => card is { CardType: "tactic" }).Select(card => card!.InstanceId)));
@@ -259,7 +262,6 @@ public sealed partial class L12GameEngine
             "own-front-low" => player.Field[0].Any(card => card is not null && IsFieldLegion(card) && card.Troops <= 2000),
             "enemy-cost-one" => PublicLegions(opponent).Any(card => card.CurrentCost <= 1),
             "enemy-legion" => PublicLegions(opponent).Any(),
-            "enemy-after-cost-debuff" => PublicLegions(opponent).Any(card => card.CurrentCost <= 1),
             "attack-legion" => State.PendingDefense?.Target.Type == "legion",
             "enemy-covered-counter" => opponent.Field[1].Any(card => card is { CardType: "tactic" }),
             "own-front-gaotianyuan" => PublicFactionLegions(player, "gaotianyuan").Any(card =>
@@ -299,7 +301,6 @@ public sealed partial class L12GameEngine
         var costIds = activation.DeclaredValues.GetValueOrDefault("cost", []);
         var graveCostValues = costIds.Concat(activation.DeclaredValues.GetValueOrDefault("costCopies", [])).ToArray();
         var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
-        var hondaTargetId = activation.DeclaredValues.GetValueOrDefault("killTarget", []).SingleOrDefault();
         string? error = null;
 
         if (planId == "richard-squires")
@@ -383,10 +384,6 @@ public sealed partial class L12GameEngine
                         => "土方岁三声明的击杀目标已失效；未支付费用且效果未入栈",
                     "enemy-legion" when targetId is null || FindOnField(opponent, targetId, out _, out _) is null
                         => "高杉晋作声明的目标已失效；未支付费用且效果未入栈",
-                    "enemy-after-cost-debuff" when hondaTargetId is null
-                        || FindOnField(opponent, hondaTargetId, out _, out _) is not { } hondaTarget
-                        || hondaTarget.CurrentCost > 1
-                        => "本多忠胜声明的随后击杀目标已失效；效果未入栈",
                     "enemy-covered-counter" when targetId is null
                         || FindOnField(opponent, targetId, out var row, out _) is not { CardType: "tactic" } || row != 1
                         => "源博雅声明的覆盖反击战术已失效；效果未入栈",

@@ -621,6 +621,18 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: orderPrompt.PromptId,
             TopCardInstanceIds: [], BottomCardInstanceIds: bottomOrder)).Accepted);
 
+        while (game.State.PendingPrompts.Count > 0 && game.State.PendingPrompts[0].Kind == "response")
+        {
+            var response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+        var readyMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", readyMode.Continuation);
+        Assert.Contains("mode:none", readyMode.ValidChoices);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: readyMode.PromptId,
+            Choice: "mode:none")).Accepted);
+
         Assert.Equal(bottomOrder, player.Library.TakeLast(bottomOrder.Count).Select(card => card.InstanceId));
         Assert.Contains(eligible, player.Hand);
         Assert.Contains(game.State.Events, entry => entry.Type == "search"
@@ -1111,7 +1123,9 @@ public sealed class NewSystemsTests
     [Fact]
     public void MarchSplitsItsIndependentParagraphsIntoSeparateStackItems()
     {
-        var game = Create(seed: 88672);
+        var game = new L12GameEngine(Catalog, "new-systems-march-segments", "RULE12MARCH", 88672,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
         const int owner = 0;
         var player = game.State.Players[owner];
         var enemy = game.State.Players[1 - owner];
@@ -1135,8 +1149,20 @@ public sealed class NewSystemsTests
         Assert.Equal("pending-activation", buff.Continuation);
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: buff.PromptId,
             Choice: friendly.InstanceId)).Accepted);
+        var buffStack = Assert.Single(game.State.EffectStack);
+        Assert.Equal("march-buff-segment", buffStack.Data.GetValueOrDefault("atomicFlow"));
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var response = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+        Assert.Equal(friendly.BaseTroops + 2000, friendly.Troops);
+
         var decision = Assert.Single(game.State.PendingPrompts);
-        Assert.Single(game.State.EffectStack);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal("pending-activation", decision.Continuation);
         Assert.Equal("effect-decision", decision.Data.GetValueOrDefault("uiPattern"));
         Assert.Equal(march.InstanceId, decision.Data.GetValueOrDefault("sourceInstanceId"));
         Assert.Equal(march.CardId, decision.Data.GetValueOrDefault("sourceCardId"));
@@ -1154,10 +1180,22 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: kill.PromptId,
             Choice: target.InstanceId)).Accepted);
         Assert.DoesNotContain(returnedMorale, id => player.Morale.Any(resource => resource.InstanceId == id));
+        var killStack = Assert.Single(game.State.EffectStack);
+        Assert.Equal("march-kill-segment", killStack.Data.GetValueOrDefault("atomicFlow"));
+        Assert.NotEqual(buffStack.StackItemId, killStack.StackItemId);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        Assert.Equal(2, game.State.Events.Count(gameEvent => gameEvent.Type == "stack-push"
+            && gameEvent.Text.Contains("神妙行军", StringComparison.Ordinal)));
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        {
+            var response = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+
         Assert.Equal(friendly.BaseTroops + 2000, friendly.Troops);
         Assert.Contains(target, enemy.Graveyard);
-        Assert.Contains(game.State.Events, gameEvent => gameEvent.Type == "stack-deferred"
-            && gameEvent.Text.Contains("神妙行军", StringComparison.Ordinal));
+        Assert.Contains(march, player.Graveyard);
     }
 
     [Fact]

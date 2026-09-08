@@ -265,7 +265,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0201")]
-    public void ThutmoseDeclaresThePublicKillTargetAndKeepsBothSegmentsIndependent()
+    public void ThutmoseDeclaresThePublicKillTargetAfterTheIndependentDebuffSegment()
     {
         var game = Create(8201);
         var source = Card("S01-0201", "batch6kb-thutmose");
@@ -279,17 +279,20 @@ public sealed class AtomicReviewBatch6KBRegressionTests
 
         QueueTrigger(game, source, "attack");
 
+        var debuff = Assert.Single(game.State.EffectStack);
+        Assert.Equal("thutmose-debuff", debuff.Data["atomicFlow"]);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        debuff.Negated = true;
+        PassResponses(game);
+
         var declaration = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", declaration.Continuation);
         Assert.Contains(low.InstanceId, declaration.ValidChoices);
         Assert.DoesNotContain(high.InstanceId, declaration.ValidChoices);
-        Assert.Empty(game.State.EffectStack);
         Resolve(game, low.InstanceId);
 
-        var debuff = Assert.Single(game.State.EffectStack);
-        Assert.Equal("thutmose-debuff", debuff.Data["atomicFlow"]);
-        debuff.Negated = true;
-        var kill = PassUntilFlow(game, "thutmose-kill");
+        var kill = Assert.Single(game.State.EffectStack);
+        Assert.Equal("thutmose-kill", kill.Data["atomicFlow"]);
         Assert.Equal(low.InstanceId, kill.Data["declared:killTarget"]);
         Assert.Contains(low, game.State.Players[1].Field.SelectMany(row => row));
     }
@@ -309,7 +312,9 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
         var first = Assert.Single(game.State.EffectStack);
         Assert.Equal("thutmose-debuff", first.Data["atomicFlow"]);
-        Assert.Equal("mode:none", first.Data["declared:killMode"]);
+        PassResponses(game);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        Assert.Equal(3000, enemy.Troops);
     }
 
     [Fact]

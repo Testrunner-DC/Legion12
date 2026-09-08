@@ -414,6 +414,11 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (plan == "mordred-enter-choice")
+        {
+            candidate.Data["presentationFlow"] = plan;
+            RefreshDeclaredPresentationSceneId(candidate, source);
+        }
         candidate.Data.Remove("declaration-committing");
         candidate.Data["declaration-complete"] = "true";
         CleanupPublicTriggerReservation(candidate);

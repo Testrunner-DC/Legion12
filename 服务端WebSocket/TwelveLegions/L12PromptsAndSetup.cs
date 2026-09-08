@@ -1288,7 +1288,6 @@ public sealed partial class L12GameEngine
         if (State.ResponseWindow is null || State.EffectStack.Count == 0) return;
         var playerIndex = State.ResponseWindow.PriorityPlayer;
         var top = State.EffectStack[^1];
-        var timing = ResponseTimingContext(top);
         var player = State.Players[playerIndex];
         var choices = new List<string>();
         var disasterAuthorityTiming = IsDisasterAuthorityTiming(top);
@@ -1305,13 +1304,12 @@ public sealed partial class L12GameEngine
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
                 && player.Hand.Count > 0 && (!defenderAttackTimingRoot || playerIndex == defendingPlayer))
                 choices.Add(card.InstanceId);
-            // 〈落穴陷阱〉分别响应通常登场与晋升登场的军团效果。军团与圣物共用 enter 堆叠时点，
-            // 因此不能只判断触发名；否则圣物的【登场时】效果也会错误开放响应。
-            if (!defenderAttackTimingRoot && card.CardId == "S01-0018" && top.Controller != playerIndex
-                && timing.Trigger is "enter" or "promotion-enter"
-                && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard))
+            // “晋升登场”属于军团登场效果家族中的独立时点。落穴只检查它实际将要无效的
+            // 当前堆叠项目，不能沿响应链借用更早的登场时点去无效绝对防御等反击效果。
+            if (!defenderAttackTimingRoot && card.CardId == "S01-0018"
+                && CanPitfallRespondToCurrentEffect(playerIndex, top))
                 choices.Add(card.InstanceId);
-            if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
+            if (CanUseS1ResponseAtCurrentEffect(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
             if (!defenderAttackTimingRoot && CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
         }
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
@@ -1405,7 +1403,6 @@ public sealed partial class L12GameEngine
     {
         if (top.Controller == playerIndex || protectedFromCounters || IsDisasterAuthorityTiming(top)) return false;
         var player = State.Players[playerIndex];
-        var timing = ResponseTimingContext(top);
         var pool = _catalog.Cards.Values.Where(card =>
             card.Faction == "universal" || card.Faction == player.Faction);
 
@@ -1413,7 +1410,7 @@ public sealed partial class L12GameEngine
         var hasEligibleCoveredCard = State.TurnSerial >= State.CounterTacticsDisabledUntilTurnSerial
             && player.Field[1].Any(card => card is { Hidden: true, CardType: "tactic" }
                 && card.CannotRespondUntilRound < State.Round);
-        if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top, timing)))
+        if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top)))
             return true;
 
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
@@ -1429,8 +1426,7 @@ public sealed partial class L12GameEngine
     private bool IsPoolCounterResponseAtTiming(
         string cardId,
         int playerIndex,
-        L12StackItem top,
-        L12StackItem timing)
+        L12StackItem top)
     {
         if (!IsCounterTactic(cardId)) return false;
         if (top.Trigger == "opponent-attack")
@@ -1438,22 +1434,48 @@ public sealed partial class L12GameEngine
             var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
             if (cardId == "S01-0016")
                 return playerIndex == defendingPlayer && State.Players[playerIndex].Hand.Count > 0;
-            return CanUseS1ReactionAtStack(cardId, playerIndex, top);
+            return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top);
         }
         if (cardId == "S01-0016")
             return top.Trigger != "authority-event" && State.Players[playerIndex].Hand.Count > 0;
         if (cardId == "S01-0018")
-            return timing.Trigger is "enter" or "promotion-enter"
-                && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard);
-        return CanUseS1ReactionAtStack(cardId, playerIndex, top)
+            return CanPitfallRespondToCurrentEffect(playerIndex, top);
+        return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
             || CanUseS2CounterAtStack(cardId, playerIndex, top);
     }
+
+    private bool CanPitfallRespondToCurrentEffect(int playerIndex, L12StackItem target)
+        => target.Controller != playerIndex
+            && IsLegionEntryEffectTrigger(target.Trigger)
+            && FindSource(target) is { } enteredCard
+            && IsFieldLegion(enteredCard);
+
+    private static bool IsLegionEntryEffectTrigger(string trigger)
+        => trigger is "enter" or "promotion-enter";
+
+    private bool CanUseS1ResponseAtCurrentEffect(string cardId, int playerIndex, L12StackItem top)
+    {
+        // “对方发动效果时”包含对方发动的反击效果本身。原始进攻的方向规则仍由
+        // CanUseS1ReactionAtStack 维护；普通/晋升登场也在该公共入口共享同一家族谓词。
+        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId)
+            && IsDisasterAuthorityTiming(top))
+            return false;
+        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId)
+            && IsResponseEffectStackItem(top) && top.Controller != playerIndex
+            && PublicLegions(State.Players[playerIndex]).Any())
+            return true;
+        return CanUseS1ReactionAtStack(cardId, playerIndex, top);
+    }
+
+    private static bool IsResponseEffectStackItem(L12StackItem item)
+        => item.Trigger is "reaction" or "s2-reaction" or "response-negate" or "response-block"
+            or "response-retarget-master";
 
     private L12StackItem ResponseTimingContext(L12StackItem top)
     {
         var current = top;
         var visited = new HashSet<string>(StringComparer.Ordinal);
-        while (current.Trigger is "reaction" or "s2-reaction" or "response-negate" or "response-block" or "response-retarget-master")
+        while (IsResponseEffectStackItem(current))
         {
             if (!visited.Add(current.StackItemId)) break;
             var targetId = current.Targets.FirstOrDefault();
@@ -1492,7 +1514,13 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var response = FindOnField(player, choice, out _, out _)
             ?? player.Hand.FirstOrDefault(card => card.InstanceId == choice);
-        if (response is null) { PassPriority(playerIndex); return; }
+        // 响应提示绑定的对象必须仍是当前堆叠顶部；资格检查与最终写入 Targets 使用同一项目。
+        if (response is null || prompt.StackItemId is null
+            || State.EffectStack.LastOrDefault()?.StackItemId != prompt.StackItemId)
+        {
+            PassPriority(playerIndex);
+            return;
+        }
         if (response.CardId == "S01-0002")
         {
             CommitMercenaryResponse(playerIndex, response, prompt.StackItemId!);

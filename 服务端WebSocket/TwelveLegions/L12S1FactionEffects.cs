@@ -237,6 +237,30 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (AtomicFlowKey(item, card))
         {
+            case "march-buff-segment":
+            {
+                var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+                if (targetId != "mode:none"
+                    && FindOnField(player, targetId, out var row, out _) is { } target
+                    && row == 0 && IsFieldLegion(target))
+                    AddTimedModifier(target, 2000, 0, State.TurnSerial, card.Name);
+                else if (targetId != "mode:none")
+                    AddEvent("effect-cancelled", item.Controller,
+                        "神妙行军选择的前排军团已失效；仅跳过兵力增加段", card);
+                FinishStackItem(item);
+                return true;
+            }
+            case "march-kill-segment":
+            {
+                var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
+                    KillTarget(item, targetId!, "被神妙行军击杀");
+                else
+                    AddEvent("effect-cancelled", item.Controller,
+                        "神妙行军选择的击杀目标已失效；已返还的士气不恢复", card);
+                FinishStackItem(item);
+                return true;
+            }
             case "duat-effect":
             {
                 var mode = CompositeDeclared(item, "duatMode").SingleOrDefault();
@@ -1080,6 +1104,12 @@ public sealed partial class L12GameEngine
             }
             foreach (var pair in CompositeFirstSegmentData(plan, declared)) data[pair.Key] = pair.Value;
         }
+        if (ability == "isisCanopic")
+            DeclarePresentationBranch(data, "isis-reward-choice", "rewardMode",
+                (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(4));
+        else if (ability == "medjedDebuff")
+            DeclarePresentationBranch(data, "medjed-debuff", "mode",
+                (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
         PushEffect(playerIndex, source, "active", "主动效果", data: data); return CommandResult.Ok();
     }
 
@@ -1391,6 +1421,9 @@ public sealed partial class L12GameEngine
     {
         foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
             AddTimedModifier(target, -1000, 0, State.TurnSerial, "图特摩斯三世");
+        // 后续击杀段必须在兵力归零的军团完成状态检查与阵亡入队之后，
+        // 再按真实战场枚举目标，不能把已阵亡对象留在延后声明中。
+        ResolveStateBasedLegionDeaths();
         FinishStackItem(item);
     }
 

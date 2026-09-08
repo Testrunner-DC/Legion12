@@ -106,9 +106,10 @@ const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'D
   ? props.game.pendingDefense.target.type : null)
 const isMyMain = computed(() => props.game.phase === 'Main' && props.game.activePlayer === controlledPlayerIndex.value)
 const activeMorale = computed(() =>
-  me.value.morale.filter(card => !card.tapped).length
+  me.value.spendableResourceCount ?? (me.value.morale.filter(card => !card.tapped).length
   + (me.value.temporaryMorale ?? 0)
-  + (me.value.faction === 'taiyangcheng' ? me.value.field.flat().filter(card => card?.cardId === 'S01-0212' && !card.tapped).length : 0),
+  + (props.game.activePlayer === me.value.playerIndex
+    ? me.value.field.flat().filter(card => card?.cardId === 'S01-0212' && !card.tapped && !card.hidden).length : 0)),
 )
 const counterIds = new Set([
   'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
@@ -146,7 +147,7 @@ const responsePlayableIds = computed(() => {
 const handPlayableIds = computed(() => {
   if (isMyMain.value) return playableIds.value
   if (responsePlayableIds.value.length) return responsePlayableIds.value
-  if (props.game.phase === 'Defense' && props.game.activePlayer !== controlledPlayerIndex.value && defenseTargetType.value === 'master')
+  if (props.game.phase === 'Defense' && props.game.pendingDefense?.stage === 'DefenseChoice' && controlledPlayerIndex.value === 1 - props.game.pendingDefense.attackerPlayer && defenseTargetType.value === 'master')
     return (me.value.hand ?? []).filter(card => card.cardType === 'legion').map(card => card.instanceId)
   return []
 })

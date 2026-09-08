@@ -1332,6 +1332,7 @@ public sealed partial class L12GameEngine
             if (!L12S2ZoneOps.SpendRunes(player, 1)) return CommandResult.Reject("需要消耗1符文");
             var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = declared[0] };
             if (declared.Length == 2) data["target"] = declared[1];
+            DeclarePresentationBranch(data, "merlin-rune", "mode", declared[0]);
             var publicText = declared[0] == "mode:debuff"
                 ? "主动休整：选择对方1张军团，本回合兵力-3000"
                 : "主动休整：查看牌库，选择1张费用不高于4的主动战术展示并加入手牌，随后重洗牌库";
@@ -1425,8 +1426,10 @@ public sealed partial class L12GameEngine
             RemoveFromField(player, source, true, "作为加拉哈德主动效果的费用被弃置",
                 leaveKind: L12FieldLeaveKind.Discard);
             player.UsedAbilities.Add(onceKey);
+            var data = new Dictionary<string, string> { ["ability"] = ability, ["healMode"] = target };
+            DeclarePresentationBranch(data, "galahad-grail-reward", "healMode", target);
             PushEffect(playerIndex, source, "active", "完成试炼后的主动效果",
-                data: new Dictionary<string, string> { ["ability"] = ability, ["healMode"] = target });
+                data: data);
             return CommandResult.Ok();
         }
         if (ability == "runeUse" && source.CardId == "S02-06C1")
@@ -1436,7 +1439,9 @@ public sealed partial class L12GameEngine
             if (mode is not ("mode:trial" or "mode:draw")) return CommandResult.Reject("符文效果选项不合法");
             L12S2ZoneOps.SpendRunes(player, 1);
             player.UsedAbilities.Add(onceKey);
-            PushEffect(playerIndex, source, "active", "符文效果", data: new Dictionary<string, string> { ["ability"] = ability, ["mode"] = mode });
+            var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = mode };
+            DeclarePresentationBranch(data, "otherworld-rune-use", "mode", mode);
+            PushEffect(playerIndex, source, "active", "符文效果", data: data);
             return CommandResult.Ok();
         }
         if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")

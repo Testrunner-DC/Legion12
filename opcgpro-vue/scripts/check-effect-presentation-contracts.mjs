@@ -17,16 +17,43 @@ const operations = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore
 
 for (const contract of [
   'data-ui-contract="effect-presentation-editor"',
+  'data-ui-contract="effect-presentation-segment"',
+  'data-ui-contract="effect-presentation-branch"',
+  'data-ui-contract="effect-presentation-multiline"',
   'scene.defaultText',
   'scene.effectiveText',
+  'scene.segmentIndex',
+  'scene.segmentCount',
+  'scene.branchLabel',
+  'scene.requiredChoices',
   'presentationDrafts[scene.sceneId]',
+  '@keydown.enter.stop',
+  '@keyup.enter.stop',
   'savePresentation(scene)',
   'restorePresentation(scene)',
   'white-space:pre-wrap',
 ]) assert(admin.includes(contract), `Admin effect presentation editor is missing ${contract}`)
 assert(platform.includes('presentations?: EffectPresentationScene[]'))
+for (const metadataField of [
+  'flow?: string | null',
+  'segmentIndex?: number | null',
+  'segmentCount?: number | null',
+  'branchLabel?: string | null',
+  'requiredChoices?: Record<string, string> | null',
+]) assert(platform.includes(metadataField), `Effect presentation scene type is missing ${metadataField}`)
 assert(platform.includes('/presentations/${encodeURIComponent(sceneId)}'))
 assert(platform.includes('/presentations/${encodeURIComponent(sceneId)}/restore'))
+assert(admin.includes("return context.filter(Boolean).join(' · ')")
+  && admin.includes('第 ${scene.segmentIndex}/${scene.segmentCount} 段')
+  && admin.includes('分段元数据异常')
+  && admin.includes('scene.segmentIndex != null || scene.segmentCount != null'),
+  'Segment/branch editor context must remain explicit and reject malformed metadata without guessing')
+assert(admin.includes("Object.entries(scene.requiredChoices ?? {})")
+  && admin.includes('公开选择条件：{{ formatPresentationChoices(scene) }}'),
+  'Public branch selectors must remain inspectable without driving client-side matching')
+assert(admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene.sceneId, text)')
+  && !admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene.sceneId, text.trim())'),
+  'The editor must send the multiline draft without flattening or trimming internal newlines')
 
 const overrideGuard = board.indexOf('if (override) return override')
 const oiranFallback = board.indexOf('/花魁的馈赠/.test(text)')

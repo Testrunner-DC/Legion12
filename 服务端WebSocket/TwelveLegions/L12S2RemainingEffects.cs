@@ -206,6 +206,8 @@ public sealed partial class L12GameEngine
                     data["ability"] = ability;
                     data["mode"] = declared[0];
                 }
+                if (declared[0] == "mode:damage")
+                    DeclarePresentationBranch(data, "divinity-power", "mode", declared[0]);
                 if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2))
                     return CommandResult.Reject("需要2张活跃的神力");
                 player.UsedAbilities.Add(onceKey);

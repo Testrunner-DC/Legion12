@@ -21,6 +21,7 @@ $lethal = Read-Source 'L12LethalReplacements.cs'
 $postResolution = Read-Source 'L12PostResolutionGeneratedEffects.cs'
 $rulingTests = Read-Source 'RulingClosureRegressionTests.cs'
 $tests = Read-Source 'AtomicReviewBatch6KBRegressionTests.cs'
+$sequencingTests = Read-Source 'BackendReportBatch296SequencingTests.cs'
 $audit = Read-Source 'S01-SUN-CITY-ASGARD-ABILITY-AUDIT.md'
 
 $expectedCards = @(
@@ -51,9 +52,19 @@ Assert-Contains $composite 'data.Remove("wisdomRewards")' 'Independent follow-up
 foreach ($token in @(
     '("S01-0201", "attack" or "death", _, _) => true',
     '("S01-0315", "enter", _, _) => true',
-    '"' + [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5Zu+54m55pGp5pav5LiJ5LiW77ya6aKE5YWI6YCJ5oup6ZqP5ZCO5Ye75p2A55qE5YW15Yqb5LiN6auY5LqOMTAwMOWGm+Wbog==')) + '"',
     '"' + [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5peg6aqo6ICF5LyK55Om5bCU77ya6aKE5YWI5aOw5piO5piv5ZCm5p+l55yL54mM5bqT6aG26YOoM+W8oOeJjA==')) + '"'
 )) { Assert-Contains $triggers $token "Batch 6K-B public declaration token is missing: $token" }
+# BATCH296 P2: the user approved post-debuff targeting for both attack and death.
+if ([regex]::Matches($composite, 'new\("thutmose-kill",[^)]*DeclareAtSegmentStart: true\)').Count -ne 2) {
+    throw 'Both Thutmose follow-up kills must declare their target at their own segment start.'
+}
+Assert-Contains $composite 'PublicLegions(opponent).Where(card => card.Troops <= 1000)' 'Thutmose must use current post-debuff troops for follow-up candidates.'
+foreach ($regression in @(
+    'ThutmoseDeclaresTheKillFromPostDebuffTroopsForBothTriggers',
+    'ThutmoseRemovesZeroTroopLegionsBeforeBuildingTheLateTargetPrompt',
+    'ThutmoseWaitsForARealDeathTriggerBeforeDeclaringItsLateTarget',
+    'ThutmoseLateDeclarationSurvivesCheckpointAndRejectsTheOldPromptTwice'
+)) { Assert-Contains $sequencingTests $regression "Thutmose approved sequencing regression is missing: $regression" }
 foreach ($flow in @(
     'case "thutmose-debuff"','case "thutmose-kill"','case "canopic-box-heal-discard"',
     'case "canopic-two-discard"','case "canopic-three-discard"',

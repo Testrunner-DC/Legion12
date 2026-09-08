@@ -12,7 +12,7 @@
 
 | 卡号 / 卡名 | 项数 | 最短规则断言 | 运行时代码证据 | 测试证据 | 唯一状态 |
 |---|---:|---|---|---|---|
-| S01-0201 图特摩斯三世 | 4 | 登场回合反击免疫；登场击杀目标前置；进攻/阵亡的全体-1000与随后击杀分别响应，击杀目标入栈前声明且失效只取消后段。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans`、`L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6KBRegressionTests` | 明确错误→已修复 |
+| S01-0201 图特摩斯三世 | 4 | 登场回合反击免疫；登场击杀目标前置；进攻/阵亡先全体-1000并完成必要状态检查，随后按当前兵力声明击杀目标，两段分别响应，失效只取消后段（BATCH296 P2）。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans`、`L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6KBRegressionTests`、`BackendReportBatch296SequencingTests` | 明确错误→已修复 |
 | S01-0202 拉美西斯二世 | 3 | 登场保护与无守卫减费按公开场面；最多3张其他同阵营军团及顺序先声明，各委托登场效果保持自己的声明/响应。 | `L12EnterPublicTriggerPlans`、`L12S1FactionEffects` | `Bq20260830RegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S01-0203 美尼斯 | 2 | 对方回合持续兵力层按守卫存在重算；进攻可弃自身在内的己方军团作为冒号费用，预付后不恢复且来源离场不获得自身强化。 | `L12AttackPublicTriggerPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6HRegressionTests` | 通过 |
 | S01-0204 陵墓构造体 | 5 | 前排挑衅、叠放与每守卫+1000分层；阵亡/离场各自生成候选，按最后已知附属、所有者墓地与公开空格原子登场。 | `L12PublicTriggerEffectPlans`、`L12AuthoritativeCardZones` | `AtomicReviewBatch6DRegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |

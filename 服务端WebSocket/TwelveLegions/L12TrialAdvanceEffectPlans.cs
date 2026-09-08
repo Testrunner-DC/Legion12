@@ -135,6 +135,12 @@ public sealed partial class L12GameEngine
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
         candidate.Data["trialAdvancePlan"] = plan;
+        if (plan is "lancelot-kill" or "constance-entry")
+        {
+            candidate.Data["presentationFlow"] = $"trial-advance:{plan}";
+            RefreshDeclaredPresentationSceneId(candidate, source
+                ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId));
+        }
         if (plan is "galahad-entry" or "finn-entry" or "angus" or "avalon"
             || plan == "constance-entry" && mode == "mode:trial"
             || plan == "lancelot-kill" && mode == "mode:trial")

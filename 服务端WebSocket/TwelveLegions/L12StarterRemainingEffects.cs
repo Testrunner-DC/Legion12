@@ -356,6 +356,8 @@ public sealed partial class L12GameEngine
         if (ability is not ("telemachusTopThree" or "oasisDancerBuff" or "christinaFreeTactic" or "kaneMillOne" or "oiranTransfer" or "lightSwordActive")) player.UsedAbilities.Add(onceKey);
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (values.Length > 0) data["target"] = string.Join('|', values);
+        if (ability == "lightSwordActive")
+            DeclarePresentationBranch(data, "light-sword-active", "mode", values[0]);
         IEnumerable<string>? publicTargets = null;
         if (ability == "athenaFrontBuff")
         {
@@ -843,6 +845,11 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (plan is "kagutsuchi-buff" or "sky-city-completion")
+        {
+            candidate.Data["presentationFlow"] = plan;
+            RefreshDeclaredPresentationSceneId(candidate, source);
+        }
         if (plan == "aeneas-promotion-search")
         {
             candidate.Data["compositePlan"] = "starter-aeneas-promotion";

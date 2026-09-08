@@ -7,7 +7,7 @@
 - 唯一可修改的 Windows 工作区是 `D:\GPT\Legion12\app`。`D:\GPT\Legion12\workspace` 和旧路径只是兼容联接或历史工作区，不能在其中开发、提交或发布。
 - 正式入口是 `https://legion-12.com`，WebSocket 为同源 `wss://legion-12.com/ws`，`www` 只做跳转。
 - 正式服务器的应用仅监听 `127.0.0.1:8083`；稳定应用入口为 `/opt/legion12-test`，持久化运行数据在 `/opt/legion12-runtime`。
-- `legion12-test.service` 是**当前正式服**的历史服务名，不是测试服。独立测试服尚未启用；不要因为服务名含 `test` 而连接、重启或发布到错误环境。
+- `legion12-test.service` 是**当前正式服**的历史服务名，不是测试服。独立内部测试服务为 `legion12-testrun.service`、8084；其公网DNS/TLS仍单独管理，不要因为服务名含 `test` 而连接、重启或发布到错误环境。
 - 旧服务器只保留迁移证据、release 和 runtime 的回滚材料，Legion12 应用已停用。禁止重启旧机服务、向旧机发布或让新旧两端同时接受写入。
 
 不要在聊天、Issue、提交、脚本输出或文档中写入密码、Token、SSH 私钥、环境文件内容、数据库备份、真实玩家数据、房间密钥、会话或未脱敏日志。SSH 信任只能使用已由维护者人工核验的新服务器主机指纹；不要以 `ssh-keyscan` 的输出自动信任主机，也不要复制其他人的私钥。
@@ -84,6 +84,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-l12-change.
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 ```
+
+当根分区容量已触发警戒时，不能继续把运行包和完整备份堆在 `/opt`。新机已核验独立、持久、可写的 `/www` 分区；本批使用固定受管制品根：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -Server root@38.76.208.25 -ServerArtifactRoot /www/legion12
+```
+
+SSH仍由现有可信配置校验；`ServerArtifactRoot`只接受`/opt`或`/www/legion12`，不可填任意目录。外置模式在上传大包前和服务器发布事务内检查独立挂载、持久挂载配置、权限、路径和容量：预备至少14GiB空闲，正式预算包含最大4GiB压缩备份、实际解包体积及8GiB余量。超限停止，不自动删除旧备份补空间。
+
+外置模式只新增`incoming/staging/releases/runtime-backups/card-assets`受管目录，不移动`/opt/legion12-runtime`和已有程序、备份、测试资源。稳定入口仍是`/opt/legion12-test`，相同哈希卡图可继续引用原`/opt`缓存。备份先写`.partial`，完成压缩流校验和SHA256后原子发布；已有文件或软链目标一律拒绝覆盖。跨根的程序保留总量及资源引用按`SERVER-STORAGE-MAINTENANCE.md`人工核对，不能分别保留两套无限累积。
 
 该脚本会再次同步远端、拒绝脏工作区或 `HEAD` 与 `origin/main` 不一致的版本，生成或复用经过校验的运行包，校验归档哈希后上传，并由服务器原子切换 release。它不会授权发布本身，也不应用于绕过本节门禁。只想验证传输与服务器前置条件而不切换版本时，可使用：
 

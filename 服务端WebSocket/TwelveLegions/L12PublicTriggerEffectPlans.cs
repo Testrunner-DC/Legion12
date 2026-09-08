@@ -855,26 +855,12 @@ public sealed partial class L12GameEngine
             case ("S01-0201", "attack" or "death", _):
             {
                 candidate.Data["preserveIndependentStack"] = "true";
-                var targets = PublicLegions(opponent).Where(card => card.Troops <= 1000)
-                    .Select(card => card.InstanceId).ToArray();
-                if (targets.Length == 0)
-                {
-                    var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
-                    {
-                        ["killMode"] = ["mode:none"],
-                    };
-                    foreach (var pair in CompositeFirstSegmentData(
-                                 $"trigger:S01-0201:{candidate.Trigger}", declared))
-                        candidate.Data[pair.Key] = pair.Value;
-                    steps = [];
-                    break;
-                }
-                steps =
-                [
-                    PublicTriggerStep("enemy-legion", "killTarget",
-                        "图特摩斯三世：预先选择随后击杀的兵力不高于1000军团",
-                        targets, allowCancel: false),
-                ];
+                foreach (var pair in CompositeFirstSegmentData(
+                             $"trigger:S01-0201:{candidate.Trigger}",
+                             new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                    candidate.Data[pair.Key] = pair.Value;
+                // 第二段必须读取减兵与阵亡检查完成后的场面；这里不提前锁定目标。
+                steps = [];
                 break;
             }
             case ("S01-0315", "enter", _):
@@ -1586,6 +1572,11 @@ public sealed partial class L12GameEngine
 
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (batch6IBPlan == "gwen-choice")
+        {
+            candidate.Data["presentationFlow"] = "gwen-choice";
+            RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
         if (batch6IBPlan is not null)
         {
             var legacyTargets = batch6IBPlan switch

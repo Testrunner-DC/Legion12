@@ -248,7 +248,7 @@ public sealed partial class L12GameEngine
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck, player.Morale,
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
-                player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+                player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
             : new
             {
@@ -259,7 +259,7 @@ public sealed partial class L12GameEngine
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, player.Morale,
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
-                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
         var prompts = State.PendingPrompts
@@ -1838,11 +1838,13 @@ public sealed partial class L12GameEngine
                     .Sum(candidate => L12StructuredCardRules.StarterGraveFactionCardCopies(
                         State.Players[playerIndex], candidate, "asgard")))
                 : 0;
-            snapshot.PlayCost = GetPlayCost(playerIndex, card);
+            var counterPlacement = IsCounterTactic(card.CardId);
+            snapshot.PlayCost = counterPlacement ? CounterTacticPlacementCost(State.Players[playerIndex]) : GetPlayCost(playerIndex, card);
             var canUseSigurdDiscount = card.CardId == "ST03-01"
                 && State.Players[playerIndex].Graveyard.Any(CanEnterHandOrLibrary);
-            snapshot.MinimumPlayCost = GetPlayCostWithSigurdDiscount(playerIndex, card, selfDamageDiscount, spentRunes, rolloReturns,
-                canUseSigurdDiscount);
+            snapshot.MinimumPlayCost = counterPlacement ? snapshot.PlayCost
+                : GetPlayCostWithSigurdDiscount(playerIndex, card, selfDamageDiscount, spentRunes, rolloReturns,
+                    canUseSigurdDiscount);
             snapshot.PlayBlockedReason = L12StructuredCardRules.HandPlayBlockReason(State.Players[playerIndex], card);
             return snapshot;
         }).ToArray();

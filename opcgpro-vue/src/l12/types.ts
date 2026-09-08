@@ -105,6 +105,8 @@ export interface PlayerView {
     canopicTrack?: Array<Card & { completed: boolean }>
   }
   temporaryMorale?: number
+  /** Authoritative ordinary-payment count, including legal public alternative resources. */
+  spendableResourceCount?: number
   nextLegionChargeMaxCost?: number | null
   nextS2PromotionGodPowerDiscount?: number
   mulliganDone: boolean

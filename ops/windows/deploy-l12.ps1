@@ -5,6 +5,8 @@ param(
     [string]$IdentityFile = "",
     [string]$ArtifactManifest = "",
     [string]$CacheRoot = "",
+    [ValidateSet("/opt", "/www/legion12")]
+    [string]$ServerArtifactRoot = "/opt",
     [switch]$DryRun,
     # 兼容旧调用；隔离工作树现在会自动通过 HEAD == origin/main 的强校验，
     # 不再需要调用者手动追加此参数。
@@ -134,15 +136,23 @@ try {
         }
     }
 
-    $incoming = "/opt/legion12-deployment/incoming"
+    $incoming = if ($ServerArtifactRoot -eq "/www/legion12") {
+        "/www/legion12/incoming"
+    }
+    else {
+        "/opt/legion12-deployment/incoming"
+    }
     $remoteBootstrap = "/tmp/deploy-l12-release-$commit.sh"
     $remoteHealthVerifier = "/tmp/verify-l12-health-$commit.mjs"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
-    Write-Host "[L12 部署] 上传发布工具与预构建运行包..."
-    Invoke-External ssh @sshOptions $Server "mkdir -p '$incoming'"
+    Write-Host "[L12 部署] 上传并安装经过本地验证的发布工具..."
     Invoke-External scp @sshOptions $serverScript "${Server}:$remoteBootstrap"
     Invoke-External scp @sshOptions $serverHealthVerifier "${Server}:$remoteHealthVerifier"
+    Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && rm -f '$remoteBootstrap' '$remoteHealthVerifier'"
+    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
+
+    Write-Host "[L12 部署] 上传预构建运行包..."
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
 
     $cardAssetsSha = "-"
@@ -150,7 +160,13 @@ try {
     $cardAssetsHash = "-"
     if ($hasCardAssets) {
         $cardAssetsHash = $cardAssetsHashValue
-        & ssh @sshOptions $Server "test -d '/opt/legion12-static/card-assets/$cardAssetsHash'"
+        $cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12") {
+            "if test -d '/www/legion12/card-assets/$cardAssetsHash' && test ! -L '/www/legion12/card-assets/$cardAssetsHash'; then exit 0; fi; test -d '/opt/legion12-static/card-assets/$cardAssetsHash' && test ! -L '/opt/legion12-static/card-assets/$cardAssetsHash'"
+        }
+        else {
+            "test -d '/opt/legion12-static/card-assets/$cardAssetsHash' && test ! -L '/opt/legion12-static/card-assets/$cardAssetsHash'"
+        }
+        & ssh @sshOptions $Server $cardAssetsProbe
         $cardAssetsCached = $LASTEXITCODE -eq 0
         if ($cardAssetsCached) {
             Write-Host "[L12 部署] 服务器复用优化卡图缓存：$cardAssetsHash"
@@ -164,10 +180,9 @@ try {
     }
     else { throw "发布清单缺少完整优化卡图包，拒绝退回旧卡图链路。" }
 
-    Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && rm -f '$remoteBootstrap' '$remoteHealthVerifier'"
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
-    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath"
+    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot'"
 
     if ($DryRun) { Write-Host "[L12 部署] 干运行成功，线上版本未改变。" }
     else { Write-Host "[L12 部署] 发布成功：https://legion-12.com/" }

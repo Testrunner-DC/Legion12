@@ -12,11 +12,12 @@ internal sealed record L12CompositeEffectSegmentSpec(
     int Cost = 0,
     string[]? PublicTargetKeys = null,
     bool PreStackCost = false,
-    string? RequiredDeclarationKey = null);
+    string? RequiredDeclarationKey = null,
+    bool DeclareAtSegmentStart = false);
 
 /// <summary>
-/// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在支付前
-/// 收齐公开模式、目标与费用对象，并让每个独立效果段各自进入堆叠和响应窗口。
+/// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
+/// 段边界收齐公开模式、目标与费用对象，并让每个独立效果段各自进入堆叠和响应窗口。
 /// </summary>
 internal static partial class L12CompositeEffectPlans
 {
@@ -89,8 +90,12 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S01-0118"] =
             [
-                new("march-buff-effect", "选择我方前排1张军团，本回合兵力+2000",
+                new("march-buff-segment", "选择我方前排1张军团，本回合兵力+2000",
                     PublicTargetKeys: ["buffTarget"]),
+                new("march-kill-segment", "返还2士气：击杀对方1张兵力不高于6000的军团",
+                    "mode:use", "morale-return", "marchReturnCost", 2,
+                    PublicTargetKeys: ["killTarget"], PreStackCost: true,
+                    RequiredDeclarationKey: "marchMode", DeclareAtSegmentStart: true),
             ],
             ["S01-0119"] =
             [
@@ -117,7 +122,7 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("oiran-search", "查看牌库顶部3张牌，将符合条件的1张加入手牌并排列其余牌"),
                 new("oiran-ready-morale", "将已声明的1张休整士气转为活跃", "mode:morale",
-                    PublicTargetKeys: ["moraleTarget"]),
+                    PublicTargetKeys: ["moraleTarget"], DeclareAtSegmentStart: true),
             ],
             ["S01-0418"] =
             [
@@ -284,20 +289,20 @@ internal static partial class L12CompositeEffectPlans
             ["trigger:S01-0201:attack"] =
             [
                 new("thutmose-debuff", "图特摩斯三世：对方所有军团本回合兵力-1000"),
-                new("thutmose-kill", "图特摩斯三世：随后击杀已声明的兵力不高于1000军团",
-                    "mode:kill", PublicTargetKeys: ["killTarget"], RequiredDeclarationKey: "killMode"),
+                new("thutmose-kill", "图特摩斯三世：随后击杀1张当前兵力不高于1000的军团",
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
             ],
             ["trigger:S01-0201:death"] =
             [
                 new("thutmose-debuff", "图特摩斯三世：对方所有军团本回合兵力-1000"),
-                new("thutmose-kill", "图特摩斯三世：随后击杀已声明的兵力不高于1000军团",
-                    "mode:kill", PublicTargetKeys: ["killTarget"], RequiredDeclarationKey: "killMode"),
+                new("thutmose-kill", "图特摩斯三世：随后击杀1张当前兵力不高于1000的军团",
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
             ],
             ["trigger:S01-0401:attack"] =
             [
                 new("honda-debuff", "本多忠胜：对方所有军团本回合费用-1"),
-                new("honda-kill", "本多忠胜：随后击杀已声明的费用为0军团",
-                    PublicTargetKeys: ["killTarget"]),
+                new("honda-kill", "本多忠胜：随后击杀1张当前费用为0的军团",
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
             ],
             ["trigger:S01-0216:enter"] =
             [
@@ -391,7 +396,7 @@ internal static partial class L12CompositeEffectPlans
         };
 
     private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
-        new(StringComparer.OrdinalIgnoreCase) { "S01-0015", "S02-0405", "S02-0620" };
+        new(StringComparer.OrdinalIgnoreCase) { "S01-0015", "S01-0419", "S02-0405", "S02-0620" };
 
     public static bool HasHandPlayPlan(string cardId)
         => HandPlayPlans.ContainsKey(cardId)
@@ -418,6 +423,13 @@ internal static partial class L12CompositeEffectPlans
 public sealed partial class L12GameEngine
 {
     private const string CompositePlanChoicePrefix = "composite-plan:";
+    private const string CompositeSegmentDeclarationAbility = "composite-segment-declaration";
+
+    private sealed record CompositeSegmentDeclarationContext(
+        string PlanId,
+        int SegmentIndex,
+        string OriginTrigger,
+        Dictionary<string, string> Data);
 
     private CommandResult BeginCompositeHandPlayDeclaration(int playerIndex, L12CardInstance source)
         => BeginCompositeDeclaration(playerIndex, source, "composite-play", effectOnlyRepeat: false);
@@ -558,9 +570,13 @@ public sealed partial class L12GameEngine
 
             case "S01-0118":
             {
-                steps.Add(CompositeStep("field-legion", "buffTarget", "神妙行军：选择我方前排1张军团，本回合兵力+2000",
-                    player.Field[0].Where(card => card is not null && IsFieldLegion(card))
-                        .Select(card => card!.InstanceId), 1));
+                var front = player.Field[0].Where(card => card is not null && IsFieldLegion(card))
+                    .Select(card => card!.InstanceId).ToArray();
+                steps.Add(front.Length == 0
+                    ? CompositeStep("option", "buffTarget", "神妙行军：我方没有前排军团，跳过兵力增加段",
+                        ["mode:none"], 1, autoSelectWhenExact: true)
+                    : CompositeStep("field-legion", "buffTarget", "神妙行军：选择我方前排1张军团，本回合兵力+2000",
+                        front, 1));
                 break;
             }
 
@@ -624,19 +640,8 @@ public sealed partial class L12GameEngine
             }
 
             case "S01-0419":
-            {
-                var rested = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
-                steps.Add(CompositeStep("option", "mode", "花魁的馈赠：选择是否将我方最多1张休整士气转为活跃",
-                    rested.Length > 0 ? ["mode:none", "mode:morale"] : ["mode:none"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "查看牌库顶部3张牌，选择1张其他【高天原】卡牌展示并加入手牌，其余返回牌库底部",
-                        ["mode:morale"] = "将我方最多1张休整士气转为活跃",
-                    }));
-                steps.Add(CompositeStep("target-morale", "moraleTarget", "花魁的馈赠：预先选择转为活跃的休整士气",
-                    rested, 1, requiredChoice: "mode:morale"));
+                // 支付会产生新的休整士气；第二段在真正准备入栈时使用公共延后声明流程枚举。
                 break;
-            }
 
             case "S01-0418":
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "天诛：预先选择费用不高于7的击杀目标",
@@ -1078,8 +1083,9 @@ public sealed partial class L12GameEngine
             "S01-0014" => declared.GetValueOrDefault("disasterValue", []).SingleOrDefault()
                 is "-2" or "-1" or "0" or "1" or "2",
             "S01-0015" => declared.Count == 0,
-            "S01-0118" => Own("buffTarget", target =>
-                FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
+            "S01-0118" => declared.GetValueOrDefault("buffTarget", []).SingleOrDefault() is { } marchTarget
+                && (marchTarget == "mode:none" || Own("buffTarget", target =>
+                    FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0)),
             "S01-0119" => mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || player.MoraleDeck.Count > 0),
             "S01-0221" => declared.GetValueOrDefault("duatMode", []).SingleOrDefault() is { } duatMode
@@ -1093,7 +1099,7 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(player, target, "asgard")) && OwnSlot("entrySlot"),
             "S01-0319" => ValidateHuntingMomentGraveEffect(player, declared)
                 && Enemy("killTarget", target => target.Troops <= 6000),
-            "S01-0419" => mode is "mode:none" or "mode:morale"
+            "S01-0419" => declared.Count == 0 || mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || declared.GetValueOrDefault("moraleTarget", []).SingleOrDefault() is { } moraleTarget
                     && player.Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped)),
             "S01-0418" => Enemy("killTarget", target => target.CurrentCost <= 7),
@@ -1326,9 +1332,266 @@ public sealed partial class L12GameEngine
             SelectedTemporaryMoraleCount(selected));
     }
 
+    private static Dictionary<string, string> CompositeContinuationData(L12StackItem item)
+        => item.Data.Where(pair =>
+                pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
+                || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
+                || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan")
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+    private static void CopyCompositeContinuationData(L12StackItem source, L12StackItem destination)
+    {
+        foreach (var pair in CompositeContinuationData(source)) destination.Data[pair.Key] = pair.Value;
+        destination.Data["compositeOriginTrigger"] =
+            source.Data.GetValueOrDefault("compositeOriginTrigger") ?? source.Trigger;
+    }
+
+    private bool TryBuildCompositeSegmentDeclarationSteps(int controller, L12StackItem item,
+        L12CompositeEffectSegmentSpec segment, out List<L12ActivationSelectionStep> steps)
+    {
+        steps = [];
+        var player = State.Players[controller];
+        var opponent = State.Players[1 - controller];
+        var targetKey = segment.PublicTargetKeys?.SingleOrDefault();
+        switch (segment.Flow)
+        {
+            case "oiran-ready-morale":
+            {
+                var rested = player.Morale.Where(card => card.Tapped)
+                    .Select(card => card.InstanceId).ToArray();
+                if (rested.Length == 0 || string.IsNullOrWhiteSpace(targetKey)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:morale";
+                var modeKey = segment.RequiredDeclarationKey ?? "mode";
+                steps.Add(CompositeStep("option", modeKey,
+                    "花魁的馈赠：选择是否将我方最多1张当前休整士气转为活跃",
+                    ["mode:none", requiredMode], 1, 1,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["mode:none"] = "不发动恢复士气的后续效果",
+                        [requiredMode] = "将我方最多1张当前休整士气转为活跃",
+                    }));
+                steps.Add(CompositeStep("target-morale", targetKey,
+                    "花魁的馈赠：选择转为活跃的当前休整士气",
+                    rested, 1, requiredChoice: requiredMode));
+                return true;
+            }
+            case "thutmose-kill":
+            {
+                var targets = PublicLegions(opponent).Where(card => card.Troops <= 1000)
+                    .Select(card => card.InstanceId).ToArray();
+                if (targets.Length == 0 || string.IsNullOrWhiteSpace(targetKey)) return false;
+                steps.Add(CompositeStep("enemy-legion", targetKey,
+                    "图特摩斯三世：选择减兵结算后当前兵力不高于1000的军团并击杀",
+                    targets, 1));
+                return true;
+            }
+            case "honda-kill":
+            {
+                var targets = PublicLegions(opponent).Where(card => card.CurrentCost == 0)
+                    .Select(card => card.InstanceId).ToArray();
+                if (targets.Length == 0 || string.IsNullOrWhiteSpace(targetKey)) return false;
+                steps.Add(CompositeStep("enemy-legion", targetKey,
+                    "本多忠胜：选择减费结算后当前费用为0的军团并击杀",
+                    targets, 1));
+                return true;
+            }
+            case "march-kill-segment":
+            {
+                var targets = PublicLegions(opponent).Where(card => card.Troops <= 6000)
+                    .Select(card => card.InstanceId).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if ((!repeatedEffectOnly && !CanReturnMorale(player, segment.Cost)) || targets.Length == 0
+                    || string.IsNullOrWhiteSpace(targetKey)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:use";
+                var modeKey = segment.RequiredDeclarationKey ?? "mode";
+                steps.Add(CompositeStep("option", modeKey,
+                    "神妙行军：是否返还2士气，发动独立的击杀段？",
+                    ["mode:none", requiredMode], 1, 1,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["mode:none"] = "不发动后续击杀效果",
+                        [requiredMode] = "返还2士气：击杀对方1张兵力不高于6000的军团",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("target-morale", segment.CostKey ?? "marchReturnCost",
+                        "神妙行军：选择返还的2张士气",
+                        player.Morale.Select(card => card.InstanceId), segment.Cost, segment.Cost,
+                        requiredChoice: requiredMode));
+                steps.Add(CompositeStep("enemy-legion", targetKey,
+                    "神妙行军：选择当前兵力不高于6000的击杀目标",
+                    targets, 1, requiredChoice: requiredMode));
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private bool BeginCompositeSegmentDeclaration(L12StackItem item, L12CardInstance source,
+        string planId, int segmentIndex, L12CompositeEffectSegmentSpec segment)
+    {
+        if (!TryBuildCompositeSegmentDeclarationSteps(item.Controller, item, segment, out var steps))
+        {
+            AddEvent("effect-cancelled", item.Controller,
+                $"〈{source.Name}〉的“{segment.Text}”当前没有合法对象；仅跳过该段", source);
+            return false;
+        }
+
+        var context = new CompositeSegmentDeclarationContext(planId, segmentIndex,
+            item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger,
+            CompositeContinuationData(item));
+        var result = BeginPendingActivationSequence(item.Controller, source,
+            CompositeSegmentDeclarationAbility, steps, triggerCandidateId: null,
+            playCardInstanceId: source.InstanceId, responseTargetStackItemId: null);
+        if (!result.Accepted)
+        {
+            AddEvent("effect-cancelled", item.Controller,
+                $"〈{source.Name}〉的“{segment.Text}”无法建立声明；仅跳过该段", source);
+            return false;
+        }
+
+        var activation = State.PendingActivations.LastOrDefault(candidate =>
+            candidate.Controller == item.Controller
+            && candidate.SourceInstanceId == source.InstanceId
+            && candidate.Ability == CompositeSegmentDeclarationAbility);
+        if (activation is null)
+        {
+            AddEvent("effect-cancelled", item.Controller,
+                $"〈{source.Name}〉的“{segment.Text}”声明未能保持；仅跳过该段", source);
+            return false;
+        }
+        activation.CommittedCompletion = JsonSerializer.Serialize(context);
+        return true;
+    }
+
+    private static bool TryReadCompositeSegmentDeclarationContext(L12PendingActivation activation,
+        out CompositeSegmentDeclarationContext context)
+    {
+        context = null!;
+        try
+        {
+            var decoded = JsonSerializer.Deserialize<CompositeSegmentDeclarationContext>(
+                activation.CommittedCompletion ?? string.Empty);
+            if (decoded is null || string.IsNullOrWhiteSpace(decoded.PlanId)
+                || decoded.SegmentIndex < 0 || string.IsNullOrWhiteSpace(decoded.OriginTrigger)
+                || decoded.Data is null) return false;
+            context = decoded with
+            {
+                Data = new Dictionary<string, string>(decoded.Data, StringComparer.OrdinalIgnoreCase),
+            };
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private L12CardInstance? CompositeSegmentDeclarationSource(L12PendingActivation activation,
+        CompositeSegmentDeclarationContext? context = null)
+    {
+        if (context?.Data.GetValueOrDefault("repeatedEffectOnly") == "true")
+            return CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        if (context?.PlanId.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
+            return FindAuthoritativeCard(activation.SourceInstanceId)
+                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        return State.Players[activation.Controller].Resolving.FirstOrDefault(card =>
+            card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
+    }
+
+    private void AbortCompositeSegmentDeclaration(L12PendingActivation activation, string reason)
+    {
+        _ = TryReadCompositeSegmentDeclarationContext(activation, out var context);
+        var player = State.Players[activation.Controller];
+        var source = CompositeSegmentDeclarationSource(activation, context)
+            ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        var resolving = player.Resolving.FirstOrDefault(card =>
+            card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
+        if (resolving is not null
+            && State.EffectStack.All(item => item.SourceInstanceId != resolving.InstanceId)
+            && State.DeferredEffectStack.All(item => item.SourceInstanceId != resolving.InstanceId))
+        {
+            player.Resolving.Remove(resolving);
+            ResetCardAfterLeavingField(resolving);
+            player.Graveyard.Add(resolving);
+        }
+        AddEvent("effect-cancelled", activation.Controller,
+            $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退", source);
+        ResumeAfterPostResolutionGeneratedInteraction();
+    }
+
+    private void CompleteCompositeSegmentDeclaration(L12PendingActivation activation)
+    {
+        if (!TryReadCompositeSegmentDeclarationContext(activation, out var context))
+        {
+            AbortCompositeSegmentDeclaration(activation, "缺少有效的结算上下文，已取消");
+            return;
+        }
+        var segments = L12CompositeEffectPlans.Segments(context.PlanId);
+        if (context.SegmentIndex >= segments.Count
+            || !segments[context.SegmentIndex].DeclareAtSegmentStart)
+        {
+            AbortCompositeSegmentDeclaration(activation, "结算段身份已失效，已取消");
+            return;
+        }
+        var segment = segments[context.SegmentIndex];
+        var data = new Dictionary<string, string>(context.Data, StringComparer.OrdinalIgnoreCase);
+        foreach (var step in activation.SelectionSteps)
+            if (!string.IsNullOrWhiteSpace(step.DeclarationKey)) data.Remove($"declared:{step.DeclarationKey}");
+        foreach (var pair in activation.DeclaredValues)
+            data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        var declared = data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
+                .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase);
+        if (!CompositeSegmentEnabled(segment, declared))
+        {
+            AbortCompositeSegmentDeclaration(activation, "由玩家选择不发动");
+            return;
+        }
+
+        var source = CompositeSegmentDeclarationSource(activation, context with { Data = data });
+        if (source is null)
+        {
+            AbortCompositeSegmentDeclaration(activation, "因来源已离开结算区而取消");
+            return;
+        }
+        var validationItem = new L12StackItem
+        {
+            StackItemId = activation.ActivationId,
+            Controller = activation.Controller,
+            SourceInstanceId = activation.SourceInstanceId,
+            SourceCardId = activation.SourceCardId,
+            SourceName = source.Name,
+            Trigger = context.OriginTrigger,
+            Text = segment.Text,
+        };
+        foreach (var pair in data) validationItem.Data[pair.Key] = pair.Value;
+        if (!ValidateCompositeSegmentTargets(activation.Controller, segment.Flow, validationItem))
+        {
+            AbortCompositeSegmentDeclaration(activation, "因目标已失效而取消");
+            return;
+        }
+        if (data.GetValueOrDefault("repeatedEffectOnly") != "true"
+            && !TryPayCompositeSegmentCost(activation.Controller, source, segment, validationItem))
+        {
+            AbortCompositeSegmentDeclaration(activation, "因费用对象已失效而取消，且未发生部分支付");
+            return;
+        }
+
+        data["compositePlan"] = context.PlanId;
+        data["compositeSegment"] = context.SegmentIndex.ToString();
+        data["atomicFlow"] = segment.Flow;
+        data["atomicContinuation"] = "true";
+        data.Remove("wisdomRewards");
+        PushEffect(activation.Controller, source, context.OriginTrigger, segment.Text,
+            CompositeSegmentTargets(segment, declared), data);
+    }
+
     private bool QueueNextCompositeSegment(L12StackItem item, L12CardInstance? source)
     {
         var planId = item.Data.GetValueOrDefault("compositePlan");
+        if (source is null && planId?.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
+            source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
         var singleResponseEffect = item.Data.GetValueOrDefault("compositeResponseScope") == "single-effect"
@@ -1348,12 +1611,7 @@ public sealed partial class L12GameEngine
                 && candidate.Data.GetValueOrDefault("originStackId") == item.StackItemId);
             if (continuationCarrier is not null)
             {
-                foreach (var pair in item.Data.Where(pair =>
-                             pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
-                             || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
-                             || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone"))
-                    continuationCarrier.Data[pair.Key] = pair.Value;
-                continuationCarrier.Data["compositeOriginTrigger"] = item.Trigger;
+                CopyCompositeContinuationData(item, continuationCarrier);
                 return true;
             }
         }
@@ -1361,6 +1619,45 @@ public sealed partial class L12GameEngine
         for (var nextIndex = current + 1; nextIndex < segments.Count; nextIndex++)
         {
             var next = segments[nextIndex];
+            if (next.DeclareAtSegmentStart)
+            {
+                // 兵力变化可先产生状态检查与阵亡触发。用一个无响应的延迟载体把声明
+                // 排在整批触发之后，保证目标集合来自所有必要状态动作完成后的场面。
+                if (item.Data.GetValueOrDefault("compositeStateCheckBarrier") != "true"
+                    && (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0))
+                {
+                    var barrier = new L12StackItem
+                    {
+                        StackItemId = $"stack-{++State.StackSequence}",
+                        Controller = item.Controller,
+                        SourceInstanceId = item.SourceInstanceId,
+                        SourceCardId = item.SourceCardId,
+                        SourceName = item.SourceName,
+                        SourceSnapshot = CaptureLastKnownSourceSnapshot(source),
+                        Trigger = "composite-continuation",
+                        Text = "状态检查与同时点触发完成后继续后续效果段",
+                    };
+                    CopyCompositeContinuationData(item, barrier);
+                    barrier.Data["atomicFlow"] = "composite-state-check-barrier";
+                    barrier.Data["atomicContinuation"] = "true";
+                    barrier.Data["compositeStateCheckBarrier"] = "true";
+                    barrier.Data["unrespondable"] = "true";
+                    State.DeferredEffectStack.Add(barrier);
+                    return true;
+                }
+                // 第一段可能产生需先处理的权威事件。把延后声明挂在本批最早建立、
+                // 因 LIFO 而最后结算的载体上，避免同时出现权威响应与声明 Prompt。
+                var declarationCarrier = State.DeferredEffectStack.FirstOrDefault(candidate =>
+                    candidate.Trigger == "authority-event"
+                    && candidate.Data.GetValueOrDefault("originStackId") == item.StackItemId);
+                if (declarationCarrier is not null)
+                {
+                    CopyCompositeContinuationData(item, declarationCarrier);
+                    return true;
+                }
+                if (BeginCompositeSegmentDeclaration(item, source, planId, nextIndex, next)) return true;
+                continue;
+            }
             if (!CompositeSegmentEnabled(next, item)) continue;
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
@@ -1405,7 +1702,7 @@ public sealed partial class L12GameEngine
             "round-table-buff" => FindOnField(State.Players[controller],
                     CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _) is { } target
                 && target.HasTrait("圆桌骑士"),
-            "march-kill-effect" => DeclaredEnemyTarget(controller,
+            "march-kill-effect" or "march-kill-segment" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "killTarget").SingleOrDefault(), target => target.Troops <= 6000) is not null,
             "yomi-kill3" => CompositeDeclared(item, "kill3Target").SingleOrDefault() is { } kill3
                 && (kill3 == "mode:none" || DeclaredEnemyTarget(controller, kill3, card => card.CurrentCost <= 3) is not null),

@@ -64,6 +64,8 @@ export interface EffectAtom {
 export interface EffectPresentationScene {
   sceneId: string; cardId: string; abilityId: string; trigger: string; defaultText: string
   overrideText?: string; effectiveText: string; overridden: boolean; eventType: string; label: string
+  flow?: string | null; segmentIndex?: number | null; segmentCount?: number | null; branchLabel?: string | null
+  requiredChoices?: Record<string, string> | null
   allowedPlaceholders?: string[]; placeholders: string[]
 }
 export interface AtomicAbility {

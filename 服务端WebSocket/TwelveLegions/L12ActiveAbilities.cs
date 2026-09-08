@@ -496,6 +496,9 @@ public sealed partial class L12GameEngine
             ["freeMasterSource"] = free.SourceInstanceId,
         };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
+        if (L12StructuredCardSemantics.IsMedjed(source.CardId) && ability == "medjedDebuff")
+            DeclarePresentationBranch(data, "medjed-debuff", "mode",
+                (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
         var (compositePlan, declared) = FaithZealotCompositeDeclaration(source.CardId, ability, target);
         string[]? publicTargets = null;
         if (compositePlan is not null)

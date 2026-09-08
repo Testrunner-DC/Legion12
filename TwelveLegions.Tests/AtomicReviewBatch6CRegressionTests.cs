@@ -109,7 +109,6 @@ public sealed class AtomicReviewBatch6CRegressionTests
     [Theory]
     [InlineData("S01-0014", "-2")]
     [InlineData("S01-0119", "mode:morale")]
-    [InlineData("S01-0419", "mode:morale")]
     [InlineData("S02-0306", "mode:mill")]
     [Trait("L12Evidence", "entry:hand-play-public-declaration")]
     public void KnownSecondSegmentChoicesAreDeclaredBeforeTheCardLeavesHand(string cardId, string expectedChoice)
@@ -208,8 +207,8 @@ public sealed class AtomicReviewBatch6CRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0419")]
-    [Trait("L12Evidence", "entry:predeclared-exact-morale-target")]
-    public void OiranGiftReadiesTheExactDeclaredMoraleInsteadOfTheFirstRestedMorale()
+    [Trait("L12Evidence", "entry:segment-start-exact-morale-target")]
+    public void OiranGiftDeclaresAndReadiesTheExactMoraleAtSecondSegmentStart()
     {
         var game = Create(7705);
         var player = game.State.Players[0];
@@ -219,16 +218,19 @@ public sealed class AtomicReviewBatch6CRegressionTests
         player.Morale.AddRange([first, second]);
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
+        var search = Assert.Single(game.State.EffectStack);
+        Assert.Equal("oiran-search", search.Data["atomicFlow"]);
+        search.Negated = true;
+
+        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:morale", mode.ValidChoices);
         Resolve(game, "mode:morale");
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(first.InstanceId, target.ValidChoices);
         Assert.Contains(second.InstanceId, target.ValidChoices);
         Resolve(game, second.InstanceId);
-        var search = Assert.Single(game.State.EffectStack);
-        Assert.Equal("oiran-search", search.Data["atomicFlow"]);
-        search.Negated = true;
-
-        PassUntilFlow(game, "oiran-ready-morale");
+        Assert.Equal("oiran-ready-morale", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
         PassResponses(game);
 
         Assert.True(first.Tapped);

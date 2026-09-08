@@ -619,7 +619,7 @@ public sealed partial class L12GameEngine
         if (player.Field[1][slot] is { CardType: not "tactic" }) return CommandResult.Reject("该后排阵地已有军团");
         var freeFromDisaster = State.ActiveDisaster?.CardId == "S01-DS03";
         var freeFromEffect = !freeFromDisaster && player.FreeTacticCount > 0;
-        var cost = freeFromDisaster || freeFromEffect ? 0 : 2;
+        var cost = CounterTacticPlacementCost(player);
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("覆盖反击战术需要消耗 2 张活跃士气");
         var paymentChoice = EnsurePlayResourcePaymentChoice(playerIndex, card, command, cost);
         if (paymentChoice is not null) return paymentChoice;
@@ -1183,8 +1183,9 @@ public sealed partial class L12GameEngine
 
     private bool TryOfferCombatLethalReplacement(L12PlayerState controller, L12CardInstance card, L12PendingDefense pending)
     {
-        if (!pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)
-            && TryApplyLakeLadySwordReplacement(controller, card, "致命进攻"))
+        // The bool value records the outcome; false is still a final decision for this combat lethal event.
+        if (pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)) return false;
+        if (TryApplyLakeLadySwordReplacement(controller, card, "致命进攻"))
         {
             pending.LethalReplacementDecisions[card.InstanceId] = true;
             return false;
@@ -1192,7 +1193,6 @@ public sealed partial class L12GameEngine
         if (TryOfferCardLethalSubstitution(controller, card, "combat-lethal-replacement", "本次致命进攻"))
             return true;
         if (!CanUseAchillesLethalReplacement(controller, card)) return false;
-        if (pending.LethalReplacementDecisions.ContainsKey(card.InstanceId)) return false;
         CreatePrompt(controller.PlayerIndex, "optional",
             $"〈{card.Name}〉即将阵亡，是否消耗并翻转1神力，代替承受本次致命进攻？",
             ["yes", "no"], 1, 1, "combat-lethal-replacement", isPrivate: false,
@@ -1215,6 +1215,14 @@ public sealed partial class L12GameEngine
         var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
         var card = FindOnField(player, cardId, out _, out _);
         if (card is null) return;
+        if (pending.LethalReplacementDecisions.ContainsKey(card.InstanceId))
+        {
+            // A recovered duplicate prompt cannot reverse an already persisted yes/no decision.
+            player.UsedAbilities.Remove(PendingCardLethalSubstitutionKey(card));
+            ResolveDefenseCore(1 - pending.AttackerPlayer, pending.DeclaredBlockIds,
+                pending.DeclaredSupportIds, pending.ForceInvalidDefense);
+            return;
+        }
         if (prompt.Data.ContainsKey("replacementKind"))
         {
             var appliedSubstitution = ResolveCombatCardLethalSubstitution(player, card, pending, prompt, choice);

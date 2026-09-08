@@ -805,6 +805,17 @@ public sealed partial class L12GameEngine
                 AddPromptCardData(promptData, previewCard);
             }
         }
+        if (activation.Ability == CompositeSegmentDeclarationAbility)
+        {
+            var segmentSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
+                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+            promptData["sourceInstanceId"] = segmentSource.InstanceId;
+            promptData["sourceCardId"] = segmentSource.CardId;
+            promptData["sourceName"] = segmentSource.Name;
+            promptData["effectText"] = step.Text;
+            AddPromptCardData(promptData, segmentSource);
+            if (step.Kind == "option") promptData["uiPattern"] = "effect-decision";
+        }
         if (targetPlayerIndex is not null) promptData["targetPlayerIndex"] = targetPlayerIndex.Value.ToString();
         if (step.Kind == "opponent-hand-anonymous")
         {
@@ -909,6 +920,11 @@ public sealed partial class L12GameEngine
                 AbortEffectGeneratedFreePlay(activation, "已取消效果生成的打出声明；卡牌保留在原区域");
                 return;
             }
+            if (activation.Ability == CompositeSegmentDeclarationAbility)
+            {
+                AbortCompositeSegmentDeclaration(activation, "由玩家在目标步骤拒绝");
+                return;
+            }
             var hadReservedCost = activation.SelectionSteps.Take(activation.CurrentStep)
                 .Any(step => step.Kind is "mixed-board-payment" or "resource-payment" or "composite-ordinary-payment"
                     || step.DeclarationKey?.Contains("cost", StringComparison.OrdinalIgnoreCase) == true);
@@ -984,6 +1000,12 @@ public sealed partial class L12GameEngine
         if (activation.TriggerCandidateId is not null)
         {
             CompleteTriggerDeclaration(activation);
+            return;
+        }
+
+        if (activation.Ability == CompositeSegmentDeclarationAbility)
+        {
+            CompleteCompositeSegmentDeclaration(activation);
             return;
         }
 
@@ -1100,6 +1122,11 @@ public sealed partial class L12GameEngine
         if (activation.Ability == EffectGeneratedFreePlayAbility)
         {
             AbortEffectGeneratedFreePlay(activation, reason);
+            return;
+        }
+        if (activation.Ability == CompositeSegmentDeclarationAbility)
+        {
+            AbortCompositeSegmentDeclaration(activation, $"因声明失效而取消：{reason}");
             return;
         }
         if (activation.Ability == "composite-committed-play")

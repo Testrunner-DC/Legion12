@@ -464,8 +464,6 @@ public sealed class Bq20260903_01RegressionTests
 
         var play = game.Handle(0, new L12Command("playCard", gift.InstanceId));
         Assert.True(play.Accepted, play.Error);
-        ResolveOnlyPrompt(game, "mode:morale");
-        ResolveOnlyPrompt(game, morale.InstanceId);
         PassResponses(game);
 
         var topThree = Assert.Single(game.State.PendingPrompts);
@@ -475,6 +473,11 @@ public sealed class Bq20260903_01RegressionTests
         ResolveOnlyBottomOrder(game, second.InstanceId, third.InstanceId);
 
         Assert.True(morale.Tapped);
+        PassResponses(game);
+        ResolveOnlyPrompt(game, "mode:morale");
+        var moraleTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(morale.InstanceId, moraleTarget.ValidChoices);
+        ResolveOnlyPrompt(game, morale.InstanceId);
         PassResponses(game);
 
         Assert.Contains(chosen, player.Hand);

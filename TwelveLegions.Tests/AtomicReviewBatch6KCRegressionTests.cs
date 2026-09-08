@@ -150,7 +150,7 @@ public sealed class AtomicReviewBatch6KCRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0401")]
-    public void HondaDeclaresTheSubsequentKillBeforeEitherIndependentSegmentStacks()
+    public void HondaDeclaresTheSubsequentKillAfterTheIndependentDebuffSegment()
     {
         var game = Create(seed: 8302);
         var source = Card("S01-0401", "batch6kc-honda");
@@ -162,21 +162,26 @@ public sealed class AtomicReviewBatch6KCRegressionTests
 
         QueueTrigger(game, source, "attack");
 
-        var declaration = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", declaration.Continuation);
-        Assert.Contains(eligibleAfterDebuff.InstanceId, declaration.ValidChoices);
-        Assert.DoesNotContain(tooExpensive.InstanceId, declaration.ValidChoices);
-        Assert.Empty(game.State.EffectStack);
-        Resolve(game, eligibleAfterDebuff.InstanceId);
-
         var first = Assert.Single(game.State.EffectStack);
         Assert.Equal("honda-debuff", first.Data["atomicFlow"]);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
         first.Negated = true;
         // A cost-0 target remains legal even when the first segment is negated, so the second segment
         // must still receive its own response window rather than being swallowed by the first item.
         eligibleAfterDebuff.CostModifier = -1;
-        var second = PassUntilFlow(game, "honda-kill");
+        while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+            Resolve(game, "pass");
+
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Contains(eligibleAfterDebuff.InstanceId, declaration.ValidChoices);
+        Assert.DoesNotContain(tooExpensive.InstanceId, declaration.ValidChoices);
+        Resolve(game, eligibleAfterDebuff.InstanceId);
+
+        var second = Assert.Single(game.State.EffectStack);
+        Assert.Equal("honda-kill", second.Data["atomicFlow"]);
         Assert.Equal(eligibleAfterDebuff.InstanceId, second.Data["declared:killTarget"]);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
         Assert.Contains(eligibleAfterDebuff, game.State.Players[1].Field.SelectMany(row => row));
     }
 

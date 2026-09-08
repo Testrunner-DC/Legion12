@@ -108,7 +108,8 @@ function moraleLabel(card: MoraleResource) {
 const temporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
 const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length + temporaryMoraleCount.value)
 const currentTrialInstanceId = computed(() => props.player.specialZones?.trials?.find(card => !card.trialCompleted)?.instanceId ?? null)
-const spendableMorale = computed(() => activeMorale.value)
+const spendableMorale = computed(() => props.player.spendableResourceCount ?? (activeMorale.value
+  + (props.active ? props.player.field.flat().filter(card => card?.cardId === 'S01-0212' && !card.tapped && !card.hidden).length : 0)))
 type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
 const factionActions = computed<AbilityEntry[]>(() => {
   if (props.player.factionEffect?.abilities?.length) return props.player.factionEffect.abilities
