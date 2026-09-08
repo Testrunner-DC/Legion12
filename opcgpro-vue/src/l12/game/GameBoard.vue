@@ -1055,7 +1055,7 @@ function statusTexts(card: Card) {
 .battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
 .battlefield-half.my-half::before{inset:0;border-color:rgba(57,171,181,.4)}
 .battlefield-half.opponent-half{grid-row:1}
-.board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate}
+.board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate;pointer-events:none}
 .board-midline-anchor{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(238,238,228,.35),transparent)}
 .battlefield-half.my-half{grid-row:3}
 .felt-board :deep(.formation){width:100%;height:350px;grid-template-columns:repeat(3,173px);grid-template-rows:repeat(2,173px);justify-content:end;gap:4px 8px}
