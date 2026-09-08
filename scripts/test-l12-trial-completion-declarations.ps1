@@ -53,7 +53,15 @@ Assert-Contains $prompts 'QueueNextTrialCompletionSegment(item)' 'Independent tr
 Assert-Contains $prompts '["mode:grave"]' 'The public graveyard mode needs a player-facing label.'
 Assert-Contains $prompts '["mode:library"]' 'The delayed library mode needs a player-facing label.'
 Assert-Contains $plans 'L12S2ZoneOps.SpendRunes(player, count)' 'Fenian Legend must atomically prepay X runes before stack entry.'
-Assert-Contains $plans 'CreateTriggerCandidate(controller, angus, "trial-complete"' 'Angus must be a separate same-time completion candidate.'
+$remaining = Read-Source 'L12S2RemainingEffects.cs'
+$angusTests = Read-Source 'EffectBatch294RegressionTests.cs'
+Assert-Contains $s2 'if (advanced) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial)' 'Angus must trigger only after actual trial progress increases.'
+Assert-Contains $remaining 'CreateTriggerCandidate(playerIndex, master, "trial-advance"' 'Angus must be a separate optional trial-progress candidate.'
+Assert-Contains $remaining 'State.ActivePlayer != playerIndex' 'Angus rune trigger must remain own-turn only.'
+Assert-Contains $angusTests 'AngusTrialAdvanceDeclineDoesNotConsumeButNegatedActivationDoes' 'Angus optional once-per-turn declaration needs a runtime regression.'
+if ($plans.Contains('angus-rune') -or $plans.Contains('TrialAngusMaster')) {
+    throw 'The retired Angus completion-rune effect must not return.'
+}
 Assert-Contains $plans 'candidate.Data["trialSegment"] = skipOptionalSearch ? "1" : "0"' 'Declining Lake Lady search must begin at the first mandatory segment.'
 Assert-Contains $kernel 'var stackText = candidate.Data.GetValueOrDefault("stackText");' 'A declared candidate must read its explicit first segment before any generic text.'
 Assert-Contains $kernel 'if (string.IsNullOrWhiteSpace(stackText))' 'Only an absent explicit stack segment may use a fallback.'

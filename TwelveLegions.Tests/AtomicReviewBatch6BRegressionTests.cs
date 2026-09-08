@@ -263,46 +263,21 @@ public sealed class AtomicReviewBatch6BRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06M2")]
     [Trait("L12Evidence", "entry:trial-completion-trigger-batch")]
-    public void PrintedTrialAndAngusAreSeparateSameTimeCandidatesChosenByTheirOwner()
+    public void TrialCompletionNoLongerQueuesTheFormerAngusRuneTrigger()
     {
         var game = Create(7624, "S02-06M2");
+        game.State.Players[0].Library.Add(Card("S02-0604", "batch6b-angus-grail-search-hit"));
 
         BeginCompletion(game, "S02-06S4", "batch6b-angus-grail");
 
         Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
-        var order = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("trigger-order", order.Kind);
-        Assert.Equal(2, order.ValidChoices.Count);
-        Assert.Contains(order.ValidChoices, id => order.Data[id].Contains("安格斯", StringComparison.Ordinal));
-        Assert.Contains(order.ValidChoices, id => order.Data[id].Contains("寻找圣杯", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    [Trait("L12Evidence", "card:S02-06M2")]
-    [Trait("L12Evidence", "entry:trial-completion-optional-master-trigger")]
-    public void AngusRuneGainIsOptionalAndResolvesFromItsOwnStackItem()
-    {
-        var game = Create(7625, "S02-06M2");
-        BeginCompletion(game, "S02-06S4", "batch6b-angus-separate");
-        var order = Assert.Single(game.State.PendingPrompts);
-        var angus = order.ValidChoices.Single(id => order.Data[id].Contains("安格斯", StringComparison.Ordinal));
-        var trial = order.ValidChoices.Single(id => id != angus);
-        ResolveMany(game, trial, angus);
-
-        var angusMode = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", angusMode.Continuation);
-        Assert.True(angusMode.Data.TryGetValue("sourceName", out var sourceName));
-        Assert.Contains("安格斯", sourceName, StringComparison.Ordinal);
-        Assert.DoesNotContain("skip", angusMode.ValidChoices);
-        Assert.Equal(angusMode.ValidChoices.Count,
-            angusMode.ValidChoices.Select(choice => angusMode.ChoiceLabels[choice]).Distinct(StringComparer.Ordinal).Count());
-        Resolve(game, "mode:use");
-        Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
-        Assert.Single(game.State.EffectStack);
-        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
-        PassResponses(game);
-        Assert.Equal(1, game.State.Players[0].SpecialZones.Runes);
-        Assert.Empty(game.State.EffectStack);
+        var printedTrialMode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", printedTrialMode.Continuation);
+        Assert.Contains("寻找圣杯", printedTrialMode.Data.GetValueOrDefault("sourceName"),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("安格斯", printedTrialMode.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
+            candidate => candidate.SourceCardId == "S02-06M2");
     }
 
     [Fact]

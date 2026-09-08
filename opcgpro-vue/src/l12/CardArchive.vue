@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
 import { cardArchiveProducts, displayCardNumber, loadCardArchiveCatalog, type DeckCard } from './decks'
+import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import CardImage from './CardImage.vue'
+import CardDetailContent from './CardDetailContent.vue'
 
 type CatalogCard = DeckCard
 type ArchivePage = 'catalog' | 'gallery'
@@ -71,6 +73,15 @@ function hasCostDimension(card: CatalogCard) {
   return card.cardType !== 'master' && card.cost !== undefined
 }
 
+function withErrataProductLabels(card: CatalogCard, errata: readonly CardErrataRecord[]) {
+  if (!card.products?.length || !errata.length) return card
+  const errataProducts = new Set(errata.map(entry => entry.sourceProduct))
+  return {
+    ...card,
+    products: card.products.map(name => errataProducts.has(name) ? `${name}（勘误收录）` : name),
+  }
+}
+
 function isGalleryVariant(card: CatalogCard) {
   return card.id !== 'S02-05C1B'
     && galleryVariantPatterns.some(pattern => pattern.test(card.id))
@@ -117,8 +128,10 @@ const selectedCatalogCard = computed(() => selectedLogical.value?.versions.find(
   ?? null)
 const selectedGalleryCard = computed(() => galleryCards.value.find(card => card.id === selectedGalleryId.value) ?? null)
 const selected = computed(() => page.value === 'gallery' ? selectedGalleryCard.value : selectedCatalogCard.value)
-const selectedProducts = computed(() => selected.value?.products ?? [])
-const modalProducts = computed(() => modalCard.value?.products ?? [])
+const selectedErrata = computed(() => selected.value ? cardErrataForCard(selected.value.archiveBaseCardId ?? selected.value.id) : [])
+const selectedDetailCard = computed(() => selected.value ? withErrataProductLabels(selected.value, selectedErrata.value) : null)
+const modalErrata = computed(() => modalCard.value ? cardErrataForCard(modalCard.value.archiveBaseCardId ?? modalCard.value.id) : [])
+const modalDetailCard = computed(() => modalCard.value ? withErrataProductLabels(modalCard.value, modalErrata.value) : null)
 const modalVersionIndex = computed(() => modalCard.value
   ? modalVersions.value.findIndex(card => card.id === modalCard.value?.id)
   : -1)
@@ -257,22 +270,17 @@ function resetFilters() {
         </template>
       </div>
 
-      <aside v-if="selected" class="archive-detail">
-        <div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">
-          <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>
-        </div>
-        <p class="archive-number">{{ displayCardNumber(selected) }} · {{ selected.product }}</p>
-        <h2>{{ selected.nameZh }}</h2>
-        <div class="archive-tags"><span v-for="trait in selected.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(selected.cardType) }}</span><span v-if="selected.profession">{{ selected.profession }}</span><span v-if="selected.rarity">{{ selected.rarity }}</span></div>
-        <dl>
-          <template v-if="hasCostDimension(selected)"><dt>费用</dt><dd>{{ selected.cost }}</dd></template>
-          <template v-if="selected.troops !== undefined"><dt>兵力</dt><dd>{{ selected.troops }}</dd></template>
-          <template v-if="selected.hp !== undefined"><dt>血量</dt><dd>{{ selected.hp }}</dd></template>
-          <template v-if="selected.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ selected.disasterLevel }}</dd></template>
-          <template v-if="selected.trialValue !== undefined"><dt>试炼值</dt><dd>{{ selected.trialValue }}</dd></template>
-        </dl>
-        <section class="archive-effect"><b>效果</b><p class="l12-effect-body">{{ selected.effect || '无效果文字' }}</p></section>
-        <section v-if="selectedProducts.length" class="archive-decks"><b>收录产品</b><p v-for="name in selectedProducts" :key="name">{{ name }}</p></section>
+      <aside v-if="selectedDetailCard" class="archive-detail">
+        <CardDetailContent :card="selectedDetailCard">
+          <template #catalog-extra>
+            <section v-if="selectedErrata.length" class="archive-effect archive-errata" data-card-errata>
+              <b>勘误记录</b>
+              <article v-for="entry in selectedErrata" :key="entry.id">
+                <p class="l12-effect-body">{{ entry.previousEffect }}</p>
+              </article>
+            </section>
+          </template>
+        </CardDetailContent>
       </aside>
     </div>
 
@@ -280,30 +288,47 @@ function resetFilters() {
       <div v-if="modalCard" class="archive-modal-backdrop" @click.self="closeDetail">
         <section class="archive-modal" role="dialog" aria-modal="true" aria-labelledby="archive-modal-title">
           <button ref="modalCloseButton" class="archive-modal-close" type="button" aria-label="关闭卡牌详情" @click="closeDetail">×</button>
-          <div class="archive-modal-image" :class="{ horizontal: isHorizontalCardType(modalCard.cardType) }">
-            <CardImage :card-id="modalCard.id" :legacy-url="modalCard.imageUrl" :alt="modalCard.nameZh" intent="detail" eager/>
-            <template v-if="modalVersions.length > 1">
-              <button class="archive-modal-version-arrow previous" type="button" aria-label="大图上一版本" title="上一版本" @click="cycleModalVersion(-1)">‹</button>
-              <button class="archive-modal-version-arrow next" type="button" aria-label="大图下一版本" title="下一版本" @click="cycleModalVersion(1)">›</button>
-              <b class="archive-modal-version-count">{{ modalVersionIndex + 1 }}/{{ modalVersions.length }}</b>
+          <CardDetailContent v-if="modalDetailCard" :card="modalDetailCard" layout="modal" title-id="archive-modal-title">
+            <template #image-overlay>
+              <template v-if="modalVersions.length > 1">
+                <button class="archive-modal-version-arrow previous" type="button" aria-label="大图上一版本" title="上一版本" @click="cycleModalVersion(-1)">‹</button>
+                <button class="archive-modal-version-arrow next" type="button" aria-label="大图下一版本" title="下一版本" @click="cycleModalVersion(1)">›</button>
+                <b class="archive-modal-version-count">{{ modalVersionIndex + 1 }}/{{ modalVersions.length }}</b>
+              </template>
             </template>
-          </div>
-          <div class="archive-modal-detail">
-            <p class="archive-number">{{ displayCardNumber(modalCard) }} · {{ modalCard.product }}</p>
-            <h2 id="archive-modal-title">{{ modalCard.nameZh }}</h2>
-            <div class="archive-tags"><span v-for="trait in modalCard.traits" :key="trait">{{ trait }}</span><span>{{ cardTypeLabel(modalCard.cardType) }}</span><span v-if="modalCard.profession">{{ modalCard.profession }}</span><span v-if="modalCard.rarity">{{ modalCard.rarity }}</span></div>
-            <dl>
-              <template v-if="hasCostDimension(modalCard)"><dt>费用</dt><dd>{{ modalCard.cost }}</dd></template>
-              <template v-if="modalCard.troops !== undefined"><dt>兵力</dt><dd>{{ modalCard.troops }}</dd></template>
-              <template v-if="modalCard.hp !== undefined"><dt>血量</dt><dd>{{ modalCard.hp }}</dd></template>
-              <template v-if="modalCard.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ modalCard.disasterLevel }}</dd></template>
-              <template v-if="modalCard.trialValue !== undefined"><dt>试炼值</dt><dd>{{ modalCard.trialValue }}</dd></template>
-            </dl>
-            <section class="archive-effect"><b>效果</b><p class="l12-effect-body">{{ modalCard.effect || '无效果文字' }}</p></section>
-            <section v-if="modalProducts.length" class="archive-decks"><b>收录产品</b><p v-for="name in modalProducts" :key="name">{{ name }}</p></section>
-          </div>
+            <template #catalog-extra>
+              <section v-if="modalErrata.length" class="archive-effect archive-errata" data-card-errata>
+                <b>勘误记录</b>
+                <article v-for="entry in modalErrata" :key="entry.id">
+                  <p class="l12-effect-body">{{ entry.previousEffect }}</p>
+                </article>
+              </section>
+            </template>
+          </CardDetailContent>
         </section>
       </div>
     </Teleport>
   </section>
 </template>
+
+<style scoped>
+.archive-modal {
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+@media (max-width: 760px) {
+  .archive-modal {
+    grid-template-rows: auto minmax(0, 1fr);
+    height: min(820px, calc(100dvh - 20px));
+  }
+
+  .archive-modal :deep(.archive-modal-detail) {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 12px 12px 4px;
+    scrollbar-gutter: stable;
+  }
+}
+</style>

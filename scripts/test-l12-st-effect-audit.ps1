@@ -9,8 +9,9 @@ $serverPath = Get-ChildItem -LiteralPath $ProjectRoot -Directory | ForEach-Objec
 $webPath = Join-Path $ProjectRoot 'opcgpro-vue/public/data/l12/cards.st.json'
 $serverPath = [string]$serverPath
 if ([string]::IsNullOrWhiteSpace($serverPath)) { throw 'Cannot locate the authoritative ST catalog.' }
-$serverRaw = [System.IO.File]::ReadAllText($serverPath, [System.Text.Encoding]::UTF8)
-$webRaw = [System.IO.File]::ReadAllText($webPath, [System.Text.Encoding]::UTF8)
+# Git checkout/apply_patch may use CRLF or LF; compare identical catalog text after line-ending normalization only.
+$serverRaw = [System.IO.File]::ReadAllText($serverPath, [System.Text.Encoding]::UTF8).Replace("`r`n", "`n")
+$webRaw = [System.IO.File]::ReadAllText($webPath, [System.Text.Encoding]::UTF8).Replace("`r`n", "`n")
 if ($serverRaw -cne $webRaw) { throw 'Server and web ST catalogs differ.' }
 
 $decodedCards = $serverRaw | ConvertFrom-Json

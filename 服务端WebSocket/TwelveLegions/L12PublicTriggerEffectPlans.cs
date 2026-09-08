@@ -186,6 +186,7 @@ public sealed partial class L12GameEngine
             ("S02-06M1", "morrigan-enemy-death", _, _) => "morrigan-rune",
             ("S02-0102", "master-morale-return", _, "limu") => "limu-morale",
             ("S02-06S4", "active", "grailRoundTableRune", _) => "grail-round-table-rune",
+            ("S02-06M2", "trial-advance", "angusTrialAdvanceRune", _) => "angus-trial-rune",
             _ => null,
         };
 
@@ -533,7 +534,8 @@ public sealed partial class L12GameEngine
                     player.MoraleDeck.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
             ];
         }
-        else if (batch6GAPlan is "anderstorp-draw" or "morrigan-rune" or "grail-round-table-rune")
+        else if (batch6GAPlan is "anderstorp-draw" or "morrigan-rune" or "grail-round-table-rune"
+                 or "angus-trial-rune")
         {
             steps =
             [
@@ -1548,7 +1550,7 @@ public sealed partial class L12GameEngine
 
         if (error is null && mode == "mode:use"
             && batch6GAPlan is "anderstorp-draw" or "artemis-death-flip" or "morrigan-rune"
-                or "limu-morale" or "grail-round-table-rune")
+                or "limu-morale" or "grail-round-table-rune" or "angus-trial-rune")
         {
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
             var pendingKey = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;

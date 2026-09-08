@@ -210,7 +210,9 @@ public sealed partial class L12GameEngine
         trial.TrialProgress = Math.Min(8, trial.TrialProgress + count);
         player.SpecialZones.TrialLevel = trial.TrialProgress;
         AddEvent("trial", playerIndex, $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}", source ?? trial);
-        return trial.TrialProgress > before;
+        var advanced = trial.TrialProgress > before;
+        if (advanced) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial);
+        return advanced;
     }
 
     private bool SourceIsFieldCard(int playerIndex, string? instanceId, out L12CardInstance card)

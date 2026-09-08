@@ -1305,9 +1305,10 @@ public sealed partial class L12GameEngine
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
                 && player.Hand.Count > 0 && (!defenderAttackTimingRoot || playerIndex == defendingPlayer))
                 choices.Add(card.InstanceId);
-            // 〈落穴陷阱〉只响应“军团登场时”。军团与圣物共用 enter 堆叠时点，
+            // 〈落穴陷阱〉分别响应通常登场与晋升登场的军团效果。军团与圣物共用 enter 堆叠时点，
             // 因此不能只判断触发名；否则圣物的【登场时】效果也会错误开放响应。
-            if (!defenderAttackTimingRoot && card.CardId == "S01-0018" && top.Controller != playerIndex && timing.Trigger == "enter"
+            if (!defenderAttackTimingRoot && card.CardId == "S01-0018" && top.Controller != playerIndex
+                && timing.Trigger is "enter" or "promotion-enter"
                 && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard))
                 choices.Add(card.InstanceId);
             if (CanUseS1ReactionAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
@@ -1333,8 +1334,67 @@ public sealed partial class L12GameEngine
                 ?? player.Hand.First(card => card.InstanceId == id))
             .ToDictionary(card => card.InstanceId, card => card.Name);
         responseData["choiceMode"] = "instant";
-        CreatePrompt(playerIndex, "response", $"是否响应堆叠顶部：{top.SourceName} - {top.Text}", choices,
+        CreatePrompt(playerIndex, "response", BuildResponsePromptText(top), choices,
             1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+    }
+
+    private string BuildResponsePromptText(L12StackItem top)
+    {
+        var source = FindSource(top) ?? top.SourceSnapshot;
+        var effect = top.Text;
+        if (source is not null && top.Trigger is "reaction" or "s2-reaction" or "response-negate"
+                or "response-block" or "response-retarget-master")
+            effect = ResolveResponseEffectDisplayText(source, effect);
+        var timing = top.Trigger switch
+        {
+            "promotion-enter" => "晋升登场",
+            "enter" => "登场时",
+            "attack" => "进攻时",
+            "after-attack" => effect.Contains("击杀时", StringComparison.Ordinal) ? "击杀时" : "进攻后",
+            "death" => "阵亡时",
+            "leave" => "离场时",
+            "trial-advance" => "推进试炼进度时",
+            "trial-complete" => "完成试炼时",
+            "trial-advance-followup" => "推进试炼进度后",
+            "turn-start" => "回合开始时",
+            "play" => "战术效果发动时",
+            "active" => "主动效果发动时",
+            "disaster" => "天地异变效果触发时",
+            "opponent-attack" => "对方进攻时",
+            "after-damage" => "对主宰造成伤害时",
+            "forge-ready-after-kill" => "击杀后",
+            "trojan-after-attack" => "对方进攻后",
+            "medjed-master-damage" => "我方主宰受到伤害后",
+            "morrigan-enemy-death" => "对方军团阵亡时",
+            "nephthys-own-death" => "我方军团阵亡时",
+            "discard-trigger" => "我方丢弃卡牌时",
+            "master-morale-return" or "morale-return" => "士气返回士气区时",
+            "opponent-back-to-front" => "对方军团从后排移动至前排时",
+            "prayer-private" => "祈祷时",
+            "s2-after-opponent-tactic" => "对方战术效果结算后",
+            "legion-attack-timing" => "军团进攻时",
+            "rune-spent" => "消耗符文时",
+            "wisdom-reward" => "对方效果成功完成结算后",
+            "return-library-top" => "返回牌库顶部时",
+            "authority-event" => top.Data.GetValueOrDefault("eventType") switch
+            {
+                "non-hand-entry" => "军团以手牌以外的方式登场时",
+                "defense" => "抵挡／支援时",
+                "effect-hand-add" => "因效果将卡牌加入手牌时",
+                "effect-ready" => "休整卡牌因效果转为活跃时",
+                _ => "规则事件响应时点",
+            },
+            "reaction" or "s2-reaction" or "response-negate" or "response-block"
+                or "response-retarget-master" => ResponseCardTimingLabel(effect),
+            _ => ResponseCardTimingLabel(effect),
+        };
+        return $"是否响应堆叠顶部：〈{top.SourceName}〉\n时点：{timing}\n效果：{effect}";
+    }
+
+    private static string ResponseCardTimingLabel(string effect)
+    {
+        var delimiter = effect.IndexOfAny(['：', ':']);
+        return delimiter > 0 ? effect[..delimiter].Trim() : "响应效果发动时";
     }
 
     /// <summary>
@@ -1383,7 +1443,8 @@ public sealed partial class L12GameEngine
         if (cardId == "S01-0016")
             return top.Trigger != "authority-event" && State.Players[playerIndex].Hand.Count > 0;
         if (cardId == "S01-0018")
-            return timing.Trigger == "enter" && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard);
+            return timing.Trigger is "enter" or "promotion-enter"
+                && FindSource(timing) is { } enteredCard && IsFieldLegion(enteredCard);
         return CanUseS1ReactionAtStack(cardId, playerIndex, top)
             || CanUseS2CounterAtStack(cardId, playerIndex, top);
     }
@@ -1656,6 +1717,7 @@ public sealed partial class L12GameEngine
             ResolvePuppetResponse(item);
             return;
         }
+        if (TryResolveS2AngusTrialAdvanceRune(item)) return;
         ResolveCardEffect(item);
     }
 

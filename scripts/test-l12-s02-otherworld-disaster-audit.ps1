@@ -42,7 +42,7 @@ $unexpected = @($auditCards | Where-Object { $expectedCards -notcontains $_ })
 if ($expectedCards.Count -ne 38 -or $auditCards.Count -ne 38 -or $missing.Count -gt 0 -or $unexpected.Count -gt 0) {
     throw "Batch 6L-D audit inventory drifted (expected=$($expectedCards.Count), actual=$($auditCards.Count), missing=$($missing -join ','), unexpected=$($unexpected -join ','))."
 }
-Assert-Contains $tests 'Assert.Equal(108, AuditedAbilityCounts.Values.Sum())' 'Batch 6L-D ability inventory must remain frozen at 108.'
+Assert-Contains $tests 'Assert.Equal(109, AuditedAbilityCounts.Values.Sum())' 'Current Batch 6L-D inventory must include the approved independent Angus trial-progress trigger (109 abilities).'
 
 Assert-Contains $faction 'DeclarationKey = "mode", Text = "梅林：选择效果"' 'Merlin public mode declaration is missing.'
 Assert-Contains $faction 'RequiredDeclaredChoice = "mode:debuff"' 'Merlin public enemy target must only be declared for debuff mode.'
@@ -163,4 +163,4 @@ Assert-Contains $openQuestions $noOpenQuestionText 'OPEN-QUESTIONS must record t
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
 if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 
-Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 108 abilities; full pool 248 cards / 577 abilities; 189 passed / 59 fixed / 0 question cards).'
+Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 109 current abilities; historical audit: 248 cards / 577 abilities; 189 passed / 59 fixed / 0 question cards).'

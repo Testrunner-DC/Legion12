@@ -59,7 +59,7 @@ public sealed class StarterProductCatalogTests
     [InlineData("ST01-M1", 10)]
     [InlineData("ST02-M1", 8)]
     [InlineData("ST03-M1", 10)]
-    [InlineData("ST04-M1", 9)]
+    [InlineData("ST04-M1", 8)]
     [InlineData("ST05-M1", 8)]
     [InlineData("ST06-M1", 8)]
     public void StarterMasterHealthDrivesTheActualMatchState(string masterId, int expectedHealth)

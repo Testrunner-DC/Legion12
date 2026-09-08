@@ -680,8 +680,14 @@ public sealed partial class L12GameEngine
             case "scathach":
                 BuffSource(2000, "斯卡哈");
                 if (source is not null)
+                {
                     source.AttackNoLossUntilTurn = Math.Max(source.AttackNoLossUntilTurn,
                         ExpiryAtNextOwnEnd(item.Controller));
+                    if (State.PendingDefense is { } pending
+                        && pending.AttackerPlayer == item.Controller
+                        && pending.AttackerInstanceId == item.SourceInstanceId)
+                        pending.AttackNoLoss = true;
+                }
                 Finish(); return true;
             case "robin-rune":
                 L12S2ZoneOps.GainRunes(player, 1);

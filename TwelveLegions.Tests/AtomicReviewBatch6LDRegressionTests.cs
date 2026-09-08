@@ -16,7 +16,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
             ["S02-0613"] = 3, ["S02-0614"] = 5, ["S02-0615"] = 3, ["S02-0616"] = 3,
             ["S02-0617"] = 4, ["S02-0618"] = 3, ["S02-0619"] = 2, ["S02-0620"] = 2,
             ["S02-0621"] = 2, ["S02-0622"] = 2, ["S02-06C1"] = 2, ["S02-06D1"] = 4,
-            ["S02-06M1"] = 3, ["S02-06M2"] = 1, ["S02-06S1"] = 1, ["S02-06S2"] = 1,
+            ["S02-06M1"] = 3, ["S02-06M2"] = 2, ["S02-06S1"] = 1, ["S02-06S2"] = 1,
             ["S02-06S3"] = 3, ["S02-06S4"] = 3, ["S02-06S5"] = 2, ["S02-06S6"] = 1,
             ["S02-DS01"] = 1, ["S02-DS02"] = 2, ["S02-DS03"] = 3, ["S02-DS04"] = 2,
             ["S02-DS05"] = 3, ["S02-DS06"] = 2,
@@ -125,7 +125,8 @@ public sealed class AtomicReviewBatch6LDRegressionTests
     public void S2OtherworldAndDisasterAuditFreezesEveryCardAndAbility()
     {
         Assert.Equal(38, AuditedAbilityCounts.Count);
-        Assert.Equal(108, AuditedAbilityCounts.Values.Sum());
+        // EFFECT294 adds Angus's independent trial-progress trigger; the other 37 cards are unchanged.
+        Assert.Equal(109, AuditedAbilityCounts.Values.Sum());
         Assert.All(AuditedAbilityCounts, pair =>
         {
             var card = Assert.Contains(pair.Key, Catalog.Cards);

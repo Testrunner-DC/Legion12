@@ -17,6 +17,15 @@ if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
 }
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
 const st = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.st.json'))
+const webSt = JSON.parse(read('../public/data/l12/cards.st.json'))
+const angusEffect = '规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。'
+if (st.find(card => card.id === 'ST04-M1')?.hp !== 8
+  || webSt.find(card => card.id === 'ST04-M1')?.hp !== 8
+  || s2.find(card => card.id === 'S02-06M2')?.effect !== angusEffect
+  || webLookup.find(card => card.cardNo === 'S02-06M2')?.effectText !== angusEffect
+  || !webLookup.find(card => card.cardNo === 'S02-06M2')?.searchText?.includes(angusEffect)) {
+  throw new Error('迦具土血量8与安格斯推进试炼选发的新文本必须在前后端卡库及搜索中一致')
+}
 const archiveAssets = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'))
 const productInclusions = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'))
 const cards = [...s1, ...s2, ...st]

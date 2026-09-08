@@ -159,7 +159,7 @@ public sealed class Bq20260907_263RegressionTests
 
         Assert.Equal("登场时 若我方主宰血量不高于7，获得冲锋。", Assert.Single(game.State.EffectStack).Text);
         Assert.Equal(
-            "是否响应堆叠顶部：传奇的拉格纳 - 登场时 若我方主宰血量不高于7，获得冲锋。",
+            "是否响应堆叠顶部：〈传奇的拉格纳〉\n时点：登场时\n效果：登场时 若我方主宰血量不高于7，获得冲锋。",
             Prompt(game).Text);
     }
 
@@ -279,7 +279,7 @@ public sealed class Bq20260907_263RegressionTests
 
         Assert.Equal("芬尼亚传奇：第2个目标本回合兵力-3000",
             Assert.Single(game.State.EffectStack).Text);
-        Assert.Equal("是否响应堆叠顶部：芬尼亚传奇 - 芬尼亚传奇：第2个目标本回合兵力-3000",
+        Assert.Equal("是否响应堆叠顶部：〈芬尼亚传奇〉\n时点：完成试炼时\n效果：芬尼亚传奇：第2个目标本回合兵力-3000",
             Prompt(game).Text);
     }
 

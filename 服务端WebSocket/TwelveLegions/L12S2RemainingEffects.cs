@@ -533,6 +533,41 @@ public sealed partial class L12GameEngine
         ]);
     }
 
+    private bool TryResolveS2AngusTrialAdvanceRune(L12StackItem item)
+    {
+        if (Batch6GAPublicTriggerPlan(item.SourceCardId, item.Trigger, item.Data) != "angus-trial-rune")
+            return false;
+        var player = State.Players[item.Controller];
+        var source = FindSource(item);
+        L12S2ZoneOps.GainRunes(player, 1);
+        AddEvent("runes", item.Controller, "安格斯·麦·奥格使我方获得1符文",
+            source is not null ? [source] : []);
+        FinishStackItem(item);
+        return true;
+    }
+
+    private void QueueS2AngusTrialAdvanceRune(int playerIndex, L12CardInstance advanceSource)
+    {
+        var player = State.Players[playerIndex];
+        var onceKey = $"trigger:angus-trial-rune:{State.TurnSerial}";
+        var pendingKey = $"{onceKey}:pending";
+        if (State.ActivePlayer != playerIndex || player.MasterId != "S02-06M2"
+            || player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Add(pendingKey)) return;
+        var master = CreateCard("S02-06M2", $"master-{playerIndex}");
+        QueueTriggerCandidates([
+            CreateTriggerCandidate(playerIndex, master, "trial-advance",
+                "推进试炼进度时可获得1符文",
+                new Dictionary<string, string>
+                {
+                    ["ability"] = "angusTrialAdvanceRune",
+                    ["advancedBy"] = advanceSource.CardId,
+                    ["onceKey"] = onceKey,
+                    ["cleanupReservation"] = pendingKey,
+                    ["triggerEffectText"] = "我方 回合1次 推进试炼进度时，可获得1符文。",
+                }, master)
+        ]);
+    }
+
     private L12TriggerCandidate? BuildS2GrailRoundTableEntryCandidate(int playerIndex, L12CardInstance legion)
     {
         var player = State.Players[playerIndex];

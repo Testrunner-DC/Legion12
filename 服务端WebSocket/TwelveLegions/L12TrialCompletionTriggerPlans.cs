@@ -9,14 +9,11 @@ public sealed partial class L12GameEngine
     private const string TrialLakeLady = "S02-06S3";
     private const string TrialGrailJourney = "S02-06S4";
     private const string TrialFenianLegend = "S02-06S5";
-    private const string TrialAngusMaster = "S02-06M2";
     private static bool HasTrialCompletionTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data)
         => trigger == "trial-complete"
             && (cardId is TrialLakeLady or TrialGrailJourney or TrialFenianLegend
-                || L12StructuredCardRules.StarterRemainingPlan(cardId, trigger) == "sky-city-completion"
-                || cardId == TrialAngusMaster
-                    && data?.GetValueOrDefault("trialCompletionPlan") == "angus-rune");
+                || L12StructuredCardRules.StarterRemainingPlan(cardId, trigger) == "sky-city-completion");
 
     private void QueueCompletedTrialTriggerBatch(int controller, L12CardInstance trial)
     {
@@ -40,19 +37,6 @@ public sealed partial class L12GameEngine
                     ["trialCompletionPlan"] = printedPlan,
                     ["triggerEffectText"] = triggerText,
                 }, trial));
-        }
-
-        if (State.Players[controller].MasterId == TrialAngusMaster)
-        {
-            var angus = CreateCard(TrialAngusMaster, $"master-{controller}");
-            candidates.Add(CreateTriggerCandidate(controller, angus, "trial-complete",
-                "安格斯·麦·奥格：完成试炼时可获得1符文",
-                new Dictionary<string, string>
-                {
-                    ["trialCompletionPlan"] = "angus-rune",
-                    ["triggerEffectText"] = "每完成1次试炼，可获得1符文。",
-                    ["completedTrial"] = trial.InstanceId,
-                }, angus));
         }
 
         QueueTriggerCandidates(candidates);
@@ -123,10 +107,6 @@ public sealed partial class L12GameEngine
                 }
                 break;
             }
-            case "angus-rune":
-                steps.Add(TrialCompletionStep("option", "mode",
-                    "安格斯·麦·奥格：预先声明是否获得1符文", ["mode:none", "mode:use"]));
-                break;
             default:
                 return false;
         }
@@ -172,7 +152,7 @@ public sealed partial class L12GameEngine
         var plan = candidate.Data.GetValueOrDefault("trialCompletionPlan");
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
 
-        if (plan is "grail-journey" or "fenian-legend" or "angus-rune" && mode == "mode:none")
+        if (plan is "grail-journey" or "fenian-legend" && mode == "mode:none")
         {
             State.PendingTriggerStackCandidates.Remove(candidate);
             AddEvent("ability-cancelled", candidate.Controller,
@@ -240,14 +220,6 @@ public sealed partial class L12GameEngine
             ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         var plan = item.Data.GetValueOrDefault("trialCompletionPlan");
         var segment = int.TryParse(item.Data.GetValueOrDefault("trialSegment"), out var parsed) ? parsed : 0;
-
-        if (plan == "angus-rune")
-        {
-            L12S2ZoneOps.GainRunes(player, 1);
-            AddEvent("runes", item.Controller, "完成试炼，安格斯·麦·奥格获得1枚符文", source);
-            FinishStackItem(item);
-            return;
-        }
 
         if (plan == "lake-lady")
         {

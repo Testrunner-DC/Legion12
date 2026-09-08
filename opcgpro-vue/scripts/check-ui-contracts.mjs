@@ -59,6 +59,7 @@ const cardTile = read('../src/l12/CardTile.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
+const cardDetailContent = read('../src/l12/CardDetailContent.vue')
 const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const galleryMarkup = cardArchive.match(/<template v-else>([\s\S]*?)<div v-if="!filteredGallery\.length"/)?.[1] ?? ''
 const sandbox = read('../src/l12/site/SandboxPage.vue')
@@ -183,7 +184,8 @@ const contracts = [
     && decks.includes('const base = byId.get(asset.baseCardId) ?? catalogById.get(asset.baseCardId)')
     && decks.includes('archiveBaseCardId: asset.baseCardId')
     && cardArchive.includes('groupArchiveCards(cards.value)') && cardArchive.includes('entry.versions.some(card =>')
-    && cardArchive.includes('selectedProducts') && cardArchive.includes('收录产品')
+    && cardDetailContent.includes('props.card.products') && cardDetailContent.includes('收录产品')
+    && cardDetailContent.includes('v-if="showCatalogOnly"')
     && cardArchive.includes('page.value === \'gallery\' ? galleryCards.value.length : logicalCards.value.length')
     && !cardArchive.includes('/ {{ cards.length }} 张'), '卡牌图鉴必须按权威收录产品载入展示用异画、区分奥林匹斯士气与神力编号、按任一版本搜索筛选，并按当前子页口径计数'],
   [cardArchiveVersions.includes('compareArchiveVersions') && cardArchiveVersions.includes('Number(Boolean(a.archiveBaseCardId)) - Number(Boolean(b.archiveBaseCardId))')
@@ -193,7 +195,8 @@ const contracts = [
   [cardArchive.includes('class="archive-card-image"') && cardArchive.includes('class="archive-version-arrow previous"')
     && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(entry, -1)"')
     && cardArchive.includes('@click.stop="cycleVersion(entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(entry).id"')
-    && cardArchive.includes(':card-id="selected.id"') && !cardArchive.includes('<div class="archive-detail-image" :class="{ horizontal: isHorizontalCardType(selected.cardType) }">\n          <CardImage :card-id="selected.id" :legacy-url="selected.imageUrl" :alt="selected.nameZh" intent="detail" eager/>\n          <template')
+    && cardArchive.includes(':card="selectedDetailCard"') && cardDetailContent.includes(':card-id="card.id"')
+    && !cardDetailContent.includes('archive-version-arrow')
     && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌图鉴必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
   [presentationGalleryAssets.length === 37
     && presentationGalleryAssets.every(card => card.baseCardId && card.id !== 'S02-05C1B')
@@ -213,10 +216,12 @@ const contracts = [
     && cardArchive.includes('role="dialog" aria-modal="true" aria-labelledby="archive-modal-title"')
     && cardArchive.includes('@click.self="closeDetail"') && cardArchive.includes("event.key === 'Escape'")
     && cardArchive.includes('aria-label="关闭卡牌详情"') && cardArchive.includes('modalCloseButton.value?.focus()')
-    && cardArchive.includes('modalTrigger?.focus()') && cardArchive.includes('hasCostDimension(modalCard)')
-    && cardArchive.includes('modalCard.troops !== undefined') && cardArchive.includes('modalCard.hp !== undefined')
-    && cardArchive.includes('modalCard.disasterLevel !== undefined') && cardArchive.includes('modalCard.trialValue !== undefined')
-    && cardArchive.includes('<p class="l12-effect-body">{{ modalCard.effect')
+    && cardArchive.includes('modalTrigger?.focus()') && cardArchive.includes(':card="modalDetailCard"')
+    && cardArchive.includes('layout="modal"') && cardArchive.includes('title-id="archive-modal-title"')
+    && cardDetailContent.includes('hasCostDimension(card)')
+    && cardDetailContent.includes('card.troops !== undefined') && cardDetailContent.includes('card.hp !== undefined')
+    && cardDetailContent.includes('card.disasterLevel !== undefined') && cardDetailContent.includes('card.trialValue !== undefined')
+    && cardDetailContent.includes('<p class="l12-effect-body">{{ card.effect')
     && cardArchive.includes('modalVersions.value = versions.length > 1 ? [...versions] : []')
     && cardArchive.includes('class="archive-modal-version-arrow previous"')
     && cardArchive.includes('class="archive-modal-version-arrow next"')
@@ -230,7 +235,7 @@ const contracts = [
     && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
     && cardArchive.includes('function hasCostDimension(card: CatalogCard)')
     && cardArchive.includes('hasCostDimension(displayedVersion(entry))')
-    && cardArchive.includes('hasCostDimension(selected)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
+    && cardDetailContent.includes('hasCostDimension(card)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
   [cardArchiveVersions.includes('identity.versionCardIds.map')
     && cardArchiveVersions.includes("if (card.id === 'S02-05C1B') return `rules:${ruleIdentity(card)}`")
     && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1')
@@ -585,6 +590,9 @@ const contracts = [
     && !matchRecords.includes('selectMatch(matches.value[0])')
     && matchRecords.includes("router.push({ name: 'match-replay'")
     && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录与JSON均须在玩家点击播放后进入独立回放路由，不得默认加载或嵌入渲染棋盘'],
+  [matchRecords.includes('/api/matches?limit=30') && matchRecords.includes('最近 30 场回放')
+    && l12ServerSources.includes('IsWithinRecentPlayerReplayWindowAsync')
+    && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制最近30场并由服务端统一可见性与每日清理保护'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
     && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard" read-only />')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
@@ -675,7 +683,7 @@ const contracts = [
     && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
     && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库浏览量须持久化；热门排序固定为浏览量、点赞、复制、最新时间，信息条按浏览量/点赞/复制/赛季要求/查看构筑排列，并使用低亮度阵营底色与可读高对比文字'],
   [deckEditor.includes('masterProfileUrl(selectedMaster.id') && lobby.includes('border-radius:2px'), '主宰头像必须使用官方正方形资源'],
-  [cardArchive.includes('trialValue') && cardArchive.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
+  [cardDetailContent.includes('trialValue') && cardDetailContent.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
   [playerMat.includes('class="morale-count resource-morale-count"') && playerMat.match(/resource-morale-count/g)?.length >= 2, '双方士气数量必须共用不溢出的独立计数器单元'],
   [board.includes('promotionFoundationTargetIds') && board.includes('promotionOptions')
@@ -781,7 +789,12 @@ const contracts = [
   [playerChoiceLabelLiterals.length > 0 && playerChoiceLabelLiterals.every(label => !inventedChoiceLabel.test(label)), '玩家效果选项必须使用卡面效果原文或准确费用动作，不得显示普通/强模式、追加效果、只结算等程序概括'],
   [windowsVerify.includes('Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\\TwelveLegions") -File -Filter "*.cs"') && windowsVerify.includes('Copy-Item -Destination $isolatedServerSourceRoot -Force'), '提交级隔离前端构建必须复制全部服务端 Prompt 定义，玩家文案全量扫描不得因缺文件失败或产生局部扫描假阳性'],
   [board.includes('const passivePresentationPaused = computed') && board.includes('activeBoardPromptId.value') && board.includes(':paused="passivePresentationPaused"') && board.includes('v-if="publicReveal && !activeBoardPromptId"') && board.includes('v-if="diceReveal && !activeBoardPromptId"') && board.includes('v-if="combat && !activeBoardPromptId"') && board.split(':interaction-prompt-active="Boolean(hasBlockingPrompt)"').length === 3 && playerMat.includes('watch(() => props.interactionPromptActive') && prompt.includes('.l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}') && board.includes('.board-target-controls{z-index:3000}') && board.includes('.card-inspector-floating{z-index:3100!important}') && actionLayer.includes('.l12-action-presentation{z-index:900}') && zoneMovementLayer.includes('.zone-card-movement{z-index:902}') && board.includes('watch(activeBoardPromptId, promptId => {') && actionLayer.includes('if (paused && active.value)') && zoneMovementLayer.includes('if (paused && active.value) cancelActiveMovement()'), '普通卡牌、触发、响应与掷骰展示不得遮挡或延迟可操作 Prompt/场面选择；交互层必须始终更高，弹框详情仍浮在蒙版上方，且场面选择立即可操作'],
-  [globalStyle.includes('.l12-effect-body{font-size:var(--l12-effect-copy,clamp(') && globalStyle.includes('overflow-wrap:anywhere;white-space:pre-wrap') && globalStyle.includes('.l12-effect-body--compact{font-size:var(--l12-effect-copy,clamp(') && cardArchive.includes('<p class="l12-effect-body">{{ selected.effect') && deckEditor.includes('<p class="l12-effect-body l12-effect-body--compact">{{ selected.effect') && board.includes('inspector-effect l12-effect-body l12-effect-body--compact') && prompt.includes("'l12-effect-body': isEffectOptionList") && masterOverlay.includes('player.master.effectText') && masterOverlay.includes('class="l12-effect-body l12-effect-body--compact">{{ entry.label }}') && playerMat.includes('player.factionEffect?.effectText') && playerMat.includes('class="l12-effect-body l12-effect-body--compact"') && adminPage.includes('<p class="l12-effect-body">{{ selectedEffect.effectText') && adminPage.includes('<p class="l12-effect-body">{{ ability.text }}') && !cardArchive.includes('archive-number l12-effect-body') && !deckEditor.includes('<small class="l12-effect-body">{{ selected.number') && !globalStyle.includes('--l12-board-readable'), '全站卡效正文必须共用自适应语义字号并保留权威换行，覆盖卡牌详情、牌库编辑、对战、Prompt、主宰/阵营与管理后台；辅助信息按组件空间使用metadata/micro层级，不得恢复全项目14px硬阈值'],
+  [globalStyle.includes('.l12-effect-body{font-size:var(--l12-effect-copy,clamp(') && globalStyle.includes('overflow-wrap:anywhere;white-space:pre-wrap') && globalStyle.includes('.l12-effect-body--compact{font-size:var(--l12-effect-copy,clamp(')
+    && cardDetailContent.includes('<p class="l12-effect-body">{{ card.effect')
+    && cardArchive.includes("import CardDetailContent from './CardDetailContent.vue'")
+    && deckEditor.includes("import CardDetailContent from './CardDetailContent.vue'")
+    && deckEditor.includes(':show-catalog-only="false"')
+    && board.includes('inspector-effect l12-effect-body l12-effect-body--compact') && prompt.includes("'l12-effect-body': isEffectOptionList") && masterOverlay.includes('player.master.effectText') && masterOverlay.includes('class="l12-effect-body l12-effect-body--compact">{{ entry.label }}') && playerMat.includes('player.factionEffect?.effectText') && playerMat.includes('class="l12-effect-body l12-effect-body--compact"') && adminPage.includes('<p class="l12-effect-body">{{ selectedEffect.effectText') && adminPage.includes('<p class="l12-effect-body">{{ ability.text }}') && !cardDetailContent.includes('archive-number l12-effect-body') && !deckEditor.includes('<small class="l12-effect-body">{{ selected.number') && !globalStyle.includes('--l12-board-readable'), '全站卡效正文必须共用自适应语义字号并保留权威换行，覆盖卡牌详情、牌库编辑、对战、Prompt、主宰/阵营与管理后台；辅助信息按组件空间使用metadata/micro层级，不得恢复全项目14px硬阈值'],
   [gmPanel.includes("emit('armPlacement'") && gamePage.includes(':gm-placement="gmPlacement"') && board.includes("emit('gmPlacementResolved')") && board.includes('GM：请选择'), 'GM 打出军团必须回到棋盘并点击目标玩家的绿色空位'],
   [playerMat.includes('selectRunePayment') && playerMat.includes('`rune:${index}`') && playerMat.includes('payable: paymentChoiceIds'), '符文支付必须直接点击场上的可用符文，不得恢复编号弹框'],
   [playerMat.includes('data-ui-contract="independent-trial-action"') && playerMat.includes("emit('ability', player.field[row][slot]!, 'trialAdvance')")
@@ -933,12 +946,13 @@ const contracts = [
     && deckConstructionBrowser.includes('aria-label="构筑筛选"')
     && deckConstructionBrowser.includes('entry.quantity') && deckConstructionBrowser.includes('const selected = computed')
     && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，档案正文不得继续平铺单卡'],
-  [adminCardAnalytics.includes('使用路径') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
+  [adminCardAnalytics.includes('实际使用情况') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
     && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
-    && adminCardAnalytics.includes('同条件基线') && adminCardAnalytics.includes('不把相关性描述成因果'), '单卡分析必须展示各节点独立的使用路径、同条件基线、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
+    && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '单卡分析必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
   [adminCardAnalytics.includes('使用方主宰') && adminCardAnalytics.includes('对方主宰')
     && adminCardAnalytics.includes('adminApi.cardAnalytics({ ...filters.value')
-    && adminCardAnalytics.includes('adminApi.cardAnalyticsDetail(cardId, filters.value)')
+    && adminCardAnalytics.includes('adminApi.cardAnalyticsDetail(cardId, { ...filters.value })')
+    && adminCardAnalytics.includes('request === detailRequest')
     && adminCardAnalytics.includes('data-ui-contract="card-analytics-low-sample-warning"')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
     && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '单卡分析必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
@@ -958,13 +972,16 @@ const contracts = [
     && !adminCardAnalytics.includes('monospace'), '日期筛选的结束日必须包含当天；分析权限响应不得泄露近期对局身份/牌库，仪表盘必须保持黑体栈'],
   [adminCardAnalytics.includes("mode: 'ranked'") && adminCardAnalytics.includes('today.getDate() - 29')
     && adminCardAnalytics.includes('平均携带数量') && adminCardAnalytics.includes('averageQuantity.toFixed(2)')
-    && adminCardAnalytics.includes('95% 差值区间') && adminCardAnalytics.includes('winRateDeltaConfidence.low > 0')
+    && !adminCardAnalytics.includes('v-model="filters.mode"')
+    && adminCardAnalytics.includes('filters.effectVersion') && adminCardAnalytics.includes('sampleStructure?.distinctPlayers')
+    && adminCardAnalytics.includes('comparison?.delta') && adminCardAnalytics.includes("interval?.status !== 'available'")
     && !adminCardAnalytics.includes('winRateDelta >= .05')
-    && platform.includes('AdminAnalyticsConfidenceInterval') && platform.includes('averageQuantity: number'), '单卡仪表盘默认排位近30日，核心指标必须展示平均携带量和95% Wilson／差值区间，方向着色不得使用固定百分点阈值'],
+    && platform.includes('AdminAnalyticsConfidenceInterval') && platform.includes('averageQuantity: number'), '单卡仪表盘只能分析排位，默认当前卡效版本近30日；必须显示玩家样本结构和分层差值，仅可用的不确定性区间可用于方向着色'],
   [l12ServerSources.includes('PrepareAnalyticsScopeAsync')
     && l12ServerSources.includes('CREATE TEMP TABLE l12_analytics_eligible')
     && l12ServerSources.includes('CREATE TEMP TABLE l12_analytics_fact_stats')
-    && l12ServerSources.includes('WilsonInterval') && l12ServerSources.includes('DifferenceInterval'), '单卡分析必须在一次请求内物化并复用按对局参赛方聚合，避免每个详情模块重复扫描事实表，并使用服务端置信区间'],
+    && l12ServerSources.includes('WilsonInterval') && l12ServerSources.includes('ReadStratifiedComparisonsAsync')
+    && l12ServerSources.includes('not-estimated'), '单卡分析必须复用参赛方聚合与目标卡事实，并使用分层对照；未修正样本依赖不得伪造差值置信区间'],
   [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
   [profileAuthForm.includes('@submit.prevent="submitAuth"') && profileAuthForm.includes('type="submit"')
     && (profileAuthForm.match(/\brequired\b/g)?.length ?? 0) === 2

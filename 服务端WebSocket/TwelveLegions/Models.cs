@@ -348,7 +348,8 @@ public sealed class L12PendingDefense
     public int AttackValue { get; set; }
     public bool IsRanged { get; init; }
     public bool RangedNoLoss { get; init; }
-    public bool AttackNoLoss { get; init; }
+    // 攻击声明后结算的动态效果也可令本次攻击无损失。
+    public bool AttackNoLoss { get; set; }
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
     /// <summary>理查的独立抵挡费用段成功结算后，才对本次进攻生效。</summary>
