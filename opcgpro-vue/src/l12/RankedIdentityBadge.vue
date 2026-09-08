@@ -56,8 +56,8 @@ withDefaults(defineProps<{
 }
 
 .ranked-identity-badge.compact {
-  --ranked-tier-badge-font-size: max(15px, calc(var(--l12-board-copy, 13px) - 3px));
-  --ranked-title-badge-font-size: max(15px, calc(var(--l12-board-copy, 13px) - 3px));
+  --ranked-tier-badge-font-size: 15px;
+  --ranked-title-badge-font-size: 15px;
 }
 
 .ranked-identity-badge.is-tier.compact {

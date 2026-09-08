@@ -286,7 +286,7 @@ const contracts = [
     && board.includes('.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}')
     && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;')
     && rankings.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && rankings.includes('<RankedIdentityBadge v-for="title in row.titles"')
-    && rankedIdentityBadge.includes("variant?: 'tier' | 'title'") && rankedIdentityBadge.includes('ranked-identity-badge.compact')
+    && rankedIdentityBadge.includes("variant?: 'tier' | 'title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
     && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)') && rankedIdentityBadge.includes('✦')
     && rankedIdentityBadge.includes('drop-shadow(0 0 4px #ffd047)') && rankedIdentityBadge.includes('color: inherit !important;')
     && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '对战右上双方摘要必须各保持两行：身份与昵称；排位等级和称号必须复用真实徽章组件并使用对战紧凑尺寸、完整显示文字；称号文字必须继承徽章配色；空间不足时先缩小徽章并压缩在线状态，并将释放空间留给对局记录'],
@@ -1085,7 +1085,7 @@ contracts.push([
 ])
 
 contracts.push([
-  shell.includes("title: '对战操作延迟与长局稳定性优化'")
+  shell.includes("title: '卡牌结算、账号治理、对战界面与长局稳定性更新'")
     && shell.match(/version: releaseVersion/g)?.length === 1
     && shell.includes("title: '操作响应与连接稳定性'")
     && shell.includes("title: '快照、观战与回放'")
