@@ -5,6 +5,7 @@ using Xunit;
 
 namespace TwelveLegions.Tests;
 
+[Collection(SqlitePoolIsolationCollection.Name)]
 public sealed class MaintenanceSandboxAuthorizationTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
