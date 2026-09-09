@@ -139,6 +139,13 @@ public sealed partial class L12GameEngine
             && data.TryGetValue("activationId", out var activationId)
             ? State.PendingActivations.SingleOrDefault(candidate => candidate.ActivationId == activationId)
             : null;
+        var boundResponseId = activation?.ResponseTargetStackItemId
+            ?? (continuation.StartsWith("stack-response-", StringComparison.Ordinal) ? stackItemId : null);
+        if (boundResponseId is not null && State.EffectStack.FirstOrDefault(item => item.StackItemId == boundResponseId) is { } responseTarget)
+        {
+            AddBoundResponsePresentation(playerIndex, responseTarget, data);
+            playerText += "\n\n" + data["responseContext"];
+        }
         var prompt = new L12Prompt
         {
             PromptId = $"prompt-{++State.PromptSequence}",
@@ -174,7 +181,7 @@ public sealed partial class L12GameEngine
     {
         var stackItem = stackItemId is null ? null : State.EffectStack.Concat(State.DeferredEffectStack)
             .FirstOrDefault(item => item.StackItemId == stackItemId);
-        if (stackItem is not null)
+        if (stackItem is not null && stackItem.Data.GetValueOrDefault("eventType") != "effect-hand-add")
         {
             data.TryAdd("sourceInstanceId", stackItem.SourceInstanceId);
             data.TryAdd("sourceCardId", stackItem.SourceCardId);
@@ -462,7 +469,9 @@ public sealed partial class L12GameEngine
         if (materialChoices.Length == 0) return;
 
         var fieldIds = State.Players.SelectMany(player => player.Field.SelectMany(row => row))
-            .Where(card => card is not null && !card.Hidden).Select(card => card!.InstanceId)
+            // 盖伏对象的位置与实例属于公开场面；能点选不等于能查看其身份。
+            // 卡名/效果/卡图仍由 FindPromptCard 的查看者权限独立过滤。
+            .Where(card => card is not null).Select(card => card!.InstanceId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var moraleIds = State.Players.SelectMany(player => player.Morale).Select(card => card.InstanceId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -731,6 +740,9 @@ public sealed partial class L12GameEngine
                 break;
             case "stack-response":
                 ResolveStackResponse(playerIndex, prompt, chosen[0]);
+                break;
+            case "stack-response-target":
+                ResolveResponseTargetChoice(prompt, chosen[0]);
                 break;
             case "stack-response-discard":
                 ResolveAbsoluteDefenseDiscard(playerIndex, prompt, chosen[0]);
@@ -1289,6 +1301,32 @@ public sealed partial class L12GameEngine
         var playerIndex = State.ResponseWindow.PriorityPlayer;
         var top = State.EffectStack[^1];
         var player = State.Players[playerIndex];
+        var choices = State.EffectStack.SelectMany(item => LegalResponseSources(playerIndex, item))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var disasterAuthorityTiming = IsDisasterAuthorityTiming(top);
+        var hasAnonymousPoolResponse = _concealHiddenResponseAvailability
+            && State.EffectStack.Any(item => CanMasterCardPoolRespondAtTiming(playerIndex, item,
+                item.Controller != playerIndex && IsProtectedFromCounterTactics(item)));
+        if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0 && !hasAnonymousPoolResponse)
+        {
+            PassPriority(playerIndex);
+            return;
+        }
+        var responseData = choices.ToDictionary(id => id, id =>
+            (FindOnField(player, id, out _, out _) ?? player.Hand.First(card => card.InstanceId == id)).Name);
+        choices.Add("pass");
+        responseData["choiceMode"] = "instant";
+        responseData["responseTargetIds"] = ResponseTargetIds(State.EffectStack, playerIndex);
+        var responseText = "选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n"
+            + string.Join("\n\n", State.EffectStack.Select(item => DescribeResponse(item, playerIndex)));
+        CreatePrompt(playerIndex, "response", responseText, choices,
+            1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+    }
+
+    // Eligibility is evaluated against the exact selected item, never a different chain ancestor.
+    private List<string> LegalResponseSources(int playerIndex, L12StackItem top)
+    {
+        var player = State.Players[playerIndex];
         var choices = new List<string>();
         var disasterAuthorityTiming = IsDisasterAuthorityTiming(top);
         var protectedFromCounters = top.Controller != playerIndex && IsProtectedFromCounterTactics(top);
@@ -1319,21 +1357,10 @@ public sealed partial class L12GameEngine
             && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
-        var hasAnonymousPoolResponse = _concealHiddenResponseAvailability
-            && CanMasterCardPoolRespondAtTiming(playerIndex, top, protectedFromCounters);
-        if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0 && !hasAnonymousPoolResponse)
-        {
-            PassPriority(playerIndex);
-            return;
-        }
-        choices.Add("pass");
-        var responseData = choices.Where(choice => choice != "pass")
-            .Select(id => responseCards.FirstOrDefault(card => card.InstanceId == id)
-                ?? player.Hand.First(card => card.InstanceId == id))
-            .ToDictionary(card => card.InstanceId, card => card.Name);
-        responseData["choiceMode"] = "instant";
-        CreatePrompt(playerIndex, "response", BuildResponsePromptText(top), choices,
-            1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+        // A hand response (notably the puppet) stays in hand until resolution, but its same
+        // physical instance is already committed and cannot be declared again in this window.
+        return choices.Where(id => !State.EffectStack.Any(item => item.SourceInstanceId == id
+            && IsResponseEffectStackItem(item))).ToList();
     }
 
     private string BuildResponsePromptText(L12StackItem top)
@@ -1386,7 +1413,7 @@ public sealed partial class L12GameEngine
                 or "response-retarget-master" => ResponseCardTimingLabel(effect),
             _ => ResponseCardTimingLabel(effect),
         };
-        return $"是否响应堆叠顶部：〈{top.SourceName}〉\n时点：{timing}\n效果：{effect}";
+        return $"〈{top.SourceName}〉\n时点：{timing}\n效果：{effect}";
     }
 
     private static string ResponseCardTimingLabel(string effect)
@@ -1511,19 +1538,56 @@ public sealed partial class L12GameEngine
             PassPriority(playerIndex);
             return;
         }
+        var targets = State.EffectStack.Where(item => LegalResponseSources(playerIndex, item).Contains(choice)).ToArray();
+        if (targets.Length == 0) { OfferResponse(); return; }
+        if (targets.Length == 1)
+        {
+            BeginSelectedStackResponse(playerIndex, choice, targets[0].StackItemId);
+            return;
+        }
+        var data = new Dictionary<string, string> { ["responseId"] = choice, ["cancel"] = "取消发动" };
+        data["responseTargetIds"] = ResponseTargetIds(targets, playerIndex);
+        foreach (var target in targets)
+        {
+            var id = target.StackItemId;
+            data[$"{id}:responseTargetIds"] = ResponseTargetIds([target], playerIndex);
+            data[id] = DescribeResponse(target, playerIndex);
+            if (target.Data.GetValueOrDefault("eventType") == "effect-hand-add")
+            {
+                // Match the authoritative stack projection: this event carries a private hand-card identity.
+                continue;
+            }
+            data[$"{id}:cardId"] = target.SourceCardId;
+            data[$"{id}:name"] = target.SourceName;
+            data[$"{id}:effect"] = target.Text;
+            var source = FindSource(target) ?? target.SourceSnapshot;
+            if (source?.ImageUrl is { } imageUrl) data[$"{id}:image"] = imageUrl;
+        }
+        CreatePrompt(playerIndex, "response-target", "选择本次响应的效果对象", targets.Select(item => item.StackItemId).Append("cancel"),
+            1, 1, "stack-response-target", isPrivate: true, data: data);
+    }
+
+    private void ResolveResponseTargetChoice(L12Prompt prompt, string choice)
+    {
+        if (choice == "cancel") { OfferResponse(); return; }
+        BeginSelectedStackResponse(prompt.PlayerIndex, prompt.Data["responseId"], choice);
+    }
+
+    private void BeginSelectedStackResponse(int playerIndex, string choice, string targetStackItemId)
+    {
         var player = State.Players[playerIndex];
         var response = FindOnField(player, choice, out _, out _)
             ?? player.Hand.FirstOrDefault(card => card.InstanceId == choice);
-        // 响应提示绑定的对象必须仍是当前堆叠顶部；资格检查与最终写入 Targets 使用同一项目。
-        if (response is null || prompt.StackItemId is null
-            || State.EffectStack.LastOrDefault()?.StackItemId != prompt.StackItemId)
+        var selected = State.EffectStack.FirstOrDefault(item => item.StackItemId == targetStackItemId);
+        // A stale choice cannot spend costs, pass priority, or silently bind to another stack item.
+        if (response is null || selected is null || !LegalResponseSources(playerIndex, selected).Contains(choice))
         {
-            PassPriority(playerIndex);
+            OfferResponse();
             return;
         }
         if (response.CardId == "S01-0002")
         {
-            CommitMercenaryResponse(playerIndex, response, prompt.StackItemId!);
+            CommitMercenaryResponse(playerIndex, response, targetStackItemId);
             return;
         }
         if (response.CardId == "S02-0005")
@@ -1535,7 +1599,7 @@ public sealed partial class L12GameEngine
             if (frontSlots.Length == 0) { PassPriority(playerIndex); return; }
             var choices = frontSlots.Append("cancel").ToArray();
             CreatePrompt(playerIndex, "slot", $"{response.Name}：预先选择休整登场的前排位置", choices,
-                1, 1, "stack-response-puppet-slot", prompt.StackItemId, isPrivate: true,
+                1, 1, "stack-response-puppet-slot", targetStackItemId, isPrivate: true,
                 data: new Dictionary<string, string>
                 {
                     ["responseId"] = response.InstanceId,
@@ -1548,7 +1612,7 @@ public sealed partial class L12GameEngine
         {
             var discards = player.Hand.Select(card => card.InstanceId).ToArray();
             CreatePrompt(playerIndex, "discard-cost", "弃置 1 张手牌作为〈绝对防御〉的费用", discards,
-                1, 1, "stack-response-discard", prompt.StackItemId, isPrivate: true,
+                1, 1, "stack-response-discard", targetStackItemId, isPrivate: true,
                 data: new Dictionary<string, string> { ["responseId"] = response.InstanceId });
             return;
         }
@@ -1556,34 +1620,40 @@ public sealed partial class L12GameEngine
         {
             var targets = PublicLegions(player).Select(card => card.InstanceId).ToArray();
             if (targets.Length == 0) { PassPriority(playerIndex); return; }
-            BeginPendingResponseActivation(playerIndex, response, prompt.StackItemId!, targets,
+            BeginPendingResponseActivation(playerIndex, response, targetStackItemId, targets,
                 "伏击：预先选择我方1张军团，本回合兵力+2000");
             return;
         }
-        if (TryBeginPublicResponseDeclaration(playerIndex, response, prompt.StackItemId!))
+        if (TryBeginPublicResponseDeclaration(playerIndex, response, targetStackItemId))
             return;
         if (response.CardId == "S01-0224")
         {
-            var target = State.EffectStack.First(item => item.StackItemId == prompt.StackItemId);
-            CommitS1ReactionResponse(playerIndex, response, prompt.StackItemId!);
+            CommitS1ReactionResponse(playerIndex, response, targetStackItemId);
             return;
         }
         if (response.CardId is "S02-0015" or "S02-0018" or "S02-0106")
         {
-            var target = State.EffectStack.First(item => item.StackItemId == prompt.StackItemId);
+            var target = selected;
             var data = response.CardId == "S02-0018" ? DirectPublicResponseData(response, target) : null;
-            CommitS2CounterResponse(playerIndex, response, prompt.StackItemId!, data);
+            CommitS2CounterResponse(playerIndex, response, targetStackItemId, data);
             return;
         }
-        CommitNegateResponse(playerIndex, response, prompt.StackItemId!);
+        CommitNegateResponse(playerIndex, response, targetStackItemId);
     }
 
     private void ResolveAbsoluteDefenseDiscard(int playerIndex, L12Prompt prompt, string discardId)
     {
         var player = State.Players[playerIndex];
         var responseId = prompt.Data["responseId"];
-        var response = FindOnField(player, responseId, out _, out _)!;
-        var discard = player.Hand.First(card => card.InstanceId == discardId);
+        var response = FindOnField(player, responseId, out _, out _);
+        var discard = player.Hand.FirstOrDefault(card => card.InstanceId == discardId);
+        var target = State.EffectStack.FirstOrDefault(item => item.StackItemId == prompt.StackItemId);
+        if (response is null || discard is null || target is null
+            || !LegalResponseSources(playerIndex, target).Contains(responseId))
+        {
+            OfferResponse();
+            return;
+        }
         player.Hand.Remove(discard);
         player.Graveyard.Add(discard);
         AddEvent("cost", playerIndex, $"{player.Name} 弃置 {discard.Name} 支付〈绝对防御〉费用", discard);
@@ -1601,12 +1671,14 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var response = player.Hand.FirstOrDefault(card => card.InstanceId == prompt.Data.GetValueOrDefault("responseId")
             && card.CardId == "S02-0005");
-        if (response is null || prompt.StackItemId is null)
+        var target = State.EffectStack.FirstOrDefault(item => item.StackItemId == prompt.StackItemId);
+        if (response is null || target is null || !LegalResponseSources(playerIndex, target).Contains(response.InstanceId)
+            || !Enumerable.Range(0, 3).Any(slot => slotChoice == $"0:{slot}" && player.Field[0][slot] is null))
         {
-            PassPriority(playerIndex);
+            OfferResponse();
             return;
         }
-        CommitPuppetResponse(playerIndex, response, prompt.StackItemId, slotChoice);
+        CommitPuppetResponse(playerIndex, response, target.StackItemId, slotChoice);
     }
 
     private void CommitPuppetResponse(int playerIndex, L12CardInstance response, string targetStackId, string slotChoice)
@@ -1626,7 +1698,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{State.Players[playerIndex].Name} 发动〈{response.Name}〉响应主宰进攻", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
+        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
         OfferResponse();
     }
 
@@ -1650,12 +1722,15 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name} 打出〈{response.Name}〉响应", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
+        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
         OfferResponse();
     }
 
     private void CommitMercenaryResponse(int playerIndex, L12CardInstance response, string targetStackId)
     {
+        var player = State.Players[playerIndex];
+        if (!player.Hand.Any(card => card.InstanceId == response.InstanceId)) return;
+        MoveHandToGrave(player, response.InstanceId, causedByEffect: false, response);
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -1665,12 +1740,13 @@ public sealed partial class L12GameEngine
             SourceName = response.Name,
             Trigger = "response-block",
             Text = "弃置此军团，抵挡本次进攻",
+            SourceSnapshot = CaptureLastKnownSourceSnapshot(response),
         };
         item.Targets.Add(targetStackId);
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{playerIndex + 1} 号玩家发动〈佣兵部队〉抵挡进攻", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
+        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
         OfferResponse();
     }
 
@@ -1733,9 +1809,7 @@ public sealed partial class L12GameEngine
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
             // 抵挡只终止交战，不无效已经发动的【进攻时】效果。
             if (State.PendingDefense is not null) State.PendingDefense.BlockedByResponse = true;
-            var player = State.Players[item.Controller];
-            var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.SourceInstanceId);
-            if (card is not null) { player.Hand.Remove(card); player.Graveyard.Add(card); }
+            var card = FindSource(item) ?? item.SourceSnapshot;
             AddEvent("defense", item.Controller, "佣兵部队抵挡本次进攻", card is null ? [] : [card]);
             FinishStackItem(item);
             return;
@@ -1802,7 +1876,7 @@ public sealed partial class L12GameEngine
         QueueTombConstructLeaveFallback(item);
         var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
         var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
-            && item.Trigger is "play" or "reaction" or "s2-reaction";
+            && item.Trigger is "play" or "reaction" or "s2-reaction" or "response-negate";
         var queueExorcistReturn = !queuedCompositeContinuation && !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";
@@ -1878,6 +1952,14 @@ public sealed partial class L12GameEngine
             || State.ResponseWindow is not null)
             return;
         State.ResponseWindow = null;
+        if (State.Players.Any(player => player.PendingStarterMoraleReturnEvents > 0
+                || player.PendingStarterRuneSpendEvents > 0))
+        {
+            FlushStarterResourceTriggerBatches();
+            if (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0
+                || State.PendingActivations.Count > 0 || State.PendingPrompts.Count > 0
+                || State.EffectStack.Count > 0 || State.ResponseWindow is not null) return;
+        }
         var pendingFactionPlayer = State.Players.FirstOrDefault(player => player.UsedAbilities.Contains("pending:factionZeroRecovery"));
         if (pendingFactionPlayer is not null)
         {

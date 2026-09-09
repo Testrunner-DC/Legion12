@@ -108,7 +108,7 @@ public sealed class CardAnalyticsFairnessTests
     }
 
     [Fact]
-    public async Task StorageMaintenanceRetriesSoonWhenBoundedBatchIsFull()
+    public async Task StorageMaintenanceDefersBoundedBacklogUntilNextFixedWindow()
     {
         var now = new DateTimeOffset(2026, 9, 9, 0, 0, 0, TimeSpan.Zero);
         var directory = TestDirectory("maintenance-backlog");
@@ -121,11 +121,35 @@ public sealed class CardAnalyticsFairnessTests
             await SeedMatchAsync(connection, $"backlog-{index:D2}", "ranked", 2, "effects-v2",
                 "MASTER-A", "MASTER-B", 0, index % 2, false, $"p-{index}", $"o-{index}");
 
-        var first = await recorder.RunCardFactStorageMaintenanceIfDueAsync(now);
+        var first = await recorder.RunCardFactStorageMaintenanceIfDueAsync(now, maxBatches: 1);
         Assert.Equal(25, first.Compacted);
+        Assert.NotNull(recorder.LastCardFactMaintenance?.OldestPendingEndedAt);
+        Assert.True(recorder.LastCardFactMaintenance?.BudgetReached);
         Assert.Equal((0, 0), await recorder.RunCardFactStorageMaintenanceIfDueAsync(now.AddMinutes(4)));
-        var retry = await recorder.RunCardFactStorageMaintenanceIfDueAsync(now.AddMinutes(5));
+        Assert.Equal((0, 0), await recorder.RunCardFactStorageMaintenanceIfDueAsync(now.AddMinutes(5)));
+        var retry = await recorder.RunCardFactStorageMaintenanceIfDueAsync(recorder.NextStorageCleanupUtc(now));
         Assert.Equal(1, retry.Compacted);
+        Assert.Null(recorder.LastCardFactMaintenance?.OldestPendingEndedAt);
+    }
+
+    [Fact]
+    public async Task MaintenanceConsumesSeveralSmallBatchesWithoutWaitingAnotherDay()
+    {
+        var now = new DateTimeOffset(2026, 9, 9, 4, 0, 0, TimeSpan.FromHours(8));
+        var path = Path.Combine(TestDirectory("maintenance-multiple-batches"), "matches.db");
+        await using var recorder = new MatchRecorder(path, () => now);
+        await recorder.InitializeAsync();
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        for (var index = 0; index < 51; index++)
+            await SeedRetentionFactAsync(connection, $"old-draw-{index:D2}", "ranked", 2, "effects-v2",
+                now.AddDays(-11), null);
+        var result = await recorder.RunCardFactStorageMaintenanceIfDueAsync(now, timeBudget: TimeSpan.FromSeconds(5));
+        Assert.Equal(0, result.Compacted);
+        Assert.Equal(51, result.Pruned);
+        Assert.Equal(3, recorder.LastCardFactMaintenance?.Batches);
+        Assert.Null(recorder.LastCardFactMaintenance?.OldestPendingEndedAt);
+        Assert.Equal((0, 0), await recorder.RunCardFactStorageMaintenanceIfDueAsync(now.AddMinutes(5)));
     }
 
     [Fact]

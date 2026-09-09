@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PagedCollection from './PagedCollection.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { hasPermission } from '@/l12/platform'
 import {
@@ -78,22 +79,22 @@ onMounted(load)
     <div class="filters"><input v-model="search" placeholder="记录 / 对局 / 房间 / 玩家 / 内容" @keyup.enter="load"/><select v-model="status" @change="load"><option value="">全部状态</option><template v-if="view === 'draws'"><option value="pending">待对方处理</option><option value="accepting">正在确认</option><option value="accepted">已接受</option><option value="rejected">已拒绝</option><option value="expired">已过期</option><option value="cancelled">已取消</option></template><template v-else><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></template></select><button @click="load">查询</button></div>
 
     <div v-if="view === 'draws'" class="records">
-      <article v-for="row in draws" :key="row.id">
+      <PagedCollection :items="draws" v-slot="{ items: paged3919 }"><article v-for="row in paged3919" :key="row.id">
         <div class="summary"><code>{{ row.id }}</code><h3>{{ row.requesterName }} → {{ row.responderName }}</h3><p>{{ row.reason }}</p><small>对局 {{ row.matchId }} · 房间 {{ row.roomCode }} · {{ row.modeId }}</small><small>申请 {{ new Date(row.requestedAt).toLocaleString() }}<template v-if="row.respondedAt"> · 处理 {{ new Date(row.respondedAt).toLocaleString() }}</template></small><span>{{ statusLabel(row.status) }}</span>
-          <details><summary>审计记录（{{ row.history.length }}）</summary><ol><li v-for="audit in row.history" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></ol></details>
+          <details><summary>审计记录（{{ row.history.length }}）</summary><ol><PagedCollection :items="row.history" v-slot="{ items: paged4517 }"><li v-for="audit in paged4517" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></PagedCollection></ol></details>
         </div>
         <form @submit.prevent="saveDraw(row)"><label>管理状态<select v-model="row.adminStatus" :disabled="!canWrite"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite" rows="2" maxlength="2000"/></label><button v-if="canWrite" type="submit">保存并审计</button></form>
-      </article>
+      </article></PagedCollection>
       <div v-if="!loading && !draws.length" class="empty">当前筛选下没有平局申请</div>
     </div>
 
     <div v-else class="records">
-      <article v-for="row in reports" :key="row.id">
+      <PagedCollection :items="reports" v-slot="{ items: paged5457 }"><article v-for="row in paged5457" :key="row.id">
         <div class="summary"><code>{{ row.id }}</code><h3>{{ row.reporterName }} 举报 {{ row.reportedName }}</h3><p>{{ row.description }}</p><small>对局 {{ row.matchId }} · 房间 {{ row.roomCode }} · {{ row.modeId }}</small><small>提交 {{ new Date(row.createdAt).toLocaleString() }} · 更新 {{ new Date(row.updatedAt).toLocaleString() }}</small><span>{{ statusLabel(row.status) }}</span>
-          <details><summary>审计记录（{{ row.history.length }}）</summary><ol><li v-for="audit in row.history" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></ol></details>
+          <details><summary>审计记录（{{ row.history.length }}）</summary><ol><PagedCollection :items="row.history" v-slot="{ items: paged6097 }"><li v-for="audit in paged6097" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></PagedCollection></ol></details>
         </div>
         <form @submit.prevent="saveReport(row)"><label>处理状态<select v-model="row.status" :disabled="!canWrite"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite" rows="2" maxlength="2000"/></label><button v-if="canWrite" type="submit">保存并审计</button></form>
-      </article>
+      </article></PagedCollection>
       <div v-if="!loading && !reports.length" class="empty">当前筛选下没有玩家举报</div>
     </div>
   </section>

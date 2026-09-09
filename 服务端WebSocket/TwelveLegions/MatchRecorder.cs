@@ -145,7 +145,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             ? $"policy:{state.OperationsPolicy.Version}" : state.OperationsPolicy.VersionId);
         command.Parameters.AddWithValue("$policy", state.OperationsPolicy.Version);
         command.Parameters.AddWithValue("$season", (object?)state.OperationsPolicy.Season.Id ?? DBNull.Value);
-        command.Parameters.AddWithValue("$initial", initialStateJson);
+        // v2 already persists this exact authoritative state as the compressed sequence-zero
+        // checkpoint in the same transaction. Keep the legacy column only for v1 readers.
+        command.Parameters.AddWithValue("$initial", journalV2 ? DBNull.Value : initialStateJson);
         command.Parameters.AddWithValue("$first", state.Phase == L12Phase.Initiative
             ? DBNull.Value : state.FirstPlayer);
         command.Parameters.AddWithValue("$factSchema", L12CardFactKinds.SchemaVersion);
@@ -313,6 +315,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
                 WHERE latest.match_id=m.match_id ORDER BY latest.sequence DESC LIMIT 1
             )
             WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
+              AND m.winner IN (0,1) AND COALESCE(m.error,'')=''
               AND NOT EXISTS (
                   SELECT 1 FROM ranked_settlement_outbox o
                   WHERE o.match_id=m.match_id
@@ -329,17 +332,21 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             var firstPlayer = reader.IsDBNull(8) ? 0 : reader.GetInt32(8);
             if (reader.GetInt32(9) < JournalStorageVersion && !reader.IsDBNull(10))
             {
-                using var state = JsonDocument.Parse(reader.GetString(10));
-                var root = state.RootElement;
-                firstPlayer = ReadInt(root, "FirstPlayer", "firstPlayer");
-                if (TryProperty(root, "Players", "players", out var players)
-                    && players.ValueKind == JsonValueKind.Array)
+                try
                 {
-                    if (players.GetArrayLength() > 0)
-                        master0 = ReadString(players[0], "MasterName", "masterName");
-                    if (players.GetArrayLength() > 1)
-                        master1 = ReadString(players[1], "MasterName", "masterName");
+                    using var state = JsonDocument.Parse(reader.GetString(10));
+                    var root = state.RootElement;
+                    firstPlayer = ReadInt(root, "FirstPlayer", "firstPlayer");
+                    if (TryProperty(root, "Players", "players", out var players)
+                        && players.ValueKind == JsonValueKind.Array)
+                    {
+                        if (players.GetArrayLength() > 0)
+                            master0 = ReadString(players[0], "MasterName", "masterName");
+                        if (players.GetArrayLength() > 1)
+                            master1 = ReadString(players[1], "MasterName", "masterName");
+                    }
                 }
+                catch (Exception error) when (error is JsonException or InvalidOperationException) { continue; }
             }
             matches.Add(new L12RankingMatch(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
@@ -639,4 +646,4 @@ public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12Reco
 
 public sealed record L12RankingMatch(
     string MatchId, string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,
-    string Master0, string Master1, int FirstPlayer);
+    string Master0, string Master1, int FirstPlayer, string? MasterId0 = null, string? MasterId1 = null);

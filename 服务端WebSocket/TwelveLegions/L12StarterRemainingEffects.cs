@@ -519,7 +519,7 @@ public sealed partial class L12GameEngine
                 break;
             case "hidden-pass-summon":
             {
-                var entries = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 4
+                var entries = player.Hand.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4)
                         && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     .Select(card => card.InstanceId).ToList();
                 var slots = EmptySlots(player).ToList();
@@ -792,7 +792,7 @@ public sealed partial class L12GameEngine
                 var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
                 if (returnCost.Count != 1 || !CanReturnSelectedMoraleById(player, returnCost, 1)
                     || !player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
-                        && card.CurrentCost <= 4 && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 4) && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     || string.IsNullOrWhiteSpace(slot)
                     || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     error = "暗度陈仓选择的士气、手牌军团或登场位置已失效；未返还士气且效果未入栈";
@@ -897,6 +897,23 @@ public sealed partial class L12GameEngine
             var runeEvents = player.PendingStarterRuneSpendEvents;
             player.PendingStarterMoraleReturnEvents = 0;
             player.PendingStarterRuneSpendEvents = 0;
+
+            if (returnedEvents > 0
+                && L12StructuredCardRules.StarterRemainingPlan(player.MasterId, "morale-return") == "change-rested-morale"
+                && player.UsedAbilities.Contains("pending:factionZeroRecovery")
+                && !player.UsedAbilities.Contains("queued:factionZeroRecovery"))
+            {
+                player.UsedAbilities.Remove("pending:factionZeroRecovery");
+                player.UsedAbilities.Add("queued:factionZeroRecovery");
+                var faction = CreateCard("S01-01C1", $"faction-{player.PlayerIndex}");
+                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, faction, "active",
+                    "返还士气后士气为0张时的天廷阵营效果",
+                    new Dictionary<string, string>
+                    {
+                        ["ability"] = "factionZeroRecovery",
+                        ["factionZeroEligibleAtReturn"] = "true",
+                    }, faction));
+            }
 
             if (returnedEvents > 0 && L12StructuredCardRules.StarterRemainingPlan(player.MasterId,
                     "morale-return") == "change-rested-morale")

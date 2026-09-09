@@ -1,0 +1,67 @@
+/* One transformed fixed host includes the app, native hit testing and all body
+   Teleports. Safe-area and visualViewport offsets are applied before rotation. */
+html[data-l12-viewport] body {
+  position: fixed;
+  inset: auto;
+  left: var(--l12-viewport-left);
+  top: var(--l12-viewport-top);
+  width: var(--l12-viewport-width);
+  height: var(--l12-viewport-height);
+  transform: translate(0, 0);
+  transform-origin: 0 0;
+}
+html[data-l12-viewport=landscape] body { transform: rotate(90deg); }
+html[data-l12-viewport] #app { width: 100%; height: 100%; }
+
+/* Short windows use an accessible scroll canvas, never an unreadable fit scale.
+   These rules deliberately do not depend on physical CSS media-query width. */
+.board-viewport.compact-viewport {
+  display: block !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  padding: 8px 80px 100px 8px;
+}
+.board-viewport.compact-viewport .board-stage {
+  transform-origin: top left;
+  margin: 8px;
+}
+.board-viewport.compact-viewport::after { display: none; }
+
+html[data-l12-viewport] :is(.l12-prompt-overlay,.graveyard-overlay,.master-overlay,.builder-modal-mask,.battle-settings-mask,.game-over) {
+  max-width: var(--l12-viewport-width);
+  max-height: var(--l12-viewport-height);
+  overflow: auto;
+}
+html[data-l12-viewport] .game-over { padding: 16px; place-content: safe center; }
+html[data-l12-viewport] .battle-ranked-ticker { max-width: calc(var(--l12-viewport-width) - 24px); }
+html[data-l12-compact=true] .deck-builder-shell { overflow: auto; }
+html[data-l12-compact=true] .deck-builder-topbar { height: auto; min-height: 74px; flex-wrap: wrap; }
+html[data-l12-compact=true] .deck-builder-grid { flex: 1 0 auto; min-height: 600px; }
+html[data-l12-viewport=landscape] .deck-builder-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(440px,1fr) 280px;
+  min-width: 980px;
+}
+html[data-l12-viewport=landscape] .deck-side-column { display: grid; }
+html[data-l12-compact=true] .deck-builder-topbar label { display: grid; }
+html[data-l12-viewport] :is(.prompt-panel,.graveyard-window,.master-dialog,.l12-settings-modal,.builder-modal,.deck-image-dialog,.delete-confirm-dialog,.archive-modal) {
+  max-width: calc(var(--l12-viewport-width) - 36px) !important;
+  max-height: calc(var(--l12-viewport-height) - 36px) !important;
+  overflow: auto;
+}
+html[data-l12-viewport] .l12-prompt-overlay:not(.minimized) {
+  width: var(--l12-viewport-width) !important;
+  height: var(--l12-viewport-height) !important;
+}
+html[data-l12-viewport=landscape] .l12-prompt-overlay:not(.minimized) .prompt-panel {
+  width: min(920px,calc(var(--l12-viewport-width) - 36px)) !important;
+}
+html[data-l12-viewport] .l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel {
+  max-width: calc(var(--l12-viewport-width) - var(--inspector-safe-lane) - 18px) !important;
+}
+html[data-l12-viewport] .graveyard-window {
+  width: min(680px,calc(var(--l12-viewport-width) - 64px));
+  height: min(570px,calc(var(--l12-viewport-height) - 64px));
+}
+html[data-l12-viewport] :is(input,textarea) { font-size: 16px; }

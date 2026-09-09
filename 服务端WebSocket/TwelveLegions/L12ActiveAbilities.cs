@@ -202,6 +202,8 @@ public sealed partial class L12GameEngine
     private static string ActiveAbilityUsageKey(string sourceInstanceId, string sourceCardId, string ability)
         => sourceCardId == "S01-03M2" && ability is "lokiCycle" or "lokiHeal"
             ? $"active:{sourceInstanceId}:loki"
+            : sourceCardId == "S01-01M2" && ability is "mengpoSilence" or "mengpoMorale"
+                ? $"active:{sourceInstanceId}:mengpo-choice"
             : sourceCardId == "S02-06S6" && ability is "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover"
                 ? $"active:{sourceInstanceId}:crusade-choice"
             : $"active:{sourceInstanceId}:{ability}";
@@ -798,16 +800,7 @@ public sealed partial class L12GameEngine
     }
 
     private void CompleteYangJianReturn(L12StackItem item, string place)
-    {
-        var player = State.Players[item.Controller];
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.Data["return-card"]);
-        if (card is not null)
-        {
-            player.Hand.Remove(card);
-            if (place == "top") player.Library.Insert(0, card); else player.Library.Add(card);
-        }
-        FinishStackItem(item);
-    }
+        => CompleteYangJianReturn(item, item.Data["return-card"], place);
 
     private void CompleteYangJianReturn(L12StackItem item, string cardId, string place)
     {
@@ -817,7 +810,7 @@ public sealed partial class L12GameEngine
         {
             player.Hand.Remove(card);
             if (place == "top") player.Library.Insert(0, card); else player.Library.Add(card);
-            AddEvent("return", item.Controller, $"{card.Name} 返回牌库{(place == "top" ? "顶部" : "底部")}", card);
+            AddEvent("private-return", item.Controller, $"{card.Name} 返回牌库{(place == "top" ? "顶部" : "底部")}", card);
         }
         FinishStackItem(item);
     }

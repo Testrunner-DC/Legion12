@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
+import { cardTypeFilterKey, cardTypeLabel } from '../cardPresentation'
 import { compareDeckCardIds } from '../deckOrdering'
-import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { automaticExtraCardIdsForMaster, deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type EffectiveOperationsPolicy, type PublishedDeck } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
-import CardImage from '@/l12/CardImage.vue'
 import DeckProfile from '@/l12/DeckProfile.vue'
+import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 
 const tab = ref<'mine' | 'plaza'>('mine')
 const catalog = ref<DeckCard[]>([])
@@ -86,6 +86,20 @@ const selectedTypes = computed(() => {
   })
   return [...totals].map(([type, count]) => [cardTypeLabel(type), count] as const)
 })
+const selectedEntries = computed<ConstructionEntry[]>(() => {
+  if (!selected.value) return []
+  const deck = selected.value.deck
+  const entries: ConstructionEntry[] = []
+  const add = (cardIds: string[], section: string) => {
+    const quantities = cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())
+    quantities.forEach((quantity, cardId) => entries.push({ cardId, quantity, section }))
+  }
+  add(deck.cardIds, 'main')
+  add(deck.moraleIds, 'morale')
+  add(deck.specialIds ?? [], 'special')
+  add(automaticExtraCardIdsForMaster(deck.masterId), 'automatic')
+  return entries
+})
 
 function uniqueName(base: string) {
   if (!saved.value[base]) return base.slice(0, 24)
@@ -94,10 +108,13 @@ function uniqueName(base: string) {
   while (saved.value[value]) value = `${base} ${++index}`.slice(0, 24)
   return value
 }
-function copyToMine(entry: PublishedDeck) {
+async function copyToMine(entry: PublishedDeck) {
   const deck = { ...entry.deck, name: uniqueName(entry.deck.name), cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...(entry.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
-  saveDeck(deck); saved.value = loadSavedDecks(); notice.value = `已复制《${deck.name}》到我的牌库`
-  if (!entry.official) void publicDeckApi.recordCopy(entry.id).then(updatePublished).catch(() => undefined)
+  try {
+    const confirmed = await saveDeck(deck)
+    saved.value = loadSavedDecks(); notice.value = `已复制《${confirmed.name}》到我的牌库`
+    if (!entry.official) void publicDeckApi.recordCopy(entry.id).then(updatePublished).catch(() => undefined)
+  } catch (error) { notice.value = error instanceof Error ? error.message : '复制到我的牌库失败' }
 }
 function updatePublished(entry: PublishedDeck) {
   const index = published.value.findIndex(item => item.id === entry.id)
@@ -139,10 +156,13 @@ async function publishDeck() {
     showPublish.value = false; tab.value = 'plaza'; selected.value = entry; notice.value = '牌库已公开到公开牌库'
   } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库失败' }
 }
-function editPublished(entry: PublishedDeck) {
+async function editPublished(entry: PublishedDeck) {
   const deck = { ...entry.deck, cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...entry.deck.specialIds] }
-  saveDeck(deck); saved.value = loadSavedDecks(); selected.value = null
-  void router.push(editorLink(deck.name, entry.id))
+  try {
+    const confirmed = await saveDeck(deck)
+    saved.value = loadSavedDecks(); selected.value = null
+    await router.push(editorLink(confirmed.name, entry.id))
+  } catch (error) { notice.value = error instanceof Error ? error.message : '牌库保存失败' }
 }
 async function deletePublished(entry: PublishedDeck) {
   if (!window.confirm('确定删除这个公开牌库？删除后将不再显示在公开牌库。')) return
@@ -170,13 +190,14 @@ async function copyPreviewImage() {
     notice.value = '牌库图已复制到剪贴板'
   } catch { notice.value = '当前浏览器不支持复制图片，请使用下载' }
 }
-function importFromCode() {
+async function importFromCode() {
   try {
     const deck = decodeDeckCode(importCode.value)
     deck.name = uniqueName(deck.name)
     const error = validateDeck(deck, catalog.value)
     if (error) throw new Error(error)
-    saveDeck(deck); saved.value = loadSavedDecks(); importCode.value = ''; notice.value = `已导入《${deck.name}》`
+    const confirmed = await saveDeck(deck)
+    saved.value = loadSavedDecks(); importCode.value = ''; notice.value = `已导入《${confirmed.name}》`
   } catch (error) { notice.value = error instanceof Error ? error.message : '牌库码导入失败' }
 }
 </script>
@@ -198,7 +219,7 @@ function importFromCode() {
     </template>
     <p v-if="notice" class="deck-notice">{{ notice }}</p>
 
-    <div v-if="selected" class="modal-mask" @click.self="selected = null"><section class="deck-detail"><header><div><small>{{ selected.author }}</small><h2>{{ selected.deck.name }}</h2><p>{{ byId.get(selected.deck.masterId)?.nameZh }} · {{ factionLabels[byId.get(selected.deck.masterId)?.faction || ''] }} · {{ deckCountSummary(selected.deck.cardIds, byId).label }} 张主牌</p></div><button @click="selected = null">×</button></header><div class="deck-analysis"><aside><DeckProfile :master-id="selected.deck.masterId" :master-name="byId.get(selected.deck.masterId)?.nameZh" :fallback-url="byId.get(selected.deck.masterId)?.imageUrl" :name="selected.deck.name" context="主宰" :meta="`${selected.deck.moraleIds.length} 张士气`"/><section><b>费用曲线</b><div class="detail-curve"><i v-for="(value,index) in selectedCurve" :key="index"><span :style="{height:`${Math.max(4,value/selectedCurveMax*62)}px`}"></span><small>{{ index === 8 ? '8+' : index }}</small><em>{{ value }}</em></i></div></section><section><b>卡牌类型</b><p v-for="[type,count] in selectedTypes" :key="type"><span>{{ type }}</span><strong>{{ count }}</strong></p></section></aside><div class="detail-grid"><article v-for="[id,count] in selectedGroups" :key="id" :class="{ 'landscape-thumbnail': isHorizontalCardType(byId.get(id)?.cardType) }"><CardImage :card-id="id" :legacy-url="byId.get(id)?.imageUrl" :alt="byId.get(id)?.nameZh || id" intent="thumb"/><b>×{{ count }}</b><span>{{ byId.get(id)?.nameZh || id }}</span><small>{{ byId.get(id)?.number || id }}</small></article></div></div><footer><button v-if="!selected.official" :disabled="!platformState.account" @click="toggleLike(selected)">♡ 点赞 {{ selected.likes }}</button><button @click="copyCode(selected.deck)">复制牌库码</button><button @click="previewImage(selected.deck)">生成牌库图</button><button v-if="selected.ownerId === platformState.account?.id" @click="editPublished(selected)">编辑公开牌库</button><button v-if="selected.ownerId === platformState.account?.id" class="danger" @click="deletePublished(selected)">删除公开牌库</button><button class="primary" @click="copyToMine(selected)">复制到我的牌库</button></footer></section></div>
+    <div v-if="selected" class="modal-mask" @click.self="selected = null"><section class="deck-detail"><header><div><small>{{ selected.author }}</small><h2>{{ selected.deck.name }}</h2><p>{{ byId.get(selected.deck.masterId)?.nameZh }} · {{ factionLabels[byId.get(selected.deck.masterId)?.faction || ''] }} · {{ deckCountSummary(selected.deck.cardIds, byId).label }} 张主牌</p></div><button @click="selected = null">×</button></header><div class="deck-analysis"><aside><DeckProfile :master-id="selected.deck.masterId" :master-name="byId.get(selected.deck.masterId)?.nameZh" :fallback-url="byId.get(selected.deck.masterId)?.imageUrl" :name="selected.deck.name" context="主宰" :meta="`${selected.deck.moraleIds.length} 张士气`"/><section><b>费用曲线</b><div class="detail-curve"><i v-for="(value,index) in selectedCurve" :key="index"><span :style="{height:`${Math.max(4,value/selectedCurveMax*62)}px`}"></span><small>{{ index === 8 ? '8+' : index }}</small><em>{{ value }}</em></i></div></section><section><b>卡牌类型</b><p v-for="[type,count] in selectedTypes" :key="type"><span>{{ type }}</span><strong>{{ count }}</strong></p></section></aside><DeckConstructionBrowser :entries="selectedEntries" :catalog="catalog" :title="`${selected.deck.name} · 全部构筑`"/></div><footer><button v-if="!selected.official" :disabled="!platformState.account" @click="toggleLike(selected)">♡ 点赞 {{ selected.likes }}</button><button @click="copyCode(selected.deck)">复制牌库码</button><button @click="previewImage(selected.deck)">生成牌库图</button><button v-if="selected.ownerId === platformState.account?.id" @click="editPublished(selected)">编辑公开牌库</button><button v-if="selected.ownerId === platformState.account?.id" class="danger" @click="deletePublished(selected)">删除公开牌库</button><button class="primary" @click="copyToMine(selected)">复制到我的牌库</button></footer></section></div>
     <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><p>选择一个已保存且合法的牌库公开展示。公开后可由作者继续编辑或删除。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="primary" :disabled="!publishName || !platformState.account" @click="publishDeck">确认公开</button></section></div>
     <div v-if="imagePreview" class="modal-mask image-mask" @click.self="closeImagePreview"><section class="image-preview"><header><div><small>16:9 SHARE IMAGE</small><h2>{{ imagePreview.deck.name }} · 牌库图</h2></div><button @click="closeImagePreview">×</button></header><img :src="imagePreview.url" alt="牌库图预览"/><footer><button @click="copyPreviewImage">复制图片</button><button class="primary" @click="downloadDeckImage(imagePreview.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
   </div>
@@ -209,9 +230,9 @@ function importFromCode() {
 @media(max-width:1050px){.mine-grid,.plaza-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.deck-page{padding:18px 12px 48px}.page-head{align-items:flex-start;flex-direction:column;gap:12px}.import-panel,.plaza-toolbar{grid-template-columns:1fr}.import-panel button,.plaza-toolbar button{padding:11px}.mine-grid,.plaza-grid{grid-template-columns:1fr}.detail-grid{grid-template-columns:repeat(3,1fr)}.deck-detail>footer{flex-wrap:wrap}.deck-detail>footer button{flex:1 1 40%}}
 .plaza-toolbar{grid-template-columns:minmax(220px,1fr) 150px 120px auto}.plaza-toolbar select{padding:11px;border:1px solid #46545d;background:#070d12;color:#fff}.deck-notice{z-index:100}.deck-detail{width:min(1180px,95vw)}.deck-detail>header,.image-preview header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px;border-bottom:1px solid #354149}.image-preview header small{color:#52c4cb;font-size:14px}.image-preview h2{margin:5px 0;font-size:24px}.image-preview header button{width:34px;height:34px;border:1px solid #53616a;background:#0b1117;color:#fff}.deck-analysis{display:grid;grid-template-columns:230px 1fr;min-height:0;overflow:hidden}.deck-analysis>aside{display:grid;align-content:start;gap:12px;padding:20px;border-right:1px solid #354149;overflow:auto}.deck-analysis>aside>section{padding:12px;border:1px solid #334049;background:#0b1218}.deck-analysis>aside>section>b{font-size:14px}.detail-master{display:flex;gap:10px;align-items:center}.detail-master .l12-card-image{width:72px;aspect-ratio:5/7}.detail-master div{display:grid;gap:4px}.detail-master small,.detail-master span{color:#78868c;font-size:14px}.detail-curve{display:flex;height:92px;align-items:end;gap:3px;margin-top:8px}.detail-curve i{display:grid;flex:1;align-items:end;justify-items:center;font-style:normal}.detail-curve i>span{width:100%;max-width:16px;background:linear-gradient(#e1bf6d,#8c6a29)}.detail-curve small,.detail-curve em{font-size:14px;font-style:normal}.detail-curve em{color:#89959a}.deck-analysis>aside>section>p{display:flex;justify-content:space-between;margin:7px 0;color:#89959a;font-size:14px}.deck-analysis>aside>section>p strong{color:#e8e4da}.detail-grid article>b{width:auto;min-width:28px;padding:0 4px}.detail-grid article>small{display:block;margin-top:3px;overflow:hidden;color:#77858c;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.image-mask{z-index:95}.image-preview{width:min(1200px,96vw);max-height:94vh;border:1px solid #52606a;background:#111923}.image-preview>img{display:block;width:100%;max-height:74vh;object-fit:contain;background:#05080a}.image-preview footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid #354149}.image-preview footer button{padding:10px 13px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}
-.detail-grid article.landscape-thumbnail{overflow:hidden}.detail-grid article.landscape-thumbnail .l12-card-image:not(.landscape-thumbnail-image){position:relative;left:50%;width:140%;height:auto;aspect-ratio:8/5;transform:translateX(-50%) rotate(90deg)}
+.deck-analysis>.construction-browser{min-width:0;padding:20px;overflow:hidden}.detail-grid article.landscape-thumbnail{overflow:hidden}.detail-grid article.landscape-thumbnail .l12-card-image:not(.landscape-thumbnail-image){position:relative;left:50%;width:140%;height:auto;aspect-ratio:8/5;transform:translateX(-50%) rotate(90deg)}
 .deck-detail>footer .danger{border-color:#9e3944;background:#4d171d;color:#ffdce0}
-@media(max-width:700px){.plaza-toolbar{grid-template-columns:1fr}.deck-analysis{grid-template-columns:1fr}.deck-analysis>aside{border-right:0;border-bottom:1px solid #354149}}
+@media(max-width:700px){.plaza-toolbar{grid-template-columns:1fr}.deck-analysis{grid-template-columns:1fr;overflow:auto}.deck-analysis>aside{border-right:0;border-bottom:1px solid #354149}.deck-analysis>.construction-browser{padding:14px}}
 .mine-grid>article>:deep(.deck-profile){border:0;background:transparent}.plaza-summary>:deep(.deck-profile){border:0;background:transparent}.deck-analysis>aside>:deep(.deck-profile){width:100%}
 .plaza-grid footer{--deck-faction:72,84,91;display:grid;grid-template-columns:auto auto auto minmax(112px,1fr) auto;align-items:center;gap:8px;padding:10px 12px;border-top-color:rgba(var(--deck-faction),.48);background:linear-gradient(90deg,rgba(var(--deck-faction),.2),rgba(var(--deck-faction),.08))}.plaza-grid .faction-tianting footer{--deck-faction:34,105,113}.plaza-grid .faction-taiyangcheng footer{--deck-faction:126,91,28}.plaza-grid .faction-asgard footer{--deck-faction:44,79,122}.plaza-grid .faction-gaotianyuan footer{--deck-faction:128,43,54}.plaza-grid .faction-olympus footer{--deck-faction:86,56,126}.plaza-grid .faction-otherworld footer,.plaza-grid .faction-bijie footer{--deck-faction:35,112,83}.plaza-grid footer button{color:#d2d9d8;font-size:14px}.plaza-grid footer button.liked{color:#ff8995}.plaza-grid footer span{color:#c7cecd;font-size:14px;white-space:nowrap}.plaza-grid footer .season-compliance{justify-self:end;color:#f0a9ad;font-weight:900}.plaza-grid footer .season-compliance.compliant{color:#a4e4c8}
 @media(max-width:700px){.plaza-grid footer{grid-template-columns:repeat(3,auto);justify-content:space-between}.plaza-grid footer .season-compliance{grid-column:1/3;justify-self:start}}

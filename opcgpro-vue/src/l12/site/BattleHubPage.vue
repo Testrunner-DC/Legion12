@@ -41,6 +41,10 @@ function formatRankedDuration(seconds: number) {
 const selectedMatchMode = ref<'ranked' | 'casual'>('ranked')
 const roomCodeCopied = ref(false)
 const rankedRulesOpen = ref(false)
+const changingFaction = ref(false)
+const pendingFaction = ref<'order' | 'chaos' | 'fate' | null>(null)
+const factionSaving = ref(false)
+const pendingFactionName = computed(() => ranked.value?.config.factions.find(item => item.id === pendingFaction.value)?.name || '')
 const selectedDeckNames = ref<Record<L12DeckSelectionScope, string>>({
   ranked: '', casual: '', friendly: '', 'sandbox-player': '', 'sandbox-opponent': '',
 })
@@ -183,8 +187,21 @@ watch(() => [l12State.room?.roomCode, currentDeck.value?.name, currentDeckError.
 }, { immediate: true })
 
 async function chooseFaction(faction: 'order' | 'chaos' | 'fate') {
-  try { await rankedApi.selectFaction(faction); ranked.value = normalizeRankedOverview(await rankedApi.overview()) }
+  if (factionSaving.value) return
+  if (ranked.value?.profile.faction) { pendingFaction.value = faction; return }
+  await submitFaction(faction)
+}
+async function submitFaction(faction: 'order' | 'chaos' | 'fate') {
+  if (factionSaving.value) return
+  factionSaving.value = true
+  try {
+    await rankedApi.selectFaction(faction)
+    ranked.value = normalizeRankedOverview(await rankedApi.overview())
+    changingFaction.value = false
+    pendingFaction.value = null
+  }
   catch (error) { l12State.notice = error instanceof Error ? error.message : '派系选择失败' }
+  finally { factionSaving.value = false }
 }
 async function onMatch() {
   try {
@@ -268,8 +285,8 @@ async function copyRoomCode() {
 
       <section v-if="tab === 'match'" class="mode-panel panel"><header class="public-match-head"><div><small>PUBLIC MATCH</small><h2>公开匹配</h2></div><button v-if="selectedMatchMode === 'ranked'" class="ranked-rules-button" type="button" @click="rankedRulesOpen = true">排位规则</button></header>
         <p v-if="selectedMatchMode === 'ranked' && operationsPolicy" class="season-name"><b>当前赛季</b><span>{{ operationsPolicy.season.name }}</span></p>
-        <div v-if="selectedMatchMode === 'ranked' && ranked && !ranked.profile.faction" class="faction-select"><b>选择本赛季派系</b><span>赛季中可改选；改选后七曜值、定级和本赛季战绩重新开始。</span><div><button v-for="faction in ranked.config.factions" :key="faction.id" @click="chooseFaction(faction.id)">{{ faction.name }}</button></div></div>
-        <div v-else-if="selectedMatchMode === 'ranked' && ranked" class="ranked-profile"><b>{{ ranked.profile.faction }} · {{ ranked.profile.placed ? ranked.profile.tier : `定级 ${ranked.profile.placementPlayed}/${ranked.config.placementMatches}` }}</b><span>{{ ranked.profile.displayValue }}<template v-if="ranked.profile.titles?.length"> · {{ ranked.profile.titles.join(' · ') }}</template><template v-else-if="ranked.profile.title"> · {{ ranked.profile.title }}</template></span><button @click="ranked.profile.faction = undefined">改选派系</button></div>
+        <div v-if="selectedMatchMode === 'ranked' && ranked && (!ranked.profile.faction || changingFaction)" class="faction-select"><b>{{ changingFaction ? '改选本赛季派系' : '选择本赛季派系' }}</b><strong v-if="changingFaction" class="faction-reset-warning">注意：确认更换后七曜值将清零，定级与本赛季战绩重新开始。</strong><span v-else>请选择本赛季参与排位的派系。</span><button v-if="changingFaction" :disabled="factionSaving" @click="changingFaction = false">返回，不更改</button><div><button v-for="faction in ranked.config.factions" :key="faction.id" :disabled="factionSaving || faction.name === ranked.profile.faction || faction.id === ranked.profile.faction" @click="chooseFaction(faction.id)">{{ faction.name }}</button></div></div>
+        <div v-else-if="selectedMatchMode === 'ranked' && ranked" class="ranked-profile"><b>{{ ranked.profile.faction }} · {{ ranked.profile.placed ? ranked.profile.tier : `定级 ${ranked.profile.placementPlayed}/${ranked.config.placementMatches}` }}</b><span>{{ ranked.profile.displayValue }}<template v-if="ranked.profile.titles?.length"> · {{ ranked.profile.titles.join(' · ') }}</template><template v-else-if="ranked.profile.title"> · {{ ranked.profile.title }}</template></span><button @click="changingFaction = true">改选派系</button></div>
         <div class="match-options"><button :class="{ active: selectedMatchMode === 'ranked' }" @click="selectedMatchMode = 'ranked'">排位匹配</button><button :class="{ active: selectedMatchMode === 'casual' }" @click="selectedMatchMode = 'casual'">休闲匹配</button></div>
         <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="!currentDeck || !!currentDeckError || maintenanceActive" @click="onMatch">开始{{ selectedMatchMode === 'ranked' ? '排位' : '休闲' }}匹配</button>
       </section>
@@ -283,6 +300,13 @@ async function copyRoomCode() {
       :loading="selectorLoading" :disabled="!!(l12State.room && me?.ready)"
       @cancel="deckSelectorOpen = false" @confirm="confirmDeckSelection"/>
     <Teleport to="body">
+      <div v-if="pendingFaction" class="ranked-rules-backdrop" @click.self="!factionSaving && (pendingFaction = null)">
+        <section class="ranked-rules-modal" role="dialog" aria-modal="true" aria-labelledby="faction-confirm-title" @keydown.esc="!factionSaving && (pendingFaction = null)">
+          <header><h2 id="faction-confirm-title">确认改为{{ pendingFactionName }}？</h2></header>
+          <div class="ranked-rules-scroll"><p class="faction-reset-warning">七曜值将清零，定级进度和本赛季战绩将重新开始。此操作不会因返回页面而撤销。</p><p>取消将保留当前派系及全部现有进度。</p></div>
+          <footer><button autofocus :disabled="factionSaving" @click="pendingFaction = null">取消，保留当前派系</button><button :disabled="factionSaving" @click="submitFaction(pendingFaction!)">{{ factionSaving ? '正在更改…' : '确认清零并更改' }}</button></footer>
+        </section>
+      </div>
       <div v-if="rankedRulesOpen" class="ranked-rules-backdrop" @click.self="rankedRulesOpen = false">
         <section class="ranked-rules-modal" role="dialog" aria-modal="true" aria-label="排位规则">
           <header><div><small>RANKED RULES</small><h2>排位规则</h2><p>{{ operationsPolicy?.season.name || '当前赛季' }}</p></div><button type="button" @click="rankedRulesOpen = false">×</button></header>
@@ -303,6 +327,8 @@ async function copyRoomCode() {
 </template>
 
 <style scoped>
+.faction-reset-warning{display:block;padding:14px;border:1px solid #d56d63;background:#30191b;color:#ffb6a9;font-weight:800;line-height:1.7}.ranked-rules-modal>footer{flex-wrap:wrap;gap:12px}
+
 .public-match-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}.public-match-head h2{margin:4px 0}.ranked-rules-button{min-width:150px;min-height:64px;border:1px solid #e1c759;background:#151c23;color:#f0d46d;font-weight:900}.season-name{display:flex;align-items:baseline;gap:10px;width:max-content;padding:10px 14px;border-left:4px solid #d7bc55;background:#1d1b12;color:#ead982}.season-name b{font-size:14px}.season-name span{font-size:17px;font-weight:900}
 .ranked-rules-backdrop{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.68)}.ranked-rules-modal{box-sizing:border-box;display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:min(760px,calc(100vw - 40px));max-height:min(820px,calc(100vh - 40px));overflow:hidden;border:1px solid #9b8438;background:#0d151d;color:#eef1ed;box-shadow:0 24px 80px #000}.ranked-rules-modal>header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 22px;border-bottom:1px solid #34414a}.ranked-rules-modal header small{color:#58c6cd;font:900 14px monospace;letter-spacing:.16em}.ranked-rules-modal header h2{margin:5px 0 2px}.ranked-rules-modal header p{margin:0;color:#d5ba59}.ranked-rules-modal header button{border:0;background:transparent;color:#b9c1c4;font-size:28px}.ranked-rules-scroll{display:grid;min-height:0;align-content:start;gap:12px;overflow-x:hidden;overflow-y:scroll;padding:18px 22px}.ranked-rules-scroll article{padding:14px;border:1px solid #2c3943;background:#101b25}.ranked-rules-scroll h3{margin:0 0 8px;color:#e7ce72}.ranked-rules-scroll p{margin:0;color:#b5c0c4;line-height:1.75}.rules-faction{display:grid;gap:6px;margin-top:10px;padding:10px;border-left:3px solid #7b63dd;background:#0b1219}.rules-faction span,.rules-faction small{color:#9caaaf;line-height:1.6}.ranked-rules-modal>footer{display:flex;justify-content:flex-end;padding:14px 22px;border-top:1px solid #34414a}.ranked-rules-modal>footer button{padding:10px 24px;border:1px solid #ddc15a;background:#332a12;color:#f0d879;font-weight:900}
 .battle-hub{width:min(980px,calc(100% - 40px));min-height:100%;margin:0 auto;padding:34px 0 60px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:22px}.page-head small,.panel>small,.panel header small{color:#50c4cc;font:900 14px monospace;letter-spacing:.2em}.page-head h1{margin:5px 0;font-size:30px}.page-head p,.mode-panel>p{margin:0;color:#7c8990;font-size:14px;line-height:1.7}.server-state{display:flex;align-items:center;gap:8px;color:#7b858a;font-size:14px;font-weight:900}.server-state i{width:8px;height:8px;border-radius:50%;background:#687177}.server-state.online i{background:#54c695;box-shadow:0 0 8px #54c695}.panel{border:1px solid rgba(235,230,216,.17);background:#101821;box-shadow:0 18px 50px rgba(0,0,0,.18)}.current-deck{display:grid;grid-template-columns:58px 1fr auto;align-items:center;gap:16px;padding:18px}.deck-thumb{display:grid;width:52px;height:70px;place-items:center;border:1px solid #d2b76f;background:linear-gradient(145deg,#6e1825,#13252a);font-size:20px;font-weight:900}.current-deck small,.current-deck b,.current-deck span{display:block}.current-deck small{color:#728089;font-size:14px}.current-deck b{margin:4px 0;font-size:17px}.current-deck span{color:#7f8b91;font-size:14px}.current-deck-actions{text-align:right}.current-deck-actions span.invalid,.room-current-deck span.invalid{color:#ef9ca4}.current-deck-actions button,.room-current-deck button{margin-top:7px;padding:8px 11px;border:1px solid #d5b862;background:#151b1d;color:#ead083;font-size:14px;font-weight:900}.mode-tabs{display:grid;grid-template-columns:repeat(3,1fr);margin:18px 0;border:1px solid rgba(235,230,216,.17);background:#0b1117}.mode-tabs button{padding:14px;border:0;background:transparent;color:#738089;font-weight:900}.mode-tabs button.active{background:linear-gradient(135deg,#8b1c2a,#ad2d38);color:#fff}.mode-panel{padding:28px}.mode-panel h2{margin:6px 0 8px;font-size:23px}.mode-panel>p{max-width:650px}.mode-panel label{display:block;margin:20px 0 12px;color:#aab2b4;font-size:14px;font-weight:900}.mode-panel input,.mode-panel select{width:100%;padding:12px;border:1px solid #45535c;background:#080e14;color:#fff;outline:none}.mode-panel input:focus,.mode-panel select:focus{border-color:#50c4cc}.primary{border-color:#e2c473!important;background:#e2c473!important;color:#0a0d0f!important;font-weight:900}.mode-panel>button.primary{min-width:220px;margin-top:22px;padding:13px;border:1px solid}.match-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.match-options button{padding:15px;border:1px solid #3e4a52;background:#0b1117;color:#7b868b}.join-row{display:grid;grid-template-columns:1fr auto 1fr auto;align-items:center;gap:9px}.join-row button{height:42px;padding:0 18px;border:1px solid #52606a;background:#121c24;color:#fff}.join-row span{color:#68757c;font-size:14px}.room-settings{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.room-settings>div{padding:14px;border:1px solid #354149;background:#0b1218}.room-settings b{display:block;margin-bottom:8px;font-size:14px}.room-stage{padding:26px}.room-stage>header{display:flex;align-items:center;justify-content:space-between}.room-stage h2{margin:4px 0}.room-stage code{padding:9px 12px;border:1px solid #d9bc6d;color:#f0d889;font-size:17px;letter-spacing:.16em}.versus{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:60px;margin:24px 0}.versus article{display:flex;min-height:150px;flex-direction:column;align-items:center;justify-content:center;border:1px solid #37434a;background:#0a1117}.versus article.empty{opacity:.55}.versus span{color:#66747c;font:900 14px monospace;letter-spacing:.15em}.versus article>b{margin:10px 0 4px;font-size:20px}.versus p{margin:0;color:#78858b;font-size:14px}.versus em{margin-top:12px;color:#d9bb68;font-size:14px;font-style:normal;font-weight:900}.versus>strong{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#a52b38}.room-current-deck{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px;border:1px solid #39464e;background:#0a1117}.room-current-deck :deep(.deck-profile){border:0;background:transparent}.room-current-deck>div{text-align:right}.room-current-deck span{display:block;color:#7f8b91;font-size:14px}.room-current-deck>p{color:#87939a;font-size:14px}.room-stage footer{display:flex;align-items:center;justify-content:space-between;margin-top:20px}.room-stage footer a{color:#55c4ca;font-size:14px;text-decoration:none}.room-stage footer button{min-width:220px;padding:12px;border:1px solid}.battle-notice{padding:11px;border-left:3px solid #a52b38;background:#211016;color:#e6a8ad;font-size:14px}

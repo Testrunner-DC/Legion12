@@ -536,7 +536,8 @@ public sealed class NewSystemsTests
         Assert.Empty(game.State.PendingPrompts);
         Assert.Equal(libraryBefore, player.Library.Count);
         Assert.Equal(returned, player.Library[^1].InstanceId);
-        Assert.Contains(game.State.Events, item => item.Type == "return" && item.Cards.Any(card => card.InstanceId == returned));
+        Assert.Contains(game.SnapshotFor(owner).RecentEvents,
+            item => item.Type == "return" && item.Cards.Any(card => card.InstanceId == returned));
     }
 
     [Fact]
@@ -771,6 +772,11 @@ public sealed class NewSystemsTests
         Assert.Equal("instant", response.Data["choiceMode"]);
         Assert.True(game.Handle(opponent, new L12Command("resolvePrompt", PromptId: response.PromptId,
             Choice: negate.InstanceId)).Accepted);
+
+        var retainedPriority = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(opponent, retainedPriority.PlayerIndex);
+        Assert.True(game.Handle(opponent, new L12Command("resolvePrompt", PromptId: retainedPriority.PromptId,
+            Choice: "pass")).Accepted);
 
         Assert.Same(legion, player.Field[0][0]);
         Assert.Equal(disasterBefore + legion.DisasterLevel, game.State.DisasterValue);

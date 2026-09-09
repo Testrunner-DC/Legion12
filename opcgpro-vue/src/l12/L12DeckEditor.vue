@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { masterProfileUrl } from './specialAssets'
@@ -35,10 +35,15 @@ const activeDeckName = ref<string | null>(null)
 const specialIds = ref<string[]>([])
 const catalogTab = ref<'master' | 'main' | 'extra'>('master')
 const pendingDeleteName = ref('')
+const deckMutationBusy = ref(false)
+const deletingDeck = ref(false)
 const deckImageUrl = ref('')
 const deckImageBlob = ref<Blob | null>(null)
 const generatingDeckImage = ref(false)
 const publicationId = ref(typeof route.query.published === 'string' ? route.query.published : '')
+const editorContentRevision = ref(0)
+
+watch([deckName, masterId, counts, specialIds], () => editorContentRevision.value++, { deep: true, flush: 'sync' })
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -188,18 +193,49 @@ function currentDeck(): SavedL12Deck {
   }
 }
 
-function onSave() {
-  if (validation.value) { notice.value = validation.value; return }
-  const deck = currentDeck()
-  saveDeck(deck)
-  if (activeDeckName.value && activeDeckName.value !== deck.name) deleteDeck(activeDeckName.value)
-  activeDeckName.value = deck.name
-  savedDecks.value = loadSavedDecks()
-  notice.value = `已保存〈${deck.name}〉，可在房间中选择`
+function mutationError(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
 }
 
-function onSaveAs() {
+async function onSave() {
   if (validation.value) { notice.value = validation.value; return }
+  if (deckMutationBusy.value || deletingDeck.value) return
+  deckMutationBusy.value = true
+  const deck = currentDeck()
+  const previousName = activeDeckName.value
+  const requestedRevision = editorContentRevision.value
+  try {
+    const saved = await saveDeck(deck)
+    let oldNameDeleteError: unknown = null
+    if (previousName && previousName.toLocaleLowerCase('zh-CN') !== saved.name.toLocaleLowerCase('zh-CN')) {
+      try {
+        // 改名先确认新名称已保存；旧名称删除失败时保留两份，绝不以丢失新牌库换取表面原子性。
+        await deleteDeck(previousName)
+      } catch (error) {
+        oldNameDeleteError = error
+      }
+    }
+    savedDecks.value = loadSavedDecks()
+    const editorUnchanged = editorContentRevision.value === requestedRevision
+    if (editorUnchanged) {
+      activeDeckName.value = saved.name
+      deckName.value = saved.name
+    }
+    if (oldNameDeleteError) {
+      notice.value = `已保存新名称〈${saved.name}〉，但旧牌库〈${previousName}〉删除失败：${mutationError(oldNameDeleteError, '请稍后重试')}`
+    } else if (editorUnchanged) {
+      notice.value = `已保存〈${saved.name}〉，可在房间中选择`
+    }
+  } catch (error) {
+    notice.value = `牌库保存失败：${mutationError(error, '请稍后重试')}`
+  } finally {
+    deckMutationBusy.value = false
+  }
+}
+
+async function onSaveAs() {
+  if (validation.value) { notice.value = validation.value; return }
+  if (deckMutationBusy.value || deletingDeck.value) return
   const base = `${deckName.value.trim()} 副本`
   let name = base.slice(0, 24)
   let suffix = 2
@@ -208,27 +244,47 @@ function onSaveAs() {
     name = `${base.slice(0, 24 - ending.length)}${ending}`
   }
   const deck = { ...currentDeck(), name }
-  saveDeck(deck)
-  publicationId.value = ''
-  activeDeckName.value = name
-  deckName.value = name
-  savedDecks.value = loadSavedDecks()
-  notice.value = `已另存为〈${name}〉`
+  const requestedRevision = editorContentRevision.value
+  deckMutationBusy.value = true
+  try {
+    const saved = await saveDeck(deck)
+    savedDecks.value = loadSavedDecks()
+    if (editorContentRevision.value === requestedRevision) {
+      publicationId.value = ''
+      activeDeckName.value = saved.name
+      deckName.value = saved.name
+      notice.value = `已另存为〈${saved.name}〉`
+    }
+  } catch (error) {
+    notice.value = `牌库另存失败：${mutationError(error, '请稍后重试')}`
+  } finally {
+    deckMutationBusy.value = false
+  }
 }
 
 async function publishCurrentDeck() {
   if (!platformState.account) { notice.value = '请先登录账号，再公开牌库'; return }
   if (validation.value) { notice.value = validation.value; return }
+  if (deckMutationBusy.value || deletingDeck.value) return
+  deckMutationBusy.value = true
+  const requestedRevision = editorContentRevision.value
+  const publishedId = publicationId.value
   try {
     const deck = currentDeck()
-    saveDeck(deck)
-    const wasPublished = !!publicationId.value
-    const result = await publicDeckApi.publish(deck, publicationId.value || undefined)
-    publicationId.value = result.id
-    await router.replace({ query: { ...route.query, deck: deck.name, published: result.id } })
-    notice.value = wasPublished ? `已更新公开牌库〈${deck.name}〉` : `已公开〈${deck.name}〉，后续可从此处更新公开版本`
+    const saved = await saveDeck(deck)
+    savedDecks.value = loadSavedDecks()
+    const result = await publicDeckApi.publish(saved, publishedId || undefined)
+    if (editorContentRevision.value === requestedRevision) {
+      activeDeckName.value = saved.name
+      deckName.value = saved.name
+      publicationId.value = result.id
+      await router.replace({ query: { ...route.query, deck: saved.name, published: result.id } })
+      notice.value = publishedId ? `已更新公开牌库〈${saved.name}〉` : `已公开〈${saved.name}〉，后续可从此处更新公开版本`
+    }
   } catch (error) {
     notice.value = error instanceof Error ? error.message : '公开牌库失败'
+  } finally {
+    deckMutationBusy.value = false
   }
 }
 
@@ -249,14 +305,21 @@ function requestDelete(name = activeDeckName.value ?? '') {
   pendingDeleteName.value = name
 }
 
-function confirmDelete() {
+async function confirmDelete() {
   const name = pendingDeleteName.value
-  if (!name) return
-  deleteDeck(name)
-  savedDecks.value = loadSavedDecks()
-  if (activeDeckName.value === name) newDeck()
-  notice.value = `已删除〈${name}〉`
-  pendingDeleteName.value = ''
+  if (!name || deletingDeck.value || deckMutationBusy.value) return
+  deletingDeck.value = true
+  try {
+    await deleteDeck(name)
+    savedDecks.value = loadSavedDecks()
+    if (activeDeckName.value === name) newDeck()
+    notice.value = `已删除〈${name}〉`
+    pendingDeleteName.value = ''
+  } catch (error) {
+    notice.value = `删除〈${name}〉失败：${mutationError(error, '请稍后重试')}`
+  } finally {
+    deletingDeck.value = false
+  }
 }
 
 function resetFilters() {
@@ -302,11 +365,11 @@ onBeforeUnmount(closeDeckImage)
       <div class="deck-total" :class="{ valid: !validation }"><b>{{ countSummary.label }}</b><span>/ 40–50<span v-if="uncountedCards">（括号内不计构筑）</span></span></div>
       <div class="deck-file-actions">
         <button @click="newDeck">新建牌库</button>
-        <button class="primary" :disabled="!!validation" @click="onSave">保存牌库</button>
-        <button :disabled="!!validation" @click="onSaveAs">另存为牌库</button>
+        <button class="primary" :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSave">{{ deckMutationBusy ? '保存中…' : '保存牌库' }}</button>
+        <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSaveAs">另存为牌库</button>
         <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
-        <button :disabled="!!validation" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
-        <button class="delete-deck" :disabled="!activeDeckName" @click="requestDelete()">删除牌库</button>
+        <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
+        <button class="delete-deck" :disabled="!activeDeckName || deckMutationBusy || deletingDeck" @click="requestDelete()">删除牌库</button>
       </div>
     </header>
 
@@ -385,7 +448,7 @@ onBeforeUnmount(closeDeckImage)
         <header><div><p class="kicker">DECK LIST</p><h2>{{ selectedMaster?.nameZh || '未选择主宰' }}</h2></div><b>{{ countSummary.label }}</b></header>
         <div class="cost-curve"><i v-for="(value,index) in curve" :key="index"><span :style="{height:`${Math.max(4, value / maxCurve * 56)}px`}"></span><b>{{ index === 8 ? '8+' : index }}</b><small>{{ value }}</small></i></div>
         <div class="deck-entries"><article v-for="entry in entries" :key="entry.card.id" class="deck-entry-row" @click="selected = entry.card">
-          <CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" object-position="center 28%"/>
+          <CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/>
           <span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong>
           <button aria-label="增加一张" :disabled="entry.count >= effectiveDeckLimit(entry.card, masterId) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button>
           <button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button>
@@ -394,13 +457,13 @@ onBeforeUnmount(closeDeckImage)
           <header><b>额外区</b><span>{{ selectedTrials.length }}/{{ trialCapacity }} 试炼<span v-if="automaticExtraCards.length"> · {{ automaticExtraCards.length }} 自动</span></span></header>
           <div class="deck-extra-entries">
             <article v-for="trial in selectedTrials" :key="trial.id" class="deck-entry-row" @click="selected = trial">
-              <CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover"/>
-              <span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }}</small></div><strong>试炼</strong>
+              <CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/>
+              <span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div><strong>×1</strong>
               <button aria-label="移出额外区" @click.stop="toggleTrial(trial)">−</button>
             </article>
             <article v-for="card in automaticExtraCards" :key="card.id" class="deck-entry-row" @click="selected = card">
-              <CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover"/>
-              <span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></div><strong>自动</strong>
+              <CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/>
+              <span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 自动配置</small></div><strong>×1</strong>
               <button aria-label="主宰自动配置" disabled>锁</button>
             </article>
           </div>
@@ -408,11 +471,11 @@ onBeforeUnmount(closeDeckImage)
         <footer :class="{ error: validation }">{{ notice || validation || '牌库合法，可以保存并用于房间对战' }}</footer>
       </aside>
     </main>
-    <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="pendingDeleteName = ''">
+    <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="deletingDeck ? undefined : pendingDeleteName = ''">
       <section class="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-deck-title">
         <h2 id="delete-deck-title">删除〈{{ pendingDeleteName }}〉？</h2>
         <p>牌库删除后不可找回</p>
-        <footer><button class="danger" @click="confirmDelete">继续删除</button><button @click="pendingDeleteName = ''">取消</button></footer>
+        <footer><button class="danger" :disabled="deletingDeck" @click="confirmDelete">{{ deletingDeck ? '删除中…' : '继续删除' }}</button><button :disabled="deletingDeck" @click="pendingDeleteName = ''">取消</button></footer>
       </section>
     </div>
     <div v-if="deckImageUrl" class="builder-modal-mask" @click.self="closeDeckImage">
@@ -426,6 +489,10 @@ onBeforeUnmount(closeDeckImage)
 </template>
 
 <style scoped>
+.selected-extra-cards{grid-template-rows:auto minmax(0,1fr)}
+.selected-extra-cards>header{flex-wrap:wrap;gap:6px}
+.deck-entry-row>strong{flex:none;white-space:nowrap}
+.deck-entry-row>div>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .deck-builder-shell{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(circle at 50% 0,rgba(22,108,120,.2),transparent 38%),linear-gradient(135deg,#080b0d,#160b0d 58%,#071216);color:#eee}
 .deck-builder-topbar{height:74px;flex:none;display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid #675f59;background:rgba(8,10,12,.94)}
 .deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:14px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#b6bab6;font-size:14px;font-weight:900}.deck-builder-topbar input{width:260px;min-height:38px;padding:8px 11px;font-size:15px;font-weight:900}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:14px}

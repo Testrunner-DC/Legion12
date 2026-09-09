@@ -343,6 +343,7 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.NotNull(restoredPlatform.RankedSettlement(fixture.MatchId, fixture.First.Id));
         Assert.NotNull(restoredPlatform.RankedSettlement(fixture.MatchId, fixture.Second.Id));
         Assert.Empty(await restoredRecorder.ListRankingMatchesAsync());
+        Assert.Equal(fixture.MatchId, Assert.Single(await restoredRecorder.ListRankedAnalyticsMatchesAsync()).MatchId);
         Assert.Equal(0, restoredPlatform.ImportRankedMasterHistory(
             await restoredRecorder.ListRankingMatchesAsync()));
     }
@@ -506,7 +507,7 @@ public sealed class RankedPersistenceRecoveryTests
     }
 
     [Fact]
-    public async Task CompletedRankedRoomReturnsToLobbyAndReconnectsWithoutPersistingANullGame()
+    public async Task CompletedRankedRoomKeepsSettlementAndReconnectsWithoutPersistingActiveRuntime()
     {
         await using var fixture = await RankedFixture.CreateAsync("completed-room-reconnect");
         var completed = await fixture.Manager.HandleActionAsync(fixture.FirstSession,
@@ -517,7 +518,7 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(0, await fixture.Recorder.CountActiveRankedRuntimesAsync());
 
         var lobby = await fixture.Manager.SetReadyAsync(fixture.FirstSession, false);
-        Assert.Contains(lobby.Select(MessageJson), payload => payload.GetProperty("type").GetString() == "roomState");
+        Assert.Contains(lobby.Select(MessageJson), payload => payload.GetProperty("type").GetString() == "error");
         fixture.Recorder.StorageFailureInjector = stage =>
         {
             if (stage == "before-ranked-runtime-batch-commit")
@@ -533,7 +534,8 @@ public sealed class RankedPersistenceRecoveryTests
         var recovery = (await fixture.Manager.RecoveryStateWithAckAsync(replacement))
             .Where(message => message.SessionId == replacement).Select(MessageJson).ToArray();
         Assert.Contains(recovery, payload => payload.GetProperty("type").GetString() == "roomState");
-        Assert.DoesNotContain(recovery, payload => payload.GetProperty("type").GetString() == "gameState");
+        Assert.Contains(recovery, payload => payload.GetProperty("type").GetString() == "gameState"
+            && payload.GetProperty("state").GetProperty("phase").GetString() == "GameOver");
         Assert.Equal(0, await fixture.Recorder.CountActiveRankedRuntimesAsync());
     }
 
@@ -571,7 +573,9 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(clockProperty.PropertyType, legacyClock.GetType());
         await fixture.Manager.HandleActionAsync(fixture.FirstSession,
             JsonSerializer.SerializeToElement(new { type = "surrender" }, WebJson));
-        await fixture.Manager.SetReadyAsync(fixture.FirstSession, false);
+        // New clients cannot reset a result room. Build the old engine-less residue explicitly.
+        roomType.GetProperty("Game")!.SetValue(room, null);
+        clockProperty.SetValue(room, null);
         Assert.Null(clockProperty.GetValue(room));
 
         // Recreate the exact legacy in-memory residue: completion was durably committed, but the
@@ -695,6 +699,55 @@ public sealed class RankedPersistenceRecoveryTests
     }
 
     [Fact]
+    public async Task V2RankedRecoveryReadsSequenceZeroCheckpointAndNeverFallsBackToLegacyInitialColumn()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("sequence-zero-initial");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                SELECT initial_state_json,
+                       (SELECT COUNT(*) FROM match_state_checkpoints
+                        WHERE match_id=m.match_id AND sequence=0)
+                FROM matches m WHERE match_id=$match;
+                """;
+            inspect.Parameters.AddWithValue("$match", fixture.MatchId);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.True(reader.IsDBNull(0));
+            Assert.Equal(1, reader.GetInt32(1));
+        }
+
+        var source = Assert.IsType<L12RankedRecoverySource>(
+            await fixture.Recorder.LoadActiveRankedMatchAsync(fixture.MatchId));
+        Assert.Null(source.LoadError);
+        Assert.False(string.IsNullOrWhiteSpace(source.InitialStateJson));
+        Assert.Equal(2, source.Decks.Length);
+
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var removeInitialCheckpoint = connection.CreateCommand();
+            removeInitialCheckpoint.CommandText = """
+                UPDATE matches SET initial_state_json=$legacyFallback WHERE match_id=$match;
+                DELETE FROM match_state_checkpoints WHERE match_id=$match AND sequence=0;
+                """;
+            removeInitialCheckpoint.Parameters.AddWithValue("$legacyFallback", source.InitialStateJson);
+            removeInitialCheckpoint.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(2, await removeInitialCheckpoint.ExecuteNonQueryAsync());
+        }
+
+        var missing = Assert.IsType<L12RankedRecoverySource>(
+            await fixture.Recorder.LoadActiveRankedMatchAsync(fixture.MatchId));
+        Assert.Contains("sequence=0", Assert.IsType<string>(missing.LoadError), StringComparison.Ordinal);
+        Assert.Empty(missing.InitialStateJson);
+        Assert.Empty(missing.Decks);
+    }
+
+    [Fact]
     public async Task LightweightRecoveryStillReadsAuthorityConclusionWinnerAndReason()
     {
         await using var fixture = await RankedFixture.CreateAsync("lightweight-authority");
@@ -788,7 +841,7 @@ public sealed class RankedPersistenceRecoveryTests
     }
 
     [Fact]
-    public async Task CorruptRuntimeAndInitialStateAreIsolatedPerRowWithoutBlockingHealthyRecovery()
+    public async Task CorruptRuntimeAndInitialCheckpointAreIsolatedPerRowWithoutBlockingHealthyRecovery()
     {
         await using var fixture = await RankedFixture.CreateAsync("corrupt-runtime-row");
         var badInitial = await fixture.CreateAdditionalMatchAsync("corrupt-initial-row");
@@ -817,14 +870,48 @@ public sealed class RankedPersistenceRecoveryTests
             corruptRuntime.Parameters.AddWithValue("$match", fixture.MatchId);
             Assert.Equal(1, await corruptRuntime.ExecuteNonQueryAsync());
 
+            byte[] initialBlob;
+            int initialBytes;
             var readInitial = connection.CreateCommand();
-            readInitial.CommandText = "SELECT initial_state_json FROM matches WHERE match_id=$match;";
+            readInitial.CommandText = """
+                SELECT state_blob,uncompressed_bytes FROM match_state_checkpoints
+                WHERE match_id=$match AND sequence=0;
+                """;
             readInitial.Parameters.AddWithValue("$match", badInitial.MatchId);
-            var initial = JsonNode.Parse((string)(await readInitial.ExecuteScalarAsync())!)!.AsObject();
+            await using (var reader = await readInitial.ExecuteReaderAsync())
+            {
+                Assert.True(await reader.ReadAsync());
+                initialBlob = (byte[])reader[0];
+                initialBytes = reader.GetInt32(1);
+            }
+            await using var initialInput = new MemoryStream(initialBlob, writable: false);
+            await using var initialBrotli = new System.IO.Compression.BrotliStream(
+                initialInput, System.IO.Compression.CompressionMode.Decompress);
+            using var initialOutput = new MemoryStream(initialBytes);
+            await initialBrotli.CopyToAsync(initialOutput);
+            var initial = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(initialOutput.ToArray()))!.AsObject();
             initial["Players"]!.AsArray()[0]!.AsObject().Remove("MoraleDeck");
+            var corruptJson = initial.ToJsonString();
+            var corruptRaw = System.Text.Encoding.UTF8.GetBytes(corruptJson);
+            byte[] corruptBlob;
+            using (var output = new MemoryStream())
+            {
+                using (var brotli = new System.IO.Compression.BrotliStream(output,
+                           System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true))
+                    await brotli.WriteAsync(corruptRaw);
+                corruptBlob = output.ToArray();
+            }
+            var corruptHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(corruptRaw))
+                .ToLowerInvariant();
             var corruptInitial = connection.CreateCommand();
-            corruptInitial.CommandText = "UPDATE matches SET initial_state_json=$json WHERE match_id=$match;";
-            corruptInitial.Parameters.AddWithValue("$json", initial.ToJsonString());
+            corruptInitial.CommandText = """
+                UPDATE match_state_checkpoints
+                SET state_blob=$state,uncompressed_bytes=$bytes,state_hash=$hash
+                WHERE match_id=$match AND sequence=0;
+                """;
+            corruptInitial.Parameters.AddWithValue("$state", corruptBlob);
+            corruptInitial.Parameters.AddWithValue("$bytes", corruptRaw.Length);
+            corruptInitial.Parameters.AddWithValue("$hash", corruptHash);
             corruptInitial.Parameters.AddWithValue("$match", badInitial.MatchId);
             Assert.Equal(1, await corruptInitial.ExecuteNonQueryAsync());
         }

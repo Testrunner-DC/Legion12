@@ -12,6 +12,7 @@ public sealed partial class L12RoomManager
         try
         {
             var staleRooms = _rooms.Values.Where(room => room.IsSandbox && room.Game is not null
+                && room.Game.State.Phase != L12Phase.GameOver
                 && room.GmControllerSessionId is { } controllerId
                 && _sessions.TryGetValue(controllerId, out var controller)
                 && !controller.Connected && controller.DisconnectedAt is { } disconnectedAt
@@ -23,7 +24,8 @@ public sealed partial class L12RoomManager
                 {
                     Guid[] spectators;
                     lock (room.Spectators) spectators = [.. room.Spectators];
-                    if (room.GmControllerSessionId is not { } controllerId
+                    if (room.Game?.State.Phase == L12Phase.GameOver
+                        || room.GmControllerSessionId is not { } controllerId
                         || !_sessions.TryGetValue(controllerId, out var controller)
                         || controller.Connected || controller.DisconnectedAt is not { } disconnectedAt
                         || now - disconnectedAt < SandboxReconnectGrace
@@ -67,45 +69,56 @@ public sealed partial class L12RoomManager
             _sessionRecoveryGate.Release();
         }
 
-        // 房间快照是第二道保护：数据库只选 completed/abandoned，这里另外
-        // 保护仍在内存房间中的沙盒（包括已 GameOver 但 GM 尚未离开的房间）。
-        var activeSandboxMatches = _rooms.Values
-            .Where(candidate => candidate.IsSandbox && candidate.Game is not null)
-            .Select(candidate => candidate.Game!.State.MatchId)
-            .ToArray();
-        var replayCleanup = await _recorder.RunSandboxReplayCleanupIfDueAsync(
-            activeSandboxMatches, now, cancellationToken);
-        try
+        // 断线沙盒退场仍及时执行；磁盘清理只进入持久化的每日低峰窗口。
+        var result = new L12SandboxReplayCleanupResult(false, 0, null, _recorder.NextStorageCleanupUtc(now));
+        await _recorder.RunDailyStorageMaintenanceIfDueAsync(async token =>
         {
-            await _recorder.RunCardFactStorageMaintenanceIfDueAsync(now, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            result = await RunScheduledStorageCleanupAsync(now, token);
+        }, now, cancellationToken);
+        return result;
+    }
+
+    private async Task<L12SandboxReplayCleanupResult> RunScheduledStorageCleanupAsync(
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var replayCleanup = new L12SandboxReplayCleanupResult(false, 0, null, _recorder.NextStorageCleanupUtc(now));
+        var retentionEnvironment = Environment.GetEnvironmentVariable("L12_STORAGE_RETENTION_ENVIRONMENT");
+        async Task Sandbox(CancellationToken token)
         {
-            throw;
+            // Test environment uses its independently validated 14-day payload policy below.
+            if (retentionEnvironment == "testrun") return;
+            var activeSandboxMatches = _rooms.Values.Where(room => room.IsSandbox && room.Game is not null)
+                .Select(room => room.Game!.State.MatchId).ToArray();
+            replayCleanup = await _recorder.RunSandboxReplayCleanupIfDueAsync(
+                activeSandboxMatches, now, token, _platform is null ? null : _platform.UnresolvedReplayEvidence);
         }
-        catch (Exception error)
-        {
-            // 单卡事实维护与沙盒录像清理相互隔离；失败留待下一轮重试，不影响房间服务。
-            Console.Error.WriteLine($"Card analytics storage maintenance: {error.Message}");
-        }
-        try
+        async Task PlayerReplay(CancellationToken token)
         {
             // Daily payload retention is independent of the weekly sandbox schedule.
             // Keep every in-memory match as well as unresolved Bug evidence out of the purge.
             var activeMatches = _rooms.Values.Where(room => room.Game is not null)
                 .Select(room => room.Game!.State.MatchId).ToArray();
-            await _recorder.RunPlayerReplayCleanupIfDueAsync(activeMatchIds: activeMatches,
-                utcNow: now, cancellationToken: cancellationToken,
-                evidenceProvider: _platform is null ? null : _platform.UnresolvedReplayEvidence);
+            if (retentionEnvironment == "testrun")
+                await _recorder.RunTestRunReplayRetentionAsync(retentionEnvironment,
+                    Environment.GetEnvironmentVariable("L12_PUBLIC_BASE_URL") ?? "",
+                    MatchRecorder.TestRunRuntimePath, MatchRecorder.ProductionRuntimePath,
+                    activeMatchIds: activeMatches, utcNow: now, cancellationToken: token,
+                    evidenceProvider: _platform is null ? null : _platform.UnresolvedReplayEvidence);
+            else
+                await _recorder.RunPlayerReplayCleanupIfDueAsync(activeMatchIds: activeMatches,
+                    utcNow: now, cancellationToken: token,
+                    evidenceProvider: _platform is null ? null : _platform.UnresolvedReplayEvidence);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        async Task Audit(CancellationToken token)
         {
-            throw;
+            if (_platform is null) return;
+            var holds = await _recorder.ReadAuditRetentionHoldsAsync(token);
+            var active = _rooms.Values.Where(room => room.Game is not null).Select(room => room.Game!.State.MatchId);
+            _platform.RunAuditLifecycle(now, holds.Concat(active).Distinct().ToArray(), token);
         }
-        catch (Exception error)
-        {
-            Console.Error.WriteLine($"Player replay retention maintenance: {error.Message}");
-        }
+        await MatchRecorder.RunStorageSlicesAsync(now,
+            [("Sandbox", Sandbox), ("Card analytics", token => _recorder.RunCardFactStorageMaintenanceIfDueAsync(now,token)),
+             ("Player replay", PlayerReplay), ("Audit lifecycle", Audit)], cancellationToken);
         return replayCleanup;
     }
 }

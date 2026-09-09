@@ -10,6 +10,28 @@ public sealed class EffectPresentationBranchSegmentTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
+    [Theory]
+    [InlineData("effect-trigger")]
+    [InlineData("effect-activation")]
+    [InlineData("effect-response")]
+    public void SegmentedAbilitiesNeverAnimateTheirWholeDeclaration(string eventType)
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 299030);
+        var checkedScenes = 0;
+        foreach (var card in catalog.AtomicEffects.All)
+        foreach (var ability in card.Abilities.Where(ability =>
+                     ability.Presentations.Any(scene => scene.EventType == "effect" && scene.Flow is not null)))
+        foreach (var whole in ability.Presentations.Where(scene => scene.EventType == "effect" && scene.Flow is null))
+        {
+            var source = Card(catalog, card.CardId, $"whole-{checkedScenes++}");
+            Invoke(game, "AddPresentationEventById", eventType, 0, "整段声明保留审计",
+                whole.SceneId, new[] { source });
+            Assert.Equal("effect-announced", game.State.Events.Last().Type);
+        }
+        Assert.True(checkedScenes > 0);
+    }
+
     [Fact]
     public void EveryConfiguredCompositeSegmentIsExposedByTheAtomicAdminCatalog()
     {
@@ -290,6 +312,8 @@ public sealed class EffectPresentationBranchSegmentTests
             legacy.SceneId, new[] { source });
         var legacyEvent = Assert.Single(defaults.State.Events, action => action.Text == "旧场景审计文案");
         Assert.Null(legacyEvent.EffectText);
+        Assert.Equal("effect-announced", legacyEvent.Type);
+        Assert.Equal("effect-trigger", defaultEvent.Type);
 
         var frozen = new L12FrozenEffectPresentation(branch.SceneId, branch.CardId, branch.Trigger,
             "冻结分支覆盖", []);

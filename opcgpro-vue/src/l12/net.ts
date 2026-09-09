@@ -205,6 +205,7 @@ export const l12State = reactive({
   notice: '',
   operationsPolicy: null as EffectiveOperationsPolicy | null,
   friendInvitation: null as null | { invitationId: string; roomCode: string; fromAccountId: string; fromName: string },
+  outgoingFriendInvitation: null as null | { invitationId: string; roomCode: string; targetAccountId: string },
   matchmaking: null as null | { queued: boolean; mode?: 'ranked' | 'casual'; joinedAt?: string },
   matchFound: null as null | { mode?: 'ranked' | 'casual'; roomCode: string; matchId?: string },
   rankedSettlement: null as RankedSettlement | null,
@@ -504,13 +505,36 @@ export function connect(): Promise<void> {
         l12State.notice = message.message || ''
       }
       else if (message.type === 'friendInvitation') l12State.friendInvitation = message
-      else if (message.type === 'friendInvitationResolved') l12State.friendInvitation = null
+      else if (message.type === 'friendInvitationResolved' || message.type === 'friendInvitationRevoked') {
+        if (!message.invitationId || l12State.friendInvitation?.invitationId === message.invitationId)
+          l12State.friendInvitation = null
+        if (!message.invitationId || l12State.outgoingFriendInvitation?.invitationId === message.invitationId)
+          l12State.outgoingFriendInvitation = null
+        if (message.type === 'friendInvitationRevoked' && message.message) l12State.notice = message.message
+      }
       else if (message.type === 'friendRoomCreated') {
-        l12State.friendInvitation = null
+        if (l12State.friendInvitation?.invitationId === message.invitationId)
+          l12State.friendInvitation = null
+        if (l12State.outgoingFriendInvitation?.invitationId === message.invitationId)
+          l12State.outgoingFriendInvitation = null
         l12State.notice = message.message || '好友房间已创建'
         window.dispatchEvent(new CustomEvent('l12-friend-room-created', { detail: message }))
       }
-      else if (message.type === 'friendInvitationSent' || message.type === 'friendInvitationRejected') l12State.notice = message.message || ''
+      else if (message.type === 'friendInvitationSent') {
+        if (message.invitationId && message.roomCode && message.targetAccountId) {
+          l12State.outgoingFriendInvitation = {
+            invitationId: message.invitationId,
+            roomCode: message.roomCode,
+            targetAccountId: message.targetAccountId,
+          }
+        }
+        l12State.notice = message.message || ''
+      }
+      else if (message.type === 'friendInvitationRejected') {
+        if (!message.invitationId || l12State.outgoingFriendInvitation?.invitationId === message.invitationId)
+          l12State.outgoingFriendInvitation = null
+        l12State.notice = message.message || ''
+      }
       else if (message.type === 'matchmakingState') {
         if (!message.queued && l12State.matchFound) return
         l12State.matchmaking = message.queued ? message : null
@@ -630,7 +654,7 @@ export function connect(): Promise<void> {
       }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
         || message.type === 'tournamentRoomRejected' || message.type === 'tournamentResultPending') {
-        l12State.notice = message.message
+        if (!(l12State.spectating && message.message === '观战者不能执行对局操作')) l12State.notice = message.message
         completePendingAction(message.requestId)
         l12State.leavingRoom = false
         syncGameReentry()
@@ -755,6 +779,7 @@ export const enterTournamentMatch = (tournamentId: string, matchId: string) => {
   send({ type: 'enterTournamentMatch', tournamentId, matchId })
 }
 export const inviteFriend = (accountId: string) => send({ type: 'inviteFriend', accountId })
+export const cancelFriendInvitation = (invitationId: string) => send({ type: 'cancelFriendInvitation', invitationId })
 export const resolveFriendInvitation = (invitationId: string, accept: boolean) => send({ type: 'resolveFriendInvitation', invitationId, accept })
 export const spectateRoom = (roomCode: string) => { l12State.leavingRoom = false; send({ type: 'spectateRoom', roomCode }) }
 export const spectateTournamentMatch = (tournamentId: string, matchId: string) => {
@@ -776,7 +801,7 @@ export const leaveRoom = () => {
   send({ type: 'leaveRoom' })
 }
 export function gameAction(command: Record<string, unknown>) {
-  if (l12State.pendingAction) return
+  if (l12State.spectating || l12State.pendingAction) return
   l12State.pendingAction = true
   pendingActionEnvelope = { type: 'gameAction', requestId: createActionRequestId(), command }
   send(pendingActionEnvelope)

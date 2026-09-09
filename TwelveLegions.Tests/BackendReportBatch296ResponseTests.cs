@@ -141,6 +141,7 @@ public sealed class BackendReportBatch296ResponseTests
         var firstPitfallStack = Assert.Single(game.State.EffectStack,
             item => item.SourceInstanceId == firstPitfall.InstanceId);
         Assert.Equal(entry.StackItemId, Assert.Single(firstPitfallStack.Targets));
+        Resolve(game, "pass"); // 本方可连续响应，明确让过后才交给对手。
         Assert.Contains(absoluteDefense.InstanceId, Assert.Single(game.State.PendingPrompts).ValidChoices);
         Resolve(game, absoluteDefense.InstanceId);
         Resolve(game, discard.InstanceId);
@@ -151,7 +152,7 @@ public sealed class BackendReportBatch296ResponseTests
         var currentPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(defenseStack.StackItemId, currentPrompt.StackItemId);
         Assert.DoesNotContain(secondPitfall.InstanceId, currentPrompt.ValidChoices);
-        Assert.Contains("是否响应堆叠顶部：〈绝对防御〉", currentPrompt.Text, StringComparison.Ordinal);
+        Assert.Contains("〈绝对防御〉", currentPrompt.Text, StringComparison.Ordinal);
         Assert.Contains(Catalog.Cards["S01-0016"].Effect!, currentPrompt.Text, StringComparison.Ordinal);
 
         var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
@@ -232,9 +233,11 @@ public sealed class BackendReportBatch296ResponseTests
 
         var response = Assert.Single(nestedGame.State.PendingPrompts);
         Assert.Equal(interleaved.StackItemId, response.StackItemId);
-        Assert.DoesNotContain(nestedPitfall.InstanceId, response.ValidChoices);
-        Assert.Contains("是否响应堆叠顶部：〈安德华拉诺特〉", response.Text, StringComparison.Ordinal);
+        Assert.Contains(nestedPitfall.InstanceId, response.ValidChoices);
+        Assert.Contains("〈安德华拉诺特〉", response.Text, StringComparison.Ordinal);
         Assert.Contains(interleaved.Text, response.Text, StringComparison.Ordinal);
+        Resolve(nestedGame, nestedPitfall.InstanceId);
+        Assert.Equal(entry.StackItemId, Assert.Single(nestedGame.State.EffectStack[^1].Targets));
     }
 
     [Fact]
@@ -297,7 +300,7 @@ public sealed class BackendReportBatch296ResponseTests
         game.State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 };
         typeof(L12GameEngine).GetMethod("OfferResponse", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(game, null);
-        Assert.DoesNotContain(pitfall.InstanceId, Assert.Single(game.State.PendingPrompts).ValidChoices);
+        Assert.Contains(pitfall.InstanceId, Assert.Single(game.State.PendingPrompts).ValidChoices);
 
         var disaster = Stack("stack-3", 0, Card("S01-DS01", "batch296-disaster"),
             "disaster", "天地异变效果");

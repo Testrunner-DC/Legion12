@@ -77,7 +77,7 @@ public sealed partial class L12GameEngine
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
         var christinaReplacementKey = $"starter-christina-free-tactic:{State.TurnSerial}";
         var usesChristinaReplacement = card.CardType == "tactic" && !IsCounterTactic(card.CardId)
-            && card.CurrentCost <= 3 && player.UsedAbilities.Contains(christinaReplacementKey);
+            && L12StructuredCardRules.CurrentCostAtMost(card, 3) && player.UsedAbilities.Contains(christinaReplacementKey);
         Dictionary<string, List<string>>? compositeDeclaration = null;
         if (L12CompositeEffectPlans.HasHandPlayPlan(card.CardId))
         {
@@ -341,8 +341,7 @@ public sealed partial class L12GameEngine
             player.NextLegionEntryDiscount = 0;
         if (card.CardType == "tactic" && player.FreeTacticCount > 0)
             player.FreeTacticCount--;
-        else if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
-            player.UsedAbilities.Remove("ds01-free-tactic");
+        // 黯陨晨星的免费分支持续整个回合，由回合切换统一清除。
 
         var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
         if (HasImmediateEffect(card, trigger))
@@ -574,7 +573,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         var counterTactic = card.CardType == "tactic" && IsCounterTactic(card.CardId);
-        if (card.CardType == "tactic" && !counterTactic && card.CurrentCost <= 3
+        if (card.CardType == "tactic" && !counterTactic && L12StructuredCardRules.CurrentCostAtMost(card, 3)
             && player.UsedAbilities.Contains($"starter-christina-free-tactic:{State.TurnSerial}")) return 0;
         if (card.CardType == "tactic" && (player.FreeTacticCount > 0
             || (!counterTactic && player.UsedAbilities.Contains("ds01-free-tactic")))) return 0;

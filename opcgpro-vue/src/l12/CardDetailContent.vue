@@ -52,3 +52,8 @@ function hasCostDimension(card: DeckCard) {
     </template>
   </div>
 </template>
+
+<style scoped>
+/* 同一图鉴详情复用于窄侧栏时，横卡的固定理想宽度不能超过宿主容器。 */
+.archive-detail-image,.archive-modal-image{box-sizing:border-box;max-width:100%;min-width:0;overflow:hidden}
+</style>

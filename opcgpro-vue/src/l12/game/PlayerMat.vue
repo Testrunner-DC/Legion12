@@ -26,6 +26,7 @@ const props = defineProps<{
   active?: boolean
   targetableIds?: string[]
   selectedTargetIds?: string[]
+  responseTargetIds?: string[]
   masterTargetable?: boolean
   attackableIds?: string[]
   responsePlayableIds?: string[]
@@ -145,6 +146,9 @@ function canAttack(card: Card, row: number) {
 function isCounterTactic(card: Card | null) {
   return card?.cardType === 'counter-tactic'
     || ['S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021', 'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420'].includes(card?.cardId ?? '')
+}
+function isBattlefieldLegionCard(card: Card) {
+  return card.cardType === 'legion' || card.isMasterLegion === true || card.cardId === 'S01-0417' && card.troops > 0
 }
 function counterState(card: Card | null) {
   if (card?.hidden && card.identityKnown) return 'hidden-dormant'
@@ -307,7 +311,7 @@ function beginCardAbility(card: Card) {
             @mouseenter="(!trial.hidden || side === 'my') && emit('focus', trial)" @focus="(!trial.hidden || side === 'my') && emit('focus', trial)" @click.stop="(!trial.hidden || side === 'my') && selectZoneCard(trial)">
             <img v-if="trial.hidden && side === 'opponent'" class="trial-card-back" src="/assets/l12/trial-back.png" alt="试炼牌背" />
             <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
-            <b v-if="trial.instanceId === currentTrialInstanceId">{{ trial.trialProgress ?? player.specialZones?.trialLevel ?? 0 }}</b>
+            <b v-if="trial.instanceId === currentTrialInstanceId" class="trial-progress" aria-label="当前试炼进度">{{ trial.trialProgress ?? player.specialZones?.trialLevel ?? 0 }}</b>
           </button>
         </div>
     </div>
@@ -324,6 +328,7 @@ function beginCardAbility(card: Card) {
               source: isSelected(player.field[row][slot]?.instanceId),
               'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
               'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
+              'response-target': !player.field[row][slot]?.hidden && responseTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'payment-resource': paymentChoiceIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'payment-selected': paymentSelectedIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'resource-ready': controllable && player.faction === 'taiyangcheng' && player.field[row][slot]?.cardId === 'S01-0212' && !player.field[row][slot]?.tapped,
@@ -347,6 +352,7 @@ function beginCardAbility(card: Card) {
                   @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">试炼</button>
               </div>
               <CardTile :card="hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!"
+                :class="{ 'battlefield-legion-card': isBattlefieldLegionCard(player.field[row][slot]!) }"
                 :selected="isSelected(player.field[row][slot]!.instanceId)"
                 @focus-card="emit('focus', $event)"
                 @mouseenter="emit('focus', hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!)" />
@@ -460,6 +466,7 @@ function beginCardAbility(card: Card) {
 .resource-zone{grid-column:4;grid-row:1/-1;display:flex;box-sizing:border-box;width:132px;max-width:132px;align-self:center;justify-self:start;flex-direction:column;gap:7px}.resource-faction-action,.resource-morale-summary,.resource-morale-stack{box-sizing:border-box;width:132px;max-width:132px;flex:none}.resource-faction-action{order:1;justify-self:start}.resource-morale-summary{order:2;display:grid;grid-template-columns:56px 76px;height:34px;align-items:stretch}.resource-morale-stack{order:3}.side-opponent .resource-morale-stack{order:1;flex-wrap:wrap-reverse;align-content:flex-end}.side-opponent .resource-morale-summary{order:2}.side-opponent .resource-faction-action{order:3}.resource-morale-label{display:grid;box-sizing:border-box;min-width:56px;height:34px;place-items:center;padding:0 5px;border:1px solid color-mix(in srgb,var(--resource-accent,#d2c8a5) 48%,#5b625f);border-right:0;background:rgba(7,10,11,.64);color:#d2d4cf;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.08em;line-height:1;white-space:nowrap}.resource-morale-count{box-sizing:border-box;width:76px;max-width:76px;justify-self:stretch;margin:0}.resource-morale-stack{display:flex;min-height:46px;flex-flow:row wrap;align-content:flex-start;align-items:center;justify-content:flex-start;gap:6px;padding:5px 5px;border:1px solid color-mix(in srgb,var(--resource-accent,#d2c8a5) 38%,#454c49);background:linear-gradient(145deg,rgba(19,23,23,.78),rgba(5,8,9,.62));box-shadow:inset 3px 0 color-mix(in srgb,var(--resource-accent,#d2c8a5) 65%,transparent)}
 .formation-slot.combat-attacker{box-shadow:none!important}
 .formation-slot.combat-target,.mini-master.combat-target{z-index:8;border-color:#e0b85a!important;box-shadow:0 0 0 3px #e0b85a,0 0 24px rgba(224,184,90,.7)!important}
+.formation-slot.response-target{z-index:8;border-color:#e0b85a!important;box-shadow:0 0 0 3px #e0b85a,0 0 24px rgba(224,184,90,.7)!important}
 .formation-slot.combat-target :deep(.card-tile),.mini-master.combat-target{animation:l12-combat-target-cue .3s ease-out both}.card-power{transition:background-color .16s,color .16s,filter .16s}
 @keyframes l12-combat-target-cue{0%,100%{filter:none}45%{filter:brightness(1.22)}}
 @media(prefers-reduced-motion:reduce){.formation-slot.combat-target :deep(.card-tile),.mini-master.combat-target{animation:none}}
@@ -482,7 +489,7 @@ function beginCardAbility(card: Card) {
 .resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}.resource-zone{gap:8px}.resource-morale-summary{grid-template-columns:68px 88px;height:38px}.resource-morale-label{min-width:68px;height:38px;padding:0 10px}.resource-morale-count{width:88px;max-width:88px;height:38px;min-height:38px;padding:0 12px}.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}
 .resource-morale-stack.morale-remainder-1::after,.resource-morale-stack.morale-remainder-2::after{content:'';display:block;flex:none;height:32px;pointer-events:none;visibility:hidden}.resource-morale-stack.morale-remainder-1::after{width:74px}.resource-morale-stack.morale-remainder-2::after{width:32px}
 .commander-zone{grid-template-columns:140px 132.25px}.battle-zone{transform:translateX(-74px)}.mat-piles{transform:translateX(-24px)}
-.relic-zone{box-sizing:border-box;width:132.25px;height:132.25px;aspect-ratio:1}.relic-zone :deep(.card-tile){width:127.65px;height:127.65px;flex-basis:127.65px;aspect-ratio:1}
+.relic-zone{box-sizing:border-box;width:132.25px;height:185.15px;aspect-ratio:5/7}.relic-zone :deep(.card-tile){width:127.65px;height:178.71px;flex-basis:127.65px;aspect-ratio:5/7}
 .special-lane{left:6px;width:152px;height:286px}.special-lane.visible{align-content:start}.side-opponent .special-lane{top:auto;bottom:calc(100% + 11px);align-content:end}.side-my .special-lane{left:6px;top:calc(100% + 11px);bottom:auto;width:152px;align-content:start}
 .trial-zone{flex-direction:column}.side-opponent .trial-zone{flex-direction:column-reverse}.trial-card,.side-my .trial-card{width:135.52px}
 </style>
@@ -490,7 +497,9 @@ function beginCardAbility(card: Card) {
 <style scoped>
 .extra-relic{position:absolute;z-index:2;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent}.extra-relic :deep(.card-tile){width:100%;height:100%}
 .trial-card.own-concealed .l12-card-image{filter:grayscale(.85) brightness(.52)}
+.trial-card .trial-progress{box-sizing:border-box;width:46px;min-width:46px;height:46px;min-height:46px;padding:0 7px;background:#102e17f2;font-size:max(20px,var(--l12-board-copy,13px));font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;box-shadow:0 0 0 2px rgba(4,22,10,.7),0 0 14px rgba(49,135,63,.88)}
 .formation-slot.counter-dormant :deep(.card-tile),.formation-slot.hidden-dormant :deep(.card-tile){filter:brightness(.4) saturate(.55)}.formation-slot.counter-ready :deep(.card-tile){filter:brightness(1.08);box-shadow:0 0 0 2px #71e197,0 0 17px rgba(70,220,126,.7)}
+.formation-slot :deep(.battlefield-legion-card){border:1px solid transparent;border-radius:0}.formation-slot:not(.counter-ready) :deep(.battlefield-legion-card),.formation-slot:not(.counter-ready) :deep(.battlefield-legion-card:hover),.formation-slot:not(.counter-ready) :deep(.battlefield-legion-card.selected),.formation-slot:not(.counter-ready) :deep(.battlefield-legion-card.tapped.selected){border-color:transparent;box-shadow:none}.formation-slot.source:not(.combat-target):not(.payment-resource):not(.payment-selected):not(.prompt-selected){border-color:#62c5cc;box-shadow:inset 0 0 0 2px rgba(70,185,195,.5)}.formation-slot:focus-visible{outline:2px solid #f4f0df;outline-offset:2px}
 .faction-effect-trigger{padding:3px 7px;border:1px solid rgba(238,238,228,.42);border-radius:1px;background:#111718;color:#e8e5dc;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}.faction-effect-trigger:hover{border-color:var(--cyan);color:#fff}
 .faction-effect-trigger.resource-faction-action{min-height:38px;padding:7px 10px;border-color:color-mix(in srgb,var(--resource-accent,#d2c8a5) 58%,#737b77);background:linear-gradient(120deg,color-mix(in srgb,var(--resource-accent,#d2c8a5) 22%,#101415),rgba(8,11,12,.82));box-shadow:inset 3px 0 var(--resource-accent,#d2c8a5);color:#f0eee7;letter-spacing:.06em;text-align:center}.faction-effect-trigger.resource-faction-action:hover{border-color:var(--resource-accent,#d2c8a5);background:linear-gradient(120deg,color-mix(in srgb,var(--resource-accent,#d2c8a5) 34%,#101415),#111718)}
 .faction-effect-overlay{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;background:rgba(2,4,5,.78);backdrop-filter:blur(7px)}

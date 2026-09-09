@@ -286,10 +286,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         PassResponses(game);
         Assert.Equal(1, player.SpecialZones.Runes);
         Resolve(game, "mode:search");
-        var payment = Assert.Single(game.State.PendingPrompts);
-        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: payment.ValidChoices.Take(1).ToList()));
-        Assert.True(paid.Accepted, paid.Error);
+        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         var hidden = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-rune-power-pick", hidden.Data["action"]);
         Assert.Contains(universal.InstanceId, hidden.ValidChoices);

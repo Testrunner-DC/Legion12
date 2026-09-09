@@ -210,7 +210,7 @@ public sealed partial class L12GameEngine
                     .Select(card => card.InstanceId).ToList();
                 var entry = player.Hand.Concat(player.Graveyard)
                     .Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
-                        && card.CardType == "legion" && card.CurrentCost <= 4)
+                        && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                     .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Prepend("mode:none").ToList();
                 var steps = new List<L12ActivationSelectionStep>
                 {

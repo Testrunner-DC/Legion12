@@ -76,6 +76,8 @@ public sealed partial class L12RoomManager
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
         public bool CompletionRecorded { get; set; }
+        public DateTimeOffset? SettlementStartedAt { get; set; }
+        public bool[] SettlementLeft { get; } = [false, false];
         public long RankedCheckpointGeneration { get; set; }
         public RankedClockState? RankedClock { get; set; }
         public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -133,6 +135,7 @@ public sealed partial class L12RoomManager
         new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Room> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FriendInvitation> _friendInvitations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _friendInvitationGate = new();
     private readonly object _tournamentRoomGate = new();
     private readonly object _matchmakingGate = new();
     private readonly SemaphoreSlim _sessionRecoveryGate = new(1, 1);
@@ -601,6 +604,29 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> ResolveFriendInvitation(Guid sessionId, string? invitationId, bool accept)
     {
+        lock (_friendInvitationGate) return ResolveFriendInvitationCore(sessionId, invitationId, accept);
+    }
+
+    public IReadOnlyList<OutgoingMessage> CancelFriendInvitation(Guid sessionId, string? invitationId)
+    {
+        lock (_friendInvitationGate)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
+                return Error(sessionId, "会话不存在");
+            var id = (invitationId ?? string.Empty).Trim();
+            if (!_friendInvitations.TryGetValue(id, out var invitation)
+                || invitation.FromAccountId != sender.AccountId)
+                return Error(sessionId, "邀请不存在或已失效");
+            _friendInvitations.TryRemove(id, out _);
+            return _sessions.Values.Where(session => session.Connected
+                    && (session.AccountId == invitation.FromAccountId || session.AccountId == invitation.ToAccountId))
+                .Select(session => new OutgoingMessage(session.Id,
+                    new { type = "friendInvitationRevoked", invitationId = id, message = "邀请已撤回" })).ToArray();
+        }
+    }
+
+    private IReadOnlyList<OutgoingMessage> ResolveFriendInvitationCore(Guid sessionId, string? invitationId, bool accept)
+    {
         if (!_sessions.TryGetValue(sessionId, out var recipient) || recipient.AccountId is null)
             return Error(sessionId, "会话不存在");
         L12OperationsPolicySnapshot? policy = null;
@@ -614,10 +640,11 @@ public sealed partial class L12RoomManager
                 return OperationsBlocked(sessionId, "no_legal_default_preset", "当前没有可用于新房间的合法官方预组");
         }
         var id = (invitationId ?? string.Empty).Trim();
-        if (!_friendInvitations.TryRemove(id, out var invitation)
+        if (!_friendInvitations.TryGetValue(id, out var invitation)
             || invitation.ToAccountId != recipient.AccountId
             || invitation.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10))
             return Error(sessionId, "邀请不存在或已失效");
+        _friendInvitations.TryRemove(id, out _);
         var senders = _sessions.Values.Where(session => session.Connected
             && session.AccountId == invitation.FromAccountId).ToArray();
         if (!accept)
@@ -646,7 +673,7 @@ public sealed partial class L12RoomManager
         recipient.SelectedDeckIndex = recipientDeckIndex;
         var created = room.Sessions.Select(memberId => new OutgoingMessage(memberId, new
         {
-            type = "friendRoomCreated", roomCode = room.Code, hostAccountId = host.AccountId,
+            type = "friendRoomCreated", invitationId = id, roomCode = room.Code, hostAccountId = host.AccountId,
             message = "好友已接受邀请，已直接创建房间",
         }));
         return created.Concat(BroadcastRoom(room)).ToArray();
@@ -1210,12 +1237,7 @@ public sealed partial class L12RoomManager
         {
             if (room.Game?.State.Phase == L12Phase.GameOver)
             {
-                // 完成记录已经在对局进入 GameOver 时落盘；这里只重置房间内的赛局槽与准备状态，
-                // 保留成员、房号、牌库和固定运营策略，供双方重新准备开启全新 match。
-                room.Game = null;
-                room.RankedClock = null;
-                room.CommandSequence = 0;
-                Array.Fill(room.Ready, false);
+                return Error(sessionId, "请先离开结算页面返回大厅，再开启新对局");
             }
             else if (room.Game is not null) return Error(sessionId, "对局已经开始");
             if (ready)
@@ -1554,6 +1576,15 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
+        if (!_sessions.TryGetValue(sessionId, out var member) || member.RoomCode is not { } code
+            || !_rooms.TryGetValue(code, out var room)) return LeaveRoomLocked(sessionId);
+        room.Gate.Wait();
+        try { return LeaveRoomLocked(sessionId); }
+        finally { room.Gate.Release(); }
+    }
+
+    private IReadOnlyList<OutgoingMessage> LeaveRoomLocked(Guid sessionId)
+    {
         if (!_sessions.TryGetValue(sessionId, out var currentSession)) return Error(sessionId, "会话不存在");
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
         if (currentSession.IsSpectator)
@@ -1573,6 +1604,8 @@ public sealed partial class L12RoomManager
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
+        if (room.Game?.State.Phase == L12Phase.GameOver)
+            return LeaveSettlementLocked(session, room);
         if (room.IsSandbox && room.Game is not null && !room.CompletionRecorded)
         {
             try
@@ -1808,6 +1841,7 @@ public sealed partial class L12RoomManager
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
+        room.SettlementStartedAt ??= _utcNow();
         if (!room.Game.State.EndedByAgreedDraw)
         {
             try

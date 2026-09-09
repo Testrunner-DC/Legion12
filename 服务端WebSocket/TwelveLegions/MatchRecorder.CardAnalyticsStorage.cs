@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Diagnostics;
 
 namespace TwelveLegions.Server;
 
@@ -6,10 +7,11 @@ public sealed partial class MatchRecorder
 {
     internal static readonly TimeSpan DetailedCardFactRetention = TimeSpan.FromDays(30);
     internal static readonly TimeSpan NonAnalyticCardFactRetention = TimeSpan.FromDays(10);
-    private static readonly TimeSpan CardFactMaintenanceInterval = TimeSpan.FromDays(1);
-    private static readonly TimeSpan CardFactBacklogRetryInterval = TimeSpan.FromMinutes(5);
     private readonly SemaphoreSlim _cardFactMaintenanceGate = new(1, 1);
     private long _nextCardFactMaintenanceUtcTicks = DateTimeOffset.MinValue.UtcDateTime.Ticks;
+    internal sealed record CardFactMaintenanceSnapshot(DateTimeOffset CheckedAt, int Compacted,
+        int Pruned, int Batches, DateTimeOffset? OldestPendingEndedAt, bool BudgetReached);
+    internal CardFactMaintenanceSnapshot? LastCardFactMaintenance { get; private set; }
 
     private static async Task InitializeAnalyticsCompactionSchemaAsync(SqliteConnection connection)
     {
@@ -293,7 +295,8 @@ public sealed partial class MatchRecorder
     }
 
     internal async Task<(int Compacted, int Pruned)> RunCardFactStorageMaintenanceIfDueAsync(
-        DateTimeOffset? utcNow = null, CancellationToken cancellationToken = default)
+        DateTimeOffset? utcNow = null, CancellationToken cancellationToken = default,
+        TimeSpan? timeBudget = null, int maxBatches = 20)
     {
         var now = (utcNow ?? _utcNow()).ToUniversalTime();
         if (now.UtcDateTime.Ticks < Volatile.Read(ref _nextCardFactMaintenanceUtcTicks))
@@ -304,18 +307,66 @@ public sealed partial class MatchRecorder
         {
             if (now.UtcDateTime.Ticks < Volatile.Read(ref _nextCardFactMaintenanceUtcTicks))
                 return (0, 0);
-            // 历史回填严格有界，避免在大库启动时形成长事务；新结束对局已同步紧凑化。
-            var compacted = await CompactCompletedCardFactsBatchAsync(25, cancellationToken);
-            var pruned = await PruneCompactedCardFactDetailsAsync(now, 100, cancellationToken);
-            var backlogLikely = compacted == 25 || pruned == 100;
+            // 每场独立事务；预算只决定是否开启下一小批，不中断已经开始的事务。
+            // 因而这是调度软预算，不是单条 SQLite 查询或 WAL 的硬上限。
+            var budget = timeBudget ?? TimeSpan.FromSeconds(2);
+            if (budget < TimeSpan.Zero || budget > TimeSpan.FromSeconds(5))
+                throw new ArgumentOutOfRangeException(nameof(timeBudget));
+            maxBatches = Math.Clamp(maxBatches, 1, 20);
+            var timer = Stopwatch.StartNew();
+            var compacted = 0;
+            var pruned = 0;
+            var batches = 0;
+            var backlogLikely = false;
+            do
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var compactedBatch = await CompactCompletedCardFactsBatchAsync(25, cancellationToken);
+                var prunedBatch = await PruneCompactedCardFactDetailsAsync(now, 25, cancellationToken);
+                compacted += compactedBatch;
+                pruned += prunedBatch;
+                batches++;
+                backlogLikely = compactedBatch == 25 || prunedBatch == 25;
+                if (!backlogLikely) break;
+            } while (batches < maxBatches && timer.Elapsed < budget);
+
+            var oldestPending = await ReadOldestPendingCardFactMaintenanceAsync(now, cancellationToken);
+            var budgetReached = backlogLikely && (batches == maxBatches || timer.Elapsed >= budget);
+            LastCardFactMaintenance = new(now, compacted, pruned, batches, oldestPending, budgetReached);
             Volatile.Write(ref _nextCardFactMaintenanceUtcTicks,
-                now.Add(backlogLikely ? CardFactBacklogRetryInterval : CardFactMaintenanceInterval)
-                    .UtcDateTime.Ticks);
+                NextStorageCleanupUtc(now).UtcDateTime.Ticks);
+            Console.WriteLine($"Card fact maintenance: compacted={compacted};pruned={pruned};batches={batches};"
+                + $"oldestPendingEndedUtc={oldestPending?.ToString("O") ?? "none"};budgetReached={budgetReached}");
             return (compacted, pruned);
         }
         finally
         {
             _cardFactMaintenanceGate.Release();
         }
+    }
+
+    private async Task<DateTimeOffset?> ReadOldestPendingCardFactMaintenanceAsync(
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenWriteConnectionAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT m.ended_utc FROM matches m
+            WHERE m.mode_id IN ('casual','friendly','ranked') AND m.ended_utc IS NOT NULL
+              AND CASE WHEN m.mode_id='ranked' AND m.analytics_version>=2
+                        AND m.effect_version IS NOT NULL AND trim(m.effect_version)<>''
+                        AND lower(trim(m.effect_version))<>'unknown'
+                        AND m.error IS NULL AND m.winner IN (0,1)
+                THEN (NOT EXISTS(SELECT 1 FROM match_card_fact_compactions c WHERE c.match_id=m.match_id)
+                      OR (m.ended_utc<$analyticCutoff
+                          AND EXISTS(SELECT 1 FROM match_card_facts f WHERE f.match_id=m.match_id)))
+                ELSE (m.ended_utc<$nonAnalyticCutoff
+                      AND EXISTS(SELECT 1 FROM match_card_facts f WHERE f.match_id=m.match_id)) END
+            ORDER BY m.ended_utc,m.match_id LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$analyticCutoff", now.Subtract(DetailedCardFactRetention).ToString("O"));
+        command.Parameters.AddWithValue("$nonAnalyticCutoff", now.Subtract(NonAnalyticCardFactRetention).ToString("O"));
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is string utc ? DateTimeOffset.Parse(utc, System.Globalization.CultureInfo.InvariantCulture) : null;
     }
 }

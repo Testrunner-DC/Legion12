@@ -10,7 +10,7 @@ const contracts = [
   [panel.includes('data-ui-contract="modian-draft-import"')
     && panel.includes('同步所选为草稿') && panel.includes('绝不自动发布，也不附加来源链接。'),
   '资讯后台必须明确以人工检查、选择、生成草稿收口，并告知不会发布或附加来源链接'],
-  [panel.includes('<article v-for="item in modianPreview.items"')
+  [/<PagedCollection :items="modianPreview.items"[^>]*><article v-for="item in \w+"/.test(panel)
     && panel.includes(':aria-labelledby="`modian-title-${item.updateId}`"')
     && !panel.includes('<label v-for="item in modianPreview.items"'),
   '同步条目不得用嵌套 label；主选择框必须有独立可访问名称'],

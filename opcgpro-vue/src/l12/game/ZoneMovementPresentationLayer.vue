@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
+import { visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card } from '../types'
 
@@ -123,7 +124,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
 
 function elementRect(element: Element | null): AnchorRect | null {
   if (!element) return null
-  const rect = element.getBoundingClientRect()
+  const rect = viewportRect(element)
   if (rect.width <= 0 || rect.height <= 0) return null
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, width: rect.width, height: rect.height }
 }
@@ -140,6 +141,7 @@ function zoneElement(zone: Zone, playerIndex: number) {
     ?? null
 }
 function fallbackRect(zone: Zone, playerIndex: number): AnchorRect {
+  const { width: innerWidth, height: innerHeight } = visibleViewport()
   if (zone === 'center') return { x: innerWidth / 2, y: innerHeight / 2, width: 72, height: 101 }
   const mine = playerIndex === props.viewerPlayerIndex
   const x = zone === 'library' || zone === 'graveyard' ? innerWidth * .9 : zone === 'relic' ? innerWidth * .12 : innerWidth * .5
@@ -253,7 +255,15 @@ function cancelActiveMovement() {
   active.value = null
 }
 
+let viewportGeneration = 0
+function viewportChanged() {
+  viewportGeneration++
+  cancelActiveMovement()
+  queue.length = 0
+  lastSequence = Math.max(lastSequence, ...props.events.map(event => event.sequence))
+}
 function reset() {
+  viewportGeneration++
   cancelActiveMovement()
   queue.length = 0
   initialized = false
@@ -269,6 +279,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     return
   }
   const fresh = props.events.filter(item => item.sequence > lastSequence).sort((a, b) => a.sequence - b.sequence)
+  const generation = viewportGeneration
   const starts = fresh.map(event => {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
     if (!draft) return null
@@ -279,6 +290,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     }
   })
   await nextTick()
+  if (generation !== viewportGeneration) return
   for (const [index, event] of fresh.entries()) {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
     const movement = draft && starts[index]
@@ -288,6 +300,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     if (movement && !movement.sourceGhost && !movement.concealed && movement.card) {
       movement.preparedImageUrl = await prepareMovementImage(movement.card)
     }
+    if (generation !== viewportGeneration) return
     const previous = queue.at(-1) ?? active.value
     const repeated = movement && previous && movement.card?.instanceId
       && movement.card.instanceId === previous.card?.instanceId
@@ -302,7 +315,8 @@ watch(() => props.paused, paused => {
   if (paused && active.value) cancelActiveMovement()
   if (!paused) showNext()
 })
-onBeforeUnmount(reset)
+onMounted(() => window.addEventListener('l12-viewport-change', viewportChanged))
+onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset() })
 </script>
 
 <template>

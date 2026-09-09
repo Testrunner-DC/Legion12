@@ -159,17 +159,17 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "织田信长":
-                PromptEnemyLegion(item, "nobunaga-kill", "织田信长：击杀对方1张费用不高于4的军团", target => target.CurrentCost <= 4, false);
+                PromptEnemyLegion(item, "nobunaga-kill", "织田信长：击杀对方1张费用不高于4的军团", target => L12StructuredCardRules.CurrentCostAtMost(target, 4), false);
                 return true;
             case "上杉谦信":
             {
                 var x = State.Players.SelectMany(owner => owner.Field[1]).Count(target => target is { CardType: "tactic" });
-                PromptEnemyLegion(item, "kenshin-kill", $"上杉谦信：击杀对方1张费用不高于{x}的军团", target => target.CurrentCost <= x, false);
+                PromptEnemyLegion(item, "kenshin-kill", $"上杉谦信：击杀对方1张费用不高于{x}的军团", target => L12StructuredCardRules.CurrentCostAtMost(target, x), false);
                 return true;
             }
             case "土方岁三":
                 item.Data["hijikata-step"] = "2";
-                PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于2的军团", target => target.CurrentCost <= 2, true);
+                PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于2的军团", target => L12StructuredCardRules.CurrentCostAtMost(target, 2), true);
                 return true;
             case "坂本龙马":
             {
@@ -310,13 +310,14 @@ public sealed partial class L12GameEngine
             case "前线侦查":
             case "scout-reveal":
             {
-                AddPresentationEvent("reveal", item.Controller,
+                AddPresentationEvent("effect", item.Controller,
                     $"前线侦查查看对方全部{enemy.Hand.Count}张手牌", "S01-0013", "opponent-hand",
                     new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["count"] = enemy.Hand.Count.ToString(),
-                    }, enemy.Hand.ToArray());
-                FinishStackItem(item);
+                    }, card);
+                ConfirmPrivateCardView(item, $"前线侦查：查看对方全部{enemy.Hand.Count}张手牌",
+                    enemy.Hand, "scout-view-confirm");
                 return true;
             }
             case "scout-shuffle-effect":
@@ -390,7 +391,7 @@ public sealed partial class L12GameEngine
             {
                 var target = PublicTriggerDeclared(item, "recoverTarget");
                 if (State.DisasterValue <= 4 && player.Graveyard.Any(candidate => candidate.InstanceId == target
-                        && candidate.CardType == "tactic" && candidate.CurrentCost <= 4))
+                        && candidate.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(candidate, 4)))
                     MoveGraveToHand(player, target);
                 FinishStackItem(item); return true;
             }
@@ -429,7 +430,7 @@ public sealed partial class L12GameEngine
                 var slot = PublicTriggerDeclared(item, "entrySlot");
                 if (player.Hand.Any(candidate => candidate.InstanceId == entry && candidate.CardType == "legion"
                         && L12StructuredCardRules.HasFaction(player, candidate, "gaotianyuan")
-                        && candidate.CurrentCost <= 3)
+                        && L12StructuredCardRules.CurrentCostAtMost(candidate, 3))
                     && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     SummonFromHand(player, entry, slot, tapped: true);
                 else AddEvent("effect-cancelled", item.Controller,
@@ -507,7 +508,7 @@ public sealed partial class L12GameEngine
                 if (item.Data["hijikata-step"] == "2")
                 {
                     item.Data["hijikata-step"] = "1";
-                    PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于1的军团", target => target.CurrentCost <= 1, true);
+                    PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于1的军团", target => L12StructuredCardRules.CurrentCostAtMost(target, 1), true);
                 }
                 else FinishStackItem(item);
                 return true;
@@ -528,6 +529,8 @@ public sealed partial class L12GameEngine
                 CompleteCampPick(item, chosen[0]); return true;
             case "camp-order":
                 CompleteCampOrder(item, chosen); return true;
+            case "scout-view-confirm":
+                FinishStackItem(item); return true;
             case "scout-shuffle":
             {
                 var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
@@ -604,18 +607,22 @@ public sealed partial class L12GameEngine
                 {
                     Kind = "card", Text = "西施：选择手牌中最多 1 张兵力不高于 2000 的其他军团",
                     ValidChoices = player.Hand.Where(card => card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000
-                        && EffectEntryBattlefieldChoices(playerIndex, card).Any()).Select(card => card.InstanceId).ToList(),
+                        && (EffectEntryBattlefieldChoices(playerIndex, card).Any()
+                            || SourceSlotAfterCost(playerIndex, source.InstanceId) is not null)).Select(card => card.InstanceId).ToList(),
+                    DeclarationKey = "entryCard",
                     MinChoose = 0,
                     MaxChoose = 1,
                 },
                 new L12ActivationSelectionStep
                 {
                     Kind = "effect-entry-battlefield", Text = "西施：选择该军团活跃登场的战场", ValidChoices = ["dynamic"],
+                    DeclarationKey = "entryBattlefield", ReferenceDeclarationKey = "entryCard", IncludeSourceSlotAfterCost = true,
                     SkipWhenPreviousStepEmpty = true,
                 },
                 new L12ActivationSelectionStep
                 {
-                    Kind = "effect-entry-slot", Text = "西施：预先选择该军团活跃登场的位置", ValidChoices = ["dynamic"],
+                    Kind = "prospective-entry-slot", Text = "西施：预先选择该军团活跃登场的位置", ValidChoices = ["dynamic"],
+                    DeclarationKey = "entrySlot", ReferenceDeclarationKey = "entryCard", IncludeSourceSlotAfterCost = true,
                     SkipWhenPreviousStepEmpty = true,
                 },
             ]);
@@ -647,18 +654,8 @@ public sealed partial class L12GameEngine
             }
             case "xishiExchange" when source.CardId == "S01-0116":
             {
-                var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length is not (0 or 3)) return CommandResult.Reject("手牌目标、战场与登场位置声明不完整");
-                if (declared.Length == 3)
-                {
-                    var handCard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000);
-                    var battlefield = ParseEffectEntryBattlefieldChoice(declared[1]);
-                    var (row, slot) = ParseSlot(declared[2]);
-                    if (handCard is null || battlefield is null
-                        || !EffectEntryBattlefieldChoices(playerIndex, handCard).Contains(battlefield.Value)
-                        || row is < 0 or > 1 || slot is < 0 or > 2 || State.Players[battlefield.Value].Field[row][slot] is not null)
-                        return CommandResult.Reject("声明的手牌目标、战场或位置不再合法");
-                }
+                if (!IsValidXishiDeclaration(player, source, target))
+                    return CommandResult.Reject("声明的手牌目标、战场或位置不再合法");
                 if (!returnMoralePrepaid && !CanReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气");
                 if (!returnMoralePrepaid) ReturnMorale(player, 1);
                 RemoveFromField(player, source, true, "被西施效果弃置", leaveKind: L12FieldLeaveKind.Discard);
@@ -931,7 +928,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = 1 - playerIndex };
+        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
         OfferResponse();
     }
 
@@ -953,7 +950,7 @@ public sealed partial class L12GameEngine
                 var slot = PublicTriggerDeclared(item, "entrySlot");
                 if (!string.IsNullOrWhiteSpace(entryId) && !string.IsNullOrWhiteSpace(slot)
                     && player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
-                        && card.CurrentCost <= 4 && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 4) && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     SummonFromHand(player, entryId, slot, tapped: false);
                 else
@@ -1119,7 +1116,7 @@ public sealed partial class L12GameEngine
                 && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
                     hasRestedOpponentLegion)
                 && (card.CardId != "ST01-10" || defender.Morale.Count > 0
-                    && defender.Hand.Any(hand => hand.CardType == "legion" && hand.CurrentCost <= 4
+                    && defender.Hand.Any(hand => hand.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(hand, 4)
                         && L12StructuredCardRules.HasFaction(defender, hand, "tianting"))
                     && EmptySlots(defender).Any())).Cast<L12CardInstance>()
             .Select(counter => IsTrojanHorse(counter)
@@ -1139,7 +1136,8 @@ public sealed partial class L12GameEngine
         var counter = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0021" });
         if (counter is not null)
             candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
-        if (player.MasterId == "S01-02M3" && sourcePlayer == 1 - damagedPlayer
+        if (player.MasterId == "S01-02M3" && State.ActivePlayer == 1 - damagedPlayer
+            && sourcePlayer == 1 - damagedPlayer
             && player.Graveyard.Any(card => card.CardId == "S01-0212")
             && !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
             && player.UsedAbilities.Add("pending:medjedDamageResponse"))

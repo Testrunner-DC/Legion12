@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { masterProfileUrl } from '@/l12/specialAssets'
 import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
@@ -38,19 +38,40 @@ const masterTitleRulesOpen = ref(false)
 const filters = [{ id: '', name: '全服' }, { id: 'order', name: '秩序' }, { id: 'chaos', name: '混沌' }, { id: 'fate', name: '命运' }]
 const ranges: Array<{ id: RankingRange; name: string }> = [{ id: '7d', name: '近7天' }, { id: '30d', name: '近30天' }, { id: 'season', name: '本赛季' }]
 
+let disposed = false
+let reloadPending = false
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+const refreshIntervalMs = 60_000
+function scheduleRefresh() {
+  clearTimeout(refreshTimer)
+  if (!disposed && !document.hidden) refreshTimer = setTimeout(() => { void load() }, refreshIntervalMs)
+}
 async function load() {
+  if (disposed) return
+  if (loading.value) { reloadPending = true; return }
+  clearTimeout(refreshTimer)
+  const requestedFaction = faction.value
+  const requestedRange = range.value
   loading.value = true
   error.value = ''
   try {
-    const [response, history] = await Promise.all([rankedApi.leaderboard(faction.value, range.value), rankedApi.history()])
+    const [response, history] = await Promise.all([rankedApi.leaderboard(requestedFaction, requestedRange), rankedApi.history()])
+    if (disposed || requestedFaction !== faction.value || requestedRange !== range.value) return
     players.value = response.players as PlayerLeaderboardEntry[]
     analytics.value = response.analytics
     honors.value = history
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '排行榜加载失败'
+    if (!disposed && requestedFaction === faction.value && requestedRange === range.value)
+      error.value = cause instanceof Error ? cause.message : '排行榜加载失败'
   } finally {
     loading.value = false
+    if (reloadPending && !disposed) { reloadPending = false; void load() }
+    else scheduleRefresh()
   }
+}
+function onVisibilityChange() {
+  clearTimeout(refreshTimer)
+  if (!document.hidden) void load()
 }
 
 const query = computed(() => search.value.trim().toLocaleLowerCase())
@@ -83,7 +104,15 @@ function cellTone(row: RankedMasterStats, opponent: RankedMasterStats) {
 }
 
 watch([faction, range], load)
-onMounted(load)
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  void load()
+})
+onBeforeUnmount(() => {
+  disposed = true
+  clearTimeout(refreshTimer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 </script>
 
 <template>
@@ -97,7 +126,7 @@ onMounted(load)
       <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong><span>{{ range === 'season' ? '本赛季' : range === '7d' ? '近7天' : '近30天' }}</span></article>
       <article><small>已定级玩家</small><strong>{{ analytics.summary.placedPlayers }}</strong><span>当前赛季</span></article>
       <article><small>活跃主宰</small><strong>{{ analytics.summary.activeMasters }}</strong><span>统计范围内</span></article>
-      <article><small>数据更新</small><strong class="updated">{{ updatedAt }}</strong><span>仅统计排位匹配</span></article>
+      <article><small>最近计入对局</small><strong class="updated">{{ updatedAt }}</strong><span>页面可见时每分钟自动刷新</span></article>
     </section>
 
     <section class="toolbar">

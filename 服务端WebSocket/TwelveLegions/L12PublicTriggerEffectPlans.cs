@@ -85,7 +85,9 @@ public sealed partial class L12GameEngine
             "exorcist-return" => sourceOnField,
             "prayer-private" => State.DisasterDeck.Count > 0 && ActiveResourceCount(player) >= 1,
             "wukong-return-morale" => player.Morale.Count < opponent.Morale.Count && player.MoraleDeck.Count > 0,
-            "faction-zero-recovery" => player.Morale.Count == 0 && player.MoraleDeck.Count > 0,
+            "faction-zero-recovery" => (player.Morale.Count == 0
+                || candidate.Data.GetValueOrDefault("factionZeroEligibleAtReturn") == "true")
+                && player.MoraleDeck.Count > 0,
             _ => false,
         };
         if (!legal)
@@ -129,25 +131,25 @@ public sealed partial class L12GameEngine
         var legal = plan switch
         {
             "sunwu-recover" => State.DisasterValue <= 4 && player.Graveyard.Any(card =>
-                card.CardType == "tactic" && card.CurrentCost <= 4),
+                card.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
             "jingke-kill" => CanReturnMorale(player, 1),
             "tutankhamun-top" => player.Graveyard.Any(card => CanEnterHandOrLibrary(card)
                 && card.CardId != "S01-0207" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                && card.CurrentCost <= 4),
+                && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
             "nitocris-summon" => EmptySlots(player).Any() && player.Graveyard.Any(card =>
                 card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                && card.CurrentCost <= 2),
+                && L12StructuredCardRules.CurrentCostAtMost(card, 2)),
             "harald-kill" => PublicLegions(opponent).Any(card => card.Troops <= 2000),
             "oddr-rest" => PublicLegions(opponent).Any(card => !card.Tapped),
             "uesugi-counters" => Enumerable.Range(0, 3).Any(slot => player.Field[1][slot] is null)
                 && player.Hand.Any(card => IsCounterTactic(card.CardId)),
             "ryoma-summon" => EmptySlots(player).Any() && player.Hand.Any(card => card.CardType == "legion"
-                && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && card.CurrentCost <= 3),
+                && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(card, 3)),
             "xiaotian-morale" => player.MoraleDeck.Count > 0,
             "atalanta-flip" => player.Morale.Any(card => !card.IsGodPower),
             "theseus-recover" => player.Graveyard.Any(card => card.CardType == "legion" && card.HasTrait("晋升者")),
             "arthur-summon" => EmptySlots(player).Any() && player.Hand.Any(card => card.CardType == "legion"
-                && card.HasTrait("圆桌骑士") && card.CurrentCost <= 4),
+                && card.HasTrait("圆桌骑士") && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
             "gwen-choice" => candidate.Data.GetValueOrDefault("cause") == "effect",
             "alice-ready" => candidate.Data.GetValueOrDefault("killed") == "true",
             _ => true,
@@ -264,6 +266,7 @@ public sealed partial class L12GameEngine
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>(data, StringComparer.OrdinalIgnoreCase);
             if (!directData.ContainsKey("compositePlan")
+                && directData.GetValueOrDefault("entryCostUnavailable") != "true"
                 && DefaultTriggerCompositePlanData(source.CardId, trigger) is { } composite)
                 foreach (var pair in composite) directData[pair.Key] = pair.Value;
             PushEffect(controller, source, trigger, text, targets, directData);
@@ -360,7 +363,7 @@ public sealed partial class L12GameEngine
         }
         else if (batch6IBPlan == "sunwu-recover")
         {
-            var targets = player.Graveyard.Where(card => card.CardType == "tactic" && card.CurrentCost <= 4)
+            var targets = player.Graveyard.Where(card => card.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                 .Select(card => card.InstanceId).ToList();
             steps =
             [
@@ -387,7 +390,7 @@ public sealed partial class L12GameEngine
             {
                 "tutankhamun-top" => player.Graveyard.Where(card => CanEnterHandOrLibrary(card)
                         && card.CardId != "S01-0207"
-                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && card.CurrentCost <= 4)
+                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                     .Select(card => card.InstanceId),
                 "oddr-rest" => PublicLegions(opponent).Where(card => !card.Tapped).Select(card => card.InstanceId),
                 _ => player.Graveyard.Where(card => card.CardType == "legion" && card.HasTrait("晋升者"))
@@ -409,7 +412,7 @@ public sealed partial class L12GameEngine
                 PublicTriggerStep("grave-card", "entryCard", "尼托克丽丝：预先选择墓地1张费用不高于2的【太阳城】军团",
                     player.Graveyard.Where(card => card.CardType == "legion"
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                        && card.CurrentCost <= 2).Select(card => card.InstanceId), allowCancel: false),
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId), allowCancel: false),
                 PublicTriggerStep("unused-slot", "entrySlot", "尼托克丽丝：预先选择活跃登场位置", EmptySlots(player),
                     allowCancel: false),
             ];
@@ -445,9 +448,9 @@ public sealed partial class L12GameEngine
             var cards = batch6IBPlan == "ryoma-summon"
                 ? player.Hand.Where(card => card.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
-                    && card.CurrentCost <= 3).Select(card => card.InstanceId)
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 3)).Select(card => card.InstanceId)
                 : player.Hand.Where(card => card.CardType == "legion" && card.HasTrait("圆桌骑士")
-                    && card.CurrentCost <= 4).Select(card => card.InstanceId);
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 4)).Select(card => card.InstanceId);
             steps =
             [
                 PublicTriggerStep("option", "mode", $"〈{source.Name}〉：预先声明是否从手牌登场军团", ["mode:none", "mode:use"]),
@@ -603,7 +606,7 @@ public sealed partial class L12GameEngine
         {
             candidate.Data["preserveIndependentStack"] = "true";
             var recover = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
-                    && card.CurrentCost <= 3 && card.CardType is "tactic" or "artifact")
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 3) && card.CardType is "tactic" or "artifact")
                 .Select(card => card.InstanceId).ToList();
             if (recover.Count == 0)
             {
@@ -671,7 +674,8 @@ public sealed partial class L12GameEngine
             case ("S01-02M3", "medjed-master-damage", _):
             {
                 candidate.Data["cleanupReservation"] = "pending:medjedDamageResponse";
-                var guards = player.Graveyard.Where(card => card.CardId == PublicTriggerTombGuardCard)
+                var guards = player.Graveyard.Where(card => State.ActivePlayer == 1 - candidate.Controller
+                        && card.CardId == PublicTriggerTombGuardCard)
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 steps =
                 [
@@ -779,7 +783,7 @@ public sealed partial class L12GameEngine
             }
             case ("S01-0021", "reaction", _):
             {
-                var legions = player.Hand.Where(card => card.CardType == "legion" && card.CurrentCost <= 3
+                var legions = player.Hand.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 3)
                         && EffectEntryBattlefieldChoices(candidate.Controller, card).Any())
                     .Select(card => card.InstanceId).ToList();
                 steps =
@@ -1144,14 +1148,16 @@ public sealed partial class L12GameEngine
             && (player.Morale.Count >= State.Players[1 - candidate.Controller].Morale.Count || player.MoraleDeck.Count == 0))
             error = "孙悟空返回后的士气条件已失效；效果未入栈";
         else if (batch6JBPlan == "faction-zero-recovery" && mode == "mode:use"
-            && (player.Morale.Count != 0 || player.MoraleDeck.Count == 0))
+            && ((player.Morale.Count != 0
+                    && candidate.Data.GetValueOrDefault("factionZeroEligibleAtReturn") != "true")
+                || player.MoraleDeck.Count == 0))
             error = "天廷阵营的零士气条件已失效；效果未入栈";
         else if (batch6IBPlan == "sunwu-recover")
         {
             var target = activation.DeclaredValues.GetValueOrDefault("recoverTarget", []).SingleOrDefault();
             if (mode == "mode:use" && (State.DisasterValue > 4 || target is null
                 || !player.Graveyard.Any(card => card.InstanceId == target && card.CardType == "tactic"
-                    && card.CurrentCost <= 4)))
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 4))))
                 error = "孙武声明的墓地战术目标已失效；效果未入栈";
         }
         else if (batch6IBPlan == "jingke-kill")
@@ -1175,7 +1181,7 @@ public sealed partial class L12GameEngine
             if (mode == "mode:use" && (target is null || !player.Graveyard.Any(card => card.InstanceId == target
                 && CanEnterHandOrLibrary(card) && card.CardId != "S01-0207"
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                && card.CurrentCost <= 4)))
+                && L12StructuredCardRules.CurrentCostAtMost(card, 4))))
                 error = "图坦卡蒙声明的墓地目标已失效；效果未入栈";
         }
         else if (batch6IBPlan == "nitocris-summon")
@@ -1183,7 +1189,7 @@ public sealed partial class L12GameEngine
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
             if (entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
                     && card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && card.CurrentCost <= 2)
+                    && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && L12StructuredCardRules.CurrentCostAtMost(card, 2))
                 || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                 error = "尼托克丽丝声明的墓地军团或登场位置已失效；效果未入栈";
         }
@@ -1217,8 +1223,8 @@ public sealed partial class L12GameEngine
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
             var cardLegal = entryCard is not null && player.Hand.Any(card => card.InstanceId == entryCard
                 && card.CardType == "legion" && (batch6IBPlan == "ryoma-summon"
-                    ? L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && card.CurrentCost <= 3
-                    : card.HasTrait("圆桌骑士") && card.CurrentCost <= 4));
+                    ? L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(card, 3)
+                    : card.HasTrait("圆桌骑士") && L12StructuredCardRules.CurrentCostAtMost(card, 4)));
             if (mode == "mode:use" && (!cardLegal || slot is null
                 || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase)))
                 error = $"〈{candidate.SourceName}〉声明的私密手牌军团或公开登场位置已失效；效果未入栈";
@@ -1358,7 +1364,8 @@ public sealed partial class L12GameEngine
         else if (key.Item1 == "S01-02M3")
         {
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
-            if (entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
+            if (State.ActivePlayer != 1 - candidate.Controller
+                || entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
                     && card.CardId == PublicTriggerTombGuardCard)
                 || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase)
                 || player.UsedAbilities.Contains("trigger:medjedDamageResponse"))
@@ -1438,7 +1445,7 @@ public sealed partial class L12GameEngine
         else if (key.Item1 == "S01-0021")
         {
             if (entryCard is null || !player.Hand.Any(card => card.InstanceId == entryCard
-                    && card.CardType == "legion" && card.CurrentCost <= 3)
+                    && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 3))
                 || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Hand))
                 error = "摄政皇权声明的手牌军团或登场位置已失效；效果未入栈";
         }
@@ -1487,7 +1494,7 @@ public sealed partial class L12GameEngine
         {
             var recovery = activation.DeclaredValues.GetValueOrDefault("recoverTarget", []).SingleOrDefault();
             if (mode == "mode:recover" && (recovery is null || !player.Graveyard.Any(card =>
-                    card.InstanceId == recovery && card.InstanceId != candidate.SourceInstanceId && card.CurrentCost <= 3
+                    card.InstanceId == recovery && card.InstanceId != candidate.SourceInstanceId && L12StructuredCardRules.CurrentCostAtMost(card, 3)
                     && card.CardType is "tactic" or "artifact")))
             {
                 activation.DeclaredValues["mode"] = ["mode:none"];

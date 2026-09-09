@@ -334,6 +334,67 @@ public sealed class LatencyAndPersistenceRegressionTests
         Assert.Equal(engine.State.EventSequence, snapshot.RecentEvents[^1].Sequence);
     }
 
+    [Theory]
+    [InlineData(0L, false)]
+    [InlineData(-1L, false)]
+    [InlineData(0L, true)]
+    [InlineData(-1L, true)]
+    public async Task 非正常命令序号在任何写入前被拒绝且不会覆盖初始检查点(
+        long invalidSequence, bool terminal)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-initial-checkpoint-guard",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var engine = new L12GameEngine(Catalog, $"checkpoint-guard-{invalidSequence}-{terminal}",
+            "SEQ000", 20260909, ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
+        await recorder.StartAsync(engine);
+
+        async Task<(string Hash, byte[] Blob, long CommandRows, long CheckpointRows)> ReadBoundaryAsync()
+        {
+            await using var connection = new SqliteConnection($"Data Source={path}");
+            await connection.OpenAsync();
+            var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                SELECT state_hash,state_blob,
+                       (SELECT COUNT(*) FROM match_events WHERE match_id=$match),
+                       (SELECT COUNT(*) FROM match_state_checkpoints WHERE match_id=$match)
+                FROM match_state_checkpoints WHERE match_id=$match AND sequence=0;
+                """;
+            inspect.Parameters.AddWithValue("$match", engine.State.MatchId);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            return (reader.GetString(0), (byte[])reader[1], reader.GetInt64(2), reader.GetInt64(3));
+        }
+
+        var before = await ReadBoundaryAsync();
+        string commandJson;
+        CommandResult result;
+        if (terminal)
+        {
+            engine.ConcludeByAuthority(0, "序号守卫终局");
+            commandJson = """{"type":"authorityConclusion","winner":0,"reason":"序号守卫终局"}""";
+            result = CommandResult.Ok();
+        }
+        else
+        {
+            var command = new L12GmCommand("setLife", 0, Value: 17);
+            result = engine.HandleGm(command);
+            Assert.True(result.Accepted);
+            commandJson = JsonSerializer.Serialize(command);
+        }
+
+        var failure = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            recorder.AppendAsync(engine, invalidSequence, -1, commandJson, result));
+        Assert.Equal("sequence", failure.ParamName);
+        var after = await ReadBoundaryAsync();
+        Assert.Equal(before.Hash, after.Hash);
+        Assert.Equal(before.Blob, after.Blob);
+        Assert.Equal(0, after.CommandRows);
+        Assert.Equal(1, after.CheckpointRows);
+    }
+
     [Fact]
     public async Task 新日志只追加小命令并可从检查点重放尾部到相同哈希()
     {
@@ -368,20 +429,31 @@ public sealed class LatencyAndPersistenceRegressionTests
             var inspect = connection.CreateCommand();
             inspect.CommandText = """
                 SELECT m.storage_version,
+                       m.initial_state_json,
                        (SELECT COUNT(*) FROM match_events e WHERE e.match_id=m.match_id),
                        (SELECT COALESCE(SUM(length(state_json)),0) FROM match_events e WHERE e.match_id=m.match_id),
                        (SELECT COUNT(*) FROM match_state_checkpoints c WHERE c.match_id=m.match_id),
-                       (SELECT COUNT(*) FROM match_action_events a WHERE a.match_id=m.match_id)
+                       (SELECT COUNT(*) FROM match_action_events a WHERE a.match_id=m.match_id),
+                       (SELECT COUNT(*) FROM match_state_checkpoints c
+                        WHERE c.match_id=m.match_id AND c.sequence=0),
+                       (SELECT state_encoding FROM match_state_checkpoints c
+                        WHERE c.match_id=m.match_id AND c.sequence=0),
+                       (SELECT length(state_blob) < uncompressed_bytes FROM match_state_checkpoints c
+                        WHERE c.match_id=m.match_id AND c.sequence=0)
                 FROM matches m WHERE m.match_id=$match;
                 """;
             inspect.Parameters.AddWithValue("$match", matchId);
             await using var reader = await inspect.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             Assert.Equal(MatchRecorder.JournalStorageVersion, reader.GetInt32(0));
-            Assert.Equal(33, reader.GetInt32(1));
-            Assert.Equal(66, reader.GetInt64(2));
-            Assert.Equal(2, reader.GetInt32(3));
-            Assert.True(reader.GetInt32(4) >= 33);
+            Assert.True(reader.IsDBNull(1));
+            Assert.Equal(33, reader.GetInt32(2));
+            Assert.Equal(66, reader.GetInt64(3));
+            Assert.Equal(2, reader.GetInt32(4));
+            Assert.True(reader.GetInt32(5) >= 33);
+            Assert.Equal(1, reader.GetInt32(6));
+            Assert.Equal("json-br-v1", reader.GetString(7));
+            Assert.Equal(1, reader.GetInt32(8));
         }
 
         var checkpoint = Assert.IsType<L12PersistedCheckpoint>(
@@ -655,6 +727,11 @@ public sealed class LatencyAndPersistenceRegressionTests
         Assert.Equal(expectedMaster0, ranking.Master0);
         Assert.Equal(expectedMaster1, ranking.Master1);
         Assert.Equal(engine.State.FirstPlayer, ranking.FirstPlayer);
+        await using var verify = new SqliteConnection($"Data Source={path}");
+        await verify.OpenAsync();
+        var initial = verify.CreateCommand();
+        initial.CommandText = "SELECT initial_state_json FROM matches WHERE match_id='v1-ranking';";
+        Assert.False(string.IsNullOrWhiteSpace((string?)await initial.ExecuteScalarAsync()));
     }
 
     [Fact]

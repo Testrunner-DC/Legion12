@@ -8,9 +8,12 @@ import GlobalBugFeedback from '@/l12/site/GlobalBugFeedback.vue'
 import FriendRequestNotifications from '@/l12/site/FriendRequestNotifications.vue'
 import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudioStore } from '@/l12/audioPreferences'
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
+import { useLandscapeViewport } from '@/l12/mobileViewport'
+import '@/l12/mobileViewport.css'
 
 const route = useRoute()
 const immersive = computed(() => route.meta.immersive === true)
+useLandscapeViewport(computed(() => route.path === '/game' || route.path === '/deck-editor' || route.meta.replay === true))
 const backgroundMusic = new BackgroundMusicController()
 let battleTrack = 0
 let primed = false

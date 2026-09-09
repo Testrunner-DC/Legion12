@@ -55,7 +55,7 @@ const consumers = [
   '../src/l12/game/SandboxCardPicker.vue',
   '../src/l12/game/MasterOverlay.vue',
   '../src/l12/site/AdminPage.vue',
-  '../src/l12/site/DeckLibraryPage.vue',
+  '../src/l12/site/DeckConstructionBrowser.vue',
 ]
 const consumerSource = consumers.map(read).join('\n')
 const remainingDirectImages = consumerSource.match(/<img[^>]*(?:imageUrl|masterImageUrl|imageFor)[^>]*>/g) ?? []

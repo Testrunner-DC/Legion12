@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PagedCollection from './PagedCollection.vue'
 import { onMounted, ref } from 'vue'
 import { adminApi, type RankedIntegrityAudit } from '@/l12/platform'
 
@@ -37,12 +38,12 @@ onMounted(load)
     </header>
     <p v-if="notice" class="notice">{{ notice }}</p>
     <div class="integrity-head"><span>时间 / 对局</span><span>双方玩家</span><span>对局证据</span><span>处置</span></div>
-    <article v-for="row in rows" :key="row.id" class="integrity-row" :data-review="row.reviewRecommended">
+    <PagedCollection :items="rows" v-slot="{ items: paged1566 }"><article v-for="row in paged1566" :key="row.id" class="integrity-row" :data-review="row.reviewRecommended">
       <span>{{ new Date(row.createdAt).toLocaleString() }}<code>{{ row.matchId }}</code><small>{{ row.seasonId }}</small></span>
       <span><b>{{ row.firstPlayer }}</b><small>{{ row.firstAccountId }}</small><b>{{ row.secondPlayer }}</b><small>{{ row.secondAccountId }}</small></span>
       <span><em v-for="signal in row.signals" :key="signal.code">{{ signal.label }}</em><small>时长 {{ duration(row.durationMs) }} · 有效操作 {{ row.meaningfulCommandCount }} · {{ row.conclusionKind }}</small><code v-if="row.networkCorrelationId">网络关联号 {{ row.networkCorrelationId }}</code></span>
       <span><b>{{ row.reviewRecommended ? '建议人工核对' : '仅留痕' }}</b><small>当前处置：无</small></span>
-    </article>
+    </article></PagedCollection>
     <div v-if="!loading && !rows.length" class="empty">当前筛选下没有排位风险记录</div>
   </section>
 </template>

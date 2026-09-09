@@ -44,6 +44,14 @@ $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -Fi
     [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
 }) -join "`n")
 $remainingPromptTokenCount = [regex]::Matches($allRuntime, '\bCreatePrompt\(').Count
+# This is a pre-payment response declaration, not a resolution-time effect choice.
+# Keep the exemption exact and single-site; other new prompts still hit the ratchet.
+$responseTargetDeclarationCount = [regex]::Matches($prompts,
+    'CreatePrompt\(playerIndex, "response-target", "选择本次响应的效果对象", targets\.Select\(item => item\.StackItemId\)\.Append\("cancel"\),\s*1, 1, "stack-response-target", isPrivate: true, data: data\);').Count
+if ($responseTargetDeclarationCount -ne 1) {
+    throw 'Expected exactly one explicit stack-target pre-payment declaration prompt.'
+}
+$remainingPromptTokenCount -= $responseTargetDeclarationCount
 if ($remainingPromptTokenCount -gt 136) {
     throw "Resolution prompt inventory regressed above the ruling-closure ratchet: $remainingPromptTokenCount > 136"
 }

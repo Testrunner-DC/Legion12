@@ -30,7 +30,7 @@ const scenes = [
     defaultText: '旧场景默认文案', effectiveText: '旧场景默认文案',
   },
   {
-    ...baseScene, sceneId: 'QA-0001:ability:1:presentation:generic-null', label: '旧通用空元数据场景',
+    ...baseScene, eventType: 'reveal', sceneId: 'QA-0001:ability:1:presentation:generic-null', label: '非效果事件空元数据场景',
     flow: null, segmentIndex: null, segmentCount: null, branchLabel: null, requiredChoices: null,
     defaultText: '旧服务端输出 null 时仍按通用场景显示。', effectiveText: '旧服务端输出 null 时仍按通用场景显示。',
   },
@@ -75,14 +75,22 @@ const ability = {
   mappingSource: 'fixture', confidence: 1, executionModel: 'fixture-only',
   reviewStatus: 'confirmed', reviewSource: 'fixture', presentations: scenes,
 }
+const genericOnlyAbility = {
+  ...ability, abilityId: 'QA-0001:ability:2', sequence: 2,
+  text: '没有分段场景的能力继续显示整体效果文案。',
+  presentations: [{
+    ...baseScene, abilityId: 'QA-0001:ability:2', sceneId: 'QA-0001:ability:2:presentation:generic', label: '仅整体效果',
+    defaultText: '没有分段时保留整体效果。', effectiveText: '没有分段时保留整体效果。',
+  }],
+}
 const fixture = {
   cardId: 'QA-0001', name: '隔离动效编辑测试卡', product: 'QA', faction: '测试', cardType: 'tactic',
-  effectText: '隔离 fixture，不属于正式卡池。', abilities: [ability], migrationStatus: 'verified',
+  effectText: '隔离 fixture，不属于正式卡池。', abilities: [ability, genericOnlyAbility], migrationStatus: 'verified',
   atomCount: 0, executableAtomCount: 0, legacyAtomCount: 0, atomKinds: [],
   reviewStatus: 'confirmed', reviewSource: 'fixture',
 }
 const coverage = {
-  totalCards: 1, cardsWithText: 1, totalAbilities: 1, totalAtoms: 0,
+  totalCards: 1, cardsWithText: 1, totalAbilities: 2, totalAtoms: 0,
   declarativeReadyAbilities: 0, verifiedAbilities: 1, legacyBackedAbilities: 0,
   byStatus: { verified: 1 }, byAtomKind: {},
 }
@@ -160,7 +168,7 @@ try {
     await page.goto(`http://127.0.0.1:${address.port}/__effect_scene_editor__`)
     await page.getByRole('button', { name: /卡效原子化/ }).click()
     await page.getByRole('button', { name: /QA-0001/ }).click()
-    await page.locator('[data-ui-contract="effect-presentation-editor"]').waitFor()
+    await page.locator('[data-ui-contract="effect-presentation-editor"]').first().waitFor()
 
     assert.equal(await page.locator('.presentation-scene').count(), 8)
     assert.equal(await page.locator('[data-ui-contract="effect-presentation-branch"]').count(), 3)
@@ -170,18 +178,17 @@ try {
     assert.equal(await page.getByText('第 2/3 段', { exact: true }).count(), 1)
     assert.equal(await page.getByText('第 3/3 段', { exact: true }).count(), 1)
 
-    const oldScene = page.locator('.presentation-scene').first()
-    assert.equal(await oldScene.locator('[data-ui-contract="effect-presentation-segment"]').count(), 0)
-    assert.equal(await oldScene.locator('[data-ui-contract="effect-presentation-branch"]').count(), 0)
-    const nullableOldScene = page.locator('.presentation-scene').nth(1)
+    assert.equal(await page.getByText('旧通用场景', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('仅整体效果', { exact: true }).count(), 1)
+    const nullableOldScene = page.locator('.presentation-scene').first()
     assert.equal(await nullableOldScene.locator('[data-ui-contract="effect-presentation-segment"]').count(), 0)
     assert.equal(await nullableOldScene.locator('[data-ui-contract="effect-presentation-branch"]').count(), 0)
     assert.equal(await nullableOldScene.getByText('分段元数据异常', { exact: true }).count(), 0)
-    await oldScene.scrollIntoViewIfNeeded()
+    await nullableOldScene.scrollIntoViewIfNeeded()
     const overviewScreenshotPath = path.join(out, `effect-scene-editor-${viewport.width}-overview.png`)
     await page.screenshot({ path: overviewScreenshotPath })
 
-    const multilineScene = page.locator('.presentation-scene').nth(6)
+    const multilineScene = page.locator('.presentation-scene').nth(5)
     const multilineEditor = multilineScene.locator('textarea')
     assert.match(await multilineEditor.inputValue(), /加入手牌。\n其余卡牌/)
     const whiteSpace = await multilineScene.locator('.presentation-preview strong')

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PagedCollection from './PagedCollection.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleRevision, type ModianImportBatchResult, type ModianImportPreview, type SiteCategory, type SiteContentKind, type SiteMedia } from '@/l12/platform'
 import ArticleDocumentEditor from './ArticleDocumentEditor.vue'
@@ -214,14 +215,14 @@ onMounted(load)
         <button v-if="modianPreview" class="modian-import-run" :disabled="modianBusy || !modianSelectedIds.length" @click="importModianUpdates">同步所选为草稿</button>
       </div>
       <div v-if="modianPreview" class="modian-update-list">
-        <article v-for="item in modianPreview.items" :key="item.updateId" class="modian-update-row" :data-state="item.state">
+        <PagedCollection :items="modianPreview.items" v-slot="{ items: paged11264 }"><article v-for="item in paged11264" :key="item.updateId" class="modian-update-row" :data-state="item.state">
           <input v-model="modianSelectedIds" type="checkbox" :value="item.updateId" :disabled="item.state === 'check-failed'" :aria-labelledby="`modian-title-${item.updateId}`">
           <span :id="`modian-title-${item.updateId}`"><b>{{ item.title }}</b><small>第 {{ item.sequence || '—' }} 次更新 · {{ new Date(item.originalPublishedAt).toLocaleString() }} · {{ modianStateLabel(item.state) }}</small><em v-if="item.checkMessage">{{ item.checkMessage }}</em></span>
           <label v-if="item.state === 'remote-changed' || item.state === 'remote-changed-local-edited'" class="modian-explicit"><input v-model="modianReimportIds" type="checkbox" :value="item.updateId">允许重导</label>
           <label v-if="item.state === 'remote-changed-local-edited'" class="modian-explicit danger"><input v-model="modianOverwriteIds" type="checkbox" :value="item.updateId" :disabled="!modianReimportIds.includes(item.updateId)">覆盖本地草稿</label>
-        </article>
+        </article></PagedCollection>
       </div>
-      <div v-if="modianResult" class="modian-result-list"><p v-for="item in modianResult.items.filter(row => row.status !== 'unchanged')" :key="item.updateId"><b>{{ item.status }}</b> {{ item.message }}<small v-if="item.warnings?.length">{{ item.warnings.join('；') }}</small></p></div>
+      <div v-if="modianResult" class="modian-result-list"><PagedCollection :items="modianResult.items.filter(row => row.status !== 'unchanged')" :page-size="5" v-slot="{ items: nestedPage }"><p v-for="item in nestedPage" :key="item.updateId"><b>{{ item.status }}</b> {{ item.message }}<small v-if="item.warnings?.length">{{ item.warnings.join('；') }}</small></p></PagedCollection></div>
     </section>
     <div class="article-layout">
       <aside class="article-list">
@@ -231,10 +232,10 @@ onMounted(load)
           <select v-model="category" @change="load"><option value="">全部分类</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}{{ item.active ? '' : '（停用）' }}</option></select>
           <button @click="load">刷新</button>
         </div>
-        <button v-for="article in articles" :key="article.id" class="article-list-row" :class="{ active: selected?.id === article.id }" @click="selectArticle(article)">
+        <PagedCollection :items="articles" v-slot="{ items: paged13295 }"><button v-for="article in paged13295" :key="article.id" class="article-list-row" :class="{ active: selected?.id === article.id }" @click="selectArticle(article)">
           <img v-if="article.coverUrl" :src="article.coverUrl" :alt="article.title">
           <span><small>{{ article.category }} · {{ statusLabel(article.status) }}</small><b>{{ article.title || '未命名稿件' }}</b><em v-if="article.hasUnpublishedChanges">有未发布修改</em><time>{{ article.publishAt ? new Date(article.publishAt).toLocaleString() : '尚未设置发布时间' }}</time></span>
-        </button>
+        </button></PagedCollection>
         <div v-if="!articles.length" class="article-empty">{{ busy ? '正在加载…' : `暂无${copy.singular}稿件` }}</div>
       </aside>
 
@@ -271,7 +272,7 @@ onMounted(load)
           </div>
           <article v-if="preview" class="article-preview"><img v-if="selectedPreview" :src="selectedPreview" :alt="selected.title"><small>{{ selected.category }} · {{ selected.publishAt ? new Date(selected.publishAt).toLocaleString() : '发布时立即公开' }}</small><h2>{{ selected.title || '未填写标题' }}</h2><b v-if="props.kind === 'video' && selected.videoAuthorName" class="video-author">作者：{{ selected.videoAuthorName }}</b><p v-if="props.kind !== 'video'">{{ selected.summary }}</p><ArticleContentRenderer v-if="props.kind === 'news'" :body="selected.body" :media="media"/><div v-else-if="props.kind === 'product'">{{ selected.body }}</div><a v-if="selected.link" :href="selected.link">{{ props.kind === 'video' ? '点击视频卡片将直接跳转到此链接' : '相关链接' }}</a></article>
           <p v-if="notice" class="article-notice">{{ notice }}</p>
-          <details v-if="selectedIsSaved" class="revision-list"><summary>历史版本（{{ revisions.length }}）</summary><article v-for="revision in revisions" :key="revision.revision"><span><b>v{{ revision.revision }} · {{ revision.action }}</b><small>{{ revision.actor }} · {{ new Date(revision.createdAt).toLocaleString() }}</small></span><button @click="restoreRevision(revision.revision)">恢复为草稿</button></article></details>
+          <details v-if="selectedIsSaved" class="revision-list"><summary>历史版本（{{ revisions.length }}）</summary><PagedCollection :items="revisions" v-slot="{ items: paged18709 }"><article v-for="revision in paged18709" :key="revision.revision"><span><b>v{{ revision.revision }} · {{ revision.action }}</b><small>{{ revision.actor }} · {{ new Date(revision.createdAt).toLocaleString() }}</small></span><button @click="restoreRevision(revision.revision)">恢复为草稿</button></article></PagedCollection></details>
         </template>
       </main>
     </div>

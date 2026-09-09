@@ -73,14 +73,6 @@ public sealed partial class L12GameEngine
         return guard is null ? null : $"tomb-guard:{guard.InstanceId}";
     }
 
-    private static string? EquivalentOrdinaryMoralePaymentKey(L12PlayerState player, string choiceId)
-    {
-        var morale = player.Morale.FirstOrDefault(card => card.InstanceId.Equals(
-            choiceId, StringComparison.OrdinalIgnoreCase) && !card.Tapped);
-        if (morale is null || morale.IsGodPower || morale.CardId == "S02-0010") return null;
-        return $"ordinary-morale:{morale.CardId}:{morale.CannotUntapUntilRound}";
-    }
-
     private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost,
         IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)
     {

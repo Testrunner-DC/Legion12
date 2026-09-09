@@ -132,11 +132,14 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal(0, game.State.CounterTacticsDisabledExpiresAtPlayerTurnStart);
     }
 
-    [Fact]
-    public void MagiciansPuppetMayRestFromHandAndRetargetAMasterAttack()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MagiciansPuppetMayRestFromHandAndRetargetAMasterAttack(bool sureHit)
     {
         var game = Create(seed: 6215);
         var attacker = Instance("S02-0003", "puppet-test-attacker");
+        attacker.HasSureHit = sureHit;
         attacker.SummonRound = 0;
         game.State.Players[0].Field[0][0] = attacker;
         var puppet = TakeCard(game, 1, "S02-0005");
@@ -163,6 +166,18 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
             Choice: "0:1")).Accepted);
 
+        if (sureHit)
+        {
+            // No block/support window remains: combat may finish immediately after the
+            // legal retarget, so the puppet can already have died rather than still be on field.
+            Assert.Contains(game.State.Events, entry => entry.Type == "enter"
+                && entry.Cards.Any(card => card.InstanceId == puppet.InstanceId)
+                && entry.Text.Contains("成为本次进攻目标"));
+            Assert.DoesNotContain(puppet, game.State.Players[1].Hand);
+            Assert.Contains(puppet, game.State.Players[1].Graveyard);
+            Assert.Null(game.State.PendingDefense);
+            return;
+        }
         Assert.Same(puppet, game.State.Players[1].Field[0][1]);
         Assert.True(puppet.Tapped);
         Assert.DoesNotContain(puppet, game.State.Players[1].Hand);
@@ -742,16 +757,7 @@ public sealed class S2UniversalEffectsTests
         var moralePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
             Choice: "mode:morale")).Accepted);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("resource-payment", payment.Kind);
-        Assert.Equal(3, payment.MinChoose);
-        Assert.Equal(3, payment.MaxChoose);
-        Assert.Equal(4, payment.ValidChoices.Count(id => id.StartsWith("temporary-morale:", StringComparison.Ordinal)));
-
-        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            CardInstanceIds: ["temporary-morale:2", "temporary-morale:3", "temporary-morale:4"]));
-
-        Assert.True(paid.Accepted, paid.Error);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.Equal(0, player.TemporaryMorale);
         var converted = Assert.Single(player.Morale, card => card.CardId == "S02-0010");
         Assert.True(converted.Tapped);

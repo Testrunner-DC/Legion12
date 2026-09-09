@@ -22,6 +22,7 @@ const emit = defineEmits<{
   mulliganConfirm: []
   focusCard: [card: Card]
   minimizedChange: [minimized: boolean]
+  responseTargetsChange: [ids: string[]]
 }>()
 
 const prompt = computed(() => props.game.prompts?.find(item => item.promptId !== props.suppressedPromptId) ?? null)
@@ -89,6 +90,25 @@ watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mull
   placementOrder.value = (prompt.value?.validChoices ?? []).filter(id => id !== 'skip')
 })
 watch(minimized, value => emit('minimizedChange', value), { immediate: true })
+const responseTargetIds = computed(() => {
+  if (!minimized.value || !visible.value || !prompt.value) return []
+  const data = prompt.value.data
+  const keys = prompt.value.kind === 'response-target'
+    ? (selected.value.length ? selected.value : prompt.value.validChoices).map(id => `${id}:responseTargetIds`)
+    : ['responseTargetIds']
+  const ids = new Set<string>()
+  for (const key of keys) {
+    try {
+      const parsed: unknown = JSON.parse(data?.[key] ?? '[]')
+      if (Array.isArray(parsed)) for (const id of parsed) if (typeof id === 'string') ids.add(id)
+    } catch { /* Malformed optional presentation metadata grants no highlight. */ }
+  }
+  return props.game.players.flatMap(player => player.field.flat())
+    .filter((card): card is Card => Boolean(card && !card.hidden && ids.has(card.instanceId)))
+    .map(card => card.instanceId)
+})
+watch(responseTargetIds, ids => emit('responseTargetsChange', ids), { immediate: true })
+onBeforeUnmount(() => emit('responseTargetsChange', []))
 
 function sendAction(command: Record<string, unknown>, actingPlayerIndex = prompt.value?.playerIndex ?? sandboxActorIndex.value) {
   if (l12State.gmEnabled) sandboxAction(actingPlayerIndex, command)
@@ -167,6 +187,8 @@ function naturalChoiceLabel(value: string | undefined, id: string) {
   return normalized && normalized !== id && !isInternalChoiceValue(normalized) ? normalized : null
 }
 function label(id: string) {
+  if (prompt.value?.kind === 'response-target') return naturalChoiceLabel(prompt.value.data?.[id], id)
+    ?? naturalChoiceLabel(prompt.value.choiceLabels?.[id], id) ?? safeChoiceFallback(id)
   if (isPureEffectDecision.value) return isDeclineChoice(id) ? '不发动' : '发动'
   if (isEffectDecision.value) {
     if (['yes', 'mode:use'].includes(id.toLowerCase())) return '发动'
@@ -295,10 +317,10 @@ const isPureEffectDecision = computed(() => Boolean(isEffectDecision.value
   && currentChoices.value.some(choice => isDeclineChoice(choice))
   && currentChoices.value.some(choice => isDirectActivationChoice(choice))
   && currentChoices.value.every(choice => isDeclineChoice(choice) || isDirectActivationChoice(choice))))
+const displayCardIds = computed(() => prompt.value?.data?.displayCardIds?.split('|').filter(Boolean) ?? [])
 const displayedChoices = computed(() => {
+  if (displayCardIds.value.length) return displayCardIds.value
   if (prompt.value?.kind === 'option') return orderedEffectChoices.value
-  const listed = prompt.value?.data?.displayCardIds?.split('|').filter(Boolean)
-  if (listed?.length) return listed
   if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
@@ -309,8 +331,9 @@ const supplementalChoices = computed(() => currentChoices.value
 const isCardSelectionPrompt = computed(() => prompt.value?.data?.cardSelection === 'true')
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
 const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
-const hasCardChoices = computed(() => !isEffectDecision.value
+const hasCardChoices = computed(() => displayCardIds.value.length > 0 || (!isEffectDecision.value
   && (showPreviewCard.value || displayedChoices.value.some(id => Boolean(detailFor(id)))))
+)
 const isEffectOptionList = computed(() => (isEffectDecision.value || prompt.value?.kind === 'option')
   && !hasCardChoices.value && !isInitiative.value)
 const displayedCardsAreAllFromHand = computed(() => {
@@ -341,7 +364,11 @@ function setupRoleLabel(playerIndex: number | null) {
   if (playerIndex == null) return '准备步骤'
   return `${props.game.firstPlayer === playerIndex ? '先攻' : '后攻'}玩家准备`
 }
-const decisionEffectText = computed(() => prompt.value?.data?.effectText?.trim() || prompt.value?.text || '')
+const decisionEffectText = computed(() => {
+  const text = prompt.value?.data?.effectText?.trim() || prompt.value?.text || ''
+  const context = prompt.value?.data?.responseContext?.trim()
+  return context && !text.includes(context) ? `${text}\n${context}` : text
+})
 
 function toggle(id: string) {
   const p = prompt.value
@@ -569,9 +596,13 @@ function kindLabel() {
             </div>
           </section>
         </div>
-        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList }">
+        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'response-target-list': prompt.kind === 'response-target' }">
           <template v-for="choice in primaryChoices" :key="choice">
-            <PromptCardCandidate v-if="detailFor(choice)"
+            <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: selected.includes(choice) }">
+              <button class="response-target-select l12-effect-body" :aria-pressed="selected.includes(choice)" :disabled="l12State.pendingAction" @click="toggle(choice)">{{ label(choice) }}</button>
+              <button v-if="detailFor(choice)" class="response-target-detail" :aria-label="`查看${cardName(choice)}来源详情`" @click="focusChoice(choice)">来源详情</button>
+            </article>
+            <PromptCardCandidate v-else-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)"
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="selected.includes(choice)"
@@ -677,6 +708,11 @@ function kindLabel() {
 </template>
 
 <style scoped>
+.prompt-choices.response-target-list{display:flex;flex-direction:column;align-items:stretch;gap:8px;overflow:auto}
+.response-target-row{display:flex;flex:none;align-items:stretch;gap:8px;border:1px solid #52615d;background:#10191a}
+.response-target-row.selected{border-color:#79d2ce;box-shadow:inset 0 0 0 1px #79d2ce}
+.response-target-select{flex:1;min-width:0;padding:12px;border:0;background:transparent;color:#eee;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
+.response-target-detail{flex:none;align-self:center;margin:8px;padding:8px;border:1px solid #52615d;background:#162629;color:#b9e7e5}
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:var(--l12-board-copy,13px)}.initiative-race span{color:#89928e;font-size:var(--l12-board-copy,13px)}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:max(52px,var(--l12-board-copy,13px));line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:var(--l12-board-copy,13px);font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}

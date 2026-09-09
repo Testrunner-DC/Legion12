@@ -245,7 +245,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var giftChoice = order.ValidChoices.Single(id => order.Data[id].Contains("不朽之礼", StringComparison.Ordinal));
         var nitocrisChoice = order.ValidChoices.Single(id => order.Data[id].Contains("尼托克丽丝", StringComparison.Ordinal));
         var ordered = game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
-            CardInstanceIds: [nitocrisChoice, giftChoice]));
+            CardInstanceIds: [giftChoice, nitocrisChoice]));
         Assert.True(ordered.Accepted, ordered.Error);
 
         var giftMode = Assert.Single(game.State.PendingPrompts);

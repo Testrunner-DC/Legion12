@@ -50,7 +50,7 @@ public sealed partial class L12GameEngine
             "extendedRange" when source.CardId == "S01-0113"
                 && (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1)
                 => "该效果只能在后排发动",
-            "xishiExchange" when source.CardId == "S01-0116" && !IsValidXishiDeclaration(player, target)
+            "xishiExchange" when source.CardId == "S01-0116" && !IsValidXishiDeclaration(player, source, target)
                 => "声明的手牌目标、战场或位置不再合法",
             "palaceExchange" when source.CardId == "S01-01D1" && source.Tapped
                 => "凌霄宝殿必须为活跃状态",
@@ -70,7 +70,7 @@ public sealed partial class L12GameEngine
         };
     }
 
-    private bool IsValidXishiDeclaration(L12PlayerState player, string? target)
+    private bool IsValidXishiDeclaration(L12PlayerState player, L12CardInstance source, string? target)
     {
         var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
         if (declared.Length == 0) return true;
@@ -79,10 +79,13 @@ public sealed partial class L12GameEngine
             && card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000);
         var battlefield = ParseEffectEntryBattlefieldChoice(declared[1]);
         var (row, slot) = ParseSlot(declared[2]);
+        var usingSourceSlot = battlefield == player.PlayerIndex
+            && SourceSlotAfterCost(player.PlayerIndex, source.InstanceId) == declared[2];
         return handCard is not null && battlefield is not null
-            && EffectEntryBattlefieldChoices(player.PlayerIndex, handCard).Contains(battlefield.Value)
+            && (usingSourceSlot || EffectEntryBattlefieldChoices(player.PlayerIndex, handCard).Contains(battlefield.Value))
             && row is >= 0 and <= 1 && slot is >= 0 and <= 2
-            && State.Players[battlefield.Value].Field[row][slot] is null;
+            && (State.ActiveDisaster?.CardId != "S01-DS03" || row == 0)
+            && (usingSourceSlot || State.Players[battlefield.Value].Field[row][slot] is null);
     }
 
     private bool BeginEffectMoraleReturn(L12StackItem item, int count, string afterReturn,

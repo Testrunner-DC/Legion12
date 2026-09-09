@@ -291,7 +291,7 @@ public sealed partial class L12GameEngine
                 var slot = CompositeDeclared(item, "entrySlot").SingleOrDefault();
                 if (targetId is not null && slot is not null
                     && player.Graveyard.Any(candidate => candidate.InstanceId == targetId && candidate.CardType == "legion"
-                        && candidate.CurrentCost <= 5 && L12StructuredCardRules.HasFaction(player, candidate, "asgard"))
+                        && L12StructuredCardRules.CurrentCostAtMost(candidate, 5) && L12StructuredCardRules.HasFaction(player, candidate, "asgard"))
                     && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     SummonFromAnyPrivateZone(player, targetId, slot, false);
                 FinishStackItem(item);
@@ -397,7 +397,7 @@ public sealed partial class L12GameEngine
             {
                 var target = PublicTriggerDeclared(item, "recoverTarget");
                 if (player.Graveyard.Any(candidate => candidate.InstanceId == target && CanEnterHandOrLibrary(candidate)
-                        && candidate.CardId != "S01-0207" && candidate.Faction == "taiyangcheng" && candidate.CurrentCost <= 4))
+                        && candidate.CardId != "S01-0207" && candidate.Faction == "taiyangcheng" && L12StructuredCardRules.CurrentCostAtMost(candidate, 4)))
                     MoveGraveToLibraryTop(player, target);
                 else AddEvent("effect-cancelled", item.Controller, "图坦卡蒙已声明的墓地目标失效；效果取消", card);
                 FinishStackItem(item); return true;
@@ -824,7 +824,7 @@ public sealed partial class L12GameEngine
                 var battlefield = revive is not null ? ParseEffectEntryBattlefieldChoice(values[1]) : null;
                 var (row, slot) = revive is not null ? ParseSlot(values[2]) : (-1, -1);
                 if (source.Tapped || declared is null || !noRevive && (revive is null
-                        || revive.CurrentCost > declared.CurrentCost || battlefield != playerIndex
+                        || !declared.HasPrintedCost || !L12StructuredCardRules.CurrentCostAtMost(revive, declared.CurrentCost) || battlefield != playerIndex
                         || row is < 0 or > 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null))
                     return CommandResult.Reject("凌霄宝殿的敌方目标或登场声明已失效");
                 var paid = declared.CurrentCost;
@@ -1315,7 +1315,7 @@ public sealed partial class L12GameEngine
                     {
                         var targetId = CompositeDeclared(item, "kill3Target").SingleOrDefault();
                         if (targetId != "mode:none"
-                            && DeclaredEnemyTarget(item.Controller, targetId, card => card.CurrentCost <= 3) is not null)
+                            && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 3)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
                         break;
                     }
@@ -1323,7 +1323,7 @@ public sealed partial class L12GameEngine
                     {
                         var targetId = CompositeDeclared(item, "kill1Target").SingleOrDefault();
                         if (targetId != "mode:none"
-                            && DeclaredEnemyTarget(item.Controller, targetId, card => card.CurrentCost <= 1) is not null)
+                            && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
                         break;
                     }
@@ -1357,7 +1357,7 @@ public sealed partial class L12GameEngine
                 {
                     var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                     if (targetId != "mode:none"
-                        && DeclaredEnemyTarget(item.Controller, targetId, card => card.CurrentCost == 0) is not null)
+                        && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null)
                         KillTarget(item, targetId!, "被天照大神击杀");
                     else if (targetId != "mode:none") AddEvent("effect-cancelled", item.Controller,
                         "天照大神选择的费用为0目标失效；该目标不会被击杀", source is null ? [] : [source]);
@@ -1379,10 +1379,9 @@ public sealed partial class L12GameEngine
                 }
                 else if (AtomicFlowKey(item) == "amaterasu-front-buff")
                 {
-                    foreach (var legion in PublicLegions(player).Where(card => FindOnField(player,
-                                 card.InstanceId, out var row, out _) is not null && row == 0
-                             && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")))
-                        AddTimedModifier(legion, 1000, 0, State.TurnSerial, "天照大神");
+                    // 本回合的前排持续状态，不是只给结算当刻的实体加值。
+                    player.UsedAbilities.Add($"amaterasu-front-aura:{State.TurnSerial}");
+                    RecalculateContinuousTroops();
                 }
                 FinishStackItem(item);
                 return true;
@@ -1565,7 +1564,7 @@ public sealed partial class L12GameEngine
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CurrentCost <= maxCost && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList();
+        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && L12StructuredCardRules.CurrentCostAtMost(card, maxCost) && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return; }
         choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" });
@@ -1573,7 +1572,7 @@ public sealed partial class L12GameEngine
 
     private void SummonAsgardFromGrave(L12StackItem item, int maxCost)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && card.CurrentCost <= maxCost).Select(card => card.InstanceId).ToList();
+        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)).Select(card => card.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return; }
         choices.Add("skip");
         CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "summon-asgard" });

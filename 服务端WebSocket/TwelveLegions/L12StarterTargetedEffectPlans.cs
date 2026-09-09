@@ -115,7 +115,7 @@ public sealed partial class L12GameEngine
             case "penelope-summon":
             {
                 var entries = player.Hand.Where(card => card.CardType == "legion"
-                        && card.CurrentCost <= 3
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 3)
                         && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToList();
                 var canUse = player.Morale.Any(card => card.IsGodPower && !card.Tapped)
@@ -335,7 +335,7 @@ public sealed partial class L12GameEngine
                 var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
                 if (!player.Morale.Any(card => card.IsGodPower && !card.Tapped)
                     || !player.Hand.Any(card => card.InstanceId == entry && card.CardType == "legion"
-                        && card.CurrentCost <= 3 && L12StructuredCardRules.HasFaction(player, card, "olympus"))
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 3) && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     error = "珀涅罗珀选择的神力、手牌军团或登场位置已失效；未支付神力且效果未入栈";
                 break;

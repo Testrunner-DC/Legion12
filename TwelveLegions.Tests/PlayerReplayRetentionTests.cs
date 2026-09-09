@@ -85,7 +85,7 @@ public sealed class PlayerReplayRetentionTests
         Assert.Equal(2, cleanup.RetainedCommandRows);
         Assert.True(cleanup.ClearedPayloadBytes > 0);
         Assert.False(cleanup.HasMoreEligibleMatches);
-        Assert.Equal(now.AddDays(1), cleanup.NextRunUtc);
+        Assert.Equal(recorder.NextStorageCleanupUtc(now), cleanup.NextRunUtc);
         Assert.Equal(2, evidenceReads);
 
         await AssertPayloadPurgedPreservingArchiveAsync(path, "old-casual");
@@ -121,7 +121,7 @@ public sealed class PlayerReplayRetentionTests
         {
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
-            for (var index = 0; index < 131; index++)
+            for (var index = 0; index < MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 31; index++)
                 await SeedMatchAsync(connection, transaction, $"tie-{index:D3}", "casual",
                     "account-a", "account-b", origin.AddHours(-2), origin.AddHours(-1));
             await transaction.CommitAsync();
@@ -129,12 +129,15 @@ public sealed class PlayerReplayRetentionTests
 
         var visible = await first.ListRecentPlayerReplayMatchesAsync("account-a", "甲", 200);
         Assert.Equal(30, visible.Count);
-        Assert.Equal("tie-130", visible[0].MatchId);
-        Assert.Equal("tie-101", visible[^1].MatchId);
+        var lastIndex = MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 30;
+        var protectedId = $"tie-{MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 1:D3}";
+        var expiredId = $"tie-{MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun:D3}";
+        Assert.Equal($"tie-{lastIndex:D3}", visible[0].MatchId);
+        Assert.Equal(protectedId, visible[^1].MatchId);
         Assert.True(await first.IsWithinRecentPlayerReplayWindowAsync(
-            "tie-101", "account-a", "甲"));
+            protectedId, "account-a", "甲"));
         Assert.False(await first.IsWithinRecentPlayerReplayWindowAsync(
-            "tie-100", "account-a", "甲"));
+            expiredId, "account-a", "甲"));
 
         now = origin.AddDays(1);
         await using var second = new MatchRecorder(path, () => now);
@@ -145,22 +148,22 @@ public sealed class PlayerReplayRetentionTests
         var ran = Assert.Single(runs, result => result.Ran);
         Assert.Equal(MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun, ran.PurgedMatches);
         Assert.True(ran.HasMoreEligibleMatches);
-        Assert.Equal(now.AddMinutes(5), ran.NextRunUtc);
-        Assert.Equal(100, await CountExpirationsAsync(path));
+        Assert.Equal(first.NextStorageCleanupUtc(now), ran.NextRunUtc);
+        Assert.Equal(MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun, await CountExpirationsAsync(path));
 
         var early = await first.RunPlayerReplayCleanupIfDueAsync(utcNow: now.AddMinutes(4));
         Assert.False(early.Ran);
-        Assert.Equal(now.AddMinutes(5), early.NextRunUtc);
+        Assert.Equal(first.NextStorageCleanupUtc(now), early.NextRunUtc);
 
-        now = now.AddMinutes(5);
+        now = first.NextStorageCleanupUtc(now);
         var drained = await first.RunPlayerReplayCleanupIfDueAsync(utcNow: now);
         Assert.True(drained.Ran);
         Assert.Equal(1, drained.PurgedMatches);
         Assert.False(drained.HasMoreEligibleMatches);
-        Assert.Equal(now.AddDays(1), drained.NextRunUtc);
-        Assert.Equal(101, await CountExpirationsAsync(path));
-        await AssertPayloadPurgedPreservingArchiveAsync(path, "tie-100");
-        var protectedBoundary = await ReadRowsAsync(path, "tie-101");
+        Assert.Equal(first.NextStorageCleanupUtc(now), drained.NextRunUtc);
+        Assert.Equal(MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 1, await CountExpirationsAsync(path));
+        await AssertPayloadPurgedPreservingArchiveAsync(path, expiredId);
+        var protectedBoundary = await ReadRowsAsync(path, protectedId);
         Assert.Equal(0, protectedBoundary.ExpirationRows);
         Assert.NotNull(protectedBoundary.InitialStateJson);
 
@@ -169,7 +172,7 @@ public sealed class PlayerReplayRetentionTests
         var persisted = await restarted.RunPlayerReplayCleanupIfDueAsync(
             utcNow: now.AddHours(12));
         Assert.False(persisted.Ran);
-        Assert.Equal(now.AddDays(1), persisted.NextRunUtc);
+        Assert.Equal(first.NextStorageCleanupUtc(now), persisted.NextRunUtc);
     }
 
     [Fact]

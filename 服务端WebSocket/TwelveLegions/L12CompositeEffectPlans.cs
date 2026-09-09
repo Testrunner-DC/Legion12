@@ -76,7 +76,8 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("scout-reveal", "查看对方所有手牌"),
                 new("scout-shuffle-effect", "消耗1士气：令对方选择1张手牌洗回牌库",
-                    "mode:use", "ordinary-payment", "scoutCost", 1, PreStackCost: true),
+                    "mode:use", "ordinary-payment", "scoutCost", 1, PreStackCost: true,
+                    DeclareAtSegmentStart: true),
             ],
             ["S01-0014"] =
             [
@@ -367,7 +368,7 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("zhuge-reveal", "诸葛亮：查看下一张天灾"),
                 new("zhuge-disaster", "诸葛亮：随后将天灾值增加或减少1",
-                    RequiredMode: "mode:use", RequiredDeclarationKey: "disasterMode"),
+                    RequiredMode: "mode:use", RequiredDeclarationKey: "disasterMode", DeclareAtSegmentStart: true),
             ],
             ["trigger:S01-0217:enter"] =
             [
@@ -396,7 +397,7 @@ internal static partial class L12CompositeEffectPlans
         };
 
     private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
-        new(StringComparer.OrdinalIgnoreCase) { "S01-0015", "S01-0419", "S02-0405", "S02-0620" };
+        new(StringComparer.OrdinalIgnoreCase) { "S01-0013", "S01-0015", "S01-0419", "S02-0405", "S02-0620" };
 
     public static bool HasHandPlayPlan(string cardId)
         => HandPlayPlans.ContainsKey(cardId)
@@ -549,17 +550,7 @@ public sealed partial class L12GameEngine
 
             case "S01-0013":
             {
-                var canUse = ActiveResourceCount(player) >= 1 && opponent.Hand.Count > 0;
-                steps.Add(CompositeStep("option", "mode", "前线侦查：选择是否消耗1士气，使对方将1张手牌洗回牌库",
-                    canUse ? ["mode:none", "mode:use"] : ["mode:none"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "查看对方所有手牌",
-                        ["mode:use"] = "消耗1士气：对方选择其1张手牌洗回牌库",
-                    }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "scoutCost",
-                    "前线侦查：预先选择洗回手牌段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:use", autoSelectEquivalentOrdinaryMorale: true));
+                // 后段决策依赖先查看手牌，不能在打出前预选或预付后段费用。
                 break;
             }
 
@@ -618,7 +609,7 @@ public sealed partial class L12GameEngine
 
             case "S01-0318":
                 steps.Add(CompositeStep("grave-card", "entryCard", "女武神的召唤：预先选择费用不高于5的【阿斯加德】军团",
-                    player.Graveyard.Where(card => card.CardType == "legion" && card.CurrentCost <= 5
+                    player.Graveyard.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 5)
                             && L12StructuredCardRules.HasFaction(player, card, "asgard"))
                         .Select(card => card.InstanceId), 1));
                 steps.Add(CompositeStep("unused-slot", "entrySlot", "女武神的召唤：预先选择活跃登场位置",
@@ -645,7 +636,7 @@ public sealed partial class L12GameEngine
 
             case "S01-0418":
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "天诛：预先选择费用不高于7的击杀目标",
-                    PublicLegions(opponent).Where(card => card.CurrentCost <= 7).Select(card => card.InstanceId), 1));
+                    PublicLegions(opponent).Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 7)).Select(card => card.InstanceId), 1));
                 break;
 
             case "S02-0009":
@@ -1095,14 +1086,14 @@ public sealed partial class L12GameEngine
                     && (recover == "mode:none" || Grave("recoverTarget", target => target.CardId != card.CardId
                         && L12StructuredCardRules.HasFaction(player, target, "taiyangcheng") && CanEnterHandOrLibrary(target)))),
             "S01-0318" => (effectOnlyRepeat || declared.GetValueOrDefault("masterDamageCost", []).SingleOrDefault() == "cost:master-damage")
-                && Grave("entryCard", target => target.CardType == "legion" && target.CurrentCost <= 5
+                && Grave("entryCard", target => target.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(target, 5)
                     && L12StructuredCardRules.HasFaction(player, target, "asgard")) && OwnSlot("entrySlot"),
             "S01-0319" => ValidateHuntingMomentGraveEffect(player, declared)
                 && Enemy("killTarget", target => target.Troops <= 6000),
             "S01-0419" => declared.Count == 0 || mode is "mode:none" or "mode:morale"
                 && (mode == "mode:none" || declared.GetValueOrDefault("moraleTarget", []).SingleOrDefault() is { } moraleTarget
                     && player.Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped)),
-            "S01-0418" => Enemy("killTarget", target => target.CurrentCost <= 7),
+            "S01-0418" => Enemy("killTarget", target => L12StructuredCardRules.CurrentCostAtMost(target, 7)),
             "S02-0009" => ValidateDefenseDeploymentDeclaration(player, card, declared),
             "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1"
                 && (mode is "mode:none" or "mode:morale")
@@ -1355,6 +1346,26 @@ public sealed partial class L12GameEngine
         var targetKey = segment.PublicTargetKeys?.SingleOrDefault();
         switch (segment.Flow)
         {
+            case "zhuge-disaster":
+                steps.Add(CompositeStep("option", "disasterMode", "诸葛亮：是否调整天灾值？",
+                    ["mode:none", "mode:use"], 1, 1, new() { ["mode:none"] = "不发动", ["mode:use"] = "发动" }));
+                steps.Add(CompositeStep("option", "disasterValue", "诸葛亮：选择天灾值增加或减少1",
+                    ["-1", "1"], 1, 1, requiredChoice: "mode:use"));
+                return true;
+            case "scout-shuffle-effect":
+            {
+                if (opponent.Hand.Count == 0 || ActiveResourceCount(player) < 1) return false;
+                steps.Add(CompositeStep("option", "mode", "前线侦查：是否消耗1士气，使对方选择1张手牌洗回牌库？",
+                    ["mode:none", "mode:use"], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动",
+                        ["mode:use"] = "发动",
+                    }));
+                steps.Add(CompositeStep("composite-ordinary-payment", "scoutCost",
+                    "前线侦查：选择消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
+                    requiredChoice: "mode:use", autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
             case "oiran-ready-morale":
             {
                 var rested = player.Morale.Where(card => card.Tapped)
@@ -1387,7 +1398,7 @@ public sealed partial class L12GameEngine
             }
             case "honda-kill":
             {
-                var targets = PublicLegions(opponent).Where(card => card.CurrentCost == 0)
+                var targets = PublicLegions(opponent).Where(card => L12StructuredCardRules.CurrentCostEquals(card, 0))
                     .Select(card => card.InstanceId).ToArray();
                 if (targets.Length == 0 || string.IsNullOrWhiteSpace(targetKey)) return false;
                 steps.Add(CompositeStep("enemy-legion", targetKey,
@@ -1705,17 +1716,17 @@ public sealed partial class L12GameEngine
             "march-kill-effect" or "march-kill-segment" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "killTarget").SingleOrDefault(), target => target.Troops <= 6000) is not null,
             "yomi-kill3" => CompositeDeclared(item, "kill3Target").SingleOrDefault() is { } kill3
-                && (kill3 == "mode:none" || DeclaredEnemyTarget(controller, kill3, card => card.CurrentCost <= 3) is not null),
+                && (kill3 == "mode:none" || DeclaredEnemyTarget(controller, kill3, card => L12StructuredCardRules.CurrentCostAtMost(card, 3)) is not null),
             "yomi-kill1" => CompositeDeclared(item, "kill1Target").SingleOrDefault() is { } kill1
-                && (kill1 == "mode:none" || DeclaredEnemyTarget(controller, kill1, card => card.CurrentCost <= 1) is not null),
+                && (kill1 == "mode:none" || DeclaredEnemyTarget(controller, kill1, card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null),
             "honda-kill" => DeclaredEnemyTarget(controller,
-                CompositeDeclared(item, "killTarget").SingleOrDefault(), card => card.CurrentCost == 0) is not null,
+                CompositeDeclared(item, "killTarget").SingleOrDefault(), card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null,
             "amaterasu-kill" => CompositeDeclared(item, "killTarget").SingleOrDefault() is { } amaterasuKill
                 && (amaterasuKill == "mode:none" || DeclaredEnemyTarget(controller, amaterasuKill,
-                    card => card.CurrentCost == 0) is not null),
+                    card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null),
             "wisdom-recover" => CompositeDeclared(item, "recoverTarget").SingleOrDefault() is { } wisdom
                 && State.Players[controller].Graveyard.Any(card => card.InstanceId == wisdom
-                    && card.InstanceId != item.SourceInstanceId && card.CurrentCost <= 3
+                    && card.InstanceId != item.SourceInstanceId && L12StructuredCardRules.CurrentCostAtMost(card, 3)
                     && card.CardType is "tactic" or "artifact"),
             "blood-eagle-recover" => CompositeDeclared(item, "graveOrder") is [var handCard, var bottomCard]
                 && !handCard.Equals(bottomCard, StringComparison.OrdinalIgnoreCase)
@@ -1730,7 +1741,7 @@ public sealed partial class L12GameEngine
                 && CompositeDeclared(item, "entrySlot").SingleOrDefault() is { } palaceSlot
                 && State.Players[controller].Graveyard.Any(card => card.InstanceId == palaceCard
                     && card.CardType == "legion" && L12StructuredCardRules.HasFaction(State.Players[controller], card, "tianting")
-                    && card.CurrentCost <= (int.TryParse(item.Data.GetValueOrDefault("paid"), out var paid) ? paid : 0))
+                    && L12StructuredCardRules.CurrentCostAtMost(card, int.TryParse(item.Data.GetValueOrDefault("paid"), out var paid) ? paid : 0))
                 && ParseSlot(palaceSlot) is var palacePosition
                 && palacePosition.Item1 is >= 0 and <= 1 && palacePosition.Item2 is >= 0 and <= 2
                 && State.Players[controller].Field[palacePosition.Item1][palacePosition.Item2] is null,

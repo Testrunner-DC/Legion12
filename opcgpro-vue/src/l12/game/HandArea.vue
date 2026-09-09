@@ -18,9 +18,10 @@ const handElement = ref<HTMLElement | null>(null)
 const handWidth = ref(900)
 let resizeObserver: ResizeObserver | null = null
 const cardCount = computed(() => props.hidden ? (props.count ?? 0) : (props.cards?.length ?? 0))
-const cardWidth = computed(() => 96)
-const minimumStep = computed(() => 26)
-const maximumStep = computed(() => 76)
+// Confirmed batch-299 layout: hand cards match battlefield legion dimensions.
+const cardWidth = computed(() => 114.4)
+const minimumStep = computed(() => 30)
+const maximumStep = computed(() => 90)
 const fanStep = computed(() => {
   if (cardCount.value <= 1) return 0
   return Math.max(minimumStep.value, Math.min(maximumStep.value, (handWidth.value - cardWidth.value) / (cardCount.value - 1)))
@@ -47,7 +48,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <template>
-  <div ref="handElement" class="l12-hand" data-l12-zone="hand" :data-player-index="playerIndex" :class="{ hidden, 'playability-active': dimUnplayable, overflowing: isOverflowing }">
+  <div ref="handElement" class="l12-hand" data-l12-zone="hand" data-ui-contract="field-sized-safe-hand" :data-player-index="playerIndex" :class="{ hidden, 'playability-active': dimUnplayable, overflowing: isOverflowing }">
     <template v-if="hidden">
       <div v-for="index in count || 0" :key="index" class="card-back" :style="fanStyle(index - 1, count || 0)"><i>XII</i></div>
     </template>
@@ -73,5 +74,5 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 .l12-hand.overflowing>.hand-card-wrap,.l12-hand.overflowing>.card-back{flex:none}
 .l12-hand.overflowing .hand-actions{top:auto;bottom:calc(100% + 4px)}
 .l12-hand.overflowing.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}
-.l12-hand .hand-card-wrap{width:96px;height:134px;flex-basis:96px}.l12-hand .hand-card-wrap .card-tile{width:96px;height:134px;flex-basis:96px}.l12-hand.hidden .card-back{box-sizing:border-box;width:96px;height:134px}
+.l12-hand .hand-card-wrap{width:114.4px;height:160.6px;flex-basis:114.4px}.l12-hand .hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent;border-radius:0;box-shadow:none}.l12-hand .hand-card-wrap .card-tile:hover{border-color:transparent;box-shadow:none}.l12-hand .hand-card-wrap.playable::after{content:'';position:absolute;z-index:14;left:50%;bottom:2px;width:22px;height:3px;background:#62c5cc;box-shadow:0 0 6px rgba(70,185,195,.72);transform:translateX(-50%);pointer-events:none}.l12-hand .hand-card-wrap.selected .card-tile,.l12-hand .hand-card-wrap .card-tile:focus-visible{border-color:transparent;box-shadow:none;outline:2px solid #f4f0df;outline-offset:1px}.l12-hand.hidden .card-back{box-sizing:border-box;width:114.4px;height:160.6px}
 </style>

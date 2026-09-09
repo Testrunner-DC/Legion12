@@ -606,11 +606,12 @@ public sealed partial class MatchRecorder
         L12RankedRuntimeCheckpoint? runtime = null;
         L12PersistedCheckpoint? stateCheckpoint = null;
         IReadOnlyList<L12PersistedActionRequest> processedRequests = [];
+        // A v2 row never consults the legacy duplicate column, including on failure.
+        var recoveryInitialStateJson = row.StorageVersion >= JournalStorageVersion
+            ? string.Empty : row.Initial;
         string? error = null;
         try
         {
-            if (string.IsNullOrWhiteSpace(row.Initial))
-                throw new InvalidDataException("缺少初始权威状态");
             if (row.Accounts.Any(string.IsNullOrWhiteSpace))
                 throw new InvalidDataException("缺少排位账号席位");
             if (row.RuntimeJson is null || row.RuntimeHash is null)
@@ -626,9 +627,15 @@ public sealed partial class MatchRecorder
                 || !string.Equals(parsedRuntime.RoomCode, row.RoomCode, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("排位运行快照身份不一致");
             runtime = parsedRuntime;
-            decks = await ReadRecoveryDecksAsync(connection, row.MatchId, row.Initial);
             if (row.StorageVersion >= JournalStorageVersion)
             {
+                var initialCheckpoint = await LoadInitialStateCheckpointAsync(connection, row.MatchId)
+                    ?? throw new InvalidDataException("v2 排位缺少 sequence=0 初始状态检查点");
+                if (!await IsIdentityScrubbedAsync(connection, row.MatchId)
+                    && !string.Equals(PersistenceHash(initialCheckpoint.StateJson),
+                        initialCheckpoint.StateHash, StringComparison.Ordinal))
+                    throw new InvalidDataException("v2 排位初始状态检查点哈希不一致");
+                recoveryInitialStateJson = initialCheckpoint.StateJson;
                 stateCheckpoint = await LoadLatestCheckpointAsync(row.MatchId)
                     ?? throw new InvalidDataException("v2 排位缺少状态检查点");
                 events = await ReadRecoveryEventsAsync(connection, row.MatchId,
@@ -637,8 +644,11 @@ public sealed partial class MatchRecorder
             }
             else
             {
+                if (string.IsNullOrWhiteSpace(recoveryInitialStateJson))
+                    throw new InvalidDataException("缺少初始权威状态");
                 events = await ReadRecoveryEventsAsync(connection, row.MatchId);
             }
+            decks = await ReadRecoveryDecksAsync(connection, row.MatchId, recoveryInitialStateJson);
         }
         catch (Exception failure) when (failure is InvalidDataException or InvalidOperationException
                                                or JsonException or KeyNotFoundException
@@ -647,8 +657,27 @@ public sealed partial class MatchRecorder
             error = SafePersistenceError(failure.Message);
         }
         return new L12RankedRecoverySource(row.MatchId, row.RoomCode, row.Seed, row.Names,
-            row.Accounts, row.Initial, row.Started, decks, events, runtime, error,
+            row.Accounts, recoveryInitialStateJson, row.Started, decks, events, runtime, error,
             row.StorageVersion, stateCheckpoint, processedRequests);
+    }
+
+    private static async Task<L12PersistedCheckpoint?> LoadInitialStateCheckpointAsync(
+        SqliteConnection connection, string matchId)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sequence,revision,state_hash,state_encoding,state_blob,uncompressed_bytes,
+                   random_draw_count,card_fact_signal_sequence,auto_pass_empty_responses,
+                   conceal_hidden_response_availability,random_state_version,random_state_blob
+            FROM match_state_checkpoints
+            WHERE match_id=$match AND sequence=0
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync()
+            ? await ReadCheckpointAsync(reader, CancellationToken.None)
+            : null;
     }
 
     private static async Task<L12PresetDeckDefinition[]> ReadRecoveryDecksAsync(

@@ -23,6 +23,7 @@ import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.
 import CardImage from '../CardImage.vue'
 import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
+import { visibleViewport, viewportRect } from '../mobileViewport'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -63,6 +64,7 @@ const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | nul
 const diceReveal = ref<{ sequence: number; values: number[]; animatedValues: number[]; text: string; settled: boolean } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
+const responseTargetIds = ref<string[]>([])
 const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt))
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
@@ -91,6 +93,11 @@ const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
 const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
 const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
+const absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])
+function identityLabel(value: string | null | undefined) {
+  const label = value?.trim() ?? ''
+  return absentIdentityLabels.has(label) ? '' : label
+}
 const playerConnection = (playerIndex: number) => {
   const timed = l12State.rankedClock?.players.find(player => player.playerIndex === playerIndex)
   if (timed) return timed.connected
@@ -193,7 +200,7 @@ const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && f
 )))
 function updateInspectorFloatRect() {
   if (!modalInspectorVisible.value || !inspectorAnchor.value) return
-  const rect = inspectorAnchor.value.getBoundingClientRect()
+  const rect = viewportRect(inspectorAnchor.value)
   const logicalWidth = inspectorAnchor.value.offsetWidth || rect.width
   const logicalHeight = inspectorAnchor.value.offsetHeight || rect.height
   const floatScale = logicalWidth > 0 ? rect.width / logicalWidth : 1
@@ -441,12 +448,13 @@ const supportReady = computed(() => {
 })
 
 function updateScale() {
-  compactViewport.value = window.innerWidth < 820
+  const viewport = visibleViewport()
+  compactViewport.value = viewport.width < 820 || viewport.height < 600
   // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
   // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
   // reserve that overflow on both edges so every control stays visible at exact 16:9.
-  const availableHeight = window.innerHeight - 124
-  const availableWidth = window.innerWidth - (props.gmPanelOpen && !compactViewport.value ? 344 : 0)
+  const availableHeight = Math.max(1, viewport.height - 124)
+  const availableWidth = Math.max(1, viewport.width - (props.gmPanelOpen && !compactViewport.value ? 344 : 0))
   scale.value = compactViewport.value
     ? Math.max(.7, Math.min(1, availableHeight / stageSize.value.height))
     : Math.min(availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
@@ -460,9 +468,13 @@ onMounted(() => {
   lastDiceSequence.value = lastHiddenRevealSequence.value
   updateScale()
   window.addEventListener('resize', updateScale)
+  window.addEventListener('l12-viewport-change', updateScale)
+  window.visualViewport?.addEventListener('resize', updateScale)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateScale)
+  window.removeEventListener('l12-viewport-change', updateScale)
+  window.visualViewport?.removeEventListener('resize', updateScale)
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   if (diceRollTimer) clearInterval(diceRollTimer)
@@ -861,7 +873,7 @@ function statusTexts(card: Card) {
               :selection-mode="selectionModeFor(viewEnemy.playerIndex)" :targetable-ids="targetableIdsFor(viewEnemy.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewEnemy.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewEnemy.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewEnemy.playerIndex) ? responsePlayableIds : []"
-              :selected-target-ids="boardTargetIds"
+              :selected-target-ids="boardTargetIds" :response-target-ids="promptMinimized ? responseTargetIds : []"
               :can-activate-osiris="isControlledPlayer(viewEnemy.playerIndex) && canActivateOsiris"
               :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewEnemy.playerIndex ? combat.attacker.instanceId : null"
@@ -932,7 +944,7 @@ function statusTexts(card: Card) {
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
-              :selected-target-ids="boardTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :selected-target-ids="boardTargetIds" :response-target-ids="promptMinimized ? responseTargetIds : []" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :can-activate-osiris="isControlledPlayer(viewMe.playerIndex) && canActivateOsiris"
               :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
@@ -951,7 +963,8 @@ function statusTexts(card: Card) {
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
-          <HandArea :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
+          <HandArea v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
+          <HandArea v-else :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
@@ -962,8 +975,8 @@ function statusTexts(card: Card) {
             <article class="player-summary opponent-summary">
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
-                <RankedIdentityBadge class="rank-badge" variant="tier" compact :label="enemyBadge?.rankLabel || '未定级'" />
-                <RankedIdentityBadge class="title-badge" variant="title" compact :label="enemyBadge?.masterTitle || '暂无称号'" />
+                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.rankLabel)" class="rank-badge" variant="tier" compact :label="identityLabel(enemyBadge?.rankLabel)" />
+                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.masterTitle)" class="title-badge" variant="title" compact :label="identityLabel(enemyBadge?.masterTitle)" />
                 <span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span>
               </div>
             </article>
@@ -971,8 +984,8 @@ function statusTexts(card: Card) {
             <article class="player-summary my-summary">
               <div class="player-summary-primary"><b>我方</b><strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
-                <RankedIdentityBadge class="rank-badge" variant="tier" compact :label="myBadge?.rankLabel || '未定级'" />
-                <RankedIdentityBadge class="title-badge" variant="title" compact :label="myBadge?.masterTitle || '暂无称号'" />
+                <RankedIdentityBadge v-if="identityLabel(myBadge?.rankLabel)" class="rank-badge" variant="tier" compact :label="identityLabel(myBadge?.rankLabel)" />
+                <RankedIdentityBadge v-if="identityLabel(myBadge?.masterTitle)" class="title-badge" variant="title" compact :label="identityLabel(myBadge?.masterTitle)" />
                 <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
               </div>
             </article>
@@ -1017,7 +1030,7 @@ function statusTexts(card: Card) {
               ? '确认支付' : '确认选择' }}</button>
       </div>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible"
-        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" />
+        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
   <SandboxCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
@@ -1030,9 +1043,8 @@ function statusTexts(card: Card) {
 .stage-layout>.board-rail{width:auto;min-width:0}
 .left-rail{display:flex}.left-detail-layout{display:flex;min-height:0;flex:1}.left-card-column{display:flex;width:100%;min-width:0;min-height:0;flex-direction:column;gap:10px}.left-rail>.grand-panel,.left-card-column>.grand-panel,.left-card-column>.card-inspector-anchor{box-sizing:border-box;width:100%}.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto;align-items:stretch}
 .current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;margin-block:242px;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-copy,13px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
-.board-center{--l12-hand-lane-height:160px;display:grid;grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height);align-items:stretch;gap:6px}
-.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:100%;height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);align-self:stretch;transform:translateX(-10px)}
-.board-center.timed-board>.l12-hand{width:calc(100% - 400px);padding-right:0;justify-self:center}
+.board-center{--l12-hand-lane-height:160px;display:grid;min-height:0;grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height);align-items:stretch;gap:6px}
+.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(-10px)}
 .board-center>.opponent-hand{grid-row:1}.opponent-status-lane{grid-row:2}.felt-board{grid-row:3}.my-status-lane{grid-row:4}.board-center>.l12-hand:last-child{grid-row:5}
 .board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
@@ -1047,7 +1059,7 @@ function statusTexts(card: Card) {
 }
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
 .player-panel{box-sizing:border-box;height:auto!important;min-height:144px;flex:none;overflow:hidden!important}
-.player-summary{display:grid;min-width:0;gap:7px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:6px}.player-summary-primary>b{color:#d2525b;font-size:var(--l12-board-copy,13px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(15px,var(--l12-board-copy,13px))!important;line-height:1.35!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:grid;min-width:0;grid-template-columns:max-content max-content minmax(0,1fr);align-items:center;column-gap:4px;color:#aeb7b5;font-size:var(--l12-board-copy,13px);line-height:1.35}.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-self:end;justify-content:flex-end;margin-left:0!important;font-size:clamp(9px,var(--l12-board-micro,9px),11px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.player-summary{display:grid;min-width:0;gap:7px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:6px}.player-summary-primary>b{color:#d2525b;font-size:var(--l12-board-copy,13px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(15px,var(--l12-board-copy,13px))!important;line-height:1.35!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:flex;min-width:0;align-items:center;column-gap:4px;color:#aeb7b5;font-size:var(--l12-board-copy,13px);line-height:1.35}.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-content:flex-end;margin-left:auto!important;font-size:clamp(9px,var(--l12-board-micro,9px),11px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:var(--l12-board-copy,13px)!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}

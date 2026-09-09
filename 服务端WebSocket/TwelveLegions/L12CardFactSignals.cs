@@ -82,7 +82,7 @@ public sealed partial class L12GameEngine
         var kind = type switch
         {
             "play" => "play",
-            "effect-activation" or "effect-trigger" or "effect-response" => "activate",
+            "effect-activation" or "effect-trigger" or "effect-response" or "effect-announced" => "activate",
             "stack-push" or "stack-deferred" or "response" => "push",
             _ => null,
         };

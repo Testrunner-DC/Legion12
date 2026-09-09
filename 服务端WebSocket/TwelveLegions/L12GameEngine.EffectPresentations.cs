@@ -36,6 +36,16 @@ public sealed partial class L12GameEngine
         // only the new Flow scenes contribute a default EffectText without an override.
         var effectText = frozen?.Text
             ?? (configured?.Flow is not null ? configured.DefaultText : null);
+        if (configured is { EventType: "effect", Flow: null }
+            && _catalog.AtomicEffects.Find(configured.CardId)?.Abilities.Any(ability =>
+                ability.Presentations.Any(scene => scene.SceneId == configured.SceneId)
+                && ability.Presentations.Any(scene => scene.EventType == "effect" && scene.Flow is not null)) == true
+            && type is "effect-trigger" or "effect-activation" or "effect-response")
+        {
+            // Keep the historical declaration/audit event, but only the actual segment or
+            // chosen branch may enter the card animation queue.
+            type = "effect-announced";
+        }
         AddEventCore(type, playerIndex, text, effectText, cards);
     }
 

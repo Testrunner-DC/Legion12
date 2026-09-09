@@ -6,6 +6,7 @@ export interface MaintenanceCountdownSource {
   endsAt?: string
   immediateActive?: boolean
   immediateExpectedDurationHours?: number
+  advanceBroadcastHours?: number
 }
 
 export interface MaintenanceCountdownView {
@@ -45,11 +46,13 @@ export function maintenanceCountdown(source: MaintenanceCountdownSource, now = D
   if (endsAt !== null && now >= endsAt) return null
 
   if (startsAt !== null && now < startsAt) {
+    const advanceHours = Math.max(1, source.advanceBroadcastHours ?? 2)
+    if (now < startsAt - advanceHours * 3_600_000) return null
     return {
       phase: 'scheduled',
       title: '维护倒计时',
       countdown: `距离维护开始 ${formatMaintenanceRemaining(startsAt - now)}`,
-      message: source.broadcastMessage || source.message,
+      message: source.message || source.broadcastMessage,
     }
   }
 

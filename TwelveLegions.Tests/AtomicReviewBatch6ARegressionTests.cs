@@ -217,8 +217,8 @@ public sealed class AtomicReviewBatch6ARegressionTests
         var bloodTrigger = triggerOrder.ValidChoices.Single(id =>
             triggerOrder.Data.GetValueOrDefault(id)?.Contains("复仇血鹰", StringComparison.Ordinal) == true);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: triggerOrder.PromptId,
-            CardInstanceIds: [bloodTrigger, .. triggerOrder.ValidChoices
-                .Where(id => id != "skip" && id != bloodTrigger)])).Accepted);
+            CardInstanceIds: [.. triggerOrder.ValidChoices
+                .Where(id => id != "skip" && id != bloodTrigger), bloodTrigger])).Accepted);
         while (game.State.PendingPrompts.Single().ValidChoices.Contains("mode:none"))
         {
             var optionalDeclaration = Assert.Single(game.State.PendingPrompts);

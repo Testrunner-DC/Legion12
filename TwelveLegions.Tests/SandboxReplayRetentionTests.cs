@@ -11,6 +11,28 @@ namespace TwelveLegions.Tests;
 
 public sealed class SandboxReplayRetentionTests
 {
+    [Fact]
+    public async Task WeeklySandboxCleanupPreservesLateBugRoomReference()
+    {
+        var directory=TestDirectory("late-bug-hold");
+        var now=DateTimeOffset.UtcNow;
+        var catalog=Catalog();
+        var decks=new[]{catalog.DeckAt(0),catalog.DeckAt(1)};
+        await using var recorder=new MatchRecorder(Path.Combine(directory,"matches.db"),()=>now);
+        await recorder.InitializeAsync();
+        var game=new L12GameEngine(catalog,"sandbox-bug-hold","HOLD01",12,["甲","乙"],decks,skipPreparation:true);
+        await recorder.StartAsync(game,"sandbox","owner",null,decks);
+        Assert.True(await recorder.CloseSandboxAsync(game));
+        now=now.AddDays(15);
+        var result=await recorder.RunSandboxReplayCleanupIfDueAsync(utcNow:now,
+            evidenceProvider:()=>new L12ReplayEvidenceReferences([],new[]{"HOLD01"}));
+        Assert.Equal(0,result.Deleted); Assert.NotNull(await recorder.GetMatchAsync(game.State.MatchId));
+        now=now.AddDays(8);
+        var released=await recorder.RunSandboxReplayCleanupIfDueAsync(utcNow:now,
+            evidenceProvider:()=>new L12ReplayEvidenceReferences([],[]));
+        Assert.Equal(1,released.Deleted);
+    }
+
     private static readonly JsonSerializerOptions WebJson = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -100,7 +122,7 @@ public sealed class SandboxReplayRetentionTests
         var cleanup = await recorder.RunSandboxReplayCleanupIfDueAsync(utcNow: now);
         Assert.True(cleanup.Ran);
         Assert.Equal(1, cleanup.Deleted);
-        Assert.Equal(now.AddDays(7), cleanup.NextRunUtc);
+        Assert.Equal(recorder.NextStorageCleanupUtc(now.AddDays(6)), cleanup.NextRunUtc);
         Assert.Null(await recorder.GetMatchAsync(game.State.MatchId));
         Assert.True(await recorder.IsSandboxReplayExpiredAsync(game.State.MatchId));
         Assert.Contains(platform.Bugs(null), item => item.Id == bug.Id && item.MatchId == game.State.MatchId);
@@ -202,7 +224,7 @@ public sealed class SandboxReplayRetentionTests
         await secondRestart.InitializeAsync();
         var persisted = await secondRestart.RunSandboxReplayCleanupIfDueAsync(utcNow: now);
         Assert.False(persisted.Ran);
-        Assert.Equal(origin.AddDays(14).AddSeconds(1), persisted.NextRunUtc);
+        Assert.Equal(secondRestart.NextStorageCleanupUtc(origin.AddDays(13).AddSeconds(1)), persisted.NextRunUtc);
         now = origin.AddDays(14).AddSeconds(1);
         var nextWeeklyRun = await secondRestart.RunSandboxReplayCleanupIfDueAsync(utcNow: now);
         Assert.True(nextWeeklyRun.Ran);
@@ -318,7 +340,7 @@ public sealed class SandboxReplayRetentionTests
         await using var reader = await schedule.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         Assert.Equal(now, DateTimeOffset.Parse(reader.GetString(0)));
-        Assert.Equal(now.AddDays(7), DateTimeOffset.Parse(reader.GetString(1)));
+        Assert.Equal(first.NextStorageCleanupUtc(now.AddDays(6)), DateTimeOffset.Parse(reader.GetString(1)));
         Assert.True(reader.IsDBNull(2));
         Assert.True(reader.IsDBNull(3));
     }
@@ -429,13 +451,13 @@ public sealed class SandboxReplayRetentionTests
     }
 
     [Fact]
-    public async Task ServerRunsDueCleanupOnIndependentObservedMaintenanceLoop()
+    public async Task ServerRunsDueCleanupOnlyInsideDailyLowTrafficWindow()
     {
         var directory = TestDirectory("server-loop");
         var path = Path.Combine(directory, "matches.db");
         var catalog = Catalog();
         var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
-        var origin = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
+        var origin = new DateTimeOffset(2026, 7, 1, 4, 0, 0, TimeSpan.FromHours(8));
         var now = origin;
         await using var recorder = new MatchRecorder(path, () => now);
         await recorder.InitializeAsync();

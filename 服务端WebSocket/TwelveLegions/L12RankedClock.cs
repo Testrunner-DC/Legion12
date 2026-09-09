@@ -370,6 +370,7 @@ public sealed partial class L12RoomManager
             Console.Error.WriteLine($"Ranked clock checkpoint batch: {error.Message}");
         }
         await TickMaintenanceLockedRoomsAsync(now, messages);
+        await TickSettlementRoomsAsync(now, messages);
         return messages;
     }
 

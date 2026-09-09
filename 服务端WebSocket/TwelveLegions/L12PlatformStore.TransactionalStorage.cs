@@ -223,18 +223,19 @@ public sealed partial class L12PlatformStore
             throw new L12PlatformStorageUnavailableException(_storageIssue ?? "事务存储处于只读回退模式");
         }
 
-        _data.BusinessVersion ??= _data.Version;
-        _data.Version++;
-        if (businessChange) _data.BusinessVersion++;
-        var snapshotJson = SerializeSnapshot(_data);
-        var mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
-        var snapshotChecksum = Sha256(snapshotJson);
-        var mirrorChecksum = Sha256(mirrorJson);
-
+        string mirrorJson;
         try
         {
             using var connection = OpenDatabase(_databasePath, readOnly: false);
             InitializeStorageSchema(connection);
+            FilterMigratedAuditSnapshot(connection, _data);
+            _data.BusinessVersion ??= _data.Version;
+            _data.Version++;
+            if (businessChange) _data.BusinessVersion++;
+            var snapshotJson = SerializeSnapshot(_data);
+            mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
+            var snapshotChecksum = Sha256(snapshotJson);
+            var mirrorChecksum = Sha256(mirrorJson);
             using var transaction = connection.BeginTransaction();
             UpsertSnapshot(connection, transaction, snapshotJson, snapshotChecksum, mirrorChecksum, _data);
             AppendIndependentAudit(connection, transaction, _data.AdminAudit);
@@ -264,6 +265,7 @@ public sealed partial class L12PlatformStore
 
     private void PersistInitialSnapshot(SqliteConnection connection, DataFile data)
     {
+        FilterMigratedAuditSnapshot(connection, data);
         var snapshotJson = SerializeSnapshot(data);
         var mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
         using var transaction = connection.BeginTransaction();
@@ -383,6 +385,7 @@ public sealed partial class L12PlatformStore
 
     private static void MergeIndependentAudit(SqliteConnection connection, DataFile data)
     {
+        FilterMigratedAuditSnapshot(connection, data);
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT payload_json,payload_sha256 FROM admin_audit_events
@@ -459,6 +462,7 @@ public sealed partial class L12PlatformStore
             """;
         command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
         command.ExecuteNonQuery();
+        InitializeAuditLifecycleSchema(connection);
     }
 
     private static SqliteConnection OpenDatabase(string path, bool readOnly, bool initialize = true)

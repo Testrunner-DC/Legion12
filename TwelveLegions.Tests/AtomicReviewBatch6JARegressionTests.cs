@@ -133,6 +133,27 @@ public sealed class AtomicReviewBatch6JARegressionTests
 
     private static L12Prompt OnlyPrompt(L12GameEngine game) => Assert.Single(game.State.PendingPrompts);
 
+    [Fact]
+    public void CourtMagicianSelectsCoveredCounterOnBoardWithoutRevealingItsIdentity()
+    {
+        var (game, _) = Arrange("S02-0003", "enter", 99608);
+        var mode = OnlyPrompt(game);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:use")).Accepted);
+        var target = OnlyPrompt(game);
+        const string counterId = "batch6ja-covered-counter";
+        Assert.Contains(counterId, target.ValidChoices);
+        Assert.Equal("board-target", target.Data.GetValueOrDefault("choiceMode"));
+        Assert.False(target.Data.ContainsKey($"{counterId}:cardId"));
+        Assert.False(target.Data.ContainsKey($"{counterId}:effect"));
+        Assert.False(target.Data.ContainsKey($"{counterId}:image"));
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
+            Choice: counterId)).Accepted);
+        PassResponses(game);
+        Assert.Null(game.State.Players[1].Field[1][0]);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == counterId);
+    }
+
     [Theory]
     [MemberData(nameof(ReviewedRows))]
     [Trait("L12Evidence", "entry:batch6ja-enter-selection-boundary")]
@@ -142,7 +163,7 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var fixture = Arrange(cardId, trigger, 9900 + index);
 
         var prompt = OnlyPrompt(fixture.Game);
-        if (cardId is "S01-0408" or "S02-0513" or "S02-0518" or "S02-0520")
+        if (cardId is "S01-0111" or "S01-0408" or "S02-0513" or "S02-0518" or "S02-0520")
         {
             Assert.Equal("stack-response", prompt.Continuation);
             Assert.Single(fixture.Game.State.EffectStack);
@@ -292,8 +313,6 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var fixture = Arrange("S01-0111", "enter", 9971);
         fixture.Game.State.DisasterDeck.Add(Card("S01-DS01", "zhuge-private-disaster"));
         var revealedName = fixture.Game.State.DisasterDeck[0].Name;
-        Resolve(fixture.Game, "mode:use");
-        Resolve(fixture.Game, "1");
         var first = Assert.Single(fixture.Game.State.EffectStack);
         Assert.Equal("zhuge-reveal", first.Data.GetValueOrDefault("atomicFlow"));
         PassResponses(fixture.Game);
@@ -305,6 +324,9 @@ public sealed class AtomicReviewBatch6JARegressionTests
         Assert.Empty(opponentEvent.Cards);
         Assert.DoesNotContain(revealedName, opponentEvent.Text, StringComparison.Ordinal);
         Assert.Contains("查看了下一张天灾", opponentEvent.Text, StringComparison.Ordinal);
+        Resolve(fixture.Game, "confirm");
+        Resolve(fixture.Game, "mode:use");
+        Resolve(fixture.Game, "1");
         var second = Assert.Single(fixture.Game.State.EffectStack);
         Assert.Equal("zhuge-disaster", second.Data.GetValueOrDefault("atomicFlow"));
     }

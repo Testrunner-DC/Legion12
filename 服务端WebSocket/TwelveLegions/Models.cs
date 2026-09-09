@@ -275,7 +275,10 @@ public sealed class L12PlayerState
     public List<L12CardInstance> Hand { get; } = [];
     public List<L12MoraleCard> MoraleDeck { get; } = [];
     public List<L12MoraleCard> Morale { get; } = [];
-    public L12CardInstance?[][] Field { get; } =
+    // Arrays cannot be populated in place by System.Text.Json. Restore must replace the complete board.
+    [JsonInclude]
+    [JsonRequired]
+    public L12CardInstance?[][] Field { get; private set; } =
     [
         new L12CardInstance?[3],
         new L12CardInstance?[3],

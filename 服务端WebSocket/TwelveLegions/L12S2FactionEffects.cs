@@ -1644,7 +1644,7 @@ public sealed partial class L12GameEngine
             else
             {
                 var choices = player.Library.Where(card => card.CardType == "tactic"
-                        && card.CurrentCost <= 4 && !IsCounterTactic(card.CardId))
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 4) && !IsCounterTactic(card.CardId))
                     .Select(card => card.InstanceId).ToList();
                 if (choices.Count == 0)
                 {
@@ -1668,7 +1668,7 @@ public sealed partial class L12GameEngine
         }
         if (ability == "aristotleDiscount" && source?.CardId == "S02-0513")
         {
-            player.NextS2OlympusLegionDiscount = Math.Max(player.NextS2OlympusLegionDiscount, 1);
+            player.NextS2OlympusLegionDiscount += 1;
             AddEvent("effect", item.Controller, "亚里士多德使本回合下一张【奥林匹斯】军团登场费用-1", source);
             FinishStackItem(item);
             return true;
@@ -1824,7 +1824,7 @@ public sealed partial class L12GameEngine
             case "s2-merlin-search":
             {
                 var selected = player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]
-                    && card.CardType == "tactic" && card.CurrentCost <= 4 && !IsCounterTactic(card.CardId));
+                    && card.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(card, 4) && !IsCounterTactic(card.CardId));
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
@@ -2058,7 +2058,7 @@ public sealed partial class L12GameEngine
             {
                 var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 var maxCost = int.TryParse(item.Data.GetValueOrDefault("heracles-shown-cost"), out var parsed) ? parsed : -1;
-                if (target is not null && target.CurrentCost <= maxCost)
+                if (target is not null && L12StructuredCardRules.CurrentCostAtMost(target, maxCost))
                     KillTarget(item, target.InstanceId, "被赫拉克勒斯·晋升击杀");
                 FinishStackItem(item);
                 return true;
@@ -2169,6 +2169,12 @@ public sealed partial class L12GameEngine
                     AddEvent("effect-cancelled", item.Controller,
                         "〈符文之力〉的可选牌库查看效果因没有可支付的士气而取消", FindSource(item) is { } source ? [source] : []);
                     FinishStackItem(item);
+                    return true;
+                }
+                if (!NeedsManualOrdinaryResourcePayment(player, 1))
+                {
+                    if (TryConsumeMorale(player, 1)) BeginRunePowerSearch(item);
+                    else FinishStackItem(item);
                     return true;
                 }
                 CreateResourcePaymentPrompt(item.Controller, 1, "card-effect", item.StackItemId,
@@ -2322,7 +2328,7 @@ public sealed partial class L12GameEngine
         item.Data["s2-limu-top"] = top.InstanceId;
         AddPresentationEvent("reveal", item.Controller, "李牧登场时，展示牌库顶的1张牌。",
             "S02-0102", "top-card", top);
-        if (top.CardType != "tactic" || IsCounterTactic(top.CardId) || top.CurrentCost > 4)
+        if (top.CardType != "tactic" || IsCounterTactic(top.CardId) || !L12StructuredCardRules.CurrentCostAtMost(top, 4))
         {
             MoveS2LiMuRevealedToBottom(item);
             FinishStackItem(item);
@@ -2361,7 +2367,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var card = FindS2LiMuRevealedCard(item);
-        if (card is null || card.CardType != "tactic" || IsCounterTactic(card.CardId) || card.CurrentCost > 4)
+        if (card is null || card.CardType != "tactic" || IsCounterTactic(card.CardId) || !L12StructuredCardRules.CurrentCostAtMost(card, 4))
         {
             FinishStackItem(item);
             return;
@@ -2630,7 +2636,7 @@ public sealed partial class L12GameEngine
     {
         var maxCost = int.TryParse(item.Data.GetValueOrDefault("heracles-shown-cost"), out var parsed) ? parsed : -1;
         var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-            .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && target.CurrentCost <= maxCost)
+            .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && L12StructuredCardRules.CurrentCostAtMost(target, maxCost))
             .Select(target => target!.InstanceId)
             .ToArray();
         if (targets.Length == 0)
@@ -2678,7 +2684,7 @@ public sealed partial class L12GameEngine
         item.Data["s2-okita-top"] = top.InstanceId;
         AddPresentationEvent("reveal", item.Controller,
             $"冲田总司展示牌库顶部的〈{top.Name}〉", "S02-0403", "top-card", top);
-        var eligible = L12StructuredCardRules.HasFaction(player, top, "gaotianyuan") && top.CurrentCost <= 3
+        var eligible = L12StructuredCardRules.HasFaction(player, top, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(top, 3)
             && top.CardType is "legion" or "artifact" or "tactic";
         if (!eligible || top.CardType == "legion" && !EffectGeneratedFreePlaySlots(player).Any())
         {
@@ -2723,7 +2729,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var card = FindS2OkitaRevealedCard(item);
-        if (card is null || !L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") || card.CurrentCost > 3)
+        if (card is null || !L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") || !L12StructuredCardRules.CurrentCostAtMost(card, 3))
         {
             FinishStackItem(item);
             return;

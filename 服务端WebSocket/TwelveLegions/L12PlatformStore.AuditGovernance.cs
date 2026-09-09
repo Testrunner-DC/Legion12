@@ -68,11 +68,13 @@ public sealed partial class L12PlatformStore
             if (!HighRiskAuditAvailable())
                 throw new L12SecurityPolicyException("audit_unavailable", "独立审计不可用，归档操作已失败关闭");
 
-            var existing = AuditArchiveSegmentsInternal();
+            // Manual archive ranges stay independent of automatic small-batch segments.
+            var existing = ReadAuditArchiveSegmentRows();
             var alreadyArchived = existing.LastOrDefault(item => item.Until == payload.ArchiveBefore);
             if (apply && alreadyArchived is not null)
                 return new(true, payload.ArchiveBefore, retentionDays, alreadyArchived.EventCount,
-                    alreadyArchived);
+                    new(alreadyArchived.Id, alreadyArchived.From, alreadyArchived.Until,
+                        alreadyArchived.EventCount, alreadyArchived.FileSha256, alreadyArchived.CreatedAt));
             var from = existing.Count == 0
                 ? DateTimeOffset.MinValue
                 : existing.Max(item => item.Until);
@@ -131,7 +133,14 @@ public sealed partial class L12PlatformStore
                         throw new InvalidDataException($"审计归档段 {segment.Id} 事件数量不匹配");
                     total += count;
                 }
-                return new(true, segments.Count, total, null, now);
+                var lifecycle = ReadLifecycleSegmentRows();
+                foreach (var segment in lifecycle)
+                {
+                    ValidateLifecycleFile(segment.FileName, segment.FileSha256, segment.EventCount,
+                        segment.From, segment.Until, CancellationToken.None);
+                    total += segment.EventCount;
+                }
+                return new(true, segments.Count + lifecycle.Count, total, null, now);
             }
             catch (Exception error)
             {
@@ -143,14 +152,33 @@ public sealed partial class L12PlatformStore
     internal static int AuditRetentionDays()
     {
         var raw = Environment.GetEnvironmentVariable("L12_AUDIT_RETENTION_DAYS");
-        return int.TryParse(raw, out var parsed) ? NormalizeAuditRetentionDays(parsed) : 365;
+        return int.TryParse(raw, out var parsed) ? NormalizeAuditRetentionDays(parsed) : 30;
     }
 
     private static int NormalizeAuditRetentionDays(int days) => Math.Clamp(days, 30, 3650);
 
     private IReadOnlyList<L12AuditArchiveSegmentView> AuditArchiveSegmentsInternal()
-        => ReadAuditArchiveSegmentRows().Select(item => new L12AuditArchiveSegmentView(item.Id, item.From,
-            item.Until, item.EventCount, item.FileSha256, item.CreatedAt)).ToArray();
+        => ReadAuditArchiveSegmentRows().Concat(ReadLifecycleSegmentRows())
+            .OrderBy(item => item.Until).ThenBy(item => item.Id)
+            .Select(item => new L12AuditArchiveSegmentView(item.Id, item.From,
+                item.Until, item.EventCount, item.FileSha256, item.CreatedAt)).ToArray();
+
+    private IReadOnlyList<AuditArchiveSegmentRow> ReadLifecycleSegmentRows()
+    {
+        if (!_storageWritable) return [];
+        using var connection = OpenDatabase(_databasePath, readOnly: true);
+        using var query = connection.CreateCommand();
+        query.CommandText = """
+            SELECT id,from_utc,until_utc,event_count,file_name,file_sha256,created_utc
+            FROM audit_lifecycle_segments WHERE status='ready' ORDER BY until_utc,id;
+            """;
+        var rows = new List<AuditArchiveSegmentRow>();
+        using var reader = query.ExecuteReader();
+        while (reader.Read()) rows.Add(new(reader.GetString(0), DateTimeOffset.Parse(reader.GetString(1)),
+            DateTimeOffset.Parse(reader.GetString(2)), reader.GetInt64(3), reader.GetString(4),
+            reader.GetString(5), DateTimeOffset.Parse(reader.GetString(6))));
+        return rows;
+    }
 
     private IReadOnlyList<L12AuditArchiveSegmentView> AuditArchiveSegmentsInternalSafe()
     {

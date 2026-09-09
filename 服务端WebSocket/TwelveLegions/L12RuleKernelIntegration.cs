@@ -699,7 +699,7 @@ public sealed partial class L12GameEngine
             var minimumCost = referenceId == "mode:none" ? 0
                 : player.Graveyard.FirstOrDefault(card => card.InstanceId == referenceId)?.CurrentCost ?? int.MaxValue;
             var choices = PublicLegions(State.Players[1 - activation.Controller])
-                .Where(card => card.CurrentCost >= minimumCost && player.Morale.Count >= card.CurrentCost)
+                .Where(card => card.HasPrintedCost && card.CurrentCost >= minimumCost && player.Morale.Count >= card.CurrentCost)
                 .Select(card => card.InstanceId).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
@@ -736,6 +736,13 @@ public sealed partial class L12GameEngine
             step.ValidChoices.AddRange(choices);
             step.ChoiceLabels["mode:none"] = "不选择可击杀目标";
             promptKind = "active-target";
+        }
+        // Dynamic declarations can lose candidates after the initial sequence validation.
+        // Never emit a required selection whose maximum is below its minimum.
+        if (step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).Count() < step.MinChoose)
+        {
+            RejectPendingActivation(activation, "当前效果没有足够的合法对象，跳过无法执行的声明");
+            return;
         }
         var promptData = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase)
         {
@@ -878,7 +885,7 @@ public sealed partial class L12GameEngine
             return null;
 
         var player = State.Players[activation.Controller];
-        var semantics = step.ValidChoices.Select(choice => EquivalentOrdinaryMoralePaymentKey(player, choice)).ToArray();
+        var semantics = step.ValidChoices.Select(choice => OrdinaryPaymentSemanticKey(player, choice)).ToArray();
         if (semantics.Any(string.IsNullOrWhiteSpace)
             || semantics.Distinct(StringComparer.Ordinal).Take(2).Count() != 1) return null;
         return step.ValidChoices.Take(step.MinChoose).ToArray();
@@ -1060,8 +1067,9 @@ public sealed partial class L12GameEngine
             var responsePlayer = State.Players[activation.Controller];
             var response = FindOnField(responsePlayer, activation.SourceInstanceId, out _, out _);
             var declaredTarget = activation.DeclaredTargets.SingleOrDefault();
+            var responseTarget = State.EffectStack.FirstOrDefault(item => item.StackItemId == activation.ResponseTargetStackItemId);
             if (response is null || !L12StructuredCardRules.RequiresOwnLegionResponseTarget(response.CardId)
-                || State.EffectStack.All(item => item.StackItemId != activation.ResponseTargetStackItemId)
+                || responseTarget is null || !LegalResponseSources(activation.Controller, responseTarget).Contains(response.InstanceId)
                 || !PublicLegions(responsePlayer).Any(card => card.InstanceId == declaredTarget))
             {
                 AddEvent("ability-rejected", activation.Controller, "响应来源或目标已不合法，未支付费用也未入栈");
@@ -1297,12 +1305,16 @@ public sealed partial class L12GameEngine
                     choices.Add($"{row}:{slot}");
         }
         if (step.IncludeSourceSlotAfterCost && targetPlayerIndex == activation.Controller
-            && FindOnField(battlefield, activation.SourceInstanceId, out var sourceRow, out var sourceSlot) is not null)
-            choices.Add($"{sourceRow}:{sourceSlot}");
+            && SourceSlotAfterCost(activation.Controller, activation.SourceInstanceId) is { } sourceSlot)
+            choices.Add(sourceSlot);
         if (State.ActiveDisaster?.CardId == "S01-DS03")
             choices.RemoveWhere(choice => choice.StartsWith("1:", StringComparison.Ordinal));
         return choices;
     }
+
+    private string? SourceSlotAfterCost(int controller, string sourceInstanceId)
+        => FindOnField(State.Players[controller], sourceInstanceId, out var row, out var slot) is not null
+            && (State.ActiveDisaster?.CardId != "S01-DS03" || row == 0) ? $"{row}:{slot}" : null;
 
     private L12CardInstance? DeclaredEnemyTarget(int controller, string? instanceId,
         Func<L12CardInstance, bool>? predicate = null)
@@ -1336,7 +1348,7 @@ public sealed partial class L12GameEngine
         var slotChoice = item.Data.GetValueOrDefault("entrySlot");
         var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == reviveId
             && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "tianting")
-            && card.CurrentCost <= paid);
+            && L12StructuredCardRules.CurrentCostAtMost(card, paid));
         if (revive is not null && battlefield == item.Controller && slotChoice is not null
             && slotChoice.Split(':') is [var rowText, var slotText]
             && int.TryParse(rowText, out var row) && int.TryParse(slotText, out var slot)
@@ -1453,6 +1465,8 @@ public sealed partial class L12GameEngine
     private void AttachDefaultTriggerCompositePlan(L12TriggerCandidate candidate)
     {
         if (candidate.Data.ContainsKey("compositePlan")) return;
+        // 条件未成立的替代展示不是原付费效果，不能自动补回其击杀/返还后段。
+        if (candidate.Data.GetValueOrDefault("entryCostUnavailable") == "true") return;
         var data = DefaultTriggerCompositePlanData(candidate.SourceCardId, candidate.Trigger);
         if (data is null) return;
         foreach (var pair in data) candidate.Data[pair.Key] = pair.Value;
@@ -1692,7 +1706,7 @@ public sealed partial class L12GameEngine
                 data[$"trigger:{candidate.CandidateId}"] = candidate.Trigger;
             }
             State.PendingTriggerBatches.Insert(0, batch);
-            CreatePrompt(batch.Controller, "trigger-order", "同一时点有多个效果触发，请按结算先后排列",
+            CreatePrompt(batch.Controller, "trigger-order", "同一时点有多个效果触发，请按发动先后排列（后发动的先结算）",
                 batch.Candidates.Select(candidate => candidate.CandidateId), batch.Candidates.Count, batch.Candidates.Count,
                 "trigger-batch-order", isPrivate: false, data: data);
             return;
@@ -1717,8 +1731,8 @@ public sealed partial class L12GameEngine
         if (batch is null) return;
         State.PendingTriggerBatches.Remove(batch);
         var byId = batch.Candidates.ToDictionary(candidate => candidate.CandidateId, StringComparer.OrdinalIgnoreCase);
-        // 玩家选择的是结算顺序；堆叠后进先出，因此反向压栈。
-        foreach (var id in chosen.AsEnumerable().Reverse()) State.PendingTriggerStackCandidates.Add(byId[id]);
+        // 玩家选择发动／入栈顺序，结算保持后进先出。
+        foreach (var id in chosen) State.PendingTriggerStackCandidates.Add(byId[id]);
         AddEvent("trigger-order", batch.Controller, $"{State.Players[batch.Controller].Name} 已排列同一时点的 {chosen.Count} 个触发效果");
         AdvanceTriggerBatches();
     }
@@ -1865,13 +1879,13 @@ public sealed partial class L12GameEngine
         {
             steps.Add(TriggerStep("grave-card", "阿尔维达：可选择墓地1张费用不高于3的【阿斯加德】卡牌加入手牌",
                 player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
-                    && card.CurrentCost <= 3).Select(card => card.InstanceId), 0));
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 3)).Select(card => card.InstanceId), 0));
         }
         else if (candidate.SourceCardId == "S01-0308")
         {
             steps.Add(TriggerStep("grave-card", "血斧艾瑞克：可选择墓地1张费用不高于3的【阿斯加德】军团活跃登场",
                 player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
-                    && card.CardType == "legion" && card.CurrentCost <= 3).Select(card => card.InstanceId), 0));
+                    && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 3)).Select(card => card.InstanceId), 0));
             steps.Add(new L12ActivationSelectionStep
             {
                 Kind = "unused-slot", Text = "选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList(),
@@ -2005,6 +2019,9 @@ public sealed partial class L12GameEngine
     {
         var bonuses = new Dictionary<string, int>(StringComparer.Ordinal);
         void Add(string key, int amount) => bonuses[key] = bonuses.GetValueOrDefault(key) + amount;
+        if (row == 0 && owner.UsedAbilities.Contains($"amaterasu-front-aura:{State.TurnSerial}")
+            && L12StructuredCardRules.HasFaction(owner, card, "gaotianyuan"))
+            Add("turn:amaterasu-front-aura", 1000);
         foreach (var sword in card.AttachedCards.Where(attached => attached.CardId == "S02-06S2"))
             Add($"attached:{sword.InstanceId}:king-sword", 1000);
         var starterDisasterBonus = L12StructuredCardRules.StarterDisasterTroopsBonus(

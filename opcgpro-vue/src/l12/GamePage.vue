@@ -98,6 +98,7 @@ function returnToLobby() {
         data-ui-contract="manual-game-over-exit" role="dialog" aria-modal="true" aria-label="对局结果">
         <p>{{ game.winner == null ? (agreedDraw ? '平局' : '对局无效') : (game.winner === game.you ? '胜利' : '败北') }}</p>
         <strong>{{ game.winnerReason || '对局已结束' }}</strong>
+        <small>点击返回后离开结算；双方都离开后关闭房间，最长保留30分钟。</small>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
         <section v-if="l12State.rankedSettlement" class="ranked-result">
           <b>{{ l12State.rankedSettlement.faction }} · {{ l12State.rankedSettlement.tierAfter }}</b>

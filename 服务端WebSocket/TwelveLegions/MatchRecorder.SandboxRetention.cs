@@ -215,7 +215,7 @@ public sealed partial class MatchRecorder
 
     public async Task<L12SandboxReplayCleanupResult> RunSandboxReplayCleanupIfDueAsync(
         IReadOnlyCollection<string>? activeMatchIds = null, DateTimeOffset? utcNow = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Func<L12ReplayEvidenceReferences>? evidenceProvider = null)
     {
         var now = (utcNow ?? _utcNow()).ToUniversalTime();
         var cachedNextTicks = Volatile.Read(ref _nextSandboxCleanupUtcTicks);
@@ -329,7 +329,7 @@ public sealed partial class MatchRecorder
                 var stillEligible = connection.CreateCommand();
                 stillEligible.Transaction = purgeTransaction;
                 stillEligible.CommandText = """
-                    SELECT COUNT(*) FROM sandbox_recordings s
+                    SELECT m.room_code FROM sandbox_recordings s
                     JOIN matches m ON m.match_id=s.match_id AND m.mode_id='sandbox'
                     WHERE s.match_id=$match AND s.status IN ('completed','abandoned')
                       AND s.retention_anchor_utc IS NOT NULL
@@ -340,8 +340,11 @@ public sealed partial class MatchRecorder
                     """;
                 stillEligible.Parameters.AddWithValue("$match", matchId);
                 stillEligible.Parameters.AddWithValue("$cutoff", cutoff);
-                if (active.Contains(matchId) || Convert.ToInt64(
-                        await stillEligible.ExecuteScalarAsync(cancellationToken)) != 1)
+                var roomCode = await stillEligible.ExecuteScalarAsync(cancellationToken) as string;
+                var evidence = evidenceProvider?.Invoke();
+                if (evidenceProvider is not null && evidence is null) throw new InvalidDataException("沙盒证据引用快照缺失");
+                if (active.Contains(matchId) || roomCode is null
+                    || evidence?.MatchIds.Contains(matchId) == true || evidence?.RoomCodes.Contains(roomCode) == true)
                 {
                     await purgeTransaction.CommitAsync(cancellationToken);
                     continue;
@@ -387,7 +390,9 @@ public sealed partial class MatchRecorder
                 await purgeTransaction.CommitAsync(cancellationToken);
             }
 
-            var nextRun = now.Add(SandboxReplayCleanupInterval);
+            // Anchor the next weekly sweep to the shared clock rather than this tick's
+            // milliseconds, which could otherwise make next week's 04:00 tick miss its due time.
+            var nextRun = NextStorageCleanupUtc(now.AddDays(6));
             using (var finish = connection.BeginTransaction(deferred: false))
             {
                 var updateSchedule = connection.CreateCommand();

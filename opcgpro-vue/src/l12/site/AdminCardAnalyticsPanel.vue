@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
+import SandboxCardPicker, { type SandboxCatalogCard } from '@/l12/game/SandboxCardPicker.vue'
+import PagedCollection from './PagedCollection.vue'
 import {
   adminApi,
+  getEffectiveOperationsPolicy,
   type AdminAnalyticsConfidenceInterval,
   type AdminCardAnalyticsBreakdown,
   type AdminCardAnalyticsDetail,
@@ -12,10 +15,24 @@ import {
   type AdminMatchSummary,
 } from '@/l12/platform'
 
+type AnalyticsTab = 'single' | 'list'
+type AnalyticsRange = 'all' | '7d' | '30d' | 'season'
+type AnalyticsSort = 'name' | 'sampleSize' | 'includedMatches' | 'inclusionRate' | 'winRate' | 'delta'
+
 const emit = defineEmits<{ notice: [message: string]; openMatch: [matchId: string] }>()
 const page = ref<AdminCardAnalyticsPage>({ items: [], total: 0 })
 const detail = ref<AdminCardAnalyticsDetail | null>(null)
 const cards = ref<DeckCard[]>([])
+const activeTab = ref<AnalyticsTab>('single')
+const range = ref<AnalyticsRange>('30d')
+const currentSeason = ref<{ id: string; name: string } | null>(null)
+const pickerOpen = ref(false)
+const selectedCardId = ref('')
+const listSearch = ref('')
+const listPage = ref(1)
+const listPageSize = 10
+const sortKey = ref<AnalyticsSort>('sampleSize')
+const sortDirection = ref<'asc' | 'desc'>('desc')
 const loading = ref(false)
 const detailLoading = ref(false)
 function localDateInput(value: Date) {
@@ -27,7 +44,7 @@ function localDateInput(value: Date) {
 const today = new Date()
 const thirtyDayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29)
 const filters = ref({
-  search: '', mode: 'ranked', from: localDateInput(thirtyDayStart), to: localDateInput(today), masterId: '', opponentMasterId: '',
+  mode: 'ranked', from: localDateInput(thirtyDayStart), to: localDateInput(today), masterId: '', opponentMasterId: '',
   initiative: '', rulesVersion: '', effectVersion: 'current', seasonId: '', minimumSample: 10,
 })
 
@@ -35,8 +52,26 @@ const cardById = computed(() => new Map(cards.value.map(card => [card.id, card])
 const masterOptions = computed(() => cards.value
   .filter(card => card.cardType === 'master')
   .sort((left, right) => left.nameZh.localeCompare(right.nameZh, 'zh-CN')))
-const selectedCatalogCard = computed(() => detail.value ? cardById.value.get(detail.value.summary.cardId) : undefined)
+const selectedCatalogCard = computed(() => cardById.value.get(selectedCardId.value || detail.value?.summary.cardId || ''))
 const summaryMetrics = computed(() => page.value.summary || {})
+const sortedItems = computed(() => [...page.value.items].sort((left, right) => {
+  const leftName = cardById.value.get(left.cardId)?.nameZh || left.cardId
+  const rightName = cardById.value.get(right.cardId)?.nameZh || right.cardId
+  const values: Record<Exclude<AnalyticsSort, 'name'>, [number, number]> = {
+    sampleSize: [left.sampleSize, right.sampleSize],
+    includedMatches: [left.includedMatches, right.includedMatches],
+    inclusionRate: [left.inclusionRate, right.inclusionRate],
+    winRate: [left.winRate, right.winRate],
+    delta: [left.comparison?.delta ?? Number.NEGATIVE_INFINITY, right.comparison?.delta ?? Number.NEGATIVE_INFINITY],
+  }
+  const comparison = sortKey.value === 'name'
+    ? leftName.localeCompare(rightName, 'zh-CN')
+    : values[sortKey.value][0] - values[sortKey.value][1]
+  if (comparison !== 0) return sortDirection.value === 'asc' ? comparison : -comparison
+  return left.cardId.localeCompare(right.cardId)
+}))
+const listPageCount = computed(() => Math.max(1, Math.ceil(sortedItems.value.length / listPageSize)))
+const visibleListItems = computed(() => sortedItems.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize))
 const maximumTiming = computed(() => Math.max(1, ...(detail.value?.turnDistribution || [])
   .flatMap(bucket => [bucket.firstDrawSamples, bucket.firstPlaySamples])))
 const maximumQuantity = computed(() => Math.max(1, ...(detail.value?.quantityDistribution || [])
@@ -69,6 +104,10 @@ function metricLabel(metric: string) {
 function observedLabel(metric: string, count: number) {
   const coverage = detail.value?.summary.usage?.metrics.find(item => item.metric === metric)
   return count > 0 ? `${count} 份已记录` : coverage?.coverageStatus === 'complete' ? '0 份' : '未记录／未知'
+}
+function observedPercent(metric: string, count: number, total: number) {
+  const coverage = detail.value?.summary.usage?.metrics.find(item => item.metric === metric)
+  return count > 0 || coverage?.coverageStatus === 'complete' ? percent(ratio(count, total)) : '—'
 }
 function modeLabel(mode: string) {
   return ({ '': '全部模式', ranked: '排位', casual: '休闲', friendly: '好友房', tournament: '赛事' } as Record<string, string>)[mode] || mode
@@ -128,27 +167,73 @@ function recentResult(match: AdminMatchSummary) {
 
 let listRequest = 0
 let detailRequest = 0
-async function loadAnalytics(reset = true) {
+const analyticsListLimit = 200
+const maximumAnalyticsListItems = 2000
+function analyticsQuery() { return { ...filters.value } }
+function applyRange(next: AnalyticsRange) {
+  range.value = next
+  filters.value.seasonId = ''
+  filters.value.from = ''
+  filters.value.to = ''
+  const now = new Date()
+  if (next === 'season') {
+    filters.value.seasonId = currentSeason.value?.id || ''
+    return
+  }
+  if (next === 'all') return
+  const days = next === '7d' ? 7 : 30
+  filters.value.from = localDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1))
+  filters.value.to = localDateInput(now)
+}
+function chooseCard(card: SandboxCatalogCard) {
+  pickerOpen.value = false
+  selectedCardId.value = card.id
+  detail.value = null
+  void selectCard(card.id)
+}
+function setSort(next: AnalyticsSort) {
+  if (sortKey.value === next) sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  else {
+    sortKey.value = next
+    sortDirection.value = next === 'name' ? 'asc' : 'desc'
+  }
+  listPage.value = 1
+}
+function sortMarker(key: AnalyticsSort) { return sortKey.value === key ? (sortDirection.value === 'asc' ? ' ↑' : ' ↓') : '' }
+async function loadAnalytics() {
   const request = ++listRequest
-  if (reset) { ++detailRequest; detail.value = null; detailLoading.value = false }
+  const query = analyticsQuery()
+  const search = listSearch.value.trim()
   loading.value = true
   try {
-    const cursor = reset ? undefined : page.value.nextCursor || undefined
-    const next = await adminApi.cardAnalytics({ ...filters.value, cursor, limit: 50 })
-    if (request !== listRequest) return
-    page.value = reset ? next : { ...next, items: [...page.value.items, ...next.items] }
-    if (reset) {
-      if (next.items[0]) await selectCard(next.items[0].cardId)
-      else detail.value = null
+    const items: AdminCardAnalyticsItem[] = []
+    let cursor: string | undefined
+    let firstPage: AdminCardAnalyticsPage | null = null
+    do {
+      const next = await adminApi.cardAnalytics({ ...query, search, cursor, limit: analyticsListLimit })
+      if (request !== listRequest) return
+      firstPage ||= next
+      items.push(...next.items)
+      if (next.total > maximumAnalyticsListItems)
+        throw new Error(`当前筛选返回 ${next.total} 张卡，超过清单安全上限 ${maximumAnalyticsListItems}`)
+      cursor = next.nextCursor || undefined
+    } while (cursor && items.length < (firstPage?.total ?? 0))
+    if (firstPage && items.length < firstPage.total) {
+      throw new Error(`卡牌清单只读取到 ${items.length} / ${firstPage.total} 张，已停止显示不完整排序`)
     }
+    page.value = firstPage ? { ...firstPage, items, nextCursor: null } : { items: [], total: 0 }
+    listPage.value = 1
   } catch (error) { if (request === listRequest) emit('notice', error instanceof Error ? error.message : '单卡分析加载失败') }
   finally { if (request === listRequest) loading.value = false }
 }
-async function selectCard(cardId: string) {
+async function selectCard(cardId = selectedCardId.value) {
+  if (!cardId) return
+  selectedCardId.value = cardId
   const request = ++detailRequest
+  const query = analyticsQuery()
   detailLoading.value = true
   try {
-    const next = await adminApi.cardAnalyticsDetail(cardId, { ...filters.value })
+    const next = await adminApi.cardAnalyticsDetail(cardId, query)
     if (request === detailRequest) detail.value = next
   }
   catch (error) {
@@ -159,10 +244,23 @@ async function selectCard(cardId: string) {
   } finally { if (request === detailRequest) detailLoading.value = false }
 }
 
+watch(filters, () => {
+  ++detailRequest
+  detail.value = null
+  detailLoading.value = false
+  ++listRequest
+  page.value = { items: [], total: 0 }
+  listPage.value = 1
+  loading.value = false
+}, { deep: true, flush: 'sync' })
+
 onMounted(async () => {
-  try { cards.value = await loadDeckCatalog() }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '卡牌图鉴加载失败') }
-  await loadAnalytics(true)
+  const [catalogResult, policyResult] = await Promise.allSettled([loadDeckCatalog(), getEffectiveOperationsPolicy()])
+  if (catalogResult.status === 'fulfilled') cards.value = catalogResult.value
+  else emit('notice', catalogResult.reason instanceof Error ? catalogResult.reason.message : '卡牌图鉴加载失败')
+  if (policyResult.status === 'fulfilled') {
+    currentSeason.value = { id: policyResult.value.season.id, name: policyResult.value.season.name }
+  } else emit('notice', '当前赛季读取失败；其余时间范围仍可使用')
 })
 </script>
 
@@ -170,45 +268,54 @@ onMounted(async () => {
   <section class="card-analytics">
     <header class="module-header">
       <div><small>排位卡牌仪表盘</small><h2>单卡影响分析</h2><p>仅分析新统计格式的已结束排位对局；比较携带表现、使用情况与同条件关联。</p></div>
-      <button :disabled="loading" @click="loadAnalytics(true)">刷新事实</button>
+      <button :disabled="loading || detailLoading || (activeTab === 'single' && !selectedCardId)" @click="activeTab === 'single' ? selectCard() : loadAnalytics()">刷新事实</button>
     </header>
 
+    <nav class="module-tabs" aria-label="单卡分析视图">
+      <button :class="{ active: activeTab === 'single' }" @click="activeTab = 'single'">单卡仪表盘</button>
+      <button :class="{ active: activeTab === 'list' }" @click="activeTab = 'list'; loadAnalytics()">卡牌数据清单</button>
+    </nav>
+
     <section class="filter-panel" aria-label="单卡分析筛选">
-      <label class="search">指定卡牌<input v-model="filters.search" placeholder="卡名、编号或 ID" @keyup.enter="loadAnalytics(true)"/></label>
+      <label v-if="activeTab === 'list'" class="search">清单搜索<input v-model="listSearch" type="search" placeholder="卡名、编号或 ID" @keyup.enter="loadAnalytics()"/></label>
+      <label class="master-filter">1. 使用方主宰<select v-model="filters.masterId"><option value="">全部主宰（允许所有卡牌）</option><option v-for="master in masterOptions" :key="`mine-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
+      <button v-if="activeTab === 'single'" class="card-choice" type="button" @click="pickerOpen = true">
+        <CardImage v-if="selectedCatalogCard" :card-id="selectedCatalogCard.id" :legacy-url="selectedCatalogCard.imageUrl" :alt="selectedCatalogCard.nameZh" intent="thumb"/>
+        <span><small>2. 指定分析卡牌</small><b>{{ selectedCatalogCard?.nameZh || '从 GM 卡牌图鉴选择' }}</b><em>{{ selectedCatalogCard?.number || '支持全部类型、阵营与卡池' }}</em></span>
+      </button>
+      <fieldset class="range-filter"><legend>统计时间</legend><button type="button" :class="{ active: range === 'all' }" @click="applyRange('all')">全部</button><button type="button" :class="{ active: range === '7d' }" @click="applyRange('7d')">近 7 天</button><button type="button" :class="{ active: range === '30d' }" @click="applyRange('30d')">近 30 天</button><button type="button" :class="{ active: range === 'season' }" :disabled="!currentSeason" @click="applyRange('season')">{{ currentSeason ? `本赛季 · ${currentSeason.name}` : '本赛季读取中' }}</button></fieldset>
       <label>卡效版本<select v-model="filters.effectVersion" aria-label="卡效版本"><option value="current">当前卡效版本</option><option value="all">全部已记录版本（分层比较）</option></select></label>
-      <label>开始日期<input v-model="filters.from" type="date"/></label>
-      <label>结束日期（含当天）<input v-model="filters.to" type="date"/></label>
-      <label>使用方主宰<select v-model="filters.masterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`mine-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
       <label>对方主宰<select v-model="filters.opponentMasterId"><option value="">全部主宰</option><option v-for="master in masterOptions" :key="`enemy-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
       <label>先后手<select v-model="filters.initiative"><option value="">全部</option><option value="first">先手</option><option value="second">后手</option></select></label>
       <label>运营规则版本<input v-model.trim="filters.rulesVersion" placeholder="全部运营规则"/></label>
-      <label>赛季<input v-model.trim="filters.seasonId" placeholder="全部赛季"/></label>
       <label>最小参赛方样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
-      <button class="query" :disabled="loading" @click="loadAnalytics(true)">按条件分析</button>
+      <button class="query" :disabled="activeTab === 'single' ? (!selectedCardId || detailLoading) : loading" @click="activeTab === 'single' ? selectCard() : loadAnalytics()">{{ activeTab === 'single' ? '查询这张卡' : '刷新完整清单' }}</button>
     </section>
     <p class="sample-contract" data-ui-contract="card-analytics-low-sample-warning">统计单位为“参赛方 × 对局”；同一局双方与重复玩家并非独立样本。低于 {{ Math.max(filters.minimumSample, 30) }} 份仅供参考；没有未收录参赛方时基线显示“—”。只纳入具有明确卡效版本的新排位数据，旧记录不回填。统计缓存最多延迟30秒。</p>
 
-    <div class="scope-summary">
+    <div v-if="activeTab === 'list'" class="scope-summary">
       <article><small>有效已结束排位</small><b>{{ summaryMetrics.eligibleMatches ?? 0 }}</b><span>排除非排位、旧统计记录、错误终局与无明确胜者记录</span></article>
       <article><small>参赛方样本</small><b>{{ summaryMetrics.sampleSize ?? 0 }}</b><span>统计单位：参赛方 × 对局</span></article>
       <article><small>达到门槛的卡牌</small><b>{{ page.total }}</b><span>已先筛选再分页</span></article>
       <article><small>事实质量</small><b>按单卡查看</b><span>列表不扫描使用事实；选择卡牌后计算覆盖情况</span></article>
     </div>
 
-    <div class="analytics-workspace">
-      <section class="card-list panel-shell">
-        <header><div><b>卡牌清单</b><span>选择一张卡查看完整事实</span></div><em>{{ page.items.length }} / {{ page.total }}</em></header>
-        <button v-for="item in page.items" :key="item.cardId" class="card-row" :class="{ selected: detail?.summary.cardId === item.cardId }" :data-low-sample="isLowSample(item)" @click="selectCard(item.cardId)">
-          <CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/>
-          <span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }}</small><em>{{ item.sampleSize }} 份参赛方样本 · {{ item.includedMatches }} 场</em></span>
-          <span class="row-numbers"><b>{{ percent(item.winRate) }}</b><small :data-tone="resultTone(item)">差 {{ signedPercent(item.comparison?.delta) }}</small></span>
-        </button>
-        <div v-if="loading" class="empty">正在聚合结构化事实…</div>
-        <div v-else-if="!page.items.length" class="empty">排位数据不足，尚无卡牌达到当前样本门槛</div>
-        <button v-if="page.nextCursor" class="load-more" :disabled="loading" @click="loadAnalytics(false)">加载更多卡牌</button>
-      </section>
+    <section v-if="activeTab === 'list'" class="card-list panel-shell">
+      <header><div><b>完整筛选清单</b><span>先读取全部 {{ page.total }} 张结果，再进行排序与分页</span></div><em>第 {{ listPage }} / {{ listPageCount }} 页</em></header>
+      <div class="list-sort" aria-label="卡牌清单排序">
+        <button @click="setSort('name')">卡牌{{ sortMarker('name') }}</button><button @click="setSort('sampleSize')">参赛方样本{{ sortMarker('sampleSize') }}</button><button @click="setSort('includedMatches')">对局数{{ sortMarker('includedMatches') }}</button><button @click="setSort('inclusionRate')">收录率{{ sortMarker('inclusionRate') }}</button><button @click="setSort('winRate')">胜率{{ sortMarker('winRate') }}</button><button @click="setSort('delta')">调整差{{ sortMarker('delta') }}</button>
+      </div>
+      <button v-for="item in visibleListItems" :key="item.cardId" class="card-row" :data-low-sample="isLowSample(item)" @click="activeTab = 'single'; selectCard(item.cardId)">
+        <CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/>
+        <span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }}</small></span>
+        <span>{{ item.sampleSize }}</span><span>{{ item.includedMatches }}</span><span>{{ percent(item.inclusionRate) }}</span><span>{{ percent(item.winRate) }}</span><span :data-tone="resultTone(item)">{{ signedPercent(item.comparison?.delta) }}</span>
+      </button>
+      <div v-if="loading" class="empty">正在读取完整筛选清单…</div>
+      <div v-else-if="!page.items.length" class="empty">排位数据不足，尚无卡牌达到当前样本门槛</div>
+      <footer v-if="page.items.length" class="pagination"><button :disabled="listPage <= 1" @click="listPage--">上一页</button><span>{{ (listPage - 1) * listPageSize + 1 }}–{{ Math.min(listPage * listPageSize, page.items.length) }} / {{ page.items.length }}</span><button :disabled="listPage >= listPageCount" @click="listPage++">下一页</button></footer>
+    </section>
 
-      <main class="analysis-detail panel-shell">
+      <main v-else class="analysis-detail panel-shell">
         <div v-if="detailLoading" class="empty">正在读取分层事实…</div>
         <template v-else-if="detail">
           <header class="card-heading">
@@ -219,9 +326,16 @@ onMounted(async () => {
           <section class="key-metrics" aria-label="核心指标">
             <article><small>构筑收录率</small><b>{{ percent(detail.summary.inclusionRate) }}</b><span>{{ detail.summary.sampleSize }} / {{ detail.summary.eligibleSampleSize }} 份参赛方</span></article>
             <article><small>平均携带数量</small><b>{{ detail.summary.averageQuantity.toFixed(2) }}</b><span>每份收录构筑中的平均张数</span></article>
-            <article><small>原始携带胜率</small><b>{{ percent(detail.summary.winRate) }}</b><span>{{ detail.summary.wins }} 胜 / {{ detail.summary.sampleSize }} 份，重复玩家影响见下方</span></article>
-            <article><small>同条件未携带基线</small><b>{{ percent(detail.summary.comparison?.winRate) }}</b><span>同主宰、卡效版本、对方主宰与先后手分层</span></article>
+            <article><small>原始携带胜率</small><b>{{ percent(detail.summary.winRate) }}</b><span>{{ detail.summary.wins }} 胜 / {{ detail.summary.sampleSize }} 份 · 区间 {{ confidenceLabel(detail.summary.winRateConfidence) }}</span></article>
+            <article><small>同条件未携带基线</small><b>{{ percent(detail.summary.comparison?.winRate) }}</b><span>同主宰、卡效版本、对方主宰与先后手分层；原始区间 {{ confidenceLabel(detail.summary.baselineWinRateConfidence) }}</span></article>
             <article><small>调整后胜率差（百分点）</small><b :data-tone="resultTone(detail.summary)">{{ signedPercent(detail.summary.comparison?.delta) }}</b><span>仅比较双方均有样本的条件；不代表因果提升</span></article>
+          </section>
+
+          <section class="behavior-metrics" aria-label="真实使用指标">
+            <article><small>记录到抽取</small><b>{{ observedPercent('draw', detail.summary.drawnSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('draw', detail.summary.drawnSamples) }} / 收录样本</span></article>
+            <article><small>记录到手牌打出</small><b>{{ observedPercent('play', detail.summary.playedSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('play', detail.summary.playedSamples) }} / 收录样本</span></article>
+            <article><small>记录到效果发动</small><b>{{ observedPercent('activation', detail.summary.activatedSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('activation', detail.summary.activatedSamples) }} / 收录样本</span></article>
+            <article><small>记录到结算状态</small><b>{{ observedPercent('settlement', detail.summary.settledSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('settlement', detail.summary.settledSamples) }} / 收录样本</span></article>
           </section>
 
           <section class="dashboard-panel" aria-label="样本可靠性">
@@ -285,7 +399,7 @@ onMounted(async () => {
           <section class="dashboard-panel breakdowns">
             <header><div><h3>条件切片与版本趋势</h3><p>排位内按双方主宰、先后手、卡效版本与赛季查看描述性结果；差值单位为百分点，调整后差值以上方同条件比较为准。</p></div></header>
             <div class="breakdown-head"><span>维度</span><span>条件</span><span>收录样本</span><span>层内总样本</span><span>胜率</span><span>基线</span><span>关联差</span></div>
-            <article v-for="row in detail.breakdowns" :key="`${row.dimension}-${row.value}`"><small>{{ dimensionLabel(row.dimension) }}</small><b>{{ dimensionValue(row) }}</b><span>{{ row.sampleSize }}</span><span>{{ row.eligibleSampleSize }}</span><span>{{ percent(row.winRate) }}</span><span>{{ percent(row.baselineWinRate) }}</span><strong :data-tone="deltaTone(row.winRateDeltaConfidence)">{{ signedPercent(row.winRateDelta) }}<small>CI {{ confidenceLabel(row.winRateDeltaConfidence, true) }}</small></strong></article>
+            <PagedCollection :items="detail.breakdowns" :page-size="10" label="条件切片"><template #default="{ items }"><article v-for="row in items" :key="`${row.dimension}-${row.value}`"><small>{{ dimensionLabel(row.dimension) }}</small><b>{{ dimensionValue(row) }}</b><span>{{ row.sampleSize }}</span><span>{{ row.eligibleSampleSize }}</span><span>{{ percent(row.winRate) }}</span><span>{{ percent(row.baselineWinRate) }}</span><strong :data-tone="deltaTone(row.winRateDeltaConfidence)">{{ signedPercent(row.winRateDelta) }}<small>CI {{ confidenceLabel(row.winRateDeltaConfidence, true) }}</small></strong></article></template></PagedCollection>
             <div v-if="!detail.breakdowns.length" class="empty compact">样本尚不足以形成条件切片</div>
           </section>
 
@@ -306,7 +420,7 @@ onMounted(async () => {
         </template>
         <div v-else class="empty">选择一张卡查看事实仪表盘</div>
       </main>
-    </div>
+    <SandboxCardPicker v-if="pickerOpen" title="选择要分析的卡牌" @select="chooseCard" @close="pickerOpen = false"/>
   </section>
 </template>
 
@@ -317,9 +431,13 @@ onMounted(async () => {
 .breakdowns>article>b{min-width:0;overflow-wrap:anywhere}
 .breakdown-head,.breakdowns>article{grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 105px}
 .breakdowns>article strong{display:grid;gap:2px}.breakdowns>article strong small{font-size:10px;font-weight:700}
+.module-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);background:#081118}.module-tabs button{min-height:44px;border:0;border-right:1px solid var(--line);background:transparent;color:#85949a;font-size:14px;font-weight:900}.module-tabs button:last-child{border-right:0}.module-tabs button.active{background:#1b2a32;color:var(--gold);box-shadow:inset 0 -3px var(--gold)}.module-tabs button:focus-visible,.list-sort button:focus-visible,.pagination button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+.filter-panel .master-filter{grid-column:span 2}.filter-panel .card-choice{display:grid;grid-column:span 2;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:10px;text-align:left}.card-choice>.l12-card-image{width:46px;height:64px}.card-choice>span{display:grid;min-width:0;gap:2px}.card-choice small{color:var(--gold);font-size:12px}.card-choice b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-choice em{color:#7f8d93;font-size:12px;font-style:normal}.range-filter{display:grid;grid-column:span 3;grid-template-columns:repeat(4,minmax(92px,1fr));gap:5px;min-width:0;margin:0;padding:6px 8px 8px;border:1px solid #40515b}.range-filter legend{padding:0 5px;color:#aab4b7;font-size:13px;font-weight:900}.range-filter button{min-height:34px;padding:6px}.range-filter button.active{border-color:var(--gold);background:#302710;color:#f2d77f}.behavior-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.behavior-metrics article{display:grid;min-width:0;gap:4px;padding:12px;border:1px solid #2c3c45;background:#0b1820}.behavior-metrics small,.behavior-metrics span{color:#829198;font-size:12px}.behavior-metrics b{font-size:19px}
+.card-list{max-height:none;overflow-x:auto}.card-list>header{position:static}.list-sort{display:grid;min-width:900px;grid-template-columns:minmax(285px,1fr) repeat(5,minmax(82px,.45fr));border-bottom:1px solid var(--line);background:#101c24}.list-sort button{min-height:39px;padding:7px;border:0;border-right:1px solid #293840;background:transparent;color:#aeb9bc;font-size:12px;font-weight:900;text-align:center}.list-sort button:first-child{text-align:left}.card-list .card-row{min-width:900px;grid-template-columns:45px minmax(220px,1fr) repeat(5,minmax(82px,.45fr))}.card-list .card-row>span:not(:nth-child(2)){display:block;text-align:center;font-size:13px;font-weight:900}.pagination{position:sticky;left:0;display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid var(--line);background:#091218}.pagination button{min-height:34px;padding:6px 14px;border:1px solid #53636d;background:#111d24;color:#e6e8e4;font-weight:900}.pagination span{color:#829198;font-size:13px}
 @media(max-width:1500px){.analytics-workspace{grid-template-columns:minmax(290px,.52fr) minmax(600px,1.48fr)}.filter-panel{grid-template-columns:repeat(4,minmax(140px,1fr))}.filter-panel .search{grid-column:span 2}}
-@media(max-width:1120px){.analytics-workspace{grid-template-columns:1fr}.card-list{max-height:440px}.key-metrics{grid-template-columns:1fr 1fr}.scope-summary{grid-template-columns:1fr 1fr}}
+@media(max-width:1120px){.analytics-workspace{grid-template-columns:1fr}.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.scope-summary{grid-template-columns:1fr 1fr}.range-filter{grid-column:span 2}}
 @media(max-width:820px){.dashboard-pair{grid-template-columns:1fr}.breakdowns{overflow:auto}.breakdown-head,.breakdowns>article{min-width:720px}.module-header{align-items:flex-start}.module-header button{margin-top:3px}}
-@media(max-width:650px){.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search{grid-column:1/-1}.scope-summary,.key-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
-@media(max-width:430px){.filter-panel,.scope-summary,.key-metrics,.settlement-grid{grid-template-columns:1fr}.module-header{display:grid}.module-header button{width:100%}.card-row{grid-template-columns:42px minmax(0,1fr) 64px}.turn-chart article{grid-template-columns:62px 1fr}.turn-chart article>div:last-child{grid-column:2}.card-heading{grid-template-columns:72px minmax(0,1fr)}.card-heading>.l12-card-image{width:72px;height:100px}}
+@media(max-width:650px){.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
+@media(max-width:430px){.filter-panel,.scope-summary,.key-metrics,.behavior-metrics,.settlement-grid{grid-template-columns:1fr}.module-header{display:grid}.module-header button{width:100%}.turn-chart article{grid-template-columns:62px 1fr}.turn-chart article>div:last-child{grid-column:2}.card-heading{grid-template-columns:72px minmax(0,1fr)}.card-heading>.l12-card-image{width:72px;height:100px}}
+.heat-scroll{max-height:520px}.heat-scroll th{position:sticky;top:0;z-index:1}.breakdowns :deep(article){display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 105px;align-items:center;gap:8px;padding:9px;border-top:1px solid #293840;font-size:12px}.breakdowns :deep(article>b){min-width:0;overflow-wrap:anywhere}.breakdowns :deep(article small){color:#70c1c6;font-weight:900}.breakdowns :deep(article strong){display:grid;gap:2px;text-align:right}.breakdowns :deep(article strong small){font-size:10px;font-weight:700}@media(max-width:820px){.breakdowns :deep(article){min-width:720px}}
 </style>

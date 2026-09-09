@@ -43,6 +43,15 @@ public sealed partial class L12GameEngine
         // 不再先询问一次“是否发动”，并将目标选择延后到效果真正结算时。
         if (plan is "morale-flip" or "theseus-flip" or "morale-flip-two" or "takasugi")
             candidate.Data["declaration-complete"] = "true";
+        if (plan == "zhuge" && !RequiresPrideMasterSurcharge(candidate.Controller,
+                candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId)))
+        {
+            foreach (var pair in CompositeFirstSegmentData("trigger:S01-0111:enter", new Dictionary<string, List<string>>()))
+                candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate,
+                candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId));
+            candidate.Data["declaration-complete"] = "true";
+        }
         if (plan is "canopic-one" or "canopic-four"
             && !PublicLegions(State.Players[candidate.Controller]).Any(card =>
                 L12StructuredCardRules.HasFaction(State.Players[candidate.Controller], card, "taiyangcheng")))
@@ -64,7 +73,7 @@ public sealed partial class L12GameEngine
         var plan = Batch6JAEnterPlan(candidate.SourceCardId, candidate.Trigger);
         if (plan is null) return false;
         var steps = Batch6JAEnterSteps(candidate, source, plan);
-        if (steps.Count == 0 || steps.Any(step => step.RequiredDeclaredChoice is null
+        if (steps.Count == 0 && plan != "zhuge" || steps.Any(step => step.RequiredDeclaredChoice is null
                 && step.ValidChoices.Count < step.MinChoose))
         {
             State.PendingTriggerStackCandidates.Remove(candidate);
@@ -127,10 +136,8 @@ public sealed partial class L12GameEngine
                     own.Where(card => L12StructuredCardRules.HasFaction(player, card, "tianting"))
                         .Select(card => card.InstanceId), 1, 2, "mode:use"); break;
             case "zhuge":
-                steps.Add(PublicTriggerStep("option", "disasterMode", "诸葛亮：预先声明是否发动随后天灾值调整段",
-                    ["mode:none", "mode:use"]));
-                steps.Add(PublicTriggerStep("option", "disasterValue", "诸葛亮：预先声明天灾值增加或减少1",
-                    ["-1", "1"], requiredChoice: "mode:use")); break;
+                // Private information must be seen before declaring the independent adjustment.
+                break;
             case "sunwu":
                 if (!CanReturnMorale(player, 1)) break;
                 Optional("孙武：预先声明是否返还1士气获得下次战术免费");
@@ -170,18 +177,18 @@ public sealed partial class L12GameEngine
                     enemy.Where(card => card.Troops <= 3000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
                         .Select(card => card.InstanceId), "mode:use"); break;
             case "nobunaga": One("enemy-legion", "target", "织田信长：预先选择击杀目标",
-                enemy.Where(card => card.CurrentCost <= 4).Select(card => card.InstanceId)); break;
+                enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 4)).Select(card => card.InstanceId)); break;
             case "uesugi":
             {
                 var x = State.Players.SelectMany(owner => owner.Field[1]).Count(card => card is { CardType: "tactic" });
                 One("enemy-legion", "target", $"上杉谦信：预先选择费用不高于{x}的击杀目标",
-                    enemy.Where(card => card.CurrentCost <= x).Select(card => card.InstanceId)); break;
+                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, x)).Select(card => card.InstanceId)); break;
             }
             case "hijikata":
                 One("enemy-legion", "target1", "土方岁三：预先选择费用不高于2的目标",
-                    enemy.Where(card => card.CurrentCost <= 2).Select(card => card.InstanceId));
+                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId));
                 One("enemy-legion", "target2", "土方岁三：预先选择另一张费用不高于1的目标",
-                    enemy.Where(card => card.CurrentCost <= 1).Select(card => card.InstanceId)); break;
+                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 1)).Select(card => card.InstanceId)); break;
             case "takasugi":
                 // 抽牌先结算；目标属于效果正文的后续选择，不能因当前没有目标而取消整段登场效果。
                 break;
@@ -194,7 +201,7 @@ public sealed partial class L12GameEngine
                     && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
                     && card.Troops <= 5000).Select(card => card.InstanceId)); break;
             case "kusanagi": One("enemy-legion", "target", "草薙剑：预先选择费用不高于2的击杀目标",
-                enemy.Where(card => card.CurrentCost <= 2).Select(card => card.InstanceId)); break;
+                enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId)); break;
             case "court-magician":
             {
                 var counters = State.Players.SelectMany(owner => owner.Field[1])
@@ -312,7 +319,7 @@ public sealed partial class L12GameEngine
             return true;
         }
         var currentSteps = Batch6JAEnterSteps(candidate, source, plan);
-        string? error = currentSteps.Count == 0 ? $"〈{candidate.SourceName}〉的声明条件或对象已失效；效果未入栈" : null;
+        string? error = currentSteps.Count == 0 && plan != "zhuge" ? $"〈{candidate.SourceName}〉的声明条件或对象已失效；效果未入栈" : null;
         foreach (var step in currentSteps)
         {
             if (step.RequiredDeclaredChoice is { } required
@@ -340,7 +347,8 @@ public sealed partial class L12GameEngine
             var shown = player.Hand.FirstOrDefault(card => card.InstanceId == handId && card.CardType == "legion");
             var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
             var target = DeclaredEnemyTarget(candidate.Controller, targetId);
-            if (shown is null || target is null || target.CurrentCost > shown.CurrentCost)
+            if (shown is null || target is null || !shown.HasPrintedCost
+                || !L12StructuredCardRules.CurrentCostAtMost(target, shown.CurrentCost))
                 error = "赫拉克勒斯·晋升声明的手牌军团或击杀目标已失效；效果未入栈";
         }
         if (error is not null)
@@ -411,7 +419,8 @@ public sealed partial class L12GameEngine
         {
             var next = State.DisasterDeck.FirstOrDefault();
             AddEvent("private-disaster-reveal", item.Controller, next is null ? "诸葛亮查看天灾牌库：没有下一张天灾" : $"诸葛亮查看下一张天灾：{next.Name}", next is null ? [] : [next]);
-            FinishStackItem(item); return true;
+            ConfirmPrivateCardView(item, next is null ? "诸葛亮：天灾牌库没有下一张天灾" : "诸葛亮：查看下一张天灾", next is null ? [] : [next]);
+            return true;
         }
         if (flow == "zhuge-disaster")
         {
@@ -444,7 +453,12 @@ public sealed partial class L12GameEngine
             case "mulan": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } mulan) mulan.HasCharge = true; break;
             case "mozi": foreach (var id in Many("targets")) if (FindOnField(player, id, out _, out _) is { } card) GrantImmortalUntilNextTurnStart(card, item.Controller); break;
             case "sunwu": player.FreeTacticCount++; break;
-            case "thutmose" or "nobunaga" or "kusanagi": KillTarget(item, One("target"), $"被{source.Name}击杀"); break;
+            case "kusanagi":
+                if (DeclaredEnemyTarget(item.Controller, One("target"),
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 2)) is not null)
+                    KillTarget(item, One("target"), $"被{source.Name}击杀");
+                break;
+            case "thutmose" or "nobunaga": KillTarget(item, One("target"), $"被{source.Name}击杀"); break;
             case "ramses":
             {
                 var inherited = L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);

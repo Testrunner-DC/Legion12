@@ -304,6 +304,11 @@ public sealed partial class L12GameEngine
         if (string.IsNullOrWhiteSpace(instanceId)) return;
         var card = State.Players[controller].Resolving.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
+        // 宿主仍在战斗待结算区，但守卫必须先成为墓地中的真实候选。
+        // 最后已知附属ID已在离场时保存；清空附属集合也防止终局再次送墓。
+        if (Batch6DPublicTriggerPlans.GetValueOrDefault($"{card.CardId}|death") == "tomb-construct"
+            && card.AttachedCards.Count > 0)
+            DiscardAttachedCards(card, $"{card.Name}阵亡");
         var candidates = BuildS1LeaveReactionCandidates(controller, card,
             includeTombConstruct: false).ToList();
         if (HasDeathTrigger(card))
@@ -338,8 +343,14 @@ public sealed partial class L12GameEngine
         var owner = CardOwner(card, battlefield);
         var promotionFoundations = DetachPromotionFoundations(card);
         if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}阵亡");
+        var returnsToMaster = ReturnsToMasterZoneOnDeparture(card);
         ResetCardAfterLeavingField(card);
-        if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+        if (returnsToMaster)
+        {
+            CompleteMasterLegionDeparture(owner, card);
+            MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}阵亡");
+        }
+        else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{card.Name}〉在阵亡触发完成后消灭，不进入其他区域", card);

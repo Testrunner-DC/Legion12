@@ -197,7 +197,7 @@ public sealed partial class L12GameEngine
                     break;
                 case "enemy-cost-one":
                     steps.Add(PublicTriggerStep("enemy-legion", "target", "土方岁三：预先选择对方1张费用不高于1的军团",
-                        PublicLegions(opponent).Where(card => card.CurrentCost <= 1).Select(card => card.InstanceId),
+                        PublicLegions(opponent).Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 1)).Select(card => card.InstanceId),
                         requiredChoice: required));
                     break;
                 case "enemy-legion":
@@ -260,7 +260,7 @@ public sealed partial class L12GameEngine
         var targetAvailable = plan.TargetKind switch
         {
             "own-front-low" => player.Field[0].Any(card => card is not null && IsFieldLegion(card) && card.Troops <= 2000),
-            "enemy-cost-one" => PublicLegions(opponent).Any(card => card.CurrentCost <= 1),
+            "enemy-cost-one" => PublicLegions(opponent).Any(card => L12StructuredCardRules.CurrentCostAtMost(card, 1)),
             "enemy-legion" => PublicLegions(opponent).Any(),
             "attack-legion" => State.PendingDefense?.Target.Type == "legion",
             "enemy-covered-counter" => opponent.Field[1].Any(card => card is { CardType: "tactic" }),
@@ -380,7 +380,7 @@ public sealed partial class L12GameEngine
                         || row != 0 || !IsFieldLegion(target) || target.Troops > 2000
                         => "阿伊声明的前排目标已失效；未支付费用且效果未入栈",
                     "enemy-cost-one" when targetId is null
-                        || FindOnField(opponent, targetId, out _, out _) is not { } target || target.CurrentCost > 1
+                        || FindOnField(opponent, targetId, out _, out _) is not { } target || !L12StructuredCardRules.CurrentCostAtMost(target, 1)
                         => "土方岁三声明的击杀目标已失效；未支付费用且效果未入栈",
                     "enemy-legion" when targetId is null || FindOnField(opponent, targetId, out _, out _) is null
                         => "高杉晋作声明的目标已失效；未支付费用且效果未入栈",
@@ -510,7 +510,7 @@ public sealed partial class L12GameEngine
                 {
                     var hondaTarget = CompositeDeclared(item, "killTarget").SingleOrDefault();
                     if (DeclaredEnemyTarget(item.Controller, hondaTarget,
-                            target => target.CurrentCost == 0) is not null)
+                            target => L12StructuredCardRules.CurrentCostEquals(target, 0)) is not null)
                         KillTarget(item, hondaTarget!, "被本多忠胜击杀");
                     else Cancel("本多忠胜选择的费用为0目标失效；该目标不会被击杀");
                 }
@@ -551,7 +551,7 @@ public sealed partial class L12GameEngine
                 Finish(); return true;
             case "hijikata":
                 if (FindOnField(opponent, targetId, out _, out _) is { } hijikataTarget
-                    && hijikataTarget.CurrentCost <= 1)
+                    && L12StructuredCardRules.CurrentCostAtMost(hijikataTarget, 1))
                     KillTarget(item, targetId, "被土方岁三击杀");
                 else Cancel("土方岁三声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
@@ -581,7 +581,7 @@ public sealed partial class L12GameEngine
                 {
                     AddPresentationEvent("reveal", item.Controller,
                         $"平阳昭公主展示牌库顶部的〈{top.Name}〉", "S02-0103", "top-card", top);
-                    if (L12StructuredCardRules.HasFaction(player, top, "tianting") && top.CurrentCost <= 5)
+                    if (L12StructuredCardRules.HasFaction(player, top, "tianting") && L12StructuredCardRules.CurrentCostAtMost(top, 5))
                     {
                         if (source is not null)
                             AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "平阳昭公主");

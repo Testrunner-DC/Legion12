@@ -487,15 +487,16 @@ public sealed partial class L12PlatformStore
             var rangeStart = range == "7d" ? now.AddDays(-7) : range == "30d" ? now.AddDays(-30) : seasonStart;
             if (rangeStart < seasonStart) rangeStart = seasonStart;
             var rangeEnd = season.EndsAt ?? DateTimeOffset.MaxValue;
-            var matches = source.Select(match => new
+            var matches = source.DistinctBy(match => match.MatchId, StringComparer.OrdinalIgnoreCase).Select(match => new
                 {
                     Match = match,
                     Started = DateTimeOffset.TryParse(match.StartedUtc, out var started) ? started : (DateTimeOffset?)null,
                     Ended = DateTimeOffset.TryParse(match.EndedUtc, out var ended) ? ended : (DateTimeOffset?)null,
-                    Master0 = MasterIdByName(match.Master0),
-                    Master1 = MasterIdByName(match.Master1),
+                    Master0 = RankingMasterId(match.MasterId0, match.Master0),
+                    Master1 = RankingMasterId(match.MasterId1, match.Master1),
                 })
                 .Where(item => item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
+                    && item.Ended is not null && item.Ended >= item.Started && item.Ended <= now
                     && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
                 .ToArray();
             var masters = new Dictionary<string, RankedMasterStatsAccumulator>(StringComparer.OrdinalIgnoreCase);
@@ -1100,6 +1101,9 @@ public sealed partial class L12PlatformStore
             && item.SeasonId == seasonId);
     }
 
+    private string? RankingMasterId(string? id, string name) => id is null ? MasterIdByName(name)
+        : SelectableMasterIds().FirstOrDefault(candidate => candidate.Equals(id, StringComparison.OrdinalIgnoreCase));
+
     private string? MasterIdByName(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
@@ -1163,8 +1167,10 @@ public sealed partial class L12PlatformStore
         return result;
     }
     private int FloorFor(int value) => _data.RankedConfig!.Factions[0].Tiers.Where(tier => value >= tier.Minimum).Max(tier => tier.Minimum);
-    private static int StreakTerminationReward(int opponentValue) => opponentValue >= 100000 ? 1250
-        : opponentValue >= 60000 ? 750 : opponentValue >= 30000 ? 400 : opponentValue >= 15000 ? 200 : 0;
+    private int StreakTerminationReward(int opponentValue) => RankedTierIndex(opponentValue) switch
+    {
+        4 => 1250, 3 => 750, 2 => 400, 1 => 200, _ => 0,
+    };
     private string AccountName(string id)
     {
         var account = _data.Accounts.FirstOrDefault(row => row.Id == id);
@@ -1186,7 +1192,7 @@ public sealed partial class L12PlatformStore
 
     private static RankedConfigRow NormalizeRankedConfig(L12RankedConfigView value)
     {
-        if (value.PlacementMatches is < 1 or > 20 || value.PlacementMaximum is < 0 or > 29999)
+        if (value.PlacementMatches is < 1 or > 20 || value.PlacementMaximum < 0)
             throw new L12OperationsConfigException("invalid_ranked_config", "定级场次需为1–20，定级上限不得超过第二段位");
         if (value.Factions.Count != 3 || !value.Factions.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(RankedFactionIds))
             throw new L12OperationsConfigException("invalid_ranked_factions", "排位派系必须且只能为秩序、混沌、命运");
@@ -1197,9 +1203,16 @@ public sealed partial class L12PlatformStore
         foreach (var faction in value.Factions)
         {
             if (faction.Tiers.Count != 5) throw new L12OperationsConfigException("invalid_ranked_tiers", "每个派系必须恰好配置5个段位");
-            var tiers = faction.Tiers.OrderBy(tier => tier.Minimum).ToArray();
-            if (!tiers.Select(tier => tier.Minimum).SequenceEqual([0, 15000, 30000, 60000, 100000]))
-                throw new L12OperationsConfigException("invalid_ranked_thresholds", "五个段位阈值固定为0、15000、30000、60000、100000");
+            var tiers = faction.Tiers.ToArray();
+            if (tiers[0].Minimum != 0 || tiers.Any(tier => tier.Minimum is < 0 or > 1_000_000_000)
+                || tiers.Skip(1).Where((tier, index) => tier.Minimum <= tiers[index].Minimum).Any())
+                throw new L12OperationsConfigException("invalid_ranked_thresholds", "首段门槛必须为0，五段门槛须按等级严格递增且不超过10亿");
+            if (value.PlacementMaximum >= tiers[2].Minimum)
+                throw new L12OperationsConfigException("invalid_ranked_config", "定级七曜上限必须低于第三段位门槛（不超过第二段位）");
+            if (tiers.Any(tier => tier.BaseDelta is < 0 or > 1_000_000
+                || tier.WinStreakCap is < 0 or > 1_000_000 || tier.LossProtectionCap is < 0 or > 1_000_000
+                || tier.RatingGapCap is < 0 or > 1_000_000))
+                throw new L12OperationsConfigException("invalid_ranked_tier_values", "段位各项分值须为0至100万之间的整数");
             row.Factions.Add(new RankedFactionRow { Id = faction.Id.ToLowerInvariant(), Name = faction.Name.Trim(),
                 Color = faction.Color.Trim(), Icon = faction.Icon.Trim(), FirstTitle = faction.FirstTitle.Trim(),
                 TopFiveTitle = faction.TopFiveTitle.Trim(), Tiers = tiers.Select(tier => new RankedTierRow
@@ -1207,7 +1220,7 @@ public sealed partial class L12PlatformStore
                     WinStreakCap = Math.Max(0, tier.WinStreakCap), LossProtectionCap = Math.Max(0, tier.LossProtectionCap),
                     RatingGapCap = Math.Max(0, tier.RatingGapCap), Color = tier.Color.Trim(), Icon = tier.Icon.Trim() }).ToList() });
         }
-        var sharedTierValues = value.Factions.Select(faction => faction.Tiers.OrderBy(tier => tier.Minimum)
+        var sharedTierValues = value.Factions.Select(faction => faction.Tiers
             .Select(tier => (tier.Minimum, tier.BaseDelta, tier.WinStreakCap,
                 tier.LossProtectionCap, tier.RatingGapCap)).ToArray()).ToArray();
         if (sharedTierValues.Skip(1).Any(tiers => !tiers.SequenceEqual(sharedTierValues[0])))

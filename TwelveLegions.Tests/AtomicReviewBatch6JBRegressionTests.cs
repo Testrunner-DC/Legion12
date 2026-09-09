@@ -94,7 +94,6 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Theory]
     [InlineData("S01-0007")]
-    [InlineData("S01-0013")]
     [Trait("L12Evidence", "hand-play:batch6jb-public-followup-declaration")]
     public void RemainingCompositeTacticsDeclareTheirPublicFollowupBeforeAnyStack(string cardId)
     {
@@ -273,7 +272,7 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "hand-play:batch6jb-affected-player-resolution-choice")]
-    public void FrontlineReconPrepaysItsIndependentSecondSegmentButLetsTheAffectedPlayerChooseTheirHandAtResolution()
+    public void FrontlineReconConfirmsPrivateViewBeforePayingItsIndependentSecondSegment()
     {
         var game = new L12GameEngine(Catalog, "atomic-review-batch6jb", "ATOMIC6JB", 10005,
             ["甲", "乙"], [0, 1], skipPreparation: true, autoPassEmptyResponses: false);
@@ -290,12 +289,13 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", scout.InstanceId)).Accepted);
-        Resolve(game, "mode:use");
-
         Assert.Equal("scout-reveal", game.State.EffectStack[^1].Data["atomicFlow"]);
-        Assert.Equal(scout.Cost + 1, player.Morale.Count(morale => morale.Tapped));
+        Assert.Equal(scout.Cost, player.Morale.Count(morale => morale.Tapped));
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         PassCurrentResponseWindow(game);
+        Assert.Equal("scout-view-confirm", OnlyPrompt(game).Data["action"]);
+        Resolve(game, "confirm");
+        Resolve(game, "mode:use");
         Assert.Equal("scout-shuffle-effect", game.State.EffectStack[^1].Data["atomicFlow"]);
         PassCurrentResponseWindow(game);
 

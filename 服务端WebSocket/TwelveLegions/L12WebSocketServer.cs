@@ -352,7 +352,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         });
         _app.MapGet("/api/rankings", async (string? faction, int? limit, string? range) =>
         {
-            var matches = await _recorder.ListRankingMatchesAsync(20_000);
+            var matches = await _recorder.ListRankedAnalyticsMatchesAsync(20_000);
             return Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
                 masterChampions = _platform.RankedMasterChampions(),
                 analytics = _platform.RankedAnalytics(matches, range) });
@@ -2121,6 +2121,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
                         GetString(root, "tournamentId"), GetString(root, "matchId")),
                     "inviteFriend" => _rooms.InviteFriend(sessionId, GetString(root, "accountId")),
+                    "cancelFriendInvitation" => _rooms.CancelFriendInvitation(sessionId, GetString(root, "invitationId")),
                     "resolveFriendInvitation" => _rooms.ResolveFriendInvitation(sessionId,
                         GetString(root, "invitationId"), GetBool(root, "accept", false)),
                     "spectateRoom" => _rooms.SpectateRoom(sessionId, GetString(root, "roomCode")),

@@ -25,7 +25,7 @@ public sealed partial class L12GameEngine
     private void ResolveOnPlayContinuousEffects(int playerIndex, L12CardInstance card)
     {
         var player = State.Players[playerIndex];
-        if (card.CardType != "legion" || player.NextLegionChargeMaxCost is not int maxCost || card.CurrentCost > maxCost) return;
+        if (card.CardType != "legion" || player.NextLegionChargeMaxCost is not int maxCost || !L12StructuredCardRules.CurrentCostAtMost(card, maxCost)) return;
         player.NextLegionChargeMaxCost = null;
         card.HasCharge = true;
         AddEvent("effect", playerIndex, $"{card.Name} 获得〈全军出击〉赋予的冲锋", card);
@@ -154,7 +154,7 @@ public sealed partial class L12GameEngine
             }
             case "草薙剑":
                 PromptEnemyLegion(item, "kusanagi-enter-kill", "选择对方 1 张费用不高于 2 的军团并击杀",
-                    target => target.CurrentCost <= 2, optional: false); return;
+                    target => L12StructuredCardRules.CurrentCostAtMost(target, 2), optional: false); return;
             default:
                 if (!TryResolveS1ExtendedEnter(item, card) && !TryResolveS2UniversalEnter(item, card)
                     && !TryResolveS2FactionEnter(item, card)) FinishStackItem(item);
@@ -228,7 +228,7 @@ public sealed partial class L12GameEngine
             case "divine-punishment-effect":
             {
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
-                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.CurrentCost <= 7) is not null)
+                if (DeclaredEnemyTarget(item.Controller, targetId, target => L12StructuredCardRules.CurrentCostAtMost(target, 7)) is not null)
                     KillTarget(item, targetId!, "被天诛击杀");
                 else AddEvent("effect-cancelled", item.Controller,
                     "天诛已声明的费用不高于7目标失效；效果取消", card);

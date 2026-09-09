@@ -120,8 +120,7 @@ public sealed partial class L12GameEngine
         var target = State.EffectStack.FirstOrDefault(item => item.StackItemId == activation.ResponseTargetStackItemId);
         if (response is null || target is null
             || response.CardId != activation.SourceCardId
-            || !(CanUseS1ReactionAtStack(response.CardId, activation.Controller, target)
-                || CanUseS2CounterAtStack(response.CardId, activation.Controller, target)))
+            || !LegalResponseSources(activation.Controller, target).Contains(response.InstanceId))
         {
             AddEvent("ability-rejected", activation.Controller,
                 "响应来源或响应时点已失效，未支付费用且未进入堆叠");

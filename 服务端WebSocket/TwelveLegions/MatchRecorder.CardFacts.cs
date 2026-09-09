@@ -240,6 +240,9 @@ public sealed partial class MatchRecorder
         L12RankedSettlementEnvelope? rankedSettlement, string? requestId,
         bool stateChangedOnRejection)
     {
+        if (sequence <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sequence), sequence,
+                "对局命令序号必须从 1 开始，0 保留给初始检查点");
         var appendStartedAt = L12PerformanceMetrics.Start();
         var journalV2 = UsesJournalV2(engine);
         var lightweightRejection = journalV2 && !result.Accepted && !stateChangedOnRejection;

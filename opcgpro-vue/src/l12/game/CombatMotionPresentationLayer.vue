@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
+import { viewportRect } from '../mobileViewport'
 import type { ActionEvent, Card } from '../types'
 
 const props = defineProps<{ events: ActionEvent[]; matchId: string }>()
@@ -39,7 +40,7 @@ function refreshFieldSnapshots() {
     if (!(element instanceof HTMLElement)) continue
     const instanceId = element.dataset.cardInstanceId
     if (!instanceId) continue
-    fieldSnapshots.set(instanceId, { ghost: element.cloneNode(true) as HTMLElement, rect: element.getBoundingClientRect() })
+    fieldSnapshots.set(instanceId, { ghost: element.cloneNode(true) as HTMLElement, rect: viewportRect(element) })
     defeatedInstances.delete(instanceId)
   }
 }
@@ -48,7 +49,7 @@ function captureCards(event: ActionEvent) {
   return (event.cards ?? []).flatMap(card => {
     const live = cardElement(card.instanceId)
     if (live instanceof HTMLElement) {
-      const snapshot = { ghost: live.cloneNode(true) as HTMLElement, rect: live.getBoundingClientRect() }
+      const snapshot = { ghost: live.cloneNode(true) as HTMLElement, rect: viewportRect(live) }
       fieldSnapshots.set(card.instanceId, snapshot)
       return [{ card, ghost: snapshot.ghost.cloneNode(true) as HTMLElement, rect: snapshot.rect }]
     }
@@ -60,11 +61,11 @@ function captureCards(event: ActionEvent) {
 function animateAttack(event: ActionEvent) {
   const attacker = cardElement(event.cards?.[0]?.instanceId)?.closest('.formation-slot') as HTMLElement | null
   if (!attacker) return
-  const source = attacker.getBoundingClientRect()
+  const source = viewportRect(attacker)
   const targetCard = cardElement(event.cards?.[1]?.instanceId)
   const targetPlayer = event.playerIndex === undefined ? undefined : 1 - event.playerIndex
-  const target = targetCard?.getBoundingClientRect()
-    ?? (targetPlayer === undefined ? null : zoneElement('master', targetPlayer)?.getBoundingClientRect())
+  const targetElement = targetCard ?? (targetPlayer === undefined ? null : zoneElement('master', targetPlayer))
+  const target = targetElement ? viewportRect(targetElement) : null
   if (!target) return
   const dx = target.left + target.width / 2 - (source.left + source.width / 2)
   const dy = target.top + target.height / 2 - (source.top + source.height / 2)
@@ -143,7 +144,8 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number
   overlays.add(wrapper)
 
   const owner = captured.card.ownerIndex ?? event.playerIndex ?? 0
-  const graveRect = zoneElement('graveyard', owner)?.getBoundingClientRect()
+  const graveElement = zoneElement('graveyard', owner)
+  const graveRect = graveElement ? viewportRect(graveElement) : null
   const dx = graveRect ? graveRect.left + graveRect.width / 2 - (captured.rect.left + captured.rect.width / 2) : 0
   const dy = graveRect ? graveRect.top + graveRect.height / 2 - (captured.rect.top + captured.rect.height / 2) : 18
   const duration = l12AnimationDuration(920, 260)
@@ -225,8 +227,16 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
     refreshFieldSnapshots()
   })
 }, { immediate: true, flush: 'pre' })
-onMounted(() => { void nextTick().then(refreshFieldSnapshots) })
-onBeforeUnmount(reset)
+function viewportChanged() {
+  const consumed = lastSequence
+  const wasInitialized = initialized
+  reset()
+  lastSequence = consumed
+  initialized = wasInitialized
+  void nextTick().then(refreshFieldSnapshots)
+}
+onMounted(() => { window.addEventListener('l12-viewport-change', viewportChanged); void nextTick().then(refreshFieldSnapshots) })
+onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset() })
 </script>
 
 <template></template>

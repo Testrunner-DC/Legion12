@@ -9,13 +9,21 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const out = process.env.L12_QA_OUT || 'D:/GPT/Legion12/artifacts/batch253-ui'
 fs.mkdirSync(out,{recursive:true})
+const qaCardArtwork={
+ 'S02-06M2':'/assets/l12/special/master/S02-06M2.png',
+ 'ST02-M1':'/assets/l12/special/master/ST02-M1.png',
+ 'ST04-M1':'/assets/l12/special/master/ST04-M1.png',
+}
+const qaCardManifest=JSON.stringify({schemaVersion:3,catalogVersion:'batch299-controlled-art',assetVersion:'batch299-controlled-art',basePath:'/',cards:Object.fromEntries(Object.entries(qaCardArtwork).map(([cardId,url])=>[cardId,{cardId,contentHash:'qa-'+cardId,width:1240,height:1732,orientation:'portrait',variants:{thumbWebp:url,boardWebp:url,detailWebp:url}}]))})
 const entry = `
 import {createApp,h} from 'vue'
 import {createRouter,createMemoryHistory} from 'vue-router'
 import GamePage from '/src/l12/GamePage.vue'
 import SandboxCardPicker from '/src/l12/game/SandboxCardPicker.vue'
 import RankingsPage from '/src/l12/site/RankingsPage.vue'
-import {rankedApi} from '/src/l12/platform.ts'
+import DeckConstructionBrowser from '/src/l12/site/DeckConstructionBrowser.vue'
+import SiteShell from '/src/l12/site/SiteShell.vue'
+import {friendApi,platformState,rankedApi} from '/src/l12/platform.ts'
 import {loadDeckCatalog} from '/src/l12/decks.ts'
 import {l12State} from '/src/l12/net.ts'
 import '/src/style.css'
@@ -24,23 +32,71 @@ const card=(def,id)=>({...def,cardId:def.id,instanceId:id,name:def.nameZh,cardTy
 const legions=catalog.filter(c=>c.cardType==='legion').slice(0,6)
 const masters=catalog.filter(c=>c.cardType==='master').slice(0,2)
 const disasters=catalog.filter(c=>c.cardType==='destruction').slice(0,4)
+const battleArtwork=['S02-06M2','ST02-M1','ST04-M1'].map(id=>catalog.find(card=>card.id===id)).filter(Boolean)
+if(battleArtwork.length!==3)throw new Error('Controlled battle artwork catalog entries are missing')
+const battleCard=(def,id)=>{
+ const template=legions[battleArtwork.indexOf(def)%legions.length]||legions[0]
+ return {...card(template,id),cardId:def.id,name:def.nameZh,effectText:def.effect,isMasterLegion:true}
+}
 const params=new URLSearchParams(location.search)
 const moraleTotal=Math.max(0,Number(params.get('morale')||12))
 const moraleActive=Math.max(0,Math.min(moraleTotal,Number(params.get('active')||moraleTotal)))
 const special=params.has('special')
 const trialMode=params.has('trial')
+const relicMode=params.has('relic')
 const moraleLockMode=params.has('moraleLock')
 const slotMode=params.has('slot')
 const effectMode=params.get('effect')
+const scoutMode=params.has('scout')
+const spectatorMode=params.has('spectator')
+const logMode=params.has('log')
+const handTotal=Math.max(0,Math.floor(Number(params.get('hand')||6)))
 const canopicIds=['S01-0216','S01-0217','S01-0218','S01-0219','S01-0220']
 const canopicTrack=canopicIds.map((id,j)=>({...card(catalog.find(c=>c.id===id)||legions[0],'canopic-'+j),completed:j<3}))
 const trial=card(catalog.find(c=>c.cardType==='trial')||disasters[0],'trial-wide')
-const players=[0,1].map(i=>({playerIndex:i,name:i?'对方测试长昵称十二军团':'我方测试昵称',deckName:'合成验收',faction:special&&i===0?'taiyangcheng':'otherworld',master:{masterId:masters[i]?.id||'ST06-M1',masterName:masters[i]?.nameZh||'银臂努阿达',hp:7,maxHp:9},libraryCount:30,hand:legions.map((d,j)=>card(d,i+'hand'+j)),handCount:6,morale:Array.from({length:moraleTotal},(_,j)=>({instanceId:i+'morale'+j,cardId:'ST06-C1',tapped:j>=moraleActive,cannotUntapUntilRound:moraleLockMode?(j===0?3:j===1?2:0):0})),field:slotMode&&i===0?[[card(legions[0],'0unit'),card(legions[1],'0occupied-1'),card(legions[2],'0occupied-2')],[card(legions[3],'0occupied-3'),card(legions[4],'0unit-payment'),card(legions[5],'0occupied-5')]]:[[card(legions[0],i+'unit'),null,null],[null,null,null]],graveyard:[card(legions[1],i+'grave')],mulliganDone:true,specialZones:{runes:3,trialLevel:0,godPower:[],trials:trialMode&&i===0?[trial]:[],canopicTrack:special&&i===0?canopicTrack:[]}}))
-l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges:[{playerIndex:0,rankLabel:'迷雾旅人',masterTitle:'最强银臂努阿达'},{playerIndex:1,rankLabel:'',masterTitle:''}],recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
+const deckCatalog=catalog.map(item=>item.id===legions[0].id?{...item,nameZh:'超长构筑卡牌名称完整换行验收'}:item)
+const deckEntries=[
+ {cardId:legions[0].id,quantity:3,section:'main'},
+ {cardId:legions[1].id,quantity:2,section:'main'},
+ {cardId:(catalog.find(c=>c.cardType==='rune')||legions[2]).id,quantity:8,section:'morale'},
+ {cardId:trial.cardId,quantity:1,section:'special'},
+ {cardId:masters[0].id,quantity:1,section:'automatic'},
+]
+const players=[0,1].map(i=>({
+ playerIndex:i,name:i?'对方测试长昵称十二军团':'我方测试昵称',deckName:'合成验收',faction:special&&i===0?'taiyangcheng':'otherworld',
+ master:{masterId:battleArtwork[i].id,masterName:battleArtwork[i].nameZh,hp:7,maxHp:9},libraryCount:30,
+ hand:spectatorMode?[]:Array.from({length:handTotal},(_,j)=>battleCard(battleArtwork[j%battleArtwork.length],i+'hand'+j)),handCount:handTotal,
+ morale:Array.from({length:moraleTotal},(_,j)=>({instanceId:i+'morale'+j,cardId:'ST06-C1',tapped:j>=moraleActive,cannotUntapUntilRound:moraleLockMode?(j===0?3:j===1?2:0):0})),
+ field:slotMode&&i===0?[[battleCard(battleArtwork[0],'0unit'),battleCard(battleArtwork[1],'0occupied-1'),battleCard(battleArtwork[2],'0occupied-2')],[battleCard(battleArtwork[0],'0occupied-3'),battleCard(battleArtwork[1],'0unit-payment'),battleCard(battleArtwork[2],'0occupied-5')]]:[[battleCard(battleArtwork[i],i+'unit'),null,null],[null,null,null]],
+ graveyard:[battleCard(battleArtwork[(i+1)%battleArtwork.length],i+'grave')],mulliganDone:true,
+ specialZones:{runes:3,trialLevel:0,godPower:[],trials:trialMode&&i===0?[trial]:[],canopicTrack:special&&i===0?canopicTrack:[]}
+}))
+if(relicMode)players[0].relic=battleCard(battleArtwork[2],'visual-relic')
+l12State.spectating=spectatorMode
+l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges:[{playerIndex:0,rankLabel:'迷雾旅人',masterTitle:'最强银臂努阿达'},{playerIndex:1,rankLabel:'未定级',masterTitle:'暂无称号'}],recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
+if(logMode){
+ const source=battleCard(battleArtwork[2],'log-source'),target=battleCard(battleArtwork[1],'log-target'),hidden={...battleCard(battleArtwork[0],'log-hidden'),name:'绝密手牌',hidden:true}
+ l12State.game.recentEvents=[
+  {sequence:1,type:'turn-start',playerIndex:0,text:'第 3 回合 · 回合开始',cards:[]},
+  {sequence:2,type:'draw',playerIndex:0,text:'〈迦具土〉使我方测试昵称抽取 1 张牌。',cards:[source]},
+  {sequence:3,type:'move',playerIndex:0,text:'战术调度使〈荷鲁斯〉位移 1 格。',cards:[target]},
+  {sequence:4,type:'draw',playerIndex:0,text:'我方测试昵称受到 1 点伤害并抽取 1 张牌。',cards:[]},
+  {sequence:5,type:'move',playerIndex:0,text:'〈荷鲁斯〉先转为活跃再位移 1 格。',cards:[target]},
+  {sequence:6,type:'draw',playerIndex:0,text:'恢复 0 点，但抽取 1 张牌。',cards:[]},
+  {sequence:7,type:'damage',playerIndex:0,text:'兵力增加 0 点。',cards:[]},
+  {sequence:8,type:'effect-failed',playerIndex:0,text:'未选择合法目标，兵力增加 0 点。',cards:[]},
+  {sequence:9,type:'reveal',playerIndex:0,text:'检视〈绝密手牌〉后放回。',cards:[hidden]},
+  {sequence:10,type:'effect',playerIndex:0,text:'仅结算公开效果。',cards:[source]},
+ ]
+}
 if(slotMode)l12State.game.prompts=[{promptId:'occupied-slot-prompt',playerIndex:0,kind:'slot',text:'选择支付后登场位置',validChoices:['0:0','1:1'],minChoose:1,maxChoose:1,data:{choiceMode:'board-slot',targetPlayerIndex:'0'},choiceLabels:{},createdRevision:1,controller:0},{promptId:'declared-cost-prompt',playerIndex:0,kind:'resource-payment',text:'已声明费用',validChoices:['0unit','0morale0'],minChoose:1,maxChoose:1,data:{choiceMode:'resource-payment'},choiceLabels:{},createdRevision:1,controller:0}]
 if(effectMode){
  const choices=effectMode==='cost2'?['pay:morale','pay:discard','no']:effectMode==='cost1'?['pay:morale','no']:['yes','no']
  l12State.game.prompts=[{promptId:'effect-cost-prompt',playerIndex:0,kind:'option',text:'迦具土',validChoices:choices,minChoose:1,maxChoose:1,data:{uiPattern:'effect-decision',effectText:'回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。'},choiceLabels:{'pay:morale':'消耗1士气','pay:discard':'弃置1张手牌',yes:'发动',no:'不发动'},createdRevision:1,controller:0}]
+}
+if(scoutMode){
+ const first=legions[0],second=legions[1]
+ l12State.game.prompts=[{promptId:'scout-view-confirm',playerIndex:0,kind:'option',text:'前线侦查：查看对方手牌',validChoices:['confirm'],minChoose:1,maxChoose:1,data:{action:'scout-view-confirm',layout:'single-row',displayCardIds:'scout-one|scout-two','scout-one:cardId':first.id,'scout-one:name':first.nameZh,'scout-one:cardType':first.cardType,'scout-one:effect':first.effect||'','scout-one:cost':String(first.cost||0),'scout-one:troops':String(first.troops||0),'scout-two:cardId':second.id,'scout-two:name':second.nameZh,'scout-two:cardType':second.cardType,'scout-two:effect':second.effect||'','scout-two:cost':String(second.cost||0),'scout-two:troops':String(second.troops||0)},choiceLabels:{confirm:'已查看，继续'},createdRevision:1,controller:0}]
 }
 window.__sentCommands=[]
 l12State.socket={readyState:WebSocket.OPEN,send:payload=>window.__sentCommands.push(JSON.parse(payload))}
@@ -50,14 +106,31 @@ l12State.status='online'
 l12State.room={roomCode:'TEST253',yourPlayerIndex:0,players:players.map(p=>({...p,connected:true,ready:true,deckIndex:0})),decks:[],started:true}
 const isPicker=new URLSearchParams(location.search).has('picker')
 const isRanking=new URLSearchParams(location.search).has('ranking')
+const isDeckViewer=params.has('deckviewer')
+const isInviteFixture=params.has('invite')
+const isOutgoingInviteFixture=params.has('outgoingInvite')
+const isOnlineFixture=params.has('online')
+if(isInviteFixture)l12State.friendInvitation={invitationId:'visual-invite',fromAccountId:'friend-1',fromName:'邀请方测试长昵称',roomCode:'QA299'}
+if(isOutgoingInviteFixture)l12State.outgoingFriendInvitation={invitationId:'visual-outgoing-invite',targetAccountId:'friend-outgoing',roomCode:'QA300'}
+if(isOnlineFixture){
+ platformState.account={id:'me',username:'当前账号',role:'player',createdAt:'2026-01-01',publicHistory:false}
+ platformState.token='visual-token'
+ friendApi.presence=async()=>[
+  {accountId:'me',username:'当前账号',online:true,activity:'idle',canInvite:false,canSpectate:false,friendStatus:'self',friendDirection:'none'},
+  {accountId:'friend-playing',username:'已是好友且正在对局',online:true,activity:'playing',roomCode:'PLAY01',canInvite:false,canSpectate:true,friendStatus:'accepted',friendDirection:'none'},
+  {accountId:'new-playing',username:'可添加并观战的玩家',online:true,activity:'playing',roomCode:'PLAY02',canInvite:false,canSpectate:true,friendStatus:'none',friendDirection:'none'},
+  {accountId:'incoming',username:'发来申请的玩家',online:true,activity:'idle',canInvite:false,canSpectate:false,friendStatus:'pending',friendDirection:'incoming'},
+ ]
+}
 const masterRows=masters.map((m,i)=>({rank:100+i,masterId:m.id,masterName:m.nameZh,games:999,wins:999,losses:0,winRate:100,usageRate:50,firstWinRate:100,secondWinRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499,strongestPlayer:'合成测试玩家',title:'最强'+m.nameZh}))
 rankedApi.leaderboard=async()=>({players:Array.from({length:4},(_,i)=>({rank:i+1,username:'合成测试长昵称'+i,faction:'命运',tier:'迷雾旅人',titles:['最强银臂努阿达','最强雷神索尔'],favoriteMasterId:masters[0].id,favoriteMasterName:masters[0].nameZh,displayValue:'七曜值 21,945',wins:999,losses:888})),analytics:{range:'season',summary:{matches:999,placedPlayers:4,activeMasters:2},masters:masterRows,matchups:masterRows.flatMap(a=>masterRows.map(b=>({masterId:a.masterId,opponentMasterId:b.masterId,games:999,wins:999,winRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499})))}})
 rankedApi.history=async()=>[]
-const app=createApp({render:()=>isPicker?h(SandboxCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):h(GamePage)})
+const app=createApp({render:()=>isPicker?h(SandboxCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):isDeckViewer?h(DeckConstructionBrowser,{entries:deckEntries,catalog:deckCatalog,title:'公开牌库完整构筑'}):(isInviteFixture||isOutgoingInviteFixture||isOnlineFixture)?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'非阻塞页面内容仍可见')}):h(GamePage)})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}));app.mount('#app')
 `
 let browser
 const server = await createServer({root,server:{host:'127.0.0.1',port:0,strictPort:false},plugins:[{name:'batch253-synthetic',resolveId(id){if(id==='/__qa__.js')return id},load(id){if(id==='/__qa__.js')return entry},configureServer(s){s.middlewares.use((req,res,next)=>{
+ if(req.url?.match(/^\/card-assets\/card-assets\.manifest\.json(\?|$)/)){res.setHeader('Content-Type','application/json');res.end(qaCardManifest);return}
  if(req.url?.match(/^\/__qa__(\?|$)/)){res.setHeader('Content-Type','text/html');res.end('<div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__qa__.js"></script>');return}next()
 })}}]})
 try {
@@ -73,11 +146,19 @@ try {
   await page.setViewportSize({width,height})
   await page.goto('http://127.0.0.1:'+port+'/__qa__')
   await page.locator('.player-summary').first().waitFor()
+  await page.waitForFunction(()=>{
+   const images=[...document.querySelectorAll('.hand-card-wrap .l12-card-image__img,.formation-slot .l12-card-image__img')]
+   return images.length===8&&images.every(image=>image.complete&&image.naturalWidth>0&&!image.currentSrc.startsWith('data:'))
+  },undefined,{timeout:10000}).catch(async error=>{
+   const state=await page.evaluate(()=>[...document.querySelectorAll('.hand-card-wrap .l12-card-image,.formation-slot .l12-card-image')].map(image=>({source:image.dataset.source,card:image.closest('[data-card-instance-id]')?.dataset.cardInstanceId,url:image.querySelector('img')?.currentSrc,naturalWidth:image.querySelector('img')?.naturalWidth})))
+   throw new Error('Controlled battle artwork did not load: '+JSON.stringify(state),{cause:error})
+  })
   await page.waitForTimeout(500)
   await page.screenshot({path:path.join(out,`battle-${width}x${height}.png`)})
   reports.push(await page.evaluate(()=>{
    const box=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,scroll:e.scrollHeight,client:e.clientHeight}}
-   return {width:innerWidth,height:innerHeight,summary:box('.player-panel'),rail:box('.right-rail'),log:box('.event-list'),dock:box('.battle-utility-dock'),clock:box('.my-status-lane'),hand:box('.board-center>.l12-hand:last-child'),phase:box('.l12-phase-track'),seam:box('.board-seam'),font:getComputedStyle(document.querySelector('.event-message')).fontSize}
+   const artwork=[...document.querySelectorAll('.hand-card-wrap .l12-card-image,.formation-slot .l12-card-image')]
+   return {width:innerWidth,height:innerHeight,summary:box('.player-panel'),rail:box('.right-rail'),log:box('.event-list'),dock:box('.battle-utility-dock'),clock:box('.my-status-lane'),hand:box('.board-center>.l12-hand:last-child'),phase:box('.l12-phase-track'),seam:box('.board-seam'),font:getComputedStyle(document.querySelector('.event-message')).fontSize,artwork:{count:artwork.length,sameOrigin:artwork.filter(image=>image.dataset.source==='sameOrigin').length},opponentBadges:document.querySelectorAll('.opponent-summary .ranked-identity-badge').length,myBadges:document.querySelectorAll('.my-summary .ranked-identity-badge').length,summaryText:document.querySelector('.player-panel').textContent}
   }))
  }
  for(const report of reports){
@@ -85,7 +166,160 @@ try {
  if(report.clock.y+report.clock.h>report.hand.y+1)throw new Error('Clock overlaps hand at '+report.width)
  if(report.hand.y+report.hand.h>report.height+1)throw new Error('Hand leaves viewport at '+report.width+'x'+report.height)
  if(report.dock.y+report.dock.h>report.height+1)throw new Error('Utility dock leaves viewport at '+report.width+'x'+report.height)
+ assert.deepEqual(report.artwork,{count:8,sameOrigin:8},'all visible face-up battle cards must use controlled real local artwork at '+report.width+'x'+report.height)
+ assert.equal(report.opponentBadges,0,'server placeholder rank/title values must render as blank at '+report.width+'x'+report.height)
+ assert.equal(report.myBadges,2,'real rank and title badges must remain visible at '+report.width+'x'+report.height)
+ assert(!report.summaryText.includes('未定级')&&!report.summaryText.includes('暂无称号'),'player summary must not display rank/title placeholders at '+report.width+'x'+report.height)
  }
+ const logReports=[]
+ for(const viewport of [{width:1920,height:1080},{width:1440,height:810},{width:1280,height:720}]){
+  await page.setViewportSize(viewport)
+  await page.goto('http://127.0.0.1:'+port+'/__qa__?log=1')
+  await page.locator('[data-event-sequence="10"]').waitFor()
+  const logResult=await page.evaluate(()=>{
+   const messages=Object.fromEntries([...document.querySelectorAll('[data-event-sequence]')].map(row=>[row.dataset.eventSequence,row.querySelector('.event-message')?.textContent?.trim()||'']))
+   const links=[...document.querySelectorAll('.log-card-link')].map(link=>link.textContent?.trim())
+   const list=document.querySelector('.event-list')
+   return {messages,links,rowCount:Object.keys(messages).length,scrollWidth:list.scrollWidth,clientWidth:list.clientWidth}
+  })
+  assert.equal(logResult.rowCount,8,'only the standalone zero-change row may be omitted')
+  assert.equal(logResult.messages['2'],'我方迦具土：抽取1张牌。','simple draw must use the shared compact result format')
+  assert.equal(logResult.messages['3'],'我方战术调度：〈荷鲁斯〉位移1格。','simple movement must use the shared compact result format')
+  assert.equal(logResult.messages['4'],'我方受到1点伤害并抽取1张牌。','compound draw must preserve its preceding outcome')
+  assert.equal(logResult.messages['5'],'我方〈荷鲁斯〉先转为活跃再位移1格。','compound movement must preserve its preceding outcome')
+  assert.equal(logResult.messages['6'],'我方恢复0点，但抽取1张牌。','mixed zero and positive outcomes must remain visible')
+  assert.equal(logResult.messages['8'],'我方未选择合法目标，兵力增加0点。','meaningful failed outcomes must remain visible')
+  assert(!logResult.messages['7'],'standalone zero-change noise must be omitted')
+  assert(!logResult.messages['9'].includes('绝密手牌')&&logResult.messages['9'].includes('隐藏卡牌'),'hidden card identities must be redacted')
+  assert(!logResult.messages['10'].includes('迦具土'),'public card metadata absent from authoritative text must not be appended')
+  assert(logResult.links.includes('荷鲁斯')&&logResult.links.includes('迦具土'),'full public card names in the current event text must remain clickable')
+  assert(logResult.links.every(link=>!/^S(?:T|0\d)-/.test(link||'')),'log links must not expose card IDs')
+  assert(logResult.scrollWidth<=logResult.clientWidth+1,'battle log must not overflow horizontally at '+viewport.width+'x'+viewport.height)
+  logReports.push({viewport,...logResult})
+  await page.screenshot({path:path.join(out,'battle-log-'+viewport.width+'x'+viewport.height+'.png')})
+ }
+ for(const viewport of [{width:1920,height:1080},{width:1440,height:810},{width:1280,height:720}]){
+  await page.setViewportSize(viewport)
+  await page.goto('http://127.0.0.1:'+port+'/__qa__?hand=6&relic=1')
+  await page.locator('.l12-player-mat.side-my .relic-zone .card-tile').waitFor()
+  const surfaces=await page.evaluate(()=>{
+   const read=selector=>{const element=document.querySelector(selector),rect=element.getBoundingClientRect(),style=getComputedStyle(element);return {left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,width:rect.width,height:rect.height,borderColor:style.borderColor,borderWidth:style.borderWidth,borderRadius:style.borderRadius,boxShadow:style.boxShadow}}
+   const hand=read('.board-center>.l12-hand:last-child .hand-card-wrap .card-tile')
+   const field=read('.l12-player-mat.side-my .formation-slot .card-tile')
+   const slot=read('.l12-player-mat.side-my .formation-slot')
+   const relic=read('.l12-player-mat.side-my .relic-zone')
+   const relicCard=read('.l12-player-mat.side-my .relic-zone .card-tile')
+   const hit=selector=>{const element=document.querySelector(selector),rect=element.getBoundingClientRect();return Boolean(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)?.closest(selector)===element)}
+   return {hand,field,slot,relic,relicCard,handHit:hit('.board-center>.l12-hand:last-child .hand-card-wrap .card-tile'),fieldHit:hit('.l12-player-mat.side-my .formation-slot .card-tile')}
+  })
+  for(const [name,surface] of [['hand',surfaces.hand],['field',surfaces.field]]){
+   assert.equal(surface.borderColor,'rgba(0, 0, 0, 0)',name+' card must not restore a visible decorative border at '+viewport.width+'x'+viewport.height)
+   assert.equal(surface.borderRadius,'0px',name+' card must not restore a decorative rounded frame at '+viewport.width+'x'+viewport.height)
+   assert.equal(surface.boxShadow,'none',name+' card must not restore a persistent decorative shadow at '+viewport.width+'x'+viewport.height)
+  }
+  assert.notEqual(surfaces.slot.borderColor,'rgba(0, 0, 0, 0)','six-slot field boundary must remain visible at '+viewport.width+'x'+viewport.height)
+  assert.equal(surfaces.handHit,true,'hand card hit target must survive frame removal at '+viewport.width+'x'+viewport.height)
+  assert.equal(surfaces.fieldHit,true,'field legion hit target must survive frame removal at '+viewport.width+'x'+viewport.height)
+  assert(Math.abs(surfaces.relic.width/surfaces.relic.height-5/7)<.01,'relic zone must use the 5:7 card ratio at '+viewport.width+'x'+viewport.height)
+  assert(Math.abs(surfaces.relicCard.width/surfaces.relicCard.height-5/7)<.01,'relic card surface must use the 5:7 card ratio at '+viewport.width+'x'+viewport.height)
+  assert(surfaces.relicCard.left>=surfaces.relic.left-1&&surfaces.relicCard.right<=surfaces.relic.right+1&&surfaces.relicCard.top>=surfaces.relic.top-1&&surfaces.relicCard.bottom<=surfaces.relic.bottom+1,'relic card must stay inside its zone at '+viewport.width+'x'+viewport.height)
+  await page.screenshot({path:path.join(out,'frameless-cards-relic-'+viewport.width+'x'+viewport.height+'.png')})
+ }
+ await page.setViewportSize({width:1920,height:1080})
+ for(const handCount of [0,1,6,12,36]){
+  await page.goto('http://127.0.0.1:'+port+'/__qa__?hand='+handCount)
+  await page.locator('.l12-player-mat.side-my .formation-slot .card-tile').first().waitFor()
+  const hand=page.locator('.board-center>.l12-hand:last-child')
+  const handCards=hand.locator('.hand-card-wrap')
+  assert.equal(await handCards.count(),handCount,'hand fixture must render every known card at count '+handCount)
+  const geometry=await page.evaluate(()=>{
+   const box=element=>{const rect=element.getBoundingClientRect();return {left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,width:rect.width,height:rect.height}}
+   const board=document.querySelector('.board-center'),hand=document.querySelector('.board-center>.l12-hand:last-child'),field=document.querySelector('.l12-player-mat.side-my .formation-slot .card-tile')
+   const cards=[...hand.querySelectorAll('.hand-card-wrap')]
+   const fieldStyle=getComputedStyle(field)
+   return {board:box(board),hand:box(hand),field:box(field),fieldCss:{width:fieldStyle.width,height:fieldStyle.height},cards:cards.map(element=>{const style=getComputedStyle(element);return {...box(element),cssWidth:style.width,cssHeight:style.height}}),overflowing:hand.classList.contains('overflowing'),scrollWidth:hand.scrollWidth,clientWidth:hand.clientWidth,zIndex:getComputedStyle(hand).zIndex}
+  })
+  const scale=geometry.field.width/114.4
+  assert(geometry.hand.left-geometry.board.left>=150*scale,'hand must stay inset from the extra-zone side at count '+handCount)
+  assert(geometry.board.right-geometry.hand.right>=150*scale,'hand must stay inset from the timer side at count '+handCount)
+  assert.equal(geometry.zIndex,'40','hand must remain above overlapping battlefield cards')
+  for(const cardBox of geometry.cards){
+   assert.equal(cardBox.cssWidth,geometry.fieldCss.width,'hand card CSS width must match a field legion at count '+handCount)
+   assert.equal(cardBox.cssHeight,geometry.fieldCss.height,'hand card CSS height must match a field legion at count '+handCount)
+  }
+  if(handCount===36){
+   assert.equal(geometry.overflowing,true,'large hands must switch to horizontal overflow')
+   assert(geometry.scrollWidth>geometry.clientWidth,'large hands must preserve all cards in a scrollable safe lane')
+  }
+  if(handCount===12){
+   const topCard=handCards.last()
+   const isClickable=await topCard.evaluate(element=>{const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return Boolean(hit?.closest('.hand-card-wrap')===element)})
+   assert.equal(isClickable,true,'top hand card must retain pointer priority over the battlefield')
+  }
+  await page.screenshot({path:path.join(out,'field-sized-hand-'+handCount+'.png')})
+ }
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?hand=9&spectator=1')
+ await page.locator('.spectator-hand .card-back').first().waitFor()
+ const spectatorHands=page.locator('.board-center>.l12-hand.hidden')
+ assert.equal(await spectatorHands.count(),2,'spectator must see both hidden hand zones')
+ for(let index=0;index<2;index++){
+  assert.equal(await spectatorHands.nth(index).locator('.card-back').count(),9,'spectator must see the full authoritative hand count as card backs')
+  assert.equal(await spectatorHands.nth(index).locator('.card-tile').count(),0,'spectator hand must not leak card identities')
+ }
+ await page.screenshot({path:path.join(out,'spectator-both-hands.png')})
+ for(const viewport of [{width:1100,height:820},{width:680,height:820}]){
+  await page.setViewportSize(viewport)
+  await page.goto('http://127.0.0.1:'+port+'/__qa__?deckviewer=1')
+  const viewer=page.locator('[data-ui-contract="shared-deck-construction-browser"]')
+  await viewer.waitFor()
+  assert.equal(await viewer.locator('.construction-grid>button').count(),5,'shared deck viewer must include main, morale, trial and automatic extra cards')
+  const options=await viewer.locator('select').first().locator('option').allTextContents()
+  for(const label of ['主牌库','士气区','试炼区','自动额外区'])assert(options.includes(label),'deck viewer must expose '+label)
+  const names=await viewer.locator('.construction-grid>button>span').evaluateAll(elements=>elements.map(element=>{const rect=element.getBoundingClientRect();return {text:element.textContent?.trim(),height:rect.height,scrollHeight:element.scrollHeight,clientHeight:element.clientHeight,whiteSpace:getComputedStyle(element).whiteSpace,overflowWrap:getComputedStyle(element).overflowWrap}}))
+  const longName=names.find(item=>item.text==='超长构筑卡牌名称完整换行验收')
+  assert(longName&&longName.height>20&&longName.scrollHeight<=longName.clientHeight+1,'long deck name must wrap to its full stable row instead of clipping')
+  assert(names.every(item=>item.whiteSpace==='normal'),'all deck names must permit full wrapping')
+  const frames=await viewer.locator('.construction-grid .l12-card-image').evaluateAll(elements=>elements.map(element=>{const style=getComputedStyle(element);return {width:element.getBoundingClientRect().width,borderWidth:style.borderWidth,boxSizing:style.boxSizing}}))
+  assert.equal(frames.length,5,'every construction entry must render a card frame')
+  assert(frames.every(frame=>frame.width>0&&frame.borderWidth==='1px'&&frame.boxSizing==='border-box'),'all viewer cards must keep their image frame')
+  if(viewport.width<=700)assert.equal(await viewer.locator('.construction-workspace>aside').isVisible(),false,'narrow shared viewer must hide only the redundant aside, not construction cards')
+  await page.screenshot({path:path.join(out,'shared-deck-viewer-'+viewport.width+'.png')})
+ }
+ await page.setViewportSize({width:1280,height:800})
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?invite=1')
+ const invitation=page.locator('.invitation-gate')
+ await invitation.waitFor()
+ const inviteBounds=await invitation.boundingBox()
+ assert(inviteBounds&&Math.abs(1280-(inviteBounds.x+inviteBounds.width)-18)<1.5&&Math.abs(800-(inviteBounds.y+inviteBounds.height)-18)<1.5,'friend invitation must stay at the bottom-right without taking over the page')
+ assert.equal(await invitation.locator('.site-modal-mask').count(),0,'friend invitation must not add a modal backdrop')
+ await page.screenshot({path:path.join(out,'friend-invitation-nonmodal.png')})
+ await page.getByRole('button',{name:'最小化好友对战邀请',exact:true}).click()
+ await page.locator('.invitation-minimized').waitFor()
+ await page.screenshot({path:path.join(out,'friend-invitation-minimized.png')})
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?outgoingInvite=1')
+ const outgoingInvitation=page.locator('.outgoing-invitation-gate')
+ await outgoingInvitation.waitFor()
+ assert.equal(await outgoingInvitation.locator('.site-modal-mask').count(),0,'sent friend invitation must not add a modal backdrop')
+ await page.screenshot({path:path.join(out,'friend-invitation-sent.png')})
+ await page.getByRole('button',{name:'撤回邀请',exact:true}).click()
+ const sentCancellation=await page.evaluate(()=>window.__sentCommands.at(-1))
+ assert.equal(sentCancellation.type,'cancelFriendInvitation','sent invitation card must send the cancel command')
+ assert.equal(sentCancellation.invitationId,'visual-outgoing-invite','sent invitation card must cancel the exact authoritative invitation id')
+ assert.equal(await outgoingInvitation.count(),1,'sent invitation must remain until the matching authoritative event arrives')
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?online=1')
+ const unreadButton=page.locator('.site-utilities button.has-unread')
+ await unreadButton.waitFor()
+ assert.equal((await unreadButton.locator('.utility-unread').textContent())?.trim(),'1','sidebar must show the unread incoming friend request count')
+ await unreadButton.click()
+ const entries=page.locator('.online-entry')
+ await entries.first().waitFor()
+ assert.equal(await entries.count(),4,'online fixture must render every presence row')
+ assert.equal(await page.locator('.online-unread').count(),1,'incoming request row must keep an explicit unread prompt')
+ for(const [name,actions] of [['已是好友且正在对局',['好友 · 邀战','观战']],['可添加并观战的玩家',['添加好友','观战']]]){
+  const row=entries.filter({hasText:name})
+  for(const action of actions)await row.getByRole('button',{name:action,exact:true}).waitFor()
+ }
+ await page.screenshot({path:path.join(out,'online-adjacent-actions-unread.png')})
  await page.setViewportSize({width:1280,height:900})
  await page.goto('http://127.0.0.1:'+port+'/__qa__?ranking=1')
  await page.locator('.player-table .tr').first().waitFor()
@@ -197,6 +431,13 @@ try {
   }
   if(scenario.name==='morale-trial'){
    assert(!(result.trial.left<result.relic.right&&result.trial.right>result.relic.left&&result.trial.top<result.relic.bottom&&result.trial.bottom>result.relic.top),'trial and relic zones must not overlap')
+   const progress=await page.locator('.l12-player-mat.side-my .trial-progress').evaluate(element=>{const rect=element.getBoundingClientRect(),style=getComputedStyle(element);return {width:rect.width,height:rect.height,cssWidth:style.width,cssHeight:style.height,minWidth:style.minWidth,minHeight:style.minHeight,whiteSpace:style.whiteSpace,fontVariantNumeric:style.fontVariantNumeric,text:element.textContent?.trim()}})
+   assert.equal(progress.cssWidth,'46px','trial progress numeric badge must keep its enlarged design width')
+   assert.equal(progress.cssHeight,'46px','trial progress numeric badge must keep its enlarged design height')
+   assert.equal(progress.minWidth,'46px','trial progress badge must not squeeze horizontally')
+   assert.equal(progress.minHeight,'46px','trial progress badge must not squeeze vertically')
+   assert.equal(progress.whiteSpace,'nowrap','trial progress digits must remain on one line')
+   assert.equal(progress.text,'0','trial progress fixture must expose the authoritative numeric value')
   }
   await page.screenshot({path:path.join(out,scenario.name+'.png')})
  }
@@ -248,13 +489,34 @@ try {
  await purePanel.getByRole('button',{name:'发动',exact:true}).click()
  const pureSent=await page.evaluate(()=>window.__sentCommands.at(-1))
  assert.equal(pureSent?.command?.type,'resolvePrompt','pure activation choice must still submit immediately')
+ await page.setViewportSize({width:1280,height:800})
+ await page.goto('http://127.0.0.1:'+port+'/__qa__?scout=1')
+ const scoutPanel=page.locator('.prompt-panel')
+ await scoutPanel.waitFor()
+ const scoutCards=scoutPanel.locator('.prompt-card-candidate')
+ assert.equal(await scoutCards.count(),2,'generic option prompt must render every displayCardIds preview card')
+ const scoutNames=(await scoutCards.locator('.prompt-card-candidate__name').allTextContents()).map(name=>name.trim())
+ assert(scoutNames.every(name=>name&&!/^scout-/.test(name)),'scout preview must use full prompt-projected card names instead of instance ids')
+ await scoutCards.first().click()
+ assert.equal(await scoutCards.locator('.selected').count(),0,'display-only scout cards must not become prompt selections')
+ assert.equal(await page.evaluate(()=>window.__sentCommands.length),0,'viewing a scout card must not submit a game command')
+ await page.locator('.card-inspector h2').filter({hasText:scoutNames[0]}).waitFor()
+ const scoutContinue=scoutPanel.getByRole('button',{name:'已查看，继续',exact:true})
+ await scoutContinue.click()
+ assert.equal(await page.evaluate(()=>window.__sentCommands.length),0,'generic option selection must retain explicit final confirmation')
+ const scoutConfirm=scoutPanel.getByRole('button',{name:'确认选择',exact:true})
+ assert.equal(await scoutConfirm.isEnabled(),true,'authoritative confirm choice must enable final submission without selecting a preview card')
+ await page.screenshot({path:path.join(out,'scout-display-cards-confirm.png')})
+ await scoutConfirm.click()
+ const scoutSent=await page.evaluate(()=>window.__sentCommands.at(-1))
+ assert.deepEqual(scoutSent?.command?.cardInstanceIds,['confirm'],'scout acknowledgement must submit only the authoritative confirm choice')
  await page.setViewportSize({width:770,height:850})
  await page.goto('http://127.0.0.1:'+port+'/__qa__?picker=1')
  await page.locator('.picker-card.horizontal').first().waitFor()
  await page.locator('.picker-image').first().click()
  await page.locator('.catalog-detail-mask').waitFor({timeout:3000})
  await page.screenshot({path:path.join(out,'sandbox-landscape.png')})
- fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({errors,reports},null,2))
- console.log(JSON.stringify({errors,reports,out},null,2))
+ fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({errors,reports,logReports},null,2))
+ console.log(JSON.stringify({errors,reports,logReports,out},null,2))
  if(errors.length)process.exitCode=1
 } finally {await browser?.close();await server.close()}

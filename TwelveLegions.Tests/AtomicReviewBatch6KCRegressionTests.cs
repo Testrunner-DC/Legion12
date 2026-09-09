@@ -278,6 +278,13 @@ public sealed class AtomicReviewBatch6KCRegressionTests
         var effect = Assert.Single(game.State.EffectStack);
         Assert.Equal("divine-punishment-effect", effect.Data["atomicFlow"]);
         Assert.Equal(legal.InstanceId, effect.Data["declared:killTarget"]);
+        Resolve(game, "pass");
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Contains("对方使用〈天诛〉", response.Text);
+        Assert.Contains("费用不高于7", response.Text);
+        Assert.Contains($"我方〈{legal.Name}〉（前排第1格）", response.Text);
+        Assert.Equal("[\"batch6kc-divine-legal\"]", response.Data["responseTargetIds"]);
     }
 
     [Fact]

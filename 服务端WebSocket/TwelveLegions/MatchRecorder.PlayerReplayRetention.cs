@@ -7,9 +7,8 @@ public sealed partial class MatchRecorder
     public const int PlayerReplayWindowSize = 30;
     public static readonly TimeSpan PlayerReplayCleanupInterval = TimeSpan.FromDays(1);
     internal const int PlayerReplayCleanupBatchSize = 25;
-    internal const int PlayerReplayCleanupMaximumMatchesPerRun = 100;
+    internal const int PlayerReplayCleanupMaximumMatchesPerRun = 500;
     private static readonly TimeSpan PlayerReplayCleanupLease = TimeSpan.FromHours(2);
-    private static readonly TimeSpan PlayerReplayCleanupBacklogRetryInterval = TimeSpan.FromMinutes(5);
 
     private readonly string _playerReplayRecorderInstanceId = Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _playerReplayCleanupGate = new(1, 1);
@@ -334,26 +333,10 @@ public sealed partial class MatchRecorder
 
                     var metrics = await ReadPlayerReplayPayloadMetricsAsync(
                         connection, purgeTransaction, candidate.MatchId, cancellationToken);
-                    var purge = connection.CreateCommand();
-                    purge.Transaction = purgeTransaction;
                     // Command rows are the compact archival ledger (including authority conclusions).
                     // Remove reconstructable state payloads while keeping command counts and match results stable.
-                    purge.CommandText = """
-                        UPDATE matches SET initial_state_json=NULL WHERE match_id=$match;
-                        UPDATE match_events SET state_json='{}'
-                        WHERE match_id=$match AND state_json<>'{}';
-                        DELETE FROM match_action_requests WHERE match_id=$match;
-                        DELETE FROM match_action_events WHERE match_id=$match;
-                        DELETE FROM match_state_checkpoints WHERE match_id=$match;
-                        INSERT INTO player_replay_payload_expirations(
-                            match_id,expired_utc,retained_command_count,cleared_payload_bytes)
-                        VALUES($match,$utc,$commands,$bytes);
-                        """;
-                    purge.Parameters.AddWithValue("$match", candidate.MatchId);
-                    purge.Parameters.AddWithValue("$utc", now.ToString("O"));
-                    purge.Parameters.AddWithValue("$commands", metrics.CommandCount);
-                    purge.Parameters.AddWithValue("$bytes", metrics.PayloadBytes);
-                    await purge.ExecuteNonQueryAsync(cancellationToken);
+                    await PurgeReplayPayloadAsync(connection, purgeTransaction, candidate.MatchId, now,
+                        metrics.CommandCount, metrics.PayloadBytes, cancellationToken);
                     StorageFailureInjector?.Invoke("before-player-replay-purge-commit");
 
                     var refreshLease = connection.CreateCommand();
@@ -381,9 +364,8 @@ public sealed partial class MatchRecorder
             }
 
             var hasMore = await HasPlayerReplayCleanupCandidateAsync(connection, cancellationToken);
-            var nextRun = now.Add(hasMore
-                ? PlayerReplayCleanupBacklogRetryInterval
-                : PlayerReplayCleanupInterval);
+            var nextRun = NextStorageCleanupUtc(now);
+            Console.WriteLine($"Player replay cleanup: pruned={purgedMatches};backlog={hasMore};nextUtc={nextRun:O}");
             using (var finish = connection.BeginTransaction(deferred: false))
             {
                 var updateSchedule = connection.CreateCommand();

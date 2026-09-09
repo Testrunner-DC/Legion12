@@ -159,6 +159,10 @@ public sealed partial class L12GameEngine
         }) ?? throw new InvalidDataException("对局检查点状态为空");
         if (state.StateFormatVersion < 2)
             throw new InvalidDataException("历史状态不能绕过命令重放直接恢复");
+        if (state.Players is null || state.Players.Length != 2 || state.Players.Any(player => player is null
+            || player.Field is null || player.Field.Length != 2
+            || player.Field.Any(row => row is null || row.Length != 3)))
+            throw new InvalidDataException("对局检查点战场结构无效，不能以空战场恢复");
         return new L12GameEngine(catalog, state, randomState, cardFactSignalSequence,
             autoPassEmptyResponses, concealHiddenResponseAvailability);
     }
@@ -298,11 +302,11 @@ public sealed partial class L12GameEngine
 
         var recentEvents = State.Events
             .TakeLast(MaximumSnapshotEvents)
-            .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, revealAllDisasters))
+            .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, revealAllDisasters, revealAllHands))
             .ToArray();
         var lastAction = State.LastAction is null
             ? null
-            : FilterDisasterEvent(State.LastAction, viewer, revealAllDisasters);
+            : FilterDisasterEvent(State.LastAction, viewer, revealAllDisasters, revealAllHands);
 
         return new L12GameSnapshot(
             State.MatchId, State.RoomCode, State.OperationsPolicy.Version, spectator ? 0 : viewer,
@@ -360,8 +364,13 @@ public sealed partial class L12GameEngine
         return new { card.InstanceId, hidden = true, ownerIndex = owner };
     }
 
-    private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll)
+    private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll,
+        bool revealAllHands = false)
     {
+        if (actionEvent.Type == "private-return")
+            return revealAllHands || actionEvent.PlayerIndex == viewer
+                ? actionEvent with { Type = "return" }
+                : new L12ActionEvent(actionEvent.Sequence, "return", actionEvent.PlayerIndex, "放回1张牌", []);
         if (!revealAll && actionEvent.Type == "private-disaster-reveal"
             && actionEvent.PlayerIndex != viewer)
         {
@@ -587,8 +596,9 @@ public sealed partial class L12GameEngine
             {
                 if (player.MasterId != "S02-03M1" || !player.Graveyard.Any(card => card.InstanceId == sourceInstanceId))
                     return view with { Enabled = false, DisabledReason = "仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果" };
-                if (player.Graveyard.Count(card => card.InstanceId != sourceInstanceId && CanEnterHandOrLibrary(card)) < 3)
-                    return view with { Enabled = false, DisabledReason = "墓地中需要另有3张可返回牌库的卡牌" };
+                if (player.Graveyard.Where(card => card.InstanceId != sourceInstanceId && CanEnterHandOrLibrary(card))
+                    .Sum(L12StructuredCardRules.StarterGraveCardCopies) < 3)
+                    return view with { Enabled = false, DisabledReason = "墓地中其他可返回牌库的卡牌需合计能视为3张" };
                 if (!EmptySlots(player).Any())
                     return view with { Enabled = false, DisabledReason = "战场没有空位" };
             }
@@ -703,7 +713,7 @@ public sealed partial class L12GameEngine
         }
         if (ability == "hippolytaRevive"
             && (player.Hand.Count == 0 || !emptySlotExists
-                || !player.Graveyard.Any(card => card.CardType == "legion" && card.CurrentCost <= 4
+                || !player.Graveyard.Any(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4)
                     && L12StructuredCardRules.HasFaction(player, card, "olympus"))))
             return "需要手牌、墓地中费用不高于4的【奥林匹斯】军团和空战场位置";
         if (ability == "horusRevive")
@@ -1549,8 +1559,14 @@ public sealed partial class L12GameEngine
                 var owner = CardOwner(card, player);
                 var promotionFoundations = DetachPromotionFoundations(card);
                 if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}离场");
+                var returnsToMaster = ReturnsToMasterZoneOnDeparture(card);
                 ResetCardAfterLeavingField(card);
-                if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+                if (returnsToMaster)
+                {
+                    CompleteMasterLegionDeparture(owner, card);
+                    MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}离场");
+                }
+                else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
                 {
                     AddEvent("derived-vanished", owner.PlayerIndex,
                         $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
@@ -1688,7 +1704,12 @@ public sealed partial class L12GameEngine
         var promotionFoundations = DetachPromotionFoundations(card);
         var finalDestination = destination;
 
-        if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
+        if (ReturnsToMasterZoneOnDeparture(card))
+        {
+            finalDestination = "master";
+            CompleteMasterLegionDeparture(owner, card);
+        }
+        else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
             finalDestination = "vanished";
             if (card.AttachedCards.Count > 0)
@@ -1974,7 +1995,8 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
-        amount = AdjustAnderstorpRingDamage(player, amount);
+        // 中立天灾伤害不受玩家卡牌的伤害替换影响。
+        if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
         player.Hp -= amount;
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
@@ -1991,7 +2013,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
-        amount = AdjustAnderstorpRingDamage(player, amount);
+        if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
         var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
         if (actual == 0) return;
         player.Hp -= actual;

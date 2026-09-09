@@ -205,7 +205,7 @@ public sealed class AtomicReviewBatch5RegressionTests
         Assert.Equal("trigger-batch-order", triggerOrder.Continuation);
         var bloodTrigger = triggerOrder.ValidChoices.Single(id =>
             triggerOrder.Data[id].Contains("复仇血鹰", StringComparison.Ordinal));
-        var orderedTriggers = triggerOrder.ValidChoices.Where(id => id != bloodTrigger).Append(bloodTrigger).ToList();
+        var orderedTriggers = triggerOrder.ValidChoices.Where(id => id != bloodTrigger).Prepend(bloodTrigger).ToList();
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: triggerOrder.PromptId,
             CardInstanceIds: orderedTriggers)).Accepted);
 

@@ -156,7 +156,7 @@ const openEndedMaintenance = maintenanceCountdown({ enabled: true, message: '维
 
 const contracts = [
   [scheduledMaintenance?.phase === 'scheduled' && scheduledMaintenance.countdown === '距离维护开始 01:01:01'
-    && scheduledMaintenance.message === '计划广播'
+    && scheduledMaintenance.message === '维护提示'
     && endingMaintenance?.phase === 'active' && endingMaintenance.countdown === '距离维护结束 00:01:01'
     && openEndedMaintenance?.countdown === '维护进行中 · 结束时间待定'
     && maintenanceCountdown({ enabled: false, message: '旧计划', broadcastMessage: '', startsAt: '2026-09-07T13:00:00Z' }, maintenanceNow) === null
@@ -247,7 +247,7 @@ const contracts = [
   [indexHtml.includes('<link rel="icon" type="image/png" href="/favicon.png" />') && existsSync(faviconPath), '网页标签必须使用项目提供的 Logo-Mini PNG，不得回退默认 Vite 图标'],
   [board.includes("import ActionPresentationLayer from './ActionPresentationLayer.vue'") && board.includes('<ActionPresentationLayer :events="game.recentEvents ?? []"') && actionLayer.includes('data-ui-contract="authoritative-action-presentation"'), 'L12 对局必须消费服务端 recentEvents 播放统一阶段变化条'],
   [actionPresentation.includes("event.type === 'turn-start'") && actionPresentation.includes("event.text === '进入主要阶段'") && actionPresentation.includes("event.text === '执行结束阶段'") && !actionPresentation.includes("执行抽牌阶段") && !actionPresentation.includes("执行士气阶段") && !actionPresentation.includes("event.type === 'play'") && !actionPresentation.includes("event.type === 'attack'"), '通用动作条只能呈现回合开始、主要阶段和回合结束，不得承载其他阶段或卡牌动作'],
-  [board.includes("import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'") && board.includes('<ZoneMovementPresentationLayer :events="game.recentEvents ?? []"') && zoneMovementLayer.includes('data-ui-contract="authoritative-zone-card-movement"') && zoneMovementLayer.includes('getBoundingClientRect()') && zoneMovementLayer.includes('data-l12-game-stage') && zoneMovementLayer.includes('data-card-instance-id') && zoneMovementLayer.includes('await nextTick()'), '打出、登场与区域移动必须读取更新前后真实 DOM 锚点并由独立卡牌实体连续飞行'],
+  [board.includes("import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'") && board.includes('<ZoneMovementPresentationLayer :events="game.recentEvents ?? []"') && zoneMovementLayer.includes('data-ui-contract="authoritative-zone-card-movement"') && zoneMovementLayer.includes('viewportRect(element)') && read('../src/l12/mobileViewport.ts').includes('element.getBoundingClientRect()') && zoneMovementLayer.includes('data-l12-game-stage') && zoneMovementLayer.includes('data-card-instance-id') && zoneMovementLayer.includes('await nextTick()'), '打出、登场与区域移动必须读取更新前后真实 DOM 锚点并由独立卡牌实体连续飞行'],
   [zoneMovementLayer.includes('source.cloneNode(true)') && zoneMovementLayer.includes('wrapper.animate([') && !zoneMovementLayer.includes('--move-mid-x') && !zoneMovementLayer.includes('l12-zone-card-pulse'), '卡牌跨区域动画必须复用来源实体快照并做单次起终点位移，不得恢复中途放大、脉冲或三段跳变'],
   [zoneMovementLayer.includes('prepareMovementImage') && zoneMovementLayer.includes('resolveCardAssetUrls') && zoneMovementLayer.includes('preparedImageUrl') && zoneMovementLayer.includes(".filter(url => url !== CARD_IMAGE_PLACEHOLDER)"), '无来源实体的区域移动必须在动画前预解码真实卡图，XII占位只能作为全部候选失败后的最终兜底'],
   [board.includes("import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'") && board.includes('<CombatMotionPresentationLayer :events="game.recentEvents ?? []"')
@@ -277,26 +277,32 @@ const contracts = [
     && board.includes('opponent-player-clock') && board.includes('my-player-clock')
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')
     && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}')
-    && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 400px);padding-right:0;justify-self:center}')
+    && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px)')
     && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于棋盘上下的普通流安全轨道，避开双方手牌和操作条，当前回合只能控制高亮'],
   [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连')
     && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:138px;')
     && playerTurnClock.includes("'untimed-clock': !clock") && playerTurnClock.includes('.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}')
     && !playerTurnClock.includes('无时限') && !playerTurnClock.includes('v-if="active"'), '双方回合玩家框必须常驻；排位显示总操作、本次操作或重连倒计时，无计时房间只保留回合玩家/等待回合并收缩'],
-  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes('<RankedIdentityBadge class="rank-badge" variant="tier" compact') && board.includes('<RankedIdentityBadge class="title-badge" variant="title" compact')
-    && board.includes("enemyBadge?.rankLabel || '未定级'") && board.includes("myBadge?.masterTitle || '暂无称号'")
+  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes('class="rank-badge" variant="tier" compact') && board.includes('class="title-badge" variant="title" compact')
+    && board.includes('v-if="identityLabel(enemyBadge?.rankLabel)"') && board.includes('v-if="identityLabel(enemyBadge?.masterTitle)"')
+    && board.includes('v-if="identityLabel(myBadge?.rankLabel)"') && board.includes('v-if="identityLabel(myBadge?.masterTitle)"')
+    && board.includes("absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])")
+    && !board.includes("|| '未定级'") && !board.includes("|| '暂无称号'")
     && board.includes('connectionLabel(viewEnemy.playerIndex)') && board.includes('connectionLabel(viewMe.playerIndex)')
     && !board.includes('<dt>主宰</dt>') && !board.includes('<dt>血量</dt>')
-    && board.includes('.player-panel{box-sizing:border-box;height:auto!important;min-height:144px') && board.includes('grid-template-columns:max-content max-content minmax(0,1fr)')
+    && board.includes('.player-panel{box-sizing:border-box;height:auto!important;min-height:144px') && board.includes('.player-summary-meta{display:flex;')
     && board.includes('.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}')
-    && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;')
+    && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;') && board.includes('margin-left:auto!important;')
     && rankings.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && rankings.includes('<RankedIdentityBadge v-for="title in row.titles"')
     && rankedIdentityBadge.includes("variant?: 'tier' | 'title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
     && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)') && rankedIdentityBadge.includes('✦')
     && rankedIdentityBadge.includes('drop-shadow(0 0 4px #ffd047)') && rankedIdentityBadge.includes('color: inherit !important;')
-    && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '对战右上双方摘要必须各保持两行：身份与昵称；排位等级和称号必须复用真实徽章组件并使用对战紧凑尺寸、完整显示文字；称号文字必须继承徽章配色；空间不足时先缩小徽章并压缩在线状态，并将释放空间留给对局记录'],
+    && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '对战右上双方摘要必须各保持两行：身份与昵称；存在排位等级或称号时复用真实徽章组件并完整显示，无数据时留空而非伪造占位；在线状态自动占据剩余空间'],
   [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],
-  [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)') && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"'), '在线玩家窗口必须支持直接添加好友、邀请空闲好友，并将对局中玩家替换为带权限原因的观战入口'],
+  [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)')
+    && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"')
+    && shell.includes('const incomingRequestCount = computed') && shell.includes('class="utility-unread"')
+    && shell.includes("player.friendStatus === 'accepted'") && shell.includes('>好友 · 邀战</button>') && shell.includes('>观战</button>'), '在线玩家窗口必须支持相邻的好友与观战操作，并在侧栏及玩家行提示未读好友申请'],
   [shell.includes('friendApi.resolve(player.accountId, accept)') && shell.includes("player.friendDirection === 'incoming'") && shell.includes('resolveOnlineFriend(player, false)') && shell.includes('resolveOnlineFriend(player, true)') && shell.includes('>拒绝</button>') && shell.includes("'接受'"), '在线玩家窗口必须允许直接接受或拒绝收到的好友申请，不能只显示待处理状态'],
   [!shell.includes('/assets/l12/card-back-navy.png'), '主页入口不得回退为卡背'],
   [shell.includes("{ to: '/battle', icon: 'battle', label: '大厅' }") && !shell.includes("label: '对战主页'") && router.includes("{ path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue')") && router.includes("{ path: '/battle/lobby', redirect: '/battle' }"), '对战区域必须直接以大厅为主页，不得恢复多余的对战主页层级'],
@@ -318,9 +324,9 @@ const contracts = [
     && board.includes('.right-rail .action-panel{max-height:300px;overflow:auto}')
     && board.includes('grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height)')
     && (board.match(/class="opponent-hand"/g) ?? []).length === 2
-    && handArea.includes('const cardWidth = computed(() => 96)') && handArea.includes('.l12-hand .hand-card-wrap .card-tile{width:96px;height:134px;flex-basis:96px}')
-    && handArea.includes('.l12-hand.hidden .card-back{box-sizing:border-box;width:96px;height:134px}')
-    && board.includes('align-self:stretch;transform:translateX(-10px)')
+    && handArea.includes('const cardWidth = computed(() => 114.4)') && handArea.includes('.l12-hand .hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent')
+    && handArea.includes('.l12-hand.hidden .card-back{box-sizing:border-box;width:114.4px;height:160.6px}')
+    && board.includes('align-self:stretch;justify-self:center;transform:translateX(-10px)')
     && board.includes('.board-center>.opponent-hand{grid-row:1}') && board.includes('.board-center>.l12-hand:last-child{grid-row:5}')
     && !board.includes('.battlefield-half.opponent-half{transform:rotate(180deg)')
     && !board.includes('.opponent-hand{transform:rotate(180deg)'), '对局舞台必须保持16:9主布局；独立窄阶段列与左、中、右区不得互相侵入，双方手牌和文字不得倒置'],
@@ -335,7 +341,7 @@ const contracts = [
     && phaseTrack.includes('.l12-phase-track.vertical{position:relative;inset:auto;display:grid')
     && phaseTrack.includes('writing-mode:horizontal-tb;transform:none')
     && !phaseTrack.includes('<i>{{ index + 1 }}</i>') && phaseTrack.indexOf('class="round"') > phaseTrack.indexOf('v-for="item in phases"'), '左侧本局天灾与当前天灾保持独立并合计对齐选中卡；窄阶段列独立右移，不显示标题或序号，两字换行居中且TURN置底'],
-  [(board.match(/<PlayerMat /g) ?? []).length === 2 && (board.match(/<HandArea /g) ?? []).length === 3
+  [(board.match(/<PlayerMat /g) ?? []).length === 2 && (board.match(/<HandArea /g) ?? []).length === 4
     && (board.match(/<GameActions /g) ?? []).length === 2 && board.includes('<BattleEventLog ')
     && board.includes('<PromptOverlay ') && board.includes('<GraveyardOverlay ') && board.includes('<MasterOverlay ')
     && board.includes('<ActionPresentationLayer ') && board.includes('<ZoneMovementPresentationLayer ')
@@ -359,11 +365,19 @@ const contracts = [
     && playerMat.includes('.side-opponent .trial-zone{flex-direction:column-reverse}')
     && playerMat.includes('.trial-zone{position:relative;z-index:6;display:flex;'), '试炼及后续额外区必须移出六格战场，第一张对齐主宰，对方新卡向上、我方新卡向下镜像延伸，且不侵入手牌'],
   [playerMat.includes('.mat-piles .pile,.mat-piles .pile.deck{box-sizing:border-box;width:100px;height:140px;min-height:140px}')
-    && playerMat.includes('.relic-zone{box-sizing:border-box;width:132.25px;height:132.25px;aspect-ratio:1}')
-    && playerMat.includes('.relic-zone :deep(.card-tile){width:127.65px;height:127.65px;flex-basis:127.65px;aspect-ratio:1}')
+    && playerMat.includes('.relic-zone{box-sizing:border-box;width:132.25px;height:185.15px;aspect-ratio:5/7}')
+    && playerMat.includes('.relic-zone :deep(.card-tile){width:127.65px;height:178.71px;flex-basis:127.65px;aspect-ratio:5/7}')
     && playerMat.includes('.mat-piles{transform:translateX(-24px)}')
     && playerMat.includes('.mat-piles .pile span{left:5px;bottom:5px;padding:3px 6px')
-    && playerMat.includes('.mat-piles .pile .pile-count{right:5px;top:5px;min-width:34px!important;height:28px!important;padding:0 8px!important'), '圣物区必须为放大15%的正方形，内部卡面同步适配；牌库和墓地名称与留有内边距的计数盒必须完整收在各自容器内'],
+    && playerMat.includes('.mat-piles .pile .pile-count{right:5px;top:5px;min-width:34px!important;height:28px!important;padding:0 8px!important'), '圣物区及内部卡面必须保持5:7卡牌比例；牌库和墓地名称与留有内边距的计数盒必须完整收在各自容器内'],
+  [handArea.includes('.hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent;border-radius:0;box-shadow:none}')
+    && handArea.includes('.hand-card-wrap.playable::after') && handArea.includes('.hand-card-wrap.selected .card-tile')
+    && playerMat.includes("'battlefield-legion-card': isBattlefieldLegionCard(player.field[row][slot]!)")
+    && playerMat.includes('.formation-slot :deep(.battlefield-legion-card){border:1px solid transparent;border-radius:0}')
+    && playerMat.includes('.formation-slot:not(.counter-ready) :deep(.battlefield-legion-card)')
+    && playerMat.includes('.formation-slot.source:not(.combat-target):not(.payment-resource):not(.payment-selected):not(.prompt-selected)')
+    && playerMat.includes('.formation-slot:focus-visible')
+    && playerMat.includes('data-ui-contract="actual-combat-target-only"'), '手牌与场上军团只移除卡片常驻装饰框，透明边线保持命中尺寸；六格边界及可用、选择、目标、支付、反击状态和键盘焦点标记必须保留'],
   [l12Types.includes("'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'") && l12Types.includes('statusIcons?: string[]') && l12Types.includes('statusEffects?: CardStatusEffect[]'), '卡牌投影视图必须提供结构化 statusEffects/statusIcons 状态契约并兼容旧快照缺省'],
   [cardTile.includes('props.card.statusEffects ?? []') && cardTile.includes('props.card.statusIcons ?? []') && cardTile.includes('statusLabel(effect, kind)') && cardTile.includes(':title="status.label"') && cardTile.includes(':aria-label="status.label"')
     && cardTile.includes('data-ui-contract="status-icons-wrap-down"') && cardTile.includes('.card-status-icons{left:3px;right:auto;top:50px;width:calc(100% - 6px);height:auto;max-height:none;flex-flow:row wrap')
@@ -574,7 +588,7 @@ const contracts = [
   [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('@media(max-width:520px)')
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
     && board.includes("'--l12-board-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes("'--l12-board-meta': `${11 / Math.min(1, floatScale)}px`") && board.includes("'--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
-  [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '公开'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
+  [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '本局天灾'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
   [board.includes('resolvedDisasterIds') && board.includes("return 'active'") && board.includes("return 'resolved'")
     && board.includes('.session-disaster-strip button.unrevealed')
     && board.includes('.session-disaster-strip button.resolved{border-color:#76508f')
@@ -664,7 +678,18 @@ const contracts = [
   [cardTile.includes('position:static!important') && cardTile.includes('object-position:center 14%'), '圆形叠放卡图不得被全局卡图定位规则覆盖'],
   [playerMat.includes("entry.id === 'trialAdvance'") && playerMat.includes('function canTrial') && playerMat.includes("'trialAdvance')"), '试炼军团必须拥有与进攻、移动并列的直接试炼按钮'],
   [playerMat.includes("@click.stop=\"(!trial.hidden || side === 'my') && selectZoneCard(trial)\""), '试炼卡必须复用公开区域卡牌能力入口；己方未完成试炼仍可查看详情，对方未知试炼保持不可见'],
-  [playerMat.includes('aspect-ratio:1752/1255') && playerMat.includes('class="trial-card-back"') && playerMat.includes('.trial-card b{position:absolute;left:50%;top:50%'), '试炼卡背必须保持正式横版素材比例并将进度数字置于中央'],
+  [playerMat.includes('aspect-ratio:1752/1255') && playerMat.includes('class="trial-card-back"')
+    && playerMat.includes('class="trial-progress"') && playerMat.includes('width:46px;min-width:46px;height:46px;min-height:46px')
+    && playerMat.includes('font-variant-numeric:tabular-nums'), '试炼卡背必须保持正式横版素材比例，进度数字使用不会被挤压的独立大尺寸容器'],
+  [handArea.includes('data-ui-contract="field-sized-safe-hand"') && handArea.includes('const cardWidth = computed(() => 114.4)')
+    && handArea.includes('width:114.4px;height:160.6px;flex-basis:114.4px')
+    && board.includes('.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}')
+    && board.includes('.board-center{--l12-hand-lane-height:160px;display:grid;min-height:0;')
+    && board.includes('width:calc(100% - 400px)') && board.includes('z-index:40')
+    && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸，限制在计时框与额外区之间并高于场面可点击，多数量时按实测宽度扇形收拢或横向滚动'],
+  [board.includes('v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0"')
+    && board.includes('class="opponent-hand" hidden :count="viewEnemy.handCount || 0"')
+    && !board.includes('class="spectator-hand" :cards="viewMe.hand"'), '观战者必须同时看到双方完整手牌数量与等量卡背，不得接收或渲染任一方手牌身份'],
   [playerMat.includes('class="master-marker-track"') && playerMat.includes('.master-marker-track{position:absolute') && playerMat.includes('.master-marker-track{top:-70px}.side-opponent .master-marker-track{top:auto;bottom:-70px}')
     && playerMat.includes('.rune-orb{width:36px;height:36px;min-width:36px') && playerMat.includes('.canopic-orb{width:36px;height:36px;min-width:36px'), '主宰附近符文与卡诺匹斯罐必须复用同一轨道、适量放大并与主宰保持间距'],
   [!playerMat.includes('class="rune-zone"') && !playerMat.includes('class="canopic-track"'), '符文与卡诺匹斯不得恢复各自独立的定位父级'],
@@ -674,6 +699,33 @@ const contracts = [
   [decks.includes("构筑时不计入卡组数量") && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
   [deckEditor.includes('publicDeckApi.publish') && deckEditor.includes("publicationId.value = ''") && deckEditor.includes("preservePublication = false"), '牌库编辑器须支持公开/更新公开牌库，并在新建、另存或切换本地牌库时隔离公开版本身份'],
   [deckLibrary.includes('publicDeckApi.list') && deckLibrary.includes('编辑公开牌库') && deckLibrary.includes('删除公开牌库') && deckLibrary.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
+  [deckLibrary.includes('<DeckConstructionBrowser :entries="selectedEntries"')
+    && deckLibrary.includes("add(deck.cardIds, 'main')") && deckLibrary.includes("add(deck.moraleIds, 'morale')")
+    && deckLibrary.includes("add(deck.specialIds ?? [], 'special')") && deckLibrary.includes('automaticExtraCardIdsForMaster')
+    && deckConstructionBrowser.includes('grid-template-rows:auto minmax(2.8em,auto) auto')
+    && deckConstructionBrowser.includes('overflow-wrap:anywhere') && deckConstructionBrowser.includes('white-space:normal'), '公开牌库详情必须复用对局档案构筑查看器，展示主牌、士气与全部额外卡，卡框稳定且完整卡名不被裁切'],
+  [prompt.includes('const displayCardIds = computed') && prompt.includes('if (displayCardIds.value.length) return displayCardIds.value')
+    && prompt.includes('displayCardIds.value.length > 0') && prompt.includes('if (!p || !p.validChoices.includes(id)) return')
+    && prompt.includes('v-for="choice in supplementalChoices"') && prompt.includes('@focus="focusChoice(choice)"'), '通用选项弹框必须把 displayCardIds 作为仅供查看的卡牌行，可打开卡牌详情但不得把展示牌误作合法选择，确认项保留在统一页脚'],
+  [shell.includes('class="invitation-gate"') && !shell.includes('class="site-modal-mask invitation-gate"')
+    && shell.includes('aria-modal="false"') && shell.includes('invitationMinimized')
+    && shell.includes('class="invitation-stack"') && shell.includes('position:fixed;z-index:160;right:18px;bottom:18px')
+    && l12Net.includes("message.type === 'friendInvitationResolved' || message.type === 'friendInvitationRevoked'")
+    && l12Net.includes('l12State.friendInvitation?.invitationId === message.invitationId')
+    && l12Net.includes('l12State.outgoingFriendInvitation?.invitationId === message.invitationId')
+    && l12Net.includes("else if (message.type === 'friendRoomCreated')")
+    && l12Net.includes("type: 'cancelFriendInvitation', invitationId")
+    && shell.includes('@click="cancelOutgoingInvitation"') && shell.includes('outgoingInvitationMinimized')
+    && l12Net.includes("l12State.spectating && message.message === '观战者不能执行对局操作'")
+    && l12Net.includes('if (l12State.spectating || l12State.pendingAction) return'), '好友邀请必须是右下角无背板可最小化通知，发起方按服务端返回的精确邀请编号撤回，接收方只按匹配邀请撤销；观战端不得发送对局命令或重复显示权限提示'],
+  [battleLog.includes("'disaster-banned': '天灾禁选'") && battleLog.includes("mulligan: '调度'")
+    && battleLog.includes("'match-created'") && battleLog.includes("'mulligan-start'") && battleLog.includes('onlyZeroChange')
+    && battleLog.includes('meaningfulFailure') && battleLog.includes('compoundOutcome') && battleLog.includes('compactDraw') && battleLog.includes('compactMove')
+    && !battleLog.includes('pendingDraw') && !battleLog.includes('faction-effect-summary') && !battleLog.includes('isGaotianyuan')
+    && battleLog.includes('redactHiddenCardNames') && battleLog.includes('filter(card => !card.hidden && Boolean(card.name))')
+    && !battleLog.includes("result.push({ text: ' · '")
+    && !battleLog.includes('{{ part.card.cardId }}') && battleLog.includes('width:2.8em')
+    && battleLog.includes('white-space:normal'), '玩家战报必须保留天灾禁选、调度及有意义失败结果，隐藏内部初始化、洗牌与单一零变化；同类抽牌/位移结果统一精简但无事务关联不得相邻合并，只让本条公开文本已有的完整卡名可点击且不泄露隐藏卡或编号，四字类别按两字换行'],
   [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
     && wsServer.includes('/api/public-decks/{id}/view') && deckLibrary.includes('publicDeckApi.recordView(entry.id)')
     && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.likes - a.likes')
@@ -722,7 +774,7 @@ const contracts = [
   [gamePage.includes('<GmPanel v-if="l12State.gmEnabled"') && l12Net.includes('gmEnabled: false'), 'GM 面板必须只在服务端授权的沙盒快照中显示'],
   [gamePage.includes(':gm-panel-open="gmPanelOpen"') && gamePage.includes('@open-change="gmPanelOpen = $event"')
     && gmPanel.includes("openChange: [open: boolean]") && board.includes("'gm-panel-docked': gmPanelOpen && !compactViewport")
-    && board.includes('const availableWidth = window.innerWidth - (props.gmPanelOpen && !compactViewport.value ? 344 : 0)')
+    && board.includes('const availableWidth = Math.max(1, viewport.width - (props.gmPanelOpen && !compactViewport.value ? 344 : 0))')
     && board.includes('.board-viewport.gm-panel-docked{right:344px}'), '展开 GM 调试面板时必须为其保留独立停靠区并重算棋盘缩放，禁止覆盖计时、玩家信息或结束回合操作'],
   [gmPanel.includes("send({ type: 'gmAction'") || (gmPanel.includes('gmAction(') && l12Net.includes("pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(), command }")), 'GM 操作必须走独立 gmAction 消息，不得伪装成普通 gameAction'],
   [gmPanel.includes('导出可复现 JSON') && gmPanel.includes('/api/matches/'), 'GM 面板必须保留可复现记录导出入口'],
@@ -943,15 +995,19 @@ const contracts = [
     && replayPage.includes("reason.code === 'sandbox_replay_expired'") && replayPage.includes("? '回放已过期'"), '对局档案必须支持最近/按玩家查询和独立的管理员沙盒排查；沙盒不混入正式记录，管理员可排查各状态沙盒，过期回放明确失败关闭'],
   [adminMatches.includes('data-ui-contract="match-snapshot-view-construction"')
     && adminMatches.includes('<DeckConstructionBrowser :entries="deckViewer.deckCards"')
+    && adminMatches.includes('copyArchivedDeckCode') && adminMatches.includes('exportArchivedDeckImage')
+    && adminMatches.includes('copyArchivedDeckToLibrary') && adminMatches.includes("expand('special')")
     && deckConstructionBrowser.includes('aria-label="构筑筛选"')
     && deckConstructionBrowser.includes('entry.quantity') && deckConstructionBrowser.includes('const selected = computed')
-    && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，档案正文不得继续平铺单卡'],
+    && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，并可复制牌库码、导出牌库图或复制到我的牌库，档案正文不得继续平铺单卡'],
   [adminCardAnalytics.includes('实际使用情况') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
     && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
     && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '单卡分析必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
   [adminCardAnalytics.includes('使用方主宰') && adminCardAnalytics.includes('对方主宰')
-    && adminCardAnalytics.includes('adminApi.cardAnalytics({ ...filters.value')
-    && adminCardAnalytics.includes('adminApi.cardAnalyticsDetail(cardId, { ...filters.value })')
+    && adminCardAnalytics.includes('function analyticsQuery() { return { ...filters.value } }')
+    && adminCardAnalytics.includes('const query = analyticsQuery()')
+    && adminCardAnalytics.includes('adminApi.cardAnalytics({ ...query')
+    && adminCardAnalytics.includes('adminApi.cardAnalyticsDetail(cardId, query)')
     && adminCardAnalytics.includes('request === detailRequest')
     && adminCardAnalytics.includes('data-ui-contract="card-analytics-low-sample-warning"')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
@@ -1185,7 +1241,7 @@ contracts.push(
     && board.includes('.inspector-card-image{display:block;width:168px;height:235px;')
     && board.includes('.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;'),
     '选中卡牌多标签必须保持自然宽度并作为整体居中，必要时换行但不得拉伸；卡图在固定详情容器内放大约15%'],
-  [board.includes('const availableHeight = window.innerHeight - 124')
+  [board.includes('const availableHeight = Math.max(1, viewport.height - 124)')
     && visualLayoutCheck.includes("throw new Error('Hand leaves viewport at '")
     && visualLayoutCheck.includes("throw new Error('Utility dock leaves viewport at '"),
     '16:9棋盘缩放必须为手牌扇面和左下工具保留绘制边界，视觉验收须阻止二者离开视口'],

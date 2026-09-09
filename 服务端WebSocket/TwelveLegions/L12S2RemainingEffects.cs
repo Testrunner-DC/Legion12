@@ -85,7 +85,7 @@ public sealed partial class L12GameEngine
             {
                 if (source.Tapped) return CommandResult.Reject("希波吕忒必须为活跃状态");
                 var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
-                        && card.CardType == "legion" && card.CurrentCost <= 4)
+                        && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                     .Select(card => card.InstanceId).ToList();
                 if (player.Hand.Count == 0 || grave.Count == 0 || !EmptySlots(player).Any())
                     return CommandResult.Reject("需要手牌、墓地中费用不高于4的【奥林匹斯】军团和空战场位置");
@@ -179,7 +179,7 @@ public sealed partial class L12GameEngine
                     var entry = declared.Length == 5
                         ? player.Hand.Concat(player.Graveyard).FirstOrDefault(card => card.InstanceId == declared[2]
                             && L12StructuredCardRules.HasFaction(player, card, "olympus")
-                            && card.CardType == "legion" && card.CurrentCost <= 4)
+                            && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                         : null;
                     var battlefield = entry is null ? null : ParseEffectEntryBattlefieldChoice(declared[3]);
                     var (row, slot) = entry is null ? (-1, -1) : ParseSlot(declared[4]);
@@ -251,7 +251,7 @@ public sealed partial class L12GameEngine
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
                 var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
                     && L12StructuredCardRules.HasFaction(player, card, "olympus")
-                    && card.CardType == "legion" && card.CurrentCost <= 4);
+                    && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4));
                 if (discard is null || revive is null || !EmptySlots(player).Contains(declared[2])) return CommandResult.Reject("选择的卡牌或位置已失效");
                 source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard);
                 PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
@@ -721,7 +721,7 @@ public sealed partial class L12GameEngine
 
     private void ReturnWukongMasterLegionAfterAttack(int playerIndex, L12CardInstance attacker)
     {
-        if (!attacker.IsMasterLegion || attacker.CardId != "S02-01M1") return;
+        if (!ReturnsToMasterZoneOnDeparture(attacker)) return;
         ReturnWukongMasterLegions(State.Players[playerIndex], "进攻结算后", resumeEndTurn: false);
     }
 
@@ -729,7 +729,7 @@ public sealed partial class L12GameEngine
     {
         var returnedAny = false;
         L12CardInstance? returnedSnapshot = null;
-        foreach (var masterLegion in PublicLegions(player).Where(card => card.IsMasterLegion && card.CardId == "S02-01M1").ToArray())
+        foreach (var masterLegion in PublicLegions(player).Where(ReturnsToMasterZoneOnDeparture).ToArray())
         {
             if (FindOnField(player, masterLegion.InstanceId, out var row, out var slot) is null) continue;
             returnedSnapshot ??= CaptureLastKnownSourceSnapshot(masterLegion);
@@ -751,5 +751,14 @@ public sealed partial class L12GameEngine
             ]);
         RecalculateContinuousTroops();
         return returnedAny;
+    }
+
+    private static bool ReturnsToMasterZoneOnDeparture(L12CardInstance card)
+        => card.IsMasterLegion && card.CardId == "S02-01M1";
+
+    private void CompleteMasterLegionDeparture(L12PlayerState owner, L12CardInstance card)
+    {
+        ResetCardAfterLeavingField(card);
+        AddEvent("return", owner.PlayerIndex, "孙悟空离场，返回主宰区", card);
     }
 }

@@ -52,7 +52,7 @@ if ($attackPlans.Contains('enemy-after-cost-debuff')) {
 if ([regex]::Matches($composite, 'new\("honda-kill",[^)]*DeclareAtSegmentStart: true\)').Count -ne 1) {
     throw 'Honda must declare its independent kill at the follow-up segment start.'
 }
-Assert-Contains $composite 'PublicLegions(opponent).Where(card => card.CurrentCost == 0)' 'Honda follow-up candidates must use current post-debuff cost.'
+Assert-Contains $composite 'PublicLegions(opponent).Where(card => L12StructuredCardRules.CurrentCostEquals(card, 0))' 'Honda follow-up candidates must use current post-debuff cost and exclude cards without a cost dimension.'
 foreach ($regression in @(
     'HondaAlwaysAppliesTheDebuffThenDeclaresOnlyCurrentZeroCostTargets',
     'HondaWithoutAZeroCostTargetKeepsTheMandatoryDebuffAndCreatesNoEmptyPrompt',

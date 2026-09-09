@@ -300,7 +300,15 @@ public sealed class StarterBatch3BRegressionTests
         changePlayer.MoraleDeck.Add(new L12MoraleCard { CardId = "S01-01C1", InstanceId = "change-added" });
         Invoke(changeGame, "RegisterReturnedMorale", changePlayer, 1);
         Invoke(changeGame, "FlushStarterResourceTriggerBatches");
-        Choose(changeGame, "mode:use");
+        var ordering = Prompt(changeGame);
+        Assert.Equal("trigger-batch-order", ordering.Continuation);
+        Assert.True(changeGame.Handle(ordering.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: ordering.PromptId, CardInstanceIds: ordering.ValidChoices.ToList())).Accepted);
+        while (changeGame.State.PendingActivations.Count > 0)
+        {
+            var declaration = changeGame.State.PendingActivations.Single();
+            Choose(changeGame, declaration.SourceCardId == "ST01-M1" ? "mode:use" : "mode:none");
+        }
         PassResponses(changeGame);
         var added = Assert.Single(changePlayer.Morale);
         Assert.True(added.Tapped);

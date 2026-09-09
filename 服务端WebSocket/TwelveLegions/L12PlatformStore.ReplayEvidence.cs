@@ -17,6 +17,16 @@ public sealed partial class L12PlatformStore
                 Add(rooms, report.RoomCode, report.Diagnostic?.RoomCode,
                     report.ClientDiagnostic?.RoomCode, report.ConnectionDiagnostic?.RoomCode);
             }
+            foreach (var report in _data.PlayerMatchReports.Where(row => row.Status is not ("resolved" or "closed")))
+            {
+                Add(matches, report.MatchId);
+                Add(rooms, report.RoomCode);
+            }
+            foreach (var request in _data.MatchDrawRequests.Where(row => row.AdminStatus is not ("resolved" or "closed")))
+            {
+                Add(matches, request.MatchId);
+                Add(rooms, request.RoomCode);
+            }
             return new L12ReplayEvidenceReferences(matches.ToArray(), rooms.ToArray());
         }
 

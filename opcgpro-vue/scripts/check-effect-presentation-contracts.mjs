@@ -10,6 +10,11 @@ const backend = backendFiles.map(file => file.source).join('\n')
 const admin = read('../src/l12/site/AdminPage.vue')
 const board = read('../src/l12/game/GameBoard.vue')
 const eventLog = read('../src/l12/game/BattleEventLog.vue')
+const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
+const actionPresentation = read('../src/l12/game/actionPresentation.ts')
+const zoneMovement = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
+const combatMotion = read('../src/l12/game/CombatMotionPresentationLayer.vue')
+const phasePlayback = read('../src/l12/game/PhasePlayback.vue')
 const platform = read('../src/l12/platform.ts')
 const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.EffectPresentations.cs')
 const model = read('../../服务端WebSocket/TwelveLegions/EffectPresentationTexts.cs')
@@ -51,9 +56,18 @@ assert(admin.includes("return context.filter(Boolean).join(' · ')")
 assert(admin.includes("Object.entries(scene.requiredChoices ?? {})")
   && admin.includes('公开选择条件：{{ formatPresentationChoices(scene) }}'),
   'Public branch selectors must remain inspectable without driving client-side matching')
+assert(admin.includes("const hasFlowEffect = scenes.some(scene => scene.eventType === 'effect' && Boolean(scene.flow?.trim()))")
+  && admin.includes("return scenes.filter(scene => scene.eventType !== 'effect' || Boolean(scene.flow?.trim()))")
+  && admin.includes('v-for="scene in visiblePresentationScenes(ability)"'),
+  'Abilities with flow-specific effect scenes must hide their obsolete whole-effect scene while keeping other event types')
 assert(admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene.sceneId, text)')
   && !admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene.sceneId, text.trim())'),
   'The editor must send the multiline draft without flattening or trimming internal newlines')
+assert([board, actionLayer, actionPresentation, zoneMovement, combatMotion, phasePlayback]
+  .every(source => !source.includes('effect-announced')),
+  'Recorded whole-effect announcements must not enter any frontend animation queue')
+assert(eventLog.includes("'effect-announced'"),
+  'Recorded whole-effect announcements must remain authoritative history without repeating in the player-facing log')
 
 const overrideGuard = board.indexOf('if (override) return override')
 const oiranFallback = board.indexOf('/花魁的馈赠/.test(text)')

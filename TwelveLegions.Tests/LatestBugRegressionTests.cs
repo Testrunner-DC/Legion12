@@ -756,7 +756,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public async Task HostClosingCompletedRoomAlsoReleasesEverySpectator()
+    public async Task BothPlayersLeavingCompletedRoomReleasesEverySpectator()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-spectator-room-close", Guid.NewGuid().ToString("N"));
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
@@ -776,7 +776,8 @@ public sealed class LatestBugRegressionTests
         manager.SpectateRoom(spectator, roomCode);
         await manager.HandleActionAsync(host, JsonSerializer.SerializeToElement(new { type = "surrender" }));
 
-        var closed = manager.LeaveRoom(host);
+        Assert.DoesNotContain(manager.LeaveRoom(host), message => message.SessionId == spectator || message.SessionId == guest);
+        var closed = manager.LeaveRoom(guest);
         var spectatorMessage = JsonSerializer.SerializeToElement(
             closed.Single(message => message.SessionId == spectator).Payload);
         Assert.Equal("roomClosed", spectatorMessage.GetProperty("type").GetString());
@@ -786,40 +787,23 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public async Task CompletedRoomCanResetReadinessAndStartANewMatchWithoutLeaving()
+    public async Task CompletedRoomCannotResetWhilePlayersReadSettlement()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-room-rematch", Guid.NewGuid().ToString("N"));
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();
         var manager = new L12RoomManager(Catalog, recorder);
-        var host = Guid.NewGuid();
-        var guest = Guid.NewGuid();
-        manager.Connect(host, "甲");
-        manager.Connect(guest, "乙");
+        var host = Guid.NewGuid(); var guest = Guid.NewGuid();
+        manager.Connect(host, "甲"); manager.Connect(guest, "乙");
         var created = manager.CreateRoom(host);
-        var roomCode = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
-        manager.JoinRoom(guest, roomCode);
-        await manager.SetReadyAsync(host, true);
-        var firstStart = await manager.SetReadyAsync(guest, true);
-        var firstMatch = JsonSerializer.SerializeToElement(firstStart.Single(message => message.SessionId == host).Payload,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web))
-            .GetProperty("state").GetProperty("matchId").GetString();
-
+        var code = JsonSerializer.SerializeToElement(created[0].Payload).GetProperty("roomCode").GetString();
+        manager.JoinRoom(guest, code);
+        await manager.SetReadyAsync(host, true); await manager.SetReadyAsync(guest, true);
         await manager.HandleActionAsync(host, JsonSerializer.SerializeToElement(new { type = "surrender" }));
-        var hostReady = await manager.SetReadyAsync(host, true);
-        var hostRoom = JsonSerializer.SerializeToElement(hostReady.Single(message => message.SessionId == host).Payload,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        Assert.Equal("roomState", hostRoom.GetProperty("type").GetString());
-        Assert.True(hostRoom.GetProperty("players").EnumerateArray()
-            .Single(player => player.GetProperty("playerIndex").GetInt32() == 0).GetProperty("ready").GetBoolean());
-        Assert.False(hostRoom.GetProperty("players").EnumerateArray()
-            .Single(player => player.GetProperty("playerIndex").GetInt32() == 1).GetProperty("ready").GetBoolean());
-
-        var secondStart = await manager.SetReadyAsync(guest, true);
-        var secondMatch = JsonSerializer.SerializeToElement(secondStart.Single(message => message.SessionId == host).Payload,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web))
-            .GetProperty("state").GetProperty("matchId").GetString();
-        Assert.NotEqual(firstMatch, secondMatch);
+        var ready = await manager.SetReadyAsync(host, true);
+        Assert.Equal("error", JsonSerializer.SerializeToElement(Assert.Single(ready).Payload).GetProperty("type").GetString());
+        var recovery = await manager.RecoveryStateAsync(guest);
+        Assert.Contains(recovery, item => JsonSerializer.SerializeToElement(item.Payload).GetProperty("type").GetString() == "gameState");
     }
 
     [Fact]
@@ -897,7 +881,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void DimMorningStarFreeActiveTacticDoesNotDiscountCounterAndIsConsumedByActiveTactic()
+    public void DimMorningStarFreeActiveTacticDoesNotDiscountCounterAndPersistsAfterActiveTactic()
     {
         var game = Create(64031);
         var player = game.State.Players[0];
@@ -919,7 +903,7 @@ public sealed class LatestBugRegressionTests
         Assert.Contains("ds01-free-tactic", player.UsedAbilities);
 
         Assert.True(game.Handle(0, new L12Command("playCard", active.InstanceId)).Accepted);
-        Assert.DoesNotContain("ds01-free-tactic", player.UsedAbilities);
+        Assert.Contains("ds01-free-tactic", player.UsedAbilities);
     }
 
     [Fact]
@@ -1717,10 +1701,7 @@ public sealed class LatestBugRegressionTests
         Assert.Equal("s2-rune-power-mode", mode.Data["action"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
             Choice: "mode:search")).Accepted);
-        var payment = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-rune-power-payment", payment.Data["action"]);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
-            Choice: payment.ValidChoices[0])).Accepted);
+        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         var pick = Assert.Single(game.State.PendingPrompts);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.Equal("s2-rune-power-pick", pick.Data["action"]);

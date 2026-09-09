@@ -359,10 +359,32 @@ public sealed class GmSandboxTests
         var invitationId = invitation.GetProperty("invitationId").GetString();
         var roomCode = invitation.GetProperty("roomCode").GetString();
 
+        // The recipient cannot revoke the sender's invitation, and a rejected attempt
+        // must not consume the invitation before ownership has been checked.
+        var unauthorized = manager.CancelFriendInvitation(guest, invitationId);
+        Assert.DoesNotContain(unauthorized, message => JsonSerializer.SerializeToElement(message.Payload, WebJson)
+            .GetProperty("type").GetString() == "friendInvitationRevoked");
+
+        var another = manager.InviteFriend(host, guestAccount.Id);
+        var anotherId = JsonSerializer.SerializeToElement(another.Single(message => message.SessionId == guest).Payload, WebJson)
+            .GetProperty("invitationId").GetString();
+        var revoked = manager.CancelFriendInvitation(host, anotherId);
+        Assert.Equal(2, revoked.Count);
+        Assert.All(revoked, message =>
+        {
+            var payload = JsonSerializer.SerializeToElement(message.Payload, WebJson);
+            Assert.Equal("friendInvitationRevoked", payload.GetProperty("type").GetString());
+            Assert.Equal(anotherId, payload.GetProperty("invitationId").GetString());
+        });
+        Assert.DoesNotContain(manager.ResolveFriendInvitation(guest, anotherId, true), message =>
+            JsonSerializer.SerializeToElement(message.Payload, WebJson).GetProperty("type").GetString() == "friendRoomCreated");
+
         var accepted = manager.ResolveFriendInvitation(guest, invitationId, true)
             .Select(message => (message.SessionId, Payload: JsonSerializer.SerializeToElement(message.Payload, WebJson))).ToArray();
         Assert.Contains(accepted, message => message.SessionId == host
             && message.Payload.GetProperty("type").GetString() == "friendRoomCreated");
+        Assert.DoesNotContain(manager.CancelFriendInvitation(host, invitationId), message =>
+            JsonSerializer.SerializeToElement(message.Payload, WebJson).GetProperty("type").GetString() == "friendInvitationRevoked");
         var hostRoom = accepted.Single(message => message.SessionId == host
             && message.Payload.GetProperty("type").GetString() == "roomState").Payload;
         var guestRoom = accepted.Single(message => message.SessionId == guest

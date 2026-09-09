@@ -241,7 +241,7 @@ public sealed class EffectBatch294RegressionTests
             });
 
         var activePrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal($"是否响应堆叠顶部：〈{promoted.Name}〉\n时点：晋升登场\n效果：{effect}", activePrompt.Text);
+        Assert.Equal($"选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n我方使用〈{promoted.Name}〉\n时点：晋升登场\n效果：{effect}\n（效果原文中的我方／对方以发动者为准）\n是否响应？", activePrompt.Text);
         Assert.DoesNotContain("private-target", activePrompt.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("private-choice-must-not-leak", activePrompt.Text, StringComparison.Ordinal);
         Assert.DoesNotContain(promoted.EffectText!.Split('\n')[0], activePrompt.Text, StringComparison.Ordinal);
@@ -249,7 +249,7 @@ public sealed class EffectBatch294RegressionTests
         Resolve(game, "pass");
         var defenderPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(pitfall.InstanceId, defenderPrompt.ValidChoices);
-        Assert.Equal(activePrompt.Text, defenderPrompt.Text);
+        Assert.Equal(activePrompt.Text.Replace("我方使用", "对方使用", StringComparison.Ordinal), defenderPrompt.Text);
     }
 
     [Fact]
@@ -280,7 +280,7 @@ public sealed class EffectBatch294RegressionTests
         Resolve(game, "pass");
         Resolve(game, pitfall.InstanceId);
         var nested = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("是否响应堆叠顶部：〈落穴陷阱〉", nested.Text, StringComparison.Ordinal);
+        Assert.Contains("〈落穴陷阱〉", nested.Text, StringComparison.Ordinal);
         Assert.Contains("时点：对方 军团登场时", nested.Text, StringComparison.Ordinal);
         Assert.Contains("效果：对方 军团登场时：使此军团登场效果无效。", nested.Text, StringComparison.Ordinal);
         for (var safety = 0; safety < 12
@@ -293,7 +293,7 @@ public sealed class EffectBatch294RegressionTests
         Assert.Same(normal, Assert.Single(game.State.EffectStack));
         Assert.Same(promoted, game.State.Players[0].Field[0][0]);
         var normalPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal($"是否响应堆叠顶部：〈{promoted.Name}〉\n时点：登场时\n效果：{normalEffect}", normalPrompt.Text);
+        Assert.Equal($"选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n我方使用〈{promoted.Name}〉\n时点：登场时\n效果：{normalEffect}\n（效果原文中的我方／对方以发动者为准）\n是否响应？", normalPrompt.Text);
     }
 
     public static IEnumerable<object[]> ResponseTimings()
@@ -350,7 +350,7 @@ public sealed class EffectBatch294RegressionTests
         PushEffect(game, 0, source, trigger, effect, ["hidden-target"], data);
 
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal($"是否响应堆叠顶部：〈{source.Name}〉\n时点：{timing}\n效果：{effect}", prompt.Text);
+        Assert.Equal($"选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n我方使用〈{source.Name}〉\n时点：{timing}\n效果：{effect}\n（效果原文中的我方／对方以发动者为准）\n是否响应？", prompt.Text);
         Assert.DoesNotContain("hidden-value", prompt.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("hidden-target", prompt.Text, StringComparison.Ordinal);
     }

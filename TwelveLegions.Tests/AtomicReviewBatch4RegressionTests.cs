@@ -104,7 +104,7 @@ public sealed class AtomicReviewBatch4RegressionTests
             id => order.Data[id].Contains("军团位移时效果", StringComparison.Ordinal));
         var attackBuff = Assert.Single(order.ValidChoices, id => id != followMove);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
-            CardInstanceIds: [followMove, attackBuff])).Accepted);
+            CardInstanceIds: [attackBuff, followMove])).Accepted);
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", mode.Continuation);
         Assert.Single(game.State.EffectStack,

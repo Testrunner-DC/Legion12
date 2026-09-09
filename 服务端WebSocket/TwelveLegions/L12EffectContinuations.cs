@@ -2,6 +2,19 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private void ConfirmPrivateCardView(L12StackItem item, string text, IEnumerable<L12CardInstance> cards,
+        string action = "private-view-confirm")
+    {
+        var shown = cards.ToArray();
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = action, ["displayCardIds"] = string.Join('|', shown.Select(card => card.InstanceId)),
+            ["layout"] = "single-row", ["confirm"] = "已查看，继续",
+        };
+        foreach (var card in shown) AddPromptCardData(data, card);
+        CreateResolutionChoicePrompt(item, "option", text, ["confirm"], action, data, isPrivate: true);
+    }
+
     private void ContinueCardEffect(L12Prompt prompt, List<string> chosen, L12Command command)
     {
         if (prompt.Continuation == "active-ability" && prompt.StackItemId is null)
@@ -12,6 +25,7 @@ public sealed partial class L12GameEngine
         var item = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == prompt.StackItemId);
         if (item is null) return;
         var action = prompt.Data.GetValueOrDefault("action") ?? string.Empty;
+        if (action == "private-view-confirm") { FinishStackItem(item); return; }
         var source = FindSource(item);
         var player = State.Players[item.Controller];
         if (action.StartsWith("s2-", StringComparison.Ordinal))
@@ -36,7 +50,9 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "yes" && source is not null) BeginEffectMoraleReturn(item, 1, "mulan-charge");
                 else FinishStackItem(item); break;
             case "kusanagi-enter-kill":
-                KillTarget(item, chosen[0], $"被{item.SourceName}击杀");
+                if (chosen.Count > 0 && DeclaredEnemyTarget(item.Controller, chosen[0],
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 2)) is not null)
+                    KillTarget(item, chosen[0], $"被{item.SourceName}击杀");
                 FinishStackItem(item); break;
             case "peace-talk":
                 if (chosen[0] == "agree")
@@ -242,6 +258,7 @@ public sealed partial class L12GameEngine
     {
         if (choice == "skip")
         {
+            AddEvent("effect", item.Controller, "高天原阵营效果：未选择军团进行1格位移");
             FinishStackItem(item);
             return;
         }
@@ -297,7 +314,7 @@ public sealed partial class L12GameEngine
             "S01-0103", "top-card", top);
         item.Data["revealed"] = top.InstanceId;
         var choices = new List<string> { "top", "bottom" };
-        if (top.CardType == "legion" && top.Faction == "tianting" && top.CurrentCost <= 5
+        if (top.CardType == "legion" && top.Faction == "tianting" && L12StructuredCardRules.CurrentCostAtMost(top, 5)
             && CanReturnMorale(player, 1) && player.Field.SelectMany(row => row).Any(card => card is null))
             choices.Add("recruit");
         var data = new Dictionary<string, string>
