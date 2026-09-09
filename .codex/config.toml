@@ -3,7 +3,8 @@ multi_agent = true
 
 [agents]
 enabled = true
-max_threads = 4
+# 按需启用；排除主任务的子代理上限。跨任务写入与构建另由主任务统筹。
+max_concurrent_threads_per_session = 2
 
 [agents.l12_fast]
 description = "十二军团快速档：只读查询、文案、档案和低风险机械修改。"

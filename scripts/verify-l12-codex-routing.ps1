@@ -30,6 +30,10 @@ $expected = [ordered]@{
 
 if (-not (Test-Path -LiteralPath $projectConfig)) { throw "Missing project config: $projectConfig" }
 $projectConfigRaw = Read-NormalizedText $projectConfig
+if ($projectConfigRaw -notmatch '(?m)^max_concurrent_threads_per_session\s*=\s*2\s*$' -or
+    $projectConfigRaw -match '(?m)^max_threads\s*=') {
+    throw "Project config must use the current per-session limit of two optional subagents"
+}
 foreach ($file in $expected.Keys) {
     $path = Join-Path $agentRoot $file
     if (-not (Test-Path -LiteralPath $path)) { throw "Missing agent config: $path" }
@@ -46,11 +50,20 @@ foreach ($file in $expected.Keys) {
     }
     if ($raw -notmatch ('(?m)^model\s*=\s*"' + [regex]::Escape($expected[$file].Model) + '"')) { throw "$file has an unexpected model" }
     if ($raw -notmatch ('(?m)^model_reasoning_effort\s*=\s*"' + [regex]::Escape($expected[$file].Effort) + '"')) { throw "$file has an unexpected reasoning effort" }
+    foreach ($boundary in @("不递归委派", "只读任务不得修改文件", "不得修改共享台账、提交、推送、部署或关闭 Bug", "仅运行专项验证")) {
+        if (-not $raw.Contains($boundary)) { throw "$file is missing the execution boundary: $boundary" }
+    }
+    if ($raw.Contains("自动提交并推送") -or $raw.Contains("完成后运行完整发布门禁")) {
+        throw "$file must leave Git and release gates to the primary"
+    }
 }
 
 $agentsRules = Read-NormalizedText (Join-Path $repoRoot "AGENTS.md")
-foreach ($marker in @("Automatic task-complexity routing", "l12_fast", "l12_standard", "l12_deep", "l12_critical", "select the highest matching tier", "route one tier higher")) {
+foreach ($marker in @("Single-primary execution and optional delegation", "l12_fast", "l12_standard", "l12_deep", "l12_critical", "Default to zero subagents", "Subagents must not recursively delegate", "docs/WORKSTREAM-COORDINATION.md")) {
     if (-not $agentsRules.Contains($marker)) { throw "AGENTS.md is missing routing marker: $marker" }
+}
+if ($agentsRules.Contains("Route the task to exactly one project agent by default")) {
+    throw "AGENTS.md must not mandate delegation for every task"
 }
 
 $python = Get-Command python.exe -ErrorAction SilentlyContinue
@@ -62,10 +75,7 @@ if ($null -ne $python) {
     }
 }
 
-$codexCandidates = @(
-    $env:CODEX_CLI_PATH,
-    "C:\Users\neptu\AppData\Local\OpenAI\Codex\bin\110b3d66a02d864e\codex.exe"
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+$codexCandidates = @($env:CODEX_CLI_PATH) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 $codex = $codexCandidates | Select-Object -First 1
 if (-not $codex) {
     $command = Get-Command codex.exe -ErrorAction SilentlyContinue
@@ -96,5 +106,5 @@ finally {
 }
 if ($codexExitCode -ne 0) { throw "Codex strict-config startup failed: $($helpOutput -join [Environment]::NewLine)" }
 
-Write-Host "[L12 Codex] Project registration, agent files, tiers, TOML syntax, AGENTS markers, and strict-config entry passed."
-Write-Host "[L12 Codex] Runtime activation still requires this repository canonical path to be trusted and the Codex project to be reloaded."
+Write-Host "[L12 Codex] Optional-agent registration, concurrency, execution boundaries, tiers, available TOML parser, and strict-config entry passed."
+Write-Host "[L12 Codex] CLI parsing is not proof of live desktop activation. New sessions load trusted project config; the current primary follows the approved operating policy immediately."
