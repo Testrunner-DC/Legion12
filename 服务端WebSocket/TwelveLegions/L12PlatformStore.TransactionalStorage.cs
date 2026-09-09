@@ -605,7 +605,29 @@ public sealed partial class L12PlatformStore
             audit.Signals ??= [];
             if (string.IsNullOrWhiteSpace(audit.Enforcement)) audit.Enforcement = "none";
             if (string.IsNullOrWhiteSpace(audit.ConclusionKind)) audit.ConclusionKind = "unknown";
+            if (audit.EndedAt == default) audit.EndedAt = audit.CreatedAt;
         }
+        data.RankedHeldRewards ??= [];
+        data.RankedSettlementProfileFacts ??= [];
+        data.RankedIntegrityDecisions ??= [];
+        foreach (var decision in data.RankedIntegrityDecisions)
+        {
+            decision.MatchIds ??= [];
+            decision.RestrictedAccountIds ??= [];
+            decision.AccountEffects ??= [];
+        }
+        data.RankedIntegrityCorrections ??= [];
+        foreach (var correction in data.RankedIntegrityCorrections)
+            correction.MatchIds ??= [];
+        data.RankedIntegrityNotifications ??= [];
+        foreach (var notification in data.RankedIntegrityNotifications)
+        {
+            notification.MatchIds ??= [];
+            if (string.IsNullOrWhiteSpace(notification.AppealGuidance))
+                notification.AppealGuidance = RankedAppealGuidance;
+        }
+        data.RankedIntegrityAppeals ??= [];
+        foreach (var appeal in data.RankedIntegrityAppeals) appeal.Events ??= [];
         data.BusinessVersion ??= data.Version;
         return data;
     }
@@ -681,13 +703,14 @@ public sealed partial class L12PlatformStore
                 || string.Equals(row.FirstAccountId, row.SecondAccountId, StringComparison.OrdinalIgnoreCase)
                 || row.Winner is not null and not (0 or 1)
                 || row.DurationMs < 0 || row.MeaningfulCommandCount < 0
-                || row.Enforcement != "none"
+                || row.Enforcement is not ("none" or "reward-held")
                 || (!string.IsNullOrEmpty(row.FirstNetworkFingerprint)
                     && NormalizeNetworkFingerprint(row.FirstNetworkFingerprint) != row.FirstNetworkFingerprint)
                 || (!string.IsNullOrEmpty(row.SecondNetworkFingerprint)
                     && NormalizeNetworkFingerprint(row.SecondNetworkFingerprint) != row.SecondNetworkFingerprint)
                 || !data.Accounts.Any(account => account.Id == row.FirstAccountId)
-                || !data.Accounts.Any(account => account.Id == row.SecondAccountId)))
+                || !data.Accounts.Any(account => account.Id == row.SecondAccountId))
+            || HasInvalidRankedIntegrityActionState(data))
             throw new InvalidDataException("排位档案、结算或广播标识为空/重复");
         return data;
     }

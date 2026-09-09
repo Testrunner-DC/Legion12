@@ -22,3 +22,4 @@ assert.match(lobby, /返回，不更改/)
 for (const panel of ['AdminPage.vue','AdminArticlesPanel.vue','AdminMatchesPanel.vue','AdminMatchGovernancePanel.vue','AdminRankedIntegrityPanel.vue','AdminSiteContentPanel.vue','AdminOperationsPanel.vue'])
   assert.match(read(panel), /<PagedCollection/)
 console.log('BATCH302 控件约束通过：广播边界、日志10份、派系确认、7类后台分页')
+import './check-ranked-integrity-contracts.mjs'

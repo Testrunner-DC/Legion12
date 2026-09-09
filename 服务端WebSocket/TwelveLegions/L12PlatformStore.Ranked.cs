@@ -46,7 +46,8 @@ public sealed record L12RankedSettlementComponent(string Kind, string Label, int
 public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
     string Outcome, bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
     int Delta, string TierBefore, string TierAfter, IReadOnlyList<L12RankedSettlementComponent> Components,
-    DateTimeOffset SettledAt);
+    DateTimeOffset SettledAt, string RewardStatus = "applied", int EffectiveDelta = 0,
+    int PendingDelta = 0);
 public sealed record L12RankedBroadcastView(string Id, string MatchId, string EventType,
     string Message, DateTimeOffset CreatedAt);
 public sealed record L12RankedBroadcastClaimView(L12RankedBroadcastView Broadcast,
@@ -242,6 +243,12 @@ public sealed partial class L12PlatformStore
             foreach (var record in _data.RankedMasterRecords) record.TitleFacts ??= [];
             _data.RankedMasterRecordedMatchIds ??= [];
             _data.RankedIntegrityAudits ??= [];
+            _data.RankedHeldRewards ??= [];
+            _data.RankedSettlementProfileFacts ??= [];
+            _data.RankedIntegrityDecisions ??= [];
+            _data.RankedIntegrityCorrections ??= [];
+            _data.RankedIntegrityNotifications ??= [];
+            _data.RankedIntegrityAppeals ??= [];
             _data.RankedConfig.MasterTitles ??= [];
             if (_data.RankedConfig.TimeControl is null)
             {
@@ -495,7 +502,8 @@ public sealed partial class L12PlatformStore
                     Master0 = RankingMasterId(match.MasterId0, match.Master0),
                     Master1 = RankingMasterId(match.MasterId1, match.Master1),
                 })
-                .Where(item => item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
+                .Where(item => !IsRankedMatchExcludedLocked(item.Match.MatchId)
+                    && item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
                     && item.Ended is not null && item.Ended >= item.Started && item.Ended <= now
                     && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
                 .ToArray();
@@ -595,6 +603,7 @@ public sealed partial class L12PlatformStore
             foreach (var match in matches.OrderBy(item => item.StartedUtc, StringComparer.Ordinal))
             {
                 if (match.Winner is not (0 or 1)
+                    || IsRankedMatchExcludedLocked(match.MatchId)
                     || _data.RankedMasterRecordedMatchIds.Contains(match.MatchId, StringComparer.OrdinalIgnoreCase)
                     || !DateTimeOffset.TryParse(match.StartedUtc, out var started)
                     || (season.StartsAt is not null && started < season.StartsAt)
@@ -717,7 +726,8 @@ public sealed partial class L12PlatformStore
             if (TryGetRankedSettlementReplayLocked(matchId, firstAccountId, secondAccountId, winner,
                     firstMasterId, secondMasterId, integrity, out var replay))
             {
-                if (integrity is not null && ImportRankedMasterTitleFactLocked(new L12RankedMasterTitleMatchFact(
+                if (integrity is not null && !IsRankedMatchExcludedLocked(matchId)
+                    && ImportRankedMasterTitleFactLocked(new L12RankedMasterTitleMatchFact(
                         matchId, firstAccountId, secondAccountId, firstMasterId ?? string.Empty,
                         secondMasterId ?? string.Empty, winner, integrity.FinalRound, integrity.EndedAt,
                         integrity.ConclusionKind, true))) Save();
@@ -728,6 +738,10 @@ public sealed partial class L12PlatformStore
             var second = RequireRankedProfile(secondAccountId);
             if (string.IsNullOrWhiteSpace(first.Faction) || string.IsNullOrWhiteSpace(second.Faction))
                 throw new InvalidOperationException("排位结算缺少赛季派系");
+            if (TryHoldRankedMatchLocked(matchId, first, second, winner, firstMasterId,
+                    secondMasterId, integrity, out var held)) return held;
+            var firstProfileBefore = CaptureRankedProfile(first);
+            var secondProfileBefore = CaptureRankedProfile(second);
             var beforeTitles = CurrentFactionTitleAssignments();
             var beforeMasterChampions = CurrentMasterChampions()
                 .ToDictionary(item => item.Key, item => item.Value.AccountId, StringComparer.OrdinalIgnoreCase);
@@ -761,6 +775,18 @@ public sealed partial class L12PlatformStore
                 beforeMasterChampions, firstStreakBefore, secondStreakBefore,
                 firstMasterId, secondMasterId);
             _data.RankedBroadcasts.AddRange(broadcasts);
+            _data.RankedSettlementProfileFacts.Add(new RankedSettlementProfileFactRow
+            {
+                MatchId = matchId,
+                FirstAccountId = firstAccountId,
+                SecondAccountId = secondAccountId,
+                FirstBefore = firstProfileBefore,
+                FirstAfter = CaptureRankedProfile(first),
+                SecondBefore = secondProfileBefore,
+                SecondAfter = CaptureRankedProfile(second),
+                AppliedInitially = true,
+                CreatedAt = integrity?.EndedAt.ToUniversalTime() ?? DateTimeOffset.UtcNow,
+            });
             if (_data.RankedBroadcasts.Count > 300)
             {
                 var removedIds = _data.RankedBroadcasts.Take(_data.RankedBroadcasts.Count - 300)
@@ -1184,9 +1210,16 @@ public sealed partial class L12PlatformStore
                 tier.WinStreakCap, tier.LossProtectionCap, tier.RatingGapCap, tier.Color, tier.Icon)).ToArray())).ToArray(),
         row.MasterTitles.Select(item => new L12RankedMasterTitleConfig(item.MasterId, item.MasterName, item.Title)).ToArray(),
         NormalizeRankedTimeControl(row.TimeControl), NormalizeRankedBroadcastConfig(row.Broadcast));
-    private L12RankedSettlementView ToView(RankedSettlementRow row) => new(row.MatchId, row.AccountId,
-        FactionFor(row.Faction).Name, row.Outcome, row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before, row.After,
-        row.Delta, row.TierBefore, row.TierAfter, row.Components.ToArray(), row.SettledAt);
+    private L12RankedSettlementView ToView(RankedSettlementRow row)
+    {
+        var rewardStatus = RankedRewardStatusLocked(row.MatchId);
+        var effectiveDelta = rewardStatus is "applied" or "released" ? row.Delta : 0;
+        var pendingDelta = rewardStatus == "held" ? row.Delta : 0;
+        return new(row.MatchId, row.AccountId, FactionFor(row.Faction).Name, row.Outcome,
+            row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before,
+            row.After, row.Delta, row.TierBefore, row.TierAfter, row.Components.ToArray(),
+            row.SettledAt, rewardStatus, effectiveDelta, pendingDelta);
+    }
     private static L12RankedBroadcastView ToView(RankedBroadcastRow row) => new(row.Id, row.MatchId,
         row.EventType, row.Message, row.CreatedAt);
 

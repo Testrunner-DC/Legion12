@@ -286,6 +286,13 @@ public sealed partial class L12PlatformStore
         public List<RankedMasterRecordRow> RankedMasterRecords { get; set; } = [];
         public List<string> RankedMasterRecordedMatchIds { get; set; } = [];
         public List<RankedIntegrityAuditRow> RankedIntegrityAudits { get; set; } = [];
+        public long RankedIntegrityRevision { get; set; }
+        public List<RankedHeldRewardRow> RankedHeldRewards { get; set; } = [];
+        public List<RankedSettlementProfileFactRow> RankedSettlementProfileFacts { get; set; } = [];
+        public List<RankedIntegrityDecisionRow> RankedIntegrityDecisions { get; set; } = [];
+        public List<RankedIntegrityCorrectionRow> RankedIntegrityCorrections { get; set; } = [];
+        public List<RankedIntegrityNotificationRow> RankedIntegrityNotifications { get; set; } = [];
+        public List<RankedIntegrityAppealRow> RankedIntegrityAppeals { get; set; } = [];
     }
 
     private readonly object _gate = new();

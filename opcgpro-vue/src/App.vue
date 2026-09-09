@@ -6,6 +6,7 @@ import { authState, platformState, updateAudioPreferences } from '@/l12/platform
 import SiteShell from '@/l12/site/SiteShell.vue'
 import GlobalBugFeedback from '@/l12/site/GlobalBugFeedback.vue'
 import FriendRequestNotifications from '@/l12/site/FriendRequestNotifications.vue'
+import RankedIntegrityNotice from '@/l12/site/RankedIntegrityNotice.vue'
 import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudioStore } from '@/l12/audioPreferences'
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
 import { useLandscapeViewport } from '@/l12/mobileViewport'
@@ -81,6 +82,7 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
   <SiteShell v-else><router-view /></SiteShell>
   <GlobalBugFeedback />
   <FriendRequestNotifications />
+  <RankedIntegrityNotice />
 </template>
 
 <style>

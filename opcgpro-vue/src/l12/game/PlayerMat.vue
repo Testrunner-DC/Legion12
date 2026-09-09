@@ -60,6 +60,11 @@ const factionOpen = ref(false)
 const factionMinimized = ref(false)
 const abilityCardOpen = ref<Card | null>(null)
 const abilityCardMinimized = ref(false)
+watch(() => props.player.specialZones?.trials, trials => {
+  const opened = abilityCardOpen.value
+  if (opened?.cardType !== 'trial') return
+  abilityCardOpen.value = trials?.find(card => card.instanceId === opened.instanceId) ?? null
+})
 watch(() => props.interactionPromptActive, active => {
   if (!active) return
   factionOpen.value = false

@@ -499,10 +499,16 @@ public sealed partial class L12GameEngine
             }).ToArray()
             : [];
         var trials = player.SpecialZones.Trials.Select(card =>
-            revealAll || viewer == ownerIndex || card.TrialCompleted
-                ? (object)card
-                : new { card.InstanceId, cardId = "hidden-trial", name = "未揭示试炼", cardType = "trial", hidden = true,
-                    imageUrl = "/assets/l12/trial-back.png", card.TrialProgress, card.TrialCompleted }).ToArray();
+        {
+            if (revealAll || viewer == ownerIndex || card.TrialCompleted)
+            {
+                var snapshot = card.Clone();
+                snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+                return (object)snapshot;
+            }
+            return new { card.InstanceId, cardId = "hidden-trial", name = "未揭示试炼", cardType = "trial", hidden = true,
+                imageUrl = "/assets/l12/trial-back.png", card.TrialProgress, card.TrialCompleted };
+        }).ToArray();
         var godPower = player.Morale.Where(card => card.IsGodPower).Select(card => new
         {
             card.InstanceId,

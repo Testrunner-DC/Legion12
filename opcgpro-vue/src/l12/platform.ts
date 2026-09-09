@@ -343,7 +343,7 @@ export interface RankedProfileHistory { seasonId: string; faction: string; seven
 export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
 export interface RankedSettlementComponent { kind: string; label: string; value: number }
-export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string }
+export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string; rewardStatus?: 'applied' | 'held' | 'released' | 'voided'; effectiveDelta?: number; pendingDelta?: number }
 export interface RankedBroadcast { id: string; matchId: string; eventType: string; message: string; createdAt: string }
 export interface RankedBroadcastClaim { broadcast: RankedBroadcast; claimToken: string; leaseExpiresAt: string }
 export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; titles: string[]; wins: number; losses: number; winStreak: number }

@@ -55,6 +55,9 @@ internal static class L12RankedNetworkPrivacy
 public sealed partial class L12PlatformStore
 {
     private static readonly TimeSpan RankedVeryShortMatch = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan RankedExtremeShortMatch = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan RankedRepeatedPairWindow = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan RankedHighRiskCooldown = TimeSpan.FromMinutes(30);
 
     private sealed class RankedIntegrityAuditRow
     {
@@ -73,7 +76,9 @@ public sealed partial class L12PlatformStore
         public string SecondNetworkFingerprint { get; set; } = string.Empty;
         public List<string> Signals { get; set; } = [];
         public bool ReviewRecommended { get; set; }
+        public bool RewardHeld { get; set; }
         public string Enforcement { get; set; } = "none";
+        public DateTimeOffset EndedAt { get; set; }
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
@@ -279,11 +284,18 @@ public sealed partial class L12PlatformStore
             if (durationMs <= (long)RankedVeryShortMatch.TotalMilliseconds)
                 signals.Add("very-short-match");
             if (meaningful == 0) signals.Add("no-meaningful-actions");
-            if (conclusion == "surrender") signals.Add("abnormal-surrender");
+            // 投降本身是正常规则结果；只有与极短时长或零有效操作复合时才是审计信号。
+            if (conclusion == "surrender"
+                && (durationMs <= (long)RankedVeryShortMatch.TotalMilliseconds || meaningful == 0))
+                signals.Add("abnormal-surrender");
             else if (conclusion.Contains("timeout", StringComparison.Ordinal))
                 signals.Add("abnormal-timeout");
         }
-        var review = signals.Count >= 2 && signals.Any(code => code != "linked-network");
+        var rewardHeld = context is not null && winner is 0 or 1
+            && IsRepeatedUnilateralExtremePairLocked(firstAccountId, secondAccountId, winner.Value,
+                durationMs, meaningful, context.EndedAt);
+        if (rewardHeld) signals.Add("repeated-unilateral-extreme-pair");
+        var review = rewardHeld || signals.Count >= 2 && signals.Any(code => code != "linked-network");
         _data.RankedIntegrityAudits.Add(new RankedIntegrityAuditRow
         {
             MatchId = matchId,
@@ -300,10 +312,64 @@ public sealed partial class L12PlatformStore
             SecondNetworkFingerprint = secondNetwork,
             Signals = signals,
             ReviewRecommended = review,
-            // 信号只进入人工审计；绝不在这里扣分、封禁或改变匹配分。
-            Enforcement = "none",
+            RewardHeld = rewardHeld,
+            // 只有严格复合信号可暂扣当前新奖励；绝不自动封禁或追扣旧分。
+            Enforcement = rewardHeld ? "reward-held" : "none",
+            EndedAt = context?.EndedAt.ToUniversalTime() ?? DateTimeOffset.UtcNow,
         });
         return true;
+    }
+
+    private bool ShouldHoldRankedRewardLocked(string firstAccountId, string secondAccountId, int winner,
+        L12RankedIntegrityContext? context)
+    {
+        if (context is null) return false;
+        var durationMs = Math.Max(0L, (long)(context.EndedAt - context.StartedAt).TotalMilliseconds);
+        return IsRepeatedUnilateralExtremePairLocked(firstAccountId, secondAccountId, winner,
+            durationMs, Math.Max(0, context.MeaningfulCommandCount), context.EndedAt);
+    }
+
+    private bool IsRepeatedUnilateralExtremePairLocked(string firstAccountId, string secondAccountId,
+        int winner, long durationMs, int meaningfulCommandCount, DateTimeOffset endedAt)
+    {
+        if (durationMs > (long)RankedExtremeShortMatch.TotalMilliseconds || meaningfulCommandCount != 0)
+            return false;
+        var winningAccountId = winner == 0 ? firstAccountId : secondAccountId;
+        var cutoff = endedAt.ToUniversalTime() - RankedRepeatedPairWindow;
+        var previous = _data.RankedIntegrityAudits.Count(row =>
+        {
+            var samePair = row.FirstAccountId.Equals(firstAccountId, StringComparison.OrdinalIgnoreCase)
+                    && row.SecondAccountId.Equals(secondAccountId, StringComparison.OrdinalIgnoreCase)
+                || row.FirstAccountId.Equals(secondAccountId, StringComparison.OrdinalIgnoreCase)
+                    && row.SecondAccountId.Equals(firstAccountId, StringComparison.OrdinalIgnoreCase);
+            if (!samePair || row.Winner is not (0 or 1)
+                || row.DurationMs > (long)RankedExtremeShortMatch.TotalMilliseconds
+                || row.MeaningfulCommandCount != 0) return false;
+            var priorWinner = row.Winner == 0 ? row.FirstAccountId : row.SecondAccountId;
+            var priorEndedAt = row.EndedAt == default ? row.CreatedAt : row.EndedAt;
+            return priorWinner.Equals(winningAccountId, StringComparison.OrdinalIgnoreCase)
+                && priorEndedAt.ToUniversalTime() >= cutoff
+                && priorEndedAt.ToUniversalTime() <= endedAt.ToUniversalTime();
+        });
+        // 当前局是同一胜者在窗口内第三局时才暂扣；重复、网络关联或普通投降单独均不足以触发。
+        return previous >= 2;
+    }
+
+    internal int RankedPairPriority(string accountId, string otherId, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var cutoff = now.ToUniversalTime() - RankedRepeatedPairWindow;
+            return _data.RankedIntegrityAudits.Count(row =>
+            {
+                var endedAt = row.EndedAt == default ? row.CreatedAt : row.EndedAt;
+                return endedAt.ToUniversalTime() >= cutoff && endedAt.ToUniversalTime() <= now.ToUniversalTime()
+                    && (row.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+                            && row.SecondAccountId.Equals(otherId, StringComparison.OrdinalIgnoreCase)
+                        || row.FirstAccountId.Equals(otherId, StringComparison.OrdinalIgnoreCase)
+                            && row.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase));
+            });
+        }
     }
 
     private static void ValidateRankedIdentity(string matchId, string firstAccountId,
@@ -347,6 +413,7 @@ public sealed partial class L12PlatformStore
         "no-meaningful-actions" => "没有有效规则操作",
         "abnormal-surrender" => "极短或无操作投降",
         "abnormal-timeout" => "异常超时结束",
+        "repeated-unilateral-extreme-pair" => "短时窗口内同一方重复零操作获胜（奖励暂扣）",
         _ => code,
     };
 }

@@ -7,6 +7,29 @@ namespace TwelveLegions.Tests;
 public sealed class CardAnalyticsFairnessTests
 {
     [Fact]
+    public async Task IntegrityExclusionsApplyToDashboardAndDetailAndInvalidateCachedResults()
+    {
+        var path = Path.Combine(TestDirectory("integrity-exclusions"), "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        foreach (var id in new[] { "valid", "held" })
+            await SeedMatchAsync(connection, id, "ranked", 2, "effects-v2", "MASTER-A", "MASTER-B",
+                0, 0, true, id + "-owner", id + "-other");
+        var query = new L12CardAnalyticsQuery(MinimumSampleSize: 1, CandidateCardIds: ["TARGET"]);
+        var before = await recorder.ListCardAnalyticsAsync(query);
+        Assert.Equal(2, Assert.Single(before.Items, item => item.CardId == "TARGET").SampleSize);
+        var excluded = query with { ExcludedMatchIds = ["held"] };
+        var after = await recorder.ListCardAnalyticsAsync(excluded);
+        Assert.Equal(1, Assert.Single(after.Items, item => item.CardId == "TARGET").SampleSize);
+        var detail = Assert.IsType<L12CardAnalyticsDetail>(await recorder.GetCardAnalyticsAsync("TARGET", excluded));
+        Assert.Equal(1, detail.Summary.SampleSize);
+        var restored = await recorder.ListCardAnalyticsAsync(query);
+        Assert.Equal(2, Assert.Single(restored.Items, item => item.CardId == "TARGET").SampleSize);
+    }
+
+    [Fact]
     public async Task DashboardIsRankedOnlyAndComparisonCarriesOnlyExactFairStrata()
     {
         var directory = TestDirectory("fair-strata");

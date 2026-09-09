@@ -9,6 +9,7 @@ public sealed partial class L12PlatformStore
         {
             var matches = new HashSet<string>(StringComparer.Ordinal);
             var rooms = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var matchId in RankedIntegrityProtectedMatchIds()) Add(matches, matchId);
             foreach (var report in _data.BugReports)
             {
                 if (report.Status is "resolved" or "closed") continue;

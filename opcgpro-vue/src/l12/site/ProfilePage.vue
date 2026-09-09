@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
+import RankedPenaltyHistory from './RankedPenaltyHistory.vue'
 import { canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, rankedApi, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession, type RankedOverview } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
@@ -246,6 +247,7 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
       </template>
     </section>
     <div class="profile-grid"><section class="panel"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel links"><header><h2>数据与工具</h2></header><router-link to="/battle/records"><b>对局记录与 JSON 回放</b><span>导出、导入并在实战棋盘查看 →</span></router-link><router-link to="/decks"><b>我的牌库</b><span>账号牌库、牌库码与牌库图分享 →</span></router-link><router-link to="/battle/rankings"><b>排行榜</b><span>玩家榜、主宰榜与对阵矩阵 →</span></router-link></section></div>
+    <RankedPenaltyHistory />
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
     <div v-if="platformState.account?.mustChangeUsername" class="username-change-gate" role="dialog" aria-modal="true" aria-labelledby="username-change-title">
       <form class="username-change-card" @submit.prevent="submitUsernameChange">

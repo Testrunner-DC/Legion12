@@ -79,7 +79,8 @@ public sealed partial class L12RoomManager
             players.Select(player => player.Connected).ToArray(),
             players.Select(player => player.DisconnectedAt).ToArray(),
             players.Select(player => player.IntegrityClientKey).ToArray(),
-            players.Select(player => player.ConnectionGeneration).ToArray(), now, clock.TimeControl);
+            players.Select(player => player.ConnectionGeneration).ToArray(), now, clock.TimeControl,
+            players.Select(player => player.RankedBrowserKey).ToArray());
     }
 
     private static void RestoreRankedClock(Room room, L12RankedRuntimeCheckpoint runtime)

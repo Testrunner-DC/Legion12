@@ -13,7 +13,7 @@ internal sealed record L12RankedRuntimeCheckpoint(
     DateTimeOffset LastSettledAt, string? ConclusionKind, bool AuthorityEventRecorded,
     bool[] Connected, DateTimeOffset?[] DisconnectedAt,
     string[] IntegrityClientKeys, long[] ConnectionGenerations, DateTimeOffset UpdatedAt,
-    L12RankedTimeControlConfig? TimeControl = null);
+    L12RankedTimeControlConfig? TimeControl = null, string[]? RankedBrowserKeys = null);
 
 internal sealed record L12RankedSettlementEnvelope(
     int Version, string MatchId, string FirstAccountId, string SecondAccountId,
@@ -100,6 +100,8 @@ public sealed partial class MatchRecorder
             || runtime.DisconnectedAt is not { Length: 2 }
             || runtime.IntegrityClientKeys is not { Length: 2 }
             || runtime.ConnectionGenerations is not { Length: 2 }
+            || (runtime.RankedBrowserKeys is not null && (runtime.RankedBrowserKeys.Length != 2
+                || runtime.RankedBrowserKeys.Any(value => value is null || value.Length > 100)))
             || runtime.IntegrityClientKeys.Any(value => value is null))
             throw new InvalidDataException("排位运行快照结构无效");
         if (runtime.TotalRemainingMs.Any(value => value < 0)

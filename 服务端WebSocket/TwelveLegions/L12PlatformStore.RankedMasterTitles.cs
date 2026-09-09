@@ -115,6 +115,7 @@ public sealed partial class L12PlatformStore
         var selectable = SelectableMasterIds().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var matches = _data.RankedMasterRecords.SelectMany(item => item.TitleFacts ?? [])
             .Where(item => IsEligibleMasterTitleMatch(item, cutoff, now))
+            .Where(item => !IsRankedMatchExcludedLocked(item.MatchId))
             .Where(item => selectable.Contains(item.FirstMasterId)
                 && selectable.Contains(item.SecondMasterId))
             .OrderBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)

@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace TwelveLegions.Server;
 
-public sealed class L12WebSocketServer : IAsyncDisposable
+public sealed partial class L12WebSocketServer : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions OutgoingJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan SocketSendTimeout = TimeSpan.FromSeconds(5);
@@ -41,6 +41,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
     private readonly SemaphoreSlim _socketClaimGate = new(1, 1);
     private readonly ConcurrentDictionary<Guid, string> _socketRankedNetworkFingerprints = new();
     private readonly string? _rankedIntegrityHmacKey;
+    private readonly L12RankedDevicePrivacy _rankedDevicePrivacy;
+    private readonly ConcurrentDictionary<Guid, string> _socketRankedDevices = new();
     private readonly TimeSpan _rankedClockWatchdogInterval;
     private CancellationTokenSource? _rankedClockWatchdogCancellation;
     private Task? _rankedClockWatchdogTask;
@@ -66,6 +68,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _releaseControl = releaseControl ?? new L12DisabledReleaseControlAdapter();
         _rankedIntegrityHmacKey = rankedIntegrityHmacKey
             ?? Environment.GetEnvironmentVariable(L12RankedNetworkPrivacy.EnvironmentKey);
+        _rankedDevicePrivacy = new L12RankedDevicePrivacy(_rankedIntegrityHmacKey);
         _rankedClockWatchdogInterval = rankedClockWatchdogInterval is { } interval && interval > TimeSpan.Zero
             ? interval : TimeSpan.FromSeconds(1);
         _sandboxReplayMaintenanceInterval = sandboxReplayMaintenanceInterval is { } maintenanceInterval
@@ -85,6 +88,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         builder.WebHost.UseUrls($"http://{host}:{port}");
         builder.Services.AddRouting();
         _app = builder.Build();
+        MapRankedIntegrityEndpoints();
         _app.Use(async (context, next) =>
         {
             // Authentication, mail throttles and privacy-preserving ranked network keys
@@ -446,7 +450,11 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                     request.HttpContext.Items.TryGetValue(L12CorrelationIds.OriginalPathItemName, out var path)
                         ? path as string ?? request.Path.Value ?? "/api/auth/login"
                         : request.Path.Value ?? "/api/auth/login"));
-            if (result.Success) return Results.Ok(new { result.Message, result.Account, result.Token });
+            if (result.Success)
+            {
+                _rankedDevicePrivacy.EnsureCookie(request.HttpContext);
+                return Results.Ok(new { result.Message, result.Account, result.Token });
+            }
             if (result.RetryAfterSeconds > 0)
                 request.HttpContext.Response.Headers.RetryAfter = result.RetryAfterSeconds.ToString();
             return ApiError(request, result.Code, result.Message,
@@ -459,6 +467,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/auth/me", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is not null) _rankedDevicePrivacy.EnsureCookie(request.HttpContext);
             return account is null ? Results.Unauthorized() : Results.Ok(account);
         });
         _app.MapPost("/api/auth/change-password", (HttpRequest request, ChangePasswordRequest body) =>
@@ -2030,6 +2039,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 context.Connection.RemoteIpAddress, _rankedIntegrityHmacKey);
             if (rankedNetworkFingerprint is not null)
                 _socketRankedNetworkFingerprints[sessionId] = rankedNetworkFingerprint;
+            var browser = _rankedDevicePrivacy.Read(context.Request.Cookies[L12RankedDevicePrivacy.CookieName]);
+            if (browser is not null) _socketRankedDevices[sessionId] = browser;
             var buffer = new byte[32 * 1024];
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
@@ -2049,6 +2060,7 @@ public sealed class L12WebSocketServer : IAsyncDisposable
                 _activeAccountSockets.TryRemove(binding.AccountId, out _);
             await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
             _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
+            _socketRankedDevices.TryRemove(sessionId, out _);
             _socketCapabilities.TryRemove(sessionId, out _);
             _snapshotCodecs.TryRemove(sessionId, out _);
             if (_outboundConnections.TryRemove(sessionId, out var outbound))
@@ -2234,7 +2246,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
         {
             previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
             claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id, authenticated.Account.Username,
-                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId));
+                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId),
+                _socketRankedDevices.GetValueOrDefault(sessionId));
             _socketPlatformSessions[sessionId] = new SocketPlatformBinding(authenticated.SessionId,
                 authenticated.Account.Id, claim.ConnectionGeneration);
             _activeAccountSockets[authenticated.Account.Id] = sessionId;
@@ -2650,7 +2663,8 @@ public sealed class L12WebSocketServer : IAsyncDisposable
             Initiative: QueryValue(request, "initiative"),
             RulesVersion: QueryValue(request, "rulesVersion"),
             SeasonId: QueryValue(request, "seasonId"),
-            EffectVersion: _recorder.ResolveAnalyticsEffectVersion(QueryValue(request, "effectVersion")));
+            EffectVersion: _recorder.ResolveAnalyticsEffectVersion(QueryValue(request, "effectVersion")),
+            ExcludedMatchIds: _platform.RankedIntegrityExcludedMatchIds().ToArray());
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)

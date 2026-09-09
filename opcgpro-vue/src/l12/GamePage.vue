@@ -101,10 +101,12 @@ function returnToLobby() {
         <small>点击返回后离开结算；双方都离开后关闭房间，最长保留30分钟。</small>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
         <section v-if="l12State.rankedSettlement" class="ranked-result">
-          <b>{{ l12State.rankedSettlement.faction }} · {{ l12State.rankedSettlement.tierAfter }}</b>
-          <strong v-if="l12State.rankedSettlement.placement && l12State.rankedSettlement.placementPlayed < l12State.rankedSettlement.placementRequired">定级 {{ l12State.rankedSettlement.placementPlayed }}/{{ l12State.rankedSettlement.placementRequired }}</strong>
+          <b>{{ l12State.rankedSettlement.faction }} · {{ ['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '') ? l12State.rankedSettlement.tierBefore : l12State.rankedSettlement.tierAfter }}</b>
+          <strong v-if="l12State.rankedSettlement.rewardStatus === 'held'">本局排位收益待审核，尚未计入七曜值与战绩。请查看处置通知，可提交申诉。</strong>
+          <strong v-else-if="l12State.rankedSettlement.rewardStatus === 'voided'">本局排位收益已作废，请查看处置通知及判罚历史。</strong>
+          <strong v-else-if="l12State.rankedSettlement.placement && l12State.rankedSettlement.placementPlayed < l12State.rankedSettlement.placementRequired">定级 {{ l12State.rankedSettlement.placementPlayed }}/{{ l12State.rankedSettlement.placementRequired }}</strong>
           <strong v-else>七曜值 {{ l12State.rankedSettlement.before.toLocaleString() }} → {{ l12State.rankedSettlement.after.toLocaleString() }} <i>{{ l12State.rankedSettlement.delta >= 0 ? '+' : '' }}{{ l12State.rankedSettlement.delta.toLocaleString() }}</i></strong>
-          <details v-if="l12State.rankedSettlement.components.length"><summary>查看结算明细</summary><span v-for="item in l12State.rankedSettlement.components" :key="item.kind">{{ item.label }} {{ item.value >= 0 ? '+' : '' }}{{ item.value.toLocaleString() }}</span></details>
+          <details v-if="l12State.rankedSettlement.components.length && !['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '')"><summary>查看结算明细</summary><span v-for="item in l12State.rankedSettlement.components" :key="item.kind">{{ item.label }} {{ item.value >= 0 ? '+' : '' }}{{ item.value.toLocaleString() }}</span></details>
         </section>
         <small>结果将保留在此处，点击返回后才离开本局。</small>
         <button @click="returnToLobby">返回大厅</button>

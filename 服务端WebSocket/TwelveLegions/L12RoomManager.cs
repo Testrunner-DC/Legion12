@@ -42,6 +42,7 @@ public sealed partial class L12RoomManager
         public bool Connected { get; set; } = true;
         public DateTimeOffset? DisconnectedAt { get; set; }
         public string IntegrityClientKey { get; set; } = string.Empty;
+        public string RankedBrowserKey { get; set; } = string.Empty;
         public long ConnectionGeneration { get; set; }
     }
 
@@ -170,7 +171,7 @@ public sealed partial class L12RoomManager
     }
 
     public async Task<L12SessionClaimResult> ConnectAsync(Guid sessionId, string accountId, string? requestedName,
-        string? integrityClientKey = null)
+        string? integrityClientKey = null, string? rankedBrowserKey = null)
     {
         var name = NormalizeName(requestedName);
         await _sessionRecoveryGate.WaitAsync();
@@ -214,6 +215,8 @@ public sealed partial class L12RoomManager
                     DisconnectedAt = null,
                     IntegrityClientKey = string.IsNullOrWhiteSpace(integrityClientKey)
                         ? source.IntegrityClientKey : integrityClientKey,
+                    RankedBrowserKey = string.IsNullOrWhiteSpace(rankedBrowserKey)
+                        ? source.RankedBrowserKey : rankedBrowserKey,
                     ConnectionGeneration = generation,
                 };
                 if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom))
@@ -308,6 +311,7 @@ public sealed partial class L12RoomManager
                 {
                     Id = sessionId, AccountId = accountId, Name = name,
                     IntegrityClientKey = integrityClientKey ?? string.Empty,
+                    RankedBrowserKey = rankedBrowserKey ?? string.Empty,
                     ConnectionGeneration = generation,
                 };
                 _sessions[sessionId] = replacement;
@@ -363,6 +367,16 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> JoinMatchmakingAsync(Guid sessionId, string? mode,
         L12CustomDeckSubmission? submission)
     {
+        // Cover admission, pair removal and durable room creation, not merely the list edit.
+        // Also fence connection replacement while these memberships are being assigned.
+        await _sessionRecoveryGate.WaitAsync();
+        try { return await JoinMatchmakingCoreAsync(sessionId, mode, submission); }
+        finally { _sessionRecoveryGate.Release(); }
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> JoinMatchmakingCoreAsync(Guid sessionId, string? mode,
+        L12CustomDeckSubmission? submission)
+    {
         if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
             return Error(sessionId, "请先登录账号", "matchmakingRejected");
         var normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
@@ -371,6 +385,14 @@ public sealed partial class L12RoomManager
         if (session.RoomCode is not null)
             return Error(sessionId, "请先离开当前房间", "matchmakingRejected");
         if (_platform is null) return Error(sessionId, "匹配服务不可用", "matchmakingRejected");
+        if (!session.Connected) return Error(sessionId, "连接已失效，请重新连接", "matchmakingRejected");
+        if (normalizedMode == "ranked")
+        {
+            var entryBlock = _platform.RankedEntryBlock(session.AccountId, _utcNow());
+            if (entryBlock is not null) return MatchmakingError(sessionId, entryBlock);
+            if (HasOtherRankedBrowserOccupant(session))
+                return MatchmakingError(sessionId, "此浏览器已有其他账号正在排位匹配或对局中，请先结束后再试。此限制不代表违规判定。");
+        }
         var current = CaptureOperationsPolicy();
         if (TryOperationsEntryBlock(sessionId, current, normalizedMode, out var blocked)) return blocked;
         var policy = normalizedMode == "ranked" ? current.ForRankedMatch() : current.ForCasualMatch();
@@ -400,7 +422,9 @@ public sealed partial class L12RoomManager
             _matchmaking.RemoveAll(item => item.AccountId == entry.AccountId || !IsQueueEntryValid(item));
             opponent = _matchmaking.Where(item => item.Mode == normalizedMode && item.AccountId != entry.AccountId
                     && IsQueueEntryValid(item) && IsRatingCompatible(entry, item))
-                .OrderBy(item => item.JoinedAt).FirstOrDefault();
+                .OrderBy(item => normalizedMode == "ranked"
+                    ? _platform.RankedPairPriority(entry.AccountId, item.AccountId, _utcNow()) : 0)
+                .ThenBy(item => item.JoinedAt).FirstOrDefault();
             if (opponent is null) _matchmaking.Add(entry);
             else _matchmaking.Remove(opponent);
         }
@@ -409,7 +433,15 @@ public sealed partial class L12RoomManager
                 mode = normalizedMode, joinedAt = entry.JoinedAt, message = "已进入匹配队列" })];
 
         if (!_sessions.TryGetValue(opponent.SessionId, out var other) || !IsQueueEntryValid(opponent))
-            return await JoinMatchmakingAsync(sessionId, normalizedMode, submission);
+            return await JoinMatchmakingCoreAsync(sessionId, normalizedMode, submission);
+        if (normalizedMode == "ranked")
+        {
+            var firstBlock = _platform.RankedEntryBlock(session.AccountId, _utcNow());
+            var secondBlock = _platform.RankedEntryBlock(other.AccountId!, _utcNow());
+            if (firstBlock is not null || secondBlock is not null)
+                return MatchmakingError(sessionId, firstBlock ?? "匹配对象暂不可进行排位，请重新匹配")
+                    .Concat(MatchmakingError(other.Id, secondBlock ?? "匹配对象暂不可进行排位，请重新匹配")).ToArray();
+        }
         current = CaptureOperationsPolicy();
         if (TryOperationsEntryBlock(sessionId, current, normalizedMode, out var pairingBlocked))
             return pairingBlocked.Concat(MatchmakingError(opponent.SessionId, "匹配期间运营规则已变更，请重新加入队列")).ToArray();
@@ -500,6 +532,20 @@ public sealed partial class L12RoomManager
     private bool IsQueueEntryValid(MatchmakingEntry entry)
         => _sessions.TryGetValue(entry.SessionId, out var session) && session.Connected
             && session.RoomCode is null && session.AccountId == entry.AccountId;
+
+    private bool HasOtherRankedBrowserOccupant(Session joining)
+    {
+        if (string.IsNullOrEmpty(joining.RankedBrowserKey)) return false;
+        lock (_matchmakingGate)
+            return _sessions.Values.Any(other => other.AccountId != joining.AccountId
+                && !other.IsVirtual && other.RankedBrowserKey == joining.RankedBrowserKey
+                && (_matchmaking.Any(entry => entry.SessionId == other.Id && entry.Mode == "ranked"
+                        && IsQueueEntryValid(entry))
+                    || (other.RoomCode is not null && !other.IsSpectator
+                        && _rooms.TryGetValue(other.RoomCode, out var room)
+                        && room.Options.MatchModeId == "ranked" && room.Game is not null
+                        && room.Game.State.Phase != L12Phase.GameOver)));
+    }
 
     private static bool IsRatingCompatible(MatchmakingEntry first, MatchmakingEntry second)
     {

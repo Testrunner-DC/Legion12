@@ -68,7 +68,8 @@ public sealed record L12CardAnalyticsQuery(
     string? Initiative = null,
     string? RulesVersion = null,
     string? SeasonId = null,
-    string? EffectVersion = null);
+    string? EffectVersion = null,
+    IReadOnlyList<string>? ExcludedMatchIds = null);
 
 public sealed record L12AdminMatchPlayer(
     int PlayerIndex,

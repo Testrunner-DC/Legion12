@@ -142,6 +142,7 @@ public sealed partial class L12RoomManager
                     Connected = false,
                     DisconnectedAt = disconnectedAt,
                     IntegrityClientKey = runtime.IntegrityClientKeys[player],
+                    RankedBrowserKey = runtime.RankedBrowserKeys?[player] ?? string.Empty,
                     ConnectionGeneration = generation,
                 };
                 if (!_sessions.TryAdd(placeholderId, session))
