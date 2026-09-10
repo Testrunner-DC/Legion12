@@ -2,6 +2,8 @@
 
 ## 2026-09-10 OPS-PRODUCTION-ADDRESS 正式部署地址更新
 
+- 最终发布闭环：应用 `5c2c7d0a7771f7d87af22c456f2b73795953c05a` 已推送main并于 `2026-09-10T05:32:15Z` 部署。干净提交级Release规则2819/2819、平台116/116及完整前端/静态门禁通过；生产完整runtime备份、精确提交HTTP与WS验证通过。公网ok且维护已关闭（现场v34），未覆盖并发运营变更。日志 `12b54ec2cb1c4e40992ca189c487d014` 已发布；陵墓构造体报告 `BUG-20260908-74b09916` 以 `Batch299WukongTombEvidenceTests.TombConstructCombatDeathWithThreeAttachedGuardsDeclaresBeforeStackAndSummonsAll(false/true)` 原场回归及已部署提交回填resolved，其余证据不足项保持开放。详见HANDOFF最新节；下方待Release描述为历史阶段记录。
+
 - 现象与根因：正式入口的旧地址 `38.76.208.25` 超时，服务商实例当前公网地址为 `154.201.80.91`；DNS 已由用户修正，但正式发布目标帮助器和入口内的第二份固定地址仍指旧地址。公网地址变更原因尚未由服务商确认，不推断为应用故障或主机重装。
 - 同类扫描：`rg -n -F -e 38.76.208.25 -e 154.201.80.91 ops/windows scripts/test-l12-deploy-behavior.ps1 opcgpro-vue/scripts/check-ui-contracts.mjs`。命中正式目标帮助器、正式入口、部署回归与 UI 契约；独立测试服不在本次部署范围，保持其失败关闭边界。
 - 修正：正式目标固定新 IP，入口从同一个已解析目标取得主机密钥别名；仍强制 HostName、HostKeyAlias、严格 known_hosts、白名单及提交一致性。旧 IP 加入明确拒绝场景。
