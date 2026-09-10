@@ -10,7 +10,10 @@ public sealed partial class L12GameEngine
         Dictionary<string, string> data)
     {
         foreach (var candidate in cards) AddPromptCardData(data, candidate);
-        CreateMappedChoicePrompt(playerIndex, kind, text, cards.Select(candidate => candidate.InstanceId),
+        data["allowCancel"] = "true";
+        data["cancel"] = "取消打出";
+        CreateMappedChoicePrompt(playerIndex, kind, text,
+            cards.Select(candidate => candidate.InstanceId).Append("cancel"),
             minimum, maximum, continuation, data, isPrivate: true);
     }
 
@@ -44,12 +47,26 @@ public sealed partial class L12GameEngine
         data["graveRepresentationCount"] = variableCount.ToString();
         data["previewCardId"] = currentCard.InstanceId;
         data["previewPresentation"] = "information-card";
+        data["allowCancel"] = "true";
+        data["cancel"] = "取消打出";
         AddPromptCardData(data, currentCard);
         CreateMappedChoicePrompt(playerIndex, "option",
             $"墓地费用：第{currentOrdinal}/{variableCount}张〈{currentCard.Name}〉" +
             $"本次视为几张{(legionOnly ? "军团" : "卡牌")}",
-            choices.Keys, 1, 1, continuation, data, isPrivate: true);
+            choices.Keys.Append("cancel"), 1, 1, continuation, data, isPrivate: true);
         return true;
+    }
+
+    private int MinimumRolloReturnCountToAfford(int playerIndex, L12CardInstance card)
+    {
+        var available = ActiveResourceCount(State.Players[playerIndex]);
+        for (var representedCount = 0; representedCount <= 8; representedCount++)
+        {
+            if (GetPlayCostWithSigurdDiscount(playerIndex, card, useSelfDamageDiscount: false,
+                    spentRunes: 0, rolloReturnCount: representedCount, useSigurdDiscount: false) <= available)
+                return representedCount;
+        }
+        return 9;
     }
 
     private CommandResult PlayCard(int playerIndex, L12Command command)
@@ -143,8 +160,16 @@ public sealed partial class L12GameEngine
                 command = command with { Choice = "rollo:" };
             else
             {
+                var minimumRepresentedCount = MinimumRolloReturnCountToAfford(playerIndex, card);
+                if (minimumRepresentedCount > 8)
+                    return CommandResult.Reject("即使返还8张【阿斯加德】卡牌，活跃士气仍不足");
+                var minimumPhysicalCards = minimumRepresentedCount == 0 ? 0
+                    : L12StructuredCardRules.MinimumPhysicalGraveCardsForCount(player, choices, "asgard",
+                        minimumRepresentedCount, legionOnly: false);
+                if (minimumPhysicalCards > Math.Min(8, choices.Length))
+                    return CommandResult.Reject("墓地中没有足以支付本次登场费用的【阿斯加德】卡牌组合");
                 CreateOptionalGraveEntryCostPrompt(playerIndex, "order", "〈步行者罗洛〉：依选择顺序将墓地最多8张【阿斯加德】卡牌返回牌库底部",
-                    choices, 0, Math.Min(8, choices.Length), "s2-rollo-grave-cost",
+                    choices, minimumPhysicalCards, Math.Min(8, choices.Length), "s2-rollo-grave-cost",
                     new Dictionary<string, string>
                     {
                         ["cardInstanceId"] = card.InstanceId,
@@ -165,7 +190,7 @@ public sealed partial class L12GameEngine
             }
             else
             {
-                var choices = Enumerable.Range(1, maximum).Select(index => $"rune:{index}").ToArray();
+                var choices = Enumerable.Range(1, maximum).Select(index => $"rune:{index}").Append("cancel").ToArray();
                 CreatePrompt(playerIndex, "resource-payment", "〈槲寄生符咒〉：请直接点击要消耗的符文", choices, 0, maximum,
                     "s2-mistletoe-rune-cost", data: new Dictionary<string, string>
                     {
@@ -173,6 +198,8 @@ public sealed partial class L12GameEngine
                         ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
                         ["choiceMode"] = "resource-payment",
                         ["resourceKind"] = "rune",
+                        ["allowCancel"] = "true",
+                        ["cancel"] = "取消打出",
                     });
                 return CommandResult.Ok();
             }
@@ -664,7 +691,7 @@ public sealed partial class L12GameEngine
             ["baseChoice"] = command.Choice ?? "normal-cost",
             ["targetPlayerIndex"] = (command.TargetPlayerIndex ?? playerIndex).ToString(),
             ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
-        }, excludedResourceIds, temporaryMoraleReserve);
+        }, excludedResourceIds, temporaryMoraleReserve, allowCancel: true);
         return CommandResult.Ok();
     }
 

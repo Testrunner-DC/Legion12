@@ -654,7 +654,7 @@ public sealed class S2FactionRegressionTests
         var runePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-mistletoe-rune-cost", runePrompt.Continuation);
         Assert.Equal("resource-payment", runePrompt.Kind);
-        Assert.Equal(["rune:1", "rune:2"], runePrompt.ValidChoices);
+        Assert.Equal(["rune:1", "rune:2", "cancel"], runePrompt.ValidChoices);
         var runePayment = game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
             CardInstanceIds: ["rune:1", "rune:2"]));
         Assert.True(runePayment.Accepted, runePayment.Error);
@@ -1502,7 +1502,8 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("playCard", rollo.InstanceId, Row: 0, Slot: 0)).Accepted);
         var gravePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-rollo-grave-cost", gravePrompt.Continuation);
-        Assert.Equal(10, gravePrompt.ValidChoices.Count);
+        Assert.Equal(11, gravePrompt.ValidChoices.Count);
+        Assert.Contains("cancel", gravePrompt.ValidChoices);
         Assert.Equal(8, gravePrompt.MaxChoose);
         var ordered = graveCards.Take(8).Reverse().Select(card => card.InstanceId).ToList();
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: gravePrompt.PromptId,

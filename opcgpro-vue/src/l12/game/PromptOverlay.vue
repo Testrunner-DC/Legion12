@@ -297,7 +297,7 @@ const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
 const previewPresentation = computed(() => prompt.value?.data?.previewPresentation ?? '')
 const showPreviewCard = computed(() => Boolean(previewCardId.value)
   && ['handled-card', 'information-card'].includes(previewPresentation.value))
-const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])
+const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline', 'cancel'])
 function isDeclineChoice(choice: string) {
   const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
   return declineChoices.has(choice.trim().toLowerCase()) || explicitLabel === '不响应' || explicitLabel === '不发动'
@@ -373,6 +373,7 @@ const decisionEffectText = computed(() => {
 function toggle(id: string) {
   const p = prompt.value
   if (!p || !p.validChoices.includes(id)) return
+  if (id === 'cancel' && p.data?.allowCancel === 'true') { resolveChoice(id); return }
   if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }
   const index = selected.value.indexOf(id)
   if (index >= 0) { selected.value.splice(index, 1); return }

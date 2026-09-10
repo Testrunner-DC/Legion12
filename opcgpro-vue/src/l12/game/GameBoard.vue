@@ -187,7 +187,7 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
 ) ?? null)
 const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
-  ?.validChoices.filter(id => id !== 'skip') ?? [])
+  ?.validChoices.filter(id => id !== 'skip' && id !== 'cancel') ?? [])
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
   ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
 const passivePresentationPaused = computed(() => Boolean(
@@ -661,6 +661,11 @@ function confirmResourcePayment(skip = false) {
   if (paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
 }
+function cancelResourcePayment() {
+  const prompt = resourceSelectionPrompt.value
+  if (!prompt?.validChoices.includes('cancel')) return
+  command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
+}
 function enemySlot(row: number, slot: number, card: Card | null) {
   if (card) focusCard.value = card
   if (resolveBoardSlotPrompt(enemy.value.playerIndex, row, slot)) return
@@ -1023,6 +1028,7 @@ function statusTexts(card: Card) {
         <strong>{{ resourceSelectionPrompt.text }}</strong>
         <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
         <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">不发动</button>
+        <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">取消打出</button>
         <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
           @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return'
             ? '确认返还'

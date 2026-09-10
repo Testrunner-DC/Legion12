@@ -433,11 +433,13 @@ public sealed class Bq20260907_263RegressionTests
         ChooseMany(game, first.InstanceId, second.InstanceId);
         var firstCount = Prompt(game);
         Assert.Equal(first.InstanceId, firstCount.Data["graveRepresentationEntityId"]);
-        Assert.Equal(3, firstCount.ValidChoices.Count);
+        Assert.Equal(4, firstCount.ValidChoices.Count);
+        Assert.Contains("cancel", firstCount.ValidChoices);
         Choose(game, RepresentationChoice(firstCount, 1));
         var secondCount = Prompt(game);
         Assert.Equal(second.InstanceId, secondCount.Data["graveRepresentationEntityId"]);
-        Assert.Equal(3, secondCount.ValidChoices.Count);
+        Assert.Equal(4, secondCount.ValidChoices.Count);
+        Assert.Contains("cancel", secondCount.ValidChoices);
         Choose(game, RepresentationChoice(secondCount, 3));
 
         Assert.Same(rollo, player.Field[0][0]);

@@ -7,10 +7,10 @@ public sealed class Bq20260905_01RegressionTests
 {
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed)
+    private static L12GameEngine Create(int seed, bool checkpointReady = false)
     {
         var game = new L12GameEngine(Catalog, "bq-20260905-01", "BQ0905", seed, ["甲", "乙"], [0, 1],
-            skipPreparation: true);
+            skipPreparation: true, stateFormatVersion: checkpointReady ? 2 : 0);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -135,7 +135,8 @@ public sealed class Bq20260905_01RegressionTests
         ChooseMany(game, warrior.InstanceId);
         var countPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-rollo-grave-count", countPrompt.Continuation);
-        Assert.Equal(3, countPrompt.ValidChoices.Count);
+        Assert.Equal(4, countPrompt.ValidChoices.Count);
+        Assert.Contains("cancel", countPrompt.ValidChoices);
         var asThree = Assert.Single(countPrompt.ValidChoices,
             choice => countPrompt.ChoiceLabels[choice].Contains("视为3张", StringComparison.Ordinal));
         Choose(game, asThree);
@@ -144,6 +145,81 @@ public sealed class Bq20260905_01RegressionTests
         Assert.Equal(7, player.Morale.Count(card => card.Tapped));
         Assert.Equal(warrior.InstanceId, Assert.Single(player.Library).InstanceId);
         Assert.DoesNotContain(warrior, player.Graveyard);
+    }
+
+    [Fact]
+    public void RolloOnlyOffersAffordableWarriorCountsAndCancellationSurvivesRestoreAndStaleSubmission()
+    {
+        var game = Create(905011, checkpointReady: true);
+        var player = game.State.Players[0];
+        var rollo = Card("S02-0302", "rollo-seven-morale");
+        var warrior = Card("ST03-08", "rollo-seven-morale-warrior");
+        player.Hand.Add(rollo);
+        player.Graveyard.Add(warrior);
+        AddMorale(player, 7);
+
+        var begin = game.Handle(0, new L12Command("playCard", rollo.InstanceId, Row: 0, Slot: 0));
+        Assert.True(begin.Accepted, begin.Error);
+        var gravePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("cancel", gravePrompt.ValidChoices);
+        Assert.Equal(1, gravePrompt.MinChoose);
+        ChooseMany(game, warrior.InstanceId);
+
+        var countPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rollo-grave-count", countPrompt.Continuation);
+        Assert.Contains("cancel", countPrompt.ValidChoices);
+        Assert.DoesNotContain(countPrompt.ValidChoices,
+            choice => countPrompt.ChoiceLabels[choice].Contains("视为1张", StringComparison.Ordinal));
+        Assert.Contains(countPrompt.ValidChoices,
+            choice => countPrompt.ChoiceLabels[choice].Contains("视为2张", StringComparison.Ordinal));
+
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence);
+        var restoredPrompt = Assert.Single(restored.State.PendingPrompts);
+        var staleChoice = $"grave-copies:{warrior.InstanceId}=1";
+        var stale = restored.Handle(0, new L12Command("resolvePrompt", PromptId: restoredPrompt.PromptId,
+            Choice: staleChoice));
+        Assert.False(stale.Accepted);
+        Assert.Equal(restoredPrompt.PromptId, Assert.Single(restored.State.PendingPrompts).PromptId);
+
+        var cancel = restored.Handle(0, new L12Command("resolvePrompt", PromptId: restoredPrompt.PromptId,
+            Choice: "cancel"));
+        Assert.True(cancel.Accepted, cancel.Error);
+        Assert.Empty(restored.State.PendingPrompts);
+        Assert.Contains(restored.State.Players[0].Hand, card => card.InstanceId == rollo.InstanceId);
+        Assert.Contains(restored.State.Players[0].Graveyard, card => card.InstanceId == warrior.InstanceId);
+        Assert.All(restored.State.Players[0].Morale, morale => Assert.False(morale.Tapped));
+        Assert.Null(restored.State.Players[0].Field[0][0]);
+    }
+
+    [Fact]
+    public void RolloRejectedGraveSelectionReturnsToACancellablePromptInsteadOfDeadlocking()
+    {
+        var game = Create(905012);
+        var player = game.State.Players[0];
+        var rollo = Card("S02-0302", "rollo-retry");
+        var ordinary = Card("S01-0301", "rollo-insufficient-ordinary");
+        var alternativeWarrior = Card("ST03-08", "rollo-affordable-alternative");
+        player.Hand.Add(rollo);
+        player.Graveyard.AddRange([ordinary, alternativeWarrior]);
+        AddMorale(player, 7);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", rollo.InstanceId, Row: 0, Slot: 0)).Accepted);
+        ChooseMany(game, ordinary.InstanceId);
+
+        var retry = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-rollo-grave-cost", retry.Continuation);
+        Assert.Contains("cancel", retry.ValidChoices);
+        Assert.Contains("不足", retry.Data["retryReason"], StringComparison.Ordinal);
+        Assert.Contains(rollo, player.Hand);
+        Assert.Contains(ordinary, player.Graveyard);
+        Assert.Contains(alternativeWarrior, player.Graveyard);
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+
+        var cancel = game.Handle(0, new L12Command("resolvePrompt", PromptId: retry.PromptId, Choice: "cancel"));
+        Assert.True(cancel.Accepted, cancel.Error);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Null(player.Field[0][0]);
     }
 
     [Fact]

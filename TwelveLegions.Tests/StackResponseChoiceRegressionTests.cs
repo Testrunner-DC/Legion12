@@ -48,6 +48,12 @@ public sealed class StackResponseChoiceRegressionTests
     private static L12StackItem AddEffect(L12GameEngine game, string id, string trigger = "enter", int owner = 0)
     {
         var source = Card("S01-0103", $"source-{id}", owner);
+        if (trigger == "enter")
+        {
+            var slot = Array.FindIndex(game.State.Players[owner].Field[0], card => card is null);
+            Assert.True(slot >= 0, "登场效果测试夹具必须为来源保留真实场上位置");
+            game.State.Players[owner].Field[0][slot] = source;
+        }
         var item = new L12StackItem
         {
             StackItemId = id, Controller = owner, SourceInstanceId = source.InstanceId,

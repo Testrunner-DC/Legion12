@@ -1521,8 +1521,15 @@ public sealed partial class L12GameEngine
         return null;
     }
 
-    private static bool IsFieldLegion(L12CardInstance card)
+    private static bool HasCurrentLegionState(L12CardInstance card)
         => !card.Hidden && (card.CardType == "legion" || card.CardId == "S01-0417" || card.IsMasterLegion);
+
+    private static bool IsFieldLegion(L12CardInstance card)
+        => HasCurrentLegionState(card);
+
+    private bool IsAuthoritativeFieldLegion(L12CardInstance card)
+        => IsFieldLegion(card) && State.Players.Any(player => player.Field
+            .SelectMany(row => row).Any(candidate => candidate?.InstanceId == card.InstanceId));
 
     private L12CardInstance? FindPublicCard(string? instanceId, out int owner)
     {
@@ -1774,7 +1781,8 @@ public sealed partial class L12GameEngine
 
     private void RecordFieldLegionDeparture(L12PlayerState controller, L12CardInstance card)
     {
-        if (State.ActivePlayer != controller.PlayerIndex || !IsFieldLegion(card)
+        // 调用点位于移出阵地之后，因此只检查离场前保留在实例上的当前军团状态。
+        if (State.ActivePlayer != controller.PlayerIndex || !HasCurrentLegionState(card)
             || !card.Name.Contains("陵墓", StringComparison.Ordinal)) return;
         controller.TombNamedLegionsLeftThisTurn++;
         AddEvent("continuous", controller.PlayerIndex,

@@ -97,6 +97,10 @@ public sealed partial class L12GameEngine
     private L12CardInstance? FindSource(L12StackItem item)
     {
         var player = State.Players[item.Controller];
+        // 孙悟空等主宰可能临时以独立实例处于战场。先取权威区域实例，再回退到
+        // 主宰区的虚拟来源，避免“印刷为主宰”覆盖其当前军团状态。
+        if (FindAuthoritativeCard(item.SourceInstanceId) is { } authoritative)
+            return authoritative;
         if (item.SourceCardId == player.MasterId)
             return CreateCard(player.MasterId, item.SourceInstanceId);
         if (item.SourceInstanceId == $"faction-{item.Controller}" && !string.IsNullOrWhiteSpace(item.SourceCardId))
@@ -104,7 +108,7 @@ public sealed partial class L12GameEngine
         foreach (var candidate in State.Players)
             if (candidate.Morale.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId) is { } morale)
                 return CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId);
-        return FindAuthoritativeCard(item.SourceInstanceId) ?? item.SourceSnapshot;
+        return item.SourceSnapshot;
     }
 
     private void ResolveEnterEffect(L12StackItem item)

@@ -241,6 +241,54 @@ public sealed class BackendReportBatch296ResponseTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0018")]
+    [Trait("L12Evidence", "card:S01-0417")]
+    public void PitfallUsesCurrentFieldLegionStateWithoutLeakingItBackToArtifactOrMasterZones()
+    {
+        var game = Create(296631, concealHiddenResponseAvailability: true);
+        var sword = Card("S01-0417", "batch296-kusanagi-artifact");
+        Assert.Equal("artifact", sword.CardType);
+        game.State.Players[0].Relic = sword;
+        var pitfall = SetCounter(game, 1, "S01-0018", 0, "kusanagi-artifact-pitfall");
+
+        var entry = PushEffect(game, 0, sword, "enter", "登场时 获得草薙剑的圣物效果。");
+        Assert.False(InvokePrivate<bool>(game, "CanMasterCardPoolRespondAtTiming", 1, entry, false));
+        Resolve(game, "pass");
+
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain(pitfall.InstanceId, response.ValidChoices);
+        Assert.Equal(entry.StackItemId, response.StackItemId);
+
+        var transformedSwordGame = Create(296632, concealHiddenResponseAvailability: true);
+        var transformedSword = Card("S01-0417", "batch296-kusanagi-legion");
+        transformedSwordGame.State.Players[0].Field[0][0] = transformedSword;
+        var swordPitfall = SetCounter(transformedSwordGame, 1, "S01-0018", 0, "kusanagi-legion-pitfall");
+        PushEffect(transformedSwordGame, 0, transformedSword, "enter", "作为军团登场时的效果。");
+        Resolve(transformedSwordGame, "pass");
+        Assert.Contains(swordPitfall.InstanceId,
+            Assert.Single(transformedSwordGame.State.PendingPrompts).ValidChoices);
+
+        var masterZoneGame = Create(296633, concealHiddenResponseAvailability: true);
+        var masterSource = Card("S02-01M1", "batch296-wukong-master-zone");
+        var masterPitfall = SetCounter(masterZoneGame, 1, "S01-0018", 0, "wukong-master-zone-pitfall");
+        PushEffect(masterZoneGame, 0, masterSource, "enter", "主宰区的提示效果。");
+        Resolve(masterZoneGame, "pass");
+        Assert.DoesNotContain(masterPitfall.InstanceId,
+            Assert.Single(masterZoneGame.State.PendingPrompts).ValidChoices);
+
+        var transformedMasterGame = Create(296634, concealHiddenResponseAvailability: true);
+        var transformedMaster = Card("S02-01M1", "batch296-wukong-field-legion");
+        transformedMaster.IsMasterLegion = true;
+        transformedMasterGame.State.Players[0].Field[0][0] = transformedMaster;
+        var transformedMasterPitfall = SetCounter(transformedMasterGame, 1, "S01-0018", 0,
+            "wukong-field-legion-pitfall");
+        PushEffect(transformedMasterGame, 0, transformedMaster, "enter", "作为军团登场时的效果。");
+        Resolve(transformedMasterGame, "pass");
+        Assert.Contains(transformedMasterPitfall.InstanceId,
+            Assert.Single(transformedMasterGame.State.PendingPrompts).ValidChoices);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ruling:R1-ambush-counter-ambush")]
     public void AmbushMayRespondToOpponentAmbushWhileAttackOnlyResponsesKeepDefenderDirection()
     {

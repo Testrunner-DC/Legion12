@@ -330,6 +330,43 @@ public sealed class ExtendedCardEffectsTests
     }
 
     [Fact]
+    public void PlayedCardResourcePaymentCanBeCancelledWithoutConsumingAnyResource()
+    {
+        var game = Create(2, 3);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var guard = player.Graveyard.First(card => card.CardId == "S01-0212");
+        player.Graveyard.Remove(guard);
+        player.Field[0][0] = guard;
+        var legion = Card("S01-0205", "cancel-paid-legion");
+        player.Hand.Add(legion);
+        var tappedBefore = player.Morale.Count(card => card.Tapped);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 1)).Accepted);
+        var paymentPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("play-morale-choice", paymentPrompt.Continuation);
+        Assert.Contains("cancel", paymentPrompt.ValidChoices);
+
+        var mixed = player.Morale.Where(card => !card.Tapped).Take(Math.Max(0, legion.Cost - 1))
+            .Select(card => card.InstanceId).Append("cancel").ToList();
+        var invalidMixedCancel = game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            CardInstanceIds: mixed));
+        Assert.False(invalidMixedCancel.Accepted);
+        Assert.Equal(paymentPrompt.PromptId, Assert.Single(game.State.PendingPrompts).PromptId);
+        Assert.False(guard.Tapped);
+        Assert.Equal(tappedBefore, player.Morale.Count(card => card.Tapped));
+
+        var cancel = game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            Choice: "cancel"));
+        Assert.True(cancel.Accepted, cancel.Error);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(legion, player.Hand);
+        Assert.Null(player.Field[0][1]);
+        Assert.False(guard.Tapped);
+        Assert.Equal(tappedBefore, player.Morale.Count(card => card.Tapped));
+    }
+
+    [Fact]
     public void SolarCityPlayerAlsoChoosesTombGuardPaymentForActiveAbilities()
     {
         var game = Create(2, 3);

@@ -600,12 +600,22 @@ public sealed partial class L12GameEngine
             && chosen.Count == 1
             && chosen[0].Equals("skip", StringComparison.OrdinalIgnoreCase)
             && prompt.ValidChoices.Contains("skip", StringComparer.OrdinalIgnoreCase);
-        if (!isPendingActivationCancellation
+        var isExplicitCancellation = chosen.Count == 1
+            && chosen[0].Equals("cancel", StringComparison.OrdinalIgnoreCase)
+            && prompt.Data.GetValueOrDefault("allowCancel") == "true"
+            && prompt.ValidChoices.Contains("cancel", StringComparer.OrdinalIgnoreCase);
+        if (!isExplicitCancellation
+            && prompt.Data.GetValueOrDefault("allowCancel") == "true"
+            && chosen.Contains("cancel", StringComparer.OrdinalIgnoreCase)
+            && prompt.ValidChoices.Contains("cancel", StringComparer.OrdinalIgnoreCase))
+            return CommandResult.Reject("取消打出不能与其他选项同时提交");
+        var bypassSelectionValidation = isPendingActivationCancellation || isExplicitCancellation;
+        if (!bypassSelectionValidation
             && (chosen.Count < prompt.MinChoose || chosen.Count > prompt.MaxChoose))
             return CommandResult.Reject($"必须选择 {prompt.MinChoose} 至 {prompt.MaxChoose} 项");
         if (chosen.Any(item => !prompt.ValidChoices.Contains(item)))
             return CommandResult.Reject("包含无效选项");
-        if (!isPendingActivationCancellation
+        if (!bypassSelectionValidation
             && prompt.Data.GetValueOrDefault("selectionConstraint") == "distinct-card-names")
         {
             var selectedCards = chosen.Select(id => FindPromptCard(playerIndex, id)).ToArray();
@@ -613,7 +623,7 @@ public sealed partial class L12GameEngine
                 || selectedCards.Select(card => card!.Name).Distinct(StringComparer.Ordinal).Count() != selectedCards.Length)
                 return CommandResult.Reject("选择的卡牌必须为非同名卡牌");
         }
-        if (!isPendingActivationCancellation
+        if (!bypassSelectionValidation
             && prompt.Data.GetValueOrDefault("selectionConstraint") == "grave-faction-exact")
         {
             var player = State.Players[playerIndex];
@@ -628,7 +638,7 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject($"所选卡牌必须能按玩家指定张数合计视为{representedCount}张");
         }
         var mixedConstraint = prompt.Data.GetValueOrDefault("selectionConstraint");
-        if (!isPendingActivationCancellation
+        if (!bypassSelectionValidation
             && (mixedConstraint is "one-resource-two-field-legions" or "zero-resource-two-field-legions"))
         {
             var player = State.Players[playerIndex];
@@ -775,6 +785,7 @@ public sealed partial class L12GameEngine
             }
             case "play-morale-choice":
             {
+                if (isExplicitCancellation) break;
                 var result = ResolveTombGuardPlayPaymentChoice(prompt, chosen);
                 if (!result.Accepted) return result;
                 break;
@@ -799,14 +810,16 @@ public sealed partial class L12GameEngine
             }
             case "s2-mistletoe-rune-cost":
             {
+                if (isExplicitCancellation) break;
                 var result = PlayCard(prompt.PlayerIndex, new L12Command(
                     "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"), Choice: $"runes:{chosen.Count}",
                     Target: new L12AttackTarget("legion", prompt.Data.GetValueOrDefault("targetInstanceId"))));
-                if (!result.Accepted) return result;
+                if (!result.Accepted) return RetryPrePlayAfterRejectedSelection(prompt, result);
                 break;
             }
             case "s2-rollo-grave-cost":
             {
+                if (isExplicitCancellation) break;
                 int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
                 int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
                 var player = State.Players[prompt.PlayerIndex];
@@ -817,15 +830,22 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("〈步行者罗洛〉所选墓地卡牌已失效");
                 if (selectedCards.Any(card => L12StructuredCardRules.StarterGraveFactionCardCopies(player, card, "asgard") > 1))
                 {
+                    var rollo = player.Hand.FirstOrDefault(card =>
+                        card.InstanceId == prompt.Data.GetValueOrDefault("cardInstanceId"));
+                    if (rollo is null)
+                        return CommandResult.Reject("〈步行者罗洛〉已不在手牌；登场费用未支付");
                     var data = new Dictionary<string, string>(prompt.Data, StringComparer.OrdinalIgnoreCase)
                     {
                         ["orderedIds"] = string.Join(',', chosen),
                         ["graveRepresentationProgress"] = string.Empty,
                     };
+                    var minimumRepresentedCount = Math.Max(selectedCards.Length,
+                        MinimumRolloReturnCountToAfford(prompt.PlayerIndex, rollo));
                     if (!TryCreateGraveRepresentationPrompt(prompt.PlayerIndex, selectedCards, "asgard",
-                            selectedCards.Length, 8, legionOnly: false, "s2-rollo-grave-count", data,
+                            minimumRepresentedCount, 8, legionOnly: false, "s2-rollo-grave-count", data,
                             out _, out _))
-                        return CommandResult.Reject("〈步行者罗洛〉所选卡牌无法合计视为1至8张");
+                        return RetryPrePlayAfterRejectedSelection(prompt,
+                            CommandResult.Reject("所选墓地卡牌无法满足本次登场费用"));
                     break;
                 }
                 var result = PlayCard(prompt.PlayerIndex, new L12Command("playCard",
@@ -833,11 +853,12 @@ public sealed partial class L12GameEngine
                     Choice: $"rollo:{string.Join(',', chosen)}",
                     TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
                         ? targetPlayerIndex : null));
-                if (!result.Accepted) return result;
+                if (!result.Accepted) return RetryPrePlayAfterRejectedSelection(prompt, result);
                 break;
             }
             case "starter-sigurd-grave-cost":
             {
+                if (isExplicitCancellation) break;
                 int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
                 int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
                 var selected = chosen.FirstOrDefault() ?? string.Empty;
@@ -846,11 +867,12 @@ public sealed partial class L12GameEngine
                     Choice: $"sigurd:{selected}",
                     TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
                         ? targetPlayerIndex : null));
-                if (!result.Accepted) return result;
+                if (!result.Accepted) return RetryPrePlayAfterRejectedSelection(prompt, result);
                 break;
             }
             case "s2-rollo-grave-count":
             {
+                if (isExplicitCancellation) break;
                 int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
                 int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
                 var player = State.Players[prompt.PlayerIndex];
@@ -867,10 +889,17 @@ public sealed partial class L12GameEngine
                 data["graveRepresentationProgress"] = string.IsNullOrWhiteSpace(previousProgress)
                     ? chosen.Single()
                     : $"{previousProgress}|{chosen.Single()}";
+                var rollo = player.Hand.FirstOrDefault(card =>
+                    card.InstanceId == prompt.Data.GetValueOrDefault("cardInstanceId"));
+                if (rollo is null)
+                    return CommandResult.Reject("〈步行者罗洛〉已不在手牌；登场费用未支付");
+                var minimumRepresentedCount = Math.Max(selectedCards.Length,
+                    MinimumRolloReturnCountToAfford(prompt.PlayerIndex, rollo));
                 if (!TryCreateGraveRepresentationPrompt(prompt.PlayerIndex, selectedCards, "asgard",
-                        selectedCards.Length, 8, legionOnly: false, "s2-rollo-grave-count", data,
+                        minimumRepresentedCount, 8, legionOnly: false, "s2-rollo-grave-count", data,
                         out var representation, out var complete))
-                    return CommandResult.Reject("〈步行者罗洛〉所选卡牌无法合计视为1至8张；登场费用未支付");
+                    return RetryPrePlayAfterRejectedSelection(prompt,
+                        CommandResult.Reject("所选墓地卡牌无法满足本次登场费用"));
                 if (!complete) break;
                 if (representation is null)
                     return CommandResult.Reject("〈步行者罗洛〉墓地代表值声明已失效；登场费用未支付");
@@ -879,7 +908,7 @@ public sealed partial class L12GameEngine
                     Choice: $"rollo:{string.Join(',', orderedIds)}|{representation}",
                     TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
                         ? targetPlayerIndex : null));
-                if (!result.Accepted) return result;
+                if (!result.Accepted) return RetryPrePlayAfterRejectedSelection(prompt, result);
                 break;
             }
             case "s2-yingzheng-enter-cost":
@@ -949,6 +978,29 @@ public sealed partial class L12GameEngine
             Target: string.IsNullOrWhiteSpace(prompt.Data.GetValueOrDefault("targetInstanceId"))
                 ? null : new L12AttackTarget("legion", prompt.Data.GetValueOrDefault("targetInstanceId")),
             TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex) ? targetPlayerIndex : null));
+    }
+
+    private CommandResult RetryPrePlayAfterRejectedSelection(L12Prompt prompt, CommandResult failure)
+    {
+        int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
+        int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
+        var targetInstanceId = prompt.Data.GetValueOrDefault("targetInstanceId");
+        var retry = PlayCard(prompt.PlayerIndex, new L12Command(
+            "playCard",
+            CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"),
+            Row: row,
+            Slot: slot,
+            Target: string.IsNullOrWhiteSpace(targetInstanceId)
+                ? null : new L12AttackTarget("legion", targetInstanceId),
+            TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex)
+                ? targetPlayerIndex : null));
+        if (!retry.Accepted) return failure;
+        var replacement = State.PendingPrompts.LastOrDefault(candidate =>
+            candidate.PlayerIndex == prompt.PlayerIndex
+            && candidate.Data.GetValueOrDefault("cardInstanceId") == prompt.Data.GetValueOrDefault("cardInstanceId"));
+        if (replacement is not null)
+            replacement.Data["retryReason"] = failure.Error ?? "上次选择无法完成支付";
+        return CommandResult.Ok();
     }
 
     private CommandResult ResolveMoveResourcePayment(L12Prompt prompt, List<string> chosen)
@@ -1475,7 +1527,7 @@ public sealed partial class L12GameEngine
         => target.Controller != playerIndex
             && IsLegionEntryEffectTrigger(target.Trigger)
             && FindSource(target) is { } enteredCard
-            && IsFieldLegion(enteredCard);
+            && IsAuthoritativeFieldLegion(enteredCard);
 
     private static bool IsLegionEntryEffectTrigger(string trigger)
         => trigger is "enter" or "promotion-enter";

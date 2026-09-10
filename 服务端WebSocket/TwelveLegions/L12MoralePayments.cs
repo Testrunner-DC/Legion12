@@ -96,17 +96,22 @@ public sealed partial class L12GameEngine
 
     private void CreateResourcePaymentPrompt(int playerIndex, int totalCost, string continuation, string? stackItemId,
         Dictionary<string, string> data, IReadOnlyCollection<string>? excludedResourceIds = null,
-        int temporaryMoraleReserve = 0)
+        int temporaryMoraleReserve = 0, bool allowCancel = false)
     {
         var player = State.Players[playerIndex];
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
         var availableTemporaryMorale = TemporaryMoralePaymentChoices(player, temporaryMoraleReserve).ToArray();
         var availableMorale = player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
         var availableGuards = ActiveTombGuardResources(player).Where(card => !excluded.Contains(card.InstanceId)).ToArray();
-        var choices = availableTemporaryMorale
+        IEnumerable<string> choices = availableTemporaryMorale
             .Concat(availableMorale.Select(card => card.InstanceId))
-            .Concat(availableGuards.Select(card => card.InstanceId))
-            .ToArray();
+            .Concat(availableGuards.Select(card => card.InstanceId));
+        if (allowCancel)
+        {
+            choices = choices.Append("cancel");
+            data["allowCancel"] = "true";
+            data["cancel"] = "取消打出";
+        }
         data["cost"] = totalCost.ToString();
         data["visibleCost"] = totalCost.ToString();
         data["choiceMode"] = "resource-payment";

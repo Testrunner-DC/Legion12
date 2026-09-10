@@ -420,7 +420,7 @@ const contracts = [
     && playerMat.includes('pointer-events:none')
     && playerMat.includes('.morale-orb.selected .morale-lock-icon')
     && playerMat.includes('.morale-orb.payable .morale-lock-icon'), '士气锁图标必须使用现有轮次投影只显示当前仍有效的 CannotUntapUntilRound，不拦截点击且不得覆盖支付高亮'],
-  [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])")
+  [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline', 'cancel'])")
     && prompt.includes("explicitLabel === '不响应' || explicitLabel === '不发动'")
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
     && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
@@ -1274,6 +1274,13 @@ contracts.push(
     && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes("page.locator('.inspector-effect').waitFor()")
     && responsiveTypeCheck.includes('selected-card effect prose must wrap without horizontal overflow'),
     '响应式字号专项必须覆盖三档16:9桌面、760与390窄宽，并实际选中卡牌验证正文和标签而非只检查空详情'],
+  [board.includes("filter(id => id !== 'skip' && id !== 'cancel')")
+    && board.includes('function cancelResourcePayment()')
+    && board.includes('resourceSelectionPrompt.validChoices.includes(\'cancel\')')
+    && board.includes('@click="cancelResourcePayment">取消打出</button>')
+    && prompt.includes("'decline', 'cancel'")
+    && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
+    '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],
 )
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)
