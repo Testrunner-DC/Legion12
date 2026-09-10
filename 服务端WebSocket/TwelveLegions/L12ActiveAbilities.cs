@@ -113,10 +113,7 @@ public sealed partial class L12GameEngine
             return freeDeclaration;
 
         if (EvaluateSingleActiveSelection(player, source, ability) is { } selection)
-        {
-            if (selection.UnavailableReason is { } reason) return CommandResult.Reject(reason);
-            return PromptActiveTarget(playerIndex, source, ability, selection.Choices, selection.Text);
-        }
+            return BeginSingleActiveSelection(playerIndex, source, ability, selection);
         return TryBeginStarterRemainingActiveAbility(playerIndex, source, ability)
                     ?? TryBeginPublicActiveDeclaration(playerIndex, source, ability)
                     ?? TryBeginS2UniversalActiveAbility(playerIndex, source, ability)

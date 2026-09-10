@@ -602,23 +602,17 @@ public sealed partial class L12GameEngine
         var enemy = State.Players[1 - playerIndex];
         if (TryBeginPublicActiveDeclaration(playerIndex, source, ability) is { } publicDeclaration)
             return publicDeclaration;
+        if (EvaluateSingleActiveSelection(player, source, ability) is { } selection)
+            return BeginSingleActiveSelection(playerIndex, source, ability, selection);
         string[] choices;
         switch (ability)
         {
             case "ankhReady" or "ankhDraw" when source.CardId == "S01-0215" && source.Tapped:
                 return CommandResult.Reject("安卡神碑已经休整，需先因其他效果转为活跃");
-            case "olgaDebuff":
-                choices = enemy.Field[0].Where(card => card is not null && IsFieldLegion(card) && !card.Hidden).Select(card => card!.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "奥尔加：选择对方前排 1 张军团");
             case "mengpoSilence":
                 choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
                 return BeginPendingActivation(playerIndex, source, ability, choices,
                     "孟婆：选择对方最多1张军团，本回合失去「阵亡时」效果", min: 0, max: 1);
-            case "sunBottomEnemy":
-                choices = PublicLegions(enemy).Where(card => card.Troops <= 4000
-                        && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
-                    .Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "众神之乡：选择返回牌库底部的军团");
             case "ankhReady":
                 if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
                     return CommandResult.Reject("需要我方存在休整的陵墓守卫");
@@ -635,9 +629,6 @@ public sealed partial class L12GameEngine
                         ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(),
                     },
                 ]);
-            case "ankhDraw":
-                choices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神碑：选择转为休整的陵墓守卫");
             case "gramDamage":
                 var gramCandidates = player.Graveyard.Where(card => card.CardType == "legion"
                     && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
@@ -732,9 +723,6 @@ public sealed partial class L12GameEngine
                     },
                 ]);
             }
-            case "amaterasuKill":
-                choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "天照大神：选择本回合费用 -1 的军团");
             default:
                 return CommitActiveAbility(playerIndex, source, ability, null);
         }

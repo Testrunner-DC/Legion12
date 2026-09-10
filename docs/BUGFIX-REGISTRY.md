@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-10 余下单步入口归并（直接需求）
+
+- 四处旧 PromptActiveTarget 调用复核：olgaDebuff、sunBottomEnemy、ankhDraw为单步；amaterasuKill的公共入口先返回完整双目标声明，旧分支不承担正常路由。本批前三项复用SingleActiveSelection，删除后一旧分支。
+- 规则参数保留：奥尔加仅对方公开前排军团，太阳目标兵力<=4000且非衍生特殊卡，安卡需活跃来源及活跃陵墓守卫。自弃/休整/士气支付和结算逻辑不变。EvaluateSingleActiveSelection与BeginSingleActiveSelection共用，未另建支付协议。
+- 专项17/17通过：新增三种无对象和三种检查点恢复/重复提交/无效保留费用，天照仍在第二次目标选择前不支付不入栈。完整Batch2840/2840零跳过及全池静态门禁通过；没有线上操作。
+
 ## 2026-09-10 单步候选与按钮同源（直接需求）
 
 - EvaluateSingleActiveSelection 统一 Text、Choices、UnavailableReason，主入口五个分支和按钮复用；无候选时不建事务也不支付。不是以按钮快照授权命令，提交及结算仍使用原事务复验。

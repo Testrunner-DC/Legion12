@@ -11,7 +11,8 @@ public sealed class SingleActiveSelectionTests
     private static (L12GameEngine Game, L12CardInstance Source) Create(string cardId, string ability, bool target)
     {
         var original = Catalog.DeckAt(0);
-        var deck = new L12PresetDeckDefinition { Name = "single-selection", MasterId = "S01-04M2",
+        var masterSource = cardId is "S01-04M2" or "S01-04M1" or "S01-02D1";
+        var deck = new L12PresetDeckDefinition { Name = "single-selection", MasterId = masterSource ? cardId : "S01-04M2",
             CardIds = [.. original.CardIds], MoraleIds = [.. original.MoraleIds], SpecialIds = [] };
         var game = new L12GameEngine(Catalog, "single-selection", "SELECTION", 31010,
             ["甲", "乙"], [deck, original], skipPreparation: true, autoPassEmptyResponses: false,
@@ -28,8 +29,12 @@ public sealed class SingleActiveSelectionTests
         for (var i = 0; i < 4; i++) owner.Morale.Add(new L12MoraleCard { CardId = "S01-04C1", InstanceId = $"resource-{i}" });
         L12CardInstance Card(string id, string instance) => (L12CardInstance)typeof(L12GameEngine)
             .GetMethod("CreateCard", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(game, [id, instance])!;
-        var source = Card(cardId, cardId == "S01-04M2" ? "master-0" : "source");
-        if (cardId != "S01-04M2") owner.Relic = source;
+        var source = Card(cardId, masterSource ? "master-0" : "source");
+        if (!masterSource)
+        {
+            if (source.CardType == "legion") owner.Field[1][2] = source;
+            else owner.Relic = source;
+        }
         if (ability == "kusanagi")
         {
             owner.Relic = Card("S01-0417", "sword");
@@ -38,9 +43,10 @@ public sealed class SingleActiveSelectionTests
         }
         else if (target)
         {
-            var candidate = Card("S01-0401", "candidate");
+            var candidate = Card(ability == "ankhDraw" ? "S01-0212" : "S01-0401", "candidate");
+            if (ability == "sunBottomEnemy") candidate.Troops = 3000;
             if (ability == "artifactSearch") owner.Hand.Add(candidate);
-            else game.State.Players[ability == "kusanagiDebuff" ? 1 : 0].Field[0][0] = candidate;
+            else game.State.Players[ability is "kusanagiDebuff" or "olgaDebuff" or "sunBottomEnemy" or "amaterasuKill" ? 1 : 0].Field[0][0] = candidate;
         }
         return (game, source);
     }
@@ -56,6 +62,9 @@ public sealed class SingleActiveSelectionTests
     [InlineData("S01-0117", "artifactSearch")]
     [InlineData("S01-0417", "kusanagiDebuff")]
     [InlineData("S01-0417", "kusanagiStrong")]
+    [InlineData("S01-0314", "olgaDebuff")]
+    [InlineData("S01-02D1", "sunBottomEnemy")]
+    [InlineData("S01-0215", "ankhDraw")]
     public void NoCandidateDisablesButtonAndRejectsWithSameReasonWithoutPayment(string card, string ability)
     {
         var (game, source) = Create(card, ability, false);
@@ -74,6 +83,9 @@ public sealed class SingleActiveSelectionTests
     [InlineData("S01-0117", "artifactSearch")]
     [InlineData("S01-0417", "kusanagiDebuff")]
     [InlineData("S01-0417", "kusanagiStrong")]
+    [InlineData("S01-0314", "olgaDebuff")]
+    [InlineData("S01-02D1", "sunBottomEnemy")]
+    [InlineData("S01-0215", "ankhDraw")]
     public void RestoredChoiceRejectsDuplicateAndNegationPreservesPaidCosts(string card, string ability)
     {
         var (game, source) = Create(card, ability, true);
@@ -95,7 +107,8 @@ public sealed class SingleActiveSelectionTests
         var result = game.Handle(0, command);
         Assert.True(result.Accepted, result.Error);
         var spent = game.State.Players[0].Morale.Count(morale => morale.Tapped);
-        Assert.Equal(ability == "artifactSearch" ? 0 : ability == "kusanagi" ? 2 : 1, spent);
+        Assert.Equal(ability is "artifactSearch" or "olgaDebuff" or "ankhDraw" ? 0
+            : ability is "kusanagi" or "sunBottomEnemy" ? 2 : 1, spent);
         Assert.False(game.Handle(0, command).Accepted);
         Assert.Equal(spent, game.State.Players[0].Morale.Count(morale => morale.Tapped));
         Assert.NotEmpty(game.State.EffectStack);
@@ -110,10 +123,29 @@ public sealed class SingleActiveSelectionTests
         Assert.Equal(spent, game.State.Players[0].Morale.Count(morale => morale.Tapped));
         if (ability == "artifactSearch")
             Assert.Contains(game.State.Players[0].Graveyard, entry => entry.InstanceId == "candidate");
+        if (ability == "olgaDebuff")
+            Assert.Contains(game.State.Players[0].Graveyard, entry => entry.InstanceId == "source");
+        if (ability == "ankhDraw")
+        {
+            Assert.True(game.State.Players[0].Relic!.Tapped);
+            Assert.True(game.State.Players[0].Field[0][0]!.Tapped);
+        }
         if (ability == "kusanagi")
         {
             Assert.Null(game.State.Players[0].Field[0][1]);
             Assert.Equal("sword", game.State.Players[0].Relic?.InstanceId);
         }
+    }
+
+    [Fact]
+    public void AmaterasuStillDeclaresSecondTargetBeforePayment()
+    {
+        var (game, source) = Create("S01-04M1", "amaterasuKill", true);
+        Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId, Ability: "amaterasuKill")).Accepted);
+        var first = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: first.PromptId, Choice: "candidate")).Accepted);
+        Assert.NotEmpty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.All(game.State.Players[0].Morale, morale => Assert.False(morale.Tapped));
     }
 }
