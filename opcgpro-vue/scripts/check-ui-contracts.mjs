@@ -1205,11 +1205,17 @@ const internalReleaseTerms = ['后台', '管理员', '审计', '存储维护', '
 contracts.push([
   currentReleaseEntry.includes('version: releaseVersion')
     && currentReleaseEntry.includes("title: '页面与对战操作'")
-    && currentReleaseEntry.includes("title: '卡牌效果与响应判定'")
-    && ['步行者罗洛', '槲寄生符咒', '落穴陷阱', '草薙剑', '孙悟空']
+    && currentReleaseEntry.includes("title: '主动效果与费用判定'")
+    && currentReleaseEntry.includes("title: '打出费用与响应判定'")
+    && ['须佐之男', '山河社稷图', '草薙剑', '奥尔加', '众神之乡', '安卡神碑',
+      '传奇的拉格纳', '无情者哈拉尔', '血斧艾瑞克', '齐格鲁德', '卡纽特大帝',
+      '莫德雷德', '伊西斯', '步行者罗洛', '槲寄生符咒', '落穴陷阱', '孙悟空']
       .every(cardName => currentReleaseEntry.includes(cardName))
+    && ['主宰效果免耗', '傲慢之罪', '选择完成前不会先扣费', '冒号只分隔该能力自己的费用与效果',
+      '再让登场费用-1', '之后才让军团离开手牌', '实际成为场上军团后']
+      .every(detail => currentReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
-  '当前玩家更新日志必须使用本次构建版本，列清页面、卡效与对战逻辑，并排除后台和内部治理内容',
+  '当前玩家更新日志必须覆盖上一期后的主动效果、费用边界、支付取消与场上响应修改，并排除后台和内部治理内容',
 ])
 contracts.push([
   migratedReleaseEntry.includes("version: '5c2c7d0a7771f7d87af22c456f2b73795953c05a'")
