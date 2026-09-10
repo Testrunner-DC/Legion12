@@ -288,6 +288,10 @@ public sealed class StarterTargetedBatch2BRegressionTests
         HoldOpponentResponseWindow(game, "mordred");
 
         Queue(game, mordred, "death");
+        var requiredChoice = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(target.InstanceId, requiredChoice.ValidChoices);
+        Assert.Empty(game.State.EffectStack);
+        Choose(game, target.InstanceId);
         target.Troops = 3000;
         PassResponses(game);
 

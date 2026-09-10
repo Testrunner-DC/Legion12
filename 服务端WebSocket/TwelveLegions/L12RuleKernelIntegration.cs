@@ -81,6 +81,7 @@ public sealed partial class L12GameEngine
                 : Math.Min(step.MaxChoose, step.ValidChoices.Count),
             CancellationPolicy = step.CancellationPolicy,
             AutoSelectWhenExact = step.AutoSelectWhenExact,
+            IsCostSelection = step.IsCostSelection,
             AutoSelectEquivalentOrdinaryMorale = step.AutoSelectEquivalentOrdinaryMorale,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
@@ -241,7 +242,7 @@ public sealed partial class L12GameEngine
             }
             var deterministicCostChoices = DeterministicCostSelection(activation, pendingStep);
             if (pendingStep.MinChoose == pendingStep.MaxChoose
-                && ((pendingStep.AutoSelectWhenExact
+                && ((pendingStep.AutoSelectWhenExact && MayAutoSelectDeclaration(pendingStep)
                         && pendingStep.ValidChoices.Count == pendingStep.MinChoose)
                     || deterministicCostChoices is not null))
             {
@@ -864,6 +865,12 @@ public sealed partial class L12GameEngine
                 || choice.Equals("no", StringComparison.OrdinalIgnoreCase)
                 || choice.Equals("skip", StringComparison.OrdinalIgnoreCase)),
         };
+
+    private static bool MayAutoSelectDeclaration(L12ActivationSelectionStep step)
+        => step.ValidChoices.Count == 0 // No object to select: preserve the empty-effect skip.
+            || step.IsCostSelection
+            || step.Kind is "resource-payment" or "composite-ordinary-payment" or "cost-marker"
+            || step.Kind == "option" && step.ValidChoices.All(choice => choice.StartsWith("mode:", StringComparison.Ordinal));
 
     private IReadOnlyList<string>? DeterministicCostSelection(
         L12PendingActivation activation, L12ActivationSelectionStep step)

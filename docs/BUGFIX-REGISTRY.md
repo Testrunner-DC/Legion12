@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-11 冒号费用与效果对象（用户裁定）
+
+- 冒号前费用必须可付；冒号后对象缺失不等价费用失败。奥尔加前批误把无前排目标作为不可发动，现SkipEmptyEffect允许自弃入栈、减兵空处理；自弃失败明确拒绝。此句当前属于主动效果，不新增登场时点。
+- AutoSelectWhenExact全服务扫描：莫德雷德唯一军团目标误自动选择。公共护栏只允许IsCostSelection显式费用、资源支付、费用标记或内部mode控制；空集合跳过保留。伊西斯三守卫冒号前费用显式标注；伊丽莎白/银臂等效果对象不依唯一候选自动选择。旧检查点未含新字段时保守要求人工选择，不自动解释成费用。
+- 嬴政已有BeginYingzhengEnterActivation/ResolveYingzhengEnterCost及entryCostUnavailable/entryCostPaid两支，费用不足仅展示手牌、费用成功进入击杀/返还/追加限制；Yingzheng具名测试复核通过，不因旧报告重复改卡文。
+- 相关专项30/30通过，含奥尔加无目标付费及莫德雷德唯一对象点击后响应；首轮揭示空对象跳过受护栏影响，已保留零对象跳过并复跑通过。新增EffectSelectionPurposeTests六种对象角色守卫；完整Batch2846/2846零跳过及全池静态门禁通过。
+
 ## 2026-09-10 余下单步入口归并（直接需求）
 
 - 四处旧 PromptActiveTarget 调用复核：olgaDebuff、sunBottomEnemy、ankhDraw为单步；amaterasuKill的公共入口先返回完整双目标声明，旧分支不承担正常路由。本批前三项复用SingleActiveSelection，删除后一旧分支。

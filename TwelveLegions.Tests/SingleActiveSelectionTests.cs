@@ -62,7 +62,6 @@ public sealed class SingleActiveSelectionTests
     [InlineData("S01-0117", "artifactSearch")]
     [InlineData("S01-0417", "kusanagiDebuff")]
     [InlineData("S01-0417", "kusanagiStrong")]
-    [InlineData("S01-0314", "olgaDebuff")]
     [InlineData("S01-02D1", "sunBottomEnemy")]
     [InlineData("S01-0215", "ankhDraw")]
     public void NoCandidateDisablesButtonAndRejectsWithSameReasonWithoutPayment(string card, string ability)
@@ -75,6 +74,25 @@ public sealed class SingleActiveSelectionTests
         Assert.Empty(game.State.PendingPrompts); Assert.Empty(game.State.PendingActivations);
         Assert.Empty(game.State.EffectStack);
         Assert.All(game.State.Players[0].Morale, morale => Assert.False(morale.Tapped));
+    }
+
+    [Fact]
+    public void OlgaPaysColonCostEvenWithoutEffectTarget()
+    {
+        var (game, source) = Create("S01-0314", "olgaDebuff", false);
+        Assert.True(View(game, source, "olgaDebuff").Enabled);
+        var result = game.Handle(0, new L12Command("activateAbility", source.InstanceId, Ability: "olgaDebuff"));
+        Assert.True(result.Accepted, result.Error);
+        Assert.Contains(game.State.Players[0].Graveyard, card => card.InstanceId == source.InstanceId);
+        Assert.Null(game.State.Players[0].Field[1][2]);
+        for (var i = 0; i < 20 && game.State.PendingPrompts.FirstOrDefault()?.Kind == "response"; i++)
+        {
+            var response = game.State.PendingPrompts[0];
+            Assert.True(game.Handle(response.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+        Assert.Empty(game.State.PendingPrompts); Assert.Empty(game.State.EffectStack);
+        Assert.False(game.Handle(0, new L12Command("activateAbility", source.InstanceId, Ability: "olgaDebuff")).Accepted);
     }
 
     [Theory]

@@ -795,8 +795,13 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "olgaDebuff" when source.CardId == "S01-0314":
-                if (!IsEnemyTargetLegal(playerIndex, target, card => FindOnField(State.Players[1 - playerIndex], card.InstanceId, out var row, out _) is not null && row == 0)) return CommandResult.Reject("目标不再合法");
-                RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard); break;
+                if (string.IsNullOrWhiteSpace(target)
+                    ? EvaluateSingleActiveSelection(player, source, ability)!.Choices.Length != 0
+                    : !IsEnemyTargetLegal(playerIndex, target, card => FindOnField(State.Players[1 - playerIndex], card.InstanceId, out var row, out _) is not null && row == 0))
+                    return CommandResult.Reject("目标不再合法");
+                if (!RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard))
+                    return CommandResult.Reject("无法弃置来源军团支付费用");
+                break;
             case "gramReady" when source.CardId == "S01-0317": if (!source.Tapped || !ConsumeMorale(2)) return CommandResult.Reject("神剑格拉墨需为休整，且需要2张活跃士气"); break;
             case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); player.UsedAbilities.Add(onceKey); break;
             case "palaceExchange" when source.CardId == "S01-01D1":

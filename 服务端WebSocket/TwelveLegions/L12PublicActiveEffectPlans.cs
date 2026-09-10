@@ -56,7 +56,7 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     PublicActiveStep("field-legion", "guardCosts", "伊西斯：预先选择弃置的3张陵墓守卫",
-                        guards, min: 3, max: 3, autoSelectWhenExact: true),
+                        guards, min: 3, max: 3, autoSelectWhenExact: true, isCostSelection: true),
                     PublicActiveStep("grave-card", "canopicTarget", "伊西斯：预先选择墓地1张卡诺匹斯圣物",
                         canopics),
                     PublicActiveStep("option", "rewardMode", "伊西斯：预先声明完成操作后的奖励",
@@ -247,7 +247,7 @@ public sealed partial class L12GameEngine
     private static L12ActivationSelectionStep PublicActiveStep(string kind, string key, string text,
         IEnumerable<string> choices, int min = 1, int max = 1, string? referenceKey = null,
         bool skipWhenReferenceIsNone = false, int? costThreshold = null, string? requiredChoice = null,
-        bool autoSelectWhenExact = false, bool includeSourceSlotAfterCost = false)
+        bool autoSelectWhenExact = false, bool includeSourceSlotAfterCost = false, bool isCostSelection = false)
         => new()
         {
             Kind = kind,
@@ -257,6 +257,7 @@ public sealed partial class L12GameEngine
             MinChoose = min,
             MaxChoose = max,
             AutoSelectWhenExact = autoSelectWhenExact,
+            IsCostSelection = isCostSelection,
             ReferenceDeclarationKey = referenceKey,
             IncludeSourceSlotAfterCost = includeSourceSlotAfterCost,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,

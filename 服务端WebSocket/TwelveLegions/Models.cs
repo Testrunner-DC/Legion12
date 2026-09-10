@@ -524,10 +524,12 @@ public sealed class L12ActivationSelectionStep
     public L12ActivationCancellationPolicy CancellationPolicy { get; set; }
         = L12ActivationCancellationPolicy.WhenNoExplicitDecline;
     /// <summary>
-    /// 合法候选数量恰好等于固定选择数量时，服务端直接记录整个集合而不弹出无意义选择。
-    /// 仅用于“必须选择全部现有公开对象”的声明步；候选更多时仍由玩家明确选择。
+    /// 请求确定性自动选择；仅费用或内部控制标记可生效。
+    /// 效果对象即使唯一也必须选择；由公共声明层强制保护。
     /// </summary>
     public bool AutoSelectWhenExact { get; init; }
+    /// <summary>显式按该效果段冒号前的文字标注费用；不可从候选数量推断。</summary>
+    public bool IsCostSelection { get; init; }
     /// <summary>
     /// 本费用步骤仅在全部候选都是同卡号、同锁定后果的普通士气时允许确定性自动选择。
     /// 临时士气、神力、黑色莲花、陵墓守卫及任何不同后果仍必须由玩家明确选择。

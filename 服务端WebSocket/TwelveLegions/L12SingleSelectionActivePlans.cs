@@ -4,10 +4,11 @@ public sealed partial class L12GameEngine
 {
     // A read-only declaration proposal, not a reservation or a payment. Rebuilt
     // for every snapshot/command; the existing activation transaction revalidates.
-    private sealed record SingleActiveSelection(string Text, string[] Choices, string? Rejection = null)
+    private sealed record SingleActiveSelection(string Text, string[] Choices, string? Rejection = null,
+        bool SkipEmptyEffect = false)
     {
         public string? UnavailableReason => Rejection
-            ?? (Choices.Length == 0 ? "当前没有合法的选择对象" : null);
+            ?? (Choices.Length == 0 && !SkipEmptyEffect ? "当前没有合法的选择对象" : null);
     }
 
     private SingleActiveSelection? EvaluateSingleActiveSelection(L12PlayerState player,
@@ -28,7 +29,7 @@ public sealed partial class L12GameEngine
             ("S01-0314", "olgaDebuff") => new("奥尔加：选择对方前排 1 张军团",
                 State.Players[1 - player.PlayerIndex].Field[0]
                     .Where(card => card is not null && IsFieldLegion(card) && !card.Hidden)
-                    .Select(card => card!.InstanceId).ToArray()),
+                    .Select(card => card!.InstanceId).ToArray(), SkipEmptyEffect: true),
             ("S01-02D1", "sunBottomEnemy") => new("众神之乡：选择返回牌库底部的军团",
                 PublicLegions(State.Players[1 - player.PlayerIndex])
                     .Where(card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
@@ -44,5 +45,7 @@ public sealed partial class L12GameEngine
         string ability, SingleActiveSelection selection)
         => selection.UnavailableReason is { } reason
             ? CommandResult.Reject(reason)
+            : selection.SkipEmptyEffect && selection.Choices.Length == 0
+                ? CommitActiveAbility(playerIndex, source, ability, null)
             : PromptActiveTarget(playerIndex, source, ability, selection.Choices, selection.Text);
 }
