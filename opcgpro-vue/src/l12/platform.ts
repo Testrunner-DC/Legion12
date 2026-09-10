@@ -70,6 +70,7 @@ export interface EffectPresentationScene {
 }
 export interface AtomicAbility {
   abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
+  costText?: string | null; resolutionText: string
   migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number; executionModel: string
   reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
   presentations?: EffectPresentationScene[]

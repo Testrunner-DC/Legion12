@@ -100,6 +100,29 @@ public sealed record L12AtomicAbility(
     string LegacyAbilityId = "")
 {
     public IReadOnlyList<L12EffectPresentationScene> Presentations { get; init; } = [];
+
+    // Printed cost/effect clauses are derived inside the current ability only. A colon in
+    // another ability on the same card must never reclassify this ability's text.
+    public string? CostText
+    {
+        get
+        {
+            if (!Atoms.Any(atom => atom.Stage == "cost")) return null;
+            var separator = Text.IndexOfAny(['：', ':']);
+            return separator > 0 ? Text[..separator].Trim() : null;
+        }
+    }
+
+    public string ResolutionText
+    {
+        get
+        {
+            var separator = CostText is null ? -1 : Text.IndexOfAny(['：', ':']);
+            return separator >= 0 && separator + 1 < Text.Length
+                ? Text[(separator + 1)..].Trim()
+                : Text;
+        }
+    }
 }
 
 public sealed record L12AtomicCardEffect(

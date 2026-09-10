@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
         "S01-02C1" => [new("sunGuard", "我方 回合1次 可消耗2士气：将1张<陵墓守卫>从我方墓地活跃登场。"), new("sunDraw", "我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌。")],
         "S01-03C1" => [new("asgardDraw", "我方 回合1次 可消耗2士气：抽取1张牌。若我方主宰血量不高于5，可额外消耗1士气：我方主宰增加1点血量。")],
         "S01-0307" => [new("alvidaSummon", "我方回合 可弃置此军团：对我方主宰造成1点伤害，将手牌中1张天灾等级2的军团活跃登场。")],
-        "S01-0314" => [new("olgaDebuff", "我方回合 可弃置此军团：选择对方前排1张军团，本回合兵力-2000。")],
+        "S01-0314" => GetStructuredRuntimeAbilityViews("S01-0314"),
         "S01-0317" => [new("gramDamage", "主动休整 将墓地4张【阿斯加德】军团自选顺序返回我方牌库底部：对对方主宰造成1点非致命伤害。"), new("gramReady", "可消耗2士气：将此圣物转为活跃。")],
         "S01-01D1" => [new("palaceReward", "我方 回合1次 若本回合返还的士气高于1张，可从士气牌库追加2张休整的士气，随后抽取1张牌。"), new("palaceExchange", "主动休整 击杀对方1张军团，我方需返还此军团相应费用的士气。随后选择墓地1张费用不高于本次返还士气数量的【天廷】军团，将其活跃登场。")],
         "S01-01M2" => [new("mengpoSilence", "返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。"), new("mengpoMorale", "若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气。")],
@@ -61,6 +61,14 @@ public sealed partial class L12GameEngine
         "S01-04M1" => [new("amaterasuKill", "我方 回合1次 可消耗1士气：选择对方1张军团，本回合费用-1。随后击杀对方1张费用为0的军团。"), new("amaterasuReady", "我方 回合1次 可弃置1张手牌：将我方最多2张士气转为活跃。")],
         _ => [],
     };
+
+    private static List<L12AbilityView> GetStructuredRuntimeAbilityViews(string cardId)
+    {
+        if (!L12StructuredCardRules.TryGetStructuredAbilities(cardId, out var abilities)) return [];
+        return abilities.Where(ability => !string.IsNullOrWhiteSpace(ability.RuntimeAbilityId))
+            .Select(ability => new L12AbilityView(ability.RuntimeAbilityId, ability.Text))
+            .ToList();
+    }
 
     private static List<L12AbilityView> GetAnkhSteleAbilityViews()
     {
