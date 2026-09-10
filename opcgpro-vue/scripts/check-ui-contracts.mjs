@@ -1193,6 +1193,35 @@ contracts.push([
   '正式发布的玩家更新日志必须明确说明操作隔离、重连幂等、增量快照及近期日志上限',
 ])
 
+const currentReleaseEntry = shell.slice(
+  shell.indexOf("date: '2026-09-11'"),
+  shell.indexOf("date: '2026-09-10'"),
+)
+const migratedReleaseEntry = shell.slice(
+  shell.indexOf("date: '2026-09-10'"),
+  shell.indexOf("date: '2026-09-09'"),
+)
+const internalReleaseTerms = ['后台', '管理员', '审计', '存储维护', '处置', '处罚']
+contracts.push([
+  currentReleaseEntry.includes('version: releaseVersion')
+    && currentReleaseEntry.includes("title: '页面与对战操作'")
+    && currentReleaseEntry.includes("title: '卡牌效果与响应判定'")
+    && ['步行者罗洛', '槲寄生符咒', '落穴陷阱', '草薙剑', '孙悟空']
+      .every(cardName => currentReleaseEntry.includes(cardName))
+    && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
+  '当前玩家更新日志必须使用本次构建版本，列清页面、卡效与对战逻辑，并排除后台和内部治理内容',
+])
+contracts.push([
+  migratedReleaseEntry.includes("version: '5c2c7d0a7771f7d87af22c456f2b73795953c05a'")
+    && migratedReleaseEntry.includes("title: '卡牌效果与对战规则'")
+    && migratedReleaseEntry.includes("title: '对战页面与恢复'")
+    && migratedReleaseEntry.includes("title: '牌库、排行与大厅'")
+    && ['雷神之锤', '梅杰德', '孙悟空', '安格斯·麦·奥格']
+      .every(cardName => migratedReleaseEntry.includes(cardName))
+    && internalReleaseTerms.every(term => !migratedReleaseEntry.includes(term)),
+  '误发到资讯的5c2c7d0版本必须迁回原更新日志弹框，并只保留玩家可感知内容',
+])
+
 const titleRules = read('../src/l12/site/RankedMasterTitleRulesModal.vue')
 const friendNotifications = read('../src/l12/site/FriendRequestNotifications.vue')
 const setupDecisionClock = read('../src/l12/game/SetupDecisionClock.vue')
