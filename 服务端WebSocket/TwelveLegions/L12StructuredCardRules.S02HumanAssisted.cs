@@ -130,7 +130,7 @@ public static partial class L12StructuredCardRules
                 H("keyword-definition", "keyword-definition", "挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。"),
                 H("enter", "triggered", "登场时 我方主宰增加1点血量。")),
             "S02-0303" => HumanCard(
-                H("hand-play", "special-summon", "可对我方主宰造成1点伤害：此军团登场费用-1。"),
+                SelfDamageEntryDiscountAbility("human-assisted", HumanS02ReviewSource),
                 H("enter", "triggered", "登场时 可选择我方战场或墓地最多2张非同名的【阿斯加德】军团，触发其阵亡效果。")),
             "S02-0304" => HumanCard(
                 H("continuous", "continuous", "进攻距离+1，远程进攻无损。"),

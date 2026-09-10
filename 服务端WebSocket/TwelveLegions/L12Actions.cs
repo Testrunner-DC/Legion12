@@ -2,8 +2,8 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private static bool HasOptionalSelfDamageEntryDiscount(L12CardInstance card)
-        => L12StructuredCardRules.HasOptionalSelfDamageEntryDiscount(card.CardId);
+    private static L12SelfDamageEntryDiscountRule? SelfDamageEntryDiscount(L12CardInstance card)
+        => L12StructuredCardRules.SelfDamageEntryDiscount(card.CardId);
 
     private void CreateOptionalGraveEntryCostPrompt(int playerIndex, string kind, string text,
         IReadOnlyCollection<L12CardInstance> cards, int minimum, int maximum, string continuation,
@@ -178,14 +178,15 @@ public sealed partial class L12GameEngine
             }
         }
 
-        var mayUseSelfDamageDiscount = card.CardType == "legion" && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1;
+        var selfDamageRule = card.CardType == "legion" ? SelfDamageEntryDiscount(card) : null;
+        var mayUseSelfDamageDiscount = selfDamageRule is not null && player.Hp > selfDamageRule.DamageAmount;
         if (mayUseSelfDamageDiscount && command.Choice?.StartsWith("self-damage-cost", StringComparison.Ordinal) != true
             && command.Choice?.StartsWith("normal-cost", StringComparison.Ordinal) != true)
         {
             var normalCost = GetPlayCost(playerIndex, card, useSelfDamageDiscount: false);
             var discountedCost = GetPlayCost(playerIndex, card, useSelfDamageDiscount: true);
             if (ActiveResourceCount(player) < discountedCost) return CommandResult.Reject("活跃士气不足");
-            CreatePrompt(playerIndex, "optional", $"{card.Name}：是否对我方主宰造成1点伤害，使此军团登场费用-1？", ["yes", "no"], 1, 1,
+            CreatePrompt(playerIndex, "optional", $"{card.Name}：是否发动「{selfDamageRule!.CostText}：{selfDamageRule.ResolutionText}」？", ["yes", "no"], 1, 1,
                 "play-cost-choice", data: new Dictionary<string, string>
                 {
                     ["cardInstanceId"] = card.InstanceId,
@@ -195,7 +196,7 @@ public sealed partial class L12GameEngine
                     ["normalCost"] = normalCost.ToString(),
                     ["discountedCost"] = discountedCost.ToString(),
                     ["choiceMode"] = "instant",
-                    ["yes"] = $"是（主宰受到1点伤害，支付{discountedCost}士气）",
+                    ["yes"] = $"发动（{selfDamageRule.CostText}，支付{discountedCost}士气）",
                     ["no"] = $"否（支付{normalCost}士气）",
                 });
             return CommandResult.Ok();
@@ -246,6 +247,9 @@ public sealed partial class L12GameEngine
                     compositeReservation.TemporaryMorale),
                 compositeReservation.ResourceIds, compositeReservation.TemporaryMorale);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+        if (usedAsgardSelfDamageDiscount)
+            DamageMaster(playerIndex, selfDamageRule!.DamageAmount,
+                $"{card.Name}发动「{selfDamageRule.CostText}：{selfDamageRule.ResolutionText}」");
         if (usesChristinaReplacement)
         {
             player.UsedAbilities.Remove(christinaReplacementKey);
@@ -314,7 +318,6 @@ public sealed partial class L12GameEngine
         AddEvent("play", playerIndex, $"{player.Name} 打出 {card.Name}", card);
         if (card.CardId == "S01-0004" && targetPlayerIndex != playerIndex)
             AddEvent("put", targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}", card);
-        if (usedAsgardSelfDamageDiscount) DamageMaster(playerIndex, 1, $"{card.Name}的登场费用减免");
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
         {
             player.LastActiveTacticCardId = card.CardId;
@@ -592,7 +595,9 @@ public sealed partial class L12GameEngine
         modifier += L12StructuredCardRules.HandPlayCostModifier(player, card);
         if (card.CardId == "S02-0601" && player.S2ArthurDiscountUntilTurn >= State.TurnSerial) modifier -= 3;
         if (card.CardId == "S01-0403" && player.UsedAbilities.Contains("s2-fortune-next-uesugi")) modifier -= 2;
-        if (useSelfDamageDiscount && HasOptionalSelfDamageEntryDiscount(card) && player.Hp > 1) modifier--;
+        var selfDamageRule = SelfDamageEntryDiscount(card);
+        if (useSelfDamageDiscount && selfDamageRule is not null && player.Hp > selfDamageRule.DamageAmount)
+            modifier += selfDamageRule.CostAdjustment;
         if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
             modifier -= player.NextFactionLegionDiscount;
         if (card.CardType == "legion") modifier -= player.NextLegionEntryDiscount;

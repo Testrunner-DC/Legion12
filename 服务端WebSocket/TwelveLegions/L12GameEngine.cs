@@ -1867,7 +1867,9 @@ public sealed partial class L12GameEngine
         => State.Players[playerIndex].Hand.Select(card =>
         {
             var snapshot = card.Clone();
-            var selfDamageDiscount = HasOptionalSelfDamageEntryDiscount(card) && State.Players[playerIndex].Hp > 1;
+            var selfDamageRule = SelfDamageEntryDiscount(card);
+            var selfDamageDiscount = selfDamageRule is not null
+                && State.Players[playerIndex].Hp > selfDamageRule.DamageAmount;
             var spentRunes = card.CardId == "S02-0622"
                 ? Math.Min(State.Players[playerIndex].SpecialZones.Runes, (card.Cost + 1) / 2)
                 : 0;

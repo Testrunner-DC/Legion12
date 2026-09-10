@@ -954,6 +954,7 @@ public sealed class ExtendedCardEffectsTests
     [InlineData("S01-0308")]
     [InlineData("S01-0310")]
     [InlineData("S01-0314")]
+    [InlineData("S02-0303")]
     public void AsgardSelfDamageEntryDiscountIsAlwaysAnExplicitChoice(string cardId)
     {
         var game = Create(3, 2);
@@ -967,10 +968,24 @@ public sealed class ExtendedCardEffectsTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("play-cost-choice", prompt.Continuation);
         Assert.Equal(["yes", "no"], prompt.ValidChoices);
+        var rule = Assert.IsType<L12SelfDamageEntryDiscountRule>(
+            L12StructuredCardRules.SelfDamageEntryDiscount(cardId));
+        Assert.Contains(rule.CostText, prompt.Text, StringComparison.Ordinal);
+        Assert.Contains(rule.ResolutionText, prompt.Text, StringComparison.Ordinal);
+        Assert.Equal("发动", prompt.ChoiceLabels["yes"]);
         Assert.Null(player.Field[0][0]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
 
         Assert.Equal(hp - 1, player.Hp);
         Assert.Equal(card.InstanceId, player.Field[0][0]?.InstanceId);
+        var costDamageIndex = game.State.Events.FindIndex(entry => entry.Type == "damage"
+            && entry.Text.Contains(rule.CostText, StringComparison.Ordinal)
+            && entry.Text.Contains(rule.ResolutionText, StringComparison.Ordinal));
+        var playIndex = game.State.Events.FindIndex(entry => entry.Type == "play"
+            && entry.Cards.Any(eventCard => eventCard.InstanceId == card.InstanceId));
+        Assert.True(costDamageIndex >= 0, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
+        Assert.True(playIndex >= 0, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
+        Assert.True(costDamageIndex < playIndex,
+            $"自伤 Cost 必须先于军团打出：cost={costDamageIndex}, play={playIndex}");
     }
 }

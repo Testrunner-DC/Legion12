@@ -104,25 +104,10 @@ public sealed record L12AtomicAbility(
     // Printed cost/effect clauses are derived inside the current ability only. A colon in
     // another ability on the same card must never reclassify this ability's text.
     public string? CostText
-    {
-        get
-        {
-            if (!Atoms.Any(atom => atom.Stage == "cost")) return null;
-            var separator = Text.IndexOfAny(['：', ':']);
-            return separator > 0 ? Text[..separator].Trim() : null;
-        }
-    }
+        => L12StructuredCardRules.SplitAbilityText(Text, Atoms.Any(atom => atom.Stage == "cost")).CostText;
 
     public string ResolutionText
-    {
-        get
-        {
-            var separator = CostText is null ? -1 : Text.IndexOfAny(['：', ':']);
-            return separator >= 0 && separator + 1 < Text.Length
-                ? Text[(separator + 1)..].Trim()
-                : Text;
-        }
-    }
+        => L12StructuredCardRules.SplitAbilityText(Text, Atoms.Any(atom => atom.Stage == "cost")).ResolutionText;
 }
 
 public sealed record L12AtomicCardEffect(

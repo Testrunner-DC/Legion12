@@ -14,8 +14,23 @@ public sealed record L12ConditionalCombatProfile(
     int IncomingRangedCombatDamageAdjustment,
     string ConditionExpression);
 
+public sealed record L12SelfDamageEntryDiscountRule(
+    int DamageAmount,
+    int CostAdjustment,
+    string CostText,
+    string ResolutionText);
+
 public static partial class L12StructuredCardRules
 {
+    public static (string? CostText, string ResolutionText) SplitAbilityText(string text, bool hasCost)
+    {
+        if (!hasCost) return (null, text);
+        var separator = text.IndexOfAny(['：', ':']);
+        return separator > 0 && separator + 1 < text.Length
+            ? (text[..separator].Trim(), text[(separator + 1)..].Trim())
+            : (null, text);
+    }
+
     public static bool CurrentCostAtMost(L12CardInstance card, int maximum)
         => card.HasPrintedCost && card.CurrentCost <= maximum;
 
@@ -67,13 +82,6 @@ public static partial class L12StructuredCardRules
             ["ST04-01"] = 1000,
             ["ST06-02"] = 1000,
         };
-
-    // 尚未迁入逐能力结构定义的旧卡仍由此身份表兜底。已迁移卡应在自己的
-    // hand-play 能力中声明 self-damage-entry-discount-cost，运行时优先读取该语义。
-    private static readonly HashSet<string> OptionalSelfDamageEntryDiscountCards = new(StringComparer.Ordinal)
-    {
-        "S01-0303", "S01-0304", "S01-0308", "S01-0310", "S02-0303",
-    };
 
     // 只有写明“触发”的天灾在翻开时播放触发式效果展示；纯持续天灾只公开卡牌。
     // 此列表同时供实战展示和原子审计使用，不再扫描卡面文本。
@@ -140,11 +148,29 @@ public static partial class L12StructuredCardRules
         => string.Equals(EffectiveFaction(owner, card), faction, StringComparison.Ordinal);
 
     public static bool HasOptionalSelfDamageEntryDiscount(string cardId)
-        => TryGetStructuredAbilities(cardId, out var abilities)
-            && abilities.SelectMany(ability => ability.Atoms).Any(atom => atom.Stage == "cost"
+        => SelfDamageEntryDiscount(cardId) is not null;
+
+    public static L12SelfDamageEntryDiscountRule? SelfDamageEntryDiscount(string cardId)
+    {
+        if (!TryGetStructuredAbilities(cardId, out var abilities)) return null;
+        var ability = abilities.SingleOrDefault(candidate => candidate.Trigger == "hand-play"
+            && candidate.Atoms.Any(atom => atom.Stage == "cost"
                 && atom.Kind == L12AtomKinds.DamageMaster
-                && atom.Parameters.GetValueOrDefault("semantic") == "self-damage-entry-discount-cost")
-            || OptionalSelfDamageEntryDiscountCards.Contains(cardId);
+                && atom.Parameters.GetValueOrDefault("semantic") == "self-damage-entry-discount-cost"));
+        if (ability is null) return null;
+        var damage = ability.Atoms.Single(atom => atom.Stage == "cost"
+            && atom.Kind == L12AtomKinds.DamageMaster);
+        var adjustment = ability.Atoms.Single(atom => atom.Kind == L12AtomKinds.SetState
+            && atom.Parameters.GetValueOrDefault("key") == "source.derived-cost");
+        if (!int.TryParse(damage.Parameters.GetValueOrDefault("amount"), out var damageAmount)
+            || damageAmount <= 0
+            || !int.TryParse(adjustment.Parameters.GetValueOrDefault("value"), out var costAdjustment)
+            || costAdjustment >= 0)
+            return null;
+        var textParts = SplitAbilityText(ability.Text, hasCost: true);
+        if (textParts.CostText is null) return null;
+        return new(damageAmount, costAdjustment, textParts.CostText, textParts.ResolutionText);
+    }
 
     public static bool HasTriggeredDisasterEffect(string cardId)
         => TriggeredDisasterCards.Contains(cardId);
@@ -464,6 +490,10 @@ public static partial class L12StructuredCardRules
         abilities = cardId switch
         {
             "S01-0215" => AnkhSteleAbilities(),
+            "S01-0303" => RagnarAbilities(),
+            "S01-0304" => HaraldAbilities(),
+            "S01-0308" => ErikAbilities(),
+            "S01-0310" => SigurdAbilities(),
             "S01-0314" => OlgaAbilities(),
             "S02-0501" => HeraclesPromotedAbilities(),
             "S02-0502" => HeraclesAbilities(),
@@ -510,23 +540,7 @@ public static partial class L12StructuredCardRules
     private static IReadOnlyList<L12StructuredAbilityTemplate> OlgaAbilities() =>
     [
         RangedAbility() with { ReviewStatus = "confirmed", ReviewSource = "user-20260911" },
-        new("hand-play", "special-summon", "可对我方主宰造成1点伤害：此军团登场费用-1。",
-        [
-            new(L12AtomKinds.Condition, "此军团位于手牌", "condition", new()
-            {
-                ["expression"] = "source.zone=hand",
-            }),
-            new(L12AtomKinds.Optional, "可选择支付此费用", "condition", new()),
-            new(L12AtomKinds.DamageMaster, "对我方主宰造成 1 点伤害", "cost", new()
-            {
-                ["amount"] = "1", ["target"] = "controller.master",
-                ["semantic"] = "self-damage-entry-discount-cost",
-            }),
-            new(L12AtomKinds.SetState, "此军团登场费用 -1", "resolution", new()
-            {
-                ["key"] = "source.derived-cost", ["operation"] = "add", ["value"] = "-1",
-            }),
-        ], "confirmed", "user-20260911"),
+        SelfDamageEntryDiscountAbility(),
         new("active", "activated", "我方回合 可弃置此军团：选择对方前排1张军团，本回合兵力-2000。",
         [
             new(L12AtomKinds.Condition, "我方回合且来源位于我方战场", "condition", new()
@@ -553,6 +567,101 @@ public static partial class L12StructuredCardRules
                 ["duration"] = "this-turn",
             }),
         ], "confirmed", "user-20260911") { RuntimeAbilityId = "olgaDebuff" },
+    ];
+
+    private static L12StructuredAbilityTemplate SelfDamageEntryDiscountAbility(
+        string reviewStatus = "confirmed", string reviewSource = "user-20260911") =>
+        new("hand-play", "special-summon", "可对我方主宰造成1点伤害：此军团登场费用-1。",
+        [
+            new(L12AtomKinds.Condition, "此军团位于手牌", "condition", new()
+            {
+                ["expression"] = "source.zone=hand",
+            }),
+            new(L12AtomKinds.Optional, "可选择支付此费用", "condition", new()),
+            new(L12AtomKinds.DamageMaster, "对我方主宰造成 1 点伤害", "cost", new()
+            {
+                ["amount"] = "1", ["target"] = "controller.master",
+                ["semantic"] = "self-damage-entry-discount-cost",
+            }),
+            new(L12AtomKinds.SetState, "此军团登场费用 -1", "resolution", new()
+            {
+                ["key"] = "source.derived-cost", ["operation"] = "add", ["value"] = "-1",
+            }),
+        ], reviewStatus, reviewSource);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> RagnarAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("enter", "triggered", "登场时 若我方主宰血量不高于7，获得冲锋。（可在登场回合进攻）",
+        [
+            new(L12AtomKinds.Condition, "我方主宰血量不高于 7", "condition", new() { ["expression"] = "controller.hp<=7" }),
+            new(L12AtomKinds.Keyword, "获得冲锋", "resolution", new() { ["keywordRef"] = "charge" }),
+        ], "confirmed", "user-20260911"),
+        new("death", "triggered", "阵亡时 可抽取1张牌，并弃置1张手牌。",
+        [
+            new(L12AtomKinds.Optional, "可发动完整效果", "condition", new()),
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.Discard, "弃置 1 张手牌", "resolution", new() { ["amount"] = "1", ["zone"] = "controller.hand" }),
+        ], "confirmed", "user-20260911"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> HaraldAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("enter", "triggered", "登场时 若对方主宰血量高于我方，可对其造成1点伤害。",
+        [
+            new(L12AtomKinds.Condition, "对方主宰血量高于我方", "condition", new() { ["expression"] = "opponent.hp>controller.hp" }),
+            new(L12AtomKinds.Optional, "可对对方主宰造成 1 点伤害", "condition", new()),
+            new(L12AtomKinds.DamageMaster, "对方主宰受到 1 点伤害", "resolution", new() { ["amount"] = "1", ["target"] = "opponent.master" }),
+        ], "confirmed", "user-20260911"),
+        new("death", "triggered", "阵亡时 击杀对方1张兵力不高于2000的军团。",
+        [
+            new(L12AtomKinds.SelectTarget, "存在时选择对方 1 张兵力不高于 2000 的军团", "target", new()
+            {
+                ["zone"] = "opponent.field", ["filter"] = "card-type=legion;troops<=2000;public=true",
+                ["min"] = "0", ["max"] = "1", ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.MoveZone, "击杀所选军团", "resolution", new() { ["from"] = "opponent.field", ["to"] = "owner.grave", ["operation"] = "kill" }),
+        ], "confirmed", "user-20260911"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> ErikAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("after-damage", "triggered", "此军团对对方主宰造成伤害时：对方弃置1张手牌。",
+        [
+            new(L12AtomKinds.Condition, "此军团对对方主宰造成伤害", "condition", new() { ["expression"] = "source.damaged-opponent-master=true" }),
+            new(L12AtomKinds.SelectTarget, "对方选择弃置 1 张手牌", "target", new() { ["zone"] = "opponent.hand", ["actor"] = "opponent", ["min"] = "1", ["max"] = "1", ["emptyPolicy"] = "skip-resolution" }),
+            new(L12AtomKinds.Discard, "对方弃置所选手牌", "resolution", new() { ["amount"] = "1", ["zone"] = "opponent.hand" }),
+        ], "confirmed", "user-20260911"),
+        new("death", "triggered", "阵亡时 将墓地1张费用不高于3的【阿斯加德】军团活跃登场。",
+        [
+            new(L12AtomKinds.SelectTarget, "存在时选择墓地 1 张费用不高于 3 的【阿斯加德】军团", "target", new()
+            {
+                ["zone"] = "controller.grave", ["filter"] = "card-type=legion;faction=asgard;current-cost<=3",
+                ["min"] = "0", ["max"] = "1", ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.MoveZone, "将所选军团活跃登场", "resolution", new() { ["from"] = "controller.grave", ["to"] = "controller.field", ["state"] = "ready" }),
+        ], "confirmed", "user-20260911"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> SigurdAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("active", "activated", "我方回合1次 可进行1次位移。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未进行骑兵位移", "condition", new() { ["expression"] = "controller.turn;source.cavalry-move-unused=true" }),
+            new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "confirmed", "user-20260911"),
+        new("attack", "triggered", "进攻时 若我方存在<神剑格拉墨>，此军团本回合兵力+1000。",
+        [
+            new(L12AtomKinds.Condition, "我方圣物区存在〈神剑格拉墨〉", "condition", new() { ["expression"] = "controller.artifact.card-id=S01-0317" }),
+            new(L12AtomKinds.ModifyTroops, "此军团兵力 +1000", "resolution", new() { ["operation"] = "add", ["value"] = "1000", ["target"] = "source" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ], "confirmed", "user-20260911"),
     ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> AnkhSteleAbilities() =>
