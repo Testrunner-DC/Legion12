@@ -226,6 +226,51 @@ public sealed class RankedIntegrityActionsTests
     }
 
     [Fact]
+    public void LegacyPlacementLatestSuffixCanBeReversedFromValidatedSettlementChain()
+    {
+        var fixture = Create("legacy-placement-inverse");
+        var beforeFirst = fixture.Store.RankedProfile(fixture.First.Id);
+        var beforeSecond = fixture.Store.RankedProfile(fixture.Second.Id);
+        var beforeFirstRating = fixture.Store.HiddenRating(fixture.First.Id);
+        var beforeSecondRating = fixture.Store.HiddenRating(fixture.Second.Id);
+        var matchIds = Enumerable.Range(0, 5)
+            .Select(index => $"legacy-placement-inverse-{index}").ToArray();
+        for (var index = 0; index < matchIds.Length; index++)
+            fixture.Store.SettleRankedMatch(matchIds[index], fixture.First.Id, fixture.Second.Id,
+                index % 2);
+        ClearProfileFacts(fixture.Store);
+
+        var action = Input("legacy-placement-confirm", "confirmed", matchIds);
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, action);
+        Assert.True(preview.CanConfirm, string.Join(" | ", preview.BlockingReasons));
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, action, preview.Revision,
+            Audit("legacy-placement-confirm"));
+
+        AssertProfilesEqual(beforeFirst, fixture.Store.RankedProfile(fixture.First.Id));
+        AssertProfilesEqual(beforeSecond, fixture.Store.RankedProfile(fixture.Second.Id));
+        Assert.Equal(beforeFirstRating, fixture.Store.HiddenRating(fixture.First.Id), 7);
+        Assert.Equal(beforeSecondRating, fixture.Store.HiddenRating(fixture.Second.Id), 7);
+    }
+
+    [Fact]
+    public void LegacyPlacementStillRequiresAnExactLatestSettlementSuffix()
+    {
+        var fixture = Create("legacy-placement-not-latest");
+        var matchIds = Enumerable.Range(0, 5)
+            .Select(index => $"legacy-placement-not-latest-{index}").ToArray();
+        for (var index = 0; index < matchIds.Length; index++)
+            fixture.Store.SettleRankedMatch(matchIds[index], fixture.First.Id, fixture.Second.Id,
+                index % 2);
+        ClearProfileFacts(fixture.Store);
+
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin,
+            Input("legacy-placement-not-latest-confirm", "confirmed", matchIds[..^1]));
+
+        Assert.False(preview.CanConfirm);
+        Assert.Contains(preview.BlockingReasons, reason => reason.Contains("连续最新结算后缀"));
+    }
+
+    [Fact]
     public void LegacyLatestSuffixUsesExactEloInverseWhenProfileFactsAreUnavailable()
     {
         var fixture = Create("legacy-inverse");

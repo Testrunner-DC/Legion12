@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-11 历史定级赛后台处置被统一拦截
+
+- 现象与根因：管理员处置五场历史定级赛时逐场提示“涉及定级进度，缺少安全反算依据”。这些对局早于`RankedSettlementProfileFacts`前后快照；`BuildVoidAppliedRewardsPlanLocked`在执行已有结算链、赛季/派系、最新连续后缀及隐藏分精确反算校验前，先按缺快照统一返回，导致历史定级赛无法使用后台处置。
+- 修复：移除仅凭缺少新快照的提前拦截。历史定级赛继续沿用不可变`RankedSettlements`账本重建定级场次、定级胜场、总胜负、连续胜负、段位保底和最高阶状态；隐藏分按双方结算倒序精确反算并正向往返校验。新对局仍优先使用持久化前后快照。
+- 安全边界：仍要求同赛季、同派系、当前档案与完整结算链一致，且所选对局是双方当前连续最新结算后缀；已有修正链、跨赛季、改派系、账本断链、胜负计数不足、缺少双方链或隐藏分触及不可逆边界继续拒绝，不回填或猜测历史快照。
+- 同类扫描：`rg -n "RankedSettlementProfileFacts|AppliedInitially|Placement|TryReverseRankedElo|连续最新结算后缀" 服务端WebSocket/TwelveLegions TwelveLegions.Tests`。确认提前拦截仅此一处；普通历史排位原已使用相同账本与隐藏分反算路径，暂扣收益另有完整前后快照，不受本修复影响。
+- 防回滚：`LegacyPlacementLatestSuffixCanBeReversedFromValidatedSettlementChain`覆盖五场旧定级赛完整撤销并核对双方档案与隐藏分；`LegacyPlacementStillRequiresAnExactLatestSettlementSuffix`固定少选末场时继续拒绝。红测原为2/2失败，修复后新增2/2、完整`RankedIntegrityActionsTests` 12/12及隔离Batch规则2860/2860零跳过通过。提交、同步状态以后续回执为准；用户已明确本次不部署。
+
 ## 2026-09-11 六张自伤减费卡的逐能力结构与运行时同源（用户裁定）
 
 - 现象与根因：奥尔加完成三段拆分后，拉格纳、无情者哈拉尔、血斧艾瑞克、齐格鲁德及卡纽特大帝仍由卡号集合赋予相同减费，运行时硬编码1点自伤与-1费用。身份表无法表达“这是独立手牌能力”，也无法让提示、费用快照、支付时序和日志从同一段定义取得数据。

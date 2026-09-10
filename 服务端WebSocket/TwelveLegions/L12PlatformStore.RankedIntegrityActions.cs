@@ -713,11 +713,6 @@ public sealed partial class L12PlatformStore
         var appliedRows = _data.RankedSettlements.Where(row => selected.Contains(row.MatchId)
                 && row.Outcome is "win" or "loss" && IsRankedMatchCurrentlyAppliedLocked(row.MatchId))
             .ToArray();
-        foreach (var row in appliedRows.Where(row => row.Placement
-                     && !_data.RankedSettlementProfileFacts.Any(fact => fact.AppliedInitially
-                         && fact.MatchId.Equals(row.MatchId, StringComparison.OrdinalIgnoreCase))))
-            plan.BlockingReasons.Add($"对局 {row.MatchId} 涉及定级进度，缺少安全反算依据");
-        if (plan.BlockingReasons.Count > 0) return;
 
         foreach (var accountRows in appliedRows.GroupBy(row => row.AccountId,
                      StringComparer.OrdinalIgnoreCase))
