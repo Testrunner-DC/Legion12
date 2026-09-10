@@ -88,11 +88,12 @@ New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 try {
     . $targetHelper
 
-    foreach ($accepted in @("root@legion-12.com", "root@38.76.208.25")) {
+    foreach ($accepted in @("root@legion-12.com", "root@154.201.80.91")) {
         $endpoint = Resolve-L12ProductionEndpoint -RemoteServer $accepted
-        Assert-True ($endpoint.TrustedHostKeyAlias -eq "38.76.208.25") "合法生产目标没有固定到新机主机密钥别名：$accepted"
+        Assert-True ($endpoint.TrustedHostKeyAlias -eq "154.201.80.91") "合法生产目标没有固定到新机主机密钥别名：$accepted"
     }
     foreach ($rejected in @(
+        "root@38.76.208.25",
         "root@103.146.230.37",
         "root@example.com",
         "operator@legion-12.com",
@@ -123,11 +124,11 @@ try {
     Assert-True ($keygen.ExitCode -eq 0) "SSH 主机指纹夹具生成失败：$($keygen.Output)"
     $publicKeyParts = (Get-Content -LiteralPath "$keyPath.pub" -Raw).Trim().Split(' ')
     $knownHosts = Join-Path $sshFixture "known_hosts"
-    Write-Utf8NoBom $knownHosts "38.76.208.25 $($publicKeyParts[0]) $($publicKeyParts[1])`n"
+    Write-Utf8NoBom $knownHosts "154.201.80.91 $($publicKeyParts[0]) $($publicKeyParts[1])`n"
     $sshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot -RemoteServer "root@legion-12.com" -KnownHostsFile $knownHosts)
     Assert-True ($sshOptions -contains "StrictHostKeyChecking=yes") "生产 SSH 没有严格主机密钥校验。"
-    Assert-True ($sshOptions -contains "HostName=38.76.208.25") "生产 SSH 没有固定连接新机 IP。"
-    Assert-True ($sshOptions -contains "HostKeyAlias=38.76.208.25") "生产主域没有固定使用新机 IP 指纹。"
+    Assert-True ($sshOptions -contains "HostName=154.201.80.91") "生产 SSH 没有固定连接新机 IP。"
+    Assert-True ($sshOptions -contains "HostKeyAlias=154.201.80.91") "生产主域没有固定使用新机 IP 指纹。"
     $explicitSshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot `
         -RemoteServer "root@legion-12.com" -KnownHostsFile $knownHosts -IdentityFile $keyPath)
     $resolvedExplicitIdentity = (Resolve-Path -LiteralPath $keyPath).Path

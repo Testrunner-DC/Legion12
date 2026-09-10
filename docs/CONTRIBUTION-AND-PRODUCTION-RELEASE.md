@@ -88,7 +88,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 当根分区容量已触发警戒时，不能继续把运行包和完整备份堆在 `/opt`。新机已核验独立、持久、可写的 `/www` 分区；本批使用固定受管制品根：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -Server root@38.76.208.25 -ServerArtifactRoot /www/legion12
+powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -Server root@154.201.80.91 -ServerArtifactRoot /www/legion12
 ```
 
 SSH仍由现有可信配置校验；`ServerArtifactRoot`只接受`/opt`或`/www/legion12`，不可填任意目录。外置模式在上传大包前和服务器发布事务内检查独立挂载、持久挂载配置、权限、路径和容量：预备至少14GiB空闲，正式预算包含最大4GiB压缩备份、实际解包体积及8GiB余量。超限停止，不自动删除旧备份补空间。
@@ -122,7 +122,7 @@ if ($health.status -ne 'ok' -or $health.serverVersion -ne $expectedCommit) {
 
 node .\scripts\ws-smoke.mjs wss://legion-12.com/ws
 
-ssh -o HostKeyAlias=38.76.208.25 root@legion-12.com `
+ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com `
     "systemctl show legion12-test.service -p ActiveState -p SubState -p UnitFileState -p NRestarts -p ExecMainStatus --no-pager; readlink -f /opt/legion12-test"
 ```
 

@@ -1,7 +1,7 @@
 ﻿Set-StrictMode -Version Latest
 
 $script:L12ProductionHost = "legion-12.com"
-$script:L12ProductionAddress = "38.76.208.25"
+$script:L12ProductionAddress = "154.201.80.91"
 
 function Resolve-L12ProductionEndpoint {
     [CmdletBinding()]

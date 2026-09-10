@@ -33,10 +33,10 @@ $env:npm_config_cache = "D:\GPT\Legion12\artifacts\temp\npm-cache"
 $env:L12_DEPLOY_CACHE = "D:\GPT\Legion12\artifacts\deploy"
 ```
 
-SSH 公钥加入新服务器且已人工核验 `38.76.208.25` 的主机指纹后验证：
+SSH 公钥加入新服务器且已人工核验 `154.201.80.91` 的主机指纹后验证：
 
 ```powershell
-ssh -o HostKeyAlias=38.76.208.25 root@legion-12.com "echo SSH连接成功"
+ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com "echo SSH连接成功"
 ```
 
 不要复制其他电脑的 SSH 私钥，也不要用 `ssh-keyscan` 的未核验结果直接建立信任。部署脚本会自动读取仓库所有者的用户 SSH 配置；只要新服务器 IP 已存在于所选 `known_hosts`，主域就固定使用该可信 IP 作为 `HostKeyAlias`，不会读取可能残留的旧域名主机项。若可信 IP 条目不存在，脚本保持 `StrictHostKeyChecking=yes` 并失败关闭，不自动接受新指纹。
@@ -104,8 +104,8 @@ CI Artifact 不重复包含卡图；若服务器没有对应缓存，部署电�
 查看状态：
 
 ```powershell
-ssh -o HostKeyAlias=38.76.208.25 root@legion-12.com "systemctl status legion12-test.service --no-pager"
-ssh -o HostKeyAlias=38.76.208.25 root@legion-12.com "journalctl -u legion12-test.service -n 200 --no-pager"
+ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com "systemctl status legion12-test.service --no-pager"
+ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com "journalctl -u legion12-test.service -n 200 --no-pager"
 ```
 
 禁止直接覆盖 `/opt/legion12-test`、删除 `/opt/legion12-runtime`，或在服务器源码目录执行 `git pull`。旧 release 暂不自动删除，以便人工审计和回滚。

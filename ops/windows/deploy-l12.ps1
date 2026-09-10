@@ -63,7 +63,7 @@ try {
     $sshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot -RemoteServer $Server `
         -KnownHostsFile $KnownHostsFile -IdentityFile $IdentityFile)
     $remoteHost = $productionEndpoint.Host
-    $trustedProductionAlias = "38.76.208.25"
+    $trustedProductionAlias = $productionEndpoint.TrustedHostKeyAlias
     $knownHostsOption = $sshOptions | Where-Object { $_ -like "UserKnownHostsFile=*" } | Select-Object -First 1
     $knownHosts = if ($knownHostsOption) { $knownHostsOption.Substring("UserKnownHostsFile=".Length) } else { "" }
     $trustedAliasEntry = if ($knownHosts) { @(& ssh-keygen -F $trustedProductionAlias -f $knownHosts 2>$null) } else { @() }
