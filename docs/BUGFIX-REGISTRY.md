@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-10 效果同源：主动士气报价（直接需求）
+
+- 按钮原先从标签正则提取印刷费用，提交另计算免耗与天灾附加费。抽取无副作用 QuoteActiveMorale，提交重算且按钮复用；不改变付费事务和消耗规则。
+- 同类扫描：GetActiveAbilityMoraleCost 全能力表、BuildAbilityViews 和 CommitActiveAbility；所有正基础费用映射均接入，荷鲁斯替代付费及未映射费用保留。此批没有完整统一候选/响应/结果事件。
+- MasterButtonAndSubmissionShareEffectiveMoraleQuote 四组合通过；完整Batch规则2823/2823、零跳过及全池静态门禁通过。不能以此替代每类重连/无效测试；未部署或修改线上分数。
+
 ## 2026-09-10 OPS-PRODUCTION-ADDRESS 正式部署地址更新
 
 - 现象与根因：正式入口的旧地址 `38.76.208.25` 超时，服务商实例当前公网地址为 `154.201.80.91`；DNS 已由用户修正，但正式发布目标帮助器和入口内的第二份固定地址仍指旧地址。公网地址变更原因尚未由服务商确认，不推断为应用故障或主机重装。

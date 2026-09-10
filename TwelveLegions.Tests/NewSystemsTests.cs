@@ -128,6 +128,44 @@ public sealed class NewSystemsTests
         Assert.DoesNotContain(player.Morale, card => !card.Tapped);
     }
 
+    [Theory]
+    [InlineData(false, false, 1)]
+    [InlineData(false, true, 2)]
+    [InlineData(true, false, 0)]
+    [InlineData(true, true, 1)]
+    public void MasterButtonAndSubmissionShareEffectiveMoraleQuote(bool waived, bool pride, int cost)
+    {
+        var game = Create(seed: 5533);
+        var owner = Enumerable.Range(0, game.State.Players.Length)
+            .Single(index => game.State.Players[index].MasterId == "S01-01M1");
+        var player = game.State.Players[owner];
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = pride ? CreateInstance("S02-DS06", "quote-pride") : null;
+        player.MasterMoraleWaiverUntilTurn = waived ? game.State.TurnSerial : -1;
+        AddAllMorale(player);
+        foreach (var morale in player.Morale) morale.Tapped = true;
+        foreach (var morale in player.Morale.Take(cost)) morale.Tapped = false;
+        var build = typeof(L12GameEngine).GetMethod("BuildAbilityViews",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        L12AbilityView View() => ((List<L12AbilityView>)build.Invoke(game,
+            [player, player.MasterId, $"master-{owner}"])!).Single(view => view.Id == "drawCycle");
+        Assert.True(View().Enabled, View().DisabledReason);
+        if (cost > 0)
+        {
+            player.Morale[cost - 1].Tapped = true;
+            Assert.False(View().Enabled);
+            Assert.Equal($"需要{cost}张活跃士气", View().DisabledReason);
+            player.Morale[cost - 1].Tapped = false;
+        }
+        var result = game.Handle(owner,
+            new L12Command("activateAbility", $"master-{owner}", Ability: "drawCycle"));
+        Assert.True(result.Accepted, result.Error);
+        Assert.DoesNotContain(player.Morale, card => !card.Tapped);
+        Assert.False(game.Handle(owner,
+            new L12Command("activateAbility", $"master-{owner}", Ability: "drawCycle")).Accepted);
+    }
+
     [Fact]
     public void PrideMasterEffectStagesReturnAndPaymentWithoutDoubleCharging()
     {

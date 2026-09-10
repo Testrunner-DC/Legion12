@@ -611,6 +611,17 @@ public sealed partial class L12GameEngine
             if (view.Id == "galahadGrailReward"
                 && !player.SpecialZones.Trials.Any(card => card.CardId == "S02-06S4" && card.TrialCompleted))
                 return view with { Enabled = false, DisabledReason = "试炼《寻找圣杯之旅》尚未完成" };
+            // Horus has alternative payments; its dedicated availability check owns
+            // that choice. Other mapped morale costs use the submission quote.
+            if (availabilitySource is not null && view.Id != "horusRevive")
+            {
+                var quote = QuoteActiveMorale(player, availabilitySource, view.Id);
+                if (quote.BaseCost > 0)
+                    return ActiveResourceCount(player) < quote.Total
+                        ? view with { Enabled = false, DisabledReason = $"需要{quote.Total}张活跃士气" }
+                        : view;
+            }
+            // Unmigrated ability-specific payments retain the existing fallback.
             var match = System.Text.RegularExpressions.Regex.Match(view.Label, @"消耗\s*(\d+)\s*士气");
             if (view.Id != "horusRevive" && match.Success
                 && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)

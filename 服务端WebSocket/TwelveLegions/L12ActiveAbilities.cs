@@ -291,11 +291,11 @@ public sealed partial class L12GameEngine
             && player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
         if (ValidatePublicActiveDeclarationBeforePayment(playerIndex, source, ability, target) is { } declarationError)
             return CommandResult.Reject(declarationError);
-        var disasterMasterSurcharge = State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0;
-        var baseMoraleCost = GetActiveAbilityMoraleCost(source, ability, target);
-        var masterMoraleWaived = source.CardId == player.MasterId
-            && player.MasterMoraleWaiverUntilTurn >= State.TurnSerial;
-        var moraleCost = (masterMoraleWaived ? 0 : baseMoraleCost) + disasterMasterSurcharge;
+        var moraleQuote = QuoteActiveMorale(player, source, ability, target);
+        var disasterMasterSurcharge = moraleQuote.Surcharge;
+        var baseMoraleCost = moraleQuote.BaseCost;
+        var masterMoraleWaived = moraleQuote.Waived;
+        var moraleCost = moraleQuote.Total;
         var returnCost = GetActiveAbilityReturnMoraleCost(player, source, ability, target);
         var requireActiveReturn = ActiveReturnRequiresActiveMorale(source, ability);
         var reservedResourceIds = ActiveAbilityReservedResourceIds(player, source, ability, target,
