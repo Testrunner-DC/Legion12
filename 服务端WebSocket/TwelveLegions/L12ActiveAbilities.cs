@@ -112,33 +112,17 @@ public sealed partial class L12GameEngine
         if (TryBeginFaithZealotFreeMasterDeclaration(playerIndex, source, ability) is { } freeDeclaration)
             return freeDeclaration;
 
-        string[] choices;
-        switch (ability)
+        if (EvaluateSingleActiveSelection(player, source, ability) is { } selection)
         {
-            case "frontBuff" when source.CardId == "S01-04M2":
-                choices = PublicFactionLegions(player, "gaotianyuan").Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团");
-            case "kusanagi" when source.CardId == "S01-04M2":
-                if (player.Relic?.CardId != "S01-0417") return CommandResult.Reject("圣物区没有〈草薙剑〉");
-                choices = Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null).Select(slot => $"0:{slot}").ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "选择〈草薙剑〉置入前排的位置");
-            case "artifactSearch" when source.CardId == "S01-0117":
-                choices = player.Hand.Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "选择弃置的 1 张手牌");
-            case "kusanagiDebuff" when source.CardId == "S01-0417":
-                choices = PublicLegions(State.Players[1 - playerIndex]).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "选择对方 1 张军团，本回合费用 -1");
-            case "kusanagiStrong" when source.CardId == "S01-0417":
-                choices = PublicFactionLegions(player, "gaotianyuan").Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "选择我方 1 张【高天原】军团，本回合获得强攻");
-            default:
-                return TryBeginStarterRemainingActiveAbility(playerIndex, source, ability)
+            if (selection.UnavailableReason is { } reason) return CommandResult.Reject(reason);
+            return PromptActiveTarget(playerIndex, source, ability, selection.Choices, selection.Text);
+        }
+        return TryBeginStarterRemainingActiveAbility(playerIndex, source, ability)
                     ?? TryBeginPublicActiveDeclaration(playerIndex, source, ability)
                     ?? TryBeginS2UniversalActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS2FactionActiveAbility(playerIndex, source, ability)
                     ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability)
                     ?? CommitActiveAbility(playerIndex, source, ability, command.CardInstanceIds?.FirstOrDefault());
-        }
     }
 
     private CommandResult PromptActiveTarget(int playerIndex, L12CardInstance source, string ability, string[] choices, string text)

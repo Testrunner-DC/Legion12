@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-10 单步候选与按钮同源（直接需求）
+
+- EvaluateSingleActiveSelection 统一 Text、Choices、UnavailableReason，主入口五个分支和按钮复用；无候选时不建事务也不支付。不是以按钮快照授权命令，提交及结算仍使用原事务复验。
+- 扫描 PromptActiveTarget 的全部调用：主入口5项本批迁移；L12S1FactionEffects 中 olgaDebuff、sunBottomEnemy、ankhDraw、amaterasuKill 位于不同前置公开声明链，留下一批核对，不宣称全部单目标卡已迁移。孟婆 min=0 合法零目标流程不套用本批必选语义。
+- SingleActiveSelectionTests 10例通过，恢复通过 SerializeFullState/RestoreCheckpoint 而非只刷新视图；无效测试对栈项设置 Negated 后通过真实响应放行结算，未模拟一张具体反击卡。保留原隐藏信息、候选及费用协议。最终Batch2833/2833零跳过及全池门禁通过；首轮1项临时matches.db清理占用，独立11/11及完整复跑通过，未跳过或修改失败断言。
+
 ## 2026-09-10 效果同源：主动士气报价（直接需求）
 
 - 按钮原先从标签正则提取印刷费用，提交另计算免耗与天灾附加费。抽取无副作用 QuoteActiveMorale，提交重算且按钮复用；不改变付费事务和消耗规则。

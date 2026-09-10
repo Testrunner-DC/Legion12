@@ -637,6 +637,8 @@ public sealed partial class L12GameEngine
     /// </summary>
     private string? ActiveAbilityUnavailableReason(L12PlayerState player, L12CardInstance source, string ability)
     {
+        if (EvaluateSingleActiveSelection(player, source, ability) is { } selection)
+            return selection.UnavailableReason;
         var enemy = State.Players[1 - player.PlayerIndex];
         var emptySlotExists = EmptySlots(player).Any();
         var ownLegions = PublicLegions(player).ToArray();
