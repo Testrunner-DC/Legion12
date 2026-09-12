@@ -151,6 +151,9 @@ public sealed partial class L12GameEngine
             System.Diagnostics.Trace.TraceError(
                 $"Effect presentation branch ambiguity failed closed for {source.CardId}/{trigger}.");
 
+        if (L12SingleSegmentResponseEffectPresentations.TryResolveScene(card, trigger,
+                out var singleResponseSceneId))
+            return singleResponseSceneId;
         var candidateAbilities = triggerAbilities;
         var declaredAbilityId = data?.GetValueOrDefault("ability");
         if (L12SingleSegmentEffectPresentations.TryResolveScene(card, trigger,

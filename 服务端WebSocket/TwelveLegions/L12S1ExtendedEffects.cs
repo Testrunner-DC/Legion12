@@ -967,6 +967,7 @@ public sealed partial class L12GameEngine
             {
                 var target = PublicLegions(player).FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target"));
                 if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                else item.Data["effectResultStatus"] = "skipped";
                 FinishStackItem(item);
                 return;
             }

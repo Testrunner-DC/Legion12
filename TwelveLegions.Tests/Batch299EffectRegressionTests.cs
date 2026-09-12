@@ -584,6 +584,11 @@ public sealed class Batch299EffectRegressionTests
         Pass(game);
         Assert.Same(mercenary, Assert.Single(owner.Graveyard));
         Assert.Empty(game.State.EffectStack);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Theory]

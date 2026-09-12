@@ -1904,9 +1904,13 @@ public sealed partial class L12GameEngine
         {
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
             // 抵挡只终止交战，不无效已经发动的【进攻时】效果。
-            if (State.PendingDefense is not null) State.PendingDefense.BlockedByResponse = true;
+            if (target is null || State.PendingDefense is null)
+                item.Data["effectResultStatus"] = "skipped";
+            else
+                State.PendingDefense.BlockedByResponse = true;
             var card = FindSource(item) ?? item.SourceSnapshot;
-            AddEvent("defense", item.Controller, "佣兵部队抵挡本次进攻", card is null ? [] : [card]);
+            if (item.Data.GetValueOrDefault("effectResultStatus") != "skipped")
+                AddEvent("defense", item.Controller, "佣兵部队抵挡本次进攻", card is null ? [] : [card]);
             FinishStackItem(item);
             return;
         }

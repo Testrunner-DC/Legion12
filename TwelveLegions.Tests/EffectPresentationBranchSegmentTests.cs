@@ -67,7 +67,8 @@ public sealed class EffectPresentationBranchSegmentTests
         var expectedSceneCount = plans.Sum(plan => plan.Segments.Count) - branchCapableSegments
             + L12EffectPresentationVariants.PublicBranchDefinitions.Count
             + L12EffectPresentationVariants.StandaloneBranchDefinitions.Count
-            + L12SingleSegmentEffectPresentations.All.Count;
+            + L12SingleSegmentEffectPresentations.All.Count
+            + L12SingleSegmentResponseEffectPresentations.All.Count;
         var actualSceneCount = catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
             .SelectMany(ability => ability.Presentations).Count(scene => scene.Flow is not null);
         Assert.Equal(expectedSceneCount, actualSceneCount);
@@ -130,6 +131,114 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
         Assert.Equal(1, result.EffectSegmentIndex);
         Assert.Equal(1, result.EffectSegmentCount);
+    }
+
+    [Fact]
+    public void AuditedSingleResponsesBindPrintedAbilitiesToRuntimeTriggers()
+    {
+        var expected = new[]
+        {
+            ("S01-0002", 2, "response-block"),
+            ("S01-0018", 1, "response-negate"),
+            ("S01-0019", 1, "reaction"),
+            ("S02-0005", 2, "response-retarget-master"),
+        };
+        Assert.Equal(expected, L12SingleSegmentResponseEffectPresentations.All
+            .Select(item => (item.CardId, item.AbilitySequence, item.RuntimeTrigger)).ToArray());
+
+        var catalog = Catalog;
+        var game = Create(catalog, 307302);
+        foreach (var definition in L12SingleSegmentResponseEffectPresentations.All)
+        {
+            var card = catalog.AtomicEffects.Find(definition.CardId)!;
+            var ability = Assert.Single(card.Abilities, item => item.Sequence == definition.AbilitySequence);
+            var scene = Assert.Single(ability.Presentations, item =>
+                item.Flow == L12SingleSegmentResponseEffectPresentations.Flow);
+            Assert.Equal(1, scene.SegmentIndex);
+            Assert.Equal(1, scene.SegmentCount);
+            Assert.Null(scene.RequiredChoices);
+            Assert.Equal(scene.SceneId, game.ResolveEffectPresentationSceneId(
+                Card(catalog, definition.CardId, $"response-{definition.CardId}"),
+                definition.RuntimeTrigger, new Dictionary<string, string>(), scene.DefaultText));
+        }
+    }
+
+    [Fact]
+    public void RealAmbushResponseKeepsItsSceneAcrossRestoreAndPublishesResolvedResult()
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307303, stateFormatVersion: 2);
+        var source = Card(catalog, "S01-0019", "single-ambush", owner: 1);
+        source.Hidden = true;
+        game.State.Players[1].Field[1][0] = source;
+        var target = Card(catalog, "S01-0004", "ambush-target", owner: 1);
+        game.State.Players[1].Field[0][0] = target;
+        var rootSource = Card(catalog, "S01-0109", "ambush-root");
+        var root = new L12StackItem
+        {
+            StackItemId = "ambush-root-stack",
+            Controller = 0,
+            SourceInstanceId = rootSource.InstanceId,
+            SourceCardId = rootSource.CardId,
+            SourceName = rootSource.Name,
+            SourceSnapshot = rootSource.Clone(),
+            Trigger = "active",
+            Text = "测试中的对方效果",
+        };
+        game.State.EffectStack.Add(root);
+        Invoke(game, "CommitS1ReactionResponse", 1, source, root.StackItemId, target.InstanceId, null);
+        var declaredScene = Assert.Single(game.State.Events, action => action.EffectResultStatus == "declared"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId)).EffectSceneId;
+
+        game = L12GameEngine.RestoreCheckpoint(catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaredScene, result.EffectSceneId);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
+        Assert.Equal(target.BaseTroops + 2000, game.State.Players[1].Field[0][0]!.Troops);
+    }
+
+    [Fact]
+    public void RealAmbushResponsePublishesSkippedWhenItsDeclaredLegionLeaves()
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307304);
+        var source = Card(catalog, "S01-0019", "skipped-ambush", owner: 1);
+        source.Hidden = true;
+        game.State.Players[1].Field[1][0] = source;
+        var target = Card(catalog, "S01-0004", "leaving-ambush-target", owner: 1);
+        game.State.Players[1].Field[0][0] = target;
+        var rootSource = Card(catalog, "S01-0109", "skipped-ambush-root");
+        var root = new L12StackItem
+        {
+            StackItemId = "skipped-ambush-root-stack",
+            Controller = 0,
+            SourceInstanceId = rootSource.InstanceId,
+            SourceCardId = rootSource.CardId,
+            SourceName = rootSource.Name,
+            SourceSnapshot = rootSource.Clone(),
+            Trigger = "active",
+            Text = "测试中的对方效果",
+        };
+        game.State.EffectStack.Add(root);
+        Invoke(game, "CommitS1ReactionResponse", 1, source, root.StackItemId, target.InstanceId, null);
+        game.State.Players[1].Field[0][0] = null;
+        game.State.Players[1].Graveyard.Add(target);
+
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("skipped", result.EffectResultStatus);
+        Assert.Contains("没有合法处理对象", result.Text, StringComparison.Ordinal);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Fact]

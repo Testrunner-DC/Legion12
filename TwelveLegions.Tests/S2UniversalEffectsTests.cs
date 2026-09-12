@@ -184,6 +184,11 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal("legion", game.State.PendingDefense?.Target.Type);
         Assert.Equal(puppet.InstanceId, game.State.PendingDefense?.Target.InstanceId);
         Assert.Equal(L12Phase.Defense, game.State.Phase);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == puppet.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     private static void PassResponses(L12GameEngine game)
@@ -287,6 +292,9 @@ public sealed class S2UniversalEffectsTests
         Assert.Null(game.State.Players[1].Field[0][1]);
         Assert.Equal("master", game.State.PendingDefense?.Target.Type);
         Assert.Equal(L12Phase.Defense, game.State.Phase);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == puppet.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
     }
 
     [Fact]

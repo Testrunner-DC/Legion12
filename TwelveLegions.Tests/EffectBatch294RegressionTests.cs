@@ -290,6 +290,11 @@ public sealed class EffectBatch294RegressionTests
 
         Assert.True(promotion.Negated);
         Assert.False(normal.Negated);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == pitfall.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
         Assert.Same(normal, Assert.Single(game.State.EffectStack));
         Assert.Same(promoted, game.State.Players[0].Field[0][0]);
         var normalPrompt = Assert.Single(game.State.PendingPrompts);
