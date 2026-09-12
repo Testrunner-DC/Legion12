@@ -130,6 +130,14 @@ internal static class L12EffectPresentationVariants
             "加拉哈德抽取1张牌", "healMode", "mode:none"), 3),
         new("S02-0604", "active", Branch("galahad-grail-reward", "抽牌并回复血量",
             "加拉哈德抽取1张牌，并使我方主宰增加1点血量", "healMode", "mode:heal"), 3),
+        new("S01-0016", "response-negate", Branch("absolute-defense-response", "抵挡本次进攻",
+            "抵挡本次进攻", "mode", "mode:block"), 1),
+        new("S01-0016", "response-negate", Branch("absolute-defense-response", "无效该效果",
+            "无效该效果", "mode", "mode:negate"), 1),
+        new("S01-0017", "reaction", Branch("last-stand-response", "单体兵力-2000",
+            "选择对方1张休整的军团，直到下个我方回合结束前兵力-2000", "mode", "mode:single"), 1),
+        new("S01-0017", "reaction", Branch("last-stand-response", "全部休整军团兵力-1000",
+            "对方所有休整的军团，直到下个我方回合结束前兵力-1000", "mode", "mode:all"), 1),
         .. SkyCityBranches(),
     ];
 

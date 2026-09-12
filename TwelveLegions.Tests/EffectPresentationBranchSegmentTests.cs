@@ -241,6 +241,160 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Empty(game.State.EffectStack);
     }
 
+    [Theory]
+    [InlineData("opponent-attack", "mode:block", "抵挡本次进攻")]
+    [InlineData("active", "mode:negate", "无效该效果")]
+    public void AbsoluteDefensePublishesTheBranchOfItsExactSelectedStackTargetAcrossRestore(
+        string targetTrigger, string expectedMode, string expectedLabel)
+    {
+        var catalog = Catalog;
+        var expectedScene = Assert.Single(catalog.AtomicEffects.Find("S01-0016")!.Abilities
+            .SelectMany(ability => ability.Presentations), scene =>
+                scene.Flow == "absolute-defense-response"
+                && scene.RequiredChoices?.GetValueOrDefault("mode") == expectedMode);
+        var game = Create(catalog, 307305 + targetTrigger.Length, stateFormatVersion: 2);
+        var response = Card(catalog, "S01-0016", $"absolute-{expectedMode}", owner: 1);
+        response.Hidden = true;
+        game.State.Players[1].Field[1][0] = response;
+        var rootSource = Card(catalog, "S01-0109", $"absolute-root-{expectedMode}");
+        var root = new L12StackItem
+        {
+            StackItemId = $"absolute-root-stack-{expectedMode}",
+            Controller = 0,
+            SourceInstanceId = rootSource.InstanceId,
+            SourceCardId = rootSource.CardId,
+            SourceName = rootSource.Name,
+            SourceSnapshot = rootSource.Clone(),
+            Trigger = targetTrigger,
+            Text = targetTrigger == "opponent-attack" ? "对方进攻宣言" : "对方发动效果",
+        };
+        game.State.EffectStack.Add(root);
+
+        Invoke(game, "CommitNegateResponse", 1, response, root.StackItemId);
+
+        var responseItem = game.State.EffectStack[^1];
+        Assert.Equal("absolute-defense-response", responseItem.Data["presentationFlow"]);
+        Assert.Equal(expectedMode, responseItem.Data["declared:mode"]);
+        Assert.Equal(expectedScene.SceneId, responseItem.Data["presentationSceneId"]);
+        var declaration = Assert.Single(game.State.Events, action => action.EffectResultStatus == "declared"
+            && action.Cards.Any(card => card.InstanceId == response.InstanceId));
+        Assert.Equal(expectedScene.SceneId, declaration.EffectSceneId);
+        Assert.Equal(expectedLabel, declaration.EffectBranchLabel);
+
+        game = L12GameEngine.RestoreCheckpoint(catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        game.State.PendingPrompts.Clear();
+        game.State.ResponseWindow = null;
+        Invoke(game, "ResolveTopStack");
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == response.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(expectedScene.SceneId, result.EffectSceneId);
+        Assert.Equal(expectedLabel, result.EffectBranchLabel);
+        Assert.True(Assert.Single(game.State.EffectStack).Negated);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AbsoluteDefenseMissingOrNegatedResponseKeepsDistinctSettlementStatus(bool negateResponse)
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, negateResponse ? 307327 : 307326);
+        var response = Card(catalog, "S01-0016", $"absolute-outcome-{negateResponse}", owner: 1);
+        response.Hidden = true;
+        game.State.Players[1].Field[1][0] = response;
+        var rootSource = Card(catalog, "S01-0109", $"absolute-outcome-root-{negateResponse}");
+        var root = new L12StackItem
+        {
+            StackItemId = $"absolute-outcome-root-stack-{negateResponse}", Controller = 0,
+            SourceInstanceId = rootSource.InstanceId, SourceCardId = rootSource.CardId,
+            SourceName = rootSource.Name, SourceSnapshot = rootSource.Clone(),
+            Trigger = "active", Text = "对方发动效果",
+        };
+        game.State.EffectStack.Add(root);
+        Invoke(game, "CommitNegateResponse", 1, response, root.StackItemId);
+        var responseItem = game.State.EffectStack[^1];
+        if (negateResponse) responseItem.Negated = true;
+        else game.State.EffectStack.Remove(root);
+        game.State.PendingPrompts.Clear();
+        game.State.ResponseWindow = null;
+
+        Invoke(game, "ResolveTopStack");
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == response.InstanceId));
+        Assert.Equal(negateResponse ? "negated" : "skipped", result.EffectResultStatus);
+        Assert.Equal("无效该效果", result.EffectBranchLabel);
+    }
+
+    [Theory]
+    [InlineData("mode:all", "mode:all", "全部休整军团兵力-1000", -1000)]
+    [InlineData("target", "mode:single", "单体兵力-2000", -2000)]
+    public void LastStandDeclarationPublishesAndRestoresItsSelectedSettlementBranch(
+        string declaration, string expectedMode, string expectedLabel, int modifier)
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307340 + modifier, stateFormatVersion: 2);
+        var response = Card(catalog, "S01-0017", $"last-stand-{expectedMode}", owner: 1);
+        response.Hidden = true;
+        game.State.Players[1].Field[1][0] = response;
+        var target = Card(catalog, "S01-0109", $"last-stand-target-{expectedMode}");
+        target.Tapped = true;
+        game.State.Players[0].Field[0][0] = target;
+        var selected = declaration == "mode:all" ? declaration : target.InstanceId;
+
+        CommitLastStandDeclaration(game, response, selected);
+
+        var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal("last-stand-response", item.Data["presentationFlow"]);
+        Assert.Equal(expectedMode, item.Data["declared:mode"]);
+        var scene = Assert.Single(catalog.AtomicEffects.Find("S01-0017")!.Abilities
+            .SelectMany(ability => ability.Presentations), candidate =>
+                candidate.Flow == "last-stand-response"
+                && candidate.RequiredChoices?.GetValueOrDefault("mode") == expectedMode);
+        Assert.Equal(scene.SceneId, item.Data["presentationSceneId"]);
+
+        game = L12GameEngine.RestoreCheckpoint(catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == response.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(scene.SceneId, result.EffectSceneId);
+        Assert.Equal(expectedLabel, result.EffectBranchLabel);
+        Assert.Equal(target.BaseTroops + modifier, targetAfterRestore(game, target.InstanceId).Troops);
+    }
+
+    [Fact]
+    public void LastStandPublishesSkippedWhenItsDeclaredSingleTargetIsNoLongerRested()
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307341);
+        var response = Card(catalog, "S01-0017", "last-stand-skipped", owner: 1);
+        response.Hidden = true;
+        game.State.Players[1].Field[1][0] = response;
+        var target = Card(catalog, "S01-0109", "last-stand-ready-target");
+        target.Tapped = true;
+        game.State.Players[0].Field[0][0] = target;
+        CommitLastStandDeclaration(game, response, target.InstanceId);
+        target.Tapped = false;
+
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == response.InstanceId));
+        Assert.Equal("skipped", result.EffectResultStatus);
+        Assert.Equal("单体兵力-2000", result.EffectBranchLabel);
+        Assert.Equal(target.BaseTroops, target.Troops);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
     [Fact]
     public void StarterContinuationPlansAndMordredPublicBranchesAreIncludedInTheIndependentAuditSet()
     {
@@ -936,6 +1090,32 @@ public sealed class EffectPresentationBranchSegmentTests
             new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
         Assert.True(result.Accepted, result.Error);
     }
+
+    private static void CommitLastStandDeclaration(
+        L12GameEngine game, L12CardInstance response, string selected)
+    {
+        var candidate = new L12TriggerCandidate
+        {
+            CandidateId = $"candidate-{response.InstanceId}", Controller = 1,
+            SourceInstanceId = response.InstanceId, SourceCardId = response.CardId,
+            SourceName = response.Name, SourceSnapshot = response.Clone(),
+            Trigger = "reaction", Text = "【对方进攻后】反击战术",
+        };
+        game.State.PendingTriggerStackCandidates.Add(candidate);
+        var activation = new L12PendingActivation
+        {
+            ActivationId = $"activation-{response.InstanceId}", Controller = 1,
+            SourceInstanceId = response.InstanceId, SourceCardId = response.CardId,
+            Ability = "trigger-declaration", Text = "拼死反抗：预先声明结算方式与合法目标",
+            ValidChoices = [selected], TriggerCandidateId = candidate.CandidateId,
+        };
+        activation.DeclaredTargets.Add(selected);
+        Invoke(game, "CompleteTriggerDeclaration", activation);
+    }
+
+    private static L12CardInstance targetAfterRestore(L12GameEngine game, string instanceId)
+        => game.State.Players.SelectMany(player => player.Field.SelectMany(row => row))
+            .First(card => card?.InstanceId == instanceId)!;
 
     private static L12MoraleCard GodPower(string instanceId) => new()
     {

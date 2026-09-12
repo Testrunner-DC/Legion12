@@ -1800,6 +1800,13 @@ public sealed partial class L12GameEngine
     private void CommitNegateResponse(int playerIndex, L12CardInstance response, string targetStackId)
     {
         var player = State.Players[playerIndex];
+        var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == targetStackId);
+        // 绝对防御响应的是玩家实际选中的当前堆叠项目：直接响应进攻宣言时是“抵挡”，
+        // 响应进攻链上的某个效果时则是“无效该效果”。不能沿响应链借用根时点，
+        // 否则无效一张反击战术也会被错误展示成抵挡进攻。
+        var absoluteDefenseMode = response.CardId == "S01-0016"
+            ? target?.Trigger == "opponent-attack" ? "mode:block" : "mode:negate"
+            : null;
         if (FindOnField(player, response.InstanceId, out var row, out var slot) is not null) player.Field[row][slot] = null;
         response.Hidden = false;
         player.Resolving.Add(response);
@@ -1811,9 +1818,11 @@ public sealed partial class L12GameEngine
             SourceCardId = response.CardId,
             SourceName = response.Name,
             Trigger = "response-negate",
-            Text = "无效堆叠中的效果",
+            Text = absoluteDefenseMode == "mode:block" ? "抵挡本次进攻" : "无效堆叠中的效果",
         };
         item.Targets.Add(targetStackId);
+        if (absoluteDefenseMode is not null)
+            DeclarePresentationBranch(item.Data, "absolute-defense-response", "mode", absoluteDefenseMode);
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name} 打出〈{response.Name}〉响应", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);

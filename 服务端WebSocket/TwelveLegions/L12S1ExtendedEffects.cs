@@ -994,7 +994,10 @@ public sealed partial class L12GameEngine
                 var declared = item.Data.GetValueOrDefault("declaredTargets");
                 if (declared == "mode:all")
                 {
-                    foreach (var target in PublicLegions(State.Players[1 - item.Controller]).Where(card => card.Tapped))
+                    var targets = PublicLegions(State.Players[1 - item.Controller])
+                        .Where(card => card.Tapped).ToArray();
+                    if (targets.Length == 0) item.Data["effectResultStatus"] = "skipped";
+                    foreach (var target in targets)
                         AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
                 }
                 else
@@ -1002,6 +1005,7 @@ public sealed partial class L12GameEngine
                     var target = PublicLegions(State.Players[1 - item.Controller])
                         .FirstOrDefault(card => card.InstanceId == declared && card.Tapped);
                     if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                    else item.Data["effectResultStatus"] = "skipped";
                 }
                 FinishStackItem(item);
                 return;

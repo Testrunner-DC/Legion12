@@ -2003,6 +2003,17 @@ public sealed partial class L12GameEngine
         }
         if (!TryCommitPreparedPrideMasterSurcharge(candidate, activation)) return;
         candidate.Data["declaredTargets"] = string.Join('|', declared);
+        if (candidate.SourceCardId == "S01-0017"
+            && candidate.Trigger == "reaction"
+            && declared.Count == 1)
+        {
+            DeclarePresentationBranch(candidate.Data, "last-stand-response", "mode",
+                declared[0] == "mode:all" ? "mode:all" : "mode:single");
+            var declaredSource = FindAuthoritativeCard(candidate.SourceInstanceId)
+                ?? candidate.SourceSnapshot;
+            if (declaredSource is not null)
+                RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
         candidate.Data["declaration-complete"] = "true";
         AdvanceTriggerBatches();
     }
