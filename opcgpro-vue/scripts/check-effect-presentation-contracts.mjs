@@ -69,12 +69,32 @@ assert([board, actionLayer, actionPresentation, zoneMovement, combatMotion, phas
 assert(eventLog.includes("'effect-announced'"),
   'Recorded whole-effect announcements must remain authoritative history without repeating in the player-facing log')
 
-const overrideGuard = board.indexOf('if (override) return override')
+const overrideGuard = board.indexOf('if (override) {')
 const oiranFallback = board.indexOf('/花魁的馈赠/.test(text)')
 assert(overrideGuard >= 0 && overrideGuard < oiranFallback,
   'Authoritative override must win before the legacy Oiran compatibility fallback')
 assert(board.includes('.public-reveal-animation strong{') && board.includes('white-space:pre-wrap;overflow-wrap:anywhere'))
 assert(eventLog.includes('.event-effect{') && eventLog.includes('white-space:pre-wrap'))
+for (const contract of [
+  "event.type === 'effect-result'",
+  "event.effectResultStatus !== 'declared'",
+  "event.effectResultStatus === 'negated'",
+  "event.effectResultStatus === 'skipped'",
+  "event.effectResultStatus === 'failed'",
+]) assert(board.includes(contract), `Battle animation settlement projection is missing ${contract}`)
+assert(eventLog.includes("'effect-result': '结算'"),
+  'Battle log must identify the authoritative settlement result')
+const replay = read('../src/l12/replayModel.ts')
+for (const field of [
+  'EffectText', 'EffectSceneId', 'EffectAbilityId', 'EffectSegmentId', 'EffectSegmentIndex',
+  'EffectSegmentCount', 'EffectBranchId', 'EffectBranchLabel', 'EffectResultStatus',
+]) assert(replay.includes(field), `Replay projection is missing ${field}`)
+for (const contract of [
+  'AddEffectResultEvent(item, resultStatus)',
+  'effectResultPublished',
+  'effectResultStatus',
+  'BuildEffectEventMetadata(configured, resultStatus)',
+]) assert(backend.includes(contract), `Backend settlement-result contract is missing ${contract}`)
 
 assert(model.includes('.Where(scene => scene.Overridden)'), 'Only manual overrides may be frozen into a match')
 assert(store.includes('.GroupBy(row => row.SceneId'), 'Malformed legacy duplicate rows must not break reads')

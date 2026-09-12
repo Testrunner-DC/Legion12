@@ -230,13 +230,17 @@ public sealed partial class L12GameEngine
                 if (mode is "mode:front" or "mode:back")
                 {
                     var row = mode == "mode:front" ? 0 : 1;
-                    foreach (var target in enemy.Field[row].Where(target => target is not null).Cast<L12CardInstance>())
+                    var targets = enemy.Field[row].Where(target => target is not null)
+                        .Cast<L12CardInstance>().ToArray();
+                    if (targets.Length == 0) item.Data["effectResultStatus"] = "skipped";
+                    foreach (var target in targets)
                         AddTimedModifier(target, -2000, 0, State.TurnSerial, card.Name);
                 }
                 else
                 {
                     var target = FindOnField(enemy, CompositeDeclared(item, "singleTarget").SingleOrDefault(), out _, out _);
                     if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, card.Name);
+                    else item.Data["effectResultStatus"] = "skipped";
                 }
                 FinishStackItem(item);
                 return true;

@@ -1894,6 +1894,7 @@ public sealed partial class L12GameEngine
         {
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
             if (target is not null) target.Negated = true;
+            else item.Data["effectResultStatus"] = "skipped";
             AddEvent("effect-negated", item.Controller,
                 target is null ? "响应目标已经离开堆叠" : $"〈{target.SourceName}〉的{target.Text}被无效");
             FinishStackItem(item);
@@ -1950,7 +1951,8 @@ public sealed partial class L12GameEngine
 
     private void FinishStackItem(L12StackItem item)
     {
-        TrackStackCompletion(item);
+        var resultStatus = TrackStackCompletion(item);
+        AddEffectResultEvent(item, resultStatus);
         QueueNextTrialCompletionSegment(item);
         if (!item.Negated && item.Data.GetValueOrDefault("wisdomRewards") is { Length: > 0 } rewards)
         {

@@ -1211,7 +1211,7 @@ contracts.push([
 ])
 
 const currentReleaseEntry = shell.slice(
-  shell.indexOf("date: '2026-09-11'"),
+  shell.indexOf("date: '2026-09-12'"),
   shell.indexOf("date: '2026-09-10'"),
 )
 const migratedReleaseEntry = shell.slice(
@@ -1231,7 +1231,8 @@ contracts.push([
       .every(cardName => currentReleaseEntry.includes(cardName))
     && ['主宰效果免耗', '傲慢之罪', '选择完成前不会先扣费', '冒号只分隔该能力自己的费用与效果',
       '再让登场费用-1', '之后才让军团离开手牌', '实际成为场上军团后', '消耗3符文把费用减至0',
-      '一次选择最多2个对象', '职介和试炼值不属于特征', '通用特征会随持有者改为当前阵营特征', '最低显示为0']
+      '一次选择最多2个对象', '职介和试炼值不属于特征', '通用特征会随持有者改为当前阵营特征', '最低显示为0',
+      '真正结算后再播放对应分支', '发动声明不会重复播放', '重连和回放后仍保持一致']
       .every(detail => currentReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
   '当前玩家更新日志必须覆盖上一期后的主动效果、费用边界、支付取消与场上响应修改，并排除后台和内部治理内容',

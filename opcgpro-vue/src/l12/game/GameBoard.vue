@@ -342,7 +342,12 @@ function showNextPublicReveal() {
 }
 function publicRevealText(event: ActionEvent) {
   const override = event.effectText?.trim()
-  if (override) return override
+  if (override) {
+    if (event.effectResultStatus === 'negated') return `${override}（被无效）`
+    if (event.effectResultStatus === 'skipped') return `${override}（无合法处理对象，跳过）`
+    if (event.effectResultStatus === 'failed') return `${override}（未能完成结算）`
+    return override
+  }
   const text = event.text.trim()
   const card = event.cards?.[0]
   if (card && /花魁的馈赠/.test(text)) return `花魁的馈赠将〈${card.name}〉加入手牌`
@@ -381,7 +386,9 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
       && (event.type === 'disaster-reveal' || event.playerIndex === null || event.playerIndex !== props.game.you)
-      && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'
+      && (event.type === 'effect-result'
+        || (event.effectResultStatus !== 'declared'
+          && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'))
         || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示')
         || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))

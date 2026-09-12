@@ -100,6 +100,12 @@ public sealed partial class L12GameEngine
         if (currentStack is not null)
         {
             _fizzledAnalyticsStackItems.Add(currentStack.StackItemId);
+            currentStack.Data["effectResultStatus"] = type switch
+            {
+                "effect-noop" => "skipped",
+                "effect-cancelled" => "declined",
+                _ => "failed",
+            };
             return;
         }
         foreach (var card in cards)
@@ -107,20 +113,27 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["eventType"] = type });
     }
 
-    private void TrackStackCompletion(L12StackItem item)
+    private string TrackStackCompletion(L12StackItem item)
     {
         if (item.Negated)
         {
             TrackStackFact("negate", item);
             _fizzledAnalyticsStackItems.Remove(item.StackItemId);
-            return;
+            return "negated";
         }
-        if (_fizzledAnalyticsStackItems.Remove(item.StackItemId))
+        var recordedStatus = item.Data.GetValueOrDefault("effectResultStatus");
+        var recordedFizzle = _fizzledAnalyticsStackItems.Remove(item.StackItemId);
+        if (!string.IsNullOrWhiteSpace(recordedStatus) || recordedFizzle)
         {
-            TrackStackFact("fizzle", item, "partial");
-            return;
+            var status = string.IsNullOrWhiteSpace(recordedStatus) ? "failed" : recordedStatus;
+            TrackStackFact("fizzle", item, "partial", new Dictionary<string, string>
+            {
+                ["resultStatus"] = status,
+            });
+            return status;
         }
         TrackStackFact("resolve", item);
+        return "resolved";
     }
 
     private void TrackMasterDamageFact(int targetPlayerIndex, int amount, int? declaredSourcePlayer,

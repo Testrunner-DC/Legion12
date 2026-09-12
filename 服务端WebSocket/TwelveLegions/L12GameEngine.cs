@@ -2080,6 +2080,10 @@ public sealed partial class L12GameEngine
 
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
+        => AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText, null, cards);
+
+    private void AddEventCoreWithEffectMetadata(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2088,7 +2092,26 @@ public sealed partial class L12GameEngine
                 var snapshot = card.Clone();
                 snapshot.Troops = snapshot.CurrentTroops;
                 return snapshot;
-            }).ToArray()) { EffectText = effectText };
+            }).ToArray())
+        {
+            EffectText = effectText,
+            EffectSceneId = effectMetadata?.SceneId,
+            EffectAbilityId = effectMetadata?.AbilityId,
+            EffectSegmentId = effectMetadata?.SegmentId,
+            EffectSegmentIndex = effectMetadata?.SegmentIndex,
+            EffectSegmentCount = effectMetadata?.SegmentCount,
+            EffectBranchId = effectMetadata?.BranchId,
+            EffectBranchLabel = effectMetadata?.BranchLabel,
+            EffectResultStatus = effectMetadata?.ResultStatus ?? type switch
+            {
+                "effect-rejected" or "ability-rejected" => "unavailable",
+                "effect-cancelled" => "declined",
+                "effect-negated" => "negated",
+                "effect-noop" => "skipped",
+                "effect-failed" => "failed",
+                _ => null,
+            },
+        };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= 2)
         {

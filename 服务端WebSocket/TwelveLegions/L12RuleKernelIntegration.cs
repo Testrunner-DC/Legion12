@@ -1685,10 +1685,12 @@ public sealed partial class L12GameEngine
     }
 
     private void PublishEffectPresentation(string eventType, int? controller, L12CardInstance source,
-        string trigger, string fallback, IReadOnlyDictionary<string, string>? data = null)
+        string trigger, string fallback, Dictionary<string, string>? data = null)
     {
         var text = ResolveEffectPresentationText(source, trigger, fallback, data);
         var sceneId = ResolveEffectPresentationSceneId(source, trigger, data, text);
+        if (!string.IsNullOrWhiteSpace(sceneId) && data is not null)
+            data["presentationSceneId"] = sceneId;
         AddPresentationEventById(eventType, controller, text, sceneId, source);
     }
 

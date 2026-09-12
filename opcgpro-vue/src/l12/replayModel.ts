@@ -201,6 +201,15 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
   const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
+    effectText: value(event, 'EffectText', 'effectText', undefined),
+    effectSceneId: value(event, 'EffectSceneId', 'effectSceneId', undefined),
+    effectAbilityId: value(event, 'EffectAbilityId', 'effectAbilityId', undefined),
+    effectSegmentId: value(event, 'EffectSegmentId', 'effectSegmentId', undefined),
+    effectSegmentIndex: value(event, 'EffectSegmentIndex', 'effectSegmentIndex', undefined),
+    effectSegmentCount: value(event, 'EffectSegmentCount', 'effectSegmentCount', undefined),
+    effectBranchId: value(event, 'EffectBranchId', 'effectBranchId', undefined),
+    effectBranchLabel: value(event, 'EffectBranchLabel', 'effectBranchLabel', undefined),
+    effectResultStatus: value(event, 'EffectResultStatus', 'effectResultStatus', undefined),
     cards: value<any[]>(event, 'Cards', 'cards', []).map(replayCard).filter(Boolean) as Card[],
   }))
   return {

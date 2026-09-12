@@ -8,6 +8,14 @@ export interface ActionEvent {
   playerIndex?: number
   text: string
   effectText?: string
+  effectSceneId?: string
+  effectAbilityId?: string
+  effectSegmentId?: string
+  effectSegmentIndex?: number
+  effectSegmentCount?: number
+  effectBranchId?: string
+  effectBranchLabel?: string
+  effectResultStatus?: 'declared' | 'resolved' | 'negated' | 'skipped' | 'failed' | 'declined' | 'unavailable'
   cards?: Card[]
 }
 

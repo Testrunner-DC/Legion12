@@ -275,6 +275,21 @@ public sealed class EffectPresentationBranchSegmentTests
         var presentation = Assert.Single(game.State.Events, action => action.Cards.Any(card =>
             card.InstanceId == source.InstanceId) && action.EffectText == "前排分支覆盖\n第二行");
         Assert.Equal(source.EffectText, presentation.Text);
+        Assert.Equal("declared", presentation.EffectResultStatus);
+        Assert.Equal(front.SceneId, presentation.EffectSceneId);
+        Assert.Equal(front.AbilityId, presentation.EffectAbilityId);
+        Assert.Equal(front.Trigger.Split(":branch-", 2)[0], presentation.EffectSegmentId);
+        Assert.Equal(front.SceneId, presentation.EffectBranchId);
+
+        PassResponses(game);
+        var resultEvent = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("resolved", resultEvent.EffectResultStatus);
+        Assert.Equal(presentation.EffectSceneId, resultEvent.EffectSceneId);
+        Assert.Equal(presentation.EffectAbilityId, resultEvent.EffectAbilityId);
+        Assert.Equal(presentation.EffectSegmentId, resultEvent.EffectSegmentId);
+        Assert.Equal(presentation.EffectBranchId, resultEvent.EffectBranchId);
+        Assert.Equal("前排分支覆盖\n第二行", resultEvent.EffectText);
 
         var cancelled = Create(catalog, 29603, [frozen]);
         var cancelledSource = Card(catalog, "S01-0005", "cancelled-volley");
@@ -288,6 +303,96 @@ public sealed class EffectPresentationBranchSegmentTests
             Choice: "skip")).Accepted);
         Assert.DoesNotContain(cancelled.State.EffectStack, stack => stack.SourceInstanceId == cancelledSource.InstanceId);
         Assert.DoesNotContain(cancelled.State.Events, action => action.EffectText == "前排分支覆盖\n第二行");
+        Assert.DoesNotContain(cancelled.State.Events, action => action.Type == "effect-result");
+    }
+
+    [Theory]
+    [InlineData("resolved")]
+    [InlineData("negated")]
+    [InlineData("skipped")]
+    [InlineData("failed")]
+    [InlineData("declined")]
+    public void StructuredSettlementPublishesExactlyOneTypedResult(string resultStatus)
+    {
+        var catalog = Catalog;
+        var scene = Assert.Single(catalog.AtomicEffects.Find("S01-0005")!.Abilities
+            .SelectMany(ability => ability.Presentations), candidate => candidate.Flow == "volley-effect"
+                && candidate.RequiredChoices?.GetValueOrDefault("volleyMode") == "mode:front");
+        var game = Create(catalog, 307100 + resultStatus.Length);
+        var source = Card(catalog, scene.CardId, $"result-{resultStatus}");
+        var item = StackItem(source, scene, resultStatus);
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "FinishStackItem", item);
+        Invoke(game, "AddEffectResultEvent", item, resultStatus);
+
+        var resultEvent = Assert.Single(game.State.Events, action => action.Type == "effect-result");
+        Assert.Equal(resultStatus, resultEvent.EffectResultStatus);
+        Assert.Equal(scene.SceneId, resultEvent.EffectSceneId);
+        Assert.Equal(scene.AbilityId, resultEvent.EffectAbilityId);
+        Assert.Equal(scene.Trigger.Split(":branch-", 2)[0], resultEvent.EffectSegmentId);
+        Assert.Equal(scene.SceneId, resultEvent.EffectBranchId);
+        Assert.Equal(scene.BranchLabel, resultEvent.EffectBranchLabel);
+        Assert.DoesNotContain(item, game.State.EffectStack);
+    }
+
+    [Fact]
+    public void PendingSettlementStatusSurvivesCheckpointRestore()
+    {
+        var catalog = Catalog;
+        var scene = Assert.Single(catalog.AtomicEffects.Find("S01-0005")!.Abilities
+            .SelectMany(ability => ability.Presentations), candidate => candidate.Flow == "volley-effect"
+                && candidate.RequiredChoices?.GetValueOrDefault("volleyMode") == "mode:front");
+        var game = Create(catalog, 307201, stateFormatVersion: 2);
+        var source = Card(catalog, scene.CardId, "reconnect-result");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.EffectStack.Add(StackItem(source, scene, "skipped"));
+
+        var restored = L12GameEngine.RestoreCheckpoint(catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredItem = Assert.Single(restored.State.EffectStack);
+        Assert.Equal("skipped", restoredItem.Data["effectResultStatus"]);
+
+        Invoke(restored, "FinishStackItem", restoredItem);
+
+        var resultEvent = Assert.Single(restored.State.Events, action => action.Type == "effect-result");
+        Assert.Equal("skipped", resultEvent.EffectResultStatus);
+        Assert.Equal(scene.SceneId, resultEvent.EffectSceneId);
+        Assert.Equal(scene.SceneId, resultEvent.EffectBranchId);
+    }
+
+    [Fact]
+    public void RealStructuredRowEffectCanResolveWithNoTargetsAsSkipped()
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307250);
+        var source = Card(catalog, "S01-0005", "no-target-volley");
+        game.State.Players[0].FreeTacticCount = 1;
+        game.State.Players[0].Hand.Add(source);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
+        ResolveOnlyPrompt(game, "mode:front");
+        Assert.Single(game.State.EffectStack);
+        PassResponses(game);
+
+        var resultEvent = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("skipped", resultEvent.EffectResultStatus);
+        Assert.Contains("没有合法处理对象", resultEvent.Text, StringComparison.Ordinal);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData("ability-rejected", "unavailable")]
+    [InlineData("effect-cancelled", "declined")]
+    [InlineData("effect-negated", "negated")]
+    public void PreSettlementOutcomesRemainDistinct(string eventType, string expectedStatus)
+    {
+        var game = Create(Catalog, 307300 + eventType.Length);
+        Invoke(game, "AddEvent", eventType, 0, "结果边界", Array.Empty<L12CardInstance>());
+        Assert.Equal(expectedStatus, game.State.Events.Last().EffectResultStatus);
     }
 
     [Fact]
@@ -671,7 +776,8 @@ public sealed class EffectPresentationBranchSegmentTests
     };
 
     private static L12GameEngine Create(L12Catalog catalog, int seed,
-        IReadOnlyList<L12FrozenEffectPresentation>? snapshot = null, string? firstMasterId = null)
+        IReadOnlyList<L12FrozenEffectPresentation>? snapshot = null, string? firstMasterId = null,
+        int stateFormatVersion = 0)
     {
         var baseDeck = catalog.DeckAt(0);
         var firstDeck = firstMasterId is null
@@ -686,7 +792,8 @@ public sealed class EffectPresentationBranchSegmentTests
             };
         var game = new L12GameEngine(catalog, "presentation-branch", "PRESBR", seed,
             ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true, autoPassEmptyResponses: false,
-            concealHiddenResponseAvailability: false, effectPresentationSnapshot: snapshot);
+            concealHiddenResponseAvailability: false, effectPresentationSnapshot: snapshot,
+            stateFormatVersion: stateFormatVersion);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -702,6 +809,26 @@ public sealed class EffectPresentationBranchSegmentTests
             player.Resolving.Clear();
         }
         return game;
+    }
+
+    private static L12StackItem StackItem(L12CardInstance source, L12EffectPresentationScene scene,
+        string resultStatus)
+    {
+        var item = new L12StackItem
+        {
+            StackItemId = $"stack-{source.InstanceId}",
+            Controller = source.OwnerIndex ?? 0,
+            SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId,
+            SourceName = source.Name,
+            SourceSnapshot = source.Clone(),
+            Trigger = "play",
+            Text = source.EffectText ?? source.Name,
+        };
+        item.Data["presentationSceneId"] = scene.SceneId;
+        if (resultStatus == "negated") item.Negated = true;
+        else if (resultStatus != "resolved") item.Data["effectResultStatus"] = resultStatus;
+        return item;
     }
 
     private static L12CardInstance Card(L12Catalog catalog, string cardId, string instanceId, int owner = 0)

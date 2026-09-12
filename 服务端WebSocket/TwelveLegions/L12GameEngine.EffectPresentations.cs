@@ -1,5 +1,15 @@
 namespace TwelveLegions.Server;
 
+internal sealed record L12EffectEventMetadata(
+    string SceneId,
+    string AbilityId,
+    string? SegmentId,
+    int? SegmentIndex,
+    int? SegmentCount,
+    string? BranchId,
+    string? BranchLabel,
+    string? ResultStatus);
+
 public sealed partial class L12GameEngine
 {
     private void AddPresentationEvent(string type, int? playerIndex, string text,
@@ -7,7 +17,9 @@ public sealed partial class L12GameEngine
         params L12CardInstance[] cards)
     {
         var effectText = ResolveFrozenPresentation(producerCardId, sceneKey, values);
-        AddEventCore(type, playerIndex, text, effectText, cards);
+        var scene = FindEffectPresentationSceneByKey(producerCardId, sceneKey);
+        AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText,
+            BuildEffectEventMetadata(scene, DeclaredStatus(type)), cards);
     }
 
     private void AddPresentationEvent(string type, int? playerIndex, string text,
@@ -46,7 +58,67 @@ public sealed partial class L12GameEngine
             // chosen branch may enter the card animation queue.
             type = "effect-announced";
         }
-        AddEventCore(type, playerIndex, text, effectText, cards);
+        AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText,
+            BuildEffectEventMetadata(configured, DeclaredStatus(type)), cards);
+    }
+
+    private void AddEffectResultEvent(L12StackItem item, string resultStatus)
+    {
+        if (item.Data.GetValueOrDefault("effectResultPublished") == "true") return;
+        var source = FindSource(item) ?? item.SourceSnapshot
+            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        var sceneId = item.Data.GetValueOrDefault("presentationSceneId");
+        if (string.IsNullOrWhiteSpace(sceneId))
+        {
+            var fallback = ResolveEffectPresentationText(source, item.Trigger, item.Text, item.Data);
+            sceneId = ResolveEffectPresentationSceneId(source, item.Trigger, item.Data, fallback);
+        }
+        var configured = FindEffectPresentationScene(source.CardId, sceneId);
+        // Result events are introduced only for structurally identified segments/branches.
+        // Legacy whole-card scenes keep their existing event stream until migrated.
+        if (configured is null || configured.Flow is null) return;
+        item.Data["effectResultPublished"] = "true";
+        item.Data["effectResultStatus"] = resultStatus;
+        var effectText = State.EffectPresentationSnapshot?.FirstOrDefault(scene =>
+                string.Equals(scene.SceneId, sceneId, StringComparison.Ordinal))?.Text
+            ?? configured.DefaultText;
+        var summary = resultStatus switch
+        {
+            "negated" => $"〈{item.SourceName}〉的效果被无效",
+            "skipped" => $"〈{item.SourceName}〉没有合法处理对象，跳过该效果段",
+            "failed" => $"〈{item.SourceName}〉的效果未能完成结算",
+            "declined" => $"〈{item.SourceName}〉的效果选择不发动",
+            _ => $"〈{item.SourceName}〉的效果结算完成",
+        };
+        AddEventCoreWithEffectMetadata("effect-result", item.Controller, summary, effectText,
+            BuildEffectEventMetadata(configured, resultStatus), source);
+    }
+
+    private static string? DeclaredStatus(string type)
+        => type is "effect-trigger" or "effect-activation" or "effect-response" ? "declared" : null;
+
+    private static L12EffectEventMetadata? BuildEffectEventMetadata(
+        L12EffectPresentationScene? scene, string? resultStatus)
+    {
+        if (scene is null) return null;
+        var hasBranch = !string.IsNullOrWhiteSpace(scene.BranchLabel)
+            || scene.RequiredChoices is { Count: > 0 };
+        return new L12EffectEventMetadata(
+            scene.SceneId,
+            scene.AbilityId,
+            EffectSegmentIdFor(scene),
+            scene.SegmentIndex,
+            scene.SegmentCount,
+            hasBranch ? scene.SceneId : null,
+            scene.BranchLabel,
+            resultStatus);
+    }
+
+    private static string? EffectSegmentIdFor(L12EffectPresentationScene scene)
+    {
+        if (scene.SegmentIndex is null) return null;
+        var branchMarker = scene.Trigger.IndexOf(":branch-", StringComparison.Ordinal);
+        return branchMarker < 0 ? scene.Trigger : scene.Trigger[..branchMarker];
     }
 
     internal string? ResolveFrozenPresentation(string cardId, string sceneKey,
@@ -201,6 +273,16 @@ public sealed partial class L12GameEngine
         if (card is null) return null;
         var matches = card.Abilities.SelectMany(ability => ability.Presentations)
             .Where(scene => string.Equals(scene.SceneId, sceneId, StringComparison.Ordinal))
+            .Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    private L12EffectPresentationScene? FindEffectPresentationSceneByKey(string cardId, string sceneKey)
+    {
+        var card = _catalog.AtomicEffects.Find(cardId);
+        if (card is null) return null;
+        var matches = card.Abilities.SelectMany(ability => ability.Presentations)
+            .Where(scene => string.Equals(scene.Trigger, sceneKey, StringComparison.Ordinal))
             .Take(2).ToArray();
         return matches.Length == 1 ? matches[0] : null;
     }
