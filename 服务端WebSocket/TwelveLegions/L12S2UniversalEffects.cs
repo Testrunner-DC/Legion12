@@ -254,8 +254,12 @@ public sealed partial class L12GameEngine
         if (ability == "shennongReset" && source?.CardId == "S02-0104")
         {
             var targetAbility = item.Data.GetValueOrDefault("target") ?? string.Empty;
-            State.Players[item.Controller].UsedAbilities.Remove($"active:master-{item.Controller}:{targetAbility}");
-            AddEvent("effect", item.Controller, "神农鼎重置我方主宰1个效果的使用次数", source);
+            var targetKey = $"active:master-{item.Controller}:{targetAbility}";
+            if (State.Players[item.Controller].UsedAbilities.Remove(targetKey))
+                AddEvent("effect", item.Controller, "神农鼎重置我方主宰1个效果的使用次数", source);
+            else
+                RecordTargetSettlementFailure(item, targetAbility,
+                    "所选主宰效果在逆结算后已不再处于使用过的状态");
             FinishStackItem(item);
             return true;
         }

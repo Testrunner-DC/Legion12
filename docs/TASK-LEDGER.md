@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260913-TARGETED-ACTIVE-STATE-RESULTS：公开对象主动状态效果结算重验
+
+- 黄金圣甲虫`scarabDebuff`与神农鼎`shennongReset`接入`single-active`第1/1段，声明、Cost、响应、实际结果、日志、动效和回放使用同一能力身份。
+- 黄金圣甲虫可在支付弃牌Cost后选择0至2个对象：0个为`skipped`；所有已选对象在逆结算后失效为`failed`；仍有合法对象时只处理合法对象并为`resolved`，不改选、不退费。神农鼎在结算时重新确认所选主宰能力仍处于已使用状态，否则`failed`，已返还士气与主动休整不回退。
+- 类别回归覆盖正常/部分结算、无目标、全部目标失效、被无效、V2检查点恢复、旧Prompt重复提交及发动前无对象拒绝；专项与呈现68/68、Focused与Batch均2962/2962通过。旧主动整段场景36→34，卡号条件分支186；未部署。
+
 ## EFFECT-20260913-TARGETLESS-ACTIVE-STATE-RESULTS：无目标主动状态效果结果同源
 
 - 从38个`active + effect + Flow=null`旧场景中复核无目标公开状态写入：雷神索尔的`thorCharge`与《探寻天空之城》的`skyCityDiscount`均无需候选，支付/主动次数提交后进入响应，再各自写入回合或本局状态，现接入`single-active`第1/1段。

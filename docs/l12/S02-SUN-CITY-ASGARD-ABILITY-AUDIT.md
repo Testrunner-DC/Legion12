@@ -16,7 +16,7 @@
 | S02-0202 陵墓圣武士 | 2 | 己方回合每张卡名含〈陵墓〉的己方军团离场均按当时控制者登记一次，登场费递减并在回合末清零；阵亡守卫和位置前置。 | `L12GameEngine`、`L12Actions`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6LBRegressionTests`、`AtomicReviewBatch6ERegressionTests` | 明确错误→已修复 |
 | S02-0203 哈特谢普苏特 | 3 | 无守卫时减费；登场甲虫与阵亡抽牌均在触发候选期声明，拒绝不造空栈，甲虫位置结算重验。 | `L12Actions`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IARegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
 | S02-0204 伊姆何泰普 | 3 | 远程无损；登场条件锁定后公开墓地费用6+太阳城目标先声明并以展示加入手牌事件移动；主动休整只降低下一张带天灾等级的太阳城军团。 | `L12EnterPublicTriggerPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6JARegressionTests`、`S2FactionRegressionTests` | 通过 |
-| S02-0205 黄金圣甲虫 | 4 | 在圣物区阻止其他圣物手牌打出；登场甲虫位置前置；两个主动先休整，守卫/私密弃牌费用与最多2公开敌军目标提交后入栈。墓地甲虫主动登场为第1/1段，位置失效/被无效与成功使用同一结果场景。 | `L12StructuredCardRules`、`L12PublicActiveEffectPlans`、`L12S2FactionEffects`、`L12SingleSegmentEffectPresentations` | `AtomicReviewBatch3RegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
+| S02-0205 黄金圣甲虫 | 4 | 在圣物区阻止其他圣物手牌打出；登场甲虫位置前置；两个主动先休整，守卫/私密弃牌费用与最多2公开敌军目标提交后入栈。墓地甲虫登场与弃牌减兵分别为第1/1段；减兵0目标跳过、全失效失败、部分合法继续结算，被无效均不退费用。 | `L12StructuredCardRules`、`L12PublicActiveEffectPlans`、`L12S2FactionEffects`、`L12SingleSegmentEffectPresentations` | `AtomicReviewBatch3RegressionTests`、`AtomicReviewBatch6ERegressionTests`、`SingleActiveTargetStatePresentationTests` | 通过 |
 | S02-0206 无畏的刺杀 | 3 | 前排太阳城目标出牌前声明；+3000与对军团确击仅本回合，目标本回合不能因效果转活跃，结束时按所有者区域弃置。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch3RegressionTests`、`RuleKernelTests` | 通过 |
 | S02-0207 沙漠君临 | 1 | 最多3张公开场上军团、等量天灾等级的私密手牌军团与公开位置完整声明；军团费用入栈前原子弃置，位置失效不覆盖、不改选、不退款。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch1RegressionTests`、`AtomicReviewBatch6LBRegressionTests` | 明确错误→已修复 |
 | S02-02M1 奈芙蒂斯 | 3 | 守卫不能进攻主宰；己方回合弃任意数量军团是主动费用并转化为下一张天灾太阳城减费；对方回合费用2+太阳城阵亡的甲虫触发回合1次且位置前置。 | `L12PublicActiveEffectPlans`、`L12PublicTriggerEffectPlans` | `S2FactionRegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
@@ -27,7 +27,7 @@
 | S02-0305 安德华拉诺特 | 4 | 开局选择与起手修正不重复；结束阶段由拥有者私密弃至6；不能从手牌打出圣物；主宰伤害抽牌与首伤改2分别按己/对方回合次数处理。 | `L12PromptsAndSetup`、`L12PublicTriggerEffectPlans`、`L12GameEngine` | `AtomicReviewBatch6GARegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0306 密米尔之泉 | 2 | 本回合累计效果伤害达到2后回合1次；治疗1+抽1同段，随后可选弃顶2另开响应，拒绝/无效前段不吞后段。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6CRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0307 海拉的凝视 | 1 | 弃置己方牌库顶1张为冒号前费用，支付后才入栈；公开敌军目标预声明，目标失效不恢复牌库费用。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch3RegressionTests` | 通过 |
-| S02-03M1 雷神索尔 | 3 | 开局锤检索计入起手；血量不高于3时主动消耗2份合法公开资源后入栈，跨控制守卫按卡面在己方回合可作士气；后续登场冲锋只持续本回合且效果回血永久禁止。无目标主动段的声明与实际`resolved/negated`结果现同源，被无效不返还已支付士气。 | `L12MoralePayments`、`L12S2RemainingEffects`、`L12SingleSegmentEffectPresentations` | `AtomicReviewBatch6LBRegressionTests`、`S2FactionRegressionTests`、`SingleActiveStatePresentationTests` | 明确错误→已修复；单段结果已验收 |
+| S02-03M1 雷神索尔 | 3 | 开局锤检索计入起手；血量不高于3时主动消耗2份合法公开资源后入栈，跨控制守卫按卡面在己方回合可作士气；后续登场冲锋只持续本回合且效果回血永久禁止。无目标主动段的声明与实际`resolved/negated`结果现同源，被无效不返还已支付士气。 | `L12MoralePayments`、`L12S2RemainingEffects`、`L12SingleSegmentEffectPresentations` | `AtomicReviewBatch6LBRegressionTests`、`S2FactionRegressionTests`、`SingleActiveStatePresentationTests` | 明确错误→已修复 |
 
 ## 公共根因、跨范围控制与保留边界
 

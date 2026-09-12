@@ -1719,12 +1719,27 @@ public sealed partial class L12GameEngine
         }
         if (ability == "scarabDebuff" && source?.CardId == "S02-0205")
         {
-            foreach (var id in (item.Data.GetValueOrDefault("targets") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).Take(2))
+            var declaredTargets = (item.Data.GetValueOrDefault("targets") ?? string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries).Take(2).ToArray();
+            var resolvedTargets = 0;
+            foreach (var id in declaredTargets)
             {
                 var target = DeclaredEnemyTarget(item.Controller, id);
                 if (target is not null)
+                {
                     AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "黄金圣甲虫");
+                    resolvedTargets++;
+                }
             }
+            if (resolvedTargets == 0)
+                RecordTargetSettlementFailure(item, string.Join('|', declaredTargets),
+                    declaredTargets.Length == 0
+                        ? "发动时没有选择减兵对象，效果空处理"
+                        : "所有已声明军团在逆结算后均已离场或不再是公开军团");
+            else if (resolvedTargets < declaredTargets.Length)
+                AddEvent("effect", item.Controller,
+                    $"黄金圣甲虫的{declaredTargets.Length - resolvedTargets}个已声明对象在逆结算后失效，其余对象继续结算",
+                    source);
             ResolveStateBasedLegionDeaths();
             FinishStackItem(item);
             return true;
