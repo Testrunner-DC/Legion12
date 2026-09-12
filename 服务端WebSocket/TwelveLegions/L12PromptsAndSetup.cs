@@ -1399,8 +1399,12 @@ public sealed partial class L12GameEngine
             if (!defenderAttackTimingRoot && card.CardId == "S01-0018"
                 && CanPitfallRespondToCurrentEffect(playerIndex, top))
                 choices.Add(card.InstanceId);
-            if (CanUseS1ResponseAtCurrentEffect(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
-            if (!defenderAttackTimingRoot && CanUseS2CounterAtStack(card.CardId, playerIndex, top)) choices.Add(card.InstanceId);
+            if (CanUseS1ResponseAtCurrentEffect(card.CardId, playerIndex, top)
+                && HasAvailablePublicResponseDeclaration(playerIndex, card.CardId, top))
+                choices.Add(card.InstanceId);
+            if (!defenderAttackTimingRoot && CanUseS2CounterAtStack(card.CardId, playerIndex, top)
+                && HasAvailablePublicResponseDeclaration(playerIndex, card.CardId, top))
+                choices.Add(card.InstanceId);
         }
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
             && State.PendingDefense.SureHit != true && playerIndex == defendingPlayer)
@@ -1513,14 +1517,16 @@ public sealed partial class L12GameEngine
             var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
             if (cardId == "S01-0016")
                 return playerIndex == defendingPlayer && State.Players[playerIndex].Hand.Count > 0;
-            return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top);
+            return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
+                && HasAvailablePublicResponseDeclaration(playerIndex, cardId, top);
         }
         if (cardId == "S01-0016")
             return top.Trigger != "authority-event" && State.Players[playerIndex].Hand.Count > 0;
         if (cardId == "S01-0018")
             return CanPitfallRespondToCurrentEffect(playerIndex, top);
-        return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
-            || CanUseS2CounterAtStack(cardId, playerIndex, top);
+        return (CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
+                || CanUseS2CounterAtStack(cardId, playerIndex, top))
+            && HasAvailablePublicResponseDeclaration(playerIndex, cardId, top);
     }
 
     private bool CanPitfallRespondToCurrentEffect(int playerIndex, L12StackItem target)

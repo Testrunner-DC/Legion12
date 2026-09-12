@@ -391,6 +391,180 @@ public sealed class StackResponseChoiceRegressionTests
         Assert.Equal(1, game.State.ResponseWindow!.PriorityPlayer);
     }
 
+    [Fact]
+    public void PublicResponseAvailabilityUsesTheSameDeclarationCandidatesAsSubmission()
+    {
+        var attack = Create();
+        var attackRoot = AddEffect(attack, "evaluation-attack", "opponent-attack");
+        attack.State.PendingDefense = new L12PendingDefense
+        {
+            AttackerPlayer = 0, AttackerInstanceId = attackRoot.SourceInstanceId,
+            Target = new L12AttackTarget("master"),
+        };
+        var emptyCity = Counter(attack, 0, "S01-0120");
+        var dawn = Counter(attack, 1, "S01-0020");
+        Offer(attack);
+        var attackPrompt = Assert.Single(attack.State.PendingPrompts);
+        Assert.DoesNotContain(emptyCity.InstanceId, attackPrompt.ValidChoices);
+        Assert.Contains(dawn.InstanceId, attackPrompt.ValidChoices);
+
+        foreach (var (cardId, eventType) in new[]
+                 {
+                     ("S02-0016", "non-hand-entry"),
+                     ("S02-0017", "effect-hand-add"),
+                 })
+        {
+            var game = Create();
+            var root = AddEffect(game, $"evaluation-{cardId}", "authority-event");
+            root.Data["eventType"] = eventType;
+            var response = Counter(game, 0, cardId);
+            Offer(game);
+            Assert.DoesNotContain(response.InstanceId,
+                Assert.Single(game.State.PendingPrompts).ValidChoices);
+        }
+    }
+
+    [Theory]
+    [InlineData("S01-0020")]
+    [InlineData("S01-0120")]
+    [InlineData("S02-0016")]
+    [InlineData("S02-0017")]
+    public void PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission(string cardId)
+    {
+        var game = Create();
+        var trigger = cardId.StartsWith("S01-", StringComparison.Ordinal)
+            ? "opponent-attack" : "authority-event";
+        var root = AddEffect(game, $"public-plan-{cardId}", trigger);
+        root.Negated = false;
+        if (trigger == "opponent-attack")
+            game.State.PendingDefense = new L12PendingDefense
+            {
+                AttackerPlayer = 0, AttackerInstanceId = root.SourceInstanceId,
+                Target = new L12AttackTarget("master"),
+            };
+        if (cardId == "S01-0120")
+            game.State.Players[1].Morale.Add(new L12MoraleCard
+            {
+                CardId = "S01-01C1", InstanceId = "public-plan-morale",
+            });
+        if (cardId == "S01-0020")
+            for (var index = 0; index < 5; index++)
+                game.State.Players[1].Graveyard.Add(Card("S01-0003", $"public-plan-grave-{index}", 1));
+        if (cardId == "S02-0016")
+        {
+            root.Data["eventType"] = "non-hand-entry";
+            game.State.Players[0].Field[0][0] = root.SourceSnapshot;
+        }
+        if (cardId == "S02-0017")
+        {
+            root.Data["eventType"] = "effect-hand-add";
+            game.State.Players[0].Hand.Add(Card("S01-0003", "public-plan-hidden", 0));
+        }
+        var response = Counter(game, 0, cardId);
+        Offer(game);
+        Resolve(game, response.InstanceId);
+
+        string? finalPromptId = null;
+        string? finalChoice = null;
+        while (game.State.PendingPrompts.SingleOrDefault()?.Continuation == "pending-activation")
+        {
+            game = Restore(game);
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            var choice = prompt.Kind switch
+            {
+                "resource-return" => prompt.ValidChoices.Single(candidate => candidate != "skip"),
+                "opponent-hand-card" => prompt.ValidChoices.Single(candidate => candidate != "skip"),
+                _ when cardId == "S02-0016" => "mode:suppress",
+                _ => "mode:none",
+            };
+            finalPromptId = prompt.PromptId;
+            finalChoice = choice;
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.NotNull(finalPromptId);
+        Assert.NotNull(finalChoice);
+        Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+        Assert.False(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: finalPromptId, Choice: finalChoice)).Accepted);
+        Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+    }
+
+    [Fact]
+    public void BattleUntilDawnRevalidatesDrawModeAfterRestore()
+    {
+        var game = Create();
+        var root = AddEffect(game, "stale-dawn-root", "opponent-attack");
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            AttackerPlayer = 0, AttackerInstanceId = root.SourceInstanceId,
+            Target = new L12AttackTarget("master"),
+        };
+        for (var index = 0; index < 5; index++)
+            game.State.Players[1].Graveyard.Add(Card("S01-0003", $"stale-dawn-{index}", 1));
+        var response = Counter(game, 0, "S01-0020");
+        Offer(game);
+        Resolve(game, response.InstanceId);
+        game = Restore(game);
+        game.State.Players[1].Graveyard.Clear();
+        Resolve(game, "mode:draw");
+        Assert.True(game.State.Players[1].Field[1][0] is { Hidden: true });
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+        Assert.Contains(game.State.Events, item => item.Type == "ability-rejected"
+            && item.Text.Contains("战斗至黎明", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EmptyCityRevalidatesReservedCostAfterRestoreWithoutPaying()
+    {
+        var game = Create();
+        var root = AddEffect(game, "stale-empty-root", "opponent-attack");
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            AttackerPlayer = 0, AttackerInstanceId = root.SourceInstanceId,
+            Target = new L12AttackTarget("master"),
+        };
+        var morale = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "stale-empty-cost" };
+        game.State.Players[1].Morale.Add(morale);
+        var response = Counter(game, 0, "S01-0120");
+        Offer(game);
+        Resolve(game, response.InstanceId);
+        Resolve(game, morale.InstanceId);
+        game = Restore(game);
+        game.State.Players[1].Morale.Clear();
+        Resolve(game, "mode:none");
+        Assert.True(game.State.Players[1].Field[1][0] is { Hidden: true });
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+        Assert.DoesNotContain(game.State.Events, item => item.Type == "cost"
+            && item.Text.Contains("空城计", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("S02-0016", "non-hand-entry")]
+    [InlineData("S02-0017", "effect-hand-add")]
+    public void AnonymousHandResponseRevalidatesTheTargetAfterRestore(string cardId, string eventType)
+    {
+        var game = Create();
+        var root = AddEffect(game, $"stale-anonymous-{cardId}", "authority-event");
+        root.Data["eventType"] = eventType;
+        var hidden = Card("S01-0003", $"stale-hidden-{cardId}", 0);
+        game.State.Players[0].Hand.Add(hidden);
+        var response = Counter(game, 0, cardId);
+        Offer(game);
+        Resolve(game, response.InstanceId);
+        if (cardId == "S02-0016") Resolve(game, "mode:discard");
+        game = Restore(game);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        var anonymous = declaration.ValidChoices.Single(choice => choice != "skip");
+        game.State.Players[0].Hand.Clear();
+        Resolve(game, anonymous);
+        Assert.True(game.State.Players[1].Field[1][0] is { Hidden: true });
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+        Assert.DoesNotContain(game.State.Players[0].Graveyard, card => card.InstanceId == hidden.InstanceId);
+        Assert.Contains(game.State.Events, item => item.Type == "ability-rejected");
+    }
+
     [Theory]
     [InlineData("missing")]
     [InlineData("null")]
