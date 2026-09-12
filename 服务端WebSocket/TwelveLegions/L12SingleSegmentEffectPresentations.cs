@@ -17,9 +17,13 @@ internal static class L12SingleSegmentEffectPresentations
     private static readonly L12SingleSegmentEffectPresentationDefinition[] Definitions =
     [
         new("S01-0109", 2, "addMorale"),
+        new("S01-0214", 2, "cleopatraGuard"),
         new("S01-0314", 3, "olgaDebuff"),
         new("S02-0003", 3, "disableCounters"),
         new("S02-0204", 3, "imhotepDiscount"),
+        new("S02-0205", 3, "scarabSummon"),
+        new("S02-0301", 4, "thorHammerRevive"),
+        new("S02-0510", 3, "hippolytaRevive"),
         new("S02-0513", 3, "aristotleDiscount"),
         new("S02-06D1", 4, "avalonDebuff"),
         new("ST02-05", 1, "oasisDancerBuff"),

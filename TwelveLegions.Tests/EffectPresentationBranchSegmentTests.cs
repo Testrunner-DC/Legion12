@@ -80,9 +80,13 @@ public sealed class EffectPresentationBranchSegmentTests
         var expected = new[]
         {
             ("S01-0109", 2, "addMorale"),
+            ("S01-0214", 2, "cleopatraGuard"),
             ("S01-0314", 3, "olgaDebuff"),
             ("S02-0003", 3, "disableCounters"),
             ("S02-0204", 3, "imhotepDiscount"),
+            ("S02-0205", 3, "scarabSummon"),
+            ("S02-0301", 4, "thorHammerRevive"),
+            ("S02-0510", 3, "hippolytaRevive"),
             ("S02-0513", 3, "aristotleDiscount"),
             ("S02-06D1", 4, "avalonDebuff"),
             ("ST02-05", 1, "oasisDancerBuff"),

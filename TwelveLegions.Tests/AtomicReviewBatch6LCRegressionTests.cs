@@ -285,6 +285,18 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         Resolve(game, player.Hand[0].InstanceId);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(neutral.InstanceId, target.ValidChoices);
+        Resolve(game, neutral.InstanceId);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Resolve(game, slot.ValidChoices[0]);
+        PassResponses(game);
+
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == neutral.InstanceId);
+        Assert.DoesNotContain(neutral, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Fact]

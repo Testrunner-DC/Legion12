@@ -240,6 +240,37 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.DoesNotContain($"active:{source.InstanceId}:scarabSummon", player.UsedAbilities);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
             && entry.Text.Contains("位置", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0205")]
+    public void GoldenScarabNegationKeepsItsRestCostAndPublishesNegatedResult()
+    {
+        var game = Create(79131);
+        var player = game.State.Players[0];
+        var source = Card("S02-0205", "batch6e-golden-negated");
+        var summoned = Card("S02-0201", "batch6e-golden-negated-target");
+        player.Relic = source;
+        player.Graveyard.Add(summoned);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
+            Ability: "scarabSummon")).Accepted);
+        Resolve(game, "0:1");
+        var stackItem = Assert.Single(game.State.EffectStack);
+        stackItem.Negated = true;
+        PassResponses(game);
+
+        Assert.True(source.Tapped);
+        Assert.Contains(summoned, player.Graveyard);
+        Assert.Null(player.Field[0][1]);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
     }
 
     [Fact]

@@ -132,14 +132,27 @@ public sealed class AtomicReviewBatch2RegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: guardPrompt.PromptId,
             Choice: guard.InstanceId)).Accepted);
         var slotPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
-            Choice: "1:2")).Accepted);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        player = game.State.Players[0];
+        cleopatra = Assert.Single(player.Field.SelectMany(row => row), card => card?.InstanceId == cleopatra.InstanceId)!;
+        guard = Assert.Single(player.Graveyard, card => card.InstanceId == guard.InstanceId);
+        var slotCommand = new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId, Choice: "1:2");
+        Assert.True(game.Handle(0, slotCommand).Accepted);
+        Assert.False(game.Handle(0, slotCommand).Accepted);
 
         Assert.True(cleopatra.Tapped);
         Assert.True(Assert.Single(player.Morale).Tapped);
         PassResponses(game);
         Assert.Same(guard, player.Field[1][2]);
         Assert.DoesNotContain(guard, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == cleopatra.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Fact]

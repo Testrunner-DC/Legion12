@@ -25,7 +25,7 @@
 | S01-0211 托勒密十三世 | 2 | 远程静态；父效果完整离栈后只复制上一张主动战术的效果，重新声明该效果所需模式/目标，不重付打出或冒号前费用，不制造虚拟区域移动。 | `L12PostResolutionGeneratedEffects`、`L12CompositeEffectPlans` | `Bq20260830RegressionTests`、`AtomicReviewBatch6JCRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S01-0212 陵墓守卫 | 3 | 构筑外置且不能入手/牌库；任何离场回所有者墓地；战场资源、对方回合费用与前排兵力均按当前控制区/位置计算。 | `L12SpecialDeckRules`、`L12MoralePayments`、`L12AuthoritativeCardZones` | `DeckValidatorTests`、`ExtendedCardEffectsTests`、`AtomicReviewBatch6DRegressionTests` | 通过 |
 | S01-0213 锡瓦的卡巴 | 2 | 前排远程静态；对方进攻后私密来源与公开空格先声明，免费活跃登场后锁定的休整士气按当时合法公开对象处理。 | `L12PublicTriggerEffectPlans`、`L12CombatTimeline` | `AtomicReviewBatch6KBRegressionTests`、`CombatTimelineRegressionTests` | 通过 |
-| S01-0214 克利奥帕特拉七世 | 2 | 远程静态；主动休整与1资源预付，墓地守卫及公开位置在入栈前声明，结算位置失效不退款。 | `L12PublicActiveEffectPlans`、`L12S1FactionEffects` | `ExtendedCardEffectsTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
+| S01-0214 克利奥帕特拉七世 | 2 | 远程静态；主动休整与1资源预付，墓地守卫及公开位置在入栈前声明，结算对象/位置失效不退款；第1/1段实际结果统一为成功、失败或被无效。 | `L12PublicActiveEffectPlans`、`L12S1FactionEffects`、`L12SingleSegmentEffectPresentations` | `ExtendedCardEffectsTests`、`AtomicReviewBatch2RegressionTests` | 通过 |
 | S01-0215 安卡神碑 | 2 | 登场强化目标前置；主动按钮即发动意图，模式、私密弃牌/公开守卫费用与目标在休整入栈前原子提交。 | `L12EnterPublicTriggerPlans`、`L12PublicActiveEffectPlans` | `ExtendedCardEffectsTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S01-0216 卡诺匹斯箱 | 2 | 不占普通圣物上限；隐藏检索只在首段合法开始后读取并展示命中，随后治疗+弃置另开响应，首段无效仍执行后段。 | `L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6KBRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S01-0217 卡诺匹斯罐 一 | 2 | 公开太阳城目标入栈前声明；强化/强攻与随后弃置分别响应，目标失效不阻止弃置段。 | `L12EnterPublicTriggerPlans`、`L12CompositeEffectPlans` | `AtomicReviewBatch6JARegressionTests`、`ExtendedCardEffectsTests` | 通过 |

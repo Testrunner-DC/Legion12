@@ -310,6 +310,11 @@ public sealed class Bq20260905_01RegressionTests
         Assert.DoesNotContain(warrior, player.Graveyard);
         Assert.Contains(warrior, player.Library);
         Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == hammer.InstanceId);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == hammer.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Fact]
