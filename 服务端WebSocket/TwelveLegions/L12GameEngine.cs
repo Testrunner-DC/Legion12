@@ -1129,7 +1129,7 @@ public sealed partial class L12GameEngine
     private void CompleteEndTurn(int playerIndex)
     {
         var current = State.Players[playerIndex];
-        ResolveS2DelayedEndTurnCards(playerIndex);
+        if (ResolveS2DelayedEndTurnCards(playerIndex)) return;
         if (State.Phase == L12Phase.GameOver) return;
         ReturnWukongMasterLegions(current, "我方回合结束", resumeEndTurn: true);
         if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0

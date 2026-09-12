@@ -73,6 +73,15 @@ public sealed class S2FactionRegressionTests
         }
     }
 
+    private static L12StackItem PushEffect(L12GameEngine game, int controller, L12CardInstance source,
+        string trigger, string text, Dictionary<string, string> data)
+    {
+        var method = typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return Assert.IsType<L12StackItem>(method.Invoke(game,
+            [controller, source, trigger, text, null, data]));
+    }
+
     [Fact]
     public void ArthurDeathDeclaresHandCardAndBattlefieldSlotBeforeEnteringStack()
     {
@@ -4161,6 +4170,11 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
         Assert.Same(horse, attackerPlayer.Field[1][1]);
         Assert.False(horse.Hidden);
+        var placementResult = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == horse.InstanceId)
+            && entry.EffectSegmentCount == 1);
+        Assert.Equal("resolved", placementResult.EffectResultStatus);
+        Assert.Equal(1, placementResult.EffectSegmentIndex);
 
         game.State.ActivePlayer = 1;
         game.State.Phase = L12Phase.Main;
@@ -4170,6 +4184,153 @@ public sealed class S2FactionRegressionTests
         Assert.Null(attackerPlayer.Field[1][1]);
         Assert.Contains(horse, owner.Graveyard);
         Assert.Equal(libraryBefore - 1, owner.Library.Count);
+        var expiryResults = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.InstanceId == horse.InstanceId)
+                && entry.EffectSegmentCount == 2)
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal(2, expiryResults.Length);
+        Assert.Equal([1, 2], expiryResults.Select(entry => entry.EffectSegmentIndex));
+        Assert.Equal(["resolved", "resolved"], expiryResults.Select(entry => entry.EffectResultStatus));
+        var graveSequence = Assert.Single(game.State.Events, entry => entry.Type == "grave"
+            && entry.Cards.Any(card => card.InstanceId == horse.InstanceId)).Sequence;
+        var drawSequence = game.State.Events.Where(entry => entry.Type == "draw"
+                && entry.Cards.Any(card => card.InstanceId == horse.InstanceId))
+            .Min(entry => entry.Sequence);
+        Assert.True(graveSequence < drawSequence);
+    }
+
+    [Fact]
+    public void TrojanHorsePlacementRevalidatesItsDeclaredSlotAfterCheckpointAndRejectsDuplicateSubmission()
+    {
+        var game = Create(633701);
+        var attackerPlayer = game.State.Players[0];
+        var owner = game.State.Players[1];
+        attackerPlayer.Hand.Clear();
+        owner.Hand.Clear();
+        var attacker = Card("S02-0004", "trojan-revalidate-attacker");
+        var horse = Card("S02-0523", "trojan-revalidate-horse");
+        attacker.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        horse.Hidden = true;
+        horse.OwnerIndex = 1;
+        horse.SetRound = 1;
+        owner.Field[1][0] = horse;
+        var response = Card("S01-0016", "trojan-revalidate-response");
+        response.Hidden = true;
+        response.SetRound = 1;
+        attackerPlayer.Field[1][0] = response;
+        attackerPlayer.Hand.Add(Card("S02-0014", "trojan-revalidate-response-cost"));
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+        PassResponses(game);
+        var confirm = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: confirm.PromptId,
+            Choice: "mode:use")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "1:1")).Accepted);
+        var responsePrompt = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredAttacker = game.State.Players[0];
+        var restoredOwner = game.State.Players[1];
+        var occupant = Card("S02-0004", "trojan-revalidate-occupant");
+        restoredAttacker.Field[1][1] = occupant;
+        PassResponses(game);
+
+        Assert.Same(occupant, restoredAttacker.Field[1][1]);
+        Assert.Contains(restoredOwner.Field.SelectMany(row => row), card => card?.InstanceId == horse.InstanceId);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == horse.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        var duplicate = game.Handle(responsePrompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: responsePrompt.PromptId, Choice: "pass"));
+        Assert.False(duplicate.Accepted);
+    }
+
+    [Fact]
+    public void TrojanHorseExpirySkipsDrawWhenItsReservedDiscardCannotSettle()
+    {
+        var game = Create(633702);
+        var owner = game.State.Players[1];
+        var horse = Card("S02-0523", "trojan-expiry-missing-horse");
+        horse.OwnerIndex = 1;
+        owner.Field[1][0] = horse;
+        var libraryBefore = owner.Library.Count;
+        var data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["compositePlan"] = "trigger:S02-0523:trojan-expiry",
+            ["compositeSegment"] = "0",
+            ["atomicFlow"] = "trojan-expiry-discard",
+            ["atomicContinuation"] = "true",
+            ["compositeResponseScope"] = "unrespondable-effect",
+            ["unrespondable"] = "true",
+            ["preserveSourceSnapshot"] = "true",
+            ["trojanHost"] = "0",
+            ["trojanSlot"] = "1:1",
+        };
+
+        PushEffect(game, 1, horse, "trojan-expiry",
+            "期限结束后弃置此战术。随后抽取1张牌。", data);
+
+        Assert.Same(horse, owner.Field[1][0]);
+        Assert.Equal(libraryBefore, owner.Library.Count);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "draw"
+            && entry.Cards.Any(card => card.InstanceId == horse.InstanceId));
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.InstanceId == horse.InstanceId))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.Equal(["failed", "skipped"], results.Select(entry => entry.EffectResultStatus));
+        Assert.Equal([1, 2], results.Select(entry => entry.EffectSegmentIndex));
+    }
+
+    [Fact]
+    public void TrojanHorseExpiryQueuesEachDueInstanceExactlyOnce()
+    {
+        var game = Create(633703);
+        var host = game.State.Players[0];
+        var owner = game.State.Players[1];
+        owner.Hand.Clear();
+        var first = Card("S02-0523", "trojan-expiry-first");
+        var second = Card("S02-0523", "trojan-expiry-second");
+        first.OwnerIndex = second.OwnerIndex = 1;
+        first.DiscardAtEndOfTurnUntilTurn = second.DiscardAtEndOfTurnUntilTurn = 5;
+        host.Field[1][0] = first;
+        host.Field[1][1] = second;
+        var libraryBefore = owner.Library.Count;
+        game.State.ActivePlayer = 1;
+        game.State.Round = 3;
+        game.State.TurnSerial = 5;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(1, new L12Command("endTurn")).Accepted);
+
+        Assert.Null(host.Field[1][0]);
+        Assert.Null(host.Field[1][1]);
+        Assert.Contains(owner.Graveyard, card => card.InstanceId == first.InstanceId);
+        Assert.Contains(owner.Graveyard, card => card.InstanceId == second.InstanceId);
+        Assert.Equal(libraryBefore - 2, owner.Library.Count);
+        foreach (var instanceId in new[] { first.InstanceId, second.InstanceId })
+        {
+            var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                    && entry.Cards.Any(card => card.InstanceId == instanceId))
+                .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+            Assert.Equal(2, results.Length);
+            Assert.Equal(["resolved", "resolved"], results.Select(entry => entry.EffectResultStatus));
+        }
     }
 
     [Fact]

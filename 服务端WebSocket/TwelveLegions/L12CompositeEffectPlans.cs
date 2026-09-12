@@ -14,7 +14,8 @@ internal sealed record L12CompositeEffectSegmentSpec(
     bool PreStackCost = false,
     string? RequiredDeclarationKey = null,
     bool DeclareAtSegmentStart = false,
-    string? DeclarationTiming = null);
+    string? DeclarationTiming = null,
+    bool RequiresPreviousSuccess = false);
 
 /// <summary>
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
@@ -394,6 +395,16 @@ internal static partial class L12CompositeEffectPlans
                     "mode:hit", PublicTargetKeys: ["buffTarget"],
                     RequiredDeclarationKey: "revealMode", DeclareAtSegmentStart: true,
                     DeclarationTiming: "post-hidden-reveal"),
+            ],
+            ["trigger:S02-0523:trojan-after-attack"] =
+            [
+                new("trojan-place", "将此战术置入已声明的对方战场空位，直到下个我方回合结束",
+                    PublicTargetKeys: ["slot"]),
+            ],
+            ["trigger:S02-0523:trojan-expiry"] =
+            [
+                new("trojan-expiry-discard", "期限结束后弃置此战术"),
+                new("trojan-expiry-draw", "随后抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["wisdom-reward:S01-0224"] =
             [
@@ -1414,6 +1425,11 @@ public sealed partial class L12GameEngine
             source.Data.GetValueOrDefault("compositeOriginTrigger") ?? source.Trigger;
     }
 
+    private static bool CompositeUsesSingleSettlementWindow(L12StackItem item, string? planId = null)
+        => item.Data.GetValueOrDefault("compositeResponseScope") is "single-effect" or "unrespondable-effect"
+            || L12CompositeEffectPlans.UsesSingleResponseEffect(planId
+                ?? item.Data.GetValueOrDefault("compositePlan"));
+
     private bool TryBuildCompositeSegmentDeclarationSteps(int controller, L12StackItem item,
         L12CompositeEffectSegmentSpec segment, out List<L12ActivationSelectionStep> steps)
     {
@@ -1733,8 +1749,7 @@ public sealed partial class L12GameEngine
             source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
-        var singleResponseEffect = item.Data.GetValueOrDefault("compositeResponseScope") == "single-effect"
-            || L12CompositeEffectPlans.UsesSingleResponseEffect(planId);
+        var singleResponseEffect = CompositeUsesSingleSettlementWindow(item, planId);
         // 整项能力只响应一次：首段被无效时，后续只是同一效果内部的结算子句，
         // 必须一并停止，不能再创建一个看似独立的新效果。
         if (singleResponseEffect && item.Negated) return false;
@@ -1758,6 +1773,13 @@ public sealed partial class L12GameEngine
         for (var nextIndex = current + 1; nextIndex < segments.Count; nextIndex++)
         {
             var next = segments[nextIndex];
+            if (next.RequiresPreviousSuccess
+                && item.Data.GetValueOrDefault("effectResultStatus") is { Length: > 0 } priorStatus
+                && !priorStatus.Equals("resolved", StringComparison.OrdinalIgnoreCase))
+            {
+                return QueueSkippedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉的前一效果段未成功结算；不执行“{next.Text}”");
+            }
             if (next.DeclareAtSegmentStart)
             {
                 // 有些后续段的分支要在前段揭示/结算后才能确定。若前段已经明确写入
@@ -1876,7 +1898,7 @@ public sealed partial class L12GameEngine
         data.Remove("presentationSceneId");
         data.Remove("presentationFlow");
         data.Remove("wisdomRewards");
-        if (L12CompositeEffectPlans.UsesSingleResponseEffect(item.Data.GetValueOrDefault("compositePlan")))
+        if (CompositeUsesSingleSettlementWindow(item))
             data["sameStackContinuation"] = "true";
         var trigger = item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger;
         PushEffect(item.Controller, source, trigger, segment.Text,

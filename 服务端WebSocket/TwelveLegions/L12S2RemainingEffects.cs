@@ -489,7 +489,8 @@ public sealed partial class L12GameEngine
         var destination = PublicTriggerDeclared(item, "slot");
         if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
-            AddEvent("effect-cancelled", item.Controller, "特洛伊木马选择的来源或置入位置已失效；该卡不置入战场");
+            RecordTargetSettlementFailure(item, destination,
+                "特洛伊木马选择的来源或置入位置已失效；该卡不置入战场");
             FinishStackItem(item);
             return;
         }
@@ -505,6 +506,69 @@ public sealed partial class L12GameEngine
         AddEvent("put", item.Controller, $"{resolvedHorse.Name}置入{host.Name}战场，直到下个我方回合结束", resolvedHorse);
         RecalculateContinuousTroops();
         FinishStackItem(item);
+    }
+
+    private void ResolveS2TrojanHorseExpiry(L12StackItem item)
+    {
+        var owner = State.Players[item.Controller];
+        switch (AtomicFlowKey(item))
+        {
+            case "trojan-expiry-discard":
+            {
+                var hostIndexValid = int.TryParse(item.Data.GetValueOrDefault("trojanHost"), out var hostIndex)
+                    && hostIndex is >= 0 and <= 1;
+                var slotParts = item.Data.GetValueOrDefault("trojanSlot")?.Split(':');
+                var row = -1;
+                var slot = -1;
+                var slotValid = slotParts is { Length: 2 }
+                    && int.TryParse(slotParts[0], out row) && row is >= 0 and <= 1
+                    && int.TryParse(slotParts[1], out slot) && slot is >= 0 and <= 2;
+                var horse = hostIndexValid && slotValid
+                    ? State.Players[hostIndex].Field[row][slot]
+                    : null;
+                if (!IsTrojanHorse(horse) || horse!.InstanceId != item.SourceInstanceId
+                    || horse.OwnerIndex != item.Controller)
+                {
+                    RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("trojanSlot"),
+                        "特洛伊木马到期时已不在登记位置；无法弃置，随后抽牌不执行");
+                    FinishStackItem(item);
+                    return;
+                }
+
+                State.Players[hostIndex].Field[row][slot] = null;
+                ResetCardAfterLeavingField(horse);
+                owner.Graveyard.Add(horse);
+                AddEvent("grave", item.Controller, $"{horse.Name}在我方回合结束时置入墓地", horse);
+                RecalculateContinuousTroops();
+                FinishStackItem(item);
+                return;
+            }
+            case "trojan-expiry-draw":
+            {
+                var horse = owner.Graveyard.LastOrDefault(card => IsTrojanHorse(card)
+                    && card.InstanceId == item.SourceInstanceId);
+                if (horse is null)
+                {
+                    RecordTargetSettlementFailure(item, item.SourceInstanceId,
+                        "特洛伊木马的弃置结果已失效；随后抽牌不执行");
+                    FinishStackItem(item);
+                    return;
+                }
+                if (!Draw(owner, 1))
+                {
+                    AddEvent("effect-failed", item.Controller, "〈特洛伊木马〉效果抽牌时牌库为空", horse);
+                    SetWinner(1 - item.Controller, "〈特洛伊木马〉效果抽牌时牌库为空");
+                    FinishStackItem(item);
+                    return;
+                }
+                AddEvent("draw", item.Controller, $"{horse.Name}的效果使{owner.Name}抽取1张牌", horse);
+                FinishStackItem(item);
+                return;
+            }
+            default:
+                FinishStackItem(item);
+                return;
+        }
     }
 
     private bool TryContinueS2RemainingEffect(L12StackItem item, L12Prompt prompt, List<string> chosen)
@@ -609,9 +673,8 @@ public sealed partial class L12GameEngine
             });
     }
 
-    private void ResolveS2DelayedEndTurnCards(int endingPlayer)
+    private bool ResolveS2DelayedEndTurnCards(int endingPlayer)
     {
-        var owner = State.Players[endingPlayer];
         for (var hostIndex = 0; hostIndex < State.Players.Length; hostIndex++)
         {
             var host = State.Players[hostIndex];
@@ -621,16 +684,19 @@ public sealed partial class L12GameEngine
                 var horse = host.Field[row][slot];
                 if (horse?.CardId != "S02-0523" || horse.OwnerIndex != endingPlayer
                     || horse.DiscardAtEndOfTurnUntilTurn > State.TurnSerial) continue;
-                host.Field[row][slot] = null;
-                ResetCardAfterLeavingField(horse);
-                owner.Graveyard.Add(horse);
-                AddEvent("grave", endingPlayer, $"{horse.Name}在我方回合结束时置入墓地", horse);
-                if (!Draw(owner, 1))
-                {
-                    SetWinner(1 - endingPlayer, "〈特洛伊木马〉效果抽牌时牌库为空");
-                    return;
-                }
-                AddEvent("draw", endingPlayer, $"{horse.Name}的效果使{owner.Name}抽取1张牌", horse);
+                var data = CompositeFirstSegmentData("trigger:S02-0523:trojan-expiry",
+                    new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase));
+                data["compositeResponseScope"] = "unrespondable-effect";
+                data["unrespondable"] = "true";
+                data["preserveSourceSnapshot"] = "true";
+                data["trojanHost"] = hostIndex.ToString();
+                data["trojanSlot"] = $"{row}:{slot}";
+                // Reserve this exact delayed instance before the synchronous push. If a checkpoint
+                // or end-phase continuation is entered while its segments settle, it cannot be queued twice.
+                horse.DiscardAtEndOfTurnUntilTurn = -1;
+                PushEffect(endingPlayer, horse, "trojan-expiry",
+                    "期限结束后弃置此战术。随后抽取1张牌。", data: data);
+                return true;
             }
         }
         for (var hostIndex = 0; hostIndex < State.Players.Length; hostIndex++)
@@ -649,6 +715,7 @@ public sealed partial class L12GameEngine
             }
         }
         RecalculateContinuousTroops();
+        return false;
     }
 
     private int AdjustAnderstorpRingDamage(L12PlayerState player, int amount)

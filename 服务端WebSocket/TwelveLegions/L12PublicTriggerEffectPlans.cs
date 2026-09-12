@@ -1643,7 +1643,14 @@ public sealed partial class L12GameEngine
             var composite = CompositeFirstSegmentData("wisdom-reward:S01-0224", activation.DeclaredValues);
             foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
         }
-        if (key.Item1 == "S01-0201" && key.Item2 is "attack" or "death")
+        if (key is ("S02-0523", "trojan-after-attack", _))
+        {
+            var composite = CompositeFirstSegmentData("trigger:S02-0523:trojan-after-attack",
+                activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
+        else if (key.Item1 == "S01-0201" && key.Item2 is "attack" or "death")
         {
             var composite = CompositeFirstSegmentData($"trigger:S01-0201:{candidate.Trigger}",
                 activation.DeclaredValues);

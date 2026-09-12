@@ -47,6 +47,8 @@ internal static class L12EffectPresentationVariants
             ["response:S01-0120"] = 1,
             ["response:S02-0015"] = 1,
             ["response:S02-0106"] = 1,
+            ["trigger:S02-0523:trojan-after-attack"] = 1,
+            ["trigger:S02-0523:trojan-expiry"] = 1,
             ["trigger:S01-0021:reaction"] = 1,
             ["trigger:S01-0223:reaction"] = 1,
             ["trigger:S01-0420:reaction"] = 1,

@@ -276,6 +276,14 @@ Assert-Contains $prompts 'or "S02-0106")' 'Cosmos Yin responses must route to th
 if ($plans.IndexOf('"S02-0106"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cosmos Yin must not be placed in the pre-reveal public trigger planner.'
 }
+Assert-Contains $composite '["trigger:S02-0523:trojan-after-attack"]' 'Trojan Horse placement must use a structured trigger segment.'
+Assert-Contains $plans 'CompositeFirstSegmentData("trigger:S02-0523:trojan-after-attack"' 'Trojan Horse declaration must attach its structured placement identity before stack entry.'
+Assert-Contains $remaining 'RecordTargetSettlementFailure(item, destination' 'Trojan Horse must report a declared slot invalidated during reverse settlement as failed.'
+Assert-Contains $composite '["trigger:S02-0523:trojan-expiry"]' 'Trojan Horse expiry must use a structured delayed plan.'
+Assert-Contains $composite 'new("trojan-expiry-draw", "随后抽取1张牌", RequiresPreviousSuccess: true)' 'Trojan Horse draw must depend on successful expiry discard.'
+Assert-Contains $remaining 'horse.DiscardAtEndOfTurnUntilTurn = -1;' 'Trojan Horse expiry must reserve the exact delayed instance before queueing.'
+Assert-Contains $remaining 'PushEffect(endingPlayer, horse, "trojan-expiry"' 'Trojan Horse expiry must enter the shared effect lifecycle instead of resolving inline.'
+Assert-Contains $cardEffects 'case "trojan-expiry": ResolveS2TrojanHorseExpiry(item); break;' 'Trojan Horse expiry needs a structured resolver dispatch.'
 foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403')) {
     if ($hiddenCardId -eq 'S02-0403' -and $plans.IndexOf('"' + $hiddenCardId + '"', [StringComparison]::Ordinal) -ge 0) {
         throw "Hidden-information effect $hiddenCardId must remain outside the pre-reveal public trigger planner."
