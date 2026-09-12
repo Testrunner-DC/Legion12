@@ -27,7 +27,7 @@
 | S02-0305 安德华拉诺特 | 4 | 开局选择与起手修正不重复；结束阶段由拥有者私密弃至6；不能从手牌打出圣物；主宰伤害抽牌与首伤改2分别按己/对方回合次数处理。 | `L12PromptsAndSetup`、`L12PublicTriggerEffectPlans`、`L12GameEngine` | `AtomicReviewBatch6GARegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0306 密米尔之泉 | 2 | 本回合累计效果伤害达到2后回合1次；治疗1+抽1同段，随后可选弃顶2另开响应，拒绝/无效前段不吞后段。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6CRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0307 海拉的凝视 | 1 | 弃置己方牌库顶1张为冒号前费用，支付后才入栈；公开敌军目标预声明，目标失效不恢复牌库费用。 | `L12CompositeEffectPlans`、`L12S2FactionEffects` | `AtomicReviewBatch3RegressionTests` | 通过 |
-| S02-03M1 雷神索尔 | 3 | 开局锤检索计入起手；血量不高于3时主动消耗2份合法公开资源后入栈，跨控制守卫按卡面在己方回合可作士气；后续登场冲锋只持续本回合且效果回血永久禁止。 | `L12MoralePayments`、`L12S2RemainingEffects` | `AtomicReviewBatch6LBRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
+| S02-03M1 雷神索尔 | 3 | 开局锤检索计入起手；血量不高于3时主动消耗2份合法公开资源后入栈，跨控制守卫按卡面在己方回合可作士气；后续登场冲锋只持续本回合且效果回血永久禁止。无目标主动段的声明与实际`resolved/negated`结果现同源，被无效不返还已支付士气。 | `L12MoralePayments`、`L12S2RemainingEffects`、`L12SingleSegmentEffectPresentations` | `AtomicReviewBatch6LBRegressionTests`、`S2FactionRegressionTests`、`SingleActiveStatePresentationTests` | 明确错误→已修复；单段结果已验收 |
 
 ## 公共根因、跨范围控制与保留边界
 
