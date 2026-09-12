@@ -147,6 +147,44 @@ public static partial class L12StructuredCardRules
     public static bool HasFaction(L12PlayerState owner, L12CardInstance card, string faction)
         => string.Equals(EffectiveFaction(owner, card), faction, StringComparison.Ordinal);
 
+    private static readonly IReadOnlyDictionary<string, string> FactionTraitNames =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["universal"] = "通用",
+            ["tianting"] = "天廷",
+            ["taiyangcheng"] = "太阳城",
+            ["asgard"] = "阿斯加德",
+            ["gaotianyuan"] = "高天原",
+            ["olympus"] = "奥林匹斯",
+            ["otherworld"] = "彼界",
+        };
+
+    private static bool IsAdditionalRuleTrait(string trait)
+        => trait is "圆桌骑士" or "晋升者"
+            || trait.EndsWith("专属", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 规则特征由当前有效阵营（六阵营或通用）与明确的附加特征组成。
+    /// 职介与试炼值不是特征；圆桌骑士、晋升者及“某主宰专属”是附加特征。
+    /// 万物统御之戒会把通用特征替换为持有者主宰的阵营特征。
+    /// </summary>
+    public static IReadOnlySet<string> EffectiveTraits(L12PlayerState owner, L12CardInstance card)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (FactionTraitNames.TryGetValue(EffectiveFaction(owner, card), out var factionTrait))
+            result.Add(factionTrait);
+        foreach (var trait in card.Traits.Where(IsAdditionalRuleTrait))
+            result.Add(trait);
+        return result;
+    }
+
+    public static bool HasOnlyEffectiveFactionTrait(L12PlayerState owner, L12CardInstance card, string faction)
+    {
+        if (!FactionTraitNames.TryGetValue(faction, out var expectedTrait)) return false;
+        var traits = EffectiveTraits(owner, card);
+        return traits.Count == 1 && traits.Contains(expectedTrait);
+    }
+
     public static bool HasOptionalSelfDamageEntryDiscount(string cardId)
         => SelfDamageEntryDiscount(cardId) is not null;
 
@@ -723,7 +761,7 @@ public static partial class L12StructuredCardRules
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> WukongAbilities() => Assisted(
     [
-        new("active", "active", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，且在登场回合即可进攻。",
+        new("active", "active", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;once-per-turn" }),
             new(L12AtomKinds.SelectTarget, "在场面上选择返还 2 至 8 张士气", "target", new() { ["zone"] = "controller.morale", ["min"] = "2", ["max"] = "8", ["presentation"] = "direct-board" }),
@@ -731,25 +769,18 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.MoveZone, "作为【斗士】军团在我方前排活跃登场", "resolution", new() { ["operation"] = "master-enter-as-legion", ["profession"] = "斗士", ["row"] = "front", ["state"] = "active" }),
             new(L12AtomKinds.ModifyTroops, "兵力设为返还士气数量 ×1000", "resolution", new() { ["operation"] = "set", ["value"] = "selected-count*1000" }),
             new(L12AtomKinds.Keyword, "获得本回合可进攻", "resolution", new() { ["keywordRef"] = "charge" }),
+            new(L12AtomKinds.MoveZone, "我方回合结束时/进攻后返回主宰区", "duration", new()
+            {
+                ["operation"] = "return-master-zone", ["timing"] = "controller-turn-end|after-attack",
+            }),
         ]),
-        new("static", "continuous", "「作为军团」在登场的回合即可进攻。",
-        [
-            new(L12AtomKinds.Condition, "作为军团且处于登场回合", "condition", new() { ["expression"] = "source.is-master-legion;source.entered-this-turn" }),
-            new(L12AtomKinds.AttackRule, "本回合可进攻", "resolution", new() { ["canAttack"] = "true" }),
-            new(L12AtomKinds.Duration, "持续至登场回合结束", "duration", new() { ["duration"] = "entry-turn" }),
-        ]),
-        new("after-attack-or-turn-end", "triggered", "「作为军团」我方回合结束时 或 进攻后 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。",
-        [
-            new(L12AtomKinds.Condition, "作为军团", "condition", new() { ["expression"] = "source.is-master-legion" }),
-            new(L12AtomKinds.MoveZone, "返回主宰区", "resolution", new() { ["operation"] = "return-master-zone" }),
-            new(L12AtomKinds.Condition, "我方士气少于对方", "condition", new() { ["expression"] = "controller.morale-count<opponent.morale-count" }),
-            new(L12AtomKinds.Optional, "可追加士气", "condition", new()),
-            new(L12AtomKinds.AddMorale, "从士气牌库追加 1 张休整士气", "resolution", new() { ["amount"] = "1", ["state"] = "rested" }),
-        ]),
-        new("leave", "replacement", "「作为军团」离场时 返回主宰区。",
+        new("leave", "replacement", "「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。",
         [
             new(L12AtomKinds.Condition, "作为军团且即将离场", "condition", new() { ["expression"] = "source.is-master-legion;source.would-leave-field" }),
             new(L12AtomKinds.MoveZone, "代替离场并返回主宰区", "replacement", new() { ["operation"] = "replace-leave-with-return-master-zone" }),
+            new(L12AtomKinds.Condition, "我方士气少于对方", "condition", new() { ["expression"] = "controller.morale-count<opponent.morale-count" }),
+            new(L12AtomKinds.Optional, "可追加士气", "condition", new()),
+            new(L12AtomKinds.AddMorale, "从士气牌库追加 1 张休整士气", "resolution", new() { ["amount"] = "1", ["state"] = "rested" }),
         ]),
     ]);
 

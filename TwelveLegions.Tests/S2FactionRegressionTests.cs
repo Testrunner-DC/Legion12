@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Reflection;
 using System.Text.Json;
 using Xunit;
 
@@ -2019,6 +2020,42 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void MistletoeCharmMaySpendThreeRunesToReachZeroCostWithoutMorale()
+    {
+        var game = Create(63122);
+        var player = game.State.Players[0];
+        var tactic = Card("S02-0622", "mistletoe-three-runes");
+        var target = Card("S02-0602", "mistletoe-three-target");
+        player.Hand.Clear();
+        player.Hand.Add(tactic);
+        game.State.Players[1].Field[0][0] = target;
+        player.Morale.Clear();
+        player.SpecialZones.Runes = 3;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var handView = Assert.Single((L12CardInstance[])typeof(L12GameEngine)
+            .GetMethod("SnapshotHand", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [0])!);
+        Assert.Equal(0, handView.MinimumPlayCost);
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        var runePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["rune:1", "rune:2", "rune:3", "cancel"], runePrompt.ValidChoices);
+        var payment = game.Handle(0, new L12Command("resolvePrompt", PromptId: runePrompt.PromptId,
+            CardInstanceIds: ["rune:1", "rune:2", "rune:3"]));
+        Assert.True(payment.Accepted, payment.Error);
+        PassResponses(game);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Empty(player.Morale);
+        Assert.Equal(2000, target.Troops);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
     public void OtherworldRuneOptionsUseEffectTextAndCanBeCancelledBeforeAutomaticPayment()
     {
         var game = CreateWithFirstMaster("S02-06M1", 63081);
@@ -2436,6 +2473,59 @@ public sealed class S2FactionRegressionTests
         Assert.Contains("bottom", prompt.ValidChoices);
         Assert.Contains(game.SnapshotFor(1).RecentEvents, entry => entry.Type == "reveal"
             && entry.Cards.Any(card => card.InstanceId == roundTableKnight.InstanceId));
+    }
+
+    [Fact]
+    public void AmakineCountsFactionAndExtraTraitsButNotProfessionOrTrialValue()
+    {
+        var game = Create(63102);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        var amakine = Card("S02-0616", "amakine-trait-dimensions-source");
+        var finn = Card("S02-0610", "amakine-profession-trial-target");
+        Assert.NotNull(finn.Profession);
+        Assert.True(finn.TrialValue > 0);
+        player.Field[0][0] = amakine;
+        player.Library.Insert(0, finn);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(playerIndex, new L12Command("activateAbility", amakine.InstanceId,
+            Ability: "amakineTop")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("hand", prompt.ValidChoices);
+    }
+
+    [Fact]
+    public void AmakineTreatsARingConvertedUniversalCardAsOnlyOtherworld()
+    {
+        var game = CreateWithFirstMaster("S02-06M1", 63103);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        var amakine = Card("S02-0616", "amakine-ring-source");
+        var universal = Card("S02-0003", "amakine-ring-universal");
+        player.Field[0][0] = amakine;
+        player.Relic = Card("S02-0008", "amakine-ring");
+        player.Library.Insert(0, universal);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(playerIndex, new L12Command("activateAbility", amakine.InstanceId,
+            Ability: "amakineTop")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("hand", prompt.ValidChoices);
+    }
+
+    [Theory]
+    [InlineData("杨戬专属")]
+    [InlineData("哪吒专属")]
+    public void MasterExclusiveLabelsAreAdditionalTraitsForOnlyTraitRules(string exclusiveTrait)
+    {
+        var game = CreateWithFirstMaster("S02-06M1", 63104);
+        var player = game.State.Players[game.State.ActivePlayer];
+        var otherworld = Card("S02-0610", $"exclusive-trait-{exclusiveTrait}");
+        otherworld.Traits.Add(exclusiveTrait);
+
+        Assert.Contains(exclusiveTrait, L12StructuredCardRules.EffectiveTraits(player, otherworld));
+        Assert.False(L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, otherworld, "otherworld"));
     }
 
     [Fact]
@@ -4390,15 +4480,16 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
-    public void WukongUsesFourHumanAssistedStructuredAbilities()
+    public void WukongUsesTwoCardTextAlignedHumanAssistedStructuredAbilities()
     {
         Assert.True(L12StructuredCardRules.TryGetStructuredAbilities("S02-01M1", out var abilities));
-        Assert.Equal(4, abilities.Count);
+        Assert.Equal(2, abilities.Count);
         Assert.All(abilities, ability => Assert.Equal("human-assisted", ability.ReviewStatus));
         Assert.Contains(abilities, ability => ability.ExecutionModel == "active"
             && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.ReturnMorale));
         Assert.Contains(abilities, ability => ability.Trigger == "leave"
-            && ability.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("operation") == "replace-leave-with-return-master-zone"));
+            && ability.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("operation") == "replace-leave-with-return-master-zone")
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.AddMorale));
     }
 
     [Fact]

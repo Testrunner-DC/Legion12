@@ -6,6 +6,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
+$deployScript = Join-Path $repoRoot "ops\windows\deploy-l12.ps1"
 $changeGateScript = Join-Path $repoRoot "scripts\verify-l12-change.ps1"
 $cacheInitializer = Join-Path $repoRoot "ops\windows\Initialize-L12BuildEnvironment.ps1"
 $powerShellHost = Get-Command "pwsh" -ErrorAction SilentlyContinue
@@ -61,9 +62,9 @@ function Write-CardManifest {
     [ordered]@{
         schemaVersion = 3
         complete = $true
-        cardCount = 362
+        cardCount = 366
         playableCardCount = 324
-        presentationCardCount = 38
+        presentationCardCount = 42
         assetVersion = $AssetVersion
     } | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 }
@@ -96,10 +97,14 @@ Assert-True ($dryRun.Output.Contains("Atomic runtime zero-legacy audit")) "Relea
 Assert-True ($dryRun.Output.Contains(".\ops\windows\verify-l12.ps1")) "Release dry-run does not invoke the commit-level verifier."
 
 $verifySource = Get-Content -LiteralPath $verifyScript -Raw
+$deploySource = Get-Content -LiteralPath $deployScript -Raw
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test [^\r\n]+PlatformStoreTests')).Count -eq 1) "Commit-level verifier must run filtered platform tests exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
+Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."
+Assert-True ($deploySource.Contains('if ($cardAssetsCached)') -and $deploySource.Contains('服务器复用优化卡图缓存')) "Deployment must explicitly reuse a matching card asset hash."
+Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."
 
 $fixtureBase = if (Test-Path -LiteralPath "D:\GPT\Legion12") { "D:\GPT\Legion12\temp" } else { [IO.Path]::GetTempPath() }
 New-Item -ItemType Directory -Path $fixtureBase -Force | Out-Null

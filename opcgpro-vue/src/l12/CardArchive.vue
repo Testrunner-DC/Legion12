@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
-import { cardArchiveProducts, displayCardNumber, loadCardArchiveCatalog, type DeckCard } from './decks'
+import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
@@ -27,7 +27,7 @@ const factionLabels: Record<string, string> = {
 // The Olympus B face is a separate rules identity, never gallery artwork.
 const galleryVariantPatterns = [
   /^S\d{2}-\d{4}[a-z]$/,
-  /^S\d{2}-\d{2}[CM]1A$/,
+  /^S\d{2}-\d{2}[CM]\d+A$/,
   /^ST\d{2}-C1st$/,
 ]
 const cards = ref<CatalogCard[]>([])
@@ -95,15 +95,15 @@ function matchesFilters(card: CatalogCard, keyword: string) {
     && (type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value)
     && (faction.value === 'all' || card.faction === faction.value)
     && (product.value === 'all' || card.products?.includes(product.value))
-    && (cost.value === 'all' || (hasCostDimension(card)
-      && (cost.value === '7+' ? card.cost! >= 7 : card.cost === Number(cost.value))))
+    && (cost.value === 'all' || (filterableCardCost(card) !== null
+      && (cost.value === '7+' ? filterableCardCost(card)! >= 7 : filterableCardCost(card) === Number(cost.value))))
     && (disaster.value === 'all'
       || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value)))
 }
 
 function compareVisibleCards(left: CatalogCard, right: CatalogCard) {
   if (sort.value === 'name') return left.nameZh.localeCompare(right.nameZh, 'zh-CN')
-  if (sort.value === 'cost') return (left.cost ?? 99) - (right.cost ?? 99) || left.number.localeCompare(right.number)
+  if (sort.value === 'cost') return (filterableCardCost(left) ?? 99) - (filterableCardCost(right) ?? 99) || left.number.localeCompare(right.number)
   if (sort.value === 'troops') return (right.troops ?? -1) - (left.troops ?? -1) || left.number.localeCompare(right.number)
   return left.number.localeCompare(right.number)
 }

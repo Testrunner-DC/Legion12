@@ -6,7 +6,7 @@ import { masterProfileUrl } from './specialAssets'
 import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
-  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
+  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 import { platformState, publicDeckApi } from './platform'
@@ -97,9 +97,10 @@ const filtered = computed(() => {
     if (master && card.faction !== 'universal' && card.faction !== master.faction) return false
     if (typeFilter.value !== 'all' && cardTypeFilterKey(card.cardType) !== typeFilter.value) return false
     if (productFilter.value !== 'all' && card.product !== productFilter.value) return false
-    if (costFilter.value !== 'all' && (costFilter.value === '7+'
-      ? (card.cost ?? -1) < 7
-      : card.cost !== Number(costFilter.value))) return false
+    const filterCost = filterableCardCost(card)
+    if (costFilter.value !== 'all' && (filterCost === null || (costFilter.value === '7+'
+      ? filterCost < 7
+      : filterCost !== Number(costFilter.value)))) return false
     if (disasterFilter.value !== 'all' && (disasterFilter.value === 'none'
       ? !!card.disasterLevel
       : card.disasterLevel !== Number(disasterFilter.value))) return false
@@ -107,7 +108,7 @@ const filtered = computed(() => {
       .some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword))
   }).sort((a, b) => {
     if (sortMode.value === 'name') return a.nameZh.localeCompare(b.nameZh, 'zh-CN')
-    if (sortMode.value === 'cost') return (a.cost ?? 99) - (b.cost ?? 99) || a.number.localeCompare(b.number)
+    if (sortMode.value === 'cost') return (filterableCardCost(a) ?? 99) - (filterableCardCost(b) ?? 99) || a.number.localeCompare(b.number)
     if (sortMode.value === 'troops') return (b.troops ?? -1) - (a.troops ?? -1) || a.number.localeCompare(b.number)
     return a.number.localeCompare(b.number)
   })

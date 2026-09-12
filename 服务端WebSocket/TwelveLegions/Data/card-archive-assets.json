@@ -297,11 +297,51 @@
       "sourceArchiveName": "S02-0622a-槲寄生符咒（噗嗤 N）.png"
     },
     {
+      "id": "S01-01M1A",
+      "baseCardId": "S01-01M1",
+      "product": "S02",
+      "products": [
+        "第2季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-01M1A.png"
+    },
+    {
+      "id": "S01-02M3A",
+      "baseCardId": "S01-02M3",
+      "product": "S02",
+      "products": [
+        "第2季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-02M3A.png"
+    },
+    {
+      "id": "S01-03M2A",
+      "baseCardId": "S01-03M2",
+      "product": "S02",
+      "products": [
+        "第2季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-03M2A.png"
+    },
+    {
+      "id": "S01-04M2A",
+      "baseCardId": "S01-04M2",
+      "product": "S02",
+      "products": [
+        "第2季|典藏版"
+      ],
+      "rarity": "",
+      "sourceArchiveName": "S01-04M2A.png"
+    },
+    {
       "id": "S02-01M1A",
       "baseCardId": "S02-01M1",
-      "product": "S01",
+      "product": "S02",
       "products": [
-        "第1季|典藏版"
+        "第2季|典藏版"
       ],
       "rarity": "",
       "sourceArchiveName": "S02-01M1A.png"

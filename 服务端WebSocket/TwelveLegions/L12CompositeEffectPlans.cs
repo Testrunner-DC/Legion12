@@ -773,9 +773,17 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0307":
-                steps.Add(CompositeStep("enemy-legion", "curseTarget", "海拉：预先选择兵力-3000的对方军团",
-                    PublicLegions(opponent).Where(card => !card.Hidden).Select(card => card.InstanceId), 1));
+            {
+                var targets = PublicLegions(opponent).Where(card => !card.Hidden)
+                    .Select(card => card.InstanceId).ToArray();
+                if (targets.Length > 0)
+                    steps.Add(CompositeStep("enemy-legion", "curseTarget", "海拉：预先选择兵力-3000的对方军团",
+                        targets, 1));
+                else
+                    steps.Add(CompositeStep("effect-skip", "curseTarget", "海拉：当前没有合法目标，效果部分跳过",
+                        [], 0, 0, autoSelectWhenExact: true));
                 break;
+            }
 
             case "S02-0206":
                 steps.Add(CompositeStep("field-legion", "buffTarget", "无畏的刺杀：预先选择我方前排1张【太阳城】军团",
@@ -1123,7 +1131,8 @@ public sealed partial class L12GameEngine
                 && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士"))
                     && (effectOnlyRepeat || OrdinaryCost("buffCost"))),
             "S02-0207" => ValidateDesertDeclaration(player, card, declared, effectOnlyRepeat),
-            "S02-0307" => (effectOnlyRepeat || player.Library.Count >= 1) && Enemy("curseTarget"),
+            "S02-0307" => (effectOnlyRepeat || player.Library.Count >= 1)
+                && (declared.GetValueOrDefault("curseTarget", []).Count == 0 || Enemy("curseTarget")),
             "S02-0206" => Own("buffTarget", target => L12StructuredCardRules.HasFaction(player, target, "taiyangcheng")
                 && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
             "S02-0406" => mode is "mode:row-cost" or "mode:front-attack" or "mode:free-move"

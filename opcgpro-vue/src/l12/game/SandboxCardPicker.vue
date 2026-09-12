@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardPresentation'
-import { loadDeckCatalog, type DeckCard } from '../decks'
+import { filterableCardCost, loadDeckCatalog, type DeckCard } from '../decks'
 import CardImage from '../CardImage.vue'
 import CatalogCardDetails from '../CatalogCardDetails.vue'
 
@@ -45,7 +45,9 @@ const filtered = computed(() => {
     const matchType = type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value
     const matchFaction = faction.value === 'all' || card.faction === faction.value
     const matchProduct = product.value === 'all' || card.product === product.value
-    const matchCost = cost.value === 'all' || (cost.value === '7+' ? (card.cost ?? -1) >= 7 : card.cost === Number(cost.value))
+    const filterCost = filterableCardCost(card)
+    const matchCost = cost.value === 'all' || (filterCost !== null
+      && (cost.value === '7+' ? filterCost >= 7 : filterCost === Number(cost.value)))
     const matchDisaster = disaster.value === 'all' || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value))
     return matchText && matchType && matchFaction && matchProduct && matchCost && matchDisaster
   }).sort((a, b) => a.number.localeCompare(b.number))

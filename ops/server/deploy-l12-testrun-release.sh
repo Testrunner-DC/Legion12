@@ -211,12 +211,12 @@ with open(os.path.join(root, "card-assets.manifest.json"), encoding="utf-8") as 
 with open(os.path.join(root, "card-assets.preload.json"), encoding="utf-8") as handle:
     preload = json.load(handle)
 if (manifest.get("schemaVersion"), manifest.get("complete"), manifest.get("cardCount"),
-        manifest.get("playableCardCount"), manifest.get("presentationCardCount")) != (3, True, 362, 324, 38):
+        manifest.get("playableCardCount"), manifest.get("presentationCardCount")) != (3, True, 366, 324, 42):
     raise SystemExit("card asset manifest is not a complete schema v3 catalog")
 if manifest.get("assetVersion") != expected or not full_hash(expected):
     raise SystemExit("card asset version does not match")
 cards = manifest.get("cards") or {}
-if len(cards) != 362 or not isinstance(preload.get("entries"), list):
+if len(cards) != 366 or not isinstance(preload.get("entries"), list):
     raise SystemExit("card asset catalog or preload list is incomplete")
 variants = ("originalWebp", "thumbWebp", "boardWebp", "detailWebp", "detailAvif")
 rows = []

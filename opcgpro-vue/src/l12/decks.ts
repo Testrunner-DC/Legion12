@@ -81,6 +81,11 @@ export const L12_DECK_SELECTION_SCOPES = [
 ] as const
 export type L12DeckSelectionScope = typeof L12_DECK_SELECTION_SCOPES[number]
 export const MAIN_DECK_TYPES = new Set(['legion', 'tactic', 'counter-tactic', 'artifact'])
+
+/** 费用筛选按规则费用维度处理；没有印刷费用的非主宰卡归入0费，但仍不伪造卡面数字。 */
+export function filterableCardCost(card: Pick<DeckCard, 'cardType' | 'cost'>): number | null {
+  return card.cardType === 'master' ? null : (card.cost ?? 0)
+}
 const AUTOMATIC_EXTRA_CARD_IDS: Readonly<Record<string, readonly string[]>> = {
   'S01-02M1': ['S01-02M2'],
 }

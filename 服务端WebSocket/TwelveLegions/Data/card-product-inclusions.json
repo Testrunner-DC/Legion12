@@ -1320,10 +1320,38 @@
       ]
     },
     {
+      "cardId": "S01-01M1A",
+      "cardPool": "S01",
+      "products": [
+        "第2季|典藏版"
+      ]
+    },
+    {
+      "cardId": "S01-02M3A",
+      "cardPool": "S01",
+      "products": [
+        "第2季|典藏版"
+      ]
+    },
+    {
+      "cardId": "S01-03M2A",
+      "cardPool": "S01",
+      "products": [
+        "第2季|典藏版"
+      ]
+    },
+    {
+      "cardId": "S01-04M2A",
+      "cardPool": "S01",
+      "products": [
+        "第2季|典藏版"
+      ]
+    },
+    {
       "cardId": "S02-01M1A",
       "cardPool": "S02",
       "products": [
-        "第1季|典藏版"
+        "第2季|典藏版"
       ]
     },
     {

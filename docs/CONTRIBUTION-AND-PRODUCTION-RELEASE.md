@@ -51,7 +51,7 @@ git push origin main
 
 ## 维护者：发布远端已验证版本
 
-部署电脑须具备 Git、PowerShell、Node.js、npm、tar、SSH，以及仓库 `global.json` 指定的 .NET SDK。`L12_CARD_ASSET_ROOT`（如设置）必须指向当前完整的 schema v3 卡图目录，清单应包含 324 张可玩卡和 38 张展示版本；不得为了通过门禁改用历史 schema v2 图库。先核对工具和 SDK：
+部署电脑须具备 Git、PowerShell、Node.js、npm、tar、SSH，以及仓库 `global.json` 指定的 .NET SDK。`L12_CARD_ASSET_ROOT`（如设置）必须指向当前完整的 schema v3 卡图目录，清单应包含 324 张可玩卡和 42 张展示版本；不得为了通过门禁改用历史 schema v2 图库。先核对工具和 SDK：
 
 ```powershell
 git --version

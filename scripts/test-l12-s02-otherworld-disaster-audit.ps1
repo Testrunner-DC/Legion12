@@ -62,10 +62,10 @@ Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, declaredTarg
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, chosen, "otherworld")' 'Fenian commit validation must use effective Otherworld faction.'
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Otherworld hidden search must use effective faction.'
 Assert-Contains $trialCompletion 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Grail resolution must use effective Otherworld faction.'
-Assert-Contains $faction 'player.Graveyard.Where(card => card.Faction == "otherworld")' 'Crusade only-Otherworld printed-faction boundary must remain explicit.'
-Assert-Contains $faction 'var isOnlyOtherworldTrait = top.Traits.Count == 1' 'Amakine must require exactly one printed trait.'
+Assert-Contains $faction 'HasOnlyEffectiveFactionTrait(player, card, "otherworld")' 'Crusade only-Otherworld boundary must use the shared effective-trait set.'
+Assert-Contains $faction 'var isOnlyOtherworldTrait = L12StructuredCardRules.HasOnlyEffectiveFactionTrait(' 'Amakine must use the shared effective-trait set.'
 Assert-Contains $faction 'item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";' 'Amakine only-Otherworld eligibility must be frozen before the choice.'
-Assert-Contains $faction 'var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" }' 'Amakine may offer hand only for cards whose sole printed trait is Otherworld.'
+Assert-Contains $faction 'var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" }' 'Amakine may offer hand only for cards whose sole effective trait is Otherworld.'
 
 Assert-Contains $active '$"active:{sourceInstanceId}:crusade-choice"' 'Crusade three modes must share the printed once-per-turn key.'
 $galahadStart = $faction.IndexOf('if (ability == "galahadGrailReward" && source.CardId == "S02-0604")', [StringComparison]::Ordinal)

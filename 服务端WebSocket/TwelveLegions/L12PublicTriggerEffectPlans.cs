@@ -720,20 +720,23 @@ public sealed partial class L12GameEngine
             {
                 var brothers = player.Hand.Where(card => card.CardId is "S01-0106" or "S01-0107")
                     .Select(card => card.InstanceId).ToList();
-                var canUse = brothers.Count > 0 && player.Morale.Count > 0 && EmptySlots(player).Any();
+                var canUse = player.Morale.Count > 0;
                 steps =
                 [
                     PublicTriggerStep("option", "mode", "刘备：预先声明是否返还1士气并使关羽或张飞活跃登场",
                         canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("target-morale", "returnCost", "刘备：预先选择返还的1张士气",
                         player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"),
-                    PublicTriggerStep("hand-card", "entryCard", "刘备：预先选择手牌1张关羽或张飞",
-                        brothers, requiredChoice: "mode:use"),
-                    PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "刘备：预先选择登场战场",
-                        ["dynamic"], referenceKey: "entryCard", requiredChoice: "mode:use"),
-                    PublicTriggerStep("effect-entry-slot", "entrySlot", "刘备：预先选择活跃登场的位置",
-                        ["dynamic"], referenceKey: "entryCard", requiredChoice: "mode:use"),
                 ];
+                if (brothers.Count > 0 && EmptySlots(player).Any())
+                {
+                    steps.Add(PublicTriggerStep("hand-card", "entryCard", "刘备：预先选择手牌1张关羽或张飞",
+                        brothers, requiredChoice: "mode:use"));
+                    steps.Add(PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "刘备：预先选择登场战场",
+                        ["dynamic"], referenceKey: "entryCard", requiredChoice: "mode:use"));
+                    steps.Add(PublicTriggerStep("effect-entry-slot", "entrySlot", "刘备：预先选择活跃登场的位置",
+                        ["dynamic"], referenceKey: "entryCard", requiredChoice: "mode:use"));
+                }
                 break;
             }
             case ("S01-0207", "enter", _):
@@ -770,15 +773,21 @@ public sealed partial class L12GameEngine
             case ("S01-0309", "enter", _):
             {
                 var sigurd = player.Hand.Concat(player.Graveyard).Where(card => card.CardId == PublicTriggerSigurdCard)
-                    .Select(card => card.InstanceId).Prepend("mode:none").ToList();
+                    .Select(card => card.InstanceId).ToList();
                 steps =
                 [
-                    PublicTriggerStep("optional-card", "entryCard", "布伦希尔德：预先选择齐格鲁德，或不发动", sigurd),
-                    PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "布伦希尔德：预先选择登场战场",
-                        ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true),
-                    PublicTriggerStep("effect-entry-slot", "entrySlot", "布伦希尔德：预先选择活跃登场位置",
-                        ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true),
+                    PublicTriggerStep("option", "mode", "布伦希尔德：预先声明是否支付1点主宰伤害费用",
+                        player.Hp > 1 ? ["mode:none", "mode:use"] : ["mode:none"]),
                 ];
+                if (sigurd.Count > 0 && EmptySlots(player).Any())
+                {
+                    steps.Add(PublicTriggerStep("card", "entryCard", "布伦希尔德：预先选择手牌或墓地的齐格鲁德",
+                        sigurd, requiredChoice: "mode:use"));
+                    steps.Add(PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "布伦希尔德：预先选择登场战场",
+                        ["dynamic"], referenceKey: "entryCard", requiredChoice: "mode:use"));
+                    steps.Add(PublicTriggerStep("effect-entry-slot", "entrySlot", "布伦希尔德：预先选择活跃登场位置",
+                        ["dynamic"], referenceKey: "entryCard", requiredChoice: "mode:use"));
+                }
                 break;
             }
             case ("S01-0021", "reaction", _):
@@ -1404,10 +1413,10 @@ public sealed partial class L12GameEngine
         else if (key.Item1 == "S01-0105")
         {
             var costId = activation.DeclaredValues.GetValueOrDefault("returnCost", []).SingleOrDefault();
-            if (entryCard is null || !player.Hand.Any(card => card.InstanceId == entryCard
+            if (costId is null || !CanReturnSelectedMoraleById(player, [costId], 1)
+                || entryCard is not null && (!player.Hand.Any(card => card.InstanceId == entryCard
                     && card.CardId is "S01-0106" or "S01-0107")
-                || costId is null || !CanReturnSelectedMoraleById(player, [costId], 1)
-                || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Hand))
+                    || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Hand)))
                 error = "刘备的士气费用、关羽/张飞或登场位置已失效；未返还士气且效果未入栈";
             else
                 _ = ReturnSelectedMoraleById(player, [costId], 1);
@@ -1435,9 +1444,9 @@ public sealed partial class L12GameEngine
         else if (key is ("S01-0309", "enter", _))
         {
             var sigurdZone = player.Hand.Concat(player.Graveyard).ToList();
-            if (entryCard is null || !sigurdZone.Any(card => card.InstanceId == entryCard
+            if (player.Hp <= 1 || entryCard is not null && (!sigurdZone.Any(card => card.InstanceId == entryCard
                     && card.CardId == PublicTriggerSigurdCard)
-                || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, sigurdZone))
+                || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, sigurdZone)))
                 error = "布伦希尔德声明的齐格鲁德或登场位置已失效；未承受伤害且效果未入栈";
             else
                 DamageMaster(candidate.Controller, 1, "布伦希尔德登场效果费用");

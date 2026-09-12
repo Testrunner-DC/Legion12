@@ -6,10 +6,11 @@ import { roundCardUrl } from './specialAssets'
 import CardImage from './CardImage.vue'
 const props = defineProps<{ card: Card; selected?: boolean; compact?: boolean }>()
 defineEmits<{ select: []; focusCard: [card: Card] }>()
-const displayCost = computed(() => props.card.playCost ?? props.card.currentCost ?? props.card.cost)
+const displayCost = computed(() => Math.max(0, props.card.playCost ?? props.card.currentCost ?? props.card.cost))
+const displayTroops = computed(() => Math.max(0, props.card.troops))
 const costState = computed(() => displayCost.value < props.card.cost ? 'discounted' : displayCost.value > props.card.cost ? 'increased' : '')
 const isBattlefieldLegion = computed(() => props.card.cardType === 'legion' || props.card.isMasterLegion === true || props.card.cardId === 'S01-0417' && props.card.troops > 0)
-const displayBaseTroops = computed(() => props.card.displayBaseTroops ?? props.card.baseTroops)
+const displayBaseTroops = computed(() => Math.max(0, props.card.displayBaseTroops ?? props.card.baseTroops))
 const attachedGroups = computed(() => {
   const groups = new Map<string, { card: Card; count: number }>()
   for (const card of props.card.attachedCards ?? []) {
@@ -121,8 +122,8 @@ const keywordRows = computed(() => {
     </span>
     <span v-if="showFace" class="card-name">{{ card.name }}</span>
     <span v-if="showFace && isBattlefieldLegion" class="card-power"
-      :class="{ boosted: card.troops > displayBaseTroops, weakened: card.troops < displayBaseTroops }"
-      :title="card.troops === displayBaseTroops ? `当前兵力 ${card.troops}` : `当前兵力 ${card.troops}；比较基准 ${displayBaseTroops}`">{{ card.troops }}</span>
+      :class="{ boosted: displayTroops > displayBaseTroops, weakened: displayTroops < displayBaseTroops }"
+      :title="displayTroops === displayBaseTroops ? `当前兵力 ${displayTroops}` : `当前兵力 ${displayTroops}；比较基准 ${displayBaseTroops}`">{{ displayTroops }}</span>
     <span v-if="showFace && card.disasterLevel" class="card-disaster">{{ card.disasterLevel }}</span>
     <span v-if="showFace && attachedGroups.length" class="attached-card-orbs" aria-label="叠放卡牌">
       <span v-for="group in attachedGroups" :key="group.card.cardId" class="attached-card-orb" role="button" tabindex="0"

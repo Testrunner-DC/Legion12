@@ -133,10 +133,11 @@ const starterCards = JSON.parse(read('../public/data/l12/cards.st.json'))
 const s2Cards = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
 const archiveAssetCards = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json')).cards
 const presentationGalleryAssets = archiveAssetCards.filter(card => card.id !== 'S02-05C1B'
-  && [/^S\d{2}-\d{4}[a-z]$/, /^S\d{2}-\d{2}[CM]1A$/, /^ST\d{2}-C1st$/].some(pattern => pattern.test(card.id)))
+  && [/^S\d{2}-\d{4}[a-z]$/, /^S\d{2}-\d{2}[CM]\d+A$/, /^ST\d{2}-C1st$/].some(pattern => pattern.test(card.id)))
 const moraleIdentities = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'))
 const olympusDefaultMorale = s2Cards.find(card => card.id === 'S02-05C1')
 const olympusAlternateArt = s2Cards.find(card => card.id === 'S02-05C1A')
+const naturalGift = starterCards.find(card => card.id === 'ST06-10')
 
 const confirmedS1DisasterLevels = {
   'S01-0304': 2,
@@ -198,14 +199,14 @@ const contracts = [
     && cardArchive.includes(':card="selectedDetailCard"') && cardDetailContent.includes(':card-id="card.id"')
     && !cardDetailContent.includes('archive-version-arrow')
     && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌图鉴必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
-  [presentationGalleryAssets.length === 37
+  [presentationGalleryAssets.length === 41
     && presentationGalleryAssets.every(card => card.baseCardId && card.id !== 'S02-05C1B')
     && s2Cards.some(card => card.id === 'S02-05C1A')
     && cardArchive.includes("card.id !== 'S02-05C1B'")
     && cardArchive.includes("Boolean(card.archiveBaseCardId) || card.id === 'S02-05C1A'")
     && cardArchive.includes('cards.value.filter(isGalleryVariant)')
     && cardArchive.includes('v-for="card in filteredGallery" :key="card.id"')
-    && !galleryMarkup.includes('archive-version-arrow'), '画廊必须逐卡展示37张登记展示资源与S02-05C1A，共38张异画；S02-05C1A在图鉴并入默认士气S02-05C1的版本切换、在画廊独立展示，不得成为新规则身份，也不得误收规则独立的奥林匹斯神力B面'],
+    && !galleryMarkup.includes('archive-version-arrow'), '画廊必须逐卡展示41张登记展示资源与S02-05C1A，共42张异画；主宰异画编号不得写死为M1A；S02-05C1A在图鉴并入默认士气S02-05C1的版本切换、在画廊独立展示，不得成为新规则身份，也不得误收规则独立的奥林匹斯神力B面'],
   [(cardArchive.match(/@dblclick\.stop="openDetail/g) ?? []).length === 2
     && (cardArchive.match(/class="archive-image-open"/g) ?? []).length === 2
     && !cardArchive.includes('<button class="archive-image-open"')
@@ -233,9 +234,11 @@ const contracts = [
     && ![cardArchive, legacyLobby, sandboxPicker, gmPanel, adminCardAnalytics, ruleCenter].some(source => source.includes('卡牌档案')), '全站用户可见名称必须统一为“卡牌图鉴”，主标题保持“卡牌图鉴”，子页签必须为“全卡池／画廊”，不得残留旧称“卡牌档案”'],
   [decks.includes('function normalizeCardDimensions(card: DeckCard)')
     && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
-    && cardArchive.includes('function hasCostDimension(card: CatalogCard)')
-    && cardArchive.includes('hasCostDimension(displayedVersion(entry))')
     && cardDetailContent.includes('hasCostDimension(card)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
+  [naturalGift && naturalGift.cardType === 'tactic' && naturalGift.cost == null
+    && decks.includes('export function filterableCardCost') && decks.includes("card.cardType === 'master' ? null : (card.cost ?? 0)")
+    && cardArchive.includes('filterableCardCost(card)') && deckEditor.includes('filterableCardCost(card)')
+    && sandboxPicker.includes('filterableCardCost(card)'), '没有印刷费用的非主宰卡必须统一归入0费筛选；自然馈赠须能在图鉴、构筑与沙盒的0费条件中被找到'],
   [cardArchiveVersions.includes('identity.versionCardIds.map')
     && cardArchiveVersions.includes("if (card.id === 'S02-05C1B') return `rules:${ruleIdentity(card)}`")
     && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1')
@@ -600,6 +603,14 @@ const contracts = [
     && prompt.includes('grid-template-columns:repeat(auto-fit,minmax(150px,1fr))')
     && prompt.includes('overflow:visible'), '效果/费用分支必须按原顺序自适应同屏排列，三项不得依赖横向拖动，且不发动固定在最后'],
   [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && replayModel.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
+  [cardTile.includes('Math.max(0, props.card.playCost')
+    && cardTile.includes('Math.max(0, props.card.troops)')
+    && cardTile.includes('Math.max(0, props.card.displayBaseTroops')
+    && prompt.includes("Math.max(0, card?.playCost")
+    && prompt.includes("Math.max(0, card?.troops")
+    && prompt.includes("Math.max(0, card?.baseTroops")
+    && replayModel.includes("currentCost: Math.max(0")
+    && replayModel.includes("hp: Math.max(0"), '卡牌、弹框和回放中的费用、兵力及血量不得显示负数'],
   [!matchRecords.includes("import GameBoard from './game/GameBoard.vue'")
     && !matchRecords.includes('selectMatch(matches.value[0])')
     && matchRecords.includes("router.push({ name: 'match-replay'")
@@ -808,6 +819,12 @@ const contracts = [
     && adminPage.includes('cardTypeLabel(card.cardType)')
     && adminPage.includes('cardTypeLabel(selectedEffect.cardType)'), '所有卡牌详情、构筑与后台原子效果清单必须明确区分主动战术和反击战术，不得显示内部英文类型'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],
+  [l12PromptSetup.includes('ExpandGraveyardSelectionDisplay(playerIndex, kind, validChoices, data)')
+    && l12PromptSetup.includes('kind.Equals("grave-card"') && l12PromptSetup.includes('SelectMany(player => player.Graveyard)')
+    && prompt.includes('displayCardIds') && prompt.includes(':unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"'), '墓地选择必须统一展示对应墓地全部卡牌，并仅允许服务端合法候选被点击'],
+  [prompt.includes('displayChoiceIds') && prompt.includes('disabledChoiceReason')
+    && prompt.includes("'unavailable-choice': Boolean(disabledChoiceReason(choice))")
+    && prompt.includes('<small v-if="disabledChoiceReason(choice)">{{ disabledChoiceReason(choice) }}</small>'), '多分支效果必须能同时展示可用与灰置选项，并显示服务端给出的不可用原因'],
   [prompt.includes("import PromptCardCandidate from './PromptCardCandidate.vue'") && (prompt.match(/<PromptCardCandidate/g)?.length ?? 0) >= 6
     && promptCardCandidate.indexOf('<CardImage') < promptCardCandidate.indexOf('prompt-card-candidate__name')
     && promptCardCandidate.indexOf('prompt-card-candidate__name') < promptCardCandidate.indexOf('prompt-card-candidate__meta')
@@ -1209,10 +1226,12 @@ contracts.push([
     && currentReleaseEntry.includes("title: '打出费用与响应判定'")
     && ['须佐之男', '山河社稷图', '草薙剑', '奥尔加', '众神之乡', '安卡神碑',
       '传奇的拉格纳', '无情者哈拉尔', '血斧艾瑞克', '齐格鲁德', '卡纽特大帝',
-      '莫德雷德', '伊西斯', '步行者罗洛', '槲寄生符咒', '落穴陷阱', '孙悟空']
+      '莫德雷德', '伊西斯', '步行者罗洛', '槲寄生符咒', '落穴陷阱', '孙悟空',
+      '土方岁三', '阿麦金', '万物统御之戒', '自然馈赠', '杨戬专属', '哪吒专属']
       .every(cardName => currentReleaseEntry.includes(cardName))
     && ['主宰效果免耗', '傲慢之罪', '选择完成前不会先扣费', '冒号只分隔该能力自己的费用与效果',
-      '再让登场费用-1', '之后才让军团离开手牌', '实际成为场上军团后']
+      '再让登场费用-1', '之后才让军团离开手牌', '实际成为场上军团后', '消耗3符文把费用减至0',
+      '一次选择最多2个对象', '职介和试炼值不属于特征', '通用特征会随持有者改为当前阵营特征', '最低显示为0']
       .every(detail => currentReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
   '当前玩家更新日志必须覆盖上一期后的主动效果、费用边界、支付取消与场上响应修改，并排除后台和内部治理内容',

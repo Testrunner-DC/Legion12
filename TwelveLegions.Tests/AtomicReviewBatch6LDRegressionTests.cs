@@ -324,7 +324,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "cards:S02-06S6,S02-0008")]
-    public void CrusadeOnlyOtherworldRecoveryDoesNotTreatARingUniversalCardAsOnlyOtherworld()
+    public void CrusadeOnlyOtherworldRecoveryTreatsARingConvertedUniversalCardAsOnlyOtherworld()
     {
         var game = Create(8711);
         var player = game.State.Players[0];
@@ -332,17 +332,22 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         trial.TrialCompleted = true;
         player.SpecialZones.Trials.Add(trial);
         player.Relic = Card("S02-0008", "batch6ld-crusade-only-ring");
-        player.Hand.Add(Card("S02-0401", "batch6ld-crusade-only-discard"));
+        var discardCost = Card("S02-0401", "batch6ld-crusade-only-discard");
+        player.Hand.Add(discardCost);
         player.Graveyard.Add(Card("S02-0003", "batch6ld-crusade-only-universal"));
         player.SpecialZones.Runes = 2;
 
         var begin = game.Handle(0,
             new L12Command("activateAbility", trial.InstanceId, Ability: "crusadeRecover"));
 
-        Assert.False(begin.Accepted);
-        Assert.Contains("只有【彼界】特征", begin.Error);
+        Assert.True(begin.Accepted, begin.Error);
         Assert.Equal(2, player.SpecialZones.Runes);
         Assert.Single(player.Hand);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(discardCost.InstanceId, discard.ValidChoices);
+        Resolve(game, discardCost.InstanceId);
+        var recover = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("batch6ld-crusade-only-universal", recover.ValidChoices);
     }
 
     [Fact]

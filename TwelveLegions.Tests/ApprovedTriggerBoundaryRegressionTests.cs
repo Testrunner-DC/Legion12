@@ -315,9 +315,7 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
             ("S01-02M3", "medjed-master-damage", new()),
             ("S02-02M1", "nephthys-own-death", new()),
             ("S02-01S1", "master-morale-return", new() { ["mode"] = "xiaotian" }),
-            ("S01-0105", "enter", new()),
             ("S01-0213", "reaction", new()),
-            ("S01-0309", "enter", new()),
             ("S02-0203", "enter", new()),
             ("S02-0205", "enter", new()),
             ("S01-0206", "attack", new()),
@@ -362,7 +360,9 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
             Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
         }
 
-        Assert.Equal(13, cases.Length);
+        // 刘备与布伦希尔德的冒号前是可支付 Cost；没有后段登场对象时仍可发动并支付，
+        // 因此由冒号 Cost 同类回归覆盖，不能再列入“仅剩不发动选项”的静默守卫样本。
+        Assert.Equal(11, cases.Length);
     }
 
     [Fact]

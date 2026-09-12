@@ -99,6 +99,22 @@ public sealed partial class L12GameEngine
             ["mode:none", "mode:use"]));
         void One(string kind, string key, string text, IEnumerable<string> choices, string? required = null)
             => steps.Add(PublicTriggerStep(kind, key, text, choices, 1, 1, requiredChoice: required));
+        void OneEffectOrSkip(string kind, string key, string text, IEnumerable<string> choices,
+            string? required = null, bool allowCancel = true)
+        {
+            var materialized = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (materialized.Length == 0) return;
+            steps.Add(PublicTriggerStep(kind, key, text, materialized, 1, 1,
+                requiredChoice: required, allowCancel: allowCancel));
+        }
+        void ManyEffectOrSkip(string kind, string key, string text, IEnumerable<string> choices, int min, int max,
+            string? required = null, bool allowCancel = true, string? selectionConstraint = null)
+        {
+            var materialized = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (materialized.Length == 0) return;
+            steps.Add(PublicTriggerStep(kind, key, text, materialized, min, max, requiredChoice: required,
+                allowCancel: allowCancel, selectionConstraint: selectionConstraint));
+        }
         void Many(string kind, string key, string text, IEnumerable<string> choices, int min, int max,
             string? required = null, string? selectionConstraint = null)
             => steps.Add(PublicTriggerStep(kind, key, text, choices, min, max, requiredChoice: required,
@@ -109,17 +125,17 @@ public sealed partial class L12GameEngine
         switch (plan)
         {
             case "lubu":
-                if (!CanReturnMorale(player, 2) || !enemy.Any(card => card.DisasterLevel is 1 or 2)) break;
+                if (!CanReturnMorale(player, 2)) break;
                 Optional("吕布：预先声明是否返还2士气发动登场效果");
                 Many("target-morale", "returnCost", "吕布：预先选择返还的2张士气", Morale(2), 2, 2, "mode:use");
-                One("enemy-legion", "target", "吕布：预先选择击杀目标",
+                OneEffectOrSkip("enemy-legion", "target", "吕布：预先选择击杀目标",
                     enemy.Where(card => card.DisasterLevel is 1 or 2).Select(card => card.InstanceId), "mode:use"); break;
             case "wuzetian":
-                if (!CanReturnMorale(player, 1) || !enemy.Any(card => card.Tapped)) break;
+                if (!CanReturnMorale(player, 1)) break;
                 Optional("武则天：预先声明是否返还1士气发动登场效果");
                 One("target-morale", "returnCost", "武则天：预先选择返还的1张士气", Morale(1), "mode:use");
-                Many("enemy-legion", "targets", "武则天：预先选择1至2张休整军团",
-                    enemy.Where(card => card.Tapped).Select(card => card.InstanceId), 1, 2, "mode:use"); break;
+                ManyEffectOrSkip("enemy-legion", "targets", "武则天：预先选择1至2张休整军团",
+                    enemy.Where(card => card.Tapped).Select(card => card.InstanceId), 0, 2, "mode:use"); break;
             case "lijing":
                 if (player.Library.Count > 0) Optional("李靖：预先声明是否展示牌库顶牌");
                 break;
@@ -128,13 +144,12 @@ public sealed partial class L12GameEngine
                 Optional("花木兰：预先声明是否返还1士气获得冲锋");
                 One("target-morale", "returnCost", "花木兰：预先选择返还的1张士气", Morale(1), "mode:use"); break;
             case "mozi":
-                if (!CanReturnMorale(player, 1)
-                    || !own.Any(card => L12StructuredCardRules.HasFaction(player, card, "tianting"))) break;
+                if (!CanReturnMorale(player, 1)) break;
                 Optional("墨子：预先声明是否返还1士气发动登场效果");
                 One("target-morale", "returnCost", "墨子：预先选择返还的1张士气", Morale(1), "mode:use");
-                Many("field-legion", "targets", "墨子：预先选择1至2张天廷军团",
+                ManyEffectOrSkip("field-legion", "targets", "墨子：预先选择1至2张天廷军团",
                     own.Where(card => L12StructuredCardRules.HasFaction(player, card, "tianting"))
-                        .Select(card => card.InstanceId), 1, 2, "mode:use"); break;
+                        .Select(card => card.InstanceId), 0, 2, "mode:use"); break;
             case "zhuge":
                 // Private information must be seen before declaring the independent adjustment.
                 break;
@@ -166,14 +181,14 @@ public sealed partial class L12GameEngine
                     .Select(card => card.InstanceId), 1, 2); break;
             case "oddr": Optional("神箭奥德尔：预先声明是否承受1点主宰伤害并抽1张牌"); break;
             case "egil":
-                if (player.Library.Count < 2 || enemy.Length == 0) break;
+                if (player.Library.Count < 2) break;
                 Optional("夺命诗人埃吉尔：预先声明是否支付主宰伤害与牌库费用");
-                One("enemy-legion", "target", "夺命诗人埃吉尔：预先选择兵力-2000目标",
+                OneEffectOrSkip("enemy-legion", "target", "夺命诗人埃吉尔：预先选择兵力-2000目标",
                     enemy.Select(card => card.InstanceId), "mode:use"); break;
             case "gram":
-                if (player.Library.Count < 2 || !enemy.Any(card => card.Troops <= 3000)) break;
+                if (player.Library.Count < 2) break;
                 Optional("神剑格拉墨：预先声明是否弃置牌库顶2张发动效果");
-                One("enemy-legion", "target", "神剑格拉墨：预先选择返回牌库底目标",
+                OneEffectOrSkip("enemy-legion", "target", "神剑格拉墨：预先选择返回牌库底目标",
                     enemy.Where(card => card.Troops <= 3000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
                         .Select(card => card.InstanceId), "mode:use"); break;
             case "nobunaga": One("enemy-legion", "target", "织田信长：预先选择击杀目标",
@@ -185,10 +200,14 @@ public sealed partial class L12GameEngine
                     enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, x)).Select(card => card.InstanceId)); break;
             }
             case "hijikata":
-                One("enemy-legion", "target1", "土方岁三：预先选择费用不高于2的目标",
-                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId));
-                One("enemy-legion", "target2", "土方岁三：预先选择另一张费用不高于1的目标",
-                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 1)).Select(card => card.InstanceId)); break;
+            {
+                var costTwoTargets = enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).ToArray();
+                ManyEffectOrSkip("enemy-legion", "targets",
+                    "土方岁三：选择最多2张军团；其中1张费用不高于2，另1张费用不高于1",
+                    costTwoTargets.Select(card => card.InstanceId), 1, Math.Min(2, costTwoTargets.Length),
+                    allowCancel: false, selectionConstraint: "hijikata-entry-targets");
+                break;
+            }
             case "takasugi":
                 // 抽牌先结算；目标属于效果正文的后续选择，不能因当前没有目标而取消整段登场效果。
                 break;
@@ -237,10 +256,10 @@ public sealed partial class L12GameEngine
                 Optional("罗宾汉：预先声明是否从私密区域选择侍从骑士登场");
                 One("field-slot", "entrySlot", "罗宾汉：预先选择公开登场位置", EmptySlots(player), "mode:use"); break;
             case "claudia":
-                if (player.SpecialZones.Runes < 1 || enemy.Length == 0) break;
+                if (player.SpecialZones.Runes < 1) break;
                 Optional("克劳迪娅：预先声明是否消耗1符文发动效果");
                 One("option", "runeCost", "克劳迪娅：预先声明1符文费用", ["rune-count:1"], "mode:use");
-                One("enemy-legion", "target", "克劳迪娅：预先选择兵力-2000目标",
+                OneEffectOrSkip("enemy-legion", "target", "克劳迪娅：预先选择兵力-2000目标",
                     enemy.Select(card => card.InstanceId), "mode:use"); break;
             case "richard": Optional("狮心王理查一世：预先声明是否叠放1张侍从骑士"); break;
             case "magatama-search" or "takeda-search": Optional($"〈{source.Name}〉：预先声明是否查看牌库并检索"); break;
@@ -259,11 +278,11 @@ public sealed partial class L12GameEngine
             {
                 var targets = own.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && card.Tapped)
                     .Select(card => card.InstanceId).ToArray();
-                if (player.Hand.Count == 0 || targets.Length == 0) break;
+                if (player.Hand.Count == 0) break;
                 Optional("井伊直虎：预先声明是否弃置1张手牌发动效果");
                 One("hand-card", "discardCost", "井伊直虎：私密选择弃置的手牌",
                     player.Hand.Select(card => card.InstanceId), "mode:use");
-                One("field-legion", "target", "井伊直虎：预先选择转为活跃的高天原军团", targets, "mode:use"); break;
+                OneEffectOrSkip("field-legion", "target", "井伊直虎：预先选择转为活跃的高天原军团", targets, "mode:use"); break;
             }
             case "imhotep":
             {
@@ -277,20 +296,20 @@ public sealed partial class L12GameEngine
             case "perseus":
             {
                 var targets = player.Graveyard.Where(card => card.CardId == "S02-0505").Select(card => card.InstanceId).ToArray();
-                if (player.Hand.Count == 0 || targets.Length == 0) break;
+                if (player.Hand.Count == 0) break;
                 Optional("珀尔修斯：预先声明是否弃牌回收晋升者");
                 One("hand-card", "discardCost", "珀尔修斯：私密选择弃置的手牌",
                     player.Hand.Select(card => card.InstanceId), "mode:use");
-                One("grave-card", "target", "珀尔修斯：预先选择墓地晋升者", targets, "mode:use"); break;
+                OneEffectOrSkip("grave-card", "target", "珀尔修斯：预先选择墓地晋升者", targets, "mode:use"); break;
             }
             case "heracles-promotion":
             {
                 var hand = player.Hand.Where(card => card.CardType == "legion").ToArray();
-                if (hand.Length == 0 || enemy.Length == 0) break;
+                if (hand.Length == 0) break;
                 Optional("赫拉克勒斯·晋升：预先声明是否展示军团并放回牌库顶");
                 One("hand-card", "discardCost", "赫拉克勒斯·晋升：私密选择展示并放回牌库顶的军团",
                     hand.Select(card => card.InstanceId), "mode:use");
-                One("enemy-legion", "target", "赫拉克勒斯·晋升：预先选择击杀目标",
+                OneEffectOrSkip("enemy-legion", "target", "赫拉克勒斯·晋升：预先选择击杀目标",
                     enemy.Select(card => card.InstanceId), "mode:use"); break;
             }
             case "perseus-promotion":
@@ -331,9 +350,13 @@ public sealed partial class L12GameEngine
                 || values.Any(value => !step.ValidChoices.Contains(value, StringComparer.OrdinalIgnoreCase)))
                 error = $"〈{candidate.SourceName}〉的公开声明已失效；未支付费用且效果未入栈";
         }
-        if (plan == "hijikata" && activation.DeclaredValues.GetValueOrDefault("target1", []).SingleOrDefault()
-            == activation.DeclaredValues.GetValueOrDefault("target2", []).SingleOrDefault())
-            error = "土方岁三的两个公开目标必须不同；效果未入栈";
+        if (plan == "hijikata")
+        {
+            var selected = activation.DeclaredValues.GetValueOrDefault("targets", []);
+            if (selected.Count == 2 && !selected.Any(id => DeclaredEnemyTarget(candidate.Controller, id,
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null))
+                error = "土方岁三选择2张时，其中至少1张费用必须不高于1；效果未入栈";
+        }
         if (plan == "canute")
         {
             var selected = activation.DeclaredValues.GetValueOrDefault("targets", []);
@@ -478,7 +501,7 @@ public sealed partial class L12GameEngine
             case "egil": if (FindOnField(opponent, One("target"), out _, out _) is { } egil) AddTimedModifier(egil, -2000, 0, State.TurnSerial, source.Name); break;
             case "gram": ReturnEnemyFieldToLibraryBottom(item.Controller, One("target")); break;
             case "uesugi": KillTarget(item, One("target"), "被上杉谦信击杀"); break;
-            case "hijikata": foreach (var id in new[] { One("target1"), One("target2") }) if (!string.IsNullOrEmpty(id)) KillTarget(item, id, "被土方岁三击杀"); break;
+            case "hijikata": foreach (var id in Many("targets")) KillTarget(item, id, "被土方岁三击杀"); break;
             case "takasugi":
                 if (!Draw(player, 1))
                 {

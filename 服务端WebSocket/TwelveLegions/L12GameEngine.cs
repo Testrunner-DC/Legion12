@@ -441,7 +441,7 @@ public sealed partial class L12GameEngine
             deployedAsLegion,
             effectText = card?.Effect,
             tapped = player.MasterTapped,
-            player.Hp,
+            Hp = Math.Max(0, player.Hp),
             player.MaxHp,
             statusIcons = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial ? new[] { "shield" } : Array.Empty<string>(),
             statusEffects = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial
@@ -758,6 +758,7 @@ public sealed partial class L12GameEngine
         => player.Graveyard.Select(card =>
         {
             var snapshot = card.Clone();
+            snapshot.Troops = snapshot.CurrentTroops;
             snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
             return snapshot;
         }).ToArray();
@@ -776,7 +777,7 @@ public sealed partial class L12GameEngine
                 // enabled state can depend on live trial/resource state and therefore
                 // cannot safely reuse the ability list captured when the card instance
                 // was created.
-                snapshot.Troops = Math.Max(0, snapshot.Troops);
+                snapshot.Troops = snapshot.CurrentTroops;
                 snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
                 snapshot.StatusEffects = BuildStatusEffects(player, card, rowIndex);
@@ -1565,7 +1566,7 @@ public sealed partial class L12GameEngine
             L12DerivedStats.SetUntilTurnEnd(card, 1000, State.TurnSerial);
             RecalculateContinuousTroops();
             AddEvent("effect", player.PlayerIndex,
-                $"{card.Name} 的免死生效，兵力设定为 1000 后重算持续修正，当前为 {card.Troops}", card);
+                $"{card.Name} 的免死生效，兵力设定为 1000 后重算持续修正，当前为 {card.CurrentTroops}", card);
             if (card.Troops > 0) return false;
             AddEvent("effect", player.PlayerIndex, $"{card.Name} 在持续兵力修正重算后兵力仍不高于 0", card);
         }
@@ -1875,6 +1876,7 @@ public sealed partial class L12GameEngine
         => State.Players[playerIndex].Hand.Select(card =>
         {
             var snapshot = card.Clone();
+            snapshot.Troops = snapshot.CurrentTroops;
             var selfDamageRule = SelfDamageEntryDiscount(card);
             var selfDamageDiscount = selfDamageRule is not null
                 && State.Players[playerIndex].Hp > selfDamageRule.DamageAmount;
@@ -2026,7 +2028,8 @@ public sealed partial class L12GameEngine
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
         // 中立天灾伤害不受玩家卡牌的伤害替换影响。
         if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
-        player.Hp -= amount;
+        amount = Math.Max(0, amount);
+        player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {amount} 点血量");
@@ -2043,6 +2046,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
         if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
+        amount = Math.Max(0, amount);
         var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
         if (actual == 0) return;
         player.Hp -= actual;
@@ -2079,7 +2083,12 @@ public sealed partial class L12GameEngine
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
-            cards.Select(card => card.Clone()).ToArray()) { EffectText = effectText };
+            cards.Select(card =>
+            {
+                var snapshot = card.Clone();
+                snapshot.Troops = snapshot.CurrentTroops;
+                return snapshot;
+            }).ToArray()) { EffectText = effectText };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= 2)
         {

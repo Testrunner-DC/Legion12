@@ -27,7 +27,7 @@
 | S02-0613 圣女贞德 | 3 | 独立保留试炼1；登场弃牌费用预付且保护主宰到下个己方回合；阵亡双方主宰各回血，来源离场不吞候选。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `S02OtherworldHumanAssistedAtomicTests`、`AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 通过 |
 | S02-0614 康斯坦丝 | 5 | 独立保留试炼1与远程职介能力；登场得符文/推进试炼公开模式先声明，推进与完成事件分离。 | `L12StructuredCardRules`、`L12TrialAdvanceEffectPlans` | `S02OtherworldHumanAssistedAtomicTests`、`AtomicReviewBatch6FRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S02-0615 格温莉安 | 3 | 前排挑衅与敌方回合+1000实时；仅因效果阵亡时，回血/抽牌强制模式候选期声明，日志使用正确卡名。 | `L12StructuredCardRules`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests` | 通过 |
-| S02-0616 阿麦金 | 3 | 休整时保护活跃试炼军团；登场得符文可选声明；主动休整后才展示牌库顶，“只拥有彼界特征”不把戒指通用卡误判为唯一彼界。 | `L12AtomicRuntimeIntegration`、`L12S2FactionEffects` | `AtomicReviewBatch6IARegressionTests`、`S2FactionRegressionTests` | 通过 |
+| S02-0616 阿麦金 | 3 | 休整时保护活跃试炼军团；登场得符文可选声明；主动休整后才展示牌库顶；“只拥有彼界特征”读取共享有效特征集合，戒指转换后的纯通用卡可成为唯一彼界，附带圆桌骑士/晋升者/专属特征则不可。 | `L12AtomicRuntimeIntegration`、`L12S2FactionEffects`、`L12StructuredCardRules` | `AtomicReviewBatch6IARegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0617 罗宾汉 | 4 | 远程；登场侍从身份结算期选择而位置预声明；进攻得符文必发，条件抽牌为独立可选段。 | `L12EnterPublicTriggerPlans`、`L12AttackPublicTriggerPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
 | S02-0618 伊丽莎白·都铎 | 3 | 独立保留试炼2与远程职介能力；登场得符文为必发触发，无空响应栈。 | `L12AtomicRuntimeIntegration`、`L12PublicTriggerEffectPlans` | `S02OtherworldHumanAssistedAtomicTests`、`AtomicReviewBatch6IARegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0619 克劳迪娅 | 2 | 前排获得刺客远程能力；登场符文费用与公开敌军目标入栈前声明，目标失效不退款。 | `L12EnterPublicTriggerPlans`、`L12StructuredCardRules` | `S02OtherworldHumanAssistedAtomicTests`、`AtomicReviewBatch6JARegressionTests` | 通过 |
@@ -43,7 +43,7 @@
 | S02-06S3 湖中仙女的馈赠 | 3 | 完成首句可选，未发动时直接进入强制回库洗牌段；减费再独立；牌库身份延迟，剑替代致命保持独立。 | `L12TrialCompletionTriggerPlans`、`L12GameEngine` | `AtomicReviewBatch6BRegressionTests`、`ImmortalityRegressionTests` | 通过 |
 | S02-06S4 寻找圣杯之旅 | 3 | 完成时只按公开牌库数量提供查看模式，不以隐藏命中裁剪；结算期按戒指有效彼界检索；圆桌登场得符文独立 once。 | `L12TrialCompletionTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6BRegressionTests`、`AtomicReviewBatch6LDRegressionTests` | 明确错误→已修复 |
 | S02-06S5 芬尼亚传奇 | 2 | 完成时 X 符文与重复公开敌军目标先声明并逐段响应；主动转活跃使用戒指有效彼界判定且回合1次。 | `L12TrialCompletionTriggerPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6BRegressionTests`、`AtomicReviewBatch6LDRegressionTests` | 明确错误→已修复 |
-| S02-06S6 十字军东征 | 1 | 三个模式共享印刷“回合1次”；费用/公开目标先声明，无效不返；“只有彼界特征”保持印刷阵营，不把戒指通用卡误判。 | `L12ActiveAbilities`、`L12S2FactionEffects` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6LDRegressionTests` | 明确错误→已修复 |
+| S02-06S6 十字军东征 | 1 | 三个模式共享印刷“回合1次”；费用/公开目标先声明，无效不返；“只有彼界特征”读取共享有效特征，戒指把通用特征替换为持有者阵营特征。 | `L12ActiveAbilities`、`L12S2FactionEffects`、`L12StructuredCardRules` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6LDRegressionTests` | 明确错误→已修复 |
 | S02-DS01 天地异变 | 1 | 翻开时真实反转双方牌库，离场再复原；顶部公开且同兵种手牌军团不可打出，洗牌/清点不破坏方向。 | `L12Disasters`、`L12Actions`、`L12GameEngine` | `LatestBugRegressionTests`、`NewSystemsTests` | 通过 |
 | S02-DS02 迷雾绝境 | 2 | 双方同时私密弃到5；低兵军团不可攻主宰、挑衅失效、活跃前排不可被攻均为持续层。 | `L12Disasters`、`L12Actions` | `NewSystemsTests`、`RuleKernelTests` | 通过 |
 | S02-DS03 无眠之夜 | 3 | 弃置原本兵力≤2000军团；所有结构化主动休整对自身主宰造成中立非致命伤害，不依赖按钮文案。 | `L12Disasters`、`L12StructuredCardRules`、`L12ActiveAbilities` | `NewSystemsTests`、`S2DisasterLevelRegressionTests` | 通过 |
@@ -54,7 +54,7 @@
 ## 公共根因、跨范围控制与保留边界
 
 - 梅林主动声明只读取公开模式、公开敌军与公开牌库数量；费用/休整提交后，合法效果开始才创建私密 `s2-merlin-search`，未命中也公开结果并重洗，命中按卡面展示后走权威加入手牌事件。
-- 所有写明【彼界】的效果筛选与提交重验统一调用 `L12StructuredCardRules.HasFaction`，覆盖鲍斯减费、莫瑞甘、芬尼亚、符文之力及圣杯检索。明确写“只拥有/只有【彼界】特征”的阿麦金和十字军回收继续使用印刷阵营，不受万物统御之戒扩展。
+- 所有写明【彼界】的效果筛选与提交重验统一调用 `L12StructuredCardRules.HasFaction`，覆盖鲍斯减费、莫瑞甘、芬尼亚、符文之力及圣杯检索。明确写“只拥有/只有【彼界】特征”的阿麦金和十字军回收统一调用 `HasOnlyEffectiveFactionTrait`：有效阵营提供基础特征，圆桌骑士、晋升者和“某主宰专属”均作为附加特征，职介与试炼值不计入；因此万物戒转换后的无附加特征通用卡合法。
 - `ActiveAbilityUsageKey` 将十字军三种按钮归并为同一 `crusade-choice` 次数；任一模式提交即消耗本回合次数，取消声明不消耗。
 - 加拉哈德由 `PendingActivation` 预声明可选回血；权威离场事务先支付弃置自身，再创建 StackItem。效果无效不抽牌/回血，但费用永不返还。
 - S02 天灾全部通过 `unrespondable=true` 的天灾堆叠入口即时结算；`S02-DS05` 继续复用已验证原子中立非致命伤害。S01 最终天灾〈堙灭〉仍固定天灾牌库最后、回合开始即时且天灾值锁 0，本批没有改变跨赛季公共规则。

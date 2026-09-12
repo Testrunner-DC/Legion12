@@ -84,10 +84,10 @@ try {
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
     $cardAssetManifest = Get-Content -LiteralPath $cardAssetManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
-    if ($cardAssetManifest.schemaVersion -ne 3 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 362 -or
-        $cardAssetManifest.playableCardCount -ne 324 -or $cardAssetManifest.presentationCardCount -ne 38 -or
+    if ($cardAssetManifest.schemaVersion -ne 3 -or -not $cardAssetManifest.complete -or $cardAssetManifest.cardCount -ne 366 -or
+        $cardAssetManifest.playableCardCount -ne 324 -or $cardAssetManifest.presentationCardCount -ne 42 -or
         [string]$cardAssetManifest.assetVersion -notmatch '^[0-9a-f]{64}$') {
-        throw "优化卡图发布清单必须为完整 schema v3（324 张可玩卡 + 38 张展示版本）内容寻址版本"
+        throw "优化卡图发布清单必须为完整 schema v3（324 张可玩卡 + 42 张展示版本）内容寻址版本"
     }
     $cardAssetsHash = [string]$cardAssetManifest.assetVersion
     $catalogRoot = Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data"

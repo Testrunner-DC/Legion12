@@ -427,13 +427,13 @@ const requiredVariants = {
   detailAvif: 'detail-960.avif',
 }
 
-if (manifest.schemaVersion !== 3 || manifest.complete !== true || manifest.cardCount !== 362 || manifest.playableCardCount !== 324 || manifest.presentationCardCount !== 38) fail('manifest 必须是完整 schema v3 且包含 324 张可玩卡和 38 张展示版本')
+if (manifest.schemaVersion !== 3 || manifest.complete !== true || manifest.cardCount !== 366 || manifest.playableCardCount !== 324 || manifest.presentationCardCount !== 42) fail('manifest 必须是完整 schema v3 且包含 324 张可玩卡和 42 张展示版本')
 if (manifest.assetVersion !== expectedHash || !/^[0-9a-f]{64}$/.test(expectedHash)) fail('manifest 资产版本不匹配')
 if (!/^[A-Za-z0-9._-]+$/.test(manifest.catalogVersion)) fail('目录版本包含不安全字符')
 if (manifest.basePath !== '/card-assets' || manifest.missing?.length !== 0) fail('manifest 基础路径或缺失列表无效')
 const cards = manifest.cards && typeof manifest.cards === 'object' ? manifest.cards : {}
 const entries = Object.entries(cards)
-if (entries.length !== 362 || new Set(entries.map(([id]) => id)).size !== 362) fail('manifest 卡号不是 362 个唯一值')
+if (entries.length !== 366 || new Set(entries.map(([id]) => id)).size !== 366) fail('manifest 卡号不是 366 个唯一值')
 
 let totalBytes = 0
 let playableCount = 0
@@ -472,7 +472,7 @@ for (const [cardId, card] of entries) {
 }
 if (presentationCount !== manifest.presentationCardCount || playableCount !== manifest.playableCardCount) fail('manifest 可玩卡与展示资源数量不匹配')
 const actualVersion = createHash('sha256').update(versionRows.sort().join('\n')).digest('hex')
-if (actualVersion !== expectedHash) fail('362 张资源的内容哈希与展示身份聚合版本不匹配')
+if (actualVersion !== expectedHash) fail('366 张资源的内容哈希与展示身份聚合版本不匹配')
 if (manifest.totalBytes !== totalBytes || totalBytes > 400 * 1024 * 1024) fail('优化卡图总量与 manifest 不匹配或超过 400 MiB')
 if (!Array.isArray(preload.entries)) fail('preload 清单格式无效')
 for (const entry of preload.entries) {
@@ -939,7 +939,7 @@ log "验证本机与公网 WebSocket 建连及无状态部署协议"
 verify_release_websocket "新版本"
 
 if [[ "$card_assets_hash" != "-" ]]; then
-  public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>{const manifest=JSON.parse(body);if(manifest.schemaVersion!==3||manifest.cardCount!==362||manifest.playableCardCount!==324||manifest.presentationCardCount!==38||!manifest.cards?.['ST01-01']||!manifest.cards?.['S01-0101b']||!manifest.cards?.['S01-01C1A']||!manifest.cards?.['S02-06C1A']||!manifest.cards?.['ST01-C1st']||!manifest.cards?.['S02-05C1B'])process.exit(2);process.stdout.write(manifest.assetVersion||'')})")"
+  public_asset_version="$(curl -fsS "${public_base}/card-assets/card-assets.manifest.json" | node -e "let body='';process.stdin.on('data',chunk=>body+=chunk);process.stdin.on('end',()=>{const manifest=JSON.parse(body);if(manifest.schemaVersion!==3||manifest.cardCount!==366||manifest.playableCardCount!==324||manifest.presentationCardCount!==42||!manifest.cards?.['ST01-01']||!manifest.cards?.['S01-0101b']||!manifest.cards?.['S01-01M1A']||!manifest.cards?.['S02-01M1A']||!manifest.cards?.['S02-06C1A']||!manifest.cards?.['ST01-C1st']||!manifest.cards?.['S02-05C1B'])process.exit(2);process.stdout.write(manifest.assetVersion||'')})")"
   [[ "$public_asset_version" == "$card_assets_hash" ]] || fail "公网优化卡图 manifest 版本不匹配"
   sample_asset_path="$(node - "${card_assets_target}/card-assets.manifest.json" <<'NODE'
 const manifest = require(process.argv[2])

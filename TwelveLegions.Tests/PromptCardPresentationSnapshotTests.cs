@@ -132,6 +132,28 @@ public sealed class PromptCardPresentationSnapshotTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "prompt-card:graveyard-selection-shows-complete-zone-and-disables-illegal")]
+    public void GraveyardSelectionDisplaysEveryCardButKeepsOnlyLegalTargetsSelectable()
+    {
+        var game = Create();
+        var legal = Card("S01-0104", "grave-legal");
+        var illegal = Card("S01-0003", "grave-illegal");
+        game.State.Players[0].Graveyard.AddRange([legal, illegal]);
+
+        CreatePrompt(game, "grave-card", [legal.InstanceId]);
+        var prompt = SnapshotPrompt(game);
+        var data = prompt.GetProperty("data");
+
+        Assert.Equal(string.Join('|', legal.InstanceId, illegal.InstanceId),
+            data.GetProperty("displayCardIds").GetString());
+        Assert.Equal("graveyard", data.GetProperty("sourceZone").GetString());
+        Assert.Equal([legal.InstanceId], prompt.GetProperty("validChoices").EnumerateArray()
+            .Select(item => item.GetString()!).ToArray());
+        AssertCardMetadata(prompt, legal, "墓地");
+        AssertCardMetadata(prompt, illegal, "墓地");
+    }
+
+    [Fact]
     [Trait("L12Evidence", "prompt-card:trial-order-is-card-order-trigger-order-is-not")]
     public void OrderingKindsUseCardEvidenceInsteadOfBlindKindMatching()
     {

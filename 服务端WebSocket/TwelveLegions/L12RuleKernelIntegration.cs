@@ -75,6 +75,11 @@ public sealed partial class L12GameEngine
             Kind = step.Kind,
             Text = step.Text,
             ValidChoices = step.ValidChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            DisplayChoices = step.DisplayChoices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            DisabledChoiceReasons = new Dictionary<string, string>(step.DisabledChoiceReasons, StringComparer.OrdinalIgnoreCase),
+            UiPattern = step.UiPattern,
+            EffectText = step.EffectText,
+            RequireExplicitDecline = step.RequireExplicitDecline,
             MinChoose = step.MinChoose,
             MaxChoose = step.Kind is "prospective-grave-card" or "grave-faction-count"
                 ? step.MaxChoose
@@ -232,7 +237,7 @@ public sealed partial class L12GameEngine
             }
             // 可选后续段在条件、目标或支付能力不足时，构造器只会留下“不发动”。
             // 该结果没有玩家决策空间：自动记录拒绝并继续后续强制段，避免无意义弹框。
-            if (IsOnlyNegativeOptionalChoice(pendingStep))
+            if (IsOnlyNegativeOptionalChoice(pendingStep) && !pendingStep.RequireExplicitDecline)
             {
                 activation.DeclaredTargets.Add(pendingStep.ValidChoices[0]);
                 if (!string.IsNullOrWhiteSpace(pendingStep.DeclarationKey))
@@ -750,6 +755,12 @@ public sealed partial class L12GameEngine
             ["activationId"] = activation.ActivationId,
             ["activationStep"] = activation.CurrentStep.ToString(),
         };
+        if (step.DisplayChoices.Count > 0)
+            promptData["displayChoiceIds"] = string.Join('|', step.DisplayChoices);
+        foreach (var pair in step.DisabledChoiceReasons)
+            promptData[$"disabledChoice:{pair.Key}"] = pair.Value;
+        if (!string.IsNullOrWhiteSpace(step.UiPattern)) promptData["uiPattern"] = step.UiPattern;
+        if (!string.IsNullOrWhiteSpace(step.EffectText)) promptData["effectText"] = step.EffectText;
         if (!string.IsNullOrWhiteSpace(promptDataChoiceMode))
             promptData["choiceMode"] = promptDataChoiceMode;
         if (!string.IsNullOrWhiteSpace(promptLockedChoices))

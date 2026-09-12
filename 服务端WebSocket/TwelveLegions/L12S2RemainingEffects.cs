@@ -294,7 +294,7 @@ public sealed partial class L12GameEngine
                 masterLegion.SetTroopsValue = int.Parse(item.Data["count"]) * 1000;
                 masterLegion.Troops = masterLegion.SetTroopsValue.Value;
                 player.Field[row][slot] = masterLegion;
-                AddEvent("put", item.Controller, $"孙悟空从主宰区作为兵力{masterLegion.Troops}的【斗士】军团在前排活跃登场", masterLegion);
+                AddEvent("put", item.Controller, $"孙悟空从主宰区作为兵力{masterLegion.CurrentTroops}的【斗士】军团在前排活跃登场", masterLegion);
                 CompleteEffectLegionEntry(item.Controller, masterLegion, "master");
                 FinishStackItem(item); return true;
             }
@@ -728,27 +728,13 @@ public sealed partial class L12GameEngine
     private bool ReturnWukongMasterLegions(L12PlayerState player, string timing, bool resumeEndTurn)
     {
         var returnedAny = false;
-        L12CardInstance? returnedSnapshot = null;
         foreach (var masterLegion in PublicLegions(player).Where(ReturnsToMasterZoneOnDeparture).ToArray())
         {
             if (FindOnField(player, masterLegion.InstanceId, out var row, out var slot) is null) continue;
-            returnedSnapshot ??= CaptureLastKnownSourceSnapshot(masterLegion);
             player.Field[row][slot] = null;
-            ResetCardAfterLeavingField(masterLegion);
+            CompleteMasterLegionDeparture(player, masterLegion, timing, resumeEndTurn);
             returnedAny = true;
-            AddEvent("return", player.PlayerIndex, $"孙悟空在{timing}返回主宰区", masterLegion);
         }
-        if (returnedSnapshot is not null && player.Morale.Count < State.Players[1 - player.PlayerIndex].Morale.Count
-            && player.MoraleDeck.Count > 0)
-            QueueTriggerCandidates([
-                CreateTriggerCandidate(player.PlayerIndex, returnedSnapshot, "active",
-                    "孙悟空返回主宰区后的可选士气效果",
-                    new Dictionary<string, string>
-                    {
-                        ["ability"] = "wukongReturnMorale",
-                        ["resumeEndTurn"] = resumeEndTurn ? "true" : "false",
-                    }, returnedSnapshot)
-            ]);
         RecalculateContinuousTroops();
         return returnedAny;
     }
@@ -756,9 +742,22 @@ public sealed partial class L12GameEngine
     private static bool ReturnsToMasterZoneOnDeparture(L12CardInstance card)
         => card.IsMasterLegion && card.CardId == "S02-01M1";
 
-    private void CompleteMasterLegionDeparture(L12PlayerState owner, L12CardInstance card)
+    private void CompleteMasterLegionDeparture(L12PlayerState owner, L12CardInstance card,
+        string timing = "离场", bool resumeEndTurn = false)
     {
+        var returnedSnapshot = CaptureLastKnownSourceSnapshot(card);
         ResetCardAfterLeavingField(card);
-        AddEvent("return", owner.PlayerIndex, "孙悟空离场，返回主宰区", card);
+        AddEvent("return", owner.PlayerIndex, $"孙悟空在{timing}返回主宰区", card);
+        if (owner.Morale.Count >= State.Players[1 - owner.PlayerIndex].Morale.Count
+            || owner.MoraleDeck.Count == 0) return;
+        QueueTriggerCandidates([
+            CreateTriggerCandidate(owner.PlayerIndex, returnedSnapshot, "active",
+                "孙悟空返回主宰区后的可选士气效果",
+                new Dictionary<string, string>
+                {
+                    ["ability"] = "wukongReturnMorale",
+                    ["resumeEndTurn"] = resumeEndTurn ? "true" : "false",
+                }, returnedSnapshot)
+        ]);
     }
 }

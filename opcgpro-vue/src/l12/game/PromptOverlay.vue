@@ -245,9 +245,9 @@ function detailFor(id: string | null) {
     hasPrintedCost: card?.hasPrintedCost ?? booleanData(id, 'hasPrintedCost'),
     cost: (card?.hasPrintedCost ?? booleanData(id, 'hasPrintedCost')) === false
       ? undefined
-      : card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost'),
-    troops: card?.troops ?? numberData(id, 'troops'),
-    baseTroops: card?.baseTroops ?? numberData(id, 'baseTroops'),
+      : Math.max(0, card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost') ?? 0),
+    troops: Math.max(0, card?.troops ?? numberData(id, 'troops') ?? 0),
+    baseTroops: Math.max(0, card?.baseTroops ?? numberData(id, 'baseTroops') ?? 0),
     disasterLevel: card?.disasterLevel ?? numberData(id, 'disasterLevel'),
   }
 }
@@ -268,8 +268,8 @@ function cardObjectFor(id: string): Card | null {
     effectText: detail.effectText,
     cost: detail.cost ?? 0,
     hasPrintedCost: detail.hasPrintedCost ?? detail.cost !== undefined,
-    baseTroops: detail.baseTroops ?? detail.troops ?? 0,
-    troops: detail.troops ?? detail.baseTroops ?? 0,
+    baseTroops: Math.max(0, detail.baseTroops ?? detail.troops ?? 0),
+    troops: Math.max(0, detail.troops ?? detail.baseTroops ?? 0),
     disasterLevel: detail.disasterLevel ?? 0,
     tapped: false,
     summonRound: 0,
@@ -318,12 +318,17 @@ const isPureEffectDecision = computed(() => Boolean(isEffectDecision.value
   && currentChoices.value.some(choice => isDirectActivationChoice(choice))
   && currentChoices.value.every(choice => isDeclineChoice(choice) || isDirectActivationChoice(choice))))
 const displayCardIds = computed(() => prompt.value?.data?.displayCardIds?.split('|').filter(Boolean) ?? [])
+const displayChoiceIds = computed(() => prompt.value?.data?.displayChoiceIds?.split('|').filter(Boolean) ?? [])
 const displayedChoices = computed(() => {
   if (displayCardIds.value.length) return displayCardIds.value
+  if (displayChoiceIds.value.length) return displayChoiceIds.value
   if (prompt.value?.kind === 'option') return orderedEffectChoices.value
   if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
+function disabledChoiceReason(choice: string) {
+  return prompt.value?.data?.[`disabledChoice:${choice}`] ?? ''
+}
 const primaryChoices = computed(() => (hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))
   ? displayedChoices.value.filter(id => !isDeclineChoice(id)) : displayedChoices.value)
 const supplementalChoices = computed(() => currentChoices.value
@@ -611,9 +616,11 @@ function kindLabel() {
               :intent="usesDetailCardImages ? 'detail' : 'thumb'" :size="isInfoConfirm ? 'featured' : 'standard'"
               :selection-order="selected.includes(choice) && prompt.maxChoose > 1 ? selected.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
-            <button v-else :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+            <button v-else :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
+              :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
+              <small v-if="disabledChoiceReason(choice)">{{ disabledChoiceReason(choice) }}</small>
             </button>
           </template>
         </div>
@@ -747,6 +754,7 @@ function kindLabel() {
 .prompt-choices.effect-option-list{display:flex;width:100%;flex-wrap:wrap;justify-content:center}
 .prompt-choices.effect-option-list>button{flex:0 1 220px;text-align:center}
 .prompt-choices.effect-option-list>button.decline-action{min-height:54px!important}
+.prompt-choices.effect-option-list>button.unavailable-choice{border-color:#4b504e;background:#202423;color:#858b88;cursor:not-allowed;opacity:.72}.prompt-choices.effect-option-list>button.unavailable-choice small{display:block;margin-top:5px;color:#a56f73;font-size:var(--l12-board-micro,9px)}
 .prompt-panel .prompt-action-footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .prompt-action-footer>span{order:-1;flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
 .prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice{box-sizing:border-box;width:112px;min-width:112px;min-height:44px;padding:9px 12px;font-size:var(--l12-board-copy,13px);line-height:1.35;text-align:center}

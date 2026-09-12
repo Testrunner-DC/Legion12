@@ -176,7 +176,7 @@ public sealed class Batch299WukongTombEvidenceTests
     [Fact]
     [Trait("L12Evidence", "card:S02-01M1")]
     [Trait("L12Evidence", "boundary:attacker-dies-before-after-attack")]
-    public void WukongKilledDuringAttackReturnsOnlyToMasterZoneWithoutMoraleReward()
+    public void WukongKilledDuringAttackReturnsToMasterZoneAndOffersMoraleReward()
     {
         var game = Create("S02-01M1", 29902);
         var owner = game.State.Players[0];
@@ -191,9 +191,13 @@ public sealed class Batch299WukongTombEvidenceTests
             Target: new L12AttackTarget("legion", target.InstanceId)));
         Assert.True(attack.Accepted, attack.Error);
 
-        Assert.Null(AdvanceCombatToPublicDecisionOrCompletion(game));
+        var optional = Assert.IsType<L12Prompt>(AdvanceCombatToPublicDecisionOrCompletion(game));
+        Assert.Equal("pending-activation", optional.Continuation);
         AssertOnlyInMasterZone(game, 0, wukong.InstanceId);
-        Assert.Empty(owner.Morale);
+        ResolveChoice(game, "mode:use");
+        PassResponses(game);
+        var morale = Assert.Single(owner.Morale);
+        Assert.True(morale.Tapped);
     }
 
     [Theory]
@@ -211,6 +215,10 @@ public sealed class Batch299WukongTombEvidenceTests
         var owner = game.State.Players[0];
         var wukong = WukongLegion(3000);
         owner.Field[0][0] = wukong;
+        game.State.Players[1].Morale.Add(new L12MoraleCard
+        {
+            InstanceId = $"batch299-opponent-{destination}", CardId = "S01-01C1"
+        });
 
         var moved = destination == "effect-defeat"
             ? game.HandleGm(new L12GmCommand("destroyCard", 0, CardInstanceId: wukong.InstanceId)).Accepted
@@ -219,6 +227,11 @@ public sealed class Batch299WukongTombEvidenceTests
 
         Assert.True(moved);
         AssertOnlyInMasterZone(game, 0, wukong.InstanceId);
+        var optional = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", optional.Continuation);
+        ResolveChoice(game, "mode:use");
+        PassResponses(game);
+        Assert.True(Assert.Single(owner.Morale).Tapped);
     }
 
     [Fact]

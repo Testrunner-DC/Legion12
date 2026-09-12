@@ -126,6 +126,7 @@ public sealed partial class L12GameEngine
         var playerText = L12PlayerFacingText.Naturalize(text);
         var validChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         data ??= [];
+        ExpandGraveyardSelectionDisplay(playerIndex, kind, validChoices, data);
         var explicitlyDisplayedIds = data.GetValueOrDefault("displayCardIds")?
             .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
         string[] previewCardIds = string.IsNullOrWhiteSpace(data.GetValueOrDefault("previewCardId"))
@@ -170,6 +171,30 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Add(prompt);
         AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
+    }
+
+    /// <summary>
+    /// 墓地是公开区域。任何从墓地选择卡牌的效果都展示对应墓地的完整内容，
+    /// 但 ValidChoices 仍只包含当前效果的合法对象，前端据此灰置不可选卡牌。
+    /// 该规则位于公共 Prompt 入口，避免各卡效只把候选子集塞进弹框。
+    /// </summary>
+    private void ExpandGraveyardSelectionDisplay(int playerIndex, string kind,
+        IReadOnlyCollection<string> validChoices, Dictionary<string, string> data)
+    {
+        if (!kind.Equals("grave-card", StringComparison.OrdinalIgnoreCase)) return;
+        var legalIds = validChoices.Where(id => id is not ("skip" or "cancel"))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var matchingOwners = State.Players
+            .Where(player => player.Graveyard.Any(card => legalIds.Contains(card.InstanceId)))
+            .ToArray();
+        if (matchingOwners.Length == 0) matchingOwners = [State.Players[playerIndex]];
+        var existing = data.GetValueOrDefault("displayCardIds")?
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        var displayed = existing.Concat(matchingOwners.SelectMany(player => player.Graveyard)
+                .Select(card => card.InstanceId))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (displayed.Length > 0) data["displayCardIds"] = string.Join('|', displayed);
+        data.TryAdd("sourceZone", "graveyard");
     }
 
     /// <summary>
@@ -517,8 +542,8 @@ public sealed partial class L12GameEngine
         if (!string.IsNullOrWhiteSpace(card.Profession)) data.TryAdd($"{id}:profession", card.Profession);
         data.TryAdd($"{id}:hasPrintedCost", card.HasPrintedCost ? "true" : "false");
         if (card.HasPrintedCost) data.TryAdd($"{id}:cost", card.CurrentCost.ToString());
-        data.TryAdd($"{id}:troops", card.Troops.ToString());
-        data.TryAdd($"{id}:baseTroops", card.BaseTroops.ToString());
+        data.TryAdd($"{id}:troops", card.CurrentTroops.ToString());
+        data.TryAdd($"{id}:baseTroops", Math.Max(0, card.BaseTroops).ToString());
         data.TryAdd($"{id}:disasterLevel", card.DisasterLevel.ToString());
     }
 
@@ -636,6 +661,18 @@ public sealed partial class L12GameEngine
                     player, cards, prompt.Data.GetValueOrDefault("factionConstraint", string.Empty),
                     representedCount, legionOnly))
                 return CommandResult.Reject($"所选卡牌必须能按玩家指定张数合计视为{representedCount}张");
+        }
+        if (!bypassSelectionValidation
+            && prompt.Data.GetValueOrDefault("selectionConstraint") == "hijikata-entry-targets"
+            && chosen.Count == 2)
+        {
+            var opponent = State.Players[1 - playerIndex];
+            var selectedCards = chosen.Select(id => FindOnField(opponent, id, out _, out _)).ToArray();
+            if (selectedCards.Any(card => card is null || !IsFieldLegion(card)
+                    || !L12StructuredCardRules.CurrentCostAtMost(card, 2))
+                || !selectedCards.Any(card => card is not null
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 1)))
+                return CommandResult.Reject("选择2张时，其中至少1张军团的费用必须不高于1");
         }
         var mixedConstraint = prompt.Data.GetValueOrDefault("selectionConstraint");
         if (!bypassSelectionValidation

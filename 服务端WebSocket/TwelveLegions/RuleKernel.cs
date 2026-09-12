@@ -85,7 +85,7 @@ public static class L12DerivedStats
         var setValue = card.SetTroopsValue is not null && card.SetTroopsUntilTurn >= turnSerial
             ? card.SetTroopsValue.Value
             : card.Troops - card.ContinuousTroopsModifier;
-        return setValue + card.ContinuousTroopsModifier;
+        return Math.Max(0, setValue + card.ContinuousTroopsModifier);
     }
 
     public static void SetUntilTurnEnd(L12CardInstance card, int value, int turnSerial)

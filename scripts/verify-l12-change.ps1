@@ -248,7 +248,7 @@ try {
 
     if ($Level -eq "Focused") {
         if ($backendChanged) {
-            Invoke-Checked "L12 focused rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--no-restore")
+            Invoke-Checked "L12 focused rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($platformChanged) {
             $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
@@ -275,7 +275,7 @@ try {
     }
 
     if ($backendChanged) {
-        Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release")
+        Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($platformChanged) {
         $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName

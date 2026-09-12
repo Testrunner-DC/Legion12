@@ -811,10 +811,10 @@ public sealed partial class L12GameEngine
         State.Phase = L12Phase.Defense;
         if (attackTarget is null)
             AddEvent("attack", playerIndex,
-                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.Troops} vs {defender.Name}【{defender.MasterName}】血量{defender.Hp}", attacker);
+                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.CurrentTroops} vs {defender.Name}【{defender.MasterName}】血量{Math.Max(0, defender.Hp)}", attacker);
         else
             AddEvent("attack", playerIndex,
-                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.Troops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.Troops}", attacker, attackTarget);
+                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.CurrentTroops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.CurrentTroops}", attacker, attackTarget);
         if (hasAttackerAttackTiming)
         {
             if (kagutsuchiCandidate is not null)
@@ -1302,7 +1302,7 @@ public sealed partial class L12GameEngine
         };
         State.Phase = L12Phase.Defense;
         AddEvent("piercing", playerIndex,
-            $"贯穿：{attacker.Name}以剩余兵力{attacker.Troops}对{opponent.Name}的主宰发动1次进攻；此次进攻不触发【进攻时】效果",
+            $"贯穿：{attacker.Name}以剩余兵力{attacker.CurrentTroops}对{opponent.Name}的主宰发动1次进攻；此次进攻不触发【进攻时】效果",
             attacker);
         AdvanceCombatTimelineIfIdle();
     }

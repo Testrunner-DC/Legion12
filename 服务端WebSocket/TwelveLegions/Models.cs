@@ -217,6 +217,8 @@ public sealed class L12CardInstance
     public List<L12CardInstance> AttachedCards { get; init; } = [];
 
     public int CurrentCost => Math.Max(0, Cost + CostModifier + ContinuousCostModifier);
+    /// <summary>对规则消费者和玩家投影公开的当前兵力；内部修正累计可以暂时低于0。</summary>
+    public int CurrentTroops => Math.Max(0, Troops);
     /// <summary>场面兵力 UI 的比较基准；设定兵力不是兵力增益。</summary>
     public int DisplayBaseTroops => SetTroopsValue ?? BaseTroops;
     public bool HasRangeBonus => L12StructuredCardRules.HasAnyRowRangeBonus(this);
@@ -515,6 +517,14 @@ public sealed class L12ActivationSelectionStep
     public required string Kind { get; init; }
     public required string Text { get; init; }
     public required List<string> ValidChoices { get; init; }
+    /// <summary>可见但不一定可选的完整选项集；用于保持同类弹框结构稳定。</summary>
+    public List<string> DisplayChoices { get; init; } = [];
+    /// <summary>选项不可用时的服务端权威原因。</summary>
+    public Dictionary<string, string> DisabledChoiceReasons { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public string? UiPattern { get; init; }
+    public string? EffectText { get; init; }
+    /// <summary>即使只剩下拒绝选项也必须显示，不得自动关闭。</summary>
+    public bool RequireExplicitDecline { get; init; }
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
     /// <summary>

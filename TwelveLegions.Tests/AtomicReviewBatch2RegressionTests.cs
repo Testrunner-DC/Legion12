@@ -345,7 +345,7 @@ public sealed class AtomicReviewBatch2RegressionTests
         var cancelGame = Create(6810);
         var (cancelPlayer, cancelTrial) = PrepareCrusade(cancelGame, 2);
         var discard = Card("S01-0003", "crusade-cancel-discard");
-        var recover = Card("S02-0601", "crusade-cancel-recover");
+        var recover = Card("S02-0610", "crusade-cancel-recover");
         cancelPlayer.Hand.Clear();
         cancelPlayer.Graveyard.Clear();
         cancelPlayer.Hand.Add(discard);
@@ -418,7 +418,7 @@ public sealed class AtomicReviewBatch2RegressionTests
         var game = Create(6814);
         var (player, trial) = PrepareCrusade(game, 2);
         var discard = Card("S01-0003", "crusade-paid-discard");
-        var recover = Card("S02-0601", "crusade-paid-recover");
+        var recover = Card("S02-0610", "crusade-paid-recover");
         player.Hand.Clear();
         player.Graveyard.Clear();
         player.Hand.Add(discard);
@@ -445,6 +445,30 @@ public sealed class AtomicReviewBatch2RegressionTests
         Assert.Contains(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add"
             && entry.TargetInstanceId == recover.InstanceId && entry.OriginZone == "graveyard"
             && entry.DestinationZone == "hand");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:crusadeRecover")]
+    public void CrusadeRecoverRejectsAnOtherworldCardWithAnAdditionalTrait()
+    {
+        var game = Create(68141);
+        var (player, trial) = PrepareCrusade(game, 2);
+        var discard = Card("S01-0003", "crusade-extra-trait-discard");
+        var roundTableKnight = Card("S02-0601", "crusade-extra-trait-target");
+        player.Hand.Clear();
+        player.Graveyard.Clear();
+        player.Hand.Add(discard);
+        player.Graveyard.Add(roundTableKnight);
+
+        var rejected = game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
+            Ability: "crusadeRecover"));
+
+        Assert.False(rejected.Accepted);
+        Assert.Equal(2, player.SpecialZones.Runes);
+        Assert.Contains(discard, player.Hand);
+        Assert.Contains(roundTableKnight, player.Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Fact]

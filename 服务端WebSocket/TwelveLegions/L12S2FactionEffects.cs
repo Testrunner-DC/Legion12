@@ -68,7 +68,7 @@ public sealed partial class L12GameEngine
             new("scarabSummon", "主动休整：将墓地1张〈增殖的甲虫〉活跃登场"),
             new("scarabDebuff", "我方回合1次：弃置1张手牌，选择对方最多2张军团，本回合兵力-1000"),
         ],
-        "S02-0603" => [new("merlinRune", "主动休整：消耗1符文，选择敌方军团-3000，或检索费用不高于4的【主动战术】")],
+        "S02-0603" => [new("merlinRune", "主动休整 消耗1符文，可选择以下一项。")],
         "S02-0604" => [new("galahadGrailReward", "《寻找圣杯之旅》完成后 可弃置此军团：抽取1张牌，我方主宰增加1点血量。")],
         "S02-0616" => [new("amakineTop", "主动休整 展示牌库顶部1张牌：若其只拥有【彼界】特征，可加入手牌；否则返回牌库顶部或底部。")],
         "S02-0404" =>
@@ -981,19 +981,34 @@ public sealed partial class L12GameEngine
         {
             var enemy = PublicLegions(State.Players[1 - playerIndex]).Select(card => card.InstanceId).ToList();
             var modes = new List<string>();
-            if (enemy.Count > 0) modes.Add("mode:debuff");
+            var unavailable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (player.SpecialZones.Runes < 1)
+            {
+                unavailable["mode:debuff"] = "需要消耗1符文";
+                unavailable["mode:search"] = "需要消耗1符文";
+            }
+            else if (enemy.Count > 0) modes.Add("mode:debuff");
+            else unavailable["mode:debuff"] = "对方没有可选择的军团";
             // 牌库命中身份与是否命中都在效果合法开始后才可知；声明期只读取公开牌库数量。
-            if (player.Library.Count > 0) modes.Add("mode:search");
-            if (modes.Count == 0) return CommandResult.Reject("没有可选择的公开目标且牌库为空");
+            if (player.SpecialZones.Runes >= 1 && player.Library.Count > 0) modes.Add("mode:search");
+            else if (player.SpecialZones.Runes >= 1) unavailable["mode:search"] = "我方牌库为空";
+            modes.Add("skip");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
                 new L12ActivationSelectionStep
                 {
                     Kind = "option", DeclarationKey = "mode", Text = "梅林：选择效果", ValidChoices = modes, MinChoose = 1, MaxChoose = 1,
+                    DisplayChoices = ["mode:debuff", "mode:search", "skip"],
+                    DisabledChoiceReasons = unavailable,
+                    CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                    UiPattern = "effect-decision",
+                    EffectText = "主动休整 消耗1符文，可选择以下一项。",
+                    RequireExplicitDecline = true,
                     ChoiceLabels = new Dictionary<string, string>
                     {
                         ["mode:debuff"] = "消耗1符文：选择对方1张军团，本回合兵力-3000",
-                        ["mode:search"] = "消耗1符文：检索1张费用不高于4的主动战术",
+                        ["mode:search"] = "消耗1符文：查看我方牌库，选择1张费用不高于4的<主动战术>展示并加入手牌。随后重洗牌库。",
+                        ["skip"] = "不发动",
                     },
                 },
                 new L12ActivationSelectionStep
@@ -1132,7 +1147,9 @@ public sealed partial class L12GameEngine
                 ]);
             }
             if (player.SpecialZones.Runes < 2 || player.Hand.Count == 0) return CommandResult.Reject("需要消耗2符文并弃置1张手牌");
-            var grave = player.Graveyard.Where(card => card.Faction == "otherworld").Select(card => card.InstanceId).ToArray();
+            var grave = player.Graveyard
+                .Where(card => L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, card, "otherworld"))
+                .Select(card => card.InstanceId).ToArray();
             if (grave.Length == 0) return CommandResult.Reject("墓地没有只有【彼界】特征的卡牌");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
@@ -1328,8 +1345,8 @@ public sealed partial class L12GameEngine
                 _ => false,
             };
             if (!valid) return CommandResult.Reject("梅林选择的效果或目标已不合法");
-            source.Tapped = true;
             if (!L12S2ZoneOps.SpendRunes(player, 1)) return CommandResult.Reject("需要消耗1符文");
+            source.Tapped = true;
             var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = declared[0] };
             if (declared.Length == 2) data["target"] = declared[1];
             DeclarePresentationBranch(data, "merlin-rune", "mode", declared[0]);
@@ -1473,7 +1490,8 @@ public sealed partial class L12GameEngine
             {
                 if (declared.Length != 2) return CommandResult.Reject("需要声明弃置手牌和回收墓地牌");
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
-                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "otherworld");
+                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
+                    && L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, card, "otherworld"));
                 if (discard is null || recover is null) return CommandResult.Reject("弃置或回收的卡牌已不合法");
                 discardCost = discard;
             }
@@ -1745,8 +1763,8 @@ public sealed partial class L12GameEngine
             item.Data["amakine-top"] = top.InstanceId;
             AddPresentationEvent("reveal", item.Controller,
                 $"阿麦金展示牌库顶部的〈{top.Name}〉", "S02-0616", "top-card", top);
-            var isOnlyOtherworldTrait = top.Traits.Count == 1
-                && top.Traits.Contains("彼界", StringComparer.OrdinalIgnoreCase);
+            var isOnlyOtherworldTrait = L12StructuredCardRules.HasOnlyEffectiveFactionTrait(
+                player, top, "otherworld");
             item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";
             var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" } : new[] { "top", "bottom" };
             var data = new Dictionary<string, string>
@@ -1802,7 +1820,8 @@ public sealed partial class L12GameEngine
             }
             else if (declared.Length == 2)
             {
-                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.Faction == "otherworld");
+                var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
+                    && L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, card, "otherworld"));
                 if (recover is not null)
                 {
                     player.Graveyard.Remove(recover);
