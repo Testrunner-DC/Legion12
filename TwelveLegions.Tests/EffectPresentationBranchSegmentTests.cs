@@ -205,7 +205,7 @@ public sealed class EffectPresentationBranchSegmentTests
     }
 
     [Fact]
-    public void RealAmbushResponsePublishesSkippedWhenItsDeclaredLegionLeaves()
+    public void RealAmbushResponsePublishesFailedWhenItsDeclaredLegionLeaves()
     {
         var catalog = Catalog;
         var game = Create(catalog, 307304);
@@ -235,8 +235,8 @@ public sealed class EffectPresentationBranchSegmentTests
 
         var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
             && action.Cards.Any(card => card.InstanceId == source.InstanceId));
-        Assert.Equal("skipped", result.EffectResultStatus);
-        Assert.Contains("没有合法处理对象", result.Text, StringComparison.Ordinal);
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains("未能完成结算", result.Text, StringComparison.Ordinal);
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
     }
@@ -326,7 +326,7 @@ public sealed class EffectPresentationBranchSegmentTests
 
         var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
             && action.Cards.Any(card => card.InstanceId == response.InstanceId));
-        Assert.Equal(negateResponse ? "negated" : "skipped", result.EffectResultStatus);
+        Assert.Equal(negateResponse ? "negated" : "failed", result.EffectResultStatus);
         Assert.Equal("无效该效果", result.EffectBranchLabel);
     }
 
@@ -371,7 +371,7 @@ public sealed class EffectPresentationBranchSegmentTests
     }
 
     [Fact]
-    public void LastStandPublishesSkippedWhenItsDeclaredSingleTargetIsNoLongerRested()
+    public void LastStandPublishesFailedWhenItsDeclaredSingleTargetIsNoLongerRested()
     {
         var catalog = Catalog;
         var game = Create(catalog, 307341);
@@ -388,7 +388,7 @@ public sealed class EffectPresentationBranchSegmentTests
 
         var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
             && action.Cards.Any(card => card.InstanceId == response.InstanceId));
-        Assert.Equal("skipped", result.EffectResultStatus);
+        Assert.Equal("failed", result.EffectResultStatus);
         Assert.Equal("单体兵力-2000", result.EffectBranchLabel);
         Assert.Equal(target.BaseTroops, target.Troops);
         Assert.Empty(game.State.PendingPrompts);
@@ -814,7 +814,7 @@ public sealed class EffectPresentationBranchSegmentTests
 
     [Theory]
     [InlineData("ability-rejected", "unavailable")]
-    [InlineData("effect-cancelled", "declined")]
+    [InlineData("effect-cancelled", "failed")]
     [InlineData("effect-negated", "negated")]
     public void PreSettlementOutcomesRemainDistinct(string eventType, string expectedStatus)
     {

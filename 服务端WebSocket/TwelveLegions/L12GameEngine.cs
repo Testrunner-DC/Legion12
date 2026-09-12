@@ -2105,7 +2105,7 @@ public sealed partial class L12GameEngine
             EffectResultStatus = effectMetadata?.ResultStatus ?? type switch
             {
                 "effect-rejected" or "ability-rejected" => "unavailable",
-                "effect-cancelled" => "declined",
+                "effect-cancelled" => "failed",
                 "effect-negated" => "negated",
                 "effect-noop" => "skipped",
                 "effect-failed" => "failed",

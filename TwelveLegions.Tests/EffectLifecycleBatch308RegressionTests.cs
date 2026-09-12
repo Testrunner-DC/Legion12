@@ -219,7 +219,7 @@ public sealed class EffectLifecycleBatch308RegressionTests
         Assert.Contains(vanished, restoredPlayer.Hand);
         var results = ResultsFor(game, source.InstanceId).OrderBy(entry => entry.EffectSegmentIndex).ToArray();
         Assert.True(results.Length == 2, LifecycleDiagnostic(game, source.InstanceId));
-        Assert.Equal(["resolved", "skipped"], results.Select(entry => entry.EffectResultStatus));
+        Assert.Equal(["resolved", "failed"], results.Select(entry => entry.EffectResultStatus));
         Assert.Equal([1, 2], results.Select(entry => entry.EffectSegmentIndex));
     }
 
@@ -305,7 +305,7 @@ public sealed class EffectLifecycleBatch308RegressionTests
         Assert.Equal(0, restoredTarget.CostModifier);
         var results = ResultsFor(game, source.InstanceId).OrderBy(entry => entry.EffectSegmentIndex).ToArray();
         Assert.True(results.Length == 2, LifecycleDiagnostic(game, source.InstanceId));
-        Assert.Equal(["resolved", "skipped"], results.Select(entry => entry.EffectResultStatus));
+        Assert.Equal(["resolved", "failed"], results.Select(entry => entry.EffectResultStatus));
         Assert.Equal([1, 2], results.Select(entry => entry.EffectSegmentIndex));
     }
 

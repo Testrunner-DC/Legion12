@@ -37,7 +37,7 @@ public sealed partial class L12GameEngine
             var result = BeginRepeatedCompositeEffectDeclaration(controller, source);
             if (!result.Accepted)
             {
-                AddEvent("effect-cancelled", controller,
+                AddEvent("effect-noop", controller,
                     $"〈{source.Name}〉的重复效果没有足够的合法选项或目标；未建立效果", source);
                 ResumeAfterPostResolutionGeneratedInteraction();
             }
@@ -48,7 +48,7 @@ public sealed partial class L12GameEngine
             var targets = PublicLegions(State.Players[1 - controller]).Select(card => card.InstanceId).ToArray();
             if (targets.Length == 0)
             {
-                AddEvent("effect-cancelled", controller, $"〈{source.Name}〉的重复效果没有合法目标", source);
+                AddEvent("effect-noop", controller, $"〈{source.Name}〉的重复效果没有合法目标", source);
                 ResumeAfterPostResolutionGeneratedInteraction();
                 return;
             }

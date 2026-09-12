@@ -449,7 +449,57 @@ public sealed class BackendReportBatch296SequencingTests
         Assert.Empty(player.Morale);
         Assert.Equal(front.BaseTroops + 2000, front.Troops);
         Assert.Contains(march, player.Graveyard);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == march.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("已离场", StringComparison.Ordinal)
+            && entry.Text.Contains("不恢复", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:selected-threshold-target-is-revalidated-after-responses")]
+    public void MarchSelectedTargetThatRisesAboveItsTroopLimitFailsAtSettlementWithoutRefund()
+    {
+        var game = Create(296321);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.FreeTacticCount = 1;
+        var march = Card("S01-0118", "batch296-march-threshold-failed");
+        var target = Card("S01-0402", "batch296-march-threshold-target", troops: 6000);
+        player.Hand.Add(march);
+        player.Morale.AddRange([
+            Morale("batch296-march-threshold-m1"),
+            Morale("batch296-march-threshold-m2"),
+        ]);
+        opponent.Field[0][0] = target;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", march.InstanceId)).Accepted);
+        PassResponses(game);
+        Resolve(game, "mode:use");
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Resolve(game, payment.ValidChoices[0], payment.ValidChoices[1]);
+        Resolve(game, target.InstanceId);
+
+        var kill = Assert.Single(game.State.EffectStack, item =>
+            item.Data.GetValueOrDefault("atomicFlow") == "march-kill-segment");
+        Assert.Equal(target.InstanceId, kill.Data.GetValueOrDefault("declared:killTarget"));
+        Assert.Empty(player.Morale);
+
+        // 模拟逆序结算的响应效果先令目标兵力 +1000。
+        target.Troops += 1000;
+        PassResponses(game);
+
+        Assert.Same(target, opponent.Field[0][0]);
+        Assert.DoesNotContain(target, opponent.Graveyard);
+        Assert.Empty(player.Morale);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == march.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("当前兵力已高于6000", StringComparison.Ordinal)
             && entry.Text.Contains("不恢复", StringComparison.Ordinal));
     }
 

@@ -44,6 +44,14 @@ public sealed partial class L12GameEngine
 
     private void ResolveCardEffect(L12StackItem item)
     {
+        if (item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
+        {
+            AddEvent("effect-failed", item.Controller,
+                item.Data.GetValueOrDefault("effectFailureReason")
+                    ?? $"〈{item.SourceName}〉已声明的对象或费用条件在结算前失效");
+            FinishStackItem(item);
+            return;
+        }
         if (TryResolveTrialAdvanceEffect(item)) return;
         // 复合能力拆出的后续独立段已经由前一段指定 atomicFlow；若再次从卡牌根程序
         // 开始执行，会把该 flow 覆盖回第一段并重复提示。后续段直接进入结构化复合路由。
@@ -201,6 +209,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被神妙行军击杀");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场或当前兵力已高于6000");
                 FinishStackItem(item);
                 return;
             }
@@ -234,8 +244,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => L12StructuredCardRules.CurrentCostAtMost(target, 7)) is not null)
                     KillTarget(item, targetId!, "被天诛击杀");
-                else AddEvent("effect-cancelled", item.Controller,
-                    "天诛已声明的费用不高于7目标失效；效果取消", card);
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场或当前费用已高于7");
                 FinishStackItem(item);
                 return;
             }
@@ -245,7 +255,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "moraleTarget").SingleOrDefault();
                 var morale = player.Morale.FirstOrDefault(candidate => candidate.InstanceId == targetId && candidate.Tapped);
                 if (morale is not null) ReadyMoraleByEffect(item.Controller, card, morale, "士气因〈花魁的馈赠〉转为活跃");
-                else AddEvent("effect-cancelled", item.Controller, "花魁的馈赠已声明的休整士气目标已失效", card);
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选士气已离开士气区或不再休整");
                 FinishStackItem(item);
                 return;
             }

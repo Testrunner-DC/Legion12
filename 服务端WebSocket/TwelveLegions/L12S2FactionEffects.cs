@@ -595,9 +595,10 @@ public sealed partial class L12GameEngine
         }
         if (AtomicFlowKey(item, card) == "hela-curse")
         {
-            var target = DeclaredEnemyTarget(item.Controller, CompositeDeclared(item, "curseTarget").SingleOrDefault());
+            var targetId = CompositeDeclared(item, "curseTarget").SingleOrDefault();
+            var target = DeclaredEnemyTarget(item.Controller, targetId);
             if (target is null)
-                AddEvent("effect-cancelled", item.Controller, "海拉声明的军团目标已失效", card);
+                RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场");
             else
                 AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
             FinishStackItem(item);
@@ -605,9 +606,11 @@ public sealed partial class L12GameEngine
         }
         if (AtomicFlowKey(item, card) == "fearless-assassination")
         {
-            var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out var fearlessRow, out _);
+            var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+            var target = FindOnField(player, targetId, out var fearlessRow, out _);
             if (target is null || fearlessRow != 0 || target.Faction != "taiyangcheng")
-                AddEvent("effect-cancelled", item.Controller, "无畏的刺杀声明的前排【太阳城】军团已失效", card);
+                RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场、离开前排或不再具有【太阳城】特征");
             else
             {
                 var expiry = ExpiryAtNextOwnEnd(item.Controller);
@@ -622,15 +625,19 @@ public sealed partial class L12GameEngine
         }
         if (AtomicFlowKey(item, card) == "nyx-primary")
         {
-            var target = DeclaredEnemyTarget(item.Controller, CompositeDeclared(item, "primaryTarget").SingleOrDefault());
+            var targetId = CompositeDeclared(item, "primaryTarget").SingleOrDefault();
+            var target = DeclaredEnemyTarget(item.Controller, targetId);
             if (target is not null) AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+            else RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场");
             FinishStackItem(item);
             return true;
         }
         if (AtomicFlowKey(item, card) == "nyx-secondary")
         {
-            var target = DeclaredEnemyTarget(item.Controller, CompositeDeclared(item, "secondaryTarget").SingleOrDefault());
+            var targetId = CompositeDeclared(item, "secondaryTarget").SingleOrDefault();
+            var target = DeclaredEnemyTarget(item.Controller, targetId);
             if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+            else RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场");
             FinishStackItem(item);
             return true;
         }

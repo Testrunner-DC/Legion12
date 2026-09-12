@@ -1338,6 +1338,7 @@ public sealed partial class L12GameEngine
             // Preserve their last-known data without exposing the internal zone lookup
             // through this prompt/stack boundary or moving a virtual card into a zone.
             SourceSnapshot = data?.GetValueOrDefault("repeatedEffectOnly") == "true"
+                || data?.GetValueOrDefault("preserveSourceSnapshot") == "true"
                 ? CaptureLastKnownSourceSnapshot(source)
                 : null,
         };
@@ -1903,7 +1904,7 @@ public sealed partial class L12GameEngine
         {
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
             if (target is not null) target.Negated = true;
-            else item.Data["effectResultStatus"] = "skipped";
+            else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "响应目标已经离开堆叠");
             AddEvent("effect-negated", item.Controller,
                 target is null ? "响应目标已经离开堆叠" : $"〈{target.SourceName}〉的{target.Text}被无效");
             FinishStackItem(item);
@@ -1914,11 +1915,12 @@ public sealed partial class L12GameEngine
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
             // 抵挡只终止交战，不无效已经发动的【进攻时】效果。
             if (target is null || State.PendingDefense is null)
-                item.Data["effectResultStatus"] = "skipped";
+                RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
+                    target is null ? "响应目标已经离开堆叠" : "原抵挡/支援窗口已经结束");
             else
                 State.PendingDefense.BlockedByResponse = true;
             var card = FindSource(item) ?? item.SourceSnapshot;
-            if (item.Data.GetValueOrDefault("effectResultStatus") != "skipped")
+            if (item.Data.GetValueOrDefault("effectResultStatus") is not ("skipped" or "failed"))
                 AddEvent("defense", item.Controller, "佣兵部队抵挡本次进攻", card is null ? [] : [card]);
             FinishStackItem(item);
             return;

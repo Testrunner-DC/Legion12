@@ -297,6 +297,9 @@ public sealed class StarterTargetedBatch2BRegressionTests
 
         Assert.Same(target, game.State.Players[1].Field[0][0]);
         Assert.DoesNotContain(target, game.State.Players[1].Graveyard);
+        var failure = Assert.Single(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("莫德雷德", StringComparison.Ordinal));
+        Assert.Equal("failed", failure.EffectResultStatus);
     }
 
     [Fact]

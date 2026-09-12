@@ -94,6 +94,23 @@ public sealed partial class L12GameEngine
             BuildEffectEventMetadata(configured, resultStatus), source);
     }
 
+    /// <summary>
+    /// 区分“发动时本来没有对象”与“已声明对象在逆结算后失去合法性”。前者是必发
+    /// 效果的空处理，后者是一次真实的结算失败；两者都不回退已支付费用。
+    /// </summary>
+    private void RecordTargetSettlementFailure(L12StackItem item, string? declaredTarget, string reason)
+    {
+        var wasDeclared = !string.IsNullOrWhiteSpace(declaredTarget)
+            && !declaredTarget.StartsWith("mode:", StringComparison.OrdinalIgnoreCase);
+        item.Data["effectResultStatus"] = wasDeclared ? "failed" : "skipped";
+        var source = FindSource(item) ?? item.SourceSnapshot;
+        AddEvent(wasDeclared ? "effect-failed" : "effect-noop", item.Controller,
+            wasDeclared
+                ? $"〈{item.SourceName}〉已声明的对象在逆结算后不再符合条件：{reason}"
+                : $"〈{item.SourceName}〉发动时没有合法处理对象：{reason}",
+            source is null ? [] : [source]);
+    }
+
     private static string? DeclaredStatus(string type)
         => type is "effect-trigger" or "effect-activation" or "effect-response" ? "declared" : null;
 

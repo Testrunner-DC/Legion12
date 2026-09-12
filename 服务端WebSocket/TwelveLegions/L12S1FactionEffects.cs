@@ -264,8 +264,8 @@ public sealed partial class L12GameEngine
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被神妙行军击杀");
                 else
-                    AddEvent("effect-cancelled", item.Controller,
-                        "神妙行军选择的击杀目标已失效；已返还的士气不恢复", card);
+                    RecordTargetSettlementFailure(item, targetId,
+                        "所选军团已离场或当前兵力已高于6000；已返还的士气不恢复");
                 FinishStackItem(item);
                 return true;
             }
@@ -1160,7 +1160,9 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "olgaDebuff":
-                if (!ApplyDeclaredTroopsDelta(item, -2000)) item.Data["effectResultStatus"] = "skipped";
+                if (!ApplyDeclaredTroopsDelta(item, -2000))
+                    RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                        "所选对方前排军团已离场；若发动时原本无对象则仅跳过本段");
                 FinishStackItem(item);
                 return true;
             case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃"); FinishStackItem(item); return true;
@@ -1321,6 +1323,9 @@ public sealed partial class L12GameEngine
                         if (targetId != "mode:none"
                             && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 3)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
+                        else if (targetId != "mode:none")
+                            RecordTargetSettlementFailure(item, targetId,
+                                "所选军团已离场或当前费用已高于3");
                         break;
                     }
                     case "yomi-kill1":
@@ -1329,6 +1334,9 @@ public sealed partial class L12GameEngine
                         if (targetId != "mode:none"
                             && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
+                        else if (targetId != "mode:none")
+                            RecordTargetSettlementFailure(item, targetId,
+                                "所选军团已离场或当前费用已高于1");
                         break;
                     }
                 }
@@ -1354,8 +1362,8 @@ public sealed partial class L12GameEngine
                 {
                     var targetId = CompositeDeclared(item, "debuffTarget").SingleOrDefault();
                     if (DeclaredEnemyTarget(item.Controller, targetId) is { } debuff) debuff.CostModifier--;
-                    else AddEvent("effect-cancelled", item.Controller,
-                        "天照大神选择的费用降低目标失效；该项目标的费用降低不结算", source is null ? [] : [source]);
+                    else RecordTargetSettlementFailure(item, targetId,
+                        "所选费用降低目标已离场");
                 }
                 else if (AtomicFlowKey(item) == "amaterasu-kill")
                 {
@@ -1363,8 +1371,9 @@ public sealed partial class L12GameEngine
                     if (targetId != "mode:none"
                         && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null)
                         KillTarget(item, targetId!, "被天照大神击杀");
-                    else if (targetId != "mode:none") AddEvent("effect-cancelled", item.Controller,
-                        "天照大神选择的费用为0目标失效；该目标不会被击杀", source is null ? [] : [source]);
+                    else if (targetId != "mode:none")
+                        RecordTargetSettlementFailure(item, targetId,
+                            "所选军团已离场或当前费用不再为0");
                 }
                 FinishStackItem(item);
                 return true;

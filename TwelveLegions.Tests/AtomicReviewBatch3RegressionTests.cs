@@ -377,7 +377,7 @@ public sealed class AtomicReviewBatch3RegressionTests
         enemy.Graveyard.Add(target);
         PassResponses(game);
         Assert.Empty(target.TimedModifiers);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("海拉", StringComparison.Ordinal));
     }
 

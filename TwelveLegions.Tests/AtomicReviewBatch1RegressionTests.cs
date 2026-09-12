@@ -214,9 +214,9 @@ public sealed class AtomicReviewBatch1RegressionTests
         Assert.False(power.Tapped);
         Assert.True(power.IsGodPower);
         Assert.Equal(2000, first.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("目标已失效", StringComparison.Ordinal)
-            && entry.Text.Contains("其余效果继续结算", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("响应逆结算后不再符合条件", StringComparison.Ordinal)
+            && entry.Text.Contains("此前效果不回退", StringComparison.Ordinal));
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
     }

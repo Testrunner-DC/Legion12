@@ -40,6 +40,15 @@ public sealed partial class L12GameEngine
         item.Targets.Add(targetStackId);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
+        if (response.CardId == "S02-0015")
+        {
+            var declaration = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["mode"] = ["mode:pending"],
+            };
+            foreach (var pair in CompositeFirstSegmentData("response:S02-0015", declaration))
+                item.Data[pair.Key] = pair.Value;
+        }
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
@@ -63,8 +72,15 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item))
         {
             case "地主的胁迫":
+            case "landlord-coercion":
             {
-                if (target is null) { FinishStackItem(item); return; }
+                if (target is null)
+                {
+                    RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
+                        "原抵挡/支援权威事件已经离开堆叠");
+                    FinishStackItem(item);
+                    return;
+                }
                 var excluded = target.Data.GetValueOrDefault("blockIds", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var choices = affected.Hand.Where(card => !excluded.Contains(card.InstanceId))
@@ -222,9 +238,18 @@ public sealed partial class L12GameEngine
             case "s2-landlord-extra-discard":
                 if (chosen[0] == "decline")
                 {
+                    DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:invalidate");
+                    item.Data.Remove("presentationSceneId");
                     if (target is not null) target.Data["invalid"] = "true";
+                    else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
+                        "原抵挡/支援权威事件已经离开堆叠");
                 }
-                else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                else
+                {
+                    DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:discard");
+                    item.Data.Remove("presentationSceneId");
+                    MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                }
                 FinishStackItem(item);
                 return true;
             case "s2-poison-discard":

@@ -281,8 +281,9 @@ public sealed class AtomicReviewBatch2RegressionTests
 
         Assert.Equal(["yomi-draw", "yomi-cost-debuff", "yomi-kill1"], flows);
         Assert.Contains(survivingTarget, enemy.Graveyard);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("费用不高于3", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("费用不高于3", StringComparison.Ordinal)
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
     }
 
     [Fact]

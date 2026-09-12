@@ -320,11 +320,126 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: counter.InstanceId)).Accepted);
         var discard = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-landlord-extra-discard", discard.Data["action"]);
+        var counterStack = Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == counter.InstanceId);
+        Assert.Equal("response:S02-0015", counterStack.Data["compositePlan"]);
+        Assert.Equal("landlord-coercion", counterStack.Data["atomicFlow"]);
+        Assert.Equal("mode:pending", counterStack.Data["declared:mode"]);
+        Assert.False(string.IsNullOrWhiteSpace(counterStack.Data["presentationSceneId"]));
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: discard.PromptId, Choice: "decline")).Accepted);
+        var duplicate = game.Handle(1, new L12Command("resolvePrompt",
+            PromptId: discard.PromptId, Choice: "decline"));
 
+        Assert.False(duplicate.Accepted);
         Assert.Equal(hpBefore - 1, game.State.Players[1].Hp);
         Assert.Contains(blocker, game.State.Players[1].Hand);
         Assert.Contains(counter, game.State.Players[0].Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal("抵挡/支援无效", result.EffectBranchLabel);
+        Assert.Equal("对方未额外弃置手牌，本次抵挡/支援无效", result.EffectText);
+    }
+
+    [Fact]
+    public void LandlordsCoercionDiscardBranchKeepsTheDefenseValidAndPublishesNoPrivateIdentity()
+    {
+        var game = Create(seed: 6228);
+        var attacker = Instance("S02-0004", "coercion-discard-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var counter = SetCounter(game, 0, "S02-0015");
+        var blocker = Instance("S02-0004", "coercion-discard-blocker");
+        var extra = Instance("S02-0006", "coercion-private-extra");
+        game.State.Players[1].Hand.Add(blocker);
+        game.State.Players[1].Hand.Add(extra);
+        var hpBefore = game.State.Players[1].Hp;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var defense = game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [blocker.InstanceId]));
+        Assert.True(defense.Accepted, defense.Error);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: counter.InstanceId)).Accepted);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.True(discard.IsPrivate);
+        Assert.Contains(extra.InstanceId, discard.ValidChoices);
+        Assert.DoesNotContain(blocker.InstanceId, discard.ValidChoices);
+        var discardPromptId = discard.PromptId;
+        var counterId = counter.InstanceId;
+        var blockerId = blocker.InstanceId;
+        var extraId = extra.InstanceId;
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredDiscard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(discardPromptId, restoredDiscard.PromptId);
+        Assert.True(restoredDiscard.IsPrivate);
+        Assert.Contains(extraId, restoredDiscard.ValidChoices);
+        Assert.DoesNotContain(blockerId, restoredDiscard.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: restoredDiscard.PromptId,
+            Choice: extra.InstanceId)).Accepted);
+
+        Assert.Equal(hpBefore, game.State.Players[1].Hp);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == blockerId);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == extraId);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counterId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal("额外弃置手牌", result.EffectBranchLabel);
+        Assert.Equal("对方额外弃置1张手牌，本次抵挡/支援继续", result.EffectText);
+        Assert.DoesNotContain(extraId, result.EffectText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NegatedLandlordsCoercionNeverOpensItsDiscardPromptAndKeepsTheDefenseValid()
+    {
+        var game = Create(seed: 6229);
+        var attacker = Instance("S02-0004", "coercion-negated-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var coercion = SetCounter(game, 0, "S02-0015");
+        var blocker = Instance("S02-0004", "coercion-negated-blocker");
+        var discardCost = Instance("S02-0006", "coercion-negated-cost");
+        game.State.Players[1].Hand.Add(blocker);
+        game.State.Players[1].Hand.Add(discardCost);
+        var hpBefore = game.State.Players[1].Hp;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var negate = SetCounter(game, 1, "S01-0016");
+        Assert.True(game.Handle(1, new L12Command("resolveDefense",
+            CardInstanceIds: [blocker.InstanceId])).Accepted);
+        var coercionPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(coercion.InstanceId, coercionPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: coercionPrompt.PromptId, Choice: coercion.InstanceId)).Accepted);
+
+        var negatePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(negate.InstanceId, negatePrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt",
+            PromptId: negatePrompt.PromptId, Choice: negate.InstanceId)).Accepted);
+        var negateCost = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt",
+            PromptId: negateCost.PromptId, Choice: discardCost.InstanceId)).Accepted);
+
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-landlord-extra-discard");
+        Assert.Equal(hpBefore, game.State.Players[1].Hp);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == blocker.InstanceId);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == coercion.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.Equal("等待对方选择", result.EffectBranchLabel);
     }
 
     [Fact]

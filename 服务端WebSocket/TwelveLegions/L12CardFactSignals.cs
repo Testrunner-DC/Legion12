@@ -103,7 +103,10 @@ public sealed partial class L12GameEngine
             currentStack.Data["effectResultStatus"] = type switch
             {
                 "effect-noop" => "skipped",
-                "effect-cancelled" => "declined",
+                // Historical resolvers used effect-cancelled for an object, source,
+                // slot or payment state that became invalid while settling.  That is
+                // a failed settlement, not the player's explicit decision to decline.
+                "effect-cancelled" => "failed",
                 _ => "failed",
             };
             return;

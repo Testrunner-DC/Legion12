@@ -361,6 +361,10 @@ internal static partial class L12CompositeEffectPlans
                 new("empty-city-draw", "若我方前排没有军团，可抽取1张牌",
                     "mode:draw", RequiredDeclarationKey: "drawMode"),
             ],
+            ["response:S02-0015"] =
+            [
+                new("landlord-coercion", "对方需额外弃置1张手牌，否则本次抵挡/支援无效"),
+            ],
             ["wisdom-reward:S01-0224"] =
             [
                 new("wisdom-draw", "抽取1张牌"),
@@ -1476,7 +1480,7 @@ public sealed partial class L12GameEngine
     {
         if (!TryBuildCompositeSegmentDeclarationSteps(item.Controller, item, segment, out var steps))
         {
-            AddEvent("effect-cancelled", item.Controller,
+            AddEvent("effect-noop", item.Controller,
                 $"〈{source.Name}〉的“{segment.Text}”当前没有合法对象；仅跳过该段", source);
             return false;
         }
@@ -1636,6 +1640,8 @@ public sealed partial class L12GameEngine
         var planId = item.Data.GetValueOrDefault("compositePlan");
         if (source is null && planId?.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
             source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        if (source is null && item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
+            source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
         var singleResponseEffect = item.Data.GetValueOrDefault("compositeResponseScope") == "single-effect"
@@ -1705,16 +1711,14 @@ public sealed partial class L12GameEngine
             if (!CompositeSegmentEnabled(next, item)) continue;
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
-                AddEvent("effect-cancelled", item.Controller,
-                    $"〈{source.Name}〉的“{next.Text}”因目标已失效而取消；其余效果继续结算", source);
-                continue;
+                return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉的“{next.Text}”已声明对象在前段及响应逆结算后不再符合条件；此前效果不回退");
             }
             if (item.Data.GetValueOrDefault("repeatedEffectOnly") != "true"
                 && !next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
             {
-                AddEvent("effect-cancelled", item.Controller,
-                    $"〈{source.Name}〉的“{next.Text}”因费用对象或目标失效而取消；未发生部分支付，其余效果继续结算", source);
-                continue;
+                return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉的“{next.Text}”已声明费用对象在结算前失效；未发生部分支付，此前效果不回退");
             }
             var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
             {
@@ -1728,6 +1732,9 @@ public sealed partial class L12GameEngine
             data.Remove("effectResultPublished");
             data.Remove("effectResultStatus");
             data.Remove("presentationSceneId");
+            data.Remove("skipCompositeSettlement");
+            data.Remove("effectFailureReason");
+            data.Remove("unrespondable");
             // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
             // 对同一项能力中的单个句子另行无效。
             if (singleResponseEffect) data["unrespondable"] = "true";
@@ -1742,6 +1749,31 @@ public sealed partial class L12GameEngine
             return true;
         }
         return false;
+    }
+
+    private bool QueueFailedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
+    {
+        var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
+        {
+            ["compositeSegment"] = segmentIndex.ToString(),
+            ["atomicFlow"] = segment.Flow,
+            ["atomicContinuation"] = "true",
+            ["skipCompositeSettlement"] = "true",
+            ["effectResultStatus"] = "failed",
+            ["effectFailureReason"] = reason,
+            ["unrespondable"] = "true",
+            ["preserveSourceSnapshot"] = "true",
+        };
+        data.Remove("effectResultPublished");
+        data.Remove("presentationSceneId");
+        data.Remove("wisdomRewards");
+        var trigger = item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger;
+        PushEffect(item.Controller, source, trigger, segment.Text,
+            CompositeSegmentTargets(segment, item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase)), data);
+        return true;
     }
 
     private bool ValidateCompositeSegmentTargets(int controller, string flow, L12StackItem item)

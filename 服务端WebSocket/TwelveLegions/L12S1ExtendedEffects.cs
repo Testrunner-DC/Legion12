@@ -238,9 +238,10 @@ public sealed partial class L12GameEngine
                 }
                 else
                 {
-                    var target = FindOnField(enemy, CompositeDeclared(item, "singleTarget").SingleOrDefault(), out _, out _);
+                    var targetId = CompositeDeclared(item, "singleTarget").SingleOrDefault();
+                    var target = FindOnField(enemy, targetId, out _, out _);
                     if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, card.Name);
-                    else item.Data["effectResultStatus"] = "skipped";
+                    else RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场");
                 }
                 FinishStackItem(item);
                 return true;
@@ -969,7 +970,8 @@ public sealed partial class L12GameEngine
             {
                 var target = PublicLegions(player).FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target"));
                 if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
-                else item.Data["effectResultStatus"] = "skipped";
+                else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                    "所选我方军团已离场");
                 FinishStackItem(item);
                 return;
             }
@@ -1007,7 +1009,8 @@ public sealed partial class L12GameEngine
                     var target = PublicLegions(State.Players[1 - item.Controller])
                         .FirstOrDefault(card => card.InstanceId == declared && card.Tapped);
                     if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
-                    else item.Data["effectResultStatus"] = "skipped";
+                    else RecordTargetSettlementFailure(item, declared,
+                        "所选军团已离场或不再处于休整状态");
                 }
                 FinishStackItem(item);
                 return;
@@ -1029,12 +1032,13 @@ public sealed partial class L12GameEngine
                 return;
             case "seppuku-cost":
             {
-                var target = DeclaredEnemyTarget(item.Controller,
-                    PublicTriggerDeclared(item, "costTarget"));
+                var declaredTarget = PublicTriggerDeclared(item, "costTarget");
+                var target = DeclaredEnemyTarget(item.Controller, declaredTarget);
                 if (target is not null)
                     AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 else
-                    item.Data["effectResultStatus"] = "skipped";
+                    RecordTargetSettlementFailure(item, declaredTarget,
+                        "所选对方军团已离场；若发动时原本无对象则仅跳过本段");
                 FinishStackItem(item);
                 return;
             }
@@ -1137,7 +1141,8 @@ public sealed partial class L12GameEngine
                 if (valid)
                     _ = TrySummonFromAnyPrivateZone(player, battlefield, plannedGuard, slot, false);
                 else
-                    item.Data["effectResultStatus"] = "skipped";
+                    RecordTargetSettlementFailure(item, plannedGuard,
+                        "所选陵墓守卫、战场或登场位置不再合法");
                 FinishStackItem(item);
                 return;
             }

@@ -512,7 +512,8 @@ public sealed partial class L12GameEngine
                     if (DeclaredEnemyTarget(item.Controller, hondaTarget,
                             target => L12StructuredCardRules.CurrentCostEquals(target, 0)) is not null)
                         KillTarget(item, hondaTarget!, "被本多忠胜击杀");
-                    else Cancel("本多忠胜选择的费用为0目标失效；该目标不会被击杀");
+                    else RecordTargetSettlementFailure(item, hondaTarget,
+                        "所选军团已离场或当前费用不再为0");
                 }
                 Finish(); return true;
             case "hanxin":
