@@ -788,6 +788,13 @@ public sealed class CombatTimelineRegressionTests
             Choice: attacker.InstanceId)).Accepted);
         Assert.Equal(handBefore + 1, game.State.Players[1].Hand.Count);
         Assert.Equal(-2, attacker.CostModifier);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.InstanceId == seppuku.InstanceId))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal([1, 2], results.Select(entry => entry.EffectSegmentIndex));
+        Assert.Equal(["resolved", "resolved"], results.Select(entry => entry.EffectResultStatus));
+        Assert.Equal(["抽取1张牌", "令已声明的对方军团直到下个我方回合结束前费用-2"],
+            results.Select(entry => entry.EffectText));
     }
 
     [Fact]

@@ -28,6 +28,8 @@ internal static partial class L12CompositeEffectPlans
     {
         "trigger:S01-0001:enter",
         "trigger:S02-0101:enter",
+        "trigger:S01-0223:reaction",
+        "trigger:S01-0420:reaction",
         "active:S01-04M1:amaterasuReady",
         "S02-0620",
     };
@@ -335,6 +337,18 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("regency-entry", "从我方手牌中将已声明的1张费用不高于3的军团活跃登场",
                     PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"]),
+            ],
+            ["trigger:S01-0223:reaction"] =
+            [
+                new("immortal-gift-draw", "抽取1张牌"),
+                new("immortal-gift-summon", "随后可将墓地1张〈陵墓守卫〉活跃登场",
+                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"]),
+            ],
+            ["trigger:S01-0420:reaction"] =
+            [
+                new("seppuku-draw", "抽取1张牌"),
+                new("seppuku-cost", "令已声明的对方军团直到下个我方回合结束前费用-2",
+                    PublicTargetKeys: ["costTarget"]),
             ],
             ["trigger:ST01-10:reaction"] =
             [
@@ -1708,6 +1722,12 @@ public sealed partial class L12GameEngine
                 ["atomicFlow"] = next.Flow,
                 ["atomicContinuation"] = "true",
             };
+            // 结算结果与场景身份属于单个效果段，绝不能沿用上一段。否则下一段虽然
+            // 实际完成了结算，却会因 effectResultPublished=true 静默丢失结果日志，
+            // 并把首段动效文本误当作后续段的展示来源。
+            data.Remove("effectResultPublished");
+            data.Remove("effectResultStatus");
+            data.Remove("presentationSceneId");
             // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
             // 对同一项能力中的单个句子另行无效。
             if (singleResponseEffect) data["unrespondable"] = "true";

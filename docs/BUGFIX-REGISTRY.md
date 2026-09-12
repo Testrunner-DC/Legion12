@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-13 复合效果后段执行但结果日志被首段状态吞掉
+
+- 现象与根因：不朽之礼和切腹仪式仍以旧整卡处理体一次性结算，无法表达“抽牌成功、后段选择不发动/目标失效”的部分结果。进一步检查`QueueNextCompositeSegment`发现，通用续段数据会复制首段完成后写入的`effectResultPublished`、`effectResultStatus`和`presentationSceneId`；后段因此可能真实执行却被去重标记阻止发布结果，并沿用首段场景。
+- 公共修复：每个后续段建立前清除上述三项段级状态，再以自己的`atomicFlow`及公开声明重新解析场景并发布唯一结果。该修复作用于全部组合计划，不以卡号做日志补丁；同一能力仅响应一次的计划仍让后段不可单独响应，首段被无效则整项停止。
+- 卡牌迁移：S01-0223不朽之礼拆为抽牌与可选守卫登场；选择不登场为`declined`，守卫/战场/位置失效为`skipped`，抽牌失败为`failed`且停止后段。S01-0420切腹仪式拆为抽牌与目标费用-2；无合法对象仍必发抽牌后`skipped`，唯一对象仍要求点击，目标结算前失效不回滚抽牌。旧不朽之礼StackItem继续使用旧整段处理体，保证升级恢复兼容。
+- 同类扫描：`rg -n "effectResultPublished|effectResultStatus|presentationSceneId|QueueNextCompositeSegment|compositeSegment" 服务端WebSocket/TwelveLegions TwelveLegions.Tests`核对全部组合计划、StackItem结果投影与检查点路径；复合旧响应体从5项降为3项（地主的胁迫、乾坤·阴、特洛伊木马）。公开场景不包含守卫或目标实例ID。
+- 防回滚与验证：新增成功、无对象、主动拒绝、目标失效、抽牌失败、整项被无效、旧Prompt重复提交、重连场景/目标保持及旧StackItem兼容测试；真实战斗切腹仪式固定两段均成功。专项111/111、完整Batch规则2940/2940零失败零跳过，S1/S2/ST逐能力、324卡原子、声明与私区事务门禁全部通过；未部署。
+
 ## 2026-09-12 响应运行时触发无法定位印刷效果段
 
 - 现象与根因：响应堆叠使用`response-block/response-negate/reaction/response-retarget-master`，而原子能力按印刷时点保存，旧场景解析按同名触发无法找到场景。结果事件因此不能关联准确响应段；若只按`reaction`统计还会漏掉佣兵、落穴和傀儡等真实入口。

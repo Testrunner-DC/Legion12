@@ -1480,6 +1480,10 @@ public sealed partial class L12GameEngine
                 AddEvent("effect-cancelled", candidate.Controller, error);
                 error = null;
             }
+            activation.DeclaredValues["entryMode"] =
+                activation.DeclaredValues.GetValueOrDefault("entryCard", []).SingleOrDefault() == "mode:none"
+                    ? ["mode:none"]
+                    : ["mode:summon"];
         }
         else if (fifthBatchPlan == "blood-eagle")
         {
@@ -1648,6 +1652,13 @@ public sealed partial class L12GameEngine
         else if (key is ("S01-0021", "reaction", _))
         {
             var composite = CompositeFirstSegmentData("trigger:S01-0021:reaction",
+                activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
+        else if (key is ("S01-0223", "reaction", _))
+        {
+            var composite = CompositeFirstSegmentData("trigger:S01-0223:reaction",
                 activation.DeclaredValues);
             foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
             RefreshDeclaredPresentationSceneId(candidate, declaredSource);

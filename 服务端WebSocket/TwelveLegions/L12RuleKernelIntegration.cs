@@ -1863,8 +1863,21 @@ public sealed partial class L12GameEngine
         }
         else if (postAttackDeclaration == "seppuku")
         {
-            steps.Add(TriggerStep("field-legion", "切腹仪式：预先选择对方1张军团，直到下个我方回合结束前费用-2",
-                PublicLegions(opponent).Select(card => card.InstanceId), 1));
+            var targets = PublicLegions(opponent).Select(card => card.InstanceId).ToArray();
+            if (targets.Length == 0)
+            {
+                var noTarget = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["costTarget"] = ["mode:none"],
+                };
+                candidate.Data["declaredTargets"] = "mode:none";
+                foreach (var pair in CompositeFirstSegmentData("trigger:S01-0420:reaction", noTarget))
+                    candidate.Data[pair.Key] = pair.Value;
+                RefreshDeclaredPresentationSceneId(candidate, source);
+            }
+            else
+                steps.Add(TriggerStep("field-legion", "切腹仪式：预先选择对方1张军团，直到下个我方回合结束前费用-2",
+                    targets, 1));
         }
         else if (candidate.Trigger != "death") return false;
         else if (candidate.SourceCardId == "S01-0108" && State.ActivePlayer != candidate.Controller)
@@ -2003,6 +2016,21 @@ public sealed partial class L12GameEngine
         }
         if (!TryCommitPreparedPrideMasterSurcharge(candidate, activation)) return;
         candidate.Data["declaredTargets"] = string.Join('|', declared);
+        if (candidate.SourceCardId == "S01-0420"
+            && candidate.Trigger == "reaction"
+            && declared.Count == 1)
+        {
+            var compositeDeclaration = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["costTarget"] = [declared[0]],
+            };
+            var composite = CompositeFirstSegmentData("trigger:S01-0420:reaction", compositeDeclaration);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+            var declaredSource = FindAuthoritativeCard(candidate.SourceInstanceId)
+                ?? candidate.SourceSnapshot;
+            if (declaredSource is not null)
+                RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
         if (candidate.SourceCardId == "S01-0017"
             && candidate.Trigger == "reaction"
             && declared.Count == 1)

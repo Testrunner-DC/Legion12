@@ -1019,6 +1019,25 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(seppukuTarget, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 FinishStackItem(item);
                 return;
+            case "seppuku-draw":
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    item.Data.Remove("compositePlan");
+                }
+                FinishStackItem(item);
+                return;
+            case "seppuku-cost":
+            {
+                var target = DeclaredEnemyTarget(item.Controller,
+                    PublicTriggerDeclared(item, "costTarget"));
+                if (target is not null)
+                    AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
+                else
+                    item.Data["effectResultStatus"] = "skipped";
+                FinishStackItem(item);
+                return;
+            }
             case "摄政皇权":
             case "regency-entry":
             {
@@ -1090,6 +1109,38 @@ public sealed partial class L12GameEngine
                 }
                 if (item.Data.ContainsKey("declared:entryCard")) { FinishStackItem(item); return; }
                 FinishStackItem(item); return;
+            case "immortal-gift-draw":
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    item.Data.Remove("compositePlan");
+                }
+                FinishStackItem(item);
+                return;
+            case "immortal-gift-summon":
+            {
+                if (PublicTriggerDeclared(item, "entryMode") != "mode:summon")
+                {
+                    item.Data["effectResultStatus"] = "declined";
+                    FinishStackItem(item);
+                    return;
+                }
+                var plannedGuard = PublicTriggerDeclared(item, "entryCard");
+                var battlefield = ParseEffectEntryBattlefieldChoice(
+                    PublicTriggerDeclared(item, "entryBattlefield")) ?? item.Controller;
+                var slot = PublicTriggerDeclared(item, "entrySlot");
+                var valid = !string.IsNullOrWhiteSpace(plannedGuard)
+                    && player.Graveyard.Any(card => card.InstanceId == plannedGuard
+                        && card.CardId == "S01-0212"
+                        && EffectEntryBattlefieldChoices(item.Controller, card).Contains(battlefield))
+                    && EmptySlots(State.Players[battlefield]).Contains(slot, StringComparer.OrdinalIgnoreCase);
+                if (valid)
+                    _ = TrySummonFromAnyPrivateZone(player, battlefield, plannedGuard, slot, false);
+                else
+                    item.Data["effectResultStatus"] = "skipped";
+                FinishStackItem(item);
+                return;
+            }
             case "智慧法典 卷一":
             {
                 var opponent = State.Players[1 - item.Controller];
