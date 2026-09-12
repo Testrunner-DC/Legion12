@@ -46,9 +46,17 @@ public sealed partial class L12GameEngine
     {
         if (item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
         {
-            AddEvent("effect-failed", item.Controller,
+            var status = item.Data.GetValueOrDefault("effectResultStatus");
+            AddEvent(status switch
+                {
+                    "skipped" => "effect-noop",
+                    "declined" => "effect-declined",
+                    _ => "effect-failed",
+                }, item.Controller,
                 item.Data.GetValueOrDefault("effectFailureReason")
-                    ?? $"〈{item.SourceName}〉已声明的对象或费用条件在结算前失效");
+                    ?? (status == "skipped"
+                        ? $"〈{item.SourceName}〉发动时没有合法处理对象"
+                        : $"〈{item.SourceName}〉已声明的对象或费用条件在结算前失效"));
             FinishStackItem(item);
             return;
         }

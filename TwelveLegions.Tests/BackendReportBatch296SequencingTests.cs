@@ -535,9 +535,10 @@ public sealed class BackendReportBatch296SequencingTests
         Assert.DoesNotContain(game.State.EffectStack.Concat(game.State.DeferredEffectStack), item =>
             item.Data.GetValueOrDefault("atomicFlow") == "march-kill-segment");
         Assert.Contains(march, player.Graveyard);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("目标已失效", StringComparison.Ordinal)
-            && entry.Text.Contains("不回退", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == march.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("failed", result.EffectResultStatus);
     }
 
     [Fact]

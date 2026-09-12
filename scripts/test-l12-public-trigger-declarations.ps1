@@ -267,8 +267,11 @@ if ($zones.IndexOf('Library.Insert(0, sourceSnapshot)', [StringComparison]::Ordi
 }
 
 Assert-Contains $counter 'var revealed = player.Library[0];' 'Cosmos Yin must inspect the hidden library top only during legal resolution.'
-Assert-Contains $counter 'CreateDelayedPublicResolutionPrompt(item' 'Cosmos Yin must declare its public target only after the hidden reveal.'
-Assert-Contains $plans 'data["declarationTiming"] = "post-hidden-reveal"' 'Delayed public resolution prompts need an explicit post-reveal timing marker.'
+Assert-Contains $composite '["response:S02-0106"]' 'Cosmos Yin must use the structured response plan.'
+Assert-Contains $composite 'new("cosmos-yin-buff"' 'Cosmos Yin must declare its public target as a delayed second segment.'
+Assert-Contains $composite 'DeclarationTiming: "post-hidden-reveal"' 'Cosmos Yin needs an explicit post-reveal timing declaration.'
+Assert-Contains $composite 'prompt.Data["declarationTiming"] = segment.DeclarationTiming' 'Delayed public resolution prompts must project their configured timing marker.'
+Assert-Contains $prompts 'data?.GetValueOrDefault("sameStackContinuation") == "true"' 'Response continuations must stay above their underlying stack item.'
 Assert-Contains $prompts 'or "S02-0106")' 'Cosmos Yin responses must route to their own effect instead of generic negate handling.'
 if ($plans.IndexOf('"S02-0106"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cosmos Yin must not be placed in the pre-reveal public trigger planner.'

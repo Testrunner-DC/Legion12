@@ -1349,7 +1349,15 @@ public sealed partial class L12GameEngine
             PublishEffectPresentation("effect-activation", controller, source, trigger, text, item.Data);
         else if (IsDirectTriggeredEffect(trigger, source, text))
             PublishEffectPresentation("effect-trigger", controller, source, trigger, text, item.Data);
-        if (State.IsResolvingStack)
+        // 同一项已完成响应的复合效果，其内部后续段必须继续压在当前下层效果之上。
+        // 若仍按普通“结算中产生的新效果”送入 DeferredEffectStack，响应效果的首段
+        // 完成后会先错误结算原效果，再处理响应效果的“随后”子句，破坏逆序结算。
+        if (State.IsResolvingStack && data?.GetValueOrDefault("sameStackContinuation") == "true")
+        {
+            State.EffectStack.Add(item);
+            AddEvent("stack-push", controller, $"〈{source.Name}〉的{stackText}继续在同一效果内结算", source);
+        }
+        else if (State.IsResolvingStack)
         {
             State.DeferredEffectStack.Add(item);
             AddEvent("stack-deferred", controller, $"〈{source.Name}〉的{stackText}将在当前堆叠关闭后开启新堆叠", source);
@@ -2009,6 +2017,17 @@ public sealed partial class L12GameEngine
         }
         if (queueExorcistReturn) QueueS2ExorcistReturns(item.Controller, completedSource!);
         if (queueAngusTrial) QueueS2AngusTacticTrial(item.Controller, completedSource!);
+        // 延后到本段结算后才声明目标的“随后”子句，必须在玩家完成声明前冻结
+        // 已经通过响应窗口的下层堆叠。声明完成后，新段会压回下层效果之上；声明
+        // 失败时则由 AbortCompositeSegmentDeclaration 直接恢复下层逆序结算。
+        if (queuedCompositeContinuation && State.PendingActivations.Any(activation =>
+                activation.Ability == CompositeSegmentDeclarationAbility
+                && TryReadCompositeSegmentDeclarationContext(activation, out var context)
+                && context.Data.GetValueOrDefault("sameStackContinuation") == "true"))
+        {
+            State.IsResolvingStack = false;
+            return;
+        }
         if (State.EffectStack.Count > 0)
         {
             if (State.IsResolvingStack) ResolveTopStack();

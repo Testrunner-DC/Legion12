@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-09-13 响应效果的“随后”段落到原效果之后结算
+
+- 现象与根因：乾坤·阴首段展示/弃置后才知道是否需要选择增益目标；迁入组合计划时发现，`PushEffect`会把结算中生成的所有续段一律送入`DeferredEffectStack`。若当前项是压在对方效果上的响应，系统会先恢复并结算下层原效果，待整栈关闭后才处理响应自己的“随后”段，违反后进先出。延迟声明期间也没有冻结下层；旧`effect-cancelled`还会把当时位于栈顶的下层项目误标失败。
+- 公共修复：一次响应的复合能力用`sameStackContinuation`将内部续段保持在当前堆叠；需段首声明时暂停下层，声明终态成为带原计划、段号和场景身份的`failed/declined`结算项，再恢复下层。无对象使用同一终态载体发布`skipped`。后段清除上一段`presentationFlow`，跨段仅保留明确的公开声明与所需结果值。
+- 乾坤·阴迁移：`response:S02-0106`固定为展示/分支第1/2段及命中后增益第2/2段；牌库顶仅在合法结算读取，符合费用不高于3的【天廷】军团才弃置并保存其当前费用/兵力，否则置底；命中后才显示标准我方军团目标弹框。被无效不读取牌库，未命中不建目标选择，无军团则空处理。
+- 同类扫描：`rg -n "SingleResponseEffectPlans|DeclareAtSegmentStart: true|DeferredEffectStack|QueueNextCompositeSegment|CreateDelayedPublicResolutionPrompt" 服务端WebSocket/TwelveLegions TwelveLegions.Tests scripts`。复核七项一次响应计划及所有延迟声明段；不朽之礼、切腹仪式与乾坤·阴共享响应内续段风险。响应初始分支改由计划表驱动，生产卡号条件分支从187降至186。
+- 防回滚：真实卡诺匹斯罐三下层效果固定在乾坤·阴目标段之后完成；覆盖命中加费用/兵力、未命中置底、命中无目标`skipped`、绝对防御无效且不揭示、目标失效`failed`、旧Prompt重复拒绝及检查点恢复。最终相关回归133/133、Batch规则2947/2947零失败零跳过；本批未部署。
+
 ## 2026-09-13 已选目标在逆序结算后失效却被记为跳过/主动放弃
 
 - 现象与根因：部分结构化入口把已选择目标在响应后离场或越过阈值记为`skipped`，大量旧结算器又使用`effect-cancelled`并被共享映射成`declined`，导致日志把真实结算失败误写成“玩家选择不发动”。组合续段的目标失效还会直接`continue`，缺少该段的失败结果事件。

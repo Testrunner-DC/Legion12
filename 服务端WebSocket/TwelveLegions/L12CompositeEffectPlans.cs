@@ -13,7 +13,8 @@ internal sealed record L12CompositeEffectSegmentSpec(
     string[]? PublicTargetKeys = null,
     bool PreStackCost = false,
     string? RequiredDeclarationKey = null,
-    bool DeclareAtSegmentStart = false);
+    bool DeclareAtSegmentStart = false,
+    string? DeclarationTiming = null);
 
 /// <summary>
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
@@ -30,12 +31,33 @@ internal static partial class L12CompositeEffectPlans
         "trigger:S02-0101:enter",
         "trigger:S01-0223:reaction",
         "trigger:S01-0420:reaction",
+        "response:S02-0106",
         "active:S01-04M1:amaterasuReady",
         "S02-0620",
     };
 
     internal static bool UsesSingleResponseEffect(string? planId)
         => !string.IsNullOrWhiteSpace(planId) && SingleResponseEffectPlans.Contains(planId);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>
+        ResponseInitialDeclarations =
+            new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["response:S02-0015"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["mode"] = "mode:pending",
+                },
+                ["response:S02-0106"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["revealMode"] = "mode:pending",
+                },
+            };
+
+    internal static Dictionary<string, List<string>>? InitialResponseDeclaration(string planId)
+        => ResponseInitialDeclarations.TryGetValue(planId, out var declaration)
+            ? declaration.ToDictionary(pair => pair.Key, pair => new List<string> { pair.Value },
+                StringComparer.OrdinalIgnoreCase)
+            : null;
 
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> HandPlayPlans =
         new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
@@ -364,6 +386,14 @@ internal static partial class L12CompositeEffectPlans
             ["response:S02-0015"] =
             [
                 new("landlord-coercion", "对方需额外弃置1张手牌，否则本次抵挡/支援无效"),
+            ],
+            ["response:S02-0106"] =
+            [
+                new("cosmos-yin-reveal", "展示牌库顶部1张牌并按条件弃置或置于牌库底部"),
+                new("cosmos-yin-buff", "选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力",
+                    "mode:hit", PublicTargetKeys: ["buffTarget"],
+                    RequiredDeclarationKey: "revealMode", DeclareAtSegmentStart: true,
+                    DeclarationTiming: "post-hidden-reveal"),
             ],
             ["wisdom-reward:S01-0224"] =
             [
@@ -1364,8 +1394,18 @@ public sealed partial class L12GameEngine
         => item.Data.Where(pair =>
                 pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
                 || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
+                || pair.Key is "bonusTroops" or "bonusCost"
                 || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan")
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+    private static bool CompositeSegmentAlreadyDeclaredAsDisabled(
+        L12CompositeEffectSegmentSpec segment, L12StackItem item)
+    {
+        if (segment.RequiredMode is null) return false;
+        var declared = CompositeDeclared(item, segment.RequiredDeclarationKey ?? "mode");
+        return declared.Length > 0
+            && !declared.Contains(segment.RequiredMode, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static void CopyCompositeContinuationData(L12StackItem source, L12StackItem destination)
     {
@@ -1470,6 +1510,15 @@ public sealed partial class L12GameEngine
                     targets, 1, requiredChoice: requiredMode));
                 return true;
             }
+            case "cosmos-yin-buff":
+            {
+                var targets = PublicLegions(player).Select(card => card.InstanceId).ToArray();
+                if (targets.Length == 0 || string.IsNullOrWhiteSpace(targetKey)) return false;
+                steps.Add(CompositeStep("field-legion", targetKey,
+                    "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
+                    targets, 1));
+                return true;
+            }
             default:
                 return false;
         }
@@ -1480,14 +1529,19 @@ public sealed partial class L12GameEngine
     {
         if (!TryBuildCompositeSegmentDeclarationSteps(item.Controller, item, segment, out var steps))
         {
-            AddEvent("effect-noop", item.Controller,
-                $"〈{source.Name}〉的“{segment.Text}”当前没有合法对象；仅跳过该段", source);
-            return false;
+            return QueueSkippedCompositeSettlementSegment(item, source, segmentIndex, segment,
+                $"〈{source.Name}〉的“{segment.Text}”在声明时没有合法对象；仅跳过该段");
         }
 
+        var continuationData = CompositeContinuationData(item);
+        if (L12CompositeEffectPlans.UsesSingleResponseEffect(planId))
+        {
+            continuationData["sameStackContinuation"] = "true";
+            continuationData["unrespondable"] = "true";
+        }
         var context = new CompositeSegmentDeclarationContext(planId, segmentIndex,
             item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger,
-            CompositeContinuationData(item));
+            continuationData);
         var result = BeginPendingActivationSequence(item.Controller, source,
             CompositeSegmentDeclarationAbility, steps, triggerCandidateId: null,
             playCardInstanceId: source.InstanceId, responseTargetStackItemId: null);
@@ -1509,6 +1563,10 @@ public sealed partial class L12GameEngine
             return false;
         }
         activation.CommittedCompletion = JsonSerializer.Serialize(context);
+        if (!string.IsNullOrWhiteSpace(segment.DeclarationTiming))
+            foreach (var prompt in State.PendingPrompts.Where(prompt =>
+                         prompt.Data.GetValueOrDefault("activationId") == activation.ActivationId))
+                prompt.Data["declarationTiming"] = segment.DeclarationTiming;
         return true;
     }
 
@@ -1547,12 +1605,43 @@ public sealed partial class L12GameEngine
             card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
     }
 
-    private void AbortCompositeSegmentDeclaration(L12PendingActivation activation, string reason)
+    private void AbortCompositeSegmentDeclaration(L12PendingActivation activation, string reason,
+        string resultStatus = "failed")
     {
-        _ = TryReadCompositeSegmentDeclarationContext(activation, out var context);
+        var hasContext = TryReadCompositeSegmentDeclarationContext(activation, out var context);
         var player = State.Players[activation.Controller];
-        var source = CompositeSegmentDeclarationSource(activation, context)
+        var source = CompositeSegmentDeclarationSource(activation, hasContext ? context : null)
             ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        if (hasContext)
+        {
+            var segments = L12CompositeEffectPlans.Segments(context.PlanId);
+            if (context.SegmentIndex >= 0 && context.SegmentIndex < segments.Count)
+            {
+                var carrier = new L12StackItem
+                {
+                    StackItemId = activation.ActivationId,
+                    Controller = activation.Controller,
+                    SourceInstanceId = activation.SourceInstanceId,
+                    SourceCardId = activation.SourceCardId,
+                    SourceName = source.Name,
+                    SourceSnapshot = CaptureLastKnownSourceSnapshot(source),
+                    Trigger = context.OriginTrigger,
+                    Text = segments[context.SegmentIndex].Text,
+                };
+                foreach (var pair in context.Data) carrier.Data[pair.Key] = pair.Value;
+                foreach (var step in activation.SelectionSteps)
+                    if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+                        carrier.Data.Remove($"declared:{step.DeclarationKey}");
+                foreach (var pair in activation.DeclaredValues)
+                    carrier.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+                carrier.Data["compositePlan"] = context.PlanId;
+                carrier.Data["compositeOriginTrigger"] = context.OriginTrigger;
+                QueueCompositeSettlementTerminal(carrier, source, context.SegmentIndex,
+                    segments[context.SegmentIndex], resultStatus,
+                    $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退");
+                return;
+            }
+        }
         var resolving = player.Resolving.FirstOrDefault(card =>
             card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
         if (resolving is not null
@@ -1563,7 +1652,7 @@ public sealed partial class L12GameEngine
             ResetCardAfterLeavingField(resolving);
             player.Graveyard.Add(resolving);
         }
-        AddEvent("effect-cancelled", activation.Controller,
+        AddEvent("ability-rejected", activation.Controller,
             $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退", source);
         ResumeAfterPostResolutionGeneratedInteraction();
     }
@@ -1593,7 +1682,7 @@ public sealed partial class L12GameEngine
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase);
         if (!CompositeSegmentEnabled(segment, declared))
         {
-            AbortCompositeSegmentDeclaration(activation, "由玩家选择不发动");
+            AbortCompositeSegmentDeclaration(activation, "由玩家选择不发动", "declined");
             return;
         }
 
@@ -1671,6 +1760,10 @@ public sealed partial class L12GameEngine
             var next = segments[nextIndex];
             if (next.DeclareAtSegmentStart)
             {
+                // 有些后续段的分支要在前段揭示/结算后才能确定。若前段已经明确写入
+                // 不匹配分支（例如乾坤·阴未命中），不要再建立一个永远不应出现的
+                // 目标声明；尚未声明分支的计划仍可进入本段自己的模式选择。
+                if (CompositeSegmentAlreadyDeclaredAsDisabled(next, item)) continue;
                 // 兵力变化可先产生状态检查与阵亡触发。用一个无响应的延迟载体把声明
                 // 排在整批触发之后，保证目标集合来自所有必要状态动作完成后的场面。
                 if (item.Data.GetValueOrDefault("compositeStateCheckBarrier") != "true"
@@ -1732,12 +1825,18 @@ public sealed partial class L12GameEngine
             data.Remove("effectResultPublished");
             data.Remove("effectResultStatus");
             data.Remove("presentationSceneId");
+            data.Remove("presentationFlow");
             data.Remove("skipCompositeSettlement");
             data.Remove("effectFailureReason");
             data.Remove("unrespondable");
+            data.Remove("sameStackContinuation");
             // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
             // 对同一项能力中的单个句子另行无效。
-            if (singleResponseEffect) data["unrespondable"] = "true";
+            if (singleResponseEffect)
+            {
+                data["unrespondable"] = "true";
+                data["sameStackContinuation"] = "true";
+            }
             // The Wisdom Codex reward belongs to the exact stack item whose cost was paid.
             // A semantic follow-up is a new effect and must not inherit that one-shot marker.
             data.Remove("wisdomRewards");
@@ -1753,6 +1852,14 @@ public sealed partial class L12GameEngine
 
     private bool QueueFailedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
         int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason);
+
+    private bool QueueSkippedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason);
+
+    private bool QueueCompositeSettlementTerminal(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason)
     {
         var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
         {
@@ -1760,14 +1867,17 @@ public sealed partial class L12GameEngine
             ["atomicFlow"] = segment.Flow,
             ["atomicContinuation"] = "true",
             ["skipCompositeSettlement"] = "true",
-            ["effectResultStatus"] = "failed",
+            ["effectResultStatus"] = resultStatus,
             ["effectFailureReason"] = reason,
             ["unrespondable"] = "true",
             ["preserveSourceSnapshot"] = "true",
         };
         data.Remove("effectResultPublished");
         data.Remove("presentationSceneId");
+        data.Remove("presentationFlow");
         data.Remove("wisdomRewards");
+        if (L12CompositeEffectPlans.UsesSingleResponseEffect(item.Data.GetValueOrDefault("compositePlan")))
+            data["sameStackContinuation"] = "true";
         var trigger = item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger;
         PushEffect(item.Controller, source, trigger, segment.Text,
             CompositeSegmentTargets(segment, item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
@@ -1807,6 +1917,9 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(State.Players[controller], card, "asgard"))),
             "oiran-ready-morale" => CompositeDeclared(item, "moraleTarget").SingleOrDefault() is { } moraleTarget
                 && State.Players[controller].Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped),
+            "cosmos-yin-buff" => CompositeDeclared(item, "buffTarget").SingleOrDefault() is { } cosmosTarget
+                && FindOnField(State.Players[controller], cosmosTarget, out _, out _) is { } cosmosLegion
+                && IsFieldLegion(cosmosLegion),
             "palace-exchange-revive" => CompositeDeclared(item, "entryCard").SingleOrDefault() is { } palaceCard
                 && CompositeDeclared(item, "entryBattlefield").SingleOrDefault() == $"battlefield:{controller}"
                 && CompositeDeclared(item, "entrySlot").SingleOrDefault() is { } palaceSlot

@@ -184,12 +184,215 @@ public sealed class AtomicReviewBatch4RegressionTests
         Assert.Equal("post-hidden-reveal", delayed.Data["declarationTiming"]);
         Assert.Contains(target.InstanceId, delayed.ValidChoices);
         Assert.Contains(hiddenTop, owner.Graveyard);
-        owner.Field[0][0] = null;
-        owner.Graveyard.Add(target);
+        Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == baseTactic.InstanceId);
+        Assert.DoesNotContain(actor.Graveyard, card => card.InstanceId == baseTactic.InstanceId);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == baseTactic.InstanceId));
+        var delayedPromptId = delayed.PromptId;
+        var targetId = target.InstanceId;
+        var hiddenTopId = hiddenTop.InstanceId;
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredDelayed = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(delayedPromptId, restoredDelayed.PromptId);
+        Assert.Equal("post-hidden-reveal", restoredDelayed.Data["declarationTiming"]);
+        var restoredOwner = game.State.Players[0];
+        var restoredTarget = Assert.Single(restoredOwner.Field[0], card => card?.InstanceId == targetId)!;
+        restoredOwner.Field[0][0] = null;
+        restoredOwner.Graveyard.Add(restoredTarget);
+        Resolve(game, targetId);
+        var duplicate = game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: delayedPromptId, Choice: targetId));
+
+        Assert.False(duplicate.Accepted);
+        Assert.Contains(restoredOwner.Graveyard, card => card.InstanceId == hiddenTopId);
+        Assert.DoesNotContain(restoredOwner.Library, card => card.InstanceId == hiddenTopId);
+        var failed = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("failed", failed.EffectResultStatus);
+        var baseResult = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == baseTactic.InstanceId)
+            && entry.EffectSegmentIndex == 1);
+        Assert.Equal("resolved", baseResult.EffectResultStatus);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0106")]
+    public void CosmosYinMatchingRevealSettlesBuffBeforeTheUnderlyingStackItem()
+    {
+        var game = Create(7003);
+        var owner = game.State.Players[0];
+        var actor = game.State.Players[1];
+        var counter = Card("S02-0106", "atomic4-cosmos-success-counter");
+        counter.Hidden = true;
+        counter.SetRound = 2;
+        owner.Field[1][0] = counter;
+        var target = Card("S02-0402", "atomic4-cosmos-success-target");
+        owner.Field[0][0] = target;
+        var troopsBefore = target.Troops;
+        var costBefore = target.CurrentCost;
+        owner.Library.Clear();
+        var revealed = Card("S01-0109", "atomic4-cosmos-success-top");
+        owner.Library.Add(revealed);
+        var baseTactic = Card("S01-0219", "atomic4-cosmos-success-base");
+        actor.Hand.Add(baseTactic);
+        game.State.ActivePlayer = 1;
+
+        Assert.True(game.Handle(1, new L12Command("playCard", baseTactic.InstanceId)).Accepted);
+        Resolve(game, "pass");
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: counter.InstanceId)).Accepted);
+        PassResponses(game);
+        var delayed = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(target.InstanceId, delayed.ValidChoices);
+        Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == baseTactic.InstanceId);
         Resolve(game, target.InstanceId);
 
-        Assert.Contains(hiddenTop, owner.Graveyard);
-        Assert.DoesNotContain(hiddenTop, owner.Library);
-        Assert.Equal(hiddenTop.BaseTroops, hiddenTop.Troops);
+        Assert.Equal(troopsBefore + revealed.BaseTroops, target.Troops);
+        Assert.Equal(costBefore + revealed.CurrentCost, target.CurrentCost);
+        var counterResults = game.State.Events.Where(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId)).ToArray();
+        Assert.True(counterResults.Length == 2,
+            string.Join(" | ", game.State.Events.TakeLast(20).Select(entry =>
+                $"{entry.Type}:{entry.Text}:{entry.EffectResultStatus}:{entry.EffectSegmentIndex}")));
+        Assert.All(counterResults, result => Assert.Equal("resolved", result.EffectResultStatus));
+        var buffResultIndex = game.State.Events.FindIndex(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        var baseResultIndex = game.State.Events.FindIndex(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == baseTactic.InstanceId));
+        Assert.True(buffResultIndex >= 0 && baseResultIndex > buffResultIndex);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0106")]
+    public void CosmosYinMissReturnsTheCardAndNeverCreatesABuffSegment()
+    {
+        var game = Create(7004);
+        var owner = game.State.Players[0];
+        var actor = game.State.Players[1];
+        var counter = Card("S02-0106", "atomic4-cosmos-miss-counter");
+        counter.Hidden = true;
+        counter.SetRound = 2;
+        owner.Field[1][0] = counter;
+        owner.Field[0][0] = Card("S02-0402", "atomic4-cosmos-miss-target");
+        owner.Library.Clear();
+        var miss = Card("S01-0005", "atomic4-cosmos-miss-top");
+        owner.Library.Add(miss);
+        var baseTactic = Card("S01-0219", "atomic4-cosmos-miss-base");
+        actor.Hand.Add(baseTactic);
+        game.State.ActivePlayer = 1;
+
+        Assert.True(game.Handle(1, new L12Command("playCard", baseTactic.InstanceId)).Accepted);
+        Resolve(game, "pass");
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: counter.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(owner.Library, card => card.InstanceId == miss.InstanceId);
+        Assert.DoesNotContain(owner.Graveyard, card => card.InstanceId == miss.InstanceId);
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.Ability == "composite-segment-declaration");
+        var counterResult = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId));
+        Assert.Equal("不符合并置底", counterResult.EffectBranchLabel);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0106")]
+    public void CosmosYinMatchingRevealWithoutOwnLegionSkipsBuffBeforeUnderlyingSettlement()
+    {
+        var game = Create(7005);
+        var owner = game.State.Players[0];
+        var actor = game.State.Players[1];
+        var counter = Card("S02-0106", "atomic4-cosmos-no-target-counter");
+        counter.Hidden = true;
+        counter.SetRound = 2;
+        owner.Field[1][0] = counter;
+        owner.Library.Clear();
+        var revealed = Card("S01-0109", "atomic4-cosmos-no-target-top");
+        owner.Library.Add(revealed);
+        var baseTactic = Card("S01-0219", "atomic4-cosmos-no-target-base");
+        actor.Hand.Add(baseTactic);
+        game.State.ActivePlayer = 1;
+
+        Assert.True(game.Handle(1, new L12Command("playCard", baseTactic.InstanceId)).Accepted);
+        Resolve(game, "pass");
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: counter.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("declarationTiming") == "post-hidden-reveal");
+        Assert.Contains(owner.Graveyard, card => card.InstanceId == revealed.InstanceId);
+        var counterResults = game.State.Events.Where(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId)).ToArray();
+        Assert.True(counterResults.Length == 2,
+            string.Join(" | ", game.State.Events.TakeLast(20).Select(entry =>
+                $"{entry.Type}:{entry.Text}:{entry.EffectResultStatus}:{entry.EffectSegmentIndex}")));
+        Assert.Equal("resolved", counterResults[0].EffectResultStatus);
+        Assert.Equal("skipped", counterResults[1].EffectResultStatus);
+        var skippedIndex = game.State.Events.FindIndex(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId)
+            && entry.EffectResultStatus == "skipped");
+        var baseResultIndex = game.State.Events.FindIndex(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == baseTactic.InstanceId));
+        Assert.True(skippedIndex >= 0 && baseResultIndex > skippedIndex);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0106")]
+    public void NegatedCosmosYinDoesNotRevealTheLibraryOrStartItsLaterSegment()
+    {
+        var game = Create(7006);
+        var owner = game.State.Players[0];
+        var actor = game.State.Players[1];
+        var counter = Card("S02-0106", "atomic4-cosmos-negated-counter");
+        counter.Hidden = true;
+        counter.SetRound = 2;
+        owner.Field[1][0] = counter;
+        owner.Field[0][0] = Card("S02-0402", "atomic4-cosmos-negated-target");
+        owner.Library.Clear();
+        var hiddenTop = Card("S01-0109", "atomic4-cosmos-negated-top");
+        owner.Library.Add(hiddenTop);
+        var negate = Card("S01-0016", "atomic4-cosmos-negate");
+        negate.Hidden = true;
+        negate.SetRound = 2;
+        actor.Field[1][0] = negate;
+        var discardCost = Card("S01-0004", "atomic4-cosmos-negate-cost");
+        actor.Hand.Add(discardCost);
+        var baseTactic = Card("S01-0219", "atomic4-cosmos-negated-base");
+        actor.Hand.Add(baseTactic);
+        game.State.ActivePlayer = 1;
+
+        Assert.True(game.Handle(1, new L12Command("playCard", baseTactic.InstanceId)).Accepted);
+        Resolve(game, "pass");
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: counter.InstanceId)).Accepted);
+        Resolve(game, "pass");
+        var negatePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(negate.InstanceId, negatePrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: negatePrompt.PromptId,
+            Choice: negate.InstanceId)).Accepted);
+        var costPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: costPrompt.PromptId,
+            Choice: discardCost.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(owner.Library, card => card.InstanceId == hiddenTop.InstanceId);
+        Assert.DoesNotContain(owner.Graveyard, card => card.InstanceId == hiddenTop.InstanceId);
+        Assert.Empty(game.State.PendingActivations);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
     }
 }

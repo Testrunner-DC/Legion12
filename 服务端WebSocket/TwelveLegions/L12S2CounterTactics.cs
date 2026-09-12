@@ -40,13 +40,10 @@ public sealed partial class L12GameEngine
         item.Targets.Add(targetStackId);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
-        if (response.CardId == "S02-0015")
+        var planId = $"response:{response.CardId}";
+        if (L12CompositeEffectPlans.InitialResponseDeclaration(planId) is { } declaration)
         {
-            var declaration = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["mode"] = ["mode:pending"],
-            };
-            foreach (var pair in CompositeFirstSegmentData("response:S02-0015", declaration))
+            foreach (var pair in CompositeFirstSegmentData(planId, declaration))
                 item.Data[pair.Key] = pair.Value;
         }
         State.EffectStack.Add(item);
@@ -58,8 +55,15 @@ public sealed partial class L12GameEngine
 
     private void ResolveS2CounterEffect(L12StackItem item)
     {
+        if (AtomicFlowKey(item) is "cosmos-yin-reveal" or "cosmos-yin-buff")
+        {
+            if (AtomicFlowKey(item) == "cosmos-yin-reveal") ResolveS2CosmosYin(item);
+            else ResolveS2CosmosYinBuff(item);
+            return;
+        }
         if (item.SourceCardId == "S02-0106")
         {
+            // Compatibility for a checkpoint created before the segmented response plan.
             ResolveS2CosmosYin(item);
             return;
         }
@@ -157,6 +161,7 @@ public sealed partial class L12GameEngine
         if (player.Library.Count == 0)
         {
             SetWinner(1 - item.Controller, "〈乾坤·阴〉展示牌库顶部时牌库为空");
+            AddEvent("effect-failed", item.Controller, "〈乾坤·阴〉展示牌库顶部时牌库为空");
             FinishStackItem(item);
             return;
         }
@@ -168,6 +173,8 @@ public sealed partial class L12GameEngine
         {
             player.Library.RemoveAt(0);
             player.Library.Add(revealed);
+            DeclarePresentationBranch(item.Data, "cosmos-yin-reveal", "revealMode", "mode:return");
+            item.Data.Remove("presentationSceneId");
             AddEvent("return", item.Controller, $"〈{revealed.Name}〉置于牌库底部", revealed);
             FinishStackItem(item);
             return;
@@ -175,22 +182,26 @@ public sealed partial class L12GameEngine
 
         player.Library.RemoveAt(0);
         player.Graveyard.Add(revealed);
+        DeclarePresentationBranch(item.Data, "cosmos-yin-reveal", "revealMode", "mode:hit");
+        item.Data.Remove("presentationSceneId");
+        item.Data["bonusTroops"] = revealed.Troops.ToString();
+        item.Data["bonusCost"] = revealed.CurrentCost.ToString();
         AddEvent("discard", item.Controller, $"〈乾坤·阴〉从牌库弃置〈{revealed.Name}〉", revealed);
-        var choices = PublicLegions(player).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0)
+        FinishStackItem(item);
+    }
+
+    private void ResolveS2CosmosYinBuff(L12StackItem item)
+    {
+        var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+        var target = FindOnField(State.Players[item.Controller], targetId, out _, out _);
+        if (target is not null && IsFieldLegion(target))
         {
-            FinishStackItem(item);
-            return;
+            _ = int.TryParse(item.Data.GetValueOrDefault("bonusTroops"), out var troops);
+            _ = int.TryParse(item.Data.GetValueOrDefault("bonusCost"), out var cost);
+            AddTimedModifier(target, troops, cost, State.TurnSerial, "乾坤·阴");
         }
-        var data = new Dictionary<string, string>
-        {
-            ["bonusTroops"] = revealed.Troops.ToString(),
-            ["bonusCost"] = revealed.CurrentCost.ToString(),
-        };
-        foreach (var card in PublicLegions(player)) AddPromptCardData(data, card);
-        CreateDelayedPublicResolutionPrompt(item, "field-legion",
-            "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
-            choices, "s2-cosmos-yin-target", data);
+        else RecordTargetSettlementFailure(item, targetId, "所选我方军团已离场或不再是军团");
+        FinishStackItem(item);
     }
 
     private L12StackItem? TargetAuthorityStackItem(L12StackItem response)

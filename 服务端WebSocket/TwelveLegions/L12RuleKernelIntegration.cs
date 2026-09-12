@@ -947,7 +947,7 @@ public sealed partial class L12GameEngine
             }
             if (activation.Ability == CompositeSegmentDeclarationAbility)
             {
-                AbortCompositeSegmentDeclaration(activation, "由玩家在目标步骤拒绝");
+                AbortCompositeSegmentDeclaration(activation, "由玩家在目标步骤拒绝", "declined");
                 return;
             }
             var hadReservedCost = activation.SelectionSteps.Take(activation.CurrentStep)
