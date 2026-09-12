@@ -1159,7 +1159,10 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "olgaDebuff": ApplyDeclaredTroopsDelta(item, -2000); FinishStackItem(item); return true;
+            case "olgaDebuff":
+                if (!ApplyDeclaredTroopsDelta(item, -2000)) item.Data["effectResultStatus"] = "skipped";
+                FinishStackItem(item);
+                return true;
             case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃"); FinishStackItem(item); return true;
             case "palaceReward":
                 if (AtomicFlowKey(item) == "palace-reward-morale") AddMorale(player, 2, true);

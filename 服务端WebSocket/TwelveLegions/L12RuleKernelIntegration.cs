@@ -1344,10 +1344,12 @@ public sealed partial class L12GameEngine
     private bool IsEnemyTargetLegal(int controller, string? instanceId, Func<L12CardInstance, bool> predicate)
         => DeclaredEnemyTarget(controller, instanceId, predicate) is not null;
 
-    private void ApplyDeclaredTroopsDelta(L12StackItem item, int delta)
+    private bool ApplyDeclaredTroopsDelta(L12StackItem item, int delta)
     {
         var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
-        if (target is not null) AddTimedModifier(target, delta, 0, State.TurnSerial, item.SourceName);
+        if (target is null) return false;
+        AddTimedModifier(target, delta, 0, State.TurnSerial, item.SourceName);
+        return true;
     }
 
     private void ResolveDeclaredPalaceExchangeKill(L12StackItem item)

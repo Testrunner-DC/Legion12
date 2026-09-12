@@ -66,10 +66,70 @@ public sealed class EffectPresentationBranchSegmentTests
             branchFlows.Contains(segment.Flow)));
         var expectedSceneCount = plans.Sum(plan => plan.Segments.Count) - branchCapableSegments
             + L12EffectPresentationVariants.PublicBranchDefinitions.Count
-            + L12EffectPresentationVariants.StandaloneBranchDefinitions.Count;
+            + L12EffectPresentationVariants.StandaloneBranchDefinitions.Count
+            + L12SingleSegmentEffectPresentations.All.Count;
         var actualSceneCount = catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
             .SelectMany(ability => ability.Presentations).Count(scene => scene.Flow is not null);
         Assert.Equal(expectedSceneCount, actualSceneCount);
+    }
+
+    [Fact]
+    public void AuditedSingleActiveEffectsExposeExactlyOneSettlementSegment()
+    {
+        var expected = new[]
+        {
+            ("S01-0109", 2, "addMorale"),
+            ("S01-0314", 3, "olgaDebuff"),
+            ("S02-0003", 3, "disableCounters"),
+            ("S02-0204", 3, "imhotepDiscount"),
+            ("S02-0513", 3, "aristotleDiscount"),
+            ("S02-06D1", 4, "avalonDebuff"),
+            ("ST02-05", 1, "oasisDancerBuff"),
+            ("ST03-05", 2, "christinaFreeTactic"),
+        };
+        Assert.Equal(expected, L12SingleSegmentEffectPresentations.All
+            .Select(item => (item.CardId, item.AbilitySequence, item.RuntimeAbilityId)).ToArray());
+
+        var catalog = Catalog;
+        var game = Create(catalog, 307300);
+        foreach (var definition in L12SingleSegmentEffectPresentations.All)
+        {
+            var card = catalog.AtomicEffects.Find(definition.CardId)!;
+            var ability = Assert.Single(card.Abilities, item => item.Sequence == definition.AbilitySequence);
+            var scene = Assert.Single(ability.Presentations, item =>
+                item.Flow == L12SingleSegmentEffectPresentations.Flow);
+            Assert.Equal("active", ability.Trigger);
+            Assert.Equal(1, scene.SegmentIndex);
+            Assert.Equal(1, scene.SegmentCount);
+            Assert.Null(scene.RequiredChoices);
+            Assert.Equal(scene.SceneId, game.ResolveEffectPresentationSceneId(
+                Card(catalog, definition.CardId, $"single-{definition.CardId}"), "active",
+                new Dictionary<string, string> { ["ability"] = definition.RuntimeAbilityId },
+                scene.DefaultText));
+        }
+    }
+
+    [Fact]
+    public void RealSingleActiveEffectPublishesResolvedResult()
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307301);
+        var source = Card(catalog, "S01-0109", "single-baiqi");
+        game.State.Players[0].Field[1][0] = source;
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", source.InstanceId, Ability: "addMorale"));
+        Assert.True(activation.Accepted, activation.Error);
+        PassResponses(game);
+
+        var declaration = Assert.Single(game.State.Events, action => action.EffectResultStatus == "declared"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Fact]

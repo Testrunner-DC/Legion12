@@ -92,6 +92,11 @@ public sealed class SingleActiveSelectionTests
                 new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
         }
         Assert.Empty(game.State.PendingPrompts); Assert.Empty(game.State.EffectStack);
+        var resultEvent = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("skipped", resultEvent.EffectResultStatus);
+        Assert.Equal(1, resultEvent.EffectSegmentIndex);
+        Assert.Equal(1, resultEvent.EffectSegmentCount);
         Assert.False(game.Handle(0, new L12Command("activateAbility", source.InstanceId, Ability: "olgaDebuff")).Accepted);
     }
 
@@ -142,7 +147,12 @@ public sealed class SingleActiveSelectionTests
         if (ability == "artifactSearch")
             Assert.Contains(game.State.Players[0].Graveyard, entry => entry.InstanceId == "candidate");
         if (ability == "olgaDebuff")
+        {
             Assert.Contains(game.State.Players[0].Graveyard, entry => entry.InstanceId == "source");
+            var resultEvent = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+                && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+            Assert.Equal("negated", resultEvent.EffectResultStatus);
+        }
         if (ability == "ankhDraw")
         {
             Assert.True(game.State.Players[0].Relic!.Tapped);

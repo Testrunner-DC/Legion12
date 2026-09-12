@@ -211,8 +211,9 @@ public static class L12EffectPresentationScenes
         {
             Presentations = Build(ability, tombConstructSharedBody),
         }).ToArray();
-        return L12EffectPresentationVariants.Attach(
-            L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached));
+        return L12SingleSegmentEffectPresentations.Attach(
+            L12EffectPresentationVariants.Attach(
+                L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached)));
     }
 
     public static IReadOnlyList<L12EffectPresentationScene> Build(L12AtomicAbility ability,

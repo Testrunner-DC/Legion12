@@ -153,6 +153,9 @@ public sealed partial class L12GameEngine
 
         var candidateAbilities = triggerAbilities;
         var declaredAbilityId = data?.GetValueOrDefault("ability");
+        if (L12SingleSegmentEffectPresentations.TryResolveScene(card, trigger,
+                declaredAbilityId, out var singleSegmentSceneId))
+            return singleSegmentSceneId;
         if (!string.IsNullOrWhiteSpace(declaredAbilityId))
         {
             var direct = candidateAbilities.FirstOrDefault(ability =>
