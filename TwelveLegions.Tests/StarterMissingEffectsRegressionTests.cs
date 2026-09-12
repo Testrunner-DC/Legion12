@@ -324,6 +324,11 @@ public sealed class StarterMissingEffectsRegressionTests
         Choose(game, entrant.InstanceId);
         Choose(game, "0:0");
 
+        var stack = Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == hiddenPass.InstanceId);
+        Assert.Equal("trigger:ST01-10:reaction", stack.Data["compositePlan"]);
+        Assert.Equal("hidden-pass-summon", stack.Data["atomicFlow"]);
+        Assert.False(string.IsNullOrWhiteSpace(stack.Data["presentationSceneId"]));
         Assert.DoesNotContain(morale, player.Morale);
         Assert.Contains(morale, player.MoraleDeck);
         Assert.DoesNotContain(hiddenPass, player.Field.SelectMany(row => row));
@@ -333,6 +338,75 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.Same(entrant, player.Field[0][0]);
         Assert.False(entrant.Tapped);
         Assert.Contains(hiddenPass, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == hiddenPass.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal("从我方手牌中将已声明的1张费用不高于4的【天廷】军团活跃登场", result.EffectText);
+    }
+
+    [Fact]
+    public void HiddenPassSettlementFailureKeepsItsPrepaidMoraleAndPublishesFailed()
+    {
+        var game = Create(207031);
+        var player = game.State.Players[0];
+        var hiddenPass = Card("ST01-10", "hidden-pass-failed");
+        hiddenPass.Hidden = true;
+        player.Field[1][0] = hiddenPass;
+        var entrant = Card("ST01-05", "hidden-pass-failed-entrant");
+        player.Hand.Add(entrant);
+        var morale = new L12MoraleCard { CardId = "ST01-C1", InstanceId = "hidden-pass-failed-morale" };
+        player.Morale.Add(morale);
+
+        QueueTrigger(game, hiddenPass, "reaction");
+        Choose(game, "mode:use");
+        Choose(game, morale.InstanceId);
+        Choose(game, entrant.InstanceId);
+        Choose(game, "0:0");
+        player.Field[0][0] = Card("ST01-04", "hidden-pass-slot-occupant");
+
+        PassResponses(game);
+
+        Assert.DoesNotContain(morale, player.Morale);
+        Assert.Contains(morale, player.MoraleDeck);
+        Assert.Contains(entrant, player.Hand);
+        Assert.Contains(hiddenPass, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == hiddenPass.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("已返还的士气不返还", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.SourceInstanceId == hiddenPass.InstanceId);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == hiddenPass.InstanceId);
+    }
+
+    [Fact]
+    public void DecliningHiddenPassDoesNotPayOrRevealAndCreatesNoStack()
+    {
+        var game = Create(207032);
+        var player = game.State.Players[0];
+        var hiddenPass = Card("ST01-10", "hidden-pass-declined");
+        hiddenPass.Hidden = true;
+        player.Field[1][0] = hiddenPass;
+        player.Hand.Add(Card("ST01-05", "hidden-pass-declined-entrant"));
+        var morale = new L12MoraleCard { CardId = "ST01-C1", InstanceId = "hidden-pass-declined-morale" };
+        player.Morale.Add(morale);
+
+        QueueTrigger(game, hiddenPass, "reaction");
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        var command = new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:none");
+        Assert.True(game.Handle(0, command).Accepted);
+        Assert.False(game.Handle(0, command).Accepted);
+
+        Assert.Contains(morale, player.Morale);
+        Assert.Empty(player.MoraleDeck);
+        Assert.Same(hiddenPass, player.Field[1][0]);
+        Assert.True(hiddenPass.Hidden);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == hiddenPass.InstanceId);
+        Assert.Contains(game.State.Events, entry => entry.Type == "ability-cancelled"
+            && !entry.Cards.Any());
     }
 
     [Fact]

@@ -45,6 +45,8 @@ internal static class L12EffectPresentationVariants
             ["active:S02-05D1:divinityRecover"] = 2,
             ["response:S01-0020"] = 1,
             ["response:S01-0120"] = 1,
+            ["trigger:S01-0021:reaction"] = 1,
+            ["trigger:ST01-10:reaction"] = 1,
             ["response:S02-0016"] = 1,
             ["response:S02-0017"] = 1,
             ["response:S02-0018"] = 1,

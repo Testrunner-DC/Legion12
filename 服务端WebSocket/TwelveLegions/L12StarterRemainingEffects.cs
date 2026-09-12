@@ -857,6 +857,13 @@ public sealed partial class L12GameEngine
             candidate.Data["atomicFlow"] = "aeneas-promotion-search";
             candidate.Data["atomicContinuation"] = "true";
         }
+        else if (plan == "hidden-pass-summon")
+        {
+            var composite = CompositeFirstSegmentData("trigger:ST01-10:reaction",
+                activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, source);
+        }
         if (candidate.Data.GetValueOrDefault("target") is { Length: > 0 } fixedTarget)
             candidate.Data["declared:fixedTarget"] = fixedTarget;
         if (candidate.Data.GetValueOrDefault("onceKey") is { Length: > 0 } onceKey)

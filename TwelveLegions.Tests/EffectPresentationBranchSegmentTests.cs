@@ -436,6 +436,111 @@ public sealed class EffectPresentationBranchSegmentTests
             }, source.EffectText!));
     }
 
+    [Theory]
+    [InlineData("S01-0021", "trigger:S01-0021:reaction", "regency-entry")]
+    [InlineData("ST01-10", "trigger:ST01-10:reaction", "hidden-pass-summon")]
+    public void PrivateHandEntryResponsesExposeOneStructuredSettlementWithoutLeakingTargetIdentity(
+        string cardId, string planId, string flow)
+    {
+        var card = Catalog.AtomicEffects.Find(cardId)!;
+        var scene = Assert.Single(card.Abilities.SelectMany(ability => ability.Presentations),
+            candidate => candidate.Flow == flow);
+        Assert.Equal(1, scene.SegmentIndex);
+        Assert.Equal(1, scene.SegmentCount);
+        Assert.Null(scene.RequiredChoices);
+        Assert.DoesNotContain("entryCard", scene.DefaultText, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(L12EffectPresentationVariants.SceneKeyPrefix(planId), scene.Trigger,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("S01-0021", "trigger:S01-0021:reaction", "regency-entry", "missing-regency")]
+    [InlineData("ST01-10", "trigger:ST01-10:reaction", "hidden-pass-summon", "missing-hidden-pass")]
+    public void PrivateHandEntryResponsesPublishFailedWhenTheirCommittedObjectDisappears(
+        string cardId, string planId, string flow, string missingId)
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307360 + cardId.Length);
+        var source = Card(catalog, cardId, $"failed-{cardId}");
+        source.Hidden = false;
+        game.State.Players[0].Resolving.Add(source);
+        var scene = Assert.Single(catalog.AtomicEffects.Find(cardId)!.Abilities
+            .SelectMany(ability => ability.Presentations), candidate => candidate.Flow == flow);
+        var item = new L12StackItem
+        {
+            StackItemId = $"failed-stack-{cardId}", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "reaction", Text = scene.DefaultText,
+        };
+        item.Data["compositePlan"] = planId;
+        item.Data["compositeSegment"] = "0";
+        item.Data["atomicFlow"] = flow;
+        item.Data["atomicContinuation"] = "true";
+        item.Data["presentationSceneId"] = scene.SceneId;
+        item.Data["declared:entryCard"] = missingId;
+        item.Data["declared:entryBattlefield"] = "battlefield:0";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveTopStack");
+
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Equal(scene.SceneId, result.EffectSceneId);
+        Assert.Contains(game.State.Events, action => action.Type == "effect-failed"
+            && action.Text.Contains("结算前失效", StringComparison.Ordinal));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Theory]
+    [InlineData("S01-0021", "S01-0208", "trigger:S01-0021:reaction", "regency-entry")]
+    [InlineData("ST01-10", "ST01-05", "trigger:ST01-10:reaction", "hidden-pass-summon")]
+    public void PrivateHandEntryResponseRestoresItsFrozenTargetAndSceneBeforeSettlement(
+        string cardId, string entrantCardId, string planId, string flow)
+    {
+        var catalog = Catalog;
+        var game = Create(catalog, 307380 + cardId.Length, stateFormatVersion: 2);
+        var source = Card(catalog, cardId, $"restore-source-{cardId}");
+        var entrant = Card(catalog, entrantCardId, $"restore-entrant-{cardId}");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Hand.Add(entrant);
+        var scene = Assert.Single(catalog.AtomicEffects.Find(cardId)!.Abilities
+            .SelectMany(ability => ability.Presentations), candidate => candidate.Flow == flow);
+        var item = new L12StackItem
+        {
+            StackItemId = $"restore-stack-{cardId}", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "reaction", Text = scene.DefaultText,
+        };
+        item.Data["compositePlan"] = planId;
+        item.Data["compositeSegment"] = "0";
+        item.Data["atomicFlow"] = flow;
+        item.Data["atomicContinuation"] = "true";
+        item.Data["presentationSceneId"] = scene.SceneId;
+        item.Data["declared:entryCard"] = entrant.InstanceId;
+        item.Data["declared:entryBattlefield"] = "battlefield:0";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+
+        game = L12GameEngine.RestoreCheckpoint(catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredItem = Assert.Single(game.State.EffectStack);
+        Assert.Equal(entrant.InstanceId, restoredItem.Data["declared:entryCard"]);
+        Assert.Equal(scene.SceneId, restoredItem.Data["presentationSceneId"]);
+        Invoke(game, "ResolveTopStack");
+
+        Assert.Equal(entrant.InstanceId, game.State.Players[0].Field[0][0]?.InstanceId);
+        var result = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+            && action.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(scene.SceneId, result.EffectSceneId);
+    }
+
     [Fact]
     public void RealMordredChoicePublishesItsBranchAndCompletesWithoutChangingSemanticAtomicFlow()
     {

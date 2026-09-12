@@ -279,7 +279,12 @@ public sealed class AtomicReviewBatch6KARegressionTests
         Assert.Equal("0", slot.Data["targetPlayerIndex"]);
         Resolve(game, "0:1");
 
-        Assert.Contains(game.State.EffectStack, item => item.SourceInstanceId == counter.InstanceId);
+        var regencyStack = Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == counter.InstanceId);
+        Assert.Equal("trigger:S01-0021:reaction", regencyStack.Data["compositePlan"]);
+        Assert.Equal("regency-entry", regencyStack.Data["atomicFlow"]);
+        Assert.Equal("0", regencyStack.Data["compositeSegment"]);
+        Assert.False(string.IsNullOrWhiteSpace(regencyStack.Data["presentationSceneId"]));
         Assert.Contains(summon, defender.Hand);
         Assert.Contains(counter, defender.Resolving);
         for (var safety = 0; safety < 40 && !defender.Field.SelectMany(row => row).Contains(summon); safety++)
@@ -297,6 +302,10 @@ public sealed class AtomicReviewBatch6KARegressionTests
         }
         Assert.Contains(summon, defender.Field.SelectMany(row => row));
         Assert.Same(summon, defender.Field[0][1]);
+        var regencyResult = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == counter.InstanceId));
+        Assert.Equal("resolved", regencyResult.EffectResultStatus);
+        Assert.Equal("从我方手牌中将已声明的1张费用不高于3的军团活跃登场", regencyResult.EffectText);
 
         var ayiDeclaration = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", ayiDeclaration.Continuation);

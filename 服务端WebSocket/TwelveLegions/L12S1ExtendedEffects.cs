@@ -952,14 +952,16 @@ public sealed partial class L12GameEngine
             {
                 var entryId = PublicTriggerDeclared(item, "entryCard");
                 var slot = PublicTriggerDeclared(item, "entrySlot");
-                if (!string.IsNullOrWhiteSpace(entryId) && !string.IsNullOrWhiteSpace(slot)
+                var valid = !string.IsNullOrWhiteSpace(entryId) && !string.IsNullOrWhiteSpace(slot)
                     && player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
-                        && L12StructuredCardRules.CurrentCostAtMost(card, 4) && L12StructuredCardRules.HasFaction(player, card, "tianting"))
-                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 4)
+                        && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase);
+                if (valid)
                     SummonFromHand(player, entryId, slot, tapped: false);
                 else
-                    AddEvent("effect-cancelled", item.Controller,
-                        "暗度陈仓选择的军团或登场位置已失效；已返还的士气不返还");
+                    AddEvent("effect-failed", item.Controller,
+                        "暗度陈仓已发动，但选择的军团或登场位置在结算前失效；已返还的士气不返还");
                 FinishStackItem(item);
                 return;
             }
@@ -1018,16 +1020,28 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return;
             case "摄政皇权":
+            case "regency-entry":
             {
                 var declaredCard = PublicTriggerDeclared(item, "entryCard");
-                if (!string.IsNullOrWhiteSpace(declaredCard))
+                var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
+                    ?? item.Controller;
+                var slot = PublicTriggerDeclared(item, "entrySlot");
+                var valid = !string.IsNullOrWhiteSpace(declaredCard)
+                    && player.Hand.Any(card => card.InstanceId == declaredCard && card.CardType == "legion"
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 3)
+                        && EffectEntryBattlefieldChoices(item.Controller, card).Contains(battlefield))
+                    && EmptySlots(State.Players[battlefield]).Contains(slot, StringComparer.OrdinalIgnoreCase);
+                if (valid)
                 {
-                    var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
-                        ?? item.Controller;
-                    SummonFromHand(player, declaredCard, PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield);
-                    FinishStackItem(item); return;
+                    SummonFromHand(player, declaredCard, slot, tapped: false, battlefield);
                 }
-                FinishStackItem(item); return;
+                else
+                {
+                    AddEvent("effect-failed", item.Controller,
+                        "摄政皇权已发动，但声明的手牌军团或登场位置在结算前失效");
+                }
+                FinishStackItem(item);
+                return;
             }
             case "复仇血鹰":
             case "blood-eagle-debuff":

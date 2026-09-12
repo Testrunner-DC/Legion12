@@ -1645,6 +1645,13 @@ public sealed partial class L12GameEngine
                 activation.DeclaredValues);
             foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
         }
+        else if (key is ("S01-0021", "reaction", _))
+        {
+            var composite = CompositeFirstSegmentData("trigger:S01-0021:reaction",
+                activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
         candidate.Data["declaration-complete"] = "true";
         CleanupPublicTriggerReservation(candidate);
         AdvanceTriggerBatches();

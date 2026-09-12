@@ -331,6 +331,16 @@ internal static partial class L12CompositeEffectPlans
                 new("battle-until-dawn-draw", "若墓地卡牌数量不低于5，可抽取1张牌",
                     "mode:draw", RequiredDeclarationKey: "drawMode"),
             ],
+            ["trigger:S01-0021:reaction"] =
+            [
+                new("regency-entry", "从我方手牌中将已声明的1张费用不高于3的军团活跃登场",
+                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"]),
+            ],
+            ["trigger:ST01-10:reaction"] =
+            [
+                new("hidden-pass-summon", "从我方手牌中将已声明的1张费用不高于4的【天廷】军团活跃登场",
+                    PublicTargetKeys: ["entryCard", "entrySlot"]),
+            ],
             ["response:S01-0120"] =
             [
                 new("empty-city-block", "返还1士气：抵挡本次进攻"),
