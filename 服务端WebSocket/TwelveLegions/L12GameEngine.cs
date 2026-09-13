@@ -704,10 +704,10 @@ public sealed partial class L12GameEngine
         if (ability == "gramDamage")
         {
             var grave = player.Graveyard.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
-            var minimum = grave.Any(card => L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard") >= 3)
-                ? 2 : 4;
-            if (grave.Length < minimum) return "墓地没有足够的【阿斯加德】军团";
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card)).ToArray();
+            if (grave.Sum(card => L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard")) < 4)
+                return "墓地没有可合法返回牌库底部、合计视为4张的【阿斯加德】军团";
         }
         if (ability == "sifCycle"
             && player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")

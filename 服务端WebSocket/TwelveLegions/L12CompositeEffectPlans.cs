@@ -307,6 +307,10 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("ankh-draw", "安卡神碑：抽取1张牌"),
             ],
+            ["active:S01-0317:gramDamage"] =
+            [
+                new("gram-nonlethal-damage", "神剑格拉墨：对对方主宰造成1点非致命伤害"),
+            ],
             ["active:S01-04D1:yomiSweep"] =
             [
                 new("yomi-draw", "黄泉之门：抽取1张牌"),

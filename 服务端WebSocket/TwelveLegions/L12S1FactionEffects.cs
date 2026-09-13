@@ -640,7 +640,11 @@ public sealed partial class L12GameEngine
                 ]);
             case "gramDamage":
                 var gramCandidates = player.Graveyard.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card)).ToArray();
+                if (gramCandidates.Sum(card =>
+                        L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard")) < 4)
+                    return CommandResult.Reject("墓地没有可合法返回牌库底部、合计视为4张的【阿斯加德】军团");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     GraveCostSelectionStep(player,
@@ -882,14 +886,15 @@ public sealed partial class L12GameEngine
                 var representation = ids.SingleOrDefault(id => id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
                 var cardIds = ids.Where(id => !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
                 var cards = cardIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
-                    && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard"))).ToArray();
+                    && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card))).ToArray();
                 if (source.Tapped || cards.Any(card => card is null)
                     || cardIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != cardIds.Length
                     || !L12StructuredCardRules.IsExactGraveFactionRepresentation(player,
                         cards.Cast<L12CardInstance>().ToArray(), representation, "asgard", 4, legionOnly: true))
                     return CommandResult.Reject("需要活跃的神剑格拉墨与可视为合计4张的墓地阿斯加德军团");
                 source.Tapped = true;
-                foreach (var card in cards.Cast<L12CardInstance>()) { player.Graveyard.Remove(card); player.Library.Add(card); }
+                MoveGraveToLibraryBottom(player, cards.Cast<L12CardInstance>());
                 break;
             }
             case "isisCanopic" when source.CardId == "S01-02M1":
@@ -1129,6 +1134,12 @@ public sealed partial class L12GameEngine
         {
             var plan = $"active:S01-0215:{ability}";
             foreach (var pair in CompositeFirstSegmentData(plan,
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
+        if (ability == "gramDamage")
+        {
+            foreach (var pair in CompositeFirstSegmentData("active:S01-0317:gramDamage",
                          new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
                 data[pair.Key] = pair.Value;
         }

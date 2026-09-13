@@ -150,7 +150,8 @@ public sealed partial class L12GameEngine
                     break;
                 case "grave-bottom-one":
                     steps.Add(PublicTriggerStep("grave-card", "cost", "奥拉夫二世：预先选择置于牌库底部的墓地1张牌",
-                        player.Graveyard.Select(card => card.InstanceId), requiredChoice: required));
+                        player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId),
+                        requiredChoice: required));
                     break;
                 case "grave-bottom-two":
                     steps.Add(GraveCostSelectionStep(player,
@@ -249,8 +250,9 @@ public sealed partial class L12GameEngine
             "discard-own-legion" => PublicLegions(player).Any(),
             "ordinary-morale" => ActiveResourceCount(player) > 0,
             "master-damage" => player.Hp > 1,
-            "grave-bottom-one" => player.Graveyard.Count > 0,
-            "grave-bottom-two" => player.Graveyard.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
+            "grave-bottom-one" => player.Graveyard.Any(CanEnterHandOrLibrary),
+            "grave-bottom-two" => player.Graveyard.Where(CanEnterHandOrLibrary)
+                .Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
             "show-hand-tactic" => player.Hand.Any(card => card.CardType == "tactic"),
             "god-power" => player.Morale.Any(card => card.IsGodPower && !card.Tapped),
             "discard-hand" => player.Hand.Count > 0,
@@ -349,7 +351,8 @@ public sealed partial class L12GameEngine
                     "master-damage" when player.Hp <= 1
                         => "贝奥武夫的主宰伤害费用已失效；未支付费用且效果未入栈",
                     "grave-bottom-one" when costIds.Count != 1
-                        || !player.Graveyard.Any(card => card.InstanceId == costIds[0])
+                        || !player.Graveyard.Any(card => card.InstanceId == costIds[0]
+                            && CanEnterHandOrLibrary(card))
                         => "奥拉夫二世声明的墓地费用已失效；未支付费用且效果未入栈",
                     "grave-bottom-two" when !L12StructuredCardRules.TryResolveGraveCostDeclaration(player,
                         graveCostValues, 2, string.Empty, legionOnly: false, out _, out _)
