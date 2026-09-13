@@ -422,6 +422,7 @@ internal static partial class L12CompositeEffectPlans
             ["starter-aeneas-promotion"] = ("ST05-01", "promotion-enter"),
             ["starter-athena-active"] = ("ST05-M1", "active"),
             ["starter-oiran-active"] = ("ST04-06", "active"),
+            ["starter-horus-active"] = ("ST02-M1", "active"),
             ["starter-nuada-active"] = ("ST06-M1", "active"),
         };
 

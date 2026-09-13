@@ -738,9 +738,9 @@ public sealed partial class L12GameEngine
         if (ability == "horusRevive")
         {
             var field = ownLegions.ToArray();
-            var graveTarget = player.Graveyard.Any(card => card.CardType == "legion" && card.BaseTroops <= 2000
+            var graveTarget = player.Graveyard.Any(card => card.CardType == "legion" && card.CurrentTroops <= 2000
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
-            var prospectiveTarget = graveTarget || field.Any(card => card.BaseTroops <= 2000
+            var prospectiveTarget = graveTarget || field.Any(card => card.CurrentTroops <= 2000
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
             var visibleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
             var resources = player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)

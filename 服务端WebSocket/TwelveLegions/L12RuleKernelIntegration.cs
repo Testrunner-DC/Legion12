@@ -618,7 +618,7 @@ public sealed partial class L12GameEngine
                 : [];
             var choices = player.Graveyard
                 .Concat(prospectiveIds.Select(id => FindOnField(player, id, out _, out _)).OfType<L12CardInstance>())
-                .Where(card => card.CardType == "legion" && card.BaseTroops <= (step.CostThreshold ?? int.MaxValue)
+                .Where(card => card.CardType == "legion" && card.CurrentTroops <= (step.CostThreshold ?? int.MaxValue)
                     && (step.SelectionConstraint is null
                         || L12StructuredCardRules.HasFaction(player, card, step.SelectionConstraint)))
                 .Select(card => card.InstanceId)

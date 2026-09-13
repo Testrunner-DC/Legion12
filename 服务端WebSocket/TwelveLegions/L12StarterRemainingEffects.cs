@@ -48,7 +48,7 @@ public sealed partial class L12GameEngine
                 var field = fieldCards.Select(card => card.InstanceId).ToList();
                 var tombGuards = fieldCards.Where(card => L12StructuredCardSemantics.IsTombGuard(card.CardId))
                     .Select(card => card.InstanceId).ToList();
-                var grave = player.Graveyard.Where(card => card.CardType == "legion" && card.BaseTroops <= 2000
+                var grave = player.Graveyard.Where(card => card.CardType == "legion" && card.CurrentTroops <= 2000
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId).ToList();
                 if (MatchesPendingFreeMasterActivation(controller, source, ability))
@@ -70,7 +70,7 @@ public sealed partial class L12GameEngine
                 var waived = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 1 : 0;
                 var paymentCost = 1 - waived;
                 var prospectiveReviveExists = grave.Count > 0 || field.Any(id =>
-                    FindOnField(player, id, out _, out _) is { } card && card.BaseTroops <= 2000
+                    FindOnField(player, id, out _, out _) is { } card && card.CurrentTroops <= 2000
                     && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
                 var modes = new List<string>();
                 if (tombGuards.Count >= 2 && prospectiveReviveExists) modes.Add("mode:tomb-guards");
@@ -235,7 +235,7 @@ public sealed partial class L12GameEngine
                 var entryId = values[entryIndex];
                 var entry = player.Graveyard.FirstOrDefault(card => card.InstanceId == entryId)
                     ?? costs.OfType<L12CardInstance>().FirstOrDefault(card => card.InstanceId == entryId);
-                if (entry is null || entry.CardType != "legion" || entry.BaseTroops > 2000
+                if (entry is null || entry.CardType != "legion" || entry.CurrentTroops > 2000
                     || !L12StructuredCardRules.HasFaction(player, entry, "taiyangcheng"))
                     return "荷鲁斯选择的墓地军团已失效";
                 var (row, slot) = ParseSlot(values[entryIndex + 1]);
@@ -379,6 +379,16 @@ public sealed partial class L12GameEngine
             data["declared:flipTarget"] = values[1];
             data["declared:buffTargets"] = string.Join('|', values.Skip(2));
             publicTargets = values.Skip(1);
+        }
+        else if (ability == "horusRevive")
+        {
+            data["compositePlan"] = "starter-horus-active";
+            data["compositeSegment"] = "0";
+            data["atomicFlow"] = "horus-revive";
+            data["atomicContinuation"] = "true";
+            data["declared:entryCard"] = values[^2];
+            data["declared:entrySlot"] = values[^1];
+            publicTargets = [values[^2]];
         }
         else if (ability == "telemachusTopThree")
         {
@@ -1267,6 +1277,27 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item);
                 return true;
+            case "horus-revive":
+            {
+                var entryId = StarterDeclaredOne(item, "entryCard");
+                var slotChoice = StarterDeclaredOne(item, "entrySlot");
+                var entry = player.Graveyard.FirstOrDefault(card => card.InstanceId == entryId
+                    && IsFieldLegion(card) && card.CurrentTroops <= 2000
+                    && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
+                var slotIsOpen = !string.IsNullOrWhiteSpace(slotChoice)
+                    && EmptySlots(player).Contains(slotChoice, StringComparer.OrdinalIgnoreCase);
+                if (entry is null)
+                    RecordTargetSettlementFailure(item, entryId,
+                        "所选军团已离开墓地、不再是兵力不高于2000的军团或失去【太阳城】特征");
+                else if (!slotIsOpen)
+                    RecordTargetSettlementFailure(item, slotChoice, "已声明的休整登场位置不再为空");
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, entry.InstanceId,
+                             slotChoice!, tapped: true))
+                    RecordTargetSettlementFailure(item, entryId,
+                        "所选军团或休整登场位置在最终区域事务中失效");
+                FinishStackItem(item);
+                return true;
+            }
             case "nuada-rune-buff":
             {
                 var target = FindOnField(player, StarterDeclaredOne(item, "buffTarget"), out _, out _);

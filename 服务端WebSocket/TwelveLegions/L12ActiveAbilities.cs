@@ -553,7 +553,7 @@ public sealed partial class L12GameEngine
             {
                 var entry = declared.Length == 2
                     ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0]
-                        && card.CardType == "legion" && card.BaseTroops <= 2000
+                        && card.CardType == "legion" && card.CurrentTroops <= 2000
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     : null;
                 var (row, slot) = declared.Length == 2 ? ParseSlot(declared[1]) : (-1, -1);
@@ -603,6 +603,7 @@ public sealed partial class L12GameEngine
             ("S01-03D1", "valhallaRecover") => "active:S01-03D1:valhallaRecover",
             ("S01-04D1", "yomiSweep") => "active:S01-04D1:yomiSweep",
             ("S01-04M1", "amaterasuKill") => "active:S01-04M1:amaterasuKill",
+            ("ST02-M1", "horusRevive") => "starter-horus-active",
             _ => null,
         };
         switch ((sourceCardId, ability))
@@ -619,6 +620,10 @@ public sealed partial class L12GameEngine
             case ("S01-04M1", "amaterasuKill"):
                 declared["debuffTarget"] = [values[0]];
                 declared["killTarget"] = [values[1]];
+                break;
+            case ("ST02-M1", "horusRevive"):
+                declared["entryCard"] = [values[0]];
+                declared["entrySlot"] = [values[1]];
                 break;
         }
         return (plan, declared);
