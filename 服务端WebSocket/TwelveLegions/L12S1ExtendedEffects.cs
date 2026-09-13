@@ -384,6 +384,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         if (TryResolveDrawDiscardSegment(item, card)) return true;
+        if (TryResolveGraveToHandTrigger(item, card)) return true;
         switch (AtomicFlowKey(item, card))
         {
             case "黑胡子蒂奇":

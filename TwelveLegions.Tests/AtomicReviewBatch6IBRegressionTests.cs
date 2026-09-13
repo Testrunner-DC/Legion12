@@ -13,7 +13,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
     [
         ("S01-0001", "death"), ("S01-0112", "death"), ("S01-0115", "death"),
         ("S01-0207", "death"), ("S01-0210", "death"), ("S01-0303", "death"),
-        ("S01-0304", "death"), ("S01-0306", "death"), ("S01-0313", "death"),
+        ("S01-0304", "death"), ("S01-0306", "death"), ("S01-0307", "death"), ("S01-0313", "death"),
         ("S01-0403", "death"), ("S01-0407", "death"), ("S02-0002", "after-kill"),
         ("S02-01S1", "death"), ("S02-0301", "death"), ("S02-0508", "death"),
         ("S02-0518", "death"), ("S02-0601", "death"), ("S02-0615", "death"),
@@ -148,6 +148,10 @@ public sealed class AtomicReviewBatch6IBRegressionTests
                     cards["target"] = Card("S01-0201", "batch6ib-harald-target", troops: 2000);
                     enemy.Field[0][0] = cards["target"];
                     break;
+                case "S01-0307":
+                    cards["target"] = Card("S01-0303", "batch6ib-alvida-target", cost: 2);
+                    player.Graveyard.Add(cards["target"]);
+                    break;
                 case "S01-0313":
                     cards["target"] = Card("S01-0201", "batch6ib-oddr-target", troops: 2000);
                     enemy.Field[0][0] = cards["target"];
@@ -208,6 +212,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         yield return ["S01-0207", "death"];
         yield return ["S01-0210", "death"];
         yield return ["S01-0304", "death"];
+        yield return ["S01-0307", "death"];
         yield return ["S01-0313", "death"];
         yield return ["S01-0403", "death"];
         yield return ["S01-0407", "death"];
@@ -257,6 +262,148 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         Assert.Empty(game.State.PendingTriggerStackCandidates);
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
+    }
+
+    public static IEnumerable<object[]> GraveToHandRows()
+    {
+        yield return ["S01-0112", true];
+        yield return ["S01-0307", false];
+        yield return ["S02-0518", true];
+    }
+
+    [Theory]
+    [MemberData(nameof(GraveToHandRows))]
+    [Trait("L12Evidence", "entry:grave-to-hand-shared-lifecycle")]
+    public void GraveToHandDeathEffectsUseOneExplicitSelectionAndSettlementProtocol(string cardId, bool optional)
+    {
+        var game = Create(9810 + cardId[^1]);
+        var player = game.State.Players[0];
+        var invalid = Card("S01-0002", $"grave-to-hand-invalid-{cardId}");
+        player.Graveyard.Add(invalid);
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+
+        if (optional) ResolveChoice(game, "mode:use");
+        var targetPrompt = OnlyPrompt(game);
+        Assert.Equal("grave-card", targetPrompt.Kind);
+        Assert.Equal(1, targetPrompt.MinChoose);
+        Assert.Equal(1, targetPrompt.MaxChoose);
+        Assert.Equal(optional, targetPrompt.ValidChoices.Contains("skip"));
+        if (optional) Assert.Equal("取消整次发动", targetPrompt.ChoiceLabels["skip"]);
+        Assert.Equal([fixture.Cards["target"].InstanceId],
+            targetPrompt.ValidChoices.Where(choice => choice != "skip"));
+        var displayed = targetPrompt.Data["displayCardIds"].Split('|');
+        Assert.Contains(fixture.Cards["target"].InstanceId, displayed);
+        Assert.Contains(invalid.InstanceId, displayed);
+        var reconnectPrompt = JsonSerializer.Serialize(game.SnapshotFor(0));
+        Assert.Contains(targetPrompt.PromptId, reconnectPrompt, StringComparison.Ordinal);
+        Assert.Contains(fixture.Cards["target"].InstanceId, reconnectPrompt, StringComparison.Ordinal);
+        Assert.Contains(invalid.InstanceId, reconnectPrompt, StringComparison.Ordinal);
+
+        ResolveCards(game, fixture.Cards["target"].InstanceId);
+        var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal(fixture.Cards["target"].InstanceId,
+            item.Data.GetValueOrDefault("declared:recoverTarget"));
+        Assert.Contains(fixture.Cards["target"].InstanceId,
+            JsonSerializer.Serialize(game.SnapshotFor(0)), StringComparison.Ordinal);
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["target"], player.Hand);
+        Assert.DoesNotContain(fixture.Cards["target"], player.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == fixture.Cards["target"].InstanceId));
+        Assert.Contains(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add"
+            && entry.TargetInstanceId == fixture.Cards["target"].InstanceId);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
+    }
+
+    [Theory]
+    [MemberData(nameof(GraveToHandRows))]
+    [Trait("L12Evidence", "entry:grave-to-hand-revalidate-after-response")]
+    public void GraveToHandDeathEffectsFailWhenDeclaredTargetLeavesGraveDuringStack(string cardId, bool optional)
+    {
+        var game = Create(9820 + cardId[^1]);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+        if (optional) ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["target"].InstanceId);
+
+        Assert.True(player.Graveyard.Remove(fixture.Cards["target"]));
+        player.Library.Add(fixture.Cards["target"]);
+        PassResponses(game);
+
+        Assert.DoesNotContain(fixture.Cards["target"], player.Hand);
+        Assert.Contains(fixture.Cards["target"], player.Library);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("逆结算后不再符合条件", StringComparison.Ordinal));
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "failed"
+            && entry.Cards.Any(card => card.CardId == cardId));
+    }
+
+    [Theory]
+    [MemberData(nameof(GraveToHandRows))]
+    [Trait("L12Evidence", "entry:grave-to-hand-negated")]
+    public void GraveToHandDeathEffectsStopWhenNegatedWithoutMovingTarget(string cardId, bool optional)
+    {
+        var game = Create(9830 + cardId[^1]);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+        if (optional) ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["target"].InstanceId);
+        Assert.Single(game.State.EffectStack).Negated = true;
+
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["target"], player.Graveyard);
+        Assert.DoesNotContain(fixture.Cards["target"], player.Hand);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "negated"
+            && entry.Cards.Any(card => card.CardId == cardId));
+    }
+
+    [Theory]
+    [InlineData("S01-0112")]
+    [InlineData("S02-0518")]
+    [Trait("L12Evidence", "entry:grave-to-hand-decline-duplicate")]
+    public void GraveToHandDeathEffectsDeclineWithoutStackAndRejectDuplicateSubmission(string cardId)
+    {
+        var game = Create(9840 + cardId[^1]);
+        QueueReviewedTrigger(game, cardId, "death");
+        var prompt = OnlyPrompt(game);
+
+        ResolveChoice(game, "mode:none");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        Assert.False(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0112")]
+    [Trait("L12Evidence", "entry:grave-to-hand-trigger-condition-locked")]
+    public void SunWuLocksDisasterTriggerConditionButStillRevalidatesTheDeclaredCard()
+    {
+        var game = Create(9849);
+        game.State.DisasterValue = 4;
+        var fixture = QueueReviewedTrigger(game, "S01-0112", "death");
+        ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["target"].InstanceId);
+
+        game.State.DisasterValue = 5;
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["target"], game.State.Players[0].Hand);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.CardId == "S01-0112"));
     }
 
     [Theory]

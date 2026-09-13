@@ -31,13 +31,14 @@ public sealed partial class L12GameEngine
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["S01-0001|death"] = "teach-draw-cycle",
-            ["S01-0112|death"] = "sunwu-recover",
+            ["S01-0112|death"] = "grave-to-hand",
             ["S01-0115|death"] = "jingke-kill",
             ["S01-0207|death"] = "tutankhamun-top",
             ["S01-0210|death"] = "nitocris-summon",
             ["S01-0303|death"] = "ragnar-draw-cycle",
             ["S01-0304|death"] = "harald-kill",
             ["S01-0306|death"] = "olaf-draw-cycle",
+            ["S01-0307|death"] = "grave-to-hand",
             ["S01-0313|death"] = "oddr-rest",
             ["S01-0403|death"] = "uesugi-counters",
             ["S01-0407|death"] = "ryoma-summon",
@@ -45,7 +46,7 @@ public sealed partial class L12GameEngine
             ["S02-01S1|death"] = "xiaotian-morale",
             ["S02-0301|death"] = "thor-draw-cycle",
             ["S02-0508|death"] = "atalanta-flip",
-            ["S02-0518|death"] = "theseus-recover",
+            ["S02-0518|death"] = "grave-to-hand",
             ["S02-0601|death"] = "arthur-summon",
             ["S02-0615|death"] = "gwen-choice",
         };
@@ -130,8 +131,8 @@ public sealed partial class L12GameEngine
         var opponent = State.Players[1 - candidate.Controller];
         var legal = plan switch
         {
-            "sunwu-recover" => State.DisasterValue <= 4 && player.Graveyard.Any(card =>
-                card.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
+            "grave-to-hand" => TryGetGraveToHandTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var recovery)
+                && GraveToHandTriggerConditionMet(recovery) && LegalGraveToHandTargets(recovery, player).Length > 0,
             "jingke-kill" => CanReturnMorale(player, 1),
             "tutankhamun-top" => player.Graveyard.Any(card => CanEnterHandOrLibrary(card)
                 && card.CardId != "S01-0207" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
@@ -147,7 +148,6 @@ public sealed partial class L12GameEngine
                 && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(card, 3)),
             "xiaotian-morale" => player.MoraleDeck.Count > 0,
             "atalanta-flip" => player.Morale.Any(card => !card.IsGodPower),
-            "theseus-recover" => player.Graveyard.Any(card => card.CardType == "legion" && card.HasTrait("晋升者")),
             "arthur-summon" => EmptySlots(player).Any() && player.Hand.Any(card => card.CardType == "legion"
                 && card.HasTrait("圆桌骑士") && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
             "gwen-choice" => candidate.Data.GetValueOrDefault("cause") == "effect",
@@ -371,16 +371,23 @@ public sealed partial class L12GameEngine
                     ["mode:none", "mode:use"]),
             ];
         }
-        else if (batch6IBPlan == "sunwu-recover")
+        else if (batch6IBPlan == "grave-to-hand"
+            && TryGetGraveToHandTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var recovery))
         {
-            var targets = player.Graveyard.Where(card => card.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(card, 4))
-                .Select(card => card.InstanceId).ToList();
-            steps =
-            [
-                PublicTriggerStep("option", "mode", "孙武：预先声明是否发动墓地回收效果", ["mode:none", "mode:use"]),
-                PublicTriggerStep("grave-card", "recoverTarget", "孙武：预先选择墓地1张费用不高于4的战术卡",
-                    targets, requiredChoice: "mode:use"),
-            ];
+            var targets = LegalGraveToHandTargets(recovery, player).Select(card => card.InstanceId).ToList();
+            steps = recovery.Optional
+                ?
+                [
+                    PublicTriggerStep("option", "mode", $"〈{recovery.Name}〉：预先声明是否发动墓地回收效果",
+                        ["mode:none", "mode:use"]),
+                    PublicTriggerStep("grave-card", "recoverTarget", recovery.PromptText,
+                        targets, requiredChoice: "mode:use"),
+                ]
+                :
+                [
+                    PublicTriggerStep("grave-card", "recoverTarget", recovery.PromptText,
+                        targets, allowCancel: false),
+                ];
         }
         else if (batch6IBPlan == "jingke-kill")
         {
@@ -394,7 +401,7 @@ public sealed partial class L12GameEngine
                     min: 0, max: 1, requiredChoice: "mode:use"),
             ];
         }
-        else if (batch6IBPlan is "tutankhamun-top" or "oddr-rest" or "theseus-recover")
+        else if (batch6IBPlan is "tutankhamun-top" or "oddr-rest")
         {
             var targets = batch6IBPlan switch
             {
@@ -403,8 +410,7 @@ public sealed partial class L12GameEngine
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                     .Select(card => card.InstanceId),
                 "oddr-rest" => PublicLegions(opponent).Where(card => !card.Tapped).Select(card => card.InstanceId),
-                _ => player.Graveyard.Where(card => card.CardType == "legion" && card.HasTrait("晋升者"))
-                    .Select(card => card.InstanceId),
+                _ => [],
             };
             var key = batch6IBPlan == "oddr-rest" ? "restTarget" : "recoverTarget";
             steps =
@@ -1182,13 +1188,15 @@ public sealed partial class L12GameEngine
                     && candidate.Data.GetValueOrDefault("factionZeroEligibleAtReturn") != "true")
                 || player.MoraleDeck.Count == 0))
             error = "天廷阵营的零士气条件已失效；效果未入栈";
-        else if (batch6IBPlan == "sunwu-recover")
+        else if (batch6IBPlan == "grave-to-hand"
+            && TryGetGraveToHandTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var graveRecoverySpec))
         {
             var target = activation.DeclaredValues.GetValueOrDefault("recoverTarget", []).SingleOrDefault();
-            if (mode == "mode:use" && (State.DisasterValue > 4 || target is null
-                || !player.Graveyard.Any(card => card.InstanceId == target && card.CardType == "tactic"
-                    && L12StructuredCardRules.CurrentCostAtMost(card, 4))))
-                error = "孙武声明的墓地战术目标已失效；效果未入栈";
+            if ((!graveRecoverySpec.Optional || mode == "mode:use")
+                && (!GraveToHandTriggerConditionMet(graveRecoverySpec) || target is null
+                || !player.Graveyard.Any(card => card.InstanceId == target
+                    && IsLegalGraveToHandTarget(graveRecoverySpec, player, card))))
+                error = $"{graveRecoverySpec.Name}声明的墓地目标已失效；效果未入栈";
         }
         else if (batch6IBPlan == "jingke-kill")
         {
@@ -1266,13 +1274,6 @@ public sealed partial class L12GameEngine
             var target = activation.DeclaredValues.GetValueOrDefault("moraleTarget", []).SingleOrDefault();
             if (target is null || !player.Morale.Any(card => card.InstanceId == target && !card.IsGodPower))
                 error = "阿塔兰忒声明的士气目标已失效；效果未入栈";
-        }
-        else if (batch6IBPlan == "theseus-recover")
-        {
-            var target = activation.DeclaredValues.GetValueOrDefault("recoverTarget", []).SingleOrDefault();
-            if (mode == "mode:use" && (target is null || !player.Graveyard.Any(card => card.InstanceId == target
-                && card.CardType == "legion" && card.HasTrait("晋升者"))))
-                error = "忒修斯声明的墓地【晋升者】目标已失效；效果未入栈";
         }
         else if (batch6IBPlan == "gwen-choice" && (mode is not ("mode:heal" or "mode:draw")
             || candidate.Data.GetValueOrDefault("cause") != "effect"))
@@ -1622,7 +1623,7 @@ public sealed partial class L12GameEngine
         {
             var legacyTargets = batch6IBPlan switch
             {
-                "sunwu-recover" or "tutankhamun-top" or "theseus-recover" =>
+                "grave-to-hand" or "tutankhamun-top" =>
                     activation.DeclaredValues.GetValueOrDefault("recoverTarget", []),
                 "jingke-kill" or "harald-kill" => activation.DeclaredValues.GetValueOrDefault("killTarget", []),
                 "oddr-rest" => activation.DeclaredValues.GetValueOrDefault("restTarget", []),

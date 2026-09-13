@@ -16,13 +16,16 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
 
     private static readonly L12SingleSegmentTriggeredEffectPresentationDefinition[] Definitions =
     [
+        new("S01-0112", 3, "death"),
         new("S01-0304", 3, "death"),
+        new("S01-0307", 2, "death"),
         new("S01-0313", 3, "death"),
         new("S02-0001", 1, "s2-after-opponent-tactic"),
         new("S02-0002", 2, "after-kill"),
         new("S02-01S1", 2, "death"),
         new("S02-0305", 3, "master-damaged"),
         new("S02-0508", 2, "death"),
+        new("S02-0518", 3, "death"),
         new("S02-05M1", 1, "friendly-ranged-death"),
         new("S02-06S4", 3, "friendly-round-table-enter"),
         new("S02-04M1", 1, "friendly-legion-moves"),

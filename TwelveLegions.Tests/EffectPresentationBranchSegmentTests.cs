@@ -50,13 +50,16 @@ public sealed class EffectPresentationBranchSegmentTests
     {
         var expected = new[]
         {
+            ("S01-0112", 3, "death"),
             ("S01-0304", 3, "death"),
+            ("S01-0307", 2, "death"),
             ("S01-0313", 3, "death"),
             ("S02-0001", 1, "s2-after-opponent-tactic"),
             ("S02-0002", 2, "after-kill"),
             ("S02-01S1", 2, "death"),
             ("S02-0305", 3, "master-damaged"),
             ("S02-0508", 2, "death"),
+            ("S02-0518", 3, "death"),
             ("S02-05M1", 1, "friendly-ranged-death"),
             ("S02-06S4", 3, "friendly-round-table-enter"),
             ("S02-04M1", 1, "friendly-legion-moves"),
