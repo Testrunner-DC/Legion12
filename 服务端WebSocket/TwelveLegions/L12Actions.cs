@@ -383,6 +383,8 @@ public sealed partial class L12GameEngine
                     && command.Target is { Type: "legion" }
                     ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
                     : null;
+            if (compositeDeclaration is not null && declaredData is not null)
+                RecordCompositePreResponseCosts(card.CardId, compositeDeclaration, declaredData);
             QueueOrPushTriggeredEffect(playerIndex, card, trigger,
                 trigger == "enter" ? "【登场时】效果" : "战术效果",
                 targets: compositeDeclaration is null ? null : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration),

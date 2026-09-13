@@ -59,5 +59,6 @@ public sealed partial class L12GameEngine
     {
         data["responseTargetIds"] = ResponseTargetIds([target], viewer);
         data["responseContext"] = DescribeResponse(target, viewer);
+        AddPaidCostResponseData(target, data);
     }
 }

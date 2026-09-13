@@ -20,6 +20,10 @@ public sealed class YingzhengEntryCostGatewayTests
         game.State.Players[1].Field[0][0] = enemy;
 
         Invoke(game, "QueueOrPushTriggeredEffect", 0, yingzheng, "enter", "【登场时】效果", null, null);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
+        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
         PassResponses(game);
 
         Assert.Same(enemy, game.State.Players[1].Field[0][0]);
@@ -201,6 +205,34 @@ public sealed class YingzhengEntryCostGatewayTests
         Assert.Contains(first, player.Graveyard);
         Assert.Contains(second, player.Hand);
         Assert.Single(player.Graveyard, card => card.InstanceId == first.InstanceId);
+    }
+
+    [Fact]
+    public void PaidCostAndCompleteEffectRemainVisibleAfterResponseReconnect()
+    {
+        var game = Create(91338, stateFormatVersion: 2);
+        var player = game.State.Players[0];
+        var yingzheng = Card("S02-0101", "yingzheng-response-restore-source");
+        var cost = Card("S02-0101", "yingzheng-response-restore-cost");
+        player.Field[0][0] = yingzheng;
+        player.Hand.Add(cost);
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, yingzheng, "enter", "【登场时】效果", null, null);
+        var costPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: costPrompt.PromptId, Choice: cost.InstanceId)).Accepted);
+
+        var restored = Restore(game);
+        var response = Assert.Single(restored.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal($"弃置手牌中的〈{cost.Name}〉（当前费用8）",
+            response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        Assert.Contains("击杀除此军团以外的所有军团", response.Text, StringComparison.Ordinal);
+        Assert.Contains("返还所有士气并限制本回合追加士气", response.Text,
+            StringComparison.Ordinal);
+        Assert.Contains(restored.State.Players[0].Graveyard,
+            card => card.InstanceId == cost.InstanceId);
     }
 
     private static L12GameEngine Create(int seed, int stateFormatVersion = 0)

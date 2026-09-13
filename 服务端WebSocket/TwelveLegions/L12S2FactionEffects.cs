@@ -2995,6 +2995,7 @@ public sealed partial class L12GameEngine
         var data = CompositeFirstSegmentData("trigger:S02-0101:enter",
             new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase));
         data["entryCostPaid"] = "true";
+        RecordPaidCostPresentation(data, $"弃置手牌中的〈{discard.Name}〉（当前费用8）");
         QueueOrPushTriggeredEffect(prompt.PlayerIndex, source, "enter", "【登场时】效果", data: data);
         return CommandResult.Ok();
     }

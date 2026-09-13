@@ -1428,6 +1428,9 @@ public sealed partial class L12GameEngine
         choices.Add("pass");
         responseData["choiceMode"] = "instant";
         responseData["responseTargetIds"] = ResponseTargetIds(State.EffectStack, playerIndex);
+        foreach (var item in State.EffectStack)
+            AddPaidCostResponseData(item, responseData, item.StackItemId);
+        AddPaidCostResponseData(top, responseData);
         var responseText = "选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n"
             + string.Join("\n\n", State.EffectStack.Select(item => DescribeResponse(item, playerIndex)));
         CreatePrompt(playerIndex, "response", responseText, choices,
@@ -1485,6 +1488,7 @@ public sealed partial class L12GameEngine
         if (source is not null && top.Trigger is "reaction" or "s2-reaction" or "response-negate"
                 or "response-block" or "response-retarget-master")
             effect = ResolveResponseEffectDisplayText(source, effect);
+        effect = CompleteSingleResponseEffectText(top, effect);
         var timing = top.Trigger switch
         {
             "promotion-enter" => "晋升登场",
@@ -1528,7 +1532,7 @@ public sealed partial class L12GameEngine
                 or "response-retarget-master" => ResponseCardTimingLabel(effect),
             _ => ResponseCardTimingLabel(effect),
         };
-        return $"〈{top.SourceName}〉\n时点：{timing}\n效果：{effect}";
+        return $"〈{top.SourceName}〉\n时点：{timing}{PaidCostResponseLine(top)}\n效果：{effect}";
     }
 
     private static string ResponseCardTimingLabel(string effect)

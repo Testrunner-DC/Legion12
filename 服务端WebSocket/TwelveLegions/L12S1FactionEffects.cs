@@ -1118,12 +1118,22 @@ public sealed partial class L12GameEngine
                 declared["moraleTargets"] = [.. values.Skip(1)];
             }
             foreach (var pair in CompositeFirstSegmentData(plan, declared)) data[pair.Key] = pair.Value;
+            if (ability == "amaterasuKill")
+                RecordPaidCostPresentation(data, "消耗1士气");
+            else
+            {
+                var discarded = player.Graveyard.FirstOrDefault(card => card.InstanceId == values[0]);
+                RecordPaidCostPresentation(data, discarded is null
+                    ? "弃置1张手牌"
+                    : $"弃置手牌中的〈{discarded.Name}〉");
+            }
         }
         if (ability == "lokiCycle")
         {
             foreach (var pair in CompositeFirstSegmentData("active:S01-03M2:lokiCycle",
                          new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
                 data[pair.Key] = pair.Value;
+            RecordPaidCostPresentation(data, "消耗1士气");
         }
         if (ability == "valhallaKill")
         {
@@ -1139,6 +1149,7 @@ public sealed partial class L12GameEngine
             };
             foreach (var pair in CompositeFirstSegmentData("active:S01-03D1:valhallaKill", declared))
                 data[pair.Key] = pair.Value;
+            RecordPaidCostPresentation(data, "主动休整", "将墓地卡牌按效果合计2张置于牌库底部");
         }
         if (ability is "ankhReady" or "ankhDraw")
         {

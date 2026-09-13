@@ -51,5 +51,13 @@ const board = readFileSync(new URL('../src/l12/game/GameBoard.vue', import.meta.
 assert.equal((mat.match(/responseTargetIds/g) ?? []).length, 2, 'highlight prop is declaration and visual binding only, never permission')
 assert.match(mat, /'response-target': !player.field\[row\]\[slot\]\?\.hidden && responseTargetIds\?\.includes/)
 assert.equal((board.match(/:response-target-ids="promptMinimized \? responseTargetIds : \[\]"/g) ?? []).length, 2)
+assert.equal((board.match(/@graveyard="\(!hasBlockingPrompt \|\| promptMinimized\) && \(graveyardPlayer = \$event\)"/g) ?? []).length, 2,
+  'both public graveyards must remain inspectable while a blocking prompt is minimized')
+assert.match(board, /:inspection-only="hasBlockingPrompt"/,
+  'graveyard opened during a prompt must expose information without enabling grave abilities')
+assert.match(board, /graveyardPlayer\.value !== null \|\| !promptMinimized\.value/,
+  'graveyard card detail inspector must remain visible while the original prompt stays minimized')
+const graveyard = readFileSync(new URL('../src/l12/game/GraveyardOverlay.vue', import.meta.url), 'utf8')
+assert.match(graveyard, /if \(props\.inspectionOnly\) return/)
 assert.match(source, /const context = prompt.value\?\.data\?\.responseContext\?\.trim\(\)/)
-console.log('Response-target highlight behavior: same-name instances, union, selection, deselection, expand, prompt switch, bound payment, malformed metadata, hidden/off-field exclusion, close and unmount passed')
+console.log('Response-target highlights and minimized-prompt public graveyard inspection passed')

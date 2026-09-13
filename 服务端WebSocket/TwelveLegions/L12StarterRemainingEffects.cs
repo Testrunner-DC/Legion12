@@ -358,6 +358,10 @@ public sealed partial class L12GameEngine
         if (values.Length > 0) data["target"] = string.Join('|', values);
         if (ability == "lightSwordActive")
             DeclarePresentationBranch(data, "light-sword-active", "mode", values[0]);
+        if (ability == "oiranTransfer")
+            RecordPaidCostPresentation(data, "主动休整");
+        else if (ability == "nuadaReadyMorale")
+            RecordPaidCostPresentation(data, "消耗2符文");
         IEnumerable<string>? publicTargets = null;
         if (ability == "oiranTransfer")
         {

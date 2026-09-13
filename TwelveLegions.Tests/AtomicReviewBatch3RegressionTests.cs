@@ -338,6 +338,12 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.Contains(discard, player.Graveyard);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal($"弃置手牌中的〈{discard.Name}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        Assert.Contains("将已声明的最多2张士气转为活跃", response.Text, StringComparison.Ordinal);
+        Assert.Contains("前排所有【高天原】军团本回合兵力+1000", response.Text, StringComparison.Ordinal);
         PassResponses(game);
         Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
     }
@@ -373,6 +379,10 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.Contains(milled, player.Graveyard);
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
         Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("弃置我方牌库顶部1张牌", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：弃置我方牌库顶部1张牌", response.Text,
+            StringComparison.Ordinal);
         enemy.Field[0][0] = null;
         enemy.Graveyard.Add(target);
         PassResponses(game);

@@ -193,10 +193,12 @@ const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
 const passivePresentationPaused = computed(() => Boolean(
   publicReveal.value || diceReveal.value || hiddenRevealCard.value || activeBoardPromptId.value,
 ))
-const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && focusCard.value && (
-  graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
-  || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
-  || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
+const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
+  graveyardPlayer.value !== null || !promptMinimized.value && (
+    masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
+    || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
+    || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
+  )
 )))
 function updateInspectorFloatRect() {
   if (!modalInspectorVisible.value || !inspectorAnchor.value) return
@@ -892,7 +894,7 @@ function statusTexts(card: Card) {
               :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
-              @focus="focusCard = $event" @graveyard="!hasBlockingPrompt && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @graveyard="(!hasBlockingPrompt || promptMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
@@ -962,7 +964,7 @@ function statusTexts(card: Card) {
               :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"
               :master-targetable="!isControlledPlayer(viewMe.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewMe.playerIndex, row, slot, card)" @master="masterFor(viewMe.playerIndex)"
-              @focus="focusCard = $event" @graveyard="!hasBlockingPrompt && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @graveyard="(!hasBlockingPrompt || promptMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewMe.playerIndex, action, card)"
               @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
               @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
@@ -1009,7 +1011,7 @@ function statusTexts(card: Card) {
         </aside>
       </div>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
-        :own-player-index="game.you" :can-activate-osiris="canActivateOsiris"
+        :own-player-index="game.you" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
         :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />

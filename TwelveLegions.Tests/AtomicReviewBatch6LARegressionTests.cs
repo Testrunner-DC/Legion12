@@ -265,6 +265,42 @@ public sealed class AtomicReviewBatch6LARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0101")]
+    public void YingzhengOpponentResponseDisclosesCommittedCostAndNegationDoesNotRefundIt()
+    {
+        var (game, player, _, cost) = BeginYingzheng(8414);
+        var item = Assert.Single(game.State.EffectStack,
+            candidate => candidate.Data.GetValueOrDefault("atomicFlow") == "yingzheng-kill");
+
+        for (var safety = 0; safety < 4; safety++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("response", prompt.Kind);
+            if (prompt.PlayerIndex == 1)
+            {
+                Assert.Equal($"弃置手牌中的〈{cost.Name}〉（当前费用8）",
+                    prompt.Data["responsePaidCostSummary"]);
+                Assert.Equal(prompt.Data["responsePaidCostSummary"],
+                    prompt.Data[$"{item.StackItemId}:responsePaidCostSummary"]);
+                Assert.Contains("Cost（已支付）", prompt.Text, StringComparison.Ordinal);
+                Assert.Contains($"〈{cost.Name}〉", prompt.Text, StringComparison.Ordinal);
+                Assert.Contains("击杀除此军团以外的所有军团", prompt.Text, StringComparison.Ordinal);
+                Assert.Contains("返还所有士气并限制本回合追加士气", prompt.Text, StringComparison.Ordinal);
+                Assert.DoesNotContain("无效不返还", prompt.Text, StringComparison.Ordinal);
+                break;
+            }
+            Resolve(game, "pass");
+        }
+
+        Assert.Contains(game.State.PendingPrompts, prompt => prompt.PlayerIndex == 1);
+        item.Negated = true;
+        PassResponses(game);
+
+        Assert.Contains(cost, player.Graveyard);
+        Assert.DoesNotContain(cost, player.Hand);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0101")]
     public void YingzhengSuccessfulResponseResolvesKillAndMoraleReturnTogether()
     {
         var (game, player, _, cost) = BeginYingzheng(8405);

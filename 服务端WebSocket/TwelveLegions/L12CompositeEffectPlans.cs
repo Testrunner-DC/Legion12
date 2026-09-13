@@ -1151,6 +1151,7 @@ public sealed partial class L12GameEngine
         }
         var data = CompositeFirstSegmentData(source.CardId, activation.DeclaredValues)
             ?? new Dictionary<string, string>();
+        RecordCompositePreResponseCosts(source.CardId, activation.DeclaredValues, data);
         data["effectGeneratedPlay"] = "free";
         data["originZone"] = "library";
         PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",

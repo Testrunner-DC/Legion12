@@ -3,12 +3,13 @@ import { computed } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 
-const props = defineProps<{ players: PlayerView[]; initialPlayer: number; ownPlayerIndex: number; canActivateOsiris?: boolean }>()
+const props = defineProps<{ players: PlayerView[]; initialPlayer: number; ownPlayerIndex: number; canActivateOsiris?: boolean; inspectionOnly?: boolean }>()
 const emit = defineEmits<{ close: []; focus: [card: Card]; ability: [card: Card, ability: string] }>()
 const player = computed(() => props.players.find(item => item.playerIndex === props.initialPlayer) ?? props.players[0])
 
 function selectCard(card: Card) {
   emit('focus', card)
+  if (props.inspectionOnly) return
   if (player.value.playerIndex !== props.ownPlayerIndex) return
   const enabledAbilities = card.abilities?.filter(ability => ability.enabled !== false) ?? []
   if (enabledAbilities.length === 1) emit('ability', card, enabledAbilities[0].id)
@@ -29,7 +30,7 @@ function selectCard(card: Card) {
             <div class="graveyard-cards">
               <div v-for="card in [...(player.graveyard || [])].reverse()" :key="card.instanceId" class="graveyard-card-entry">
                 <CardTile :card="card" @mouseenter="emit('focus', card)" @select="selectCard(card)" />
-                <button v-if="player.playerIndex === ownPlayerIndex && canActivateOsiris && card.cardId === 'S01-02M2'"
+                <button v-if="!inspectionOnly && player.playerIndex === ownPlayerIndex && canActivateOsiris && card.cardId === 'S01-02M2'"
                   class="osiris-victory" @mouseenter="emit('focus', card)" @click.stop="emit('ability', card, 'isisVictory')">特殊胜利</button>
               </div>
               <p v-if="!player.graveyard?.length">墓地为空</p>
