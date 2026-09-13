@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260913-SEMANTIC-TRIGGERS-B：月读、孙悟空与天廷时点及呈现同源
+
+- 月读三个位移触发分别改用`friendly-back-to-front`、`friendly-front-to-back`、`friendly-legion-moves`；同一移动产生多个能力时仍进入一个由控制者排序的TriggerBatch，但每项保持自己的印刷能力、费用、候选和结算场景。
+- 孙悟空返回主宰区后的士气分支改用`master-legion-returned`，只展示已经发生返回后的条件士气段；天廷士气归零恢复改用`morale-returned-to-zero`。天廷两项能力新增权威结构定义，主动追加活跃士气进入`single-active`，归零恢复进入`single-trigger`，不再由卡文解析误判成静态或主动事件。
+- 放弃不建空堆叠并发布`declined`，成功、被无效及目标失效使用同一场景身份；费用预付、once预留、重复提交和恢复继续走公共协议。定向109/109、Focused/Batch/Release规则3124/3124、平台116/116、UI321项、连接23/23、卡图324+42与前后端生产构建通过。功能提交`9d48da58cc721ecddf1bf457bf6efd5260b698e8`，发布证据`D:\GPT\Legion12\artifacts\deploy\9d48da58cc721ecddf1bf457bf6efd5260b698e8\l12-release-9d48da58cc721ecddf1bf457bf6efd5260b698e8.json`；未部署。
+
 ## EFFECT-20260913-SEMANTIC-TRIGGERS-A：事件触发不再伪装为主动发动
 
 - 安德华拉诺特、阿尔忒弥斯、〈寻找圣杯之旅〉三个单段可选触发已接入`single-trigger`协议，分别使用`master-damaged`、`friendly-ranged-death`、`friendly-round-table-enter`真实时点；声明、放弃、入栈、结算、动效、日志、回放与恢复共享各自印刷能力第1/1段。

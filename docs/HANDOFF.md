@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-09-13 事件触发语义键第二批
+
+- 月读三项位移能力已分别使用`friendly-back-to-front`、`friendly-front-to-back`、`friendly-legion-moves`，同一移动的多触发仍由一个TriggerBatch排序。
+- 孙悟空返回后的士气分支使用`master-legion-returned`并仅展示未结算的士气段；天廷主动追加活跃士气与归零恢复分别接入`single-active`、`single-trigger`，权威结构不再依赖卡文推断。
+- 放弃/成功/无效/失效、费用和once、重复提交及恢复沿公共协议。功能提交`9d48da58cc721ecddf1bf457bf6efd5260b698e8`通过定向109/109、规则3124/3124、平台116、UI321、连接23、卡图与生产构建；发布证据在同哈希产物目录，未部署。
+
 ## 2026-09-13 事件触发语义键第一批
 
 - 五项事件候选已移出`active`：安德华拉诺特=`master-damaged`、玛格丽特=`master-damaged-by-effect`、阿尔忒弥斯=`friendly-ranged-death`、圣杯=`friendly-round-table-enter`、安格斯=`tactic-effect-resolved`。
