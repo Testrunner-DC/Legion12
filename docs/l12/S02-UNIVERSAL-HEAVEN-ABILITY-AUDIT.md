@@ -12,7 +12,7 @@
 
 | 卡号 / 卡名 | 项数 | 最短规则断言 | 运行时代码证据 | 测试证据 | 唯一状态 |
 |---|---:|---|---|---|---|
-| S02-0001 驱魔道士 陆瑛 | 2 | 对方战术结算后的返手模式先进入 TriggerCandidate 声明；登场费用税只影响对方下回合从手牌打出的主动战术。 | `L12PublicTriggerEffectPlans`、`L12S2UniversalEffects` | `AtomicReviewBatch6JBRegressionTests`、`S2UniversalEffectsTests` | 通过 |
+| S02-0001 驱魔道士 陆瑛 | 2 | 对方战术结算后的返手模式先进入 TriggerCandidate 声明；能力1以单段公开触发区分放弃、成功、无效与来源失效并支持V2恢复；登场费用税只影响对方下回合从手牌打出的主动战术。 | `L12PublicTriggerEffectPlans`、`L12SingleSegmentTriggeredEffectPresentations`、`L12S2UniversalEffects` | `EffectPresentationBranchSegmentTests`、`AtomicReviewBatch6JBRegressionTests`、`S2UniversalEffectsTests` | 通过 |
 | S02-0002 疯狂的爱丽丝 | 2 | 进攻无损走战斗数值层；回合1次击杀后转活跃为可选候选，拒绝释放 pending、提交才最终消费。 | `L12RuleKernelIntegration`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0003 宫廷魔术师 | 3 | 远程静态正确；登场公开反击目标先声明；主动休整后直到下个己方回合开始前阻止全场反击战术发动。 | `L12EnterPublicTriggerPlans`、`L12S2UniversalEffects` | `AtomicReviewBatch6JARegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S02-0004 路易芒德兰 | 2 | 前排时获得挑衅；仅对方回合获得+1000持续兵力层，不污染基础兵力。 | `L12RuleKernelIntegration`、`L12StructuredCardRules.S02HumanAssisted` | `AtomicReviewBatch3RegressionTests`、`S2UniversalEffectsTests` | 通过 |

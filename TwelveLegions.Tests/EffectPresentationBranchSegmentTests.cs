@@ -45,6 +45,23 @@ public sealed class EffectPresentationBranchSegmentTests
         });
     }
 
+    [Fact]
+    public void AuditedSingleTriggeredEffectsExposeExactlyOneSettlementSegment()
+    {
+        var definition = Assert.Single(L12SingleSegmentTriggeredEffectPresentations.All);
+        Assert.Equal("S02-0001", definition.CardId);
+        Assert.Equal(1, definition.AbilitySequence);
+        Assert.Equal("s2-after-opponent-tactic", definition.RuntimeTrigger);
+        var ability = Catalog.AtomicEffects.Find(definition.CardId)!.Abilities
+            .Single(item => item.Sequence == definition.AbilitySequence);
+        var scene = Assert.Single(ability.Presentations,
+            item => item.Flow == L12SingleSegmentTriggeredEffectPresentations.Flow);
+        Assert.Equal(1, scene.SegmentIndex);
+        Assert.Equal(1, scene.SegmentCount);
+        Assert.DoesNotContain(ability.Presentations,
+            item => item.EventType == "effect" && item.Flow is null);
+    }
+
     [Theory]
     [InlineData("effect-trigger")]
     [InlineData("effect-activation")]
@@ -103,6 +120,7 @@ public sealed class EffectPresentationBranchSegmentTests
             + L12EffectPresentationVariants.PublicBranchDefinitions.Count
             + L12EffectPresentationVariants.StandaloneBranchDefinitions.Count
             + L12SingleSegmentEffectPresentations.All.Count
+            + L12SingleSegmentTriggeredEffectPresentations.All.Count
             + L12SingleSegmentResponseEffectPresentations.All.Count;
         var actualSceneCount = catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
             .SelectMany(ability => ability.Presentations)

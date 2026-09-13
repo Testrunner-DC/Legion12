@@ -173,6 +173,9 @@ public sealed partial class L12GameEngine
         if (L12SingleSegmentResponseEffectPresentations.TryResolveScene(card, trigger,
                 out var singleResponseSceneId))
             return singleResponseSceneId;
+        if (L12SingleSegmentTriggeredEffectPresentations.TryResolveScene(card, trigger,
+                out var singleTriggeredSceneId))
+            return singleTriggeredSceneId;
         var candidateAbilities = triggerAbilities;
         var declaredAbilityId = data?.GetValueOrDefault("ability");
         if (L12SingleSegmentEffectPresentations.TryResolveScene(card, trigger,

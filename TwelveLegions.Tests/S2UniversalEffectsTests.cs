@@ -8,8 +8,9 @@ public sealed class S2UniversalEffectsTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed = 6201)
-        => new(Catalog, "s2-effects", "S2TEST", seed, ["甲", "乙"], [4, 4], skipPreparation: true);
+    private static L12GameEngine Create(int seed = 6201, bool autoPassEmptyResponses = true)
+        => new(Catalog, "s2-effects", "S2TEST", seed, ["甲", "乙"], [4, 4], skipPreparation: true,
+            autoPassEmptyResponses: autoPassEmptyResponses);
 
     private static L12GameEngine CreateTianting(int seed)
         => new(Catalog, "s2-tianting", "S2TT", seed, ["甲", "乙"], [0, 0], skipPreparation: true);
@@ -114,6 +115,145 @@ public sealed class S2UniversalEffectsTests
 
         Assert.Null(exorcistOwner.Field[0][0]);
         Assert.Contains(exorcist, exorcistOwner.Hand);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == exorcist.InstanceId));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Equal(1, declaration.EffectSegmentIndex);
+        Assert.Equal(1, declaration.EffectSegmentCount);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == exorcist.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
+    }
+
+    [Fact]
+    public void ExorcistDeclineIsDistinctAndDoesNotCreateAnEmptyStack()
+    {
+        var game = Create(seed: 62091);
+        var tacticPlayer = game.State.Players[0];
+        var exorcistOwner = game.State.Players[1];
+        var tactic = TakeCard(game, 0, "S02-0014");
+        var exorcist = TakeCard(game, 1, "S02-0001");
+        exorcistOwner.Hand.Remove(exorcist);
+        exorcist.SummonRound = 0;
+        exorcistOwner.Field[0][0] = exorcist;
+        AddMorale(tacticPlayer, 3);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:none")).Accepted);
+
+        Assert.Same(exorcist, exorcistOwner.Field[0][0]);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == exorcist.InstanceId);
+        var declined = Assert.Single(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.Cards.Any(card => card.InstanceId == exorcist.InstanceId));
+        Assert.Equal("declined", declined.EffectResultStatus);
+        Assert.NotNull(declined.EffectSceneId);
+        Assert.False(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+    }
+
+    [Fact]
+    public void ExorcistSourceLeavingDuringResponseFailsInsteadOfReturningItsSnapshot()
+    {
+        var game = Create(seed: 62092, autoPassEmptyResponses: false);
+        var tacticPlayer = game.State.Players[0];
+        var exorcistOwner = game.State.Players[1];
+        var tactic = TakeCard(game, 0, "S02-0014");
+        var exorcist = TakeCard(game, 1, "S02-0001");
+        exorcistOwner.Hand.Remove(exorcist);
+        exorcist.SummonRound = 0;
+        exorcistOwner.Field[0][0] = exorcist;
+        AddMorale(tacticPlayer, 3);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+        Assert.Single(game.State.EffectStack);
+        exorcistOwner.Field[0][0] = null;
+        exorcistOwner.Graveyard.Add(exorcist);
+        PassResponses(game);
+
+        Assert.DoesNotContain(exorcistOwner.Hand, card => card.InstanceId == exorcist.InstanceId);
+        Assert.Contains(exorcistOwner.Graveyard, card => card.InstanceId == exorcist.InstanceId);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == exorcist.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+    }
+
+    [Fact]
+    public void ExorcistNegatedResultKeepsTheSourceOnTheBattlefield()
+    {
+        var game = Create(seed: 62093, autoPassEmptyResponses: false);
+        var tacticPlayer = game.State.Players[0];
+        var exorcistOwner = game.State.Players[1];
+        var tactic = TakeCard(game, 0, "S02-0014");
+        var exorcist = TakeCard(game, 1, "S02-0001");
+        exorcistOwner.Hand.Remove(exorcist);
+        exorcist.SummonRound = 0;
+        exorcistOwner.Field[0][0] = exorcist;
+        AddMorale(tacticPlayer, 3);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Same(exorcist, exorcistOwner.Field[0][0]);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == exorcist.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
+    }
+
+    [Fact]
+    public void ExorcistTriggerResumesOnceAfterCheckpointAndRejectsTheOldResponsePrompt()
+    {
+        var game = Create(seed: 62094, autoPassEmptyResponses: false);
+        var tacticPlayer = game.State.Players[0];
+        var exorcistOwner = game.State.Players[1];
+        var tactic = TakeCard(game, 0, "S02-0014");
+        var exorcist = TakeCard(game, 1, "S02-0001");
+        exorcistOwner.Hand.Remove(exorcist);
+        exorcist.SummonRound = 0;
+        exorcistOwner.Field[0][0] = exorcist;
+        AddMorale(tacticPlayer, 3);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        PassResponses(game);
+        var activation = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1,
+            new L12Command("resolvePrompt", PromptId: activation.PromptId, Choice: "mode:use")).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        PassResponses(game);
+
+        Assert.Contains(game.State.Players[1].Hand,
+            card => card.InstanceId == exorcist.InstanceId);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.InstanceId == exorcist.InstanceId));
+        Assert.False(game.Handle(response.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
     }
 
     [Fact]
