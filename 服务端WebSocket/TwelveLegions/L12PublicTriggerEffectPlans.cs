@@ -34,16 +34,18 @@ public sealed partial class L12GameEngine
             ["S01-0112|death"] = "grave-to-hand",
             ["S01-0115|death"] = "jingke-kill",
             ["S01-0207|death"] = "tutankhamun-top",
-            ["S01-0210|death"] = "nitocris-summon",
+            ["S01-0210|death"] = "grave-legion-summon",
             ["S01-0303|death"] = "ragnar-draw-cycle",
             ["S01-0304|death"] = "harald-kill",
             ["S01-0306|death"] = "olaf-draw-cycle",
             ["S01-0307|death"] = "grave-to-hand",
+            ["S01-0308|death"] = "grave-legion-summon",
             ["S01-0313|death"] = "oddr-rest",
             ["S01-0403|death"] = "uesugi-counters",
             ["S01-0407|death"] = "ryoma-summon",
             ["S02-0002|after-kill"] = "alice-ready",
             ["S02-01S1|death"] = "xiaotian-morale",
+            ["S02-0202|death"] = "grave-legion-summon",
             ["S02-0301|death"] = "thor-draw-cycle",
             ["S02-0508|death"] = "atalanta-flip",
             ["S02-0518|death"] = "grave-to-hand",
@@ -137,9 +139,9 @@ public sealed partial class L12GameEngine
             "tutankhamun-top" => player.Graveyard.Any(card => CanEnterHandOrLibrary(card)
                 && card.CardId != "S01-0207" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
                 && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
-            "nitocris-summon" => EmptySlots(player).Any() && player.Graveyard.Any(card =>
-                card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                && L12StructuredCardRules.CurrentCostAtMost(card, 2)),
+            "grave-legion-summon" => TryGetGraveLegionSummonTriggerSpec(candidate.SourceCardId,
+                    candidate.Trigger, out var summon)
+                && EmptySlots(player).Any() && LegalGraveLegionSummonTargets(summon, player).Length > 0,
             "harald-kill" => PublicLegions(opponent).Any(card => card.Troops <= 2000),
             "oddr-rest" => PublicLegions(opponent).Any(card => !card.Tapped),
             "uesugi-counters" => Enumerable.Range(0, 3).Any(slot => player.Field[1][slot] is null)
@@ -421,15 +423,14 @@ public sealed partial class L12GameEngine
                     requiredChoice: "mode:use"),
             ];
         }
-        else if (batch6IBPlan == "nitocris-summon")
+        else if (batch6IBPlan == "grave-legion-summon"
+            && TryGetGraveLegionSummonTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var summon))
         {
             steps =
             [
-                PublicTriggerStep("grave-card", "entryCard", "尼托克丽丝：预先选择墓地1张费用不高于2的【太阳城】军团",
-                    player.Graveyard.Where(card => card.CardType == "legion"
-                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                        && L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId), allowCancel: false),
-                PublicTriggerStep("unused-slot", "entrySlot", "尼托克丽丝：预先选择活跃登场位置", EmptySlots(player),
+                PublicTriggerStep("grave-card", "entryCard", summon.PromptText,
+                    LegalGraveLegionSummonTargets(summon, player).Select(card => card.InstanceId), allowCancel: false),
+                PublicTriggerStep("unused-slot", "entrySlot", $"{summon.Name}：选择活跃登场位置", EmptySlots(player),
                     allowCancel: false),
             ];
         }
@@ -1222,14 +1223,14 @@ public sealed partial class L12GameEngine
                 && L12StructuredCardRules.CurrentCostAtMost(card, 4))))
                 error = "图坦卡蒙声明的墓地目标已失效；效果未入栈";
         }
-        else if (batch6IBPlan == "nitocris-summon")
+        else if (batch6IBPlan == "grave-legion-summon"
+            && TryGetGraveLegionSummonTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var summonSpec))
         {
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
             if (entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
-                    && card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && L12StructuredCardRules.CurrentCostAtMost(card, 2))
+                    && IsLegalGraveLegionSummonTarget(summonSpec, player, card))
                 || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
-                error = "尼托克丽丝声明的墓地军团或登场位置已失效；效果未入栈";
+                error = $"{summonSpec.Name}声明的墓地军团或登场位置已失效；效果未入栈";
         }
         else if (batch6IBPlan == "harald-kill")
         {
@@ -1628,7 +1629,7 @@ public sealed partial class L12GameEngine
                 "jingke-kill" or "harald-kill" => activation.DeclaredValues.GetValueOrDefault("killTarget", []),
                 "oddr-rest" => activation.DeclaredValues.GetValueOrDefault("restTarget", []),
                 "uesugi-counters" => activation.DeclaredValues.GetValueOrDefault("entryCards", []),
-                "nitocris-summon" or "ryoma-summon" or "arthur-summon" =>
+                "grave-legion-summon" or "ryoma-summon" or "arthur-summon" =>
                     activation.DeclaredValues.GetValueOrDefault("entryCard", [])
                         .Concat(activation.DeclaredValues.GetValueOrDefault("entrySlot", [])).ToList(),
                 _ => [],
