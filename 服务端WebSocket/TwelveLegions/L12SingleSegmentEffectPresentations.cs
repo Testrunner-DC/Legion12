@@ -19,6 +19,7 @@ internal static class L12SingleSegmentEffectPresentations
         new("S01-0109", 2, "addMorale"),
         new("S01-0214", 2, "cleopatraGuard"),
         new("S01-0314", 3, "olgaDebuff"),
+        new("S01-0415", 3, "revealHidden"),
         new("S02-0003", 3, "disableCounters"),
         new("S02-0104", 2, "shennongReset"),
         new("S02-0204", 3, "imhotepDiscount"),

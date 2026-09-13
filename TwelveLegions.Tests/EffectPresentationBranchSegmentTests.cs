@@ -15,7 +15,7 @@ public sealed class EffectPresentationBranchSegmentTests
     {
         var expected = new[]
         {
-            "S01-0310|2", "S01-0409|3", "S01-0415|3",
+            "S01-0310|2", "S01-0409|3",
             "S02-0505|3",
             "S02-DS03|3", "ST01-01|1",
             "ST02-M1|1", "ST06-04|1", "ST06-M1|2",
@@ -103,6 +103,7 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S01-0109", 2, "addMorale"),
             ("S01-0214", 2, "cleopatraGuard"),
             ("S01-0314", 3, "olgaDebuff"),
+            ("S01-0415", 3, "revealHidden"),
             ("S02-0003", 3, "disableCounters"),
             ("S02-0104", 2, "shennongReset"),
             ("S02-0204", 3, "imhotepDiscount"),

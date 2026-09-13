@@ -28,6 +28,10 @@ public sealed partial class L12GameEngine
                         && !CheckVerifiedAtomicCondition(atom.Parameters.GetValueOrDefault("expression"), item.Data,
                             source, controller, opponent))
                     {
+                        if (atom.Parameters.GetValueOrDefault("failureResult") == "failed")
+                            RecordTargetSettlementFailure(item, source.InstanceId,
+                                atom.Parameters.GetValueOrDefault("failureReason")
+                                ?? $"〈{source.Name}〉的结算条件已失效");
                         FinishStackItem(item);
                         return true;
                     }
@@ -169,6 +173,7 @@ public sealed partial class L12GameEngine
                 || candidate.InstanceId == source.InstanceId || !IsFieldLegion(candidate)),
             "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
             "source.hidden=true" => source.Hidden,
+            "source.field-hidden=true" => FindOnField(controller, source.InstanceId, out _, out _) is { Hidden: true },
             "item.killed=true" => data.GetValueOrDefault("killed") == "true",
             "controller.field-troops<opponent.field-troops" =>
                 controller.Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Sum(card => card!.Troops)
