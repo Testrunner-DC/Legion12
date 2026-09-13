@@ -89,6 +89,8 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S02-0205", 4, "scarabDebuff"),
             ("S02-0301", 4, "thorHammerRevive"),
             ("S02-03M1", 2, "thorCharge"),
+            ("S02-05C1", 3, "godPowerDraw"),
+            ("S02-05C1A", 3, "godPowerDraw"),
             ("S02-05D1", 1, "divinityFlipMorale"),
             ("S02-05D1", 3, "divinityFreePromotion"),
             ("S02-0510", 3, "hippolytaRevive"),
@@ -96,6 +98,7 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S02-06D1", 4, "avalonDebuff"),
             ("ST02-05", 1, "oasisDancerBuff"),
             ("ST03-05", 2, "christinaFreeTactic"),
+            ("ST03-M1", 1, "sifCycle"),
             ("ST06-S1", 2, "skyCityDiscount"),
         };
         Assert.Equal(expected, L12SingleSegmentEffectPresentations.All

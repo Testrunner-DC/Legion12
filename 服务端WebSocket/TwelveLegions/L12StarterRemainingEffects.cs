@@ -423,7 +423,12 @@ public sealed partial class L12GameEngine
                     values.ElementAtOrDefault(values.Length - 1) ?? string.Empty, tapped: true);
                 break;
             case "sifCycle":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "西芙效果抽牌时牌库为空");
+                if (!Draw(player, 1))
+                {
+                    AddEvent("effect-failed", item.Controller,
+                        "西芙效果抽牌时牌库为空", source is null ? [] : [source]);
+                    SetWinner(1 - item.Controller, "西芙效果抽牌时牌库为空");
+                }
                 break;
             case "athenaFrontBuff":
                 // New declarations are split by TryResolveStarterRemainingEffect. Keep this

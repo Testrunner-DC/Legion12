@@ -1614,7 +1614,12 @@ public sealed partial class L12GameEngine
         }
         if (ability == "godPowerDraw" && source?.CardId == "S02-05C1")
         {
-            Draw(player, 1);
+            if (!Draw(player, 1))
+            {
+                AddEvent("effect-failed", item.Controller,
+                    "奥林匹斯神力效果抽牌时牌库为空", source);
+                SetWinner(1 - item.Controller, "奥林匹斯神力效果抽牌时牌库为空");
+            }
             FinishStackItem(item);
             return true;
         }

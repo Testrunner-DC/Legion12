@@ -26,6 +26,8 @@ internal static class L12SingleSegmentEffectPresentations
         new("S02-0205", 4, "scarabDebuff"),
         new("S02-0301", 4, "thorHammerRevive"),
         new("S02-03M1", 2, "thorCharge"),
+        new("S02-05C1", 3, "godPowerDraw"),
+        new("S02-05C1A", 3, "godPowerDraw"),
         new("S02-05D1", 1, "divinityFlipMorale"),
         new("S02-05D1", 3, "divinityFreePromotion"),
         new("S02-0510", 3, "hippolytaRevive"),
@@ -33,6 +35,7 @@ internal static class L12SingleSegmentEffectPresentations
         new("S02-06D1", 4, "avalonDebuff"),
         new("ST02-05", 1, "oasisDancerBuff"),
         new("ST03-05", 2, "christinaFreeTactic"),
+        new("ST03-M1", 1, "sifCycle"),
         new("ST06-S1", 2, "skyCityDiscount"),
     ];
 
