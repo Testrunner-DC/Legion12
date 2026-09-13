@@ -213,6 +213,8 @@ public sealed class L12CardInstance
     public int ImmortalExpiresAtPlayerTurnStart { get; set; } = -1;
     public int SuppressDeathUntilTurn { get; set; } = -1;
     public List<L12AbilityView> Abilities { get; set; } = [];
+    /// <summary>不进入效果堆叠的规则动作；按钮资格、禁用原因和呈现文字均由服务端投影。</summary>
+    public List<L12RuleActionView> RuleActions { get; set; } = [];
     public List<L12TimedModifier> TimedModifiers { get; init; } = [];
     public List<L12CardInstance> AttachedCards { get; init; } = [];
 
@@ -236,6 +238,15 @@ public sealed record L12AbilityView(
     bool Enabled = true,
     string? DisabledReason = null,
     bool TriggerOnly = false);
+
+public sealed record L12RuleActionView(
+    string Id,
+    string Label,
+    string Text,
+    bool Enabled = true,
+    string? DisabledReason = null,
+    string? PresentationSceneId = null,
+    IReadOnlyList<string>? TargetKeys = null);
 
 /// <summary>卡面短期状态的结构化投影；Kind 决定图标，Label/Source 用于提示。</summary>
 public sealed record L12StatusEffectView(string Kind, string Label, string? Source = null);

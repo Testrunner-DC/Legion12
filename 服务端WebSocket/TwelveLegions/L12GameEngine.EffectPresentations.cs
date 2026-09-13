@@ -47,7 +47,9 @@ public sealed partial class L12GameEngine
         // historical event shape.  Legacy scenes keep their previous frozen-only behavior;
         // only the new Flow scenes contribute a default EffectText without an override.
         var effectText = frozen?.Text
-            ?? (configured?.Flow is not null ? configured.DefaultText : null);
+            ?? (configured is { EventType: not "effect" } || configured?.Flow is not null
+                ? configured?.DefaultText
+                : null);
         if (configured is { EventType: "effect", Flow: null }
             && _catalog.AtomicEffects.Find(configured.CardId)?.Abilities.Any(ability =>
                 ability.Presentations.Any(scene => scene.SceneId == configured.SceneId)

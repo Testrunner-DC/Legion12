@@ -23,7 +23,7 @@
 | S02-0502 赫拉克勒斯 | 1 | 登场可选抽2，抽后弃置具体隐藏手牌只在合法结算后选择。 | `L12AtomicRuntimeIntegration` | `AtomicReviewBatch6IARegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0503 阿喀琉斯·晋升 | 6 | 晋升共享状态；远程伤害额外-1000按伤害层结算；晋升登场本回合可攻军团；真实击杀存活后才获得至下个己方回合开始、仅前排生效的挑衅。 | `RuleKernel`、`L12CombatTimeline`、`L12StructuredCardRules` | `AtomicReviewBatch6LCRegressionTests`、`LatestBugRegressionTests` | 明确错误→已修复 |
 | S02-0504 阿喀琉斯 | 2 | 前排主宰保护读取实时兵力；致命替代回合1次，消耗并翻转1神力后承受替代结果，不影响其他已裁定替代。 | `L12StructuredCardRules`、`L12GameEngine` | `LatestBugRegressionTests`、`S2FactionRegressionTests` | 通过 |
-| S02-0505 珀尔修斯·晋升 | 5 | 晋升共享状态；晋升登场公开休整敌军目标前置；自位移回合1次，普通登场冲锋与晋升时点分别建立。 | `RuleKernel`、`L12EnterPublicTriggerPlans`、`L12S2FactionEffects` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
+| S02-0505 珀尔修斯·晋升 | 5 | 晋升共享状态；晋升登场公开休整敌军目标前置；自位移回合1次为不可响应规则动作并与天灾合法位置同源，普通登场冲锋与晋升时点分别建立。 | `RuleKernel`、`L12RuleActions`、`L12EnterPublicTriggerPlans`、`L12S2FactionEffects` | `CavalryMoveRuleActionTests`、`AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
 | S02-0506 珀尔修斯 | 1 | 登场弃1手牌为冒号前费用，墓地晋升者目标公开前置；目标失效不返弃牌。 | `L12EnterPublicTriggerPlans` | `AtomicReviewBatch6JARegressionTests` | 通过 |
 | S02-0507 阿塔兰忒·晋升 | 5 | 晋升共享状态；晋升登场和普通登场各有一次独立可选抽牌；后排派生为弓手、兵力视为3000并按远程规则结算。 | `RuleKernel`、`L12PublicTriggerEffectPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6IARegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
 | S02-0508 阿塔兰忒 | 2 | 常驻远程+1/无损；阵亡时确切士气翻面目标在候选期声明，来源离场后按快照结算。 | `L12StructuredCardRules`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`S2FactionRegressionTests` | 通过 |

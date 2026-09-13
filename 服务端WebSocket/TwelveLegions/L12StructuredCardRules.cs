@@ -723,7 +723,7 @@ public static partial class L12StructuredCardRules
     private static IReadOnlyList<L12StructuredAbilityTemplate> SigurdAbilities() =>
     [
         SelfDamageEntryDiscountAbility(),
-        new("active", "activated", "我方回合1次 可进行1次位移。",
+        new("active", "rule-action", "我方回合1次 可进行1次位移。",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未进行骑兵位移", "condition", new() { ["expression"] = "controller.turn;source.cavalry-move-unused=true" }),
             new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
@@ -962,7 +962,7 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.SetState, "下个对方重置阶段无法转为活跃", "resolution", new() { ["key"] = "target.skip-next-reset-ready", ["value"] = "true" }),
             new(L12AtomKinds.Duration, "持续至下个对方重置阶段", "duration", new() { ["duration"] = "until-opponent-next-reset" }),
         ]),
-        new("active", "activated", "我方 回合1次 可进行1次位移。",
+        new("active", "rule-action", "我方 回合1次 可进行1次位移。",
         [
             new(L12AtomKinds.Condition, "我方回合、此军团活跃且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.ready=true;source.once-per-turn-unused=true" }),
             new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
@@ -1563,7 +1563,7 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.ModifyTroops, "本次进攻兵力视为 2000", "resolution", new() { ["operation"] = "set", ["value"] = "2000" }),
             new(L12AtomKinds.Duration, "仅本次进攻", "duration", new() { ["duration"] = "current-attack" }),
         ]),
-        new("active", "activated", "我方 回合1次 可进行1次位移。",
+        new("active", "rule-action", "我方 回合1次 可进行1次位移。",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn-and-once" }),
             new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),

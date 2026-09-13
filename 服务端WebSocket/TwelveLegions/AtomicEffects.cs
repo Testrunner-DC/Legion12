@@ -220,6 +220,16 @@ public static class L12EffectPresentationScenes
     public static IReadOnlyList<L12EffectPresentationScene> Build(L12AtomicAbility ability,
         string? tombConstructSharedBody = null)
     {
+        if (IsCavalryMoveRuleAction(ability))
+        {
+            return
+            [
+                new($"{ability.AbilityId}:presentation:rule-action-cavalry-move",
+                    ability.CardId, ability.AbilityId, "cavalry-move", ability.Text,
+                    EventType: "rule-action", Label: "骑兵位移",
+                    Flow: "rule-action:cavalry-move"),
+            ];
+        }
         if (!IsAnimated(ability)) return [];
 
         var defaultText = ability.CardId == "S01-0204" && ability.Trigger == "death"
@@ -239,6 +249,13 @@ public static class L12EffectPresentationScenes
 
         return scenes;
     }
+
+    internal static bool IsCavalryMoveRuleAction(L12AtomicAbility ability)
+        => ability.Trigger == "active"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Move
+                && atom.Parameters.GetValueOrDefault("operation") == "cavalry-move")
+            && ability.Atoms.All(atom => atom.Kind is L12AtomKinds.Trigger
+                or L12AtomKinds.Condition or L12AtomKinds.Move or L12AtomKinds.Duration);
 
     private static bool IsAnimated(L12AtomicAbility ability)
         => ability.Trigger is not "static" and not "continuous"
@@ -483,7 +500,7 @@ public sealed class L12AtomicEffectCatalog
             var routeAtom = route.Atoms.Single(atom => atom.Kind == L12AtomKinds.CompositeFlow);
             atoms.Add(routeAtom with { AtomId = $"atom-{atoms.Count + 1}", Order = atoms.Count + 1 });
         }
-        else
+        else if (template.ExecutionModel != "rule-action")
         {
             var legacyDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Legacy);
             atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", L12AtomKinds.Legacy, "调用现有权威卡效分支", atoms.Count + 1,
@@ -492,9 +509,13 @@ public sealed class L12AtomicEffectCatalog
                     ["reason"] = "人工结构已审查，尚未完成逐卡运行时等价迁移",
                 }), legacyDescriptor.RuntimeExecutable, "migration-guard", "resolution"));
         }
+        var isRuleAction = template.ExecutionModel == "rule-action";
         return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, template.Text,
-            template.Trigger, atoms, route is null ? "partially-atomized" : "verified", route is null,
-            route is null ? "shared-structured-rule+legacy-runtime" : "shared-structured-rule+verified-composite-flow",
+            template.Trigger, atoms, route is null && !isRuleAction ? "partially-atomized" : "verified",
+            route is null && !isRuleAction,
+            isRuleAction ? "shared-structured-rule+rule-action"
+                : route is null ? "shared-structured-rule+legacy-runtime"
+                : "shared-structured-rule+verified-composite-flow",
             1m, template.ExecutionModel,
             template.ReviewStatus, template.ReviewSource);
     }

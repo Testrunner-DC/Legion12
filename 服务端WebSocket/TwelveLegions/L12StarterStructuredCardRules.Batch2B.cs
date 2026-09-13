@@ -64,7 +64,7 @@ public static partial class L12StructuredCardRules
             ],
             "ST06-04" =>
             [
-                new("active", "active", "我方 回合1次 可进行1次骑兵位移。",
+                new("active", "rule-action", "我方 回合1次 可进行1次骑兵位移。",
                 [
                     new(L12AtomKinds.Move, "进行1次骑兵位移", "resolution", new()
                     {

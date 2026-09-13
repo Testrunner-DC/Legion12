@@ -170,9 +170,17 @@ function canMove(card: Card, row: number, slot: number) {
     .some(([nextRow, nextSlot]) => nextRow >= 0 && nextRow < 2 && nextSlot >= 0 && nextSlot < 3 && !props.player.field[nextRow][nextSlot])
 }
 function canCavalryMove(card: Card) {
+  const authority = card.ruleActions?.find(action => action.id === 'cavalryMove')
+  if (authority) return Boolean(props.controllable && authority.enabled !== false)
   if (!props.controllable || !props.actionsEnabled || card.tapped || card.hidden || card.profession !== '骑兵') return false
   if (card.lastCavalryMoveTurn === props.turnSerial) return false
   return props.player.field.some(row => row.some(slotCard => !slotCard))
+}
+function cavalryMoveAction(card: Card) {
+  return card.ruleActions?.find(action => action.id === 'cavalryMove')
+}
+function hasCavalryMoveAction(card: Card) {
+  return Boolean(cavalryMoveAction(card)) || canCavalryMove(card)
 }
 function canFreeMove(card: Card, row: number, slot: number) {
   if (!props.controllable || !props.actionsEnabled || card.tapped || card.hidden) return false
@@ -185,8 +193,13 @@ function isMoveTarget(row: number, slot: number) {
     for (let sourceSlot = 0; sourceSlot < 3; sourceSlot++) {
       if (props.player.field[sourceRow][sourceSlot]?.instanceId !== props.selectedId) continue
       if (props.freeMoveMode) return sourceSlot === slot && sourceRow !== row
-      return Boolean(props.cavalryMoveMode)
-        || Math.abs(sourceRow - row) + Math.abs(sourceSlot - slot) === 1
+      if (props.cavalryMoveMode) {
+        const authority = cavalryMoveAction(props.player.field[sourceRow][sourceSlot]!)
+        return authority?.targetKeys
+          ? authority.targetKeys.includes(`${row}:${slot}`)
+          : true
+      }
+      return Math.abs(sourceRow - row) + Math.abs(sourceSlot - slot) === 1
     }
   }
   return false
@@ -349,8 +362,10 @@ function beginCardAbility(card: Card) {
                   @click.stop="emit('cardAction', 'move', player.field[row][slot]!)">{{ moveMode ? '选择位置' : '移动' }}</button>
                 <button v-if="canUseAbilities(player.field[row][slot]!) && canFreeMove(player.field[row][slot]!, row, slot)" :class="{ active: freeMoveMode }"
                   @click.stop="emit('cardAction', 'freeMove', player.field[row][slot]!)">{{ freeMoveMode ? '选择前后位置' : '免费位移' }}</button>
-                <button v-if="canUseAbilities(player.field[row][slot]!) && canCavalryMove(player.field[row][slot]!)" :class="{ active: cavalryMoveMode }"
-                  @click.stop="emit('cardAction', 'cavalryMove', player.field[row][slot]!)">{{ cavalryMoveMode ? '选择任意位置' : '骑兵位移' }}</button>
+                <button v-if="canUseAbilities(player.field[row][slot]!) && hasCavalryMoveAction(player.field[row][slot]!)" :class="{ active: cavalryMoveMode }"
+                  :disabled="!canCavalryMove(player.field[row][slot]!)"
+                  :title="cavalryMoveAction(player.field[row][slot]!)?.disabledReason || cavalryMoveAction(player.field[row][slot]!)?.text || '我方回合1次，可进行1次骑兵位移'"
+                  @click.stop="emit('cardAction', 'cavalryMove', player.field[row][slot]!)">{{ cavalryMoveMode ? '选择任意位置' : (cavalryMoveAction(player.field[row][slot]!)?.label || '骑兵位移') }}</button>
                 <button v-if="canUseAbilities(player.field[row][slot]!) && modalAbilities(player.field[row][slot]!).length"
                   @click.stop="beginCardAbility(player.field[row][slot]!)">发动</button>
                 <button v-if="canTrial(player.field[row][slot]!)" type="button" data-ui-contract="independent-trial-action"

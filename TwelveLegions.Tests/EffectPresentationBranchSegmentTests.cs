@@ -13,11 +13,6 @@ public sealed class EffectPresentationBranchSegmentTests
     [Fact]
     public void RemainingLegacyActiveEffectScenesAreExplicitlyInventoried()
     {
-        var expected = new[]
-        {
-            "S01-0310|2", "S01-0409|3",
-            "S02-0505|3", "ST01-01|1", "ST06-04|1",
-        };
         var remaining = Catalog.AtomicEffects.All
             .SelectMany(card => card.Abilities
                 .Where(ability => ability.Trigger == "active"
@@ -26,7 +21,28 @@ public sealed class EffectPresentationBranchSegmentTests
                 .Select(ability => $"{card.CardId}|{ability.Sequence}"))
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(expected, remaining);
+        Assert.Empty(remaining);
+
+        var expectedActions = new[]
+        {
+            "S01-0310|2", "S01-0409|3",
+            "S02-0505|3", "ST01-01|1", "ST06-04|1",
+        };
+        var actions = Catalog.AtomicEffects.All
+            .SelectMany(card => card.Abilities
+                .Where(L12EffectPresentationScenes.IsCavalryMoveRuleAction)
+                .Select(ability => $"{card.CardId}|{ability.Sequence}"))
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedActions, actions);
+        Assert.All(Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
+            .Where(L12EffectPresentationScenes.IsCavalryMoveRuleAction), ability =>
+        {
+            var scene = Assert.Single(ability.Presentations);
+            Assert.Equal("rule-action", scene.EventType);
+            Assert.Equal("rule-action:cavalry-move", scene.Flow);
+            Assert.False(ability.HasLegacyFallback);
+        });
     }
 
     [Theory]
@@ -89,7 +105,8 @@ public sealed class EffectPresentationBranchSegmentTests
             + L12SingleSegmentEffectPresentations.All.Count
             + L12SingleSegmentResponseEffectPresentations.All.Count;
         var actualSceneCount = catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
-            .SelectMany(ability => ability.Presentations).Count(scene => scene.Flow is not null);
+            .SelectMany(ability => ability.Presentations)
+            .Count(scene => scene.EventType == "effect" && scene.Flow is not null);
         Assert.Equal(expectedSceneCount, actualSceneCount);
     }
 

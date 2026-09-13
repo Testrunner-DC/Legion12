@@ -1349,20 +1349,21 @@ public sealed partial class L12GameEngine
         if (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2) return CommandResult.Reject("目标阵地无效");
         var player = State.Players[playerIndex];
         var card = FindOnField(player, command.CardInstanceId, out var sourceRow, out var sourceSlot);
-        if (card is null || !IsFieldLegion(card) || card.Tapped || card.Hidden
-            || !L12StructuredCardRules.HasProfession(card, sourceRow, "骑兵"))
-            return CommandResult.Reject("只能令活跃且未覆盖的【骑兵】进行骑兵位移");
-        if (card.LastCavalryMoveTurn == State.TurnSerial) return CommandResult.Reject("该军团本回合已经进行过骑兵位移");
+        if (card is null) return CommandResult.Reject("只能令我方战场军团进行骑兵位移");
+        if (CavalryMoveSourceUnavailableReason(player, card, sourceRow) is { } unavailable)
+            return CommandResult.Reject(unavailable);
         var targetRow = command.Row.Value;
         var targetSlot = command.Slot.Value;
-        if (State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1)
-            return CommandResult.Reject("〈腐秽大地〉持续期间无法位移至后排");
-        if (player.Field[targetRow][targetSlot] is not null) return CommandResult.Reject("目标阵地已占用");
+        if (!IsLegalCavalryMoveDestination(player, targetRow, targetSlot))
+            return CommandResult.Reject(State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
+                ? "〈腐秽大地〉持续期间无法位移至后排"
+                : "目标阵地已占用");
         player.Field[sourceRow][sourceSlot] = null;
         player.Field[targetRow][targetSlot] = card;
         card.LastMovedTurn = State.TurnSerial;
         card.LastCavalryMoveTurn = State.TurnSerial;
-        AddEvent("move", playerIndex, $"{card.Name} 发动骑兵位移", card);
+        AddPresentationEventById("move", playerIndex, $"{card.Name} 发动骑兵位移",
+            NativeCavalryMovePresentation(card.CardId)?.SceneId, card);
         RecordLegionMovement(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }

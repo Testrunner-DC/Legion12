@@ -394,7 +394,9 @@ public sealed class AtomicEffectsTests
 
         var yoshitsune = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0409"));
         Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "continuous");
-        Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "activated");
+        Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "rule-action"
+            && !ability.HasLegacyFallback
+            && ability.Presentations.Any(scene => scene.Flow == "rule-action:cavalry-move"));
         Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "after-attack"
             && ability.MappingSource.Contains("verified-runtime-program", StringComparison.Ordinal));
     }

@@ -12,7 +12,7 @@ public static partial class L12StructuredCardRules
         {
             "ST01-01" =>
             [
-                new("active", "active", "我方 回合1次 可进行1次位移。", [new(L12AtomKinds.Move, "进行1次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move" })], "human-assisted", "product-database"),
+                new("active", "rule-action", "我方 回合1次 可进行1次位移。", [new(L12AtomKinds.Move, "进行1次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move" })], "human-assisted", "product-database"),
                 new("enter", "triggered", "登场时 可返还1士气：获得冲锋。",
                 [new(L12AtomKinds.Optional, "可发动", "condition", new()), new(L12AtomKinds.ReturnMorale, "返还1士气", "cost", new() { ["amount"] = "1" }), new(L12AtomKinds.Keyword, "获得冲锋", "resolution", new() { ["keyword"] = "charge" })], "human-assisted", "product-database"),
                 new("granted", "granted-effect", "冲锋 在登场的回合即可进行进攻。", [new(L12AtomKinds.Keyword, "冲锋", "resolution", new() { ["keywordRef"] = "charge" })], "human-assisted", "product-database"),

@@ -37,7 +37,9 @@ const sideLabel = computed(() => {
   if (active.value.playerIndex === 1) return '玩家 B'
   return ''
 })
-const actionSymbol = computed(() => active.value?.kind === 'turn-start' ? '启' : active.value?.kind === 'turn-end' ? '终' : '主')
+const actionSymbol = computed(() => active.value?.kind === 'turn-start' ? '启'
+  : active.value?.kind === 'turn-end' ? '终'
+    : active.value?.kind === 'cavalry-move' ? '骑' : '主')
 
 function showNext() {
   if (active.value || props.paused || !queue.length) return

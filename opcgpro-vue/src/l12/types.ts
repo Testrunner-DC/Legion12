@@ -73,6 +73,7 @@ export interface Card {
   suppressDeathUntilTurn?: number
   timedModifiers?: Array<{ troopsDelta: number; costDelta: number; expiresAfterTurn: number; source: string }>
   abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }>
+  ruleActions?: Array<{ id: string; label: string; text: string; enabled?: boolean; disabledReason?: string; presentationSceneId?: string; targetKeys?: string[] }>
   attachedCards?: Card[]
 }
 

@@ -20,7 +20,7 @@
 | S01-0406 土方岁三 | 2 | 登场两个公开击杀目标、进攻士气费用与目标均入栈前声明，单目标失效不改选。 | `L12EnterPublicTriggerPlans`、`L12AttackPublicTriggerPlans` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6HRegressionTests` | 通过 |
 | S01-0407 坂本龙马 | 2 | 登场最多2军团的移动目标先声明；阵亡私密手牌军团+公开格位先声明，万物统御之戒使通用卡按控制者阵营处理。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans`、`L12StructuredCardRules` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 明确错误→已修复 |
 | S01-0408 高杉晋作 | 2 | 登场抽1与同句目标减费在一个语义段；登场/进攻的公开目标与进攻士气费用均前置。 | `L12EnterPublicTriggerPlans`、`L12AttackPublicTriggerPlans` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6HRegressionTests` | 通过 |
-| S01-0409 源义经 | 4 | 后排进攻的2000兵力/距离/无损仅属当次进攻；移动回合1次；击杀抽牌可选声明不在结算期首问。 | `L12Actions`、`L12AtomicRuntimeIntegration` | `CombatTimelineRegressionTests`、`AtomicReviewBatch6IARegressionTests` | 通过 |
+| S01-0409 源义经 | 4 | 后排进攻的2000兵力/距离/无损仅属当次进攻；移动回合1次为不可响应规则动作且无legacy回退；击杀抽牌可选声明不在结算期首问。 | `L12Actions`、`L12RuleActions`、`L12AtomicRuntimeIntegration` | `CavalryMoveRuleActionTests`、`CombatTimelineRegressionTests`、`AtomicReviewBatch6IARegressionTests` | 通过 |
 | S01-0410 巴御前 | 2 | 远程距离/无损为静态战斗档案；登场冲锋确定结算。 | `L12StructuredCardRules`、`L12AtomicRuntimeIntegration` | `GameEngineTests`、`RuleKernelTests` | 通过 |
 | S01-0411 安倍晴明 | 3 | 远程静态正确；登场免死公开目标入栈前声明，只消费一次替代。 | `L12EnterPublicTriggerPlans`、`L12RuleKernel` | `AtomicReviewBatch6JARegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S01-0412 立花誚千代 | 2 | 登场公开减费目标先声明；阵亡全体减费用 LKI 延续到下个己方回合结束。 | `L12EnterPublicTriggerPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6JARegressionTests`、`RuleKernelTests` | 通过 |

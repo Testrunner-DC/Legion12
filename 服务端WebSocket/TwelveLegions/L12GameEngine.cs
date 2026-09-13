@@ -779,6 +779,7 @@ public sealed partial class L12GameEngine
                 // was created.
                 snapshot.Troops = snapshot.CurrentTroops;
                 snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+                snapshot.RuleActions = BuildRuleActionViews(player, card, rowIndex);
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
                 snapshot.StatusEffects = BuildStatusEffects(player, card, rowIndex);
                 snapshot.StatusIcons = snapshot.StatusEffects.Select(effect => effect.Kind)
