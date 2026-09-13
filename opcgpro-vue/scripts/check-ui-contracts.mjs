@@ -1211,7 +1211,7 @@ contracts.push([
 ])
 
 const currentReleaseEntry = shell.slice(
-  shell.indexOf("date: '2026-09-12'"),
+  shell.indexOf("date: '2026-09-13'"),
   shell.indexOf("date: '2026-09-10'"),
 )
 const migratedReleaseEntry = shell.slice(
@@ -1224,6 +1224,13 @@ contracts.push([
     && currentReleaseEntry.includes("title: '页面与对战操作'")
     && currentReleaseEntry.includes("title: '主动效果与费用判定'")
     && currentReleaseEntry.includes("title: '打出费用与响应判定'")
+    && currentReleaseEntry.includes("title: '结算结果与响应顺序'")
+    && currentReleaseEntry.includes("title: '反击战术与多段效果'")
+    && currentReleaseEntry.includes("title: '对象重验与连续结算'")
+    && currentReleaseEntry.includes("title: '跨回合与主动状态'")
+    && currentReleaseEntry.includes("title: '诸神巅能力结算'")
+    && currentReleaseEntry.includes("title: '登场对象、操作提示与卡图'")
+    && currentReleaseEntry.includes("title: '排位结果与申诉'")
     && ['须佐之男', '山河社稷图', '草薙剑', '奥尔加', '众神之乡', '安卡神碑',
       '传奇的拉格纳', '无情者哈拉尔', '血斧艾瑞克', '齐格鲁德', '卡纽特大帝',
       '莫德雷德', '伊西斯', '步行者罗洛', '槲寄生符咒', '落穴陷阱', '孙悟空',
@@ -1233,6 +1240,16 @@ contracts.push([
       '再让登场费用-1', '之后才让军团离开手牌', '实际成为场上军团后', '消耗3符文把费用减至0',
       '一次选择最多2个对象', '职介和试炼值不属于特征', '通用特征会随持有者改为当前阵营特征', '最低显示为0',
       '真正结算后再播放对应分支', '发动声明不会重复播放', '重连和回放后仍保持一致']
+      .every(detail => currentReleaseEntry.includes(detail))
+    && ['白起', '绝对防御', '拼死反抗', '摄政皇权', '暗度陈仓', '不朽之礼', '切腹仪式',
+      '神妙行军', '地主的胁迫', '乾坤·阴', '特洛伊木马', '雷神索尔', '探寻天空之城',
+      '克利奥帕特拉七世', '希波吕忒', '神农鼎', '诸神巅', '嬴政', '天照', '梅林']
+      .every(cardName => currentReleaseEntry.includes(cardName))
+    && ['已结算、被无效、已跳过、未完成、已放弃', '声明时已经支付的费用不会返还',
+      '后段可以分别显示已结算、未完成、已跳过或已放弃', '先弃置再抽牌',
+      '多次伤害分配会逐个重新核对对象', '孙悟空》更新主卡图']
+      .every(detail => currentReleaseEntry.includes(detail))
+    && ['历史异常对局被确认无效时', '保护后续正常结算', '当前七曜值、定级进度和隐藏分保持不变']
       .every(detail => currentReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
   '当前玩家更新日志必须覆盖上一期后的主动效果、费用边界、支付取消与场上响应修改，并排除后台和内部治理内容',

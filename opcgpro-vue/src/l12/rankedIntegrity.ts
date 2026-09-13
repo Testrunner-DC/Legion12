@@ -4,7 +4,9 @@ export type IntegrityDisposition = 'normal' | 'insufficient' | 'system-error' | 
 export const integrityOutcomeLabels: Record<string, string> = {
   normal: '复核正常', insufficient: '证据不足，不予处罚', 'system-error': '系统异常',
   confirmed: '确认违规', review: '待复核', revoked: '处置已撤销', held: '排位收益待审核',
-  released: '排位收益已补发', 'appeal-reply': '申诉处理回复',
+  released: '排位收益已补发', voided: '所选对局收益已作废', restored: '所选对局收益已恢复',
+  unchanged: '排位收益不变', 'voided-profile-preserved': '所选对局已作废；为保护后续正常结算，当前排位档案保持不变',
+  'appeal-reply': '申诉处理回复',
 }
 export const integrityLabel = (value: string) => integrityOutcomeLabels[value] || value
 export interface IntegrityAction {

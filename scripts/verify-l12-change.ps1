@@ -270,7 +270,7 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
             $releaseArguments += @("-CacheRoot", $env:L12_WORK_CACHE)
         }
-        Invoke-Checked "Commit-level release verification (no deployment)" "powershell" $releaseArguments
+        Invoke-Checked "Commit-level release verification (no deployment)" "pwsh" $releaseArguments
         return
     }
 

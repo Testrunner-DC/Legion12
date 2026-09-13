@@ -266,6 +266,7 @@ public sealed partial class L12PlatformStore
         public List<RankedProfileTransition> Transitions { get; } = [];
         public HashSet<string> ReleasedHeldMatchIds { get; } = new(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> VoidedAppliedMatchIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool PreservesProfilesForDownstreamSettlements { get; set; }
         public RankedIntegrityDecisionRow? RevokedDecision { get; set; }
     }
 
@@ -713,6 +714,8 @@ public sealed partial class L12PlatformStore
         var appliedRows = _data.RankedSettlements.Where(row => selected.Contains(row.MatchId)
                 && row.Outcome is "win" or "loss" && IsRankedMatchCurrentlyAppliedLocked(row.MatchId))
             .ToArray();
+        var accountPlans = new List<(string AccountId, RankedProfileRow Profile,
+            RankedSettlementRow[] Rows, RankedSettlementRow[] Segment, bool IsLatestSuffix)>();
 
         foreach (var accountRows in appliedRows.GroupBy(row => row.AccountId,
                      StringComparer.OrdinalIgnoreCase))
@@ -765,16 +768,36 @@ public sealed partial class L12PlatformStore
                 plan.BlockingReasons.Add($"账号 {AccountName(accountId)}：{chainReason}");
                 continue;
             }
-            if (rows.Length > segment.Length
-                || !segment[^rows.Length..].Select(row => row.MatchId)
-                    .SequenceEqual(rows.Select(row => row.MatchId), StringComparer.OrdinalIgnoreCase))
+            var segmentIds = segment.Select(row => row.MatchId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (rows.Any(row => !segmentIds.Contains(row.MatchId)))
             {
-                plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 的所选对局不是当前连续最新结算后缀");
+                plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 的所选对局不属于当前排位档案结算链");
+                continue;
+            }
+            var isLatestSuffix = rows.Length <= segment.Length
+                && segment[^rows.Length..].Select(row => row.MatchId)
+                    .SequenceEqual(rows.Select(row => row.MatchId), StringComparer.OrdinalIgnoreCase);
+            accountPlans.Add((accountId, profile, rows, segment, isLatestSuffix));
+        }
+        if (plan.BlockingReasons.Count > 0) return;
+
+        // 历史对局后面已经存在正常结算时，继续倒推会连带改写后续对手和整条排位链。
+        // 此时只作废所选对局、执行限制并保存证据，当前档案保持不变；最新连续后缀仍精确回滚。
+        plan.PreservesProfilesForDownstreamSettlements = accountPlans.Any(item => !item.IsLatestSuffix);
+        foreach (var accountPlan in accountPlans)
+        {
+            var (accountId, profile, rows, segment, _) = accountPlan;
+            var before = CaptureRankedProfile(profile);
+            if (plan.PreservesProfilesForDownstreamSettlements)
+            {
+                plan.Transitions.Add(new(accountId, before, CloneRankedProfileSnapshot(before),
+                    "void-applied", rows.Select(row => row.MatchId).ToArray()));
+                foreach (var row in rows) plan.VoidedAppliedMatchIds.Add(row.MatchId);
                 continue;
             }
 
             var prefix = segment[..^rows.Length];
-            var before = CaptureRankedProfile(profile);
             var exactFacts = rows.Select(row => _data.RankedSettlementProfileFacts.FirstOrDefault(fact =>
                     fact.AppliedInitially && fact.MatchId.Equals(row.MatchId,
                         StringComparison.OrdinalIgnoreCase)))
@@ -807,7 +830,8 @@ public sealed partial class L12PlatformStore
                 .Select(row => row.MatchId).ToArray()));
             foreach (var row in rows) plan.VoidedAppliedMatchIds.Add(row.MatchId);
         }
-        if (plan.BlockingReasons.Count == 0 && appliedRows.Length > 0
+        if (!plan.PreservesProfilesForDownstreamSettlements
+            && plan.BlockingReasons.Count == 0 && appliedRows.Length > 0
             && !TryApplyHistoricalHiddenRatingRollbackLocked(plan, appliedRows, out var ratingReason))
             plan.BlockingReasons.Add(ratingReason);
     }
@@ -1031,6 +1055,8 @@ public sealed partial class L12PlatformStore
                 && plan.Input.RestrictedAccountIds.Contains(accountId, StringComparer.OrdinalIgnoreCase);
             var rewardOutcome = plan.Input.Disposition switch
             {
+                "confirmed" or "system-error" when plan.PreservesProfilesForDownstreamSettlements
+                    => "voided-profile-preserved",
                 "confirmed" or "system-error" => "voided",
                 "normal" or "insufficient" when plan.ReleasedHeldMatchIds.Count > 0 => "released",
                 "review" when plan.Input.MatchIds.Any(matchId => _data.RankedHeldRewards.Any(row =>

@@ -351,6 +351,12 @@ public sealed partial class L12GameEngine
             ["mode:ranged"] = "所选远程军团本回合进攻时兵力+2000",
             ["mode:tomb-guards"] = "弃置我方战场2张〈陵墓守卫〉",
             ["mode:morale-legions"] = "消耗士气并弃置我方战场2张军团",
+            ["mode:block"] = "抵挡本次进攻",
+            ["mode:negate"] = "无效该效果",
+            ["mode:pending"] = "等待后续选择",
+            ["mode:hit"] = "符合条件，弃置公开卡牌",
+            ["mode:return"] = "不符合条件，置于牌库底部",
+            ["mode:invalidate"] = "令本次抵挡或支援无效",
             ["row:0"] = "选择前排", ["row:1"] = "选择后排",
             ["pay:god-power"] = "支付神力", ["buff:strong"] = "获得强攻", ["buff:shock"] = "获得震击",
         };
