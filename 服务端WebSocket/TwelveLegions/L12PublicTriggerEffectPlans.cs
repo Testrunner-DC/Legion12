@@ -42,14 +42,14 @@ public sealed partial class L12GameEngine
             ["S01-0308|death"] = "grave-legion-summon",
             ["S01-0313|death"] = "oddr-rest",
             ["S01-0403|death"] = "uesugi-counters",
-            ["S01-0407|death"] = "ryoma-summon",
+            ["S01-0407|death"] = "hand-legion-summon",
             ["S02-0002|after-kill"] = "alice-ready",
             ["S02-01S1|death"] = "xiaotian-morale",
             ["S02-0202|death"] = "grave-legion-summon",
             ["S02-0301|death"] = "thor-draw-cycle",
             ["S02-0508|death"] = "atalanta-flip",
             ["S02-0518|death"] = "grave-to-hand",
-            ["S02-0601|death"] = "arthur-summon",
+            ["S02-0601|death"] = "hand-legion-summon",
             ["S02-0615|death"] = "gwen-choice",
         };
 
@@ -146,12 +146,11 @@ public sealed partial class L12GameEngine
             "oddr-rest" => PublicLegions(opponent).Any(card => !card.Tapped),
             "uesugi-counters" => Enumerable.Range(0, 3).Any(slot => player.Field[1][slot] is null)
                 && player.Hand.Any(card => IsCounterTactic(card.CardId)),
-            "ryoma-summon" => EmptySlots(player).Any() && player.Hand.Any(card => card.CardType == "legion"
-                && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(card, 3)),
+            "hand-legion-summon" => TryGetHandLegionSummonTriggerSpec(candidate.SourceCardId,
+                    candidate.Trigger, out var handSummon)
+                && EmptySlots(player).Any() && LegalHandLegionSummonTargets(handSummon, player).Length > 0,
             "xiaotian-morale" => player.MoraleDeck.Count > 0,
             "atalanta-flip" => player.Morale.Any(card => !card.IsGodPower),
-            "arthur-summon" => EmptySlots(player).Any() && player.Hand.Any(card => card.CardType == "legion"
-                && card.HasTrait("圆桌骑士") && L12StructuredCardRules.CurrentCostAtMost(card, 4)),
             "gwen-choice" => candidate.Data.GetValueOrDefault("cause") == "effect",
             "alice-ready" => candidate.Data.GetValueOrDefault("killed") == "true",
             _ => true,
@@ -460,22 +459,23 @@ public sealed partial class L12GameEngine
                     backSlots, referenceKey: "entryCards", requiredChoice: "mode:use", minReferenceCount: 2),
             ];
         }
-        else if (batch6IBPlan is "ryoma-summon" or "arthur-summon")
+        else if (batch6IBPlan == "hand-legion-summon"
+            && TryGetHandLegionSummonTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var handSummon))
         {
-            var cards = batch6IBPlan == "ryoma-summon"
-                ? player.Hand.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
-                    && L12StructuredCardRules.CurrentCostAtMost(card, 3)).Select(card => card.InstanceId)
-                : player.Hand.Where(card => card.CardType == "legion" && card.HasTrait("圆桌骑士")
-                    && L12StructuredCardRules.CurrentCostAtMost(card, 4)).Select(card => card.InstanceId);
-            steps =
-            [
-                PublicTriggerStep("option", "mode", $"〈{source.Name}〉：预先声明是否从手牌登场军团", ["mode:none", "mode:use"]),
-                PublicTriggerStep("hand-card", "entryCard", $"〈{source.Name}〉：私密选择要登场的军团", cards,
-                    requiredChoice: "mode:use"),
-                PublicTriggerStep("unused-slot", "entrySlot", $"〈{source.Name}〉：公开声明登场位置", EmptySlots(player),
-                    requiredChoice: "mode:use"),
-            ];
+            var cards = LegalHandLegionSummonTargets(handSummon, player).Select(card => card.InstanceId);
+            steps = [];
+            if (handSummon.Optional)
+                steps.Add(PublicTriggerStep("option", "mode",
+                    $"〈{source.Name}〉：预先声明是否从手牌登场军团", ["mode:none", "mode:use"]));
+            steps.Add(PublicTriggerStep("hand-card", "entryCard", handSummon.PromptText, cards,
+                min: handSummon.MinimumSelection, max: 1,
+                requiredChoice: handSummon.Optional ? "mode:use" : null,
+                allowCancel: handSummon.Optional));
+            steps.Add(PublicTriggerStep("unused-slot", "entrySlot",
+                $"{handSummon.Name}：公开声明{(handSummon.Tapped ? "休整" : "活跃")}登场位置",
+                EmptySlots(player), referenceKey: "entryCard",
+                requiredChoice: handSummon.Optional ? "mode:use" : null,
+                minReferenceCount: 1, allowCancel: handSummon.Optional));
         }
         else if (batch6IBPlan == "atalanta-flip")
         {
@@ -1257,15 +1257,19 @@ public sealed partial class L12GameEngine
                     .Select(index => $"1:{index}").Contains(slot, StringComparer.OrdinalIgnoreCase))))
                 error = "上杉谦信声明的私密反击战术或公开后排位置已失效；效果未入栈";
         }
-        else if (batch6IBPlan is "ryoma-summon" or "arthur-summon")
+        else if (batch6IBPlan == "hand-legion-summon"
+            && TryGetHandLegionSummonTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var handSummon))
         {
+            var entries = activation.DeclaredValues.GetValueOrDefault("entryCard", []);
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
-            var cardLegal = entryCard is not null && player.Hand.Any(card => card.InstanceId == entryCard
-                && card.CardType == "legion" && (batch6IBPlan == "ryoma-summon"
-                    ? L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(card, 3)
-                    : card.HasTrait("圆桌骑士") && L12StructuredCardRules.CurrentCostAtMost(card, 4)));
-            if (mode == "mode:use" && (!cardLegal || slot is null
-                || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase)))
+            var expectsSelection = !handSummon.Optional || mode == "mode:use";
+            var validEmpty = entries.Count == 0 && handSummon.MinimumSelection == 0
+                && string.IsNullOrWhiteSpace(slot);
+            var validSelected = entries.Count == 1
+                && player.Hand.Any(card => card.InstanceId == entries[0]
+                    && IsLegalHandLegionSummonTarget(handSummon, player, card))
+                && slot is not null && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase);
+            if (expectsSelection && !validEmpty && !validSelected)
                 error = $"〈{candidate.SourceName}〉声明的私密手牌军团或公开登场位置已失效；效果未入栈";
         }
         else if (batch6IBPlan == "xiaotian-morale" && mode == "mode:use" && player.MoraleDeck.Count == 0)
@@ -1629,7 +1633,7 @@ public sealed partial class L12GameEngine
                 "jingke-kill" or "harald-kill" => activation.DeclaredValues.GetValueOrDefault("killTarget", []),
                 "oddr-rest" => activation.DeclaredValues.GetValueOrDefault("restTarget", []),
                 "uesugi-counters" => activation.DeclaredValues.GetValueOrDefault("entryCards", []),
-                "grave-legion-summon" or "ryoma-summon" or "arthur-summon" =>
+                "grave-legion-summon" or "hand-legion-summon" =>
                     activation.DeclaredValues.GetValueOrDefault("entryCard", [])
                         .Concat(activation.DeclaredValues.GetValueOrDefault("entrySlot", [])).ToList(),
                 _ => [],

@@ -21,7 +21,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
 
     private static readonly string[] ResolutionModeCards =
     [
-        "S01-0001", "S01-0303", "S01-0306", "S02-0002", "S02-01S1", "S02-0301",
+        "S01-0001", "S01-0303", "S01-0306", "S02-0002", "S02-01S1", "S02-0301", "S02-0601",
     ];
 
     private static L12GameEngine Create(int seed)
@@ -269,6 +269,203 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         yield return ["S01-0112", true];
         yield return ["S01-0307", false];
         yield return ["S02-0518", true];
+    }
+
+    public static IEnumerable<object[]> DeathHandSummonRows()
+    {
+        yield return ["S01-0407", false, true];
+        yield return ["S02-0601", true, false];
+    }
+
+    public static IEnumerable<object[]> DeathHandSummonIdentityRows()
+    {
+        yield return ["S01-0407", false];
+        yield return ["S02-0601", true];
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathHandSummonRows))]
+    [Trait("L12Evidence", "entry:death-hand-summon-shared-lifecycle")]
+    public void DeathHandSummonsShareSelectionResponseAndSettlementProtocol(
+        string cardId, bool optional, bool tapped)
+    {
+        var game = Create(9805 + cardId[^1]);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+
+        if (optional)
+        {
+            var mode = OnlyPrompt(game);
+            Assert.Equal(["mode:none", "mode:use"], mode.ValidChoices);
+            ResolveChoice(game, "mode:use");
+        }
+
+        var hand = OnlyPrompt(game);
+        Assert.Equal("hand-card", hand.Kind);
+        Assert.Equal(optional ? 1 : 0, hand.MinChoose);
+        Assert.Equal(1, hand.MaxChoose);
+        Assert.Equal(optional, hand.ValidChoices.Contains("skip"));
+        if (optional) Assert.Equal("取消整次发动", hand.ChoiceLabels["skip"]);
+        Assert.Contains(fixture.Cards["private"].InstanceId, hand.ValidChoices);
+        Assert.Contains(fixture.Cards["private"].InstanceId,
+            JsonSerializer.Serialize(game.SnapshotFor(0)), StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.Cards["private"].InstanceId,
+            JsonSerializer.Serialize(game.SnapshotFor(1)), StringComparison.Ordinal);
+
+        ResolveCards(game, fixture.Cards["private"].InstanceId);
+        var slotPrompt = OnlyPrompt(game);
+        Assert.Equal("slot", slotPrompt.Kind);
+        Assert.Equal(optional, slotPrompt.ValidChoices.Contains("skip"));
+        if (optional) Assert.Equal("取消整次发动", slotPrompt.ChoiceLabels["skip"]);
+        var slot = slotPrompt.ValidChoices.First(choice => choice != "skip");
+        ResolveChoice(game, slot);
+
+        var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal(fixture.Cards["private"].InstanceId,
+            item.Data.GetValueOrDefault("declared:entryCard"));
+        Assert.False(string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("presentationSceneId")));
+        PassResponses(game);
+
+        Assert.DoesNotContain(fixture.Cards["private"], player.Hand);
+        Assert.Contains(fixture.Cards["private"], player.Field.SelectMany(row => row).OfType<L12CardInstance>());
+        Assert.Equal(tapped, fixture.Cards["private"].Tapped);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.CardId == cardId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0407")]
+    [Trait("L12Evidence", "entry:ryoma-mandatory-zero-selection")]
+    public void RyomaDeathIsMandatoryButMayChooseZeroCardsInsideTheEffect()
+    {
+        var game = Create(9807);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, "S01-0407", "death");
+
+        var hand = OnlyPrompt(game);
+        Assert.Equal("hand-card", hand.Kind);
+        Assert.Equal(0, hand.MinChoose);
+        Assert.DoesNotContain("mode:none", hand.ValidChoices);
+        Assert.DoesNotContain("skip", hand.ValidChoices);
+        ResolveCards(game);
+
+        Assert.Single(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "slot");
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["private"], player.Hand);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "ability-cancelled"
+            && entry.Cards.Any(card => card.CardId == "S01-0407"));
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.CardId == "S01-0407"));
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathHandSummonIdentityRows))]
+    [Trait("L12Evidence", "entry:death-hand-summon-revalidate-zone")]
+    public void DeathHandSummonFailsWhenDeclaredCardLeavesHandDuringResponse(
+        string cardId, bool optional)
+    {
+        var game = Create(9809 + cardId[^1]);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+        if (optional) ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["private"].InstanceId);
+        var slot = OnlyPrompt(game).ValidChoices.First(choice => choice != "skip");
+        ResolveChoice(game, slot);
+
+        Assert.True(player.Hand.Remove(fixture.Cards["private"]));
+        player.Graveyard.Add(fixture.Cards["private"]);
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["private"], player.Graveyard);
+        Assert.DoesNotContain(fixture.Cards["private"], player.Field.SelectMany(row => row).OfType<L12CardInstance>());
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "failed"
+            && entry.Cards.Any(card => card.CardId == cardId));
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathHandSummonIdentityRows))]
+    [Trait("L12Evidence", "entry:death-hand-summon-revalidate-cost-slot")]
+    public void DeathHandSummonRevalidatesCurrentCostAndReservedSlot(
+        string cardId, bool optional)
+    {
+        foreach (var invalidateSlot in new[] { false, true })
+        {
+            var game = Create(9811 + cardId[^1] + (invalidateSlot ? 20 : 0));
+            var player = game.State.Players[0];
+            var fixture = QueueReviewedTrigger(game, cardId, "death");
+            if (optional) ResolveChoice(game, "mode:use");
+            ResolveCards(game, fixture.Cards["private"].InstanceId);
+            var slotPrompt = OnlyPrompt(game);
+            var slot = slotPrompt.ValidChoices.First(choice => choice != "skip");
+            ResolveChoice(game, slot);
+
+            if (invalidateSlot)
+            {
+                var parts = slot.Split(':');
+                var row = int.Parse(parts[0]);
+                var index = int.Parse(parts[1]);
+                player.Field[row][index] = Card("S01-0002", $"occupied-{cardId}");
+            }
+            else
+            {
+                fixture.Cards["private"].CostModifier += 1;
+            }
+
+            PassResponses(game);
+
+            Assert.Contains(fixture.Cards["private"], player.Hand);
+            Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+                && entry.EffectResultStatus == "failed"
+                && entry.Cards.Any(card => card.CardId == cardId));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathHandSummonIdentityRows))]
+    [Trait("L12Evidence", "entry:death-hand-summon-negated")]
+    public void DeathHandSummonStopsWhenNegatedWithoutMovingTheCard(string cardId, bool optional)
+    {
+        var game = Create(9815 + cardId[^1]);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+        if (optional) ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["private"].InstanceId);
+        var slot = OnlyPrompt(game).ValidChoices.First(choice => choice != "skip");
+        ResolveChoice(game, slot);
+        Assert.Single(game.State.EffectStack).Negated = true;
+
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["private"], player.Hand);
+        Assert.DoesNotContain(fixture.Cards["private"], player.Field.SelectMany(row => row).OfType<L12CardInstance>());
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "negated"
+            && entry.Cards.Any(card => card.CardId == cardId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0601")]
+    [Trait("L12Evidence", "entry:arthur-cancel-duplicate")]
+    public void ArthurMayCancelBeforeCommitAndDuplicateSubmissionIsRejected()
+    {
+        var game = Create(9818);
+        var fixture = QueueReviewedTrigger(game, "S02-0601", "death");
+        ResolveChoice(game, "mode:use");
+        var prompt = OnlyPrompt(game);
+        Assert.Equal("取消整次发动", prompt.ChoiceLabels["skip"]);
+
+        ResolveCards(game, "skip");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(fixture.Cards["private"], game.State.Players[0].Hand);
+        Assert.False(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                CardInstanceIds: [fixture.Cards["private"].InstanceId])).Accepted);
     }
 
     [Theory]
@@ -530,7 +727,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
     {
         var game = Create(9851 + cardId[^1]);
         var fixture = QueueReviewedTrigger(game, cardId, "death");
-        ResolveChoice(game, "mode:use");
+        if (cardId != "S01-0407") ResolveChoice(game, "mode:use");
         var privatePrompt = OnlyPrompt(game);
         Assert.Contains(fixture.Cards["private"].InstanceId, privatePrompt.ValidChoices);
 
