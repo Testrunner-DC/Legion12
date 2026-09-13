@@ -89,6 +89,8 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S02-0205", 4, "scarabDebuff"),
             ("S02-0301", 4, "thorHammerRevive"),
             ("S02-03M1", 2, "thorCharge"),
+            ("S02-05D1", 1, "divinityFlipMorale"),
+            ("S02-05D1", 3, "divinityFreePromotion"),
             ("S02-0510", 3, "hippolytaRevive"),
             ("S02-0513", 3, "aristotleDiscount"),
             ("S02-06D1", 4, "avalonDebuff"),

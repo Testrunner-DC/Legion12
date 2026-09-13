@@ -119,8 +119,8 @@ if ($allAuditRows.Count -ne 248 -or $allAudited.Count -ne 248 -or $duplicateAudi
     throw "Full-pool per-card audit coverage drifted (rows=$($allAuditRows.Count), unique=$($allAudited.Count), duplicateGroups=$($duplicateAuditIds.Count))."
 }
 $allAbilityCount = ($allAuditRows | Measure-Object Abilities -Sum).Sum
-if ($allAbilityCount -ne 577) {
-    throw "Full-pool per-ability audit total drifted (expected=577, actual=$allAbilityCount)."
+if ($allAbilityCount -ne 578) {
+    throw "Full-pool per-ability audit total drifted (expected=578, actual=$allAbilityCount)."
 }
 
 $questionStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5pyJ55aR54K5'))
@@ -163,4 +163,4 @@ Assert-Contains $openQuestions $noOpenQuestionText 'OPEN-QUESTIONS must record t
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
 if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 
-Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 109 current abilities; historical audit: 248 cards / 577 abilities; 189 passed / 59 fixed / 0 question cards).'
+Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 109 current abilities; full audit: 248 cards / 578 abilities; 189 passed / 59 fixed / 0 question cards).'

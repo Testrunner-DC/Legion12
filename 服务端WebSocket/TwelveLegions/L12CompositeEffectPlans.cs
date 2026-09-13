@@ -15,7 +15,9 @@ internal sealed record L12CompositeEffectSegmentSpec(
     string? RequiredDeclarationKey = null,
     bool DeclareAtSegmentStart = false,
     string? DeclarationTiming = null,
-    bool RequiresPreviousSuccess = false);
+    bool RequiresPreviousSuccess = false,
+    string? DeclinedMode = null,
+    string? DeclinedDeclarationKey = null);
 
 /// <summary>
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
@@ -303,9 +305,9 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("divinity-recover", "奥林匹斯 诸神巅：将已声明的墓地卡牌加入手牌",
                     PublicTargetKeys: ["recoverCard"]),
-                new("divinity-entry", "奥林匹斯 诸神巅：随后令已声明的军团活跃登场",
-                    RequiredMode: "mode:entry", PublicTargetKeys: ["entryCard", "entrySlot"],
-                    RequiredDeclarationKey: "entryMode"),
+                new("divinity-entry", "奥林匹斯 诸神巅：随后可令已声明的军团活跃登场",
+                    PublicTargetKeys: ["entryCard", "entrySlot"], DeclinedMode: "mode:none",
+                    DeclinedDeclarationKey: "entryMode"),
             ],
         };
 
@@ -365,7 +367,8 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("immortal-gift-draw", "抽取1张牌"),
                 new("immortal-gift-summon", "随后可将墓地1张〈陵墓守卫〉活跃登场",
-                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"]),
+                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"],
+                    DeclinedMode: "mode:none", DeclinedDeclarationKey: "entryMode"),
             ],
             ["trigger:S01-0420:reaction"] =
             [
@@ -1824,6 +1827,13 @@ public sealed partial class L12GameEngine
                 continue;
             }
             if (!CompositeSegmentEnabled(next, item)) continue;
+            if (next.DeclinedMode is { } declinedMode
+                && CompositeDeclared(item, next.DeclinedDeclarationKey ?? "mode")
+                    .Contains(declinedMode, StringComparer.OrdinalIgnoreCase))
+            {
+                return QueueDeclinedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉已明确选择不发动“{next.Text}”");
+            }
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
                 return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
@@ -1879,6 +1889,10 @@ public sealed partial class L12GameEngine
     private bool QueueSkippedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
         int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
         => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason);
+
+    private bool QueueDeclinedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "declined", reason);
 
     private bool QueueCompositeSettlementTerminal(L12StackItem item, L12CardInstance source,
         int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason)

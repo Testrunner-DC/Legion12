@@ -2601,7 +2601,14 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var choices = player.Morale.Where(card => !card.IsGodPower && (!onlyTapped || card.Tapped)).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0) { FinishStackItem(item); return true; }
+        if (choices.Count == 0)
+        {
+            if (item.Data.GetValueOrDefault("resolutionTimeMoraleCandidateCommitted") == "true")
+                RecordTargetSettlementFailure(item, "resolution-time-morale-selection",
+                    "发动时存在的士气候选在响应逆结算后均已不再符合条件");
+            FinishStackItem(item);
+            return true;
+        }
         if (optional) choices.Add("skip");
         CreatePrompt(item.Controller, "target-morale", $"{source.Name}：选择1张士气翻转", choices, optional ? 0 : 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-flip-morale" });

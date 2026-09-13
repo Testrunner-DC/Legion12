@@ -1,10 +1,10 @@
 # S02 高天原与奥林匹斯逐卡独立语义审计（Batch 6L-C）
 
-更新日期：2026-09-05
+更新日期：2026-09-13
 
 ## 范围与结论
 
-- 固定范围为 `cards.s2.json` 的 7 张 `gaotianyuan` 高天原卡与 28 张 `olympus` 奥林匹斯卡，含主宰、主神、士气/神力、晋升者与特殊牌，共 35 张、104 项原子目录能力；S02 天灾留后批。
+- 固定范围为 `cards.s2.json` 的 7 张 `gaotianyuan` 高天原卡与 28 张 `olympus` 奥林匹斯卡，含主宰、主神、士气/神力、晋升者与特殊牌，共 35 张、105 项原子目录能力；S02 天灾留后批。
 - 权威顺序为玩家裁定 > `FAQ-RULINGS.md`/FAQ > 规则书与关键词 > 印刷卡面。逐项核对时点、费用预付、独立段、区域/所有者、四状态资源、晋升叠放、数值、隐藏信息、来源 LKI 与响应无效。
 - 唯一结论：18 张通过、17 张明确错误并修复、有疑点 0、缺少测试 0、未实现 0。海伦已按 2026-09-02玩家裁定闭环；武田整段单响应按2026-09-05玩家最新裁定覆盖旧结论。
 
@@ -46,7 +46,7 @@
 | S02-05M2 普罗米修斯 | 1 | 只消耗1神力不翻面；牌库顶身份结算期读取，戒指通用卡合法；所选1张先以公开 `reveal` 事件展示再进入隐藏手牌，对手不得看到其余候选或回顶/回底顺序。 | `L12AuthorityEvents`、`L12S2FactionEffects`、`L12S2ZoneOps` | `AtomicReviewBatch6LCRegressionTests`、`S2FactionRegressionTests` | 明确错误→已修复 |
 | S02-05C1 神力 | 2 | 与士气同区且可付普通费用；自身主动只选择活跃神力，消耗并翻面后成为休整士气，回合1次按实例。 | `RuleKernel`、`L12S2FactionEffects` | `AtomicReviewBatch6LCRegressionTests`、`RuleKernelTests` | 通过 |
 | S02-05C1A 士气 | 1 | 主动发动先选择并消耗实际费用资源；若支付选择会影响可翻转目标，必须由玩家点击费用对象。入栈结算后再按支付后的场面选择另一张士气翻为神力，四状态维度保持正交。 | `L12ActiveAbilities`、`L12S2FactionEffects`、`RuleKernel` | `S2FactionRegressionTests` | 明确错误→已修复 |
-| S02-05D1 奥林匹斯 诸神巅 | 3 | 两项主神能力各自回合1次；翻士气能力在效果结算时选择目标。2神力预付；墓地回收与随后可选登场分别响应，前段无效不吞后段；戒指通用卡合法；主神开场额外2士气只执行一次。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12S2RemainingEffects` | `AtomicReviewBatch2RegressionTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
+| S02-05D1 奥林匹斯 诸神巅 | 4 | 四项印刷能力均有结构定义。两项回合1次主动分别绑定第1、2段，主动休整免晋升神力绑定第3段，开场额外2士气为第4段。翻士气在结算时选择并在候选消失时`failed`；2神力预付后，回收/可选登场与六份伤害使用独立场景，伤害逐份重验，全部失效为`failed`、部分有效继续结算；明确不登场为独立`declined`，已付Cost不回退。 | `L12StructuredCardRules`、`L12CompositeEffectPlans`、`L12S2RemainingEffects`、`L12SingleSegmentEffectPresentations` | `DivinityEffectLifecycleTests`、`EffectPresentationBranchSegmentTests`、`AtomicReviewBatch6LCRegressionTests` | 明确错误→已修复 |
 
 ## 公共根因、跨范围控制与保留边界
 

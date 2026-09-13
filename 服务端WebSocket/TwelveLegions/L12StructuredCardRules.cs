@@ -561,6 +561,7 @@ public static partial class L12StructuredCardRules
             "S02-05M2" => PrometheusAbilities(),
             "S02-05C1" => OlympusResourceAbilities(),
             "S02-05C1A" => OlympusResourceAbilities(),
+            "S02-05D1" => DivinityAbilities(),
             "S02-01M1" => WukongAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
@@ -1402,6 +1403,70 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
         ]),
     ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> DivinityAbilities() =>
+    [
+        new("active", "activated", "我方 回合1次 可翻转1张士气。",
+        [
+            new(L12AtomKinds.Condition, "我方回合、本回合未发动且存在可翻转士气", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true;controller.morale.non-god-power>=1",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.SelectTarget, "结算时选择 1 张士气", "target", new()
+            {
+                ["zone"] = "controller.morale", ["filter"] = "is-god-power=false", ["timing"] = "resolution",
+                ["min"] = "1", ["max"] = "1",
+            }),
+            new(L12AtomKinds.Special, "翻转所选士气", "resolution", new()
+            {
+                ["domain"] = "morale", ["operation"] = "flip-selected-to-god-power",
+            }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]) { RuntimeAbilityId = "divinityFlipMorale", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("active", "activated", "我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。",
+        [
+            new(L12AtomKinds.Condition, "我方回合、本回合未发动且有 2 张活跃神力", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true;controller.active-god-power>=2",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            GodPowerCost(2, true),
+            new(L12AtomKinds.SelectMode, "选择回收登场或分配 6000 兵力伤害", "target", new()
+            {
+                ["options"] = "recover-and-entry|allocate-6000-troop-damage",
+            }),
+            new(L12AtomKinds.Special, "按所选分支执行结构化效果段", "resolution", new()
+            {
+                ["domain"] = "olympus-divinity", ["operation"] = "selected-branch",
+            }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]) { RuntimeAbilityId = "divinityPower", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("active", "activated", "主动休整 本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且诸神巅处于活跃", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.ready=true",
+            }),
+            new(L12AtomKinds.RestSource, "将诸神巅转为休整", "cost", new()),
+            new(L12AtomKinds.SetState, "下 1 张【奥林匹斯】军团晋升登场无需神力", "resolution", new()
+            {
+                ["key"] = "controller.next-olympus-promotion-god-power-cost", ["value"] = "0",
+            }),
+            new(L12AtomKinds.Duration, "持续至本回合被下一次符合条件的晋升登场消耗", "duration", new()
+            {
+                ["duration"] = "this-turn-or-next-matching-consumption",
+            }),
+        ]) { RuntimeAbilityId = "divinityFreePromotion", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("setup", "triggered", "主神开场即可追加2张额外士气。",
+        [
+            new(L12AtomKinds.AddMorale, "主神开场追加 2 张额外士气", "resolution", new()
+            {
+                ["amount"] = "2", ["state"] = "rested", ["source"] = "morale-deck",
+            }),
+        ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+    ];
+
     private static IReadOnlyList<L12StructuredAbilityTemplate> TheseusAbilities() => Assisted(
     [
         new("static", "continuous", "「位于手牌」若我方神力为0张，此军团登场费用-1。",

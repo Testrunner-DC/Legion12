@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260913-DIVINITY-BRANCH-LIFECYCLE：诸神巅多分支与可选随后段
+
+- 诸神巅4项印刷能力全部进入结构目录：`divinityFlipMorale`为第1段、`divinityPower`为第2段、`divinityFreePromotion`为第3段、开场追加2士气为第4段；纠正6000伤害分支误挂第3段的问题。
+- 六份伤害逐份按结算时状态重验：零声明对象=`skipped`，全部失效=`failed`，部分有效则合法份数继续并记录部分失败；翻士气结算时无候选=`failed`。已支付2神力、主动次数及主动休整均不回退。
+- 公共复合计划可把预声明`mode:none`投影成独立`declined`段；同类扫描仅命中诸神巅与不朽之礼，互斥`RequiredMode`分支不受影响。专项8/8、同类兼容280/280，Focused与Batch规则均2970/2970通过；未部署。
+
 ## EFFECT-20260913-TARGETED-ACTIVE-STATE-RESULTS：公开对象主动状态效果结算重验
 
 - 黄金圣甲虫`scarabDebuff`与神农鼎`shennongReset`接入`single-active`第1/1段，声明、Cost、响应、实际结果、日志、动效和回放使用同一能力身份。

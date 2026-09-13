@@ -26,6 +26,8 @@ internal static class L12SingleSegmentEffectPresentations
         new("S02-0205", 4, "scarabDebuff"),
         new("S02-0301", 4, "thorHammerRevive"),
         new("S02-03M1", 2, "thorCharge"),
+        new("S02-05D1", 1, "divinityFlipMorale"),
+        new("S02-05D1", 3, "divinityFreePromotion"),
         new("S02-0510", 3, "hippolytaRevive"),
         new("S02-0513", 3, "aristotleDiscount"),
         new("S02-06D1", 4, "avalonDebuff"),

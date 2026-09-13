@@ -153,7 +153,11 @@ public sealed partial class L12GameEngine
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
                 player.UsedAbilities.Add(onceKey);
                 PushEffect(playerIndex, source, "active", "主神效果",
-                    data: new Dictionary<string, string> { ["ability"] = ability });
+                    data: new Dictionary<string, string>
+                    {
+                        ["ability"] = ability,
+                        ["resolutionTimeMoraleCandidateCommitted"] = "true",
+                    });
                 return CommandResult.Ok();
             case "divinityPower" when source.CardId == "S02-05D1":
             {
@@ -313,13 +317,29 @@ public sealed partial class L12GameEngine
             {
                 if (item.Data["mode"] == "mode:damage")
                 {
-                    foreach (var id in item.Data.GetValueOrDefault("targets", string.Empty)
-                        .Split('|', StringSplitOptions.RemoveEmptyEntries))
+                    var declaredAllocations = item.Data.GetValueOrDefault("targets", string.Empty)
+                        .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    var declaredTargets = declaredAllocations.Where(id => id != "mode:none").ToArray();
+                    var resolvedAllocations = 0;
+                    foreach (var id in declaredTargets)
                     {
                         var target = DeclaredEnemyTarget(item.Controller, id);
                         if (target is not null)
+                        {
                             AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "诸神巅");
+                            resolvedAllocations++;
+                        }
                     }
+                    if (resolvedAllocations == 0)
+                        RecordTargetSettlementFailure(item, string.Join('|', declaredTargets),
+                            declaredTargets.Length == 0
+                                ? "发动时对方战场没有军团，6000兵力伤害空处理"
+                                : "全部已声明伤害对象在逆结算后均已离场或不再是公开军团");
+                    else if (resolvedAllocations < declaredTargets.Length)
+                        AddEvent("effect", item.Controller,
+                            $"诸神巅的{declaredTargets.Length - resolvedAllocations}份已声明伤害在逆结算后失效，其余伤害继续结算",
+                            source);
+                    ResolveStateBasedLegionDeaths();
                     FinishStackItem(item);
                     return true;
                 }
@@ -342,6 +362,12 @@ public sealed partial class L12GameEngine
                 }
                 if (AtomicFlowKey(item, source) == "divinity-entry")
                 {
+                    if (CompositeDeclared(item, "entryMode").SingleOrDefault() != "mode:entry")
+                    {
+                        item.Data["effectResultStatus"] = "declined";
+                        FinishStackItem(item);
+                        return true;
+                    }
                     var entry = CompositeDeclared(item, "entryCard").SingleOrDefault();
                     var slot = CompositeDeclared(item, "entrySlot").SingleOrDefault();
                     if (string.IsNullOrWhiteSpace(entry) || string.IsNullOrWhiteSpace(slot)
