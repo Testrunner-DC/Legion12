@@ -462,9 +462,7 @@ function updateScale() {
   // reserve that overflow on both edges so every control stays visible at exact 16:9.
   const availableHeight = Math.max(1, viewport.height - 124)
   const availableWidth = Math.max(1, viewport.width - (props.gmPanelOpen && !compactViewport.value ? 344 : 0))
-  scale.value = compactViewport.value
-    ? Math.max(.7, Math.min(1, availableHeight / stageSize.value.height))
-    : Math.min(availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
+  scale.value = Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
   window.requestAnimationFrame(updateInspectorFloatRect)
 }
 watch(stageSize, updateScale)

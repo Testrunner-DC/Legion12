@@ -184,9 +184,8 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 .player-panel strong{font-size:max(17px,var(--l12-board-copy,13px))}.player-panel span{font-size:var(--l12-board-copy,13px)}.l12-actions p{font-size:var(--l12-board-copy,13px)}.l12-actions button{font-size:var(--l12-board-copy,13px)}
 
 @media(max-width:820px){
-  .board-viewport.compact-viewport{display:block;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y}
-  .board-viewport.compact-viewport .board-stage{transform-origin:top left;margin:8px}
-  .board-viewport.compact-viewport::after{position:fixed}
+  .board-viewport.compact-viewport{display:flex;overflow:hidden}
+  .board-viewport.compact-viewport .board-stage{transform-origin:center;margin:0}
 }
 .master-actions{display:grid;grid-template-columns:1fr;gap:5px;margin:7px 0}.master-actions button{font-size:var(--l12-board-copy,13px)}
 .relic-zone{position:relative}.relic-zone .relic-actions{bottom:calc(100% + 5px);display:flex}

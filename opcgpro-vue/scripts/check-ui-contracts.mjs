@@ -9,6 +9,8 @@ const mainNav = shell.match(/const mainNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const battleNav = shell.match(/const battleNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
+const mobileViewportStyle = read('../src/l12/mobileViewport.css')
+const mobileViewportCheck = read('./test-mobile-viewport.mjs')
 const phaseTrack = read('../src/l12/game/PhaseTrack.vue')
 const battleLog = read('../src/l12/game/BattleEventLog.vue')
 const battleDock = read('../src/l12/game/BattleUtilityDock.vue')
@@ -1219,6 +1221,10 @@ contracts.push([
 ])
 
 const currentReleaseEntry = shell.slice(
+  shell.indexOf("date: '2026-09-14'"),
+  shell.indexOf("date: '2026-09-13'"),
+)
+const previousReleaseEntry = shell.slice(
   shell.indexOf("date: '2026-09-13'"),
   shell.indexOf("date: '2026-09-10'"),
 )
@@ -1229,38 +1235,63 @@ const migratedReleaseEntry = shell.slice(
 const internalReleaseTerms = ['后台', '管理员', '审计', '存储维护', '处置', '处罚']
 contracts.push([
   currentReleaseEntry.includes('version: releaseVersion')
-    && currentReleaseEntry.includes("title: '页面与对战操作'")
-    && currentReleaseEntry.includes("title: '主动效果与费用判定'")
-    && currentReleaseEntry.includes("title: '打出费用与响应判定'")
-    && currentReleaseEntry.includes("title: '结算结果与响应顺序'")
-    && currentReleaseEntry.includes("title: '反击战术与多段效果'")
-    && currentReleaseEntry.includes("title: '对象重验与连续结算'")
-    && currentReleaseEntry.includes("title: '跨回合与主动状态'")
-    && currentReleaseEntry.includes("title: '诸神巅能力结算'")
-    && currentReleaseEntry.includes("title: '登场对象、操作提示与卡图'")
-    && currentReleaseEntry.includes("title: '排位结果与申诉'")
+    && currentReleaseEntry.includes("title: '移动端对战页面'")
+    && currentReleaseEntry.includes("title: '登场费用、牌库顶与持续效果'")
+    && currentReleaseEntry.includes("title: '士气、符文与主动装备'")
+    && currentReleaseEntry.includes("title: '军团主动、位移与时点'")
+    && currentReleaseEntry.includes("title: '公开触发与发动取消'")
+    && currentReleaseEntry.includes("title: '阵亡与击杀触发'")
+    && currentReleaseEntry.includes("title: '多对象与连续结算'")
+    && ['嬴政', '天照', '孙悟空', '山河社稷图', '普罗米修斯', '特勒马科斯', '野外扎营', '花魁的馈赠',
+      '阿麦金', '西芙', '安卡神碑', '神剑格拉墨', '黄泉之门', '八尺琼勾玉', '匠神锻造炉',
+      '莫瑞甘', '阿尔忒弥斯', '奈芙蒂斯', '服部半藏', '银臂努阿达', '无眠之夜', '荷鲁斯',
+      '腐秽大地', '驱魔道士陆瑛', '安德华拉诺特', '玛格丽特', '圣杯', '安格斯·麦·奥格',
+      '月读', '爱丽丝', '黑胡子蒂奇', '传奇的拉格纳', '奥拉夫二世', '雷神之锤', '赫拉克勒斯',
+      '洛基', '孙武', '阿尔维达', '忒修斯', '尼托克丽丝', '血斧艾瑞克', '陵墓圣武士',
+      '坂本龙马', '亚瑟王', '无名的渗透者', '墨子', '贝奥武夫', '布伦希尔德', '哈特谢普苏特',
+      '井伊直虎', '埃涅阿斯', '金发哈拉尔', '圣女贞德', '吉原的花魁', '英灵殿', '土方岁三']
+      .every(cardName => currentReleaseEntry.includes(cardName))
+    && ['同时按可用宽度和高度等比缩放并居中', '完整收进一屏', '取消整次发动', '最多1张',
+      '直接规则动作', '一次响应内的连续结算', '已结算、被无效、已跳过、未完成和已放弃',
+      '重连、回放、日志和卡牌动效会保持同一实际结果']
+      .every(detail => currentReleaseEntry.includes(detail))
+    && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
+  '当前玩家更新日志必须覆盖上一正式版本后的移动端一屏适配和全部玩家可见卡效批次，并排除后台和内部治理内容',
+])
+contracts.push([
+  previousReleaseEntry.includes("version: '086f6f796d52bd7eefa09217da8e8bffe9e74e57'")
+    && previousReleaseEntry.includes("title: '页面与对战操作'")
+    && previousReleaseEntry.includes("title: '主动效果与费用判定'")
+    && previousReleaseEntry.includes("title: '打出费用与响应判定'")
+    && previousReleaseEntry.includes("title: '结算结果与响应顺序'")
+    && previousReleaseEntry.includes("title: '反击战术与多段效果'")
+    && previousReleaseEntry.includes("title: '对象重验与连续结算'")
+    && previousReleaseEntry.includes("title: '跨回合与主动状态'")
+    && previousReleaseEntry.includes("title: '诸神巅能力结算'")
+    && previousReleaseEntry.includes("title: '登场对象、操作提示与卡图'")
+    && previousReleaseEntry.includes("title: '排位结果与申诉'")
     && ['须佐之男', '山河社稷图', '草薙剑', '奥尔加', '众神之乡', '安卡神碑',
       '传奇的拉格纳', '无情者哈拉尔', '血斧艾瑞克', '齐格鲁德', '卡纽特大帝',
       '莫德雷德', '伊西斯', '步行者罗洛', '槲寄生符咒', '落穴陷阱', '孙悟空',
       '土方岁三', '阿麦金', '万物统御之戒', '自然馈赠', '杨戬专属', '哪吒专属']
-      .every(cardName => currentReleaseEntry.includes(cardName))
+      .every(cardName => previousReleaseEntry.includes(cardName))
     && ['主宰效果免耗', '傲慢之罪', '选择完成前不会先扣费', '冒号只分隔该能力自己的费用与效果',
       '再让登场费用-1', '之后才让军团离开手牌', '实际成为场上军团后', '消耗3符文把费用减至0',
       '一次选择最多2个对象', '职介和试炼值不属于特征', '通用特征会随持有者改为当前阵营特征', '最低显示为0',
       '真正结算后再播放对应分支', '发动声明不会重复播放', '重连和回放后仍保持一致']
-      .every(detail => currentReleaseEntry.includes(detail))
+      .every(detail => previousReleaseEntry.includes(detail))
     && ['白起', '绝对防御', '拼死反抗', '摄政皇权', '暗度陈仓', '不朽之礼', '切腹仪式',
       '神妙行军', '地主的胁迫', '乾坤·阴', '特洛伊木马', '雷神索尔', '探寻天空之城',
       '克利奥帕特拉七世', '希波吕忒', '神农鼎', '诸神巅', '嬴政', '天照', '梅林']
-      .every(cardName => currentReleaseEntry.includes(cardName))
+      .every(cardName => previousReleaseEntry.includes(cardName))
     && ['已结算、被无效、已跳过、未完成、已放弃', '声明时已经支付的费用不会返还',
       '后段可以分别显示已结算、未完成、已跳过或已放弃', '先弃置再抽牌',
       '多次伤害分配会逐个重新核对对象', '孙悟空》更新主卡图']
-      .every(detail => currentReleaseEntry.includes(detail))
+      .every(detail => previousReleaseEntry.includes(detail))
     && ['历史异常对局被确认无效时', '保护后续正常结算', '当前七曜值、定级进度和隐藏分保持不变']
-      .every(detail => currentReleaseEntry.includes(detail))
-    && internalReleaseTerms.every(term => !currentReleaseEntry.includes(term)),
-  '当前玩家更新日志必须覆盖上一期后的主动效果、费用边界、支付取消与场上响应修改，并排除后台和内部治理内容',
+      .every(detail => previousReleaseEntry.includes(detail))
+    && internalReleaseTerms.every(term => !previousReleaseEntry.includes(term)),
+  '上一期玩家更新日志必须固定到对应正式版本，继续覆盖主动效果、费用边界、支付取消与场上响应修改',
 ])
 contracts.push([
   migratedReleaseEntry.includes("version: '5c2c7d0a7771f7d87af22c456f2b73795953c05a'")
@@ -1354,6 +1385,16 @@ contracts.push(
     && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes("page.locator('.inspector-effect').waitFor()")
     && responsiveTypeCheck.includes('selected-card effect prose must wrap without horizontal overflow'),
     '响应式字号专项必须覆盖三档16:9桌面、760与390窄宽，并实际选中卡牌验证正文和标签而非只检查空详情'],
+  [board.includes('Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)')
+    && !board.includes('Math.max(.7')
+    && mobileViewportStyle.includes('.board-viewport.compact-viewport')
+    && mobileViewportStyle.includes('overflow: hidden !important')
+    && mobileViewportStyle.includes('transform-origin: center')
+    && mobileViewportCheck.includes('{width:375,height:667}')
+    && mobileViewportCheck.includes('{width:740,height:360}')
+    && mobileViewportCheck.includes("assert.equal(result.overflowY,'hidden')")
+    && mobileViewportCheck.includes('result.stage.bottom<=result.board.bottom+1'),
+    '移动端自动横屏与实际横屏必须同时按宽高完整缩放棋盘，禁止恢复最低缩放或双轴滚动，并覆盖短屏边界'],
   [board.includes("filter(id => id !== 'skip' && id !== 'cancel')")
     && board.includes('function cancelResourcePayment()')
     && board.includes('resourceSelectionPrompt.validChoices.includes(\'cancel\')')
