@@ -551,7 +551,9 @@ public sealed class S2FactionRegressionTests
             Choice: "mode:use")).Accepted);
         PassResponses(game);
         var discard = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-olympus-draw-discard", discard.Data["action"]);
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.Equal("post-draw-private", discard.Data["declarationTiming"]);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId, Choice: zealot.InstanceId)).Accepted);
         PassResponses(game);
 

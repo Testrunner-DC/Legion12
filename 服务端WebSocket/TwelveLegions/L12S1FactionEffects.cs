@@ -362,7 +362,7 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        if (TryResolveDrawDiscardDeathSegment(item, card)) return true;
+        if (TryResolveDrawDiscardSegment(item, card)) return true;
         switch (AtomicFlowKey(item, card))
         {
             case "thutmose-debuff": ApplySunKingDebuff(item); return true;
@@ -1117,6 +1117,12 @@ public sealed partial class L12GameEngine
             }
             foreach (var pair in CompositeFirstSegmentData(plan, declared)) data[pair.Key] = pair.Value;
         }
+        if (ability == "lokiCycle")
+        {
+            foreach (var pair in CompositeFirstSegmentData("active:S01-03M2:lokiCycle",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
         if (ability == "valhallaKill")
         {
             var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -1166,6 +1172,9 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionActive(L12StackItem item, L12CardInstance? source, string ability)
     {
         var player = State.Players[item.Controller];
+        var settlementSource = source ?? item.SourceSnapshot
+            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        if (TryResolveDrawDiscardSegment(item, settlementSource)) return true;
         switch (ability)
         {
             case "cleopatraGuard":

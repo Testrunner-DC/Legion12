@@ -601,6 +601,7 @@ public sealed partial class L12GameEngine
             ("S01-01M1", "drawCycle") => "active:S01-01M1:drawCycle",
             ("S01-02D1", "sunTopThree") => "active:S01-02D1:sunTopThree",
             ("S01-03D1", "valhallaRecover") => "active:S01-03D1:valhallaRecover",
+            ("S01-03M2", "lokiCycle") => "active:S01-03M2:lokiCycle",
             ("S01-04D1", "yomiSweep") => "active:S01-04D1:yomiSweep",
             ("S01-04M1", "amaterasuKill") => "active:S01-04M1:amaterasuKill",
             ("ST02-M1", "horusRevive") => "starter-horus-active",

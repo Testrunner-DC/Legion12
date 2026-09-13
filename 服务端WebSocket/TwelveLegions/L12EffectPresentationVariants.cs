@@ -44,6 +44,7 @@ internal static class L12EffectPresentationVariants
             ["active:S01-04D1:yomiRecover"] = 3,
             ["active:S01-01M1:drawCycle"] = 1,
             ["active:S01-02D1:sunTopThree"] = 2,
+            ["active:S01-03M2:lokiCycle"] = 1,
             ["active:S01-03D1:valhallaRecover"] = 2,
             ["active:S01-04D1:yomiSweep"] = 2,
             ["active:S01-04M1:amaterasuKill"] = 1,

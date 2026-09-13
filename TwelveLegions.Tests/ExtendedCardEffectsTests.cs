@@ -12,7 +12,8 @@ public sealed class ExtendedCardEffectsTests
     private static L12GameEngine Create(int firstDeck, int secondDeck, int seed = 9012)
         => new(Catalog, "extended-effects", "EFFECT", seed, ["甲", "乙"], [firstDeck, secondDeck], skipPreparation: true);
 
-    private static L12GameEngine CreateWithFirstMaster(string masterId, int seed = 9012)
+    private static L12GameEngine CreateWithFirstMaster(string masterId, int seed = 9012,
+        bool autoPassEmptyResponses = true)
     {
         var baseDeck = Catalog.DeckAt(2);
         var firstDeck = new L12PresetDeckDefinition
@@ -21,7 +22,8 @@ public sealed class ExtendedCardEffectsTests
             CardIds = [.. baseDeck.CardIds], MoraleIds = [.. baseDeck.MoraleIds], SpecialIds = [.. baseDeck.SpecialIds],
         };
         return new L12GameEngine(Catalog, "extended-effects", "EFFECT", seed,
-            ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true);
+            ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true,
+            autoPassEmptyResponses: autoPassEmptyResponses);
     }
 
     private static void ReadyMain(L12GameEngine game, int playerIndex)
@@ -728,6 +730,86 @@ public sealed class ExtendedCardEffectsTests
         var secondLokiEffect = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
         Assert.False(secondLokiEffect.Accepted);
         Assert.Contains("本回合", secondLokiEffect.Error);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:lokiCycle")]
+    public void LokiCyclePaysBeforeOneSharedResponseThenRequiresPrivatePostDrawDiscard()
+    {
+        var game = CreateWithFirstMaster("S01-03M2", 90161, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        player.Hand.Clear();
+        player.Library.Clear();
+        var existing = Card("S01-0001", "loki-cycle-existing");
+        var drawn = Card("S01-0002", "loki-cycle-drawn");
+        player.Hand.Add(existing);
+        player.Library.Add(drawn);
+        var activeBefore = player.Morale.Count(card => !card.Tapped);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
+        Assert.True(activation.Accepted, activation.Error);
+        var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("active:S01-03M2:lokiCycle", first.Data["compositePlan"]);
+        Assert.Equal("draw-discard-draw-1", first.Data["atomicFlow"]);
+        Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
+        Assert.Equal(activeBefore - 1, player.Morale.Count(card => !card.Tapped));
+
+        PassResponses(game);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.True(discard.IsPrivate);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        Assert.Equal("post-draw-private", discard.Data["declarationTiming"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
+            CardInstanceIds: [drawn.InstanceId])).Accepted);
+        PassResponses(game);
+
+        Assert.True(player.Graveyard.Contains(drawn),
+            $"hand={string.Join(',', player.Hand.Select(card => card.InstanceId))}; " +
+            $"grave={string.Join(',', player.Graveyard.Select(card => card.InstanceId))}; " +
+            $"stack={string.Join(',', game.State.EffectStack.Select(item => item.Data.GetValueOrDefault("atomicFlow")))}; " +
+            $"events={string.Join(" || ", game.State.Events.TakeLast(8).Select(entry => entry.Text))}");
+        Assert.Contains(existing, player.Hand);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.CardId == "S01-03M2"))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.All(results, result => Assert.Equal("resolved", result.EffectResultStatus));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:lokiCycle")]
+    public void NegatedLokiCycleKeepsPaidMoraleAndStopsDrawAndDiscardTogether()
+    {
+        var game = CreateWithFirstMaster("S01-03M2", 90162, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        player.Hand.Clear();
+        player.Library.Clear();
+        var existing = Card("S01-0001", "loki-negated-existing");
+        var drawn = Card("S01-0002", "loki-negated-drawn");
+        player.Hand.Add(existing);
+        player.Library.Add(drawn);
+        var activeBefore = player.Morale.Count(card => !card.Tapped);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
+        Assert.True(activation.Accepted, activation.Error);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Equal(activeBefore - 1, player.Morale.Count(card => !card.Tapped));
+        Assert.Equal([existing.InstanceId], player.Hand.Select(card => card.InstanceId).ToArray());
+        Assert.Equal([drawn.InstanceId], player.Library.Select(card => card.InstanceId).ToArray());
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == "S01-03M2"));
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(2, result.EffectSegmentCount);
     }
 
     private static IEnumerable<L12CardInstance> StateHand(L12GameEngine game, int playerIndex)

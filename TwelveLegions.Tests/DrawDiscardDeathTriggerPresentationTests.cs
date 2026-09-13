@@ -18,13 +18,35 @@ public sealed class DrawDiscardDeathTriggerPresentationTests
     }
 
     [Theory]
+    [InlineData("S02-0502", "enter", "draw-discard-draw-2")]
+    [InlineData("S01-03M2", "active", "draw-discard-draw-1")]
+    public void SameTypeEnterAndActiveEffectsUseTheSharedDrawDiscardPresentation(
+        string cardId, string trigger, string firstFlow)
+    {
+        var ability = cardId == "S01-03M2"
+            ? Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
+                candidate => candidate.Sequence == 1)
+            : Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
+                candidate => candidate.Trigger == trigger);
+        var scenes = ability.Presentations.Where(scene => scene.Flow is "draw-discard-draw-1"
+                or "draw-discard-draw-2" or "draw-discard-discard")
+            .OrderBy(scene => scene.SegmentIndex).ToArray();
+
+        Assert.Equal(2, scenes.Length);
+        Assert.Equal(firstFlow, scenes[0].Flow);
+        Assert.Equal("draw-discard-discard", scenes[1].Flow);
+        Assert.Equal([1, 2], scenes.Select(scene => scene.SegmentIndex).ToArray());
+        Assert.All(scenes, scene => Assert.Equal(2, scene.SegmentCount));
+    }
+
+    [Theory]
     [MemberData(nameof(Cases))]
     public void CatalogBindsBothRuntimeSegmentsToThePrintedDeathAbility(string cardId, int _)
     {
         var death = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
             ability => ability.Trigger == "death");
-        var scenes = death.Presentations.Where(scene => scene.Flow is "death-cycle-draw-1"
-                or "death-cycle-draw-2" or "death-cycle-discard")
+        var scenes = death.Presentations.Where(scene => scene.Flow is "draw-discard-draw-1"
+                or "draw-discard-draw-2" or "draw-discard-discard")
             .OrderBy(scene => scene.SegmentIndex).ToArray();
 
         Assert.Equal(2, scenes.Length);
@@ -48,7 +70,7 @@ public sealed class DrawDiscardDeathTriggerPresentationTests
 
         var first = Assert.Single(game.State.EffectStack);
         Assert.Equal($"trigger:{cardId}:death", first.Data.GetValueOrDefault("compositePlan"));
-        Assert.Equal($"death-cycle-draw-{drawCount}", first.Data.GetValueOrDefault("atomicFlow"));
+        Assert.Equal($"draw-discard-draw-{drawCount}", first.Data.GetValueOrDefault("atomicFlow"));
         Assert.Equal("0", first.Data.GetValueOrDefault("compositeSegment"));
         Assert.Equal("single-effect", first.Data.GetValueOrDefault("compositeResponseScope"));
         var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
@@ -80,6 +102,45 @@ public sealed class DrawDiscardDeathTriggerPresentationTests
         Assert.False(game.Handle(discard.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: discard.PromptId,
                 CardInstanceIds: [existing.InstanceId])).Accepted);
+    }
+
+    [Fact]
+    public void HeraclesEnterUsesTheSamePostDrawPrivateDiscardProtocol()
+    {
+        var game = Create(31422);
+        var player = game.State.Players[0];
+        var source = Card("S02-0502", "heracles-source");
+        var existing = Card("S01-0002", "heracles-existing");
+        var drawnA = Card("S01-0003", "heracles-drawn-a");
+        var drawnB = Card("S01-0004", "heracles-drawn-b");
+        player.Field[0][0] = source;
+        player.Hand.Add(existing);
+        player.Library.AddRange([drawnA, drawnB]);
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, source, "enter", "赫拉克勒斯登场效果", null,
+            new Dictionary<string, string>());
+        ResolveChoice(game, "mode:use");
+        var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("trigger:S02-0502:enter", first.Data["compositePlan"]);
+        Assert.Equal("draw-discard-draw-2", first.Data["atomicFlow"]);
+        Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
+
+        PassResponses(game);
+        var discard = OnlyPrompt(game);
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.Equal("post-draw-private", discard.Data["declarationTiming"]);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        ResolveCards(game, drawnB.InstanceId);
+        PassResponses(game);
+
+        Assert.Contains(drawnB, player.Graveyard);
+        Assert.Contains(existing, player.Hand);
+        Assert.Contains(drawnA, player.Hand);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.CardId == "S02-0502"))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.All(results, result => Assert.Equal("resolved", result.EffectResultStatus));
     }
 
     [Theory]

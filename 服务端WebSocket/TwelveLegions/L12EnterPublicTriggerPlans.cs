@@ -436,6 +436,12 @@ public sealed partial class L12GameEngine
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0217:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
         else if (plan == "canopic-four")
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0220:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
+        else if (plan == "heracles")
+        {
+            foreach (var pair in CompositeFirstSegmentData("trigger:S02-0502:enter", activation.DeclaredValues))
+                candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, source);
+        }
         candidate.Data.Remove("declaration-committing");
         candidate.Data["declaration-complete"] = "true";
         AdvanceTriggerBatches();
@@ -444,6 +450,7 @@ public sealed partial class L12GameEngine
 
     private bool TryResolveBatch6JAEnterEffect(L12StackItem item, L12CardInstance source)
     {
+        if (TryResolveDrawDiscardSegment(item, source)) return true;
         var plan = Batch6JAEnterPlan(item.SourceCardId, item.Trigger);
         if (plan is null && !AtomicFlowKey(item, source).StartsWith("batch6ja-", StringComparison.OrdinalIgnoreCase)) return false;
         return ResolveBatch6JAEnterEffect(item, source, plan);

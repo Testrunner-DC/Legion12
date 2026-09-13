@@ -42,6 +42,8 @@ internal static partial class L12CompositeEffectPlans
         "trigger:S01-0303:death",
         "trigger:S01-0306:death",
         "trigger:S02-0301:death",
+        "trigger:S02-0502:enter",
+        "active:S01-03M2:lokiCycle",
         "starter-oiran-active",
         "starter-nuada-active",
         "S02-0620",
@@ -247,6 +249,13 @@ internal static partial class L12CompositeEffectPlans
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> ActivePlans =
         new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
         {
+            ["active:S01-03M2:lokiCycle"] =
+            [
+                new("draw-discard-draw-1", "洛基：抽取1张牌"),
+                new("draw-discard-discard", "洛基：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
             ["active:S01-02D1:sunTopThree"] =
             [
                 new("sun-top-three-search", "众神之乡：公开并处理牌库顶部3张牌"),
@@ -446,29 +455,36 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["trigger:S01-0001:death"] =
             [
-                new("death-cycle-draw-2", "黑胡子蒂奇：抽取2张牌"),
-                new("death-cycle-discard", "黑胡子蒂奇：并弃置1张手牌",
+                new("draw-discard-draw-2", "黑胡子蒂奇：抽取2张牌"),
+                new("draw-discard-discard", "黑胡子蒂奇：并弃置1张手牌",
                     DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
                     RequiresPreviousSuccess: true),
             ],
             ["trigger:S01-0303:death"] =
             [
-                new("death-cycle-draw-1", "传奇的拉格纳：抽取1张牌"),
-                new("death-cycle-discard", "传奇的拉格纳：并弃置1张手牌",
+                new("draw-discard-draw-1", "传奇的拉格纳：抽取1张牌"),
+                new("draw-discard-discard", "传奇的拉格纳：并弃置1张手牌",
                     DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
                     RequiresPreviousSuccess: true),
             ],
             ["trigger:S01-0306:death"] =
             [
-                new("death-cycle-draw-2", "奥拉夫二世：抽取2张牌"),
-                new("death-cycle-discard", "奥拉夫二世：并弃置1张手牌",
+                new("draw-discard-draw-2", "奥拉夫二世：抽取2张牌"),
+                new("draw-discard-discard", "奥拉夫二世：并弃置1张手牌",
                     DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
                     RequiresPreviousSuccess: true),
             ],
             ["trigger:S02-0301:death"] =
             [
-                new("death-cycle-draw-1", "雷神之锤：抽取1张牌"),
-                new("death-cycle-discard", "雷神之锤：并弃置1张手牌",
+                new("draw-discard-draw-1", "雷神之锤：抽取1张牌"),
+                new("draw-discard-discard", "雷神之锤：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S02-0502:enter"] =
+            [
+                new("draw-discard-draw-2", "赫拉克勒斯：抽取2张牌"),
+                new("draw-discard-discard", "赫拉克勒斯：并弃置1张手牌",
                     DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
                     RequiresPreviousSuccess: true),
             ],
@@ -1536,7 +1552,8 @@ public sealed partial class L12GameEngine
                 pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
                 || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
                 || pair.Key is "bonusTroops" or "bonusCost"
-                || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan")
+                || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan"
+                || pair.Key is "ability" or "freeMasterActivation" or "freeMasterSource")
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
     private static bool CompositeSegmentAlreadyDeclaredAsDisabled(
@@ -1665,7 +1682,7 @@ public sealed partial class L12GameEngine
                     targets, 1));
                 return true;
             }
-            case "death-cycle-discard":
+            case "draw-discard-discard":
             {
                 if (player.Hand.Count == 0) return false;
                 var discard = CompositeStep("hand-card", "discardTarget",
@@ -1755,6 +1772,12 @@ public sealed partial class L12GameEngine
         if (context?.Data.GetValueOrDefault("repeatedEffectOnly") == "true")
             return CreateCard(activation.SourceCardId, activation.SourceInstanceId);
         if (context?.PlanId.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
+            return FindAuthoritativeCard(activation.SourceInstanceId)
+                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        // 主动效果已经合法发动并完成首段后，后续段不应因为来源不是一张位于
+        // Resolving 区的手牌（主宰、场上军团与圣物均如此）而被误判中断。
+        // 优先继续使用权威区域实例；若来源已经离区，则使用其印刷身份作为结算快照。
+        if (context?.PlanId.StartsWith("active:", StringComparison.OrdinalIgnoreCase) == true)
             return FindAuthoritativeCard(activation.SourceInstanceId)
                 ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
         return State.Players[activation.Controller].Resolving.FirstOrDefault(card =>
@@ -2062,7 +2085,7 @@ public sealed partial class L12GameEngine
     private bool ValidateCompositeSegmentTargets(int controller, string flow, L12StackItem item)
         => flow switch
         {
-            "death-cycle-discard" => CompositeDeclared(item, "discardTarget").SingleOrDefault() is { } discard
+            "draw-discard-discard" => CompositeDeclared(item, "discardTarget").SingleOrDefault() is { } discard
                 && State.Players[controller].Hand.Any(card => card.InstanceId == discard),
             "nyx-secondary" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "secondaryTarget").SingleOrDefault()) is not null,
@@ -2124,22 +2147,22 @@ public sealed partial class L12GameEngine
             _ => true,
         };
 
-    private bool TryResolveDrawDiscardDeathSegment(L12StackItem item, L12CardInstance card)
+    private bool TryResolveDrawDiscardSegment(L12StackItem item, L12CardInstance card)
     {
         var flow = AtomicFlowKey(item, card);
-        if (flow is "death-cycle-draw-1" or "death-cycle-draw-2")
+        if (flow is "draw-discard-draw-1" or "draw-discard-draw-2")
         {
             var drawCount = flow.EndsWith("-2", StringComparison.Ordinal) ? 2 : 1;
             if (!Draw(State.Players[item.Controller], drawCount))
             {
                 AddEvent("effect-failed", item.Controller,
-                    $"〈{item.SourceName}〉阵亡效果抽取{drawCount}张牌时牌库数量不足", card);
-                SetWinner(1 - item.Controller, $"{item.SourceName}阵亡效果抽牌时牌库为空");
+                    $"〈{item.SourceName}〉抽取{drawCount}张牌时牌库数量不足", card);
+                SetWinner(1 - item.Controller, $"{item.SourceName}效果抽牌时牌库为空");
             }
             FinishStackItem(item);
             return true;
         }
-        if (flow != "death-cycle-discard") return false;
+        if (flow != "draw-discard-discard") return false;
 
         var player = State.Players[item.Controller];
         var discardId = CompositeDeclared(item, "discardTarget").SingleOrDefault();

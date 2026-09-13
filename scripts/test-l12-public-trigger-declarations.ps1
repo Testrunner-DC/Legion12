@@ -22,6 +22,7 @@ $composite = Read-Source 'L12CompositeEffectPlans.cs'
 $faction = Read-Source 'L12S2FactionEffects.cs'
 $s1Extended = Read-Source 'L12S1ExtendedEffects.cs'
 $s1Faction = Read-Source 'L12S1FactionEffects.cs'
+$activeAbilities = Read-Source 'L12ActiveAbilities.cs'
 $s2Universal = Read-Source 'L12S2UniversalEffects.cs'
 $atomicPrograms = Read-Source 'AtomicEffects.cs'
 $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
@@ -369,19 +370,30 @@ Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One target 
 Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four target and discard must remain independent stack segments.'
 foreach ($drawDiscardPlan in @(
     'trigger:S01-0001:death', 'trigger:S01-0303:death',
-    'trigger:S01-0306:death', 'trigger:S02-0301:death'
+    'trigger:S01-0306:death', 'trigger:S02-0301:death',
+    'trigger:S02-0502:enter', 'active:S01-03M2:lokiCycle'
 )) {
     Assert-Contains $composite ('["' + $drawDiscardPlan + '"]') `
-        "Draw-then-discard death trigger lost its structured plan: $drawDiscardPlan"
+        "Draw-then-discard effect lost its structured plan: $drawDiscardPlan"
     Assert-Contains $composite ('"' + $drawDiscardPlan + '",') `
-        "Draw-then-discard death trigger lost its single-response registration: $drawDiscardPlan"
+        "Draw-then-discard effect lost its single-response registration: $drawDiscardPlan"
 }
 Assert-Contains $composite 'DeclarationTiming: "post-draw-private"' `
     'Draw-then-discard triggers must choose the exact private hand card only after drawing.'
 Assert-Contains $composite 'discard.CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed;' `
     'The mandatory discard after a chosen draw effect must not expose a cancellation escape.'
-Assert-Contains $composite 'TryResolveDrawDiscardDeathSegment' `
-    'All draw-then-discard death triggers must share one settlement implementation.'
+Assert-Contains $composite 'TryResolveDrawDiscardSegment' `
+    'All draw-then-discard effects must share one settlement implementation.'
+Assert-Contains $composite 'context?.PlanId.StartsWith("active:"' `
+    'Delayed active segments must retain a valid authoritative source or immutable printed snapshot.'
+Assert-Contains $composite 'pair.Key is "ability" or "freeMasterActivation" or "freeMasterSource"' `
+    'Active composite continuations must preserve their ability and free-activation identity.'
+Assert-Contains $entryPlans 'CompositeFirstSegmentData("trigger:S02-0502:enter"' `
+    'Heracles must attach the shared draw-then-discard plan before entering the stack.'
+Assert-Contains $s1Faction 'CompositeFirstSegmentData("active:S01-03M2:lokiCycle"' `
+    'Normal Loki cycle activation must attach the shared draw-then-discard plan.'
+Assert-Contains $activeAbilities '=> "active:S01-03M2:lokiCycle"' `
+    'Faith Zealot Loki cycle must attach the same shared draw-then-discard plan.'
 foreach ($legalHiddenPrompt in @('s2-ring-search','s2-magatama-search','s2-takeda-search','s2-robin-summon-squire')) {
     Assert-Contains $entryPlans $legalHiddenPrompt "Legal post-reveal hidden prompt is missing: $legalHiddenPrompt"
 }

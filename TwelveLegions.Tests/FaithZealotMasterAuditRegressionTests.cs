@@ -149,10 +149,18 @@ public sealed class FaithZealotMasterAuditRegressionTests
         PassResponses(game);
         var discard = Prompt(game);
         Assert.True(discard.IsPrivate);
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.Equal("post-draw-private", discard.Data["declarationTiming"]);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
         Assert.Contains(drawn.InstanceId, discard.ValidChoices);
-        Resolve(game, discard, drawn.InstanceId);
+        ResolveMany(game, discard, drawn.InstanceId);
+        PassResponses(game);
 
-        Assert.Contains(drawn, player.Graveyard);
+        Assert.True(player.Graveyard.Contains(drawn),
+            $"hand={string.Join(',', player.Hand.Select(card => card.InstanceId))}; " +
+            $"grave={string.Join(',', player.Graveyard.Select(card => card.InstanceId))}; " +
+            $"stack={string.Join(',', game.State.EffectStack.Select(item => item.Data.GetValueOrDefault("atomicFlow")))}; " +
+            $"events={string.Join(" || ", game.State.Events.TakeLast(8).Select(entry => entry.Text))}");
         Assert.Empty(player.Hand);
         Assert.Empty(player.Morale);
         Assert.DoesNotContain("active:master-0:loki", player.UsedAbilities);
