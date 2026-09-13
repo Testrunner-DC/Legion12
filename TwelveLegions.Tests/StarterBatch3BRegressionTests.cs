@@ -1114,8 +1114,8 @@ public sealed class StarterBatch3BRegressionTests
 
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Equal(2, trial.TrialProgress);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
-            && entry.Text.Contains("0张士气"));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
+            && entry.Text.Contains("未声明需要转为活跃的士气"));
     }
 
     [Fact]

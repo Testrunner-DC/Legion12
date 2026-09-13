@@ -35,6 +35,11 @@ internal static partial class L12CompositeEffectPlans
                 new("oiran-enemy-debuff", "选择对方1张军团，本回合兵力-1000", PublicTargetKeys: ["enemyTarget"]),
                 new("oiran-own-buff", "选择我方1张军团，本回合兵力+1000", PublicTargetKeys: ["ownTarget"]),
             ],
+            ["starter-nuada-active"] =
+            [
+                new("nuada-ready-morale", "将已声明的最多2张休整士气转为活跃", PublicTargetKeys: ["readyTargets"]),
+                new("nuada-trial-advance", "试炼+2"),
+            ],
         };
 }
 

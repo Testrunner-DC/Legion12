@@ -39,6 +39,7 @@ internal static partial class L12CompositeEffectPlans
         "active:S01-03D1:valhallaKill",
         "trigger:S01-0406:enter",
         "starter-oiran-active",
+        "starter-nuada-active",
         "S02-0620",
     };
 

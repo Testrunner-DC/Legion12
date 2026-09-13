@@ -386,6 +386,15 @@ public sealed partial class L12GameEngine
                          new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
                 data[pair.Key] = pair.Value;
         }
+        else if (ability == "nuadaReadyMorale")
+        {
+            data["compositePlan"] = "starter-nuada-active";
+            data["compositeSegment"] = "0";
+            data["atomicFlow"] = "nuada-ready-morale";
+            data["atomicContinuation"] = "true";
+            data["declared:readyTargets"] = string.Join('|', values);
+            publicTargets = values;
+        }
         PushEffect(controller, source, "active", "主动效果", publicTargets, data);
         return CommandResult.Ok();
     }
@@ -1213,6 +1222,49 @@ public sealed partial class L12GameEngine
             case "athena-front-buff":
                 ResolveStarterAthenaFrontBuff(item, FindSource(item),
                     StarterDeclaredMany(item, "buffTargets"));
+                FinishStackItem(item);
+                return true;
+            case "nuada-ready-morale":
+            {
+                var declared = StarterDeclaredMany(item, "readyTargets");
+                if (declared.Length == 0)
+                {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller,
+                        "银臂努阿达未声明需要转为活跃的士气，跳过本段", FindSource(item) is { } noTargetSource ? [noTargetSource] : []);
+                }
+                else
+                {
+                    var readied = new List<L12MoraleCard>();
+                    foreach (var id in declared.Distinct(StringComparer.OrdinalIgnoreCase))
+                    {
+                        var target = player.Morale.FirstOrDefault(card => card.InstanceId == id && card.Tapped);
+                        if (target is null) continue;
+                        target.Tapped = false;
+                        readied.Add(target);
+                    }
+                    if (readied.Count == 0)
+                        RecordTargetSettlementFailure(item, string.Join('|', declared),
+                            "已声明的士气在逆序结算时均已不再休整或已离开士气区");
+                    else
+                    {
+                        AddEvent("effect", item.Controller,
+                            $"银臂努阿达将{readied.Count}张士气转为活跃", FindSource(item) is { } source ? [source] : []);
+                        if (readied.Count < declared.Length)
+                            AddEvent("effect", item.Controller,
+                                $"银臂努阿达有{declared.Length - readied.Count}张已声明士气在逆序结算后失效；其余士气继续结算");
+                    }
+                }
+                FinishStackItem(item);
+                return true;
+            }
+            case "nuada-trial-advance":
+                if (!AdvanceTrial(item.Controller, 2, FindSource(item)))
+                {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller,
+                        "银臂努阿达结算时没有可推进的试炼，跳过试炼+2", FindSource(item) is { } trialSource ? [trialSource] : []);
+                }
                 FinishStackItem(item);
                 return true;
             case "nuada-rune-buff":
