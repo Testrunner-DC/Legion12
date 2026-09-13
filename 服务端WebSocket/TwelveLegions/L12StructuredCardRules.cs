@@ -562,6 +562,7 @@ public static partial class L12StructuredCardRules
             "S02-05C1" => OlympusResourceAbilities(),
             "S02-05C1A" => OlympusResourceAbilities(),
             "S02-05D1" => DivinityAbilities(),
+            "S02-DS03" => SleeplessNightAbilities(),
             "S02-01M1" => WukongAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
@@ -606,6 +607,39 @@ public static partial class L12StructuredCardRules
                 ["duration"] = "this-turn",
             }),
         ], "confirmed", "user-20260911") { RuntimeAbilityId = "olgaDebuff" },
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> SleeplessNightAbilities() =>
+    [
+        new("disaster", "triggered", "触发 双方弃置各自战场上所有原本兵力不高于2000的军团。",
+        [
+            new(L12AtomKinds.SelectTarget, "锁定双方战场上所有原本兵力不高于 2000 的军团", "target", new()
+            {
+                ["zone"] = "both.field", ["filter"] = "card-type=legion;printed-troops<=2000",
+                ["selection"] = "automatic-all", ["min"] = "0", ["max"] = "all",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.MoveZone, "将仍符合条件的军团弃置", "resolution", new()
+            {
+                ["from"] = "both.field", ["to"] = "owner.graveyard", ["operation"] = "discard",
+                ["leaveKind"] = "discard", ["queueDeathTrigger"] = "false",
+            }),
+        ]) { ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("continuous", "continuous", "持续 当玩家使用主动休整时，对其主宰造成1点非致命伤害。",
+        [
+            new(L12AtomKinds.Condition, "监听任一玩家实际使用主动休整", "condition", new()
+            {
+                ["expression"] = "event=active-rest-ability-used",
+            }),
+            new(L12AtomKinds.DamageMaster, "对使用者的主宰造成 1 点非致命伤害", "resolution", new()
+            {
+                ["target"] = "event.controller.master", ["amount"] = "1", ["nonlethal"] = "true",
+            }),
+            new(L12AtomKinds.Duration, "〈无眠之夜〉处于天灾区期间持续", "duration", new()
+            {
+                ["duration"] = "while-source-is-active-disaster",
+            }),
+        ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
     ];
 
     private static L12StructuredAbilityTemplate SelfDamageEntryDiscountAbility(

@@ -18,7 +18,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
             ["S02-0621"] = 2, ["S02-0622"] = 2, ["S02-06C1"] = 2, ["S02-06D1"] = 4,
             ["S02-06M1"] = 3, ["S02-06M2"] = 2, ["S02-06S1"] = 1, ["S02-06S2"] = 1,
             ["S02-06S3"] = 3, ["S02-06S4"] = 3, ["S02-06S5"] = 2, ["S02-06S6"] = 1,
-            ["S02-DS01"] = 1, ["S02-DS02"] = 2, ["S02-DS03"] = 3, ["S02-DS04"] = 2,
+            ["S02-DS01"] = 1, ["S02-DS02"] = 2, ["S02-DS03"] = 2, ["S02-DS04"] = 2,
             ["S02-DS05"] = 3, ["S02-DS06"] = 2,
         };
 
@@ -125,8 +125,8 @@ public sealed class AtomicReviewBatch6LDRegressionTests
     public void S2OtherworldAndDisasterAuditFreezesEveryCardAndAbility()
     {
         Assert.Equal(38, AuditedAbilityCounts.Count);
-        // EFFECT294 adds Angus's independent trial-progress trigger; the other 37 cards are unchanged.
-        Assert.Equal(109, AuditedAbilityCounts.Values.Sum());
+        // Preserve Angus's added trial-progress trigger while removing Sleepless Night's false active split.
+        Assert.Equal(108, AuditedAbilityCounts.Values.Sum());
         Assert.All(AuditedAbilityCounts, pair =>
         {
             var card = Assert.Contains(pair.Key, Catalog.Cards);
@@ -134,6 +134,31 @@ public sealed class AtomicReviewBatch6LDRegressionTests
             Assert.False(string.IsNullOrWhiteSpace(card.Effect));
             Assert.Equal(pair.Value, Catalog.AtomicEffects.Find(pair.Key)?.Abilities.Count);
         });
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-DS03")]
+    [Trait("L12Evidence", "entry:sleepless-night-trigger-classification")]
+    public void SleeplessNightIsOneDisasterTriggerAndOneContinuousListener()
+    {
+        var card = Catalog.AtomicEffects.Find("S02-DS03");
+        Assert.NotNull(card);
+        Assert.Collection(card.Abilities.OrderBy(ability => ability.Sequence),
+            trigger =>
+            {
+                Assert.Equal("disaster", trigger.Trigger);
+                Assert.Equal("triggered", trigger.ExecutionModel);
+                Assert.Equal("触发 双方弃置各自战场上所有原本兵力不高于2000的军团。", trigger.Text);
+            },
+            listener =>
+            {
+                Assert.Equal("continuous", listener.Trigger);
+                Assert.Equal("continuous", listener.ExecutionModel);
+                Assert.Equal("持续 当玩家使用主动休整时，对其主宰造成1点非致命伤害。", listener.Text);
+                Assert.Contains(listener.Atoms, atom => atom.Kind == L12AtomKinds.DamageMaster
+                    && atom.Parameters.GetValueOrDefault("nonlethal") == "true");
+            });
+        Assert.DoesNotContain(card.Abilities, ability => ability.Trigger == "active");
     }
 
     [Fact]

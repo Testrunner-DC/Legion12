@@ -108,6 +108,27 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void SleeplessNightDoesNotDamageMasterForAnOrdinaryActiveAbility()
+    {
+        var game = Create(seed: 55321);
+        var player = game.State.Players[0];
+        var hanzo = CreateInstance("S01-0415", "sleepless-hanzo");
+        hanzo.OwnerIndex = 0;
+        hanzo.Hidden = true;
+        player.Field[0][0] = hanzo;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS03", "sleepless-disaster-boundary");
+        var hpBefore = player.Hp;
+
+        var result = game.Handle(0,
+            new L12Command("activateAbility", hanzo.InstanceId, Ability: "revealHidden"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(hpBefore, player.Hp);
+    }
+
+    [Fact]
     public void PrideDisasterAddsOneMoraleToMasterEffectCost()
     {
         var game = Create(seed: 5533);
