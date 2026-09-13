@@ -59,6 +59,8 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S02-0512", 4, "death"),
             ("S01-0302", 3, "death"),
             ("S02-0613", 3, "death"),
+            ("S02-0609", 3, "death"),
+            ("ST06-06", 2, "death"),
             ("S01-0112", 3, "death"),
             ("S01-0210", 3, "death"),
             ("S01-0304", 3, "death"),

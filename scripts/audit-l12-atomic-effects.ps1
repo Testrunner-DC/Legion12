@@ -39,7 +39,8 @@ $branchPatterns = [ordered]@{
 $atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
 $generatedProgramSources = @(
     'L12SimpleDrawTriggerEffects.cs',
-    'L12SimpleMasterHealTriggerEffects.cs'
+    'L12SimpleMasterHealTriggerEffects.cs',
+    'L12SimpleTrialAdvanceTriggerEffects.cs'
 ) | ForEach-Object {
     [System.IO.File]::ReadAllText((Join-Path $sourcePath $_), [System.Text.Encoding]::UTF8)
 }

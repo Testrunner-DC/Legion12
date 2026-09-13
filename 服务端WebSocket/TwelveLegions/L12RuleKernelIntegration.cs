@@ -1520,6 +1520,8 @@ public sealed partial class L12GameEngine
             return simpleDraw.SettlementText;
         if (L12SimpleMasterHealTriggerEffects.Find(card.CardId, trigger) is { } simpleHeal)
             return simpleHeal.SettlementText;
+        if (L12SimpleTrialAdvanceTriggerEffects.Find(card.CardId, trigger) is { } simpleTrial)
+            return simpleTrial.SettlementText;
         if (string.IsNullOrWhiteSpace(card.EffectText)) return fallback;
         var lines = card.EffectText.Replace("\r", string.Empty, StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

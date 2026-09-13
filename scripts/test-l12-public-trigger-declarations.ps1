@@ -28,6 +28,7 @@ $atomicPrograms = Read-Source 'AtomicEffects.cs'
 $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
 $simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
 $simpleMasterHealTriggers = Read-Source 'L12SimpleMasterHealTriggerEffects.cs'
+$simpleTrialAdvanceTriggers = Read-Source 'L12SimpleTrialAdvanceTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $entryPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
@@ -294,6 +295,11 @@ foreach ($simpleHealSpec in @('new("S01-0302", 3, "death"', 'new("S02-0613", 3, 
 }
 Assert-Contains $simpleMasterHealTriggers 'HealRecipient: "both"' `
     'Joan death heal must retain the both-masters recipient policy.'
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));' `
+    'Simple death trial-advance effects must be generated from their shared definition.'
+foreach ($simpleTrialSpec in @('new("S02-0609", 3, "death"', 'new("ST06-06", 2, "death"')) {
+    Assert-Contains $simpleTrialAdvanceTriggers $simpleTrialSpec "Simple death trial-advance inventory is missing: $simpleTrialSpec"
+}
 if ($atomicRuntime.IndexOf('CreatePrompt(', [StringComparison]::Ordinal) -ge 0) {
     throw 'Verified atomic runtime must not create any resolution-time Optional prompt.'
 }

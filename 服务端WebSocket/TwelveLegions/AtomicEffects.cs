@@ -819,8 +819,6 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             Program("S02-0618", "enter",
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
-            Program("S02-0609", "death",
-                Atom(L12AtomKinds.AdvanceTrial, "试炼 +1", ("amount", "1"))),
             Program("S02-0612", "enter",
                 Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
             Program("S02-0616", "enter",
@@ -913,8 +911,6 @@ public static class L12VerifiedAtomicPrograms
             Program("ST06-06", "enter",
                 OptionalDraw("费奥纳的骑士"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "费奥纳的骑士登场效果抽牌时牌库为空"), ("event", "费奥纳的骑士抽取 1 张牌"))),
-            Program("ST06-06", "death",
-                Atom(L12AtomKinds.AdvanceTrial, "试炼 +2", ("amount", "2"))),
             Program("ST06-08", "enter",
                 Atom(L12AtomKinds.Optional, "可获得 1 符文",
                     ("prompt", "纯白的灵鹿：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
@@ -952,6 +948,7 @@ public static class L12VerifiedAtomicPrograms
         };
         programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
         programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
+        programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));
         return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -1002,6 +999,11 @@ public static class L12VerifiedAtomicPrograms
             Atom(L12AtomKinds.HealMaster, spec.SettlementText,
                 ("amount", spec.Amount.ToString()), ("target", spec.HealRecipient),
                 ("reason", spec.Reason)));
+
+    private static L12VerifiedAtomicProgram SimpleTrialAdvanceProgram(L12SimpleTrialAdvanceTriggerSpec spec)
+        => Program(spec.CardId, spec.Trigger,
+            Atom(L12AtomKinds.AdvanceTrial, spec.SettlementText,
+                ("amount", spec.Amount.ToString())));
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
     {
