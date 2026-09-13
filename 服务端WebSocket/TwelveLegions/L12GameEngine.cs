@@ -2111,6 +2111,7 @@ public sealed partial class L12GameEngine
                 "effect-cancelled" => "failed",
                 "effect-negated" => "negated",
                 "effect-noop" => "skipped",
+                "effect-declined" => "declined",
                 "effect-failed" => "failed",
                 _ => null,
             },

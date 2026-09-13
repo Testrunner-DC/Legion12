@@ -84,6 +84,10 @@ for (const contract of [
 ]) assert(board.includes(contract), `Battle animation settlement projection is missing ${contract}`)
 assert(eventLog.includes("'effect-result': '结算'"),
   'Battle log must identify the authoritative settlement result')
+assert(eventLog.includes("'effect-declined': '未发动'"),
+  'Battle log must distinguish a player decline from failure or negation')
+assert(backend.includes('"effect-declined" => "declined"'),
+  'Backend event and stack projections must share the declined result status')
 const replay = read('../src/l12/replayModel.ts')
 for (const field of [
   'EffectText', 'EffectSceneId', 'EffectAbilityId', 'EffectSegmentId', 'EffectSegmentIndex',

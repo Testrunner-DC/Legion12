@@ -1519,7 +1519,11 @@ public sealed partial class L12GameEngine
             if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
             player.UsedAbilities.Add(onceKey);
             PushEffect(playerIndex, source, "active", "阵营效果",
-                data: new Dictionary<string, string> { ["ability"] = ability });
+                data: new Dictionary<string, string>
+                {
+                    ["ability"] = ability,
+                    ["resolutionTimeMoraleCandidateCommitted"] = "true",
+                });
             return CommandResult.Ok();
         }
         return TryCommitS2RemainingAbility(playerIndex, source, ability, target, onceKey);
@@ -2177,13 +2181,27 @@ public sealed partial class L12GameEngine
             }
             case "s2-flip-morale":
             {
-                if (chosen.Count == 0 || chosen[0] == "skip") { FinishStackItem(item); return true; }
-                var morale = player.Morale.FirstOrDefault(card => card.InstanceId == chosen[0]);
-                if (morale is not null)
+                var optional = item.Data.GetValueOrDefault("resolutionFlipMoraleOptional") == "true";
+                if (chosen.Count == 0 || chosen[0] == "skip")
                 {
-                    L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true);
-                    AddEvent("morale", item.Controller, "翻转1张士气", FindSource(item) is { } source ? [source] : []);
+                    item.Data["effectResultStatus"] = optional ? "declined" : "failed";
+                    AddEvent(optional ? "effect-declined" : "effect-failed", item.Controller,
+                        optional ? $"〈{item.SourceName}〉选择不发动翻转士气效果"
+                            : $"〈{item.SourceName}〉未提交必须选择的士气对象",
+                        FindSource(item) is { } skippedSource ? [skippedSource] : []);
+                    FinishStackItem(item);
+                    return true;
                 }
+                var onlyTapped = item.Data.GetValueOrDefault("resolutionFlipMoraleOnlyTapped") == "true";
+                var morale = player.Morale.FirstOrDefault(card => card.InstanceId == chosen[0]
+                    && !card.IsGodPower && (!onlyTapped || card.Tapped));
+                if (morale is null || !L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true))
+                    RecordTargetSettlementFailure(item, chosen[0],
+                        onlyTapped ? "所选休整士气已离开士气区、转为活跃或不再是士气面"
+                            : "所选士气已离开士气区或不再是士气面");
+                else
+                    AddEvent("morale", item.Controller, "翻转1张士气",
+                        FindSource(item) is { } source ? [source] : []);
                 FinishStackItem(item);
                 return true;
             }
@@ -2608,12 +2626,17 @@ public sealed partial class L12GameEngine
         var choices = player.Morale.Where(card => !card.IsGodPower && (!onlyTapped || card.Tapped)).Select(card => card.InstanceId).ToList();
         if (choices.Count == 0)
         {
-            if (item.Data.GetValueOrDefault("resolutionTimeMoraleCandidateCommitted") == "true")
-                RecordTargetSettlementFailure(item, "resolution-time-morale-selection",
-                    "发动时存在的士气候选在响应逆结算后均已不再符合条件");
+            var hadCommittedCandidate = item.Data.GetValueOrDefault("resolutionTimeMoraleCandidateCommitted") == "true";
+            RecordTargetSettlementFailure(item,
+                hadCommittedCandidate ? "resolution-time-morale-selection" : null,
+                hadCommittedCandidate
+                    ? "发动时存在的士气候选在响应逆结算后均已不再符合条件"
+                    : "结算时没有合法士气对象");
             FinishStackItem(item);
             return true;
         }
+        item.Data["resolutionFlipMoraleOptional"] = optional ? "true" : "false";
+        item.Data["resolutionFlipMoraleOnlyTapped"] = onlyTapped ? "true" : "false";
         if (optional) choices.Add("skip");
         CreatePrompt(item.Controller, "target-morale", $"{source.Name}：选择1张士气翻转", choices, optional ? 0 : 1, 1,
             "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-flip-morale" });

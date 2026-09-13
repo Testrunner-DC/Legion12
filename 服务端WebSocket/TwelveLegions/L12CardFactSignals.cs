@@ -95,7 +95,7 @@ public sealed partial class L12GameEngine
                 });
         }
 
-        if (type is not ("effect-failed" or "effect-cancelled" or "effect-noop")) return;
+        if (type is not ("effect-failed" or "effect-cancelled" or "effect-noop" or "effect-declined")) return;
         var currentStack = State.EffectStack.LastOrDefault();
         if (currentStack is not null)
         {
@@ -103,6 +103,7 @@ public sealed partial class L12GameEngine
             currentStack.Data["effectResultStatus"] = type switch
             {
                 "effect-noop" => "skipped",
+                "effect-declined" => "declined",
                 // Historical resolvers used effect-cancelled for an object, source,
                 // slot or payment state that became invalid while settling.  That is
                 // a failed settlement, not the player's explicit decision to decline.
