@@ -4,7 +4,7 @@
 
 - 新增`single-trigger`协议；驱魔道士陆瑛能力1绑定`s2-after-opponent-tactic`第1/1段，选择发动后才进入响应堆叠。
 - 放弃=`declined`且无空堆叠，正常返手=`resolved`，被无效=`negated`，来源响应中离场=`failed`；全部读取同一场景身份。
-- 正常、放弃、旧Prompt、失效、无效与V2恢复专项8/8，Focused/Batch规则3114/3114及全池审计通过；待提交级Release和推送，本批不部署。
+- 正常、放弃、旧Prompt、失效、无效与V2恢复专项8/8，Focused/Batch/Release规则3114/3114、平台116/116、UI321项、连接23项、卡图与生产构建及全池审计通过。功能提交`edad5d003dda232095d2991d23fb8dfb5b706ee7`已推送并精确读回，本批不部署。
 
 ## 2026-09-13 骑兵位移规则动作一致性
 
