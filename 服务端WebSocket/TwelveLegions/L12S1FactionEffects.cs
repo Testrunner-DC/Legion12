@@ -622,8 +622,9 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivation(playerIndex, source, ability, choices,
                     "孟婆：选择对方最多1张军团，本回合失去「阵亡时」效果", min: 0, max: 1);
             case "ankhReady":
-                if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
-                    return CommandResult.Reject("需要我方存在休整的陵墓守卫");
+                if (player.Hand.Count == 0
+                    || !PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
+                    return CommandResult.Reject("需要我方存在休整的陵墓守卫，且手牌中有1张可弃置卡牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep
@@ -1124,6 +1125,13 @@ public sealed partial class L12GameEngine
             foreach (var pair in CompositeFirstSegmentData("active:S01-03D1:valhallaKill", declared))
                 data[pair.Key] = pair.Value;
         }
+        if (ability is "ankhReady" or "ankhDraw")
+        {
+            var plan = $"active:S01-0215:{ability}";
+            foreach (var pair in CompositeFirstSegmentData(plan,
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
         if (ability == "isisCanopic")
             DeclarePresentationBranch(data, "isis-reward-choice", "rewardMode",
                 (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(4));
@@ -1224,10 +1232,21 @@ public sealed partial class L12GameEngine
                 var guardId = item.Data.GetValueOrDefault("target", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
                 var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == guardId && card.CardId == "S01-0212" && card.Tapped);
                 if (guard is not null) ReadyCardByEffect(item.Controller, source ?? guard, guard, $"{guard.Name}因安卡神碑转为活跃");
+                else RecordTargetSettlementFailure(item, guardId,
+                    "所选〈陵墓守卫〉已离场或不再为休整状态");
                 FinishStackItem(item);
                 return true;
             }
-            case "ankhDraw": Draw(player, 1); FinishStackItem(item); return true;
+            case "ankhDraw":
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller, "安卡神碑效果抽牌时牌库为空",
+                        source is null ? [] : [source]);
+                    SetWinner(1 - item.Controller, "安卡神碑效果抽牌时牌库为空");
+                }
+                FinishStackItem(item);
+                return true;
             case "gramDamage": DamageMasterNonLethal(1 - item.Controller, 1, "神剑格拉墨"); FinishStackItem(item); return true;
             case "isisCanopic":
             {

@@ -299,6 +299,14 @@ internal static partial class L12CompositeEffectPlans
                     "mode:revive", PublicTargetKeys: ["entryCard", "entrySlot"],
                     RequiredDeclarationKey: "reviveMode"),
             ],
+            ["active:S01-0215:ankhReady"] =
+            [
+                new("ankh-ready-guard", "安卡神碑：将已选择的休整〈陵墓守卫〉转为活跃"),
+            ],
+            ["active:S01-0215:ankhDraw"] =
+            [
+                new("ankh-draw", "安卡神碑：抽取1张牌"),
+            ],
             ["active:S01-04D1:yomiSweep"] =
             [
                 new("yomi-draw", "黄泉之门：抽取1张牌"),
