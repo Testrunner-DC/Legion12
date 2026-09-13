@@ -14,6 +14,11 @@ function Read-NormalizedText {
     return ConvertTo-NormalizedText ([IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8))
 }
 
+function ConvertFrom-Utf8Base64 {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Text))
+}
+
 if ((ConvertTo-NormalizedText "first`r`nsecond`rthird") -ne "first`nsecond`nthird") {
     throw "Line-ending normalization self-check failed"
 }
@@ -50,10 +55,18 @@ foreach ($file in $expected.Keys) {
     }
     if ($raw -notmatch ('(?m)^model\s*=\s*"' + [regex]::Escape($expected[$file].Model) + '"')) { throw "$file has an unexpected model" }
     if ($raw -notmatch ('(?m)^model_reasoning_effort\s*=\s*"' + [regex]::Escape($expected[$file].Effort) + '"')) { throw "$file has an unexpected reasoning effort" }
-    foreach ($boundary in @("不递归委派", "只读任务不得修改文件", "不得修改共享台账、提交、推送、部署或关闭 Bug", "仅运行专项验证")) {
+    $executionBoundaries = @(
+        "5LiN6YCS5b2S5aeU5rS+",
+        "5Y+q6K+75Lu75Yqh5LiN5b6X5L+u5pS55paH5Lu2",
+        "5LiN5b6X5L+u5pS55YWx5Lqr5Y+w6LSm44CB5o+Q5Lqk44CB5o6o6YCB44CB6YOo572y5oiW5YWz6ZetIEJ1Zw==",
+        "5LuF6L+Q6KGM5LiT6aG56aqM6K+B"
+    ) | ForEach-Object { ConvertFrom-Utf8Base64 $_ }
+    foreach ($boundary in $executionBoundaries) {
         if (-not $raw.Contains($boundary)) { throw "$file is missing the execution boundary: $boundary" }
     }
-    if ($raw.Contains("自动提交并推送") -or $raw.Contains("完成后运行完整发布门禁")) {
+    $autoCommitAndPush = ConvertFrom-Utf8Base64 "6Ieq5Yqo5o+Q5Lqk5bm25o6o6YCB"
+    $fullReleaseGate = ConvertFrom-Utf8Base64 "5a6M5oiQ5ZCO6L+Q6KGM5a6M5pW05Y+R5biD6Zeo56aB"
+    if ($raw.Contains($autoCommitAndPush) -or $raw.Contains($fullReleaseGate)) {
         throw "$file must leave Git and release gates to the primary"
     }
 }

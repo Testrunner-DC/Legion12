@@ -723,7 +723,7 @@ public static class L12VerifiedAtomicPrograms
 
     private static Dictionary<string, L12VerifiedAtomicProgram> Build()
     {
-        var programs = new[]
+        var programs = new List<L12VerifiedAtomicProgram>
         {
             Program("S01-0012", "play",
                 Atom(L12AtomKinds.SetState, "记录下一张军团的冲锋条件", ("key", "controller.nextLegionChargeMaxCost"), ("value", "6"), ("event", "本回合下一张费用不高于 6 的军团获得冲锋"))),
@@ -756,9 +756,6 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Condition, "我方士气不高于 7 张", ("expression", "controller.morale<=7")),
                 OptionalDraw("荆轲"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "荆轲登场效果抽牌时牌库为空"), ("event", "荆轲抽取 1 张牌"))),
-            Program("S01-0301", "death",
-                OptionalDraw("贝奥武夫"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "贝奥武夫阵亡效果抽牌时牌库为空"), ("event", "贝奥武夫阵亡时抽取 1 张牌"))),
             Program("S01-0302", "death",
                 Atom(L12AtomKinds.HealMaster, "我方主宰增加 1 点血量", ("amount", "1"), ("reason", "金发哈拉尔阵亡效果"))),
             Program("S01-0302", "attack",
@@ -772,22 +769,9 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Optional, "可对对方主宰造成 1 点伤害",
                     ("prompt", "无情者哈拉尔：是否对对方主宰造成1点伤害？"), ("yes", "对对方主宰造成1点伤害"), ("no", "不发动")),
                 Atom(L12AtomKinds.DamageMaster, "对方主宰受到 1 点伤害", ("amount", "1"), ("target", "opponent"), ("reason", "无情者哈拉尔登场效果"))),
-            Program("S01-0309", "death",
-                Atom(L12AtomKinds.Condition, "我方主宰血量不高于对方", ("expression", "controller.hp<=opponent.hp")),
-                OptionalDraw("布伦希尔德"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "布伦希尔德阵亡效果抽牌时牌库为空"), ("event", "布伦希尔德阵亡时抽取 1 张牌"))),
             Program("S02-0104", "enter",
                 OptionalDraw("神农鼎"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "神农鼎登场效果抽牌时牌库为空"), ("event", "神农鼎抽取 1 张牌"))),
-            Program("S02-0203", "death",
-                OptionalDraw("哈特谢普苏特"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "哈特谢普苏特阵亡效果抽牌时牌库为空"), ("event", "哈特谢普苏特阵亡时抽取 1 张牌"))),
-            Program("S02-0402", "death",
-                OptionalDraw("井伊直虎"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "井伊直虎阵亡效果抽牌时牌库为空"), ("event", "井伊直虎阵亡时抽取 1 张牌"))),
-            Program("S02-0512", "death",
-                OptionalDraw("埃涅阿斯"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "埃涅阿斯阵亡效果抽牌时牌库为空"), ("event", "埃涅阿斯阵亡时抽取 1 张牌"))),
             Program("S02-0507", "enter",
                 OptionalDraw("阿塔兰忒·晋升"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "阿塔兰忒·晋升登场效果抽牌时牌库为空"), ("event", "阿塔兰忒·晋升因登场抽取 1 张牌"))),
@@ -970,6 +954,7 @@ public static class L12VerifiedAtomicPrograms
             Program("S02-DS05", "disaster",
                 Atom(L12AtomKinds.DamageMaster, "双方主宰各受到 1 点非致命伤害", ("amount", "1"), ("target", "both"), ("lethal", "false"), ("neutralSource", "true"), ("reason", "〈暴怒之罪〉"))),
         };
+        programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
         return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -1002,6 +987,18 @@ public static class L12VerifiedAtomicPrograms
     private static L12VerifiedAtomicProgram StarterTargetedProgram(string cardId, string trigger, string flow)
         => Program(cardId, trigger,
             Atom(L12AtomKinds.CompositeFlow, "执行 ST 带目标军团效果", ("flow", flow)));
+
+    private static L12VerifiedAtomicProgram SimpleDrawProgram(L12SimpleDrawTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.Condition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查抽牌触发条件", ("expression", spec.Condition)));
+        if (spec.Optional) operations.Add(OptionalDraw(spec.Name));
+        operations.Add(Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"),
+            ("target", spec.DrawRecipient), ("emptyLossReason", spec.EmptyLossReason),
+            ("event", spec.EventText)));
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
     {

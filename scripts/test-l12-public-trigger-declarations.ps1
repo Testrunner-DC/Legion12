@@ -26,6 +26,7 @@ $activeAbilities = Read-Source 'L12ActiveAbilities.cs'
 $s2Universal = Read-Source 'L12S2UniversalEffects.cs'
 $atomicPrograms = Read-Source 'AtomicEffects.cs'
 $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
+$simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $entryPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
@@ -267,14 +268,24 @@ Assert-Contains $atomicRuntime 'item.Data.GetValueOrDefault("verifiedAtomicCondi
 foreach ($verifiedOptionalProgram in @(
     'Program("S01-0413", "enter"', 'Program("S01-0405", "attack"',
     'Program("S01-0409", "after-attack"', 'Program("S01-0115", "enter"',
-    'Program("S01-0301", "death"', 'Program("S01-0304", "enter"',
-    'Program("S01-0309", "death"', 'Program("S02-0104", "enter"',
-    'Program("S02-0203", "death"', 'Program("S02-0402", "death"',
-    'Program("S02-0512", "death"', 'Program("S02-0507", "enter"',
+    'Program("S01-0304", "enter"', 'Program("S02-0104", "enter"',
+    'Program("S02-0507", "enter"',
     'Program("S02-0507", "promotion-enter"', 'Program("S02-0616", "enter"'
 )) {
     Assert-Contains $atomicPrograms $verifiedOptionalProgram "Verified atomic Optional inventory is missing: $verifiedOptionalProgram"
 }
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));' `
+    'Simple death-draw effects must be generated from their shared definition.'
+foreach ($simpleDrawSpec in @(
+    'new("S01-0004", 3, "death"', 'new("S01-0110", 3, "death"',
+    'new("S01-0301", 4, "death"', 'new("S01-0309", 3, "death"',
+    'new("S02-0203", 3, "death"', 'new("S02-0402", 2, "death"',
+    'new("S02-0512", 4, "death"'
+)) {
+    Assert-Contains $simpleDrawTriggers $simpleDrawSpec "Simple death-draw inventory is missing: $simpleDrawSpec"
+}
+Assert-Contains $simpleDrawTriggers 'DrawRecipient: "source-owner"' `
+    'Infiltrator death draw must retain the source-owner recipient policy.'
 if ($atomicRuntime.IndexOf('CreatePrompt(', [StringComparison]::Ordinal) -ge 0) {
     throw 'Verified atomic runtime must not create any resolution-time Optional prompt.'
 }

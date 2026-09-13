@@ -37,12 +37,17 @@ $branchPatterns = [ordered]@{
     effectTextInference = '(?:EffectText|\.Effect)\??\.Contains\s*\('
 }
 $atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
+$simpleDrawSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12SimpleDrawTriggerEffects.cs'), [System.Text.Encoding]::UTF8)
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
 $fineProgramMatches = [regex]::Matches($atomicSource,
     'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
+$simpleDrawProgramMatches = [regex]::Matches($simpleDrawSource,
+    'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*\d+\s*,\s*"(?<trigger>[^"]+)"')
+$fineProgramCount = $fineProgramMatches.Count + $simpleDrawProgramMatches.Count
 $compositeRouteMatches = [regex]::Matches($routeSource,
     'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
-$fineCardIds = @($fineProgramMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
+$fineCardIds = @(@($fineProgramMatches) + @($simpleDrawProgramMatches) |
+    ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $compositeCardIds = @($compositeRouteMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $catalogOnlyCardIds = @($cards | Where-Object {
     $fineCardIds -notcontains $_.id -and $compositeCardIds -notcontains $_.id
@@ -128,7 +133,7 @@ $summary = [ordered]@{
     baselineLegacyCaseOccurrences = [int]$baseline.legacyCardCaseOccurrences
     identityReferenceAndInferenceTotal = $legacyDispatchTotal
     branchCounts = $branchCounts
-    fineGrainedVerifiedPrograms = $fineProgramMatches.Count
+    fineGrainedVerifiedPrograms = $fineProgramCount
     fineGrainedVerifiedCards = $fineCardIds.Count
     compositeTransitionRoutes = $compositeRouteMatches.Count
     compositeTransitionCards = $compositeCardIds.Count

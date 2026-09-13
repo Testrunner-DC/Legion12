@@ -527,6 +527,8 @@ public static partial class L12StructuredCardRules
         if (TryGetHumanAssistedOtherworldAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {
+            "S01-0004" => InfiltratorAbilities(),
+            "S01-0110" => MoziAbilities(),
             "S01-0215" => AnkhSteleAbilities(),
             "S01-0303" => RagnarAbilities(),
             "S01-0304" => HaraldAbilities(),
@@ -570,6 +572,74 @@ public static partial class L12StructuredCardRules
         };
         return abilities.Count > 0;
     }
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> InfiltratorAbilities() =>
+    [
+        new("static", "continuous", "此军团可在战场任意位置休整登场，不可进行支援和进攻。",
+        [
+            new(L12AtomKinds.Special, "可在任意一方战场休整登场", "resolution", new()
+            {
+                ["operation"] = "enter-any-battlefield-rested",
+            }),
+            new(L12AtomKinds.AttackRule, "不可进行支援和进攻", "resolution", new()
+            {
+                ["cannotSupport"] = "true",
+                ["cannotAttack"] = "true",
+            }),
+        ], "confirmed", "user-20260914"),
+        new("active", "activated", "我方/对方 可消耗2士气：击杀此军团。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.PayMorale, "消耗 2 士气", "cost", new() { ["amount"] = "2" }),
+            new(L12AtomKinds.MoveZone, "击杀此军团", "resolution", new()
+            {
+                ["from"] = "field",
+                ["to"] = "owner.grave",
+                ["operation"] = "kill-source",
+            }),
+        ], "confirmed", "user-20260914"),
+        new("death", "triggered", "阵亡时 此军团的所有者抽取1张牌。",
+        [
+            new(L12AtomKinds.Draw, "其所有者抽取 1 张牌", "resolution", new()
+            {
+                ["amount"] = "1",
+                ["target"] = "source-owner",
+            }),
+        ], "confirmed", "user-20260914"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> MoziAbilities() =>
+    [
+        RangedAbility() with { ReviewStatus = "confirmed", ReviewSource = "user-20260914" },
+        new("enter", "triggered", "登场时 可返还1士气：选择我方最多2张【天廷】军团，直到我方下个回合开始前获得免死。（仅1次，即将阵亡时，将兵力在本回合变为1000作为代替）",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.ReturnMorale, "返还 1 士气", "cost", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.SelectTarget, "选择我方 0 至 2 张【天廷】军团；无合法对象时跳过", "target", new()
+            {
+                ["zone"] = "controller.field",
+                ["filter"] = "card-type=legion;faction=tianting",
+                ["min"] = "0",
+                ["max"] = "2",
+                ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.Keyword, "所选军团获得免死", "resolution", new()
+            {
+                ["keywordRef"] = "immortality",
+                ["uses"] = "1",
+                ["replacementTroops"] = "1000",
+            }),
+            new(L12AtomKinds.Duration, "持续至我方下个回合开始前", "duration", new()
+            {
+                ["duration"] = "until-controller-next-turn",
+            }),
+        ], "confirmed", "user-20260914"),
+        new("death", "triggered", "阵亡时 抽取1张牌。",
+        [
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+        ], "confirmed", "user-20260914"),
+    ];
 
     public static L12StructuredAbilityTemplate? FindRuntimeAbility(string cardId, string runtimeAbilityId)
     {

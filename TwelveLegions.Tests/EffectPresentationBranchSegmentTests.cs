@@ -50,6 +50,13 @@ public sealed class EffectPresentationBranchSegmentTests
     {
         var expected = new[]
         {
+            ("S01-0004", 3, "death"),
+            ("S01-0110", 3, "death"),
+            ("S01-0301", 4, "death"),
+            ("S01-0309", 3, "death"),
+            ("S02-0203", 3, "death"),
+            ("S02-0402", 2, "death"),
+            ("S02-0512", 4, "death"),
             ("S01-0112", 3, "death"),
             ("S01-0210", 3, "death"),
             ("S01-0304", 3, "death"),
@@ -159,6 +166,7 @@ public sealed class EffectPresentationBranchSegmentTests
     {
         var expected = new[]
         {
+            ("S01-0004", 2, "destroyInfiltrator"),
             ("S01-01C1", 1, "factionAddActive"),
             ("S01-0109", 2, "addMorale"),
             ("S01-0214", 2, "cleopatraGuard"),

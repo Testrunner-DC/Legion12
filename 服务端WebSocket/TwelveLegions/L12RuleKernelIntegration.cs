@@ -1513,6 +1513,11 @@ public sealed partial class L12GameEngine
     internal static string ResolveTriggeredEffectDisplayText(L12CardInstance card, string trigger, string fallback,
         IReadOnlyDictionary<string, string>? data = null)
     {
+        // Audited simple-draw triggers own their runtime copy in the same definition that
+        // supplies eligibility and settlement.  Do not send these cards back through the
+        // legacy substring parser, where reminder text can contain the same timing words.
+        if (L12SimpleDrawTriggerEffects.Find(card.CardId, trigger) is { } simpleDraw)
+            return simpleDraw.SettlementText;
         if (string.IsNullOrWhiteSpace(card.EffectText)) return fallback;
         var lines = card.EffectText.Replace("\r", string.Empty, StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

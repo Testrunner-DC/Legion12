@@ -107,7 +107,12 @@ public sealed partial class L12GameEngine
                 case L12AtomKinds.Draw:
                 {
                     var amount = AtomicInt(atom, "amount");
-                    var drawPlayer = atom.Parameters.GetValueOrDefault("target") == "opponent" ? opponent : controller;
+                    var drawPlayer = atom.Parameters.GetValueOrDefault("target") switch
+                    {
+                        "opponent" => opponent,
+                        "source-owner" when source.OwnerIndex is >= 0 and <= 1 => State.Players[source.OwnerIndex.Value],
+                        _ => controller,
+                    };
                     var succeeded = Draw(drawPlayer, amount);
                     if (!succeeded)
                     {

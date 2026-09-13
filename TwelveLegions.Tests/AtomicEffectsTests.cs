@@ -130,7 +130,17 @@ public sealed class AtomicEffectsTests
             var composite = Assert.Single(program.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow);
             Assert.True(composite.RuntimeExecutable);
             Assert.False(string.IsNullOrWhiteSpace(composite.Parameters["flow"]));
-            Assert.Same(program, L12VerifiedAtomicPrograms.Find(program.CardId, program.Trigger));
+            var currentProgram = Assert.IsType<L12VerifiedAtomicProgram>(
+                L12VerifiedAtomicPrograms.Find(program.CardId, program.Trigger));
+            if (L12SimpleDrawTriggerEffects.Find(program.CardId, program.Trigger) is not null)
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Single(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.Draw);
+                continue;
+            }
+            Assert.Same(program, currentProgram);
 
             var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));
             var ability = card.Abilities.FirstOrDefault(candidate => candidate.Trigger == program.Trigger
