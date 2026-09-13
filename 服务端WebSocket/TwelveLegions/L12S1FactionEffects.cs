@@ -1004,7 +1004,8 @@ public sealed partial class L12GameEngine
             case "yomiRecover" when source.CardId == "S01-04D1":
                 if (source.Tapped || string.IsNullOrWhiteSpace(target)
                     || !player.Graveyard.Any(card => card.InstanceId == target
-                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")))
+                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && CanEnterHandOrLibrary(card)))
                     return CommandResult.Reject("黄泉之门必须为活跃状态且墓地目标需保持合法");
                 source.Tapped = true;
                 player.MasterTapped = true;
@@ -1141,6 +1142,15 @@ public sealed partial class L12GameEngine
         {
             foreach (var pair in CompositeFirstSegmentData("active:S01-0317:gramDamage",
                          new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
+        if (ability == "yomiRecover")
+        {
+            var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["graveCard"] = string.IsNullOrWhiteSpace(target) ? [] : [target],
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S01-04D1:yomiRecover", declared))
                 data[pair.Key] = pair.Value;
         }
         if (ability == "isisCanopic")
@@ -1419,12 +1429,15 @@ public sealed partial class L12GameEngine
             {
                 var targetId = item.Data.GetValueOrDefault("target");
                 var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"));
+                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                    && CanEnterHandOrLibrary(card));
                 if (recover is not null)
                 {
                     player.Graveyard.Remove(recover);
                     AddCardToHandByEffect(player, recover, "graveyard", "黄泉之门回收高天原卡牌");
                 }
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选墓地【高天原】卡牌已离开墓地、失去有效特征或不能进入手牌");
                 FinishStackItem(item);
                 return true;
             }

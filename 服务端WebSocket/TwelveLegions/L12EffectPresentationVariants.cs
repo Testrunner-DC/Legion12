@@ -41,6 +41,7 @@ internal static class L12EffectPresentationVariants
             ["active:S01-0215:ankhReady"] = 2,
             ["active:S01-0215:ankhDraw"] = 2,
             ["active:S01-0317:gramDamage"] = 2,
+            ["active:S01-04D1:yomiRecover"] = 3,
             ["active:S01-01M1:drawCycle"] = 1,
             ["active:S01-02D1:sunTopThree"] = 2,
             ["active:S01-03D1:valhallaRecover"] = 2,

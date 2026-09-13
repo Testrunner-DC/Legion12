@@ -318,6 +318,11 @@ internal static partial class L12CompositeEffectPlans
                 new("yomi-kill3", "黄泉之门：结算已声明的费用不高于3击杀目标"),
                 new("yomi-kill1", "黄泉之门：结算已声明的费用不高于1击杀目标"),
             ],
+            ["active:S01-04D1:yomiRecover"] =
+            [
+                new("yomi-grave-recover", "黄泉之门：将已选择的墓地【高天原】卡牌加入手牌",
+                    PublicTargetKeys: ["graveCard"], RequiredDeclarationKey: "graveCard"),
+            ],
             ["active:S01-04M1:amaterasuKill"] =
             [
                 new("amaterasu-debuff", "天照大神：令已声明的对方军团本回合费用-1",

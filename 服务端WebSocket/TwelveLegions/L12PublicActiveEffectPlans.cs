@@ -180,7 +180,8 @@ public sealed partial class L12GameEngine
             case ("S01-04D1", "yomiRecover"):
             {
                 if (source.Tapped) return CommandResult.Reject("黄泉之门必须为活跃状态");
-                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && CanEnterHandOrLibrary(card))
                     .Select(card => card.InstanceId).ToList();
                 if (grave.Count == 0) return CommandResult.Reject("墓地没有可回收的【高天原】卡牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
